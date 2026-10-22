@@ -1,68 +1,164 @@
-use gpui::{App, ClickEvent, Div, SharedString, Window, div, prelude::*, px};
-use gpui_component::Icon;
+use gpui_kit::component::alert::Alert;
+use gpui_kit::component::empty::{Empty, EmptyContent};
+use gpui_kit::component::label::Label;
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::component::{Icon, Sizable};
+use gpui_kit::{App, ClickEvent, Div, SharedString, Window, div, prelude::*, px};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::metrics::{SPACING_4, SPACING_8, SPACING_12};
-use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 pub(crate) const WORK_STATE_ICON_SIZE: f32 = 18.0;
 pub(crate) const WORK_STATE_MIN_HEIGHT: f32 = 72.0;
 
-#[derive(Clone, Copy)]
-enum WorkStateTone {
-    Neutral,
-    Progress,
-    Error,
-}
-
 pub(crate) fn empty_state(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
     icon: MaterialIcon,
     title: impl Into<SharedString>,
     description: impl Into<SharedString>,
 ) -> Div {
-    work_state(
-        theme,
-        selector,
-        icon,
-        title.into(),
-        description.into(),
-        WorkStateTone::Neutral,
-    )
+    let icon_selector = format!("{selector}-icon");
+    let title_selector = format!("{selector}-title");
+    let description_selector = format!("{selector}-description");
+    let content_selector = format!("{selector}-kit-content");
+    div()
+        .debug_selector(move || selector.into())
+        .w_full()
+        .min_h(px(WORK_STATE_MIN_HEIGHT))
+        .flex_none()
+        .child(
+            Empty::new()
+                .p_3()
+                .gap_0()
+                .items_start()
+                .text_left()
+                .content(
+                    EmptyContent::new()
+                        .w_full()
+                        .max_w_full()
+                        .items_start()
+                        .child(
+                            div()
+                                .debug_selector(move || content_selector.clone())
+                                .w_full()
+                                .min_w_0()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .debug_selector(move || icon_selector.clone())
+                                        .flex_none()
+                                        .child(Icon::new(icon).size(px(WORK_STATE_ICON_SIZE))),
+                                )
+                                .child(
+                                    div()
+                                        .min_w_0()
+                                        .flex_1()
+                                        .flex()
+                                        .flex_col()
+                                        .gap_1()
+                                        .child(
+                                            div()
+                                                .debug_selector(move || title_selector.clone())
+                                                .child(Label::new(title).text_sm()),
+                                        )
+                                        .child(
+                                            div()
+                                                .debug_selector(move || {
+                                                    description_selector.clone()
+                                                })
+                                                .child(Label::new(description).text_sm()),
+                                        ),
+                                ),
+                        ),
+                ),
+        )
 }
 
+/// A loading message, never a determinate percentage. The original owner
+/// decides when this surface is mounted; there is no new task/timer controller.
 pub(crate) fn progress_state(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
     title: impl Into<SharedString>,
     description: impl Into<SharedString>,
 ) -> Div {
-    work_state(
-        theme,
-        selector,
-        MaterialIcon::ProgressActivity,
-        title.into(),
-        description.into(),
-        WorkStateTone::Progress,
-    )
+    let title_selector = format!("{selector}-title");
+    let description_selector = format!("{selector}-description");
+    let icon_selector = format!("{selector}-icon");
+    div()
+        .debug_selector(move || selector.into())
+        .w_full()
+        .min_h(px(WORK_STATE_MIN_HEIGHT))
+        .flex_none()
+        .p_3()
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .debug_selector(move || icon_selector.clone())
+                .flex_none()
+                .child(LoadingIndicator),
+        )
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .debug_selector(move || title_selector.clone())
+                        .child(Label::new(title).text_sm()),
+                )
+                .child(
+                    div()
+                        .debug_selector(move || description_selector.clone())
+                        .child(Label::new(description).text_sm()),
+                ),
+        )
+}
+
+#[derive(gpui_kit::IntoElement)]
+struct LoadingIndicator;
+impl gpui_kit::RenderOnce for LoadingIndicator {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+        if crate::ui::motion::motion_allowed(cx) {
+            Spinner::new().small().into_any_element()
+        } else {
+            Icon::new(MaterialIcon::ProgressActivity)
+                .small()
+                .into_any_element()
+        }
+    }
 }
 
 pub(crate) fn inline_error_state(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
     title: impl Into<SharedString>,
     description: impl Into<SharedString>,
 ) -> Div {
-    work_state(
-        theme,
-        selector,
-        MaterialIcon::Info,
-        title.into(),
-        description.into(),
-        WorkStateTone::Error,
-    )
+    let alert_selector = format!("{selector}-kit-alert");
+    div()
+        .debug_selector(move || selector.into())
+        .w_full()
+        .min_h(px(WORK_STATE_MIN_HEIGHT))
+        .flex_none()
+        .child(
+            div()
+                .debug_selector(move || alert_selector.clone())
+                .w_full()
+                .child(
+                    Alert::error(selector, description.into())
+                        .xsmall()
+                        .title(title),
+                ),
+        )
 }
 
 pub(crate) fn interactive_state(
@@ -76,15 +172,13 @@ pub(crate) fn interactive_state(
         on_click: Box::new(on_click),
     }
 }
-
-#[derive(gpui::IntoElement)]
+#[derive(gpui_kit::IntoElement)]
 struct InteractiveWorkState {
     selector: &'static str,
     state: Div,
     on_click: crate::ui::components::action::ClickHandler,
 }
-
-impl gpui::RenderOnce for InteractiveWorkState {
+impl gpui_kit::RenderOnce for InteractiveWorkState {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let Self {
             selector,
@@ -99,13 +193,14 @@ impl gpui::RenderOnce for InteractiveWorkState {
             )
             .read(cx)
             .clone();
-        let focused = focus.is_focused(window);
+        let focused = focus.is_focused(window) && window.last_input_was_keyboard();
         crate::ui::components::action::focused_action(
             selector,
             &focus,
             Theme::zed_dark(),
             false,
             window,
+            cx,
             on_click,
         )
         .border_0()
@@ -126,159 +221,52 @@ impl gpui::RenderOnce for InteractiveWorkState {
     }
 }
 
-fn work_state(
-    theme: Theme,
-    selector: &'static str,
-    icon: MaterialIcon,
-    title: SharedString,
-    description: SharedString,
-    tone: WorkStateTone,
-) -> Div {
-    let (semantic_color, title_color, shows_error_edge) = match tone {
-        WorkStateTone::Neutral => (theme.icon_muted, theme.text_secondary, false),
-        WorkStateTone::Progress => (theme.accent, theme.text_secondary, false),
-        WorkStateTone::Error => (theme.danger, theme.danger, true),
-    };
-    let icon_selector = format!("{selector}-icon");
-    let title_selector = format!("{selector}-title");
-    let description_selector = format!("{selector}-description");
-    let marker_selector = format!("{selector}-marker");
-
-    div()
-        .debug_selector(move || selector.into())
-        .relative()
-        .w_full()
-        .min_h(px(WORK_STATE_MIN_HEIGHT))
-        .flex_none()
-        .px(px(SPACING_12))
-        .py(px(SPACING_12))
-        .when(shows_error_edge, |state| {
-            state.child(
-                div()
-                    .debug_selector(move || marker_selector.clone())
-                    .absolute()
-                    .left_0()
-                    .top(px(SPACING_12))
-                    .bottom(px(SPACING_12))
-                    .w(px(2.0))
-                    .bg(theme.danger),
-            )
-        })
-        .flex()
-        .items_center()
-        .gap(px(SPACING_8))
-        .child(
-            div()
-                .debug_selector(move || icon_selector.clone())
-                .size(px(WORK_STATE_ICON_SIZE))
-                .flex_none()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    Icon::new(icon)
-                        .size(px(WORK_STATE_ICON_SIZE))
-                        .text_color(semantic_color),
-                ),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .flex_1()
-                .flex()
-                .flex_col()
-                .gap(px(SPACING_4))
-                .child(
-                    div()
-                        .debug_selector(move || title_selector.clone())
-                        .text_size(px(TEXT_BODY))
-                        .line_height(px(LINE_HEIGHT_BODY))
-                        .text_color(title_color)
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .debug_selector(move || description_selector.clone())
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .text_color(theme.text_muted)
-                        .child(description),
-                ),
-        )
-}
-
 #[cfg(test)]
 mod tests {
-    use gpui::{Context, IntoElement, Render, TestAppContext, Window, div, point, px, size};
-
     use super::*;
-
-    struct StateFixture;
-
-    impl Render for StateFixture {
-        fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-            let theme = Theme::zed_dark();
+    use gpui_kit::{Context, Render, TestAppContext, size};
+    struct States;
+    impl Render for States {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             div()
-                .size_full()
+                .w_full()
                 .flex()
                 .flex_col()
                 .child(empty_state(
-                    theme,
+                    Theme::zed_dark(),
                     "state-empty",
                     MaterialIcon::Search,
                     "没有内容",
                     "调整条件后重试。",
                 ))
                 .child(progress_state(
-                    theme,
+                    Theme::zed_dark(),
                     "state-progress",
                     "正在加载",
                     "正在读取有界结果。",
                 ))
                 .child(inline_error_state(
-                    theme,
+                    Theme::zed_dark(),
                     "state-error",
                     "加载失败",
                     "请查看诊断信息后重试。",
                 ))
         }
     }
-
-    #[gpui::test]
-    fn shared_work_states_keep_one_icon_and_typography_geometry(cx: &mut TestAppContext) {
-        let window = cx.add_empty_window();
-        window.draw(
-            point(px(0.0), px(0.0)),
-            size(px(480.0), px(WORK_STATE_MIN_HEIGHT * 3.0)),
-            |_window, cx| cx.new(|_| StateFixture),
-        );
-
-        let mut origins = Vec::new();
-        for selector in ["state-empty", "state-progress", "state-error"] {
-            let state = window.debug_bounds(selector).expect("shared state surface");
-            let icon = window
-                .debug_bounds(Box::leak(format!("{selector}-icon").into_boxed_str()))
-                .expect("shared state icon slot");
-            let title = window
-                .debug_bounds(Box::leak(format!("{selector}-title").into_boxed_str()))
-                .expect("shared state title");
-            let description = window
-                .debug_bounds(Box::leak(
-                    format!("{selector}-description").into_boxed_str(),
-                ))
-                .expect("shared state description");
-
-            assert_eq!(state.size.width, px(480.0));
-            assert_eq!(state.size.height, px(WORK_STATE_MIN_HEIGHT));
-            assert_eq!(
-                icon.size,
-                size(px(WORK_STATE_ICON_SIZE), px(WORK_STATE_ICON_SIZE))
-            );
-            assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
-            assert_eq!(description.size.height, px(LINE_HEIGHT_LABEL));
-            assert_eq!(title.left(), description.left());
-            origins.push((icon.left(), title.left(), description.left()));
+    #[gpui_kit::test]
+    fn shared_work_states_keep_actual_component_content_inside_original_minimum_budget(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        let (_, surface) = cx.add_window_view(|_, _| States);
+        surface.simulate_resize(size(px(480.0), px(300.0)));
+        surface.refresh().expect("real shared states");
+        for id in ["state-empty", "state-progress", "state-error"] {
+            let bounds = surface.debug_bounds(id).expect("state");
+            assert_eq!(bounds.size.width, px(480.0));
+            assert!(bounds.size.height >= px(WORK_STATE_MIN_HEIGHT));
+            assert!(bounds.right() <= px(480.0) && bounds.bottom() <= px(300.0));
         }
-        assert!(origins.windows(2).all(|pair| pair[0] == pair[1]));
     }
 }

@@ -1,0 +1,19 @@
+{
+  "id": "menu-notification-refinement",
+  "name": "menu-notification-refinement",
+  "title": "Official notification integration with invocation-safe identity and passive screen lifecycle",
+  "description": "User-approved Kit0.7.1 Notification/NotificationList/ToastStack replaces custom cards/timers; fixed5seconds/group pause, distinct invocation IDs, native pointer/keyboard stack allocation and preserved original-source actions.",
+  "status": "review",
+  "package": "nxtools-desktop",
+  "priority": "P1",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-16",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "commit": null,
+  "notes": "Official source integration completed2026-10-17: Desktop799/Core58/Protocol48/CSharp256safe, strict/workspace/fmt/Debug and8source gates pass. Owned native finalfixture601c9e26265d4226b892725d5b8d566b measures158->306->158,1reveal/2visibleadjust/1finalhide,foreground unchanged. Actual3image page directly inspected; not user/installed/physical/mixedDPI/reader acceptance. One bounded review addressed near-expiry position timer reset and allocation reconciliation. See official-notification-integration-outcomes.md. Current source is NOT packaged. Delivered sequence15 remains18,498,970bytes/SHA B373A3BD3DE3A672CA5E6B99967F2893F33563FF74EB9A8F6A3DC11E999EB506 with priorcustomimplementation. No package/install/normalproductlaunch/services/userdata/plugins/commit/push/archive; preserve priorwork. Existing non-test extension_adapter warning unsuppressed.",
+  "children": [],
+  "parent": null
+}

@@ -1,80 +1,54 @@
-use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
-use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{Icon, Selectable, Sizable};
+use gpui_kit::component::button::{Button, ButtonCustomVariant, ButtonGroup, ButtonVariants};
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{Icon, Selectable, Sizable};
+use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, RADIUS_NONE, SPACING_8};
+#[cfg(test)]
+use crate::ui::metrics::CONTROL_HEIGHT_ACTION;
+use crate::ui::metrics::RADIUS_CONTROL;
 
-pub(crate) type ClickHandler = Box<dyn Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static>;
+pub(crate) type ClickHandler = Box<dyn Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static>;
 
 /// One existing GPUI click boundary for pointer and keyboard activation.
 /// GPUI generates Enter/Space clicks for a tracked focus handle; do not add
 /// another activation handler, which would dispatch twice.
 pub(crate) fn focused_action(
-    id: impl Into<gpui::ElementId>,
-    focus: &gpui::FocusHandle,
+    id: impl Into<gpui_kit::ElementId>,
+    focus: &gpui_kit::FocusHandle,
     theme: Theme,
     disabled: bool,
     window: &Window,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-) -> gpui::Stateful<gpui::Div> {
-    let focused = focus.is_focused(window) && !disabled;
-    let pointer_focus = focus.clone();
-    let key_focus = focus.clone();
-    div()
-        .id(id)
+    _cx: &mut App,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui_kit::base::Button {
+    let focused = focus.is_focused(window) && !disabled && window.last_input_was_keyboard();
+    gpui_kit::base::Button::new(id)
+        .track_focus(focus)
+        .disabled(disabled)
         .relative()
         .border_2()
         .border_color(if focused {
             theme.focus_ring
         } else {
-            gpui::transparent_black().into()
+            gpui_kit::transparent_black().into()
         })
+        .focus_visible(move |style| style.border_color(theme.focus_ring))
         .rounded(px(RADIUS_CONTROL))
-        .when(!disabled, |element| element.track_focus(focus))
         .when(!disabled, |element| element.cursor_pointer())
-        .on_mouse_down(gpui::MouseButton::Left, move |_, window, _| {
-            if !disabled {
-                pointer_focus.focus(window);
-            }
-        })
-        .capture_key_down(move |event, window, cx| {
-            if disabled || !key_focus.is_focused(window) {
-                return;
-            }
-            if event.keystroke.key == "tab"
-                && !event.keystroke.modifiers.control
-                && !event.keystroke.modifiers.alt
-                && !event.keystroke.modifiers.platform
-            {
-                if event.keystroke.modifiers.shift {
-                    window.focus_prev();
-                } else {
-                    window.focus_next();
-                }
-                window.prevent_default();
-                cx.stop_propagation();
-            } else if event.is_held && matches!(event.keystroke.key.as_str(), "enter" | "space") {
-                window.prevent_default();
-                cx.stop_propagation();
-            }
-        })
         .on_click(move |event, window, cx| {
-            if !disabled {
-                on_click(event, window, cx);
-            }
+            on_click(event, window, cx);
             cx.stop_propagation();
         })
 }
 
 pub(crate) fn focusable_content(
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<gpui_kit::ElementId>,
     theme: Theme,
     disabled: bool,
     content: AnyElement,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     FocusableContent {
         id: id.into(),
@@ -86,15 +60,15 @@ pub(crate) fn focusable_content(
     .into_any_element()
 }
 
-#[derive(gpui::IntoElement)]
+#[derive(gpui_kit::IntoElement)]
 struct FocusableContent {
-    id: gpui::ElementId,
+    id: gpui_kit::ElementId,
     theme: Theme,
     disabled: bool,
     content: AnyElement,
     on_click: ClickHandler,
 }
-impl gpui::RenderOnce for FocusableContent {
+impl gpui_kit::RenderOnce for FocusableContent {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let Self {
             id,
@@ -107,11 +81,13 @@ impl gpui::RenderOnce for FocusableContent {
             .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle().tab_stop(true))
             .read(cx)
             .clone();
-        let focused = focus.is_focused(window) && !disabled;
-        focused_action(id, &focus, theme, disabled, window, on_click)
+        let focused = focus.is_focused(window) && !disabled && window.last_input_was_keyboard();
+        focused_action(id, &focus, theme, disabled, window, cx, on_click)
             .border_0()
             .w_full()
-            .child(content)
+            .flex()
+            .flex_col()
+            .child(div().w_full().min_w_0().child(content))
             .when(focused, |action| {
                 action.child(
                     div()
@@ -134,7 +110,7 @@ impl SegmentedOption {
     pub(crate) fn new(
         id: &'static str,
         label: impl Into<SharedString>,
-        on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+        on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
     ) -> Self {
         Self {
             id,
@@ -144,22 +120,43 @@ impl SegmentedOption {
     }
 }
 
-pub(crate) fn primary_button_variant(theme: Theme, cx: &App) -> ButtonCustomVariant {
+pub(crate) fn primary_button_variant(_theme: Theme, cx: &App) -> ButtonCustomVariant {
+    let colors = gpui_kit::component::Theme::global(cx).colors;
     ButtonCustomVariant::new(cx)
-        .color(theme.accent.into())
-        .foreground(theme.image_well.into())
-        .border(theme.accent.into())
-        .hover(theme.accent_hover.into())
-        .active(theme.accent.into())
+        .color(colors.button_primary)
+        .foreground(colors.button_primary_foreground)
+        .hover(colors.button_primary_hover)
+        .active(colors.button_primary_active)
+}
+
+pub(crate) fn primary_action_button(
+    id: &'static str,
+    label: impl IntoElement,
+    theme: Theme,
+    disabled: bool,
+    _cx: &App,
+) -> Button {
+    use gpui_kit::component::Disableable;
+    Button::new(id)
+        .debug_selector(move || id.to_string())
+        .small()
+        .primary()
+        .disabled(disabled)
+        .when(disabled, |button| button.bg(theme.surface_raised))
+        .child(
+            div()
+                .when(disabled, |label| label.text_color(theme.text_secondary))
+                .child(label),
+        )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct DangerHoverButtonPalette {
-    rest: gpui::Rgba,
-    foreground: gpui::Rgba,
-    border: gpui::Rgba,
-    hover: gpui::Rgba,
-    active: gpui::Rgba,
+    rest: gpui_kit::Rgba,
+    foreground: gpui_kit::Rgba,
+    border: gpui_kit::Rgba,
+    hover: gpui_kit::Rgba,
+    active: gpui_kit::Rgba,
 }
 
 fn danger_hover_button_palette(theme: Theme) -> DangerHoverButtonPalette {
@@ -174,9 +171,9 @@ fn danger_hover_button_palette(theme: Theme) -> DangerHoverButtonPalette {
 
 fn danger_ghost_button_palette(theme: Theme) -> DangerHoverButtonPalette {
     DangerHoverButtonPalette {
-        rest: gpui::transparent_black().into(),
+        rest: gpui_kit::transparent_black().into(),
         foreground: theme.icon_muted,
-        border: gpui::transparent_black().into(),
+        border: gpui_kit::transparent_black().into(),
         hover: theme.danger_soft,
         active: theme.danger_soft,
     }
@@ -187,7 +184,6 @@ pub(crate) fn danger_hover_button_variant(theme: Theme, cx: &App) -> ButtonCusto
     ButtonCustomVariant::new(cx)
         .color(palette.rest.into())
         .foreground(palette.foreground.into())
-        .border(palette.border.into())
         .hover(palette.hover.into())
         .active(palette.active.into())
 }
@@ -197,7 +193,6 @@ pub(crate) fn danger_ghost_button_variant(theme: Theme, cx: &App) -> ButtonCusto
     ButtonCustomVariant::new(cx)
         .color(palette.rest.into())
         .foreground(palette.foreground.into())
-        .border(palette.border.into())
         .hover(palette.hover.into())
         .active(palette.active.into())
 }
@@ -206,12 +201,10 @@ pub(crate) fn action_button(id: &'static str, label: impl Into<SharedString>) ->
     // The debug selector makes every shared action button addressable by the
     // production geometry gates; it is a no-op outside test builds.
     Button::new(id)
+        .secondary()
         .debug_selector(move || id.to_string())
         .label(label)
         .small()
-        .h(px(CONTROL_HEIGHT_ACTION))
-        .px(px(SPACING_8))
-        .rounded(px(RADIUS_CONTROL))
 }
 
 pub(crate) fn labelled_icon_action(
@@ -227,16 +220,17 @@ pub(crate) fn icon_action(
     icon: MaterialIcon,
     tooltip_label: &'static str,
 ) -> Button {
-    icon_action_button(id, icon).tooltip(tooltip_label)
+    icon_action_button(id, icon)
+        .accessibility_label(tooltip_label)
+        .tooltip(tooltip_label)
 }
 
 pub(crate) fn icon_action_button(id: &'static str, icon: MaterialIcon) -> Button {
     Button::new(id)
+        .secondary()
         .debug_selector(move || id.to_string())
         .icon(Icon::new(icon).size(px(14.0)))
         .small()
-        .size(px(CONTROL_HEIGHT_ACTION))
-        .rounded(px(RADIUS_CONTROL))
 }
 
 pub(crate) fn icon_action_tooltip_surface(
@@ -259,11 +253,40 @@ pub(crate) fn icon_action_tooltip_surface(
 }
 
 pub(crate) fn segmented_control(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
     selected_id: &'static str,
     options: Vec<SegmentedOption>,
-    cx: &App,
+    _cx: &App,
+) -> AnyElement {
+    segmented_control_sized(
+        selector,
+        selected_id,
+        options,
+        gpui_kit::component::Size::Small,
+    )
+}
+
+pub(crate) fn input_segmented_control(
+    _theme: Theme,
+    selector: &'static str,
+    selected_id: &'static str,
+    options: Vec<SegmentedOption>,
+    _cx: &App,
+) -> AnyElement {
+    segmented_control_sized(
+        selector,
+        selected_id,
+        options,
+        gpui_kit::component::Size::Medium,
+    )
+}
+
+fn segmented_control_sized(
+    selector: &'static str,
+    selected_id: &'static str,
+    options: Vec<SegmentedOption>,
+    size: gpui_kit::component::Size,
 ) -> AnyElement {
     assert_eq!(
         options
@@ -273,86 +296,130 @@ pub(crate) fn segmented_control(
         1,
         "a segmented control must have exactly one selected option"
     );
-    let selected_variant = ButtonCustomVariant::new(cx)
-        .color(theme.accent_soft.into())
-        .foreground(theme.text.into())
-        .border(gpui::transparent_black())
-        .hover(theme.surface_hover.into())
-        .active(theme.element_selected.into());
+    let option_width = 1.0 / options.len() as f32;
     div()
         .debug_selector(move || selector.into())
-        .h(px(CONTROL_HEIGHT_ACTION))
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .overflow_hidden()
-        .flex()
-        .children(options.into_iter().map(move |option| {
-            let selected = option.id == selected_id;
-            let button = Button::new(option.id)
-                .label(option.label)
-                .small()
-                .h_full()
+        .w_full()
+        .min_w_0()
+        .child(
+            ButtonGroup::new(selector)
+                .with_size(size)
+                .outline()
                 .w_full()
-                .rounded(px(RADIUS_NONE))
-                .selected(selected)
-                .when(selected, |button| button.custom(selected_variant))
-                .when(!selected, |button| button.ghost())
-                .on_click(option.on_click);
-            div()
-                .debug_selector(move || option.id.into())
-                .h_full()
-                .flex_1()
-                .min_w_0()
-                .child(button)
-        }))
+                .children(options.into_iter().map(move |option| {
+                    Button::new(option.id)
+                        .debug_selector(move || option.id.into())
+                        .label(option.label)
+                        .selected(option.id == selected_id)
+                        .w(gpui_kit::relative(option_width))
+                        .flex_none()
+                        .min_w_0()
+                        .whitespace_nowrap()
+                        .on_click(option.on_click)
+                })),
+        )
         .into_any_element()
 }
 
 #[cfg(test)]
 mod tests {
-    use gpui::TestAppContext;
+
+    #[gpui_kit::test]
+    fn installed_navigation_pointer_focus_has_no_outline_but_keyboard_focus_does(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let action_calls = calls.clone();
+        let fixture = cx.new(move |cx| FocusedActionFixture {
+            focus: cx.focus_handle().tab_stop(true),
+            calls: action_calls,
+            disabled: false,
+            outline: std::cell::Cell::new(false),
+        });
+        let view = fixture.clone();
+        let (_, window) =
+            cx.add_window_view(move |window, cx| gpui_kit::base::Root::new(view, window, cx));
+        window.refresh().expect("production action");
+        let bounds = window
+            .debug_bounds("foundation-action")
+            .expect("real hit bounds");
+        window.simulate_click(bounds.center(), gpui_kit::Modifiers::default());
+        window.refresh().expect("pointer focus presentation");
+        assert_eq!(calls.get(), 1);
+        assert!(
+            !fixture.read_with(window, |fixture, _| fixture.outline.get()),
+            "mouse click must not leave the settings rectangle"
+        );
+        window.simulate_keystrokes("tab");
+        window.refresh().expect("keyboard focus presentation");
+        assert!(
+            fixture.read_with(window, |fixture, _| fixture.outline.get()),
+            "Tab must retain a visible keyboard focus indicator"
+        );
+        assert_eq!(window.debug_bounds("foundation-action"), Some(bounds));
+        window.simulate_keystrokes("enter");
+        window.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse("enter").expect("Enter"),
+        });
+        assert_eq!(calls.get(), 2, "existing KeyUp boundary dispatches once");
+    }
+
+    use gpui_kit::TestAppContext;
 
     use super::*;
 
     struct FocusedActionFixture {
-        focus: gpui::FocusHandle,
+        focus: gpui_kit::FocusHandle,
         calls: std::rc::Rc<std::cell::Cell<usize>>,
         disabled: bool,
+        outline: std::cell::Cell<bool>,
     }
 
-    impl gpui::Render for FocusedActionFixture {
-        fn render(&mut self, window: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+    impl gpui_kit::Render for FocusedActionFixture {
+        fn render(
+            &mut self,
+            window: &mut Window,
+            cx: &mut gpui_kit::Context<Self>,
+        ) -> impl IntoElement {
             let calls = self.calls.clone();
-            focused_action(
+            let mut action = focused_action(
                 "foundation-action",
                 &self.focus,
                 Theme::zed_dark(),
                 self.disabled,
                 window,
+                cx,
                 move |_, _, _| calls.set(calls.get() + 1),
-            )
-            .debug_selector(|| "foundation-action".into())
-            .w(px(120.0))
-            .h(px(CONTROL_HEIGHT_ACTION))
-            .child("配置")
+            );
+            self.outline
+                .set(action.style().border_color == Some(Theme::zed_dark().focus_ring.into()));
+            action
+                .debug_selector(|| "foundation-action".into())
+                .w(px(120.0))
+                .h(px(CONTROL_HEIGHT_ACTION))
+                .child("配置")
         }
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn foundation_focused_action_uses_one_dispatch_and_rejects_disabled_input(
         cx: &mut TestAppContext,
     ) {
-        use gpui::{KeyDownEvent, KeyUpEvent, Keystroke, Modifiers};
-        cx.update(gpui_component::init);
+        use gpui_kit::{KeyDownEvent, KeyUpEvent, Keystroke, Modifiers};
+        cx.update(gpui_kit::init);
         cx.update(crate::theme::apply_component_theme);
         let calls = std::rc::Rc::new(std::cell::Cell::new(0));
         let fixture_calls = calls.clone();
-        let (fixture, window) = cx.add_window_view(move |_, cx| FocusedActionFixture {
+        let fixture = cx.new(move |cx| FocusedActionFixture {
             focus: cx.focus_handle().tab_stop(true),
             calls: fixture_calls,
             disabled: false,
+            outline: std::cell::Cell::new(false),
         });
+        let view = fixture.clone();
+        let (_, window) =
+            cx.add_window_view(move |window, cx| gpui_kit::base::Root::new(view, window, cx));
         window.refresh().expect("render shared focused action");
         let bounds = window
             .debug_bounds("foundation-action")
@@ -366,6 +433,7 @@ mod tests {
             window.simulate_event(KeyDownEvent {
                 keystroke: Keystroke::parse(key).expect("activation stroke"),
                 is_held: true,
+                prefer_character_input: false,
             });
             assert_eq!(
                 calls.get(),
@@ -405,11 +473,11 @@ mod tests {
         assert_eq!(window.debug_bounds("foundation-action"), Some(bounds));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn destructive_action_is_neutral_at_rest_and_danger_only_on_interaction(
         cx: &mut TestAppContext,
     ) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let theme = Theme::zed_dark();
         let palette = danger_hover_button_palette(theme);
         assert_eq!(palette.rest, theme.surface_raised);
@@ -423,7 +491,6 @@ mod tests {
             ButtonCustomVariant::new(cx)
                 .color(palette.rest.into())
                 .foreground(palette.foreground.into())
-                .border(palette.border.into())
                 .hover(palette.hover.into())
                 .active(palette.active.into())
         });
@@ -434,25 +501,108 @@ mod tests {
         );
 
         let ghost = danger_ghost_button_palette(theme);
-        assert_eq!(ghost.rest, gpui::transparent_black().into());
+        assert_eq!(ghost.rest, gpui_kit::transparent_black().into());
         assert_eq!(ghost.foreground, theme.icon_muted);
-        assert_eq!(ghost.border, gpui::transparent_black().into());
+        assert_eq!(ghost.border, gpui_kit::transparent_black().into());
         assert_eq!(ghost.hover, theme.danger_soft);
         assert_eq!(ghost.active, theme.danger_soft);
     }
 
-    #[gpui::test]
+    struct PrimaryContrastFixture {
+        disabled: bool,
+        colors: std::rc::Rc<std::cell::RefCell<Vec<gpui_kit::Hsla>>>,
+        calls: std::rc::Rc<std::cell::Cell<usize>>,
+    }
+
+    impl gpui_kit::Render for PrimaryContrastFixture {
+        fn render(&mut self, _: &mut Window, cx: &mut gpui_kit::Context<Self>) -> impl IntoElement {
+            let theme = Theme::zed_dark();
+            let colors = self.colors.clone();
+            let calls = self.calls.clone();
+            div().text_color(Theme::zed_dark().text).child(
+                primary_action_button(
+                    "upgrade-apply",
+                    gpui_kit::canvas(
+                        |_, _, _| (),
+                        move |_, (), window, _| colors.borrow_mut().push(window.text_style().color),
+                    )
+                    .size(px(1.0)),
+                    theme,
+                    self.disabled,
+                    cx,
+                )
+                .w(px(72.0))
+                .h(px(32.0))
+                .on_click(move |_, _, _| calls.set(calls.get() + 1)),
+            )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn primary_apply_text_keeps_readable_contrast_in_normal_hover_and_disabled_states(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        let colors = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let recorded = colors.clone();
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0));
+        let action_calls = calls.clone();
+        let (view, window) = cx.add_window_view(move |_, _| PrimaryContrastFixture {
+            disabled: false,
+            colors: recorded,
+            calls: action_calls,
+        });
+        window.refresh().expect("actual primary rendering");
+        let normal = *colors.borrow().last().expect("painted foreground");
+        assert_eq!(
+            normal,
+            gpui_kit::Hsla::from(Theme::zed_dark().image_well),
+            "normal Apply text must be dark on light neutral background"
+        );
+        let bounds = window
+            .debug_bounds("upgrade-apply")
+            .expect("primary hit target");
+        window.simulate_click(bounds.center(), gpui_kit::Modifiers::default());
+        assert_eq!(calls.get(), 1);
+        window.simulate_mouse_move(bounds.center(), None, gpui_kit::Modifiers::default());
+        window.refresh().expect("actual hover foreground");
+        assert_eq!(
+            *colors.borrow().last().expect("hover foreground"),
+            normal,
+            "hover must not replace the primary foreground with another color"
+        );
+        view.update(window, |view, cx| {
+            view.disabled = true;
+            cx.notify();
+        });
+        window.refresh().expect("disabled primary rendering");
+        let disabled = *colors.borrow().last().expect("disabled foreground");
+        assert!(
+            disabled.a >= 0.9,
+            "disabled label must remain readable rather than fading into its neutral background"
+        );
+        assert_eq!(
+            disabled,
+            gpui_kit::Hsla::from(Theme::zed_dark().text_secondary)
+        );
+        assert_eq!(window.debug_bounds("upgrade-apply"), Some(bounds));
+        window.simulate_click(bounds.center(), gpui_kit::Modifiers::default());
+        assert_eq!(calls.get(), 1, "disabled Apply must not dispatch");
+    }
+
+    #[gpui_kit::test]
     fn primary_button_variant_provides_solid_accent_anchor(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let theme = Theme::zed_dark();
         let actual = cx.update(|cx| primary_button_variant(theme, cx));
         let expected = cx.update(|cx| {
+            let colors = gpui_kit::component::Theme::global(cx).colors;
             ButtonCustomVariant::new(cx)
-                .color(theme.accent.into())
-                .foreground(theme.image_well.into())
-                .border(theme.accent.into())
-                .hover(theme.accent_hover.into())
-                .active(theme.accent.into())
+                .color(colors.button_primary)
+                .foreground(colors.button_primary_foreground)
+                .hover(colors.button_primary_hover)
+                .active(colors.button_primary_active)
         });
         assert!(
             actual == expected,

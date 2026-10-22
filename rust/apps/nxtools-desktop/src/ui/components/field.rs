@@ -1,120 +1,24 @@
-use gpui::{
-    AnyElement, Entity, FontWeight, IntoElement, Pixels, Styled, div, prelude::*, px, relative,
-};
-use gpui_component::input::{Input, InputState};
+use gpui_kit::component::Sizable;
+use gpui_kit::component::input::Input;
+use gpui_kit::{AnyElement, IntoElement, div, prelude::*, px};
 
 use crate::theme::Theme;
-use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8,
-};
-use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL};
+use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_8};
+use gpui_kit::component::alert::Alert;
 
-fn field_shell_with_height(
-    theme: Theme,
-    selector: &'static str,
-    control: Input,
-    height: Pixels,
-) -> AnyElement {
-    let control = Styled::h(control, relative(1.0));
+pub(crate) fn field_shell(_theme: Theme, selector: &'static str, control: Input) -> AnyElement {
     div()
         .debug_selector(move || selector.into())
-        .h(height)
         .w_full()
         .min_w_0()
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.canvas)
-        .overflow_hidden()
-        .flex()
-        .items_center()
-        .child(div().size_full().min_w_0().child(control))
-        .into_any_element()
-}
-
-pub(crate) fn field_shell(theme: Theme, selector: &'static str, control: Input) -> AnyElement {
-    field_shell_with_height(theme, selector, control, px(CONTROL_HEIGHT_INPUT))
-}
-
-pub(crate) fn multiline_field_shell(
-    theme: Theme,
-    selector: &'static str,
-    control: Input,
-    height: Pixels,
-) -> AnyElement {
-    field_shell_with_height(theme, selector, control, height)
-}
-
-pub(crate) fn labeled_control(
-    theme: Theme,
-    label: &'static str,
-    description: Option<&'static str>,
-    control: AnyElement,
-    selector: &'static str,
-) -> AnyElement {
-    div()
-        .w_full()
-        .min_w_0()
-        .flex()
-        .flex_col()
-        .gap(px(SPACING_4))
         .child(
-            div()
-                .debug_selector(move || format!("{selector}-label"))
-                .h(px(LINE_HEIGHT_LABEL))
-                .flex()
-                .items_center()
-                .gap(px(SPACING_8))
-                .child(
-                    div()
-                        .flex_none()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .font_weight(FontWeight::MEDIUM)
-                        .text_color(theme.text_secondary)
-                        .child(label),
-                )
-                .when_some(description, |row, description| {
-                    row.child(
-                        div()
-                            .debug_selector(move || format!("{selector}-description"))
-                            .min_w_0()
-                            .flex_1()
-                            .truncate()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_muted)
-                            .child(description),
-                    )
-                }),
-        )
-        .child(control)
-        .into_any_element()
-}
-
-pub(crate) fn labeled_field(
-    theme: Theme,
-    label: &'static str,
-    description: Option<&'static str>,
-    control: &Entity<InputState>,
-    selector: &'static str,
-) -> AnyElement {
-    labeled_control(
-        theme,
-        label,
-        description,
-        field_shell(
-            theme,
-            selector,
-            Input::new(control)
-                .appearance(false)
-                .bordered(false)
+            control
+                .with_size(gpui_kit::component::Size::Medium)
+                .appearance(true)
+                .bordered(true)
                 .focus_bordered(true),
-        ),
-        selector,
-    )
+        )
+        .into_any_element()
 }
 
 pub(crate) fn path_picker_shell(
@@ -136,23 +40,20 @@ pub(crate) fn path_picker_shell(
 }
 
 pub(crate) fn inline_error(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
-    message: impl Into<gpui::SharedString>,
+    message: impl Into<gpui_kit::SharedString>,
 ) -> AnyElement {
+    let alert_selector = format!("{selector}-kit-alert");
     div()
         .debug_selector(move || selector.into())
         .w_full()
-        .rounded(px(RADIUS_CONTROL))
-        .border_l_2()
-        .border_color(theme.danger)
-        .bg(theme.danger_soft)
-        .px(px(SPACING_8))
-        .py(px(SPACING_4))
-        .min_h(px(CONTROL_HEIGHT_ACTION))
-        .text_size(px(TEXT_LABEL))
-        .line_height(px(LINE_HEIGHT_LABEL))
-        .text_color(theme.danger)
-        .child(message.into())
+        .min_w_0()
+        .child(
+            div()
+                .debug_selector(move || alert_selector.clone())
+                .w_full()
+                .child(Alert::error(selector, message.into()).xsmall()),
+        )
         .into_any_element()
 }

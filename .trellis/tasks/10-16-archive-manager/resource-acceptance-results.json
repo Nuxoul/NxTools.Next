@@ -1,0 +1,3193 @@
+{
+  "environment": {
+    "Timestamp": "2026-10-19T17:58:52.0774087+08:00",
+    "OS": "Microsoft Windows 11 Pro",
+    "Version": "10.0.22631",
+    "OSBuild": "22631",
+    "CPU": [
+      {
+        "Name": "12th Gen Intel(R) Core(TM) i5-12400F",
+        "NumberOfCores": 6,
+        "NumberOfLogicalProcessors": 12
+      }
+    ],
+    "Memory": {
+      "AvailableBytes": 17441579008,
+      "CommittedBytes": 28321349632,
+      "CommitLimit": 55570448384
+    },
+    "Disks": [
+      {
+        "DeviceID": "C:",
+        "FileSystem": "NTFS",
+        "Size": 322123591680,
+        "FreeSpace": 26607161344
+      },
+      {
+        "DeviceID": "D:",
+        "FileSystem": "NTFS",
+        "Size": 701090492416,
+        "FreeSpace": 44649095168
+      }
+    ],
+    "Background": [
+      {
+        "ProcessId": 21484,
+        "Name": "dotnet.exe",
+        "ExecutablePath": "D:\\Unity\\6000.6.0f1\\Editor\\Data\\DotNetSdk\\dotnet.exe",
+        "CommandLine": "\"D:/Unity/6000.6.0f1/Editor/Data/DotNetSdk/dotnet.exe\" D:/Unity/6000.6.0f1/Editor/Data\\Tools\\Burst\\Client\\bcl\\bcl.dll +persistentserver --cache-directory=D:\\TapTapGame\\AbyssalDaoUnity\\AbyssalDao\\Library\\BurstCache --target-framework=NetFramework --named-pipe-or-unix-socket=unity-burst-104b8297-5861-41c9-a94c-585617223f4a"
+      }
+    ],
+    "Rustc": "rustc 1.96.0 (ac68faa20 2026-05-25)",
+    "Cargo": "cargo 1.96.0 (30a34c682 2026-05-25)",
+    "Dotnet": "8.0.424",
+    "Python": "Python 3.13.2",
+    "Configuration": "Debug unoptimized+debuginfo",
+    "CARGO_BUILD_JOBS": "1",
+    "CARGO_INCREMENTAL": "0",
+    "RUSTFLAGS": "-C codegen-units=256",
+    "LockSHA256": "4541C2E5174847049DD4D1333EC307B58068687A7C080F5012F4713B7B8A76B5",
+    "WorkerSHA256": "C4FC406F4B9E7E36C0B1FD035B51AAAF8541F8CA0EAA341200C5B782C7BAEB66"
+  },
+  "fixtures": {
+    "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+    "generator_sha256": "694aab76012433df4b6a95bef819f8e86f243cd6cda75e9e281e3144d21f8b7b",
+    "entries": 100000,
+    "directories": 100,
+    "empty_files": 9081,
+    "unicode_files": 100,
+    "small_payload_bytes": 1362285,
+    "synthetic_payload_bytes": 1073741824,
+    "synthetic_payload_sha256": "2c06ade942ee3f17a048dd1064b2fab046a4bb95386d8bb41b68dc6711ac2af3",
+    "files": {
+      "100k.zip": {
+        "bytes": 12161983,
+        "sha256": "34a9f9fe2e1d669b825d3557e523cadf00aeabf1ebfe187c99fcd4475cda956d"
+      },
+      "entries.jsonl": {
+        "bytes": 8470828,
+        "sha256": "4fd4bdca3f5ceb0f388206c1c2a12cf827be97856313f3be85c5efb31e2768dc"
+      },
+      "1gib.zip": {
+        "bytes": 1073741948,
+        "sha256": "b7f213cbbd6f34d993b08f8baad8823adb07c191e182e77b60d32ab251bcda71"
+      }
+    }
+  },
+  "attempts": [
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+        "--archive-resource-probe",
+        "cancel1gib",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "cancel1gib",
+      "timestamp": "2026-10-19T18:16:55.239198+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 73798.18939999677,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"scenario\":\"cancel1gib\",\"operation_id\":\"2a4a2798-94fe-43c9-b2d2-ff671bccb3a2\",\"debug\":true,\"full_terminal_ms\":73706,\"first_batch_ms\":-1,\"observed_entries\":0,\"cancel_at_ms\":73664,\"process_exit_observed_ms\":73692,\"cleanup_predisposal_ms\":-1,\"partial_bytes_at_cancel\":65536,\"worker_cancel_frame\":null,\"worker_cancel_accept_timestamp\":\"not_exposed\",\"worker_cancel_observe_frame_ms\":-1,\"cancel_to_exit_upper_ms\":28,\"cancel_to_cleanup_ms\":42,\"heldSlot\":false,\"heldSource\":false,\"heldJobEmpty\":false,\"Category\":\"cancelled\",\"ExitCode\":0,\"CleanupComplete\":true,\"source_writable\":true,\"helper_removed\":true,\"active_count\":0,\"metadata_budget\":268435456,\"work_budget\":67108864,\"job_ceiling\":402653184,\"caller\":{\"Role\":\"isolated_csharp_runner_host\",\"ProcessId\":31912,\"Path\":\"D:\\\\Code\\\\NxTools.Next-main\\\\csharp\\\\NxTools.PlatformHost.Tests\\\\bin\\\\Debug\\\\net8.0-windows\\\\NxTools.PlatformHost.Tests.exe\",\"BaselineWorking\":23465984,\"BaselinePrivate\":7991296,\"PeakWorking\":48553984,\"PeakPrivate\":23187456,\"LastWorking\":48553984,\"LastPrivate\":23187456,\"Count\":2364,\"requested_interval_ms\":20,\"MaxIntervalMs\":133.1807},\"worker\":{\"Role\":\"actual_rust_worker\",\"ProcessId\":34732,\"Path\":\"D:\\\\Code\\\\NxTools.Next-main\\\\csharp\\\\NxTools.PlatformHost.Tests\\\\bin\\\\Debug\\\\net8.0-windows\\\\NxTools.ArchiveWorker.exe\",\"BaselineWorking\":1679360,\"BaselinePrivate\":458752,\"PeakWorking\":9080832,\"PeakPrivate\":2011136,\"LastWorking\":9080832,\"LastPrivate\":2011136,\"Count\":2364,\"requested_interval_ms\":20,\"MaxIntervalMs\":53.46499999999651}}\r\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 18069446656,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26596245504
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17825247232,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26187718656
+      },
+      "processes": [
+        {
+          "pid": 31912,
+          "parent_pid": 34200,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 1.412,
+            "pid": 31912,
+            "working_set": 5468160,
+            "private_bytes": 1187840,
+            "process_lifetime_peak_working_set": 5468160,
+            "process_lifetime_peak_commit": 1187840
+          },
+          "peak_working_set": 49115136,
+          "peak_private_bytes": 23187456,
+          "samples": 2374,
+          "max_interval_ms": 46.28299999999945,
+          "last_ms": 73785.909,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 73785.909,
+            "pid": 31912,
+            "working_set": 49115136,
+            "private_bytes": 22532096,
+            "process_lifetime_peak_working_set": 49115136,
+            "process_lifetime_peak_commit": 23187456
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 34732,
+          "parent_pid": 31912,
+          "role": "actual_worker",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 182.764,
+            "pid": 34732,
+            "working_set": 2297856,
+            "private_bytes": 507904,
+            "process_lifetime_peak_working_set": 2297856,
+            "process_lifetime_peak_commit": 512000
+          },
+          "peak_working_set": 9080832,
+          "peak_private_bytes": 2011136,
+          "samples": 2366,
+          "max_interval_ms": 46.28299999999945,
+          "last_ms": 73723.195,
+          "exit_observed_ms": 73754.80750000133,
+          "last": {
+            "ms": 73723.195,
+            "pid": 34732,
+            "working_set": 8568832,
+            "private_bytes": 1478656,
+            "process_lifetime_peak_working_set": 9080832,
+            "process_lifetime_peak_commit": 2011136
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "cancel1gib-correctness.json",
+      "sha256": "7138858ee5d95c7f4dca686ce5bbd6d196dde90093bd8d50d4dd999ef4a52a6b",
+      "events": [
+        {
+          "scenario": "cancel1gib",
+          "operation_id": "2a4a2798-94fe-43c9-b2d2-ff671bccb3a2",
+          "debug": true,
+          "full_terminal_ms": 73706,
+          "first_batch_ms": -1,
+          "observed_entries": 0,
+          "cancel_at_ms": 73664,
+          "process_exit_observed_ms": 73692,
+          "cleanup_predisposal_ms": -1,
+          "partial_bytes_at_cancel": 65536,
+          "worker_cancel_frame": null,
+          "worker_cancel_accept_timestamp": "not_exposed",
+          "worker_cancel_observe_frame_ms": -1,
+          "cancel_to_exit_upper_ms": 28,
+          "cancel_to_cleanup_ms": 42,
+          "heldSlot": false,
+          "heldSource": false,
+          "heldJobEmpty": false,
+          "Category": "cancelled",
+          "ExitCode": 0,
+          "CleanupComplete": true,
+          "source_writable": true,
+          "helper_removed": true,
+          "active_count": 0,
+          "metadata_budget": 268435456,
+          "work_budget": 67108864,
+          "job_ceiling": 402653184,
+          "caller": {
+            "Role": "isolated_csharp_runner_host",
+            "ProcessId": 31912,
+            "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+            "BaselineWorking": 23465984,
+            "BaselinePrivate": 7991296,
+            "PeakWorking": 48553984,
+            "PeakPrivate": 23187456,
+            "LastWorking": 48553984,
+            "LastPrivate": 23187456,
+            "Count": 2364,
+            "requested_interval_ms": 20,
+            "MaxIntervalMs": 133.1807
+          },
+          "worker": {
+            "Role": "actual_rust_worker",
+            "ProcessId": 34732,
+            "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+            "BaselineWorking": 1679360,
+            "BaselinePrivate": 458752,
+            "PeakWorking": 9080832,
+            "PeakPrivate": 2011136,
+            "LastWorking": 9080832,
+            "LastPrivate": 2011136,
+            "Count": 2364,
+            "requested_interval_ms": 20,
+            "MaxIntervalMs": 53.46499999999651
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+        "--archive-resource-probe",
+        "cancel1gib-hold",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "cancel1gib-hold",
+      "timestamp": "2026-10-19T18:05:50.432779+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 71914.9405000062,
+      "exit_code": 1,
+      "result": null,
+      "stdout": "",
+      "stderr": "RESOURCE_FAIL System.InvalidCastException: Unable to cast object of type 'NxTools.PlatformHost.Windows.Archive.ArchiveWorkerOutputBridge' to type 'NxTools.PlatformHost.Windows.Extensions.ExtensionKernelHandle'.\r\n   at NxTools.PlatformHost.Tests.ArchiveResourceProbe.Measure(String scenario, String root) in D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\ArchiveResourceProbe.cs:line 166\r\n   at NxTools.PlatformHost.Tests.ArchiveResourceProbe.Measure(String scenario, String root) in D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\ArchiveResourceProbe.cs:line 199\r\n   at NxTools.PlatformHost.Tests.ArchiveResourceProbe.RunAsync(String scenario, String root) in D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\ArchiveResourceProbe.cs:line 70\r\n",
+      "failure": "exit1",
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17537036288,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27342045184
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17457229824,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27250606080
+      },
+      "processes": [
+        {
+          "pid": 32728,
+          "parent_pid": 31080,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 1.433,
+            "pid": 32728,
+            "working_set": 7438336,
+            "private_bytes": 1851392,
+            "process_lifetime_peak_working_set": 7438336,
+            "process_lifetime_peak_commit": 1851392
+          },
+          "peak_working_set": 50868224,
+          "peak_private_bytes": 23302144,
+          "samples": 2314,
+          "max_interval_ms": 40.934,
+          "last_ms": 71903.03,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 71903.03,
+            "pid": 32728,
+            "working_set": 50868224,
+            "private_bytes": 23195648,
+            "process_lifetime_peak_working_set": 50868224,
+            "process_lifetime_peak_commit": 23867392
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 2540,
+          "parent_pid": 32728,
+          "role": "actual_worker",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 197.392,
+            "pid": 2540,
+            "working_set": 7323648,
+            "private_bytes": 1351680,
+            "process_lifetime_peak_working_set": 7323648,
+            "process_lifetime_peak_commit": 1372160
+          },
+          "peak_working_set": 9068544,
+          "peak_private_bytes": 2007040,
+          "samples": 2304,
+          "max_interval_ms": 33.11899999999969,
+          "last_ms": 71779.34,
+          "exit_observed_ms": 71810.23249999998,
+          "last": {
+            "ms": 71779.34,
+            "pid": 2540,
+            "working_set": 9068544,
+            "private_bytes": 2007040,
+            "process_lifetime_peak_working_set": 9068544,
+            "process_lifetime_peak_commit": 2007040
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "cancel1gib-hold-correctness.json",
+      "sha256": "f10146cabb55ae32cb7d3befd6efedd5af8b6cf23b2804078e8e09a6eb1f2a5d",
+      "events": []
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+        "--archive-resource-probe",
+        "cancel1gib-hold",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "repeat",
+      "scenario": "cancel1gib-hold",
+      "timestamp": "2026-10-19T18:08:18.536210+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 73079.58009999857,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"scenario\":\"cancel1gib-hold\",\"operation_id\":\"4d9bebdd-9e78-416d-a520-33e58674e2d9\",\"debug\":true,\"full_terminal_ms\":72821,\"first_batch_ms\":-1,\"observed_entries\":0,\"cancel_at_ms\":72755,\"process_exit_observed_ms\":72785,\"cleanup_predisposal_ms\":72795,\"partial_bytes_at_cancel\":131072,\"worker_cancel_frame\":null,\"worker_cancel_accept_timestamp\":\"not_exposed\",\"worker_cancel_observe_frame_ms\":-1,\"cancel_to_exit_upper_ms\":30,\"cancel_to_cleanup_ms\":66,\"heldSlot\":true,\"heldSource\":true,\"heldJobEmpty\":true,\"Category\":\"cancelled\",\"ExitCode\":0,\"CleanupComplete\":true,\"source_writable\":true,\"helper_removed\":true,\"active_count\":0,\"metadata_budget\":268435456,\"work_budget\":67108864,\"job_ceiling\":402653184,\"caller\":{\"Role\":\"isolated_csharp_runner_host\",\"ProcessId\":34564,\"Path\":\"D:\\\\Code\\\\NxTools.Next-main\\\\csharp\\\\NxTools.PlatformHost.Tests\\\\bin\\\\Debug\\\\net8.0-windows\\\\NxTools.PlatformHost.Tests.exe\",\"BaselineWorking\":23453696,\"BaselinePrivate\":7950336,\"PeakWorking\":47411200,\"PeakPrivate\":21671936,\"LastWorking\":47411200,\"LastPrivate\":21671936,\"Count\":2335,\"requested_interval_ms\":20,\"MaxIntervalMs\":123.7787},\"worker\":{\"Role\":\"actual_rust_worker\",\"ProcessId\":22892,\"Path\":\"D:\\\\Code\\\\NxTools.Next-main\\\\csharp\\\\NxTools.PlatformHost.Tests\\\\bin\\\\Debug\\\\net8.0-windows\\\\NxTools.ArchiveWorker.exe\",\"BaselineWorking\":2256896,\"BaselinePrivate\":516096,\"PeakWorking\":9072640,\"PeakPrivate\":2011136,\"LastWorking\":8712192,\"LastPrivate\":2011136,\"Count\":2335,\"requested_interval_ms\":20,\"MaxIntervalMs\":49.353000000002794}}\r\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17554542592,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27351756800
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17469935616,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27270393856
+      },
+      "processes": [
+        {
+          "pid": 34564,
+          "parent_pid": 32652,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 1.82,
+            "pid": 34564,
+            "working_set": 6844416,
+            "private_bytes": 1294336,
+            "process_lifetime_peak_working_set": 6926336,
+            "process_lifetime_peak_commit": 1380352
+          },
+          "peak_working_set": 48418816,
+          "peak_private_bytes": 21688320,
+          "samples": 2342,
+          "max_interval_ms": 46.450000000004366,
+          "last_ms": 72908.626,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 72908.626,
+            "pid": 34564,
+            "working_set": 48418816,
+            "private_bytes": 21598208,
+            "process_lifetime_peak_working_set": 48418816,
+            "process_lifetime_peak_commit": 21692416
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 22892,
+          "parent_pid": 34564,
+          "role": "actual_worker",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 129.109,
+            "pid": 22892,
+            "working_set": 1667072,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1667072,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 9072640,
+          "peak_private_bytes": 2011136,
+          "samples": 2334,
+          "max_interval_ms": 46.450000000004366,
+          "last_ms": 72783.388,
+          "exit_observed_ms": 72814.42500000412,
+          "last": {
+            "ms": 72783.388,
+            "pid": 22892,
+            "working_set": 8552448,
+            "private_bytes": 1470464,
+            "process_lifetime_peak_working_set": 9072640,
+            "process_lifetime_peak_commit": 2011136
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "cancel1gib-hold-repeat.json",
+      "sha256": "44b206696fe756dce05d989cc6606a27f19a32243cf58ac86f7227b59a86d15a",
+      "events": [
+        {
+          "scenario": "cancel1gib-hold",
+          "operation_id": "4d9bebdd-9e78-416d-a520-33e58674e2d9",
+          "debug": true,
+          "full_terminal_ms": 72821,
+          "first_batch_ms": -1,
+          "observed_entries": 0,
+          "cancel_at_ms": 72755,
+          "process_exit_observed_ms": 72785,
+          "cleanup_predisposal_ms": 72795,
+          "partial_bytes_at_cancel": 131072,
+          "worker_cancel_frame": null,
+          "worker_cancel_accept_timestamp": "not_exposed",
+          "worker_cancel_observe_frame_ms": -1,
+          "cancel_to_exit_upper_ms": 30,
+          "cancel_to_cleanup_ms": 66,
+          "heldSlot": true,
+          "heldSource": true,
+          "heldJobEmpty": true,
+          "Category": "cancelled",
+          "ExitCode": 0,
+          "CleanupComplete": true,
+          "source_writable": true,
+          "helper_removed": true,
+          "active_count": 0,
+          "metadata_budget": 268435456,
+          "work_budget": 67108864,
+          "job_ceiling": 402653184,
+          "caller": {
+            "Role": "isolated_csharp_runner_host",
+            "ProcessId": 34564,
+            "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+            "BaselineWorking": 23453696,
+            "BaselinePrivate": 7950336,
+            "PeakWorking": 47411200,
+            "PeakPrivate": 21671936,
+            "LastWorking": 47411200,
+            "LastPrivate": 21671936,
+            "Count": 2335,
+            "requested_interval_ms": 20,
+            "MaxIntervalMs": 123.7787
+          },
+          "worker": {
+            "Role": "actual_rust_worker",
+            "ProcessId": 22892,
+            "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+            "BaselineWorking": 2256896,
+            "BaselinePrivate": 516096,
+            "PeakWorking": 9072640,
+            "PeakPrivate": 2011136,
+            "LastWorking": 8712192,
+            "LastPrivate": 2011136,
+            "Count": 2335,
+            "requested_interval_ms": 20,
+            "MaxIntervalMs": 49.353000000002794
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\nxtools-archive-worker.exe",
+        "--archive-worker"
+      ],
+      "attempt": "correctness",
+      "scenario": "direct-worker100k",
+      "timestamp": "2026-10-19T17:59:15.869067+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 3536.9722999967053,
+      "exit_code": 0,
+      "result": {
+        "scenario": "direct-worker100k",
+        "operation_id": "a8601ab5-d92d-4f04-8ad1-e39728e5a47f",
+        "count": 100000,
+        "batches": 50000,
+        "snapshot_id": "not_exposed_in_legacy_wire",
+        "first_batch_ms": 2264.276300003985,
+        "terminal_ms": 3472.2955000033835,
+        "native_job_source_lease": false,
+        "first_paint": "not_measured_no_ui"
+      },
+      "stdout": "",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17439682560,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27266879488
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17446600704,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27265200128
+      },
+      "processes": [
+        {
+          "pid": 31376,
+          "parent_pid": 32084,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\nxtools-archive-worker.exe",
+          "baseline": {
+            "ms": 1.327,
+            "pid": 31376,
+            "working_set": 4968448,
+            "private_bytes": 1171456,
+            "process_lifetime_peak_working_set": 4968448,
+            "process_lifetime_peak_commit": 1171456
+          },
+          "peak_working_set": 66887680,
+          "peak_private_bytes": 70868992,
+          "samples": 112,
+          "max_interval_ms": 32.871000000000095,
+          "last_ms": 3453.276,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 3453.276,
+            "pid": 31376,
+            "working_set": 40476672,
+            "private_bytes": 34643968,
+            "process_lifetime_peak_working_set": 66891776,
+            "process_lifetime_peak_commit": 72450048
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "direct-worker100k-correctness.json",
+      "sha256": "ce99930ddbfad851c24fe1e3ada91e8f68b7140a39e33d3ef951e77a45fd0658",
+      "events": []
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\nxtools-archive-worker.exe",
+        "--archive-worker"
+      ],
+      "attempt": "repeat",
+      "scenario": "direct-worker100k",
+      "timestamp": "2026-10-19T18:15:41.280709+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 3541.728999996849,
+      "exit_code": 0,
+      "result": {
+        "scenario": "direct-worker100k",
+        "operation_id": "db1d57e9-664a-4b00-8f2c-3d35906a25fd",
+        "count": 100000,
+        "batches": 50000,
+        "snapshot_id": "not_exposed_in_legacy_wire",
+        "first_batch_ms": 2271.716799994465,
+        "terminal_ms": 3490.1914000001852,
+        "native_job_source_lease": false,
+        "first_paint": "not_measured_no_ui"
+      },
+      "stdout": "",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 18041835520,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26571644928
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 18066157568,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26599645184
+      },
+      "processes": [
+        {
+          "pid": 26736,
+          "parent_pid": 24320,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\nxtools-archive-worker.exe",
+          "baseline": {
+            "ms": 1.549,
+            "pid": 26736,
+            "working_set": 7606272,
+            "private_bytes": 1417216,
+            "process_lifetime_peak_working_set": 7606272,
+            "process_lifetime_peak_commit": 1437696
+          },
+          "peak_working_set": 66912256,
+          "peak_private_bytes": 70930432,
+          "samples": 113,
+          "max_interval_ms": 32.84299999999985,
+          "last_ms": 3489.922,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 3489.922,
+            "pid": 26736,
+            "working_set": 8904704,
+            "private_bytes": 2248704,
+            "process_lifetime_peak_working_set": 66916352,
+            "process_lifetime_peak_commit": 72536064
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "direct-worker100k-repeat.json",
+      "sha256": "4558d705cb2c674780d47bbd3d40d0368fcbd96f77cf39552a203060136967fb",
+      "events": []
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "engine100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "engine100k",
+      "timestamp": "2026-10-19T17:57:02.035380+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 3139.598300003854,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":28872,\"scenario\":\"engine100k\"}\nRESOURCE {\"cleanup\":true,\"default_metadata_bytes\":268435456,\"default_work_bytes\":536870912,\"entries\":100000,\"first_batch_ms\":null,\"first_paint\":\"not_measured_no_ui\",\"open_ms\":2248.7387,\"operation_id\":\"03a3e623-c0a8-48dc-8c41-bff089f9eaa3\",\"scenario\":\"engine100k\",\"snapshot_id\":\"dc66dd10-5d66-404b-8dca-af715f6eed85\",\"typed_entry_refusal\":\"ResourceLimit\",\"typed_metadata_refusal\":\"ResourceLimit\"}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17128857600,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26931437568
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17116971008,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26936434688
+      },
+      "processes": [
+        {
+          "pid": 28872,
+          "parent_pid": 32852,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.325,
+            "pid": 28872,
+            "working_set": 4726784,
+            "private_bytes": 843776,
+            "process_lifetime_peak_working_set": 4726784,
+            "process_lifetime_peak_commit": 864256
+          },
+          "peak_working_set": 63856640,
+          "peak_private_bytes": 70283264,
+          "samples": 101,
+          "max_interval_ms": 33.644999999999996,
+          "last_ms": 3102.635,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 3102.635,
+            "pid": 28872,
+            "working_set": 5419008,
+            "private_bytes": 1032192,
+            "process_lifetime_peak_working_set": 63860736,
+            "process_lifetime_peak_commit": 71901184
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "engine100k-correctness.json",
+      "sha256": "8d5d58dd9ed4354ece3d1c321e3823eb49cf50c1aa1ea78f94bd642c8ee82d44",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 28872,
+          "scenario": "engine100k"
+        },
+        {
+          "cleanup": true,
+          "default_metadata_bytes": 268435456,
+          "default_work_bytes": 536870912,
+          "entries": 100000,
+          "first_batch_ms": null,
+          "first_paint": "not_measured_no_ui",
+          "open_ms": 2248.7387,
+          "operation_id": "03a3e623-c0a8-48dc-8c41-bff089f9eaa3",
+          "scenario": "engine100k",
+          "snapshot_id": "dc66dd10-5d66-404b-8dca-af715f6eed85",
+          "typed_entry_refusal": "ResourceLimit",
+          "typed_metadata_refusal": "ResourceLimit"
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "engine100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "repeat",
+      "scenario": "engine100k",
+      "timestamp": "2026-10-19T18:15:37.575732+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 3172.0859999986715,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":34152,\"scenario\":\"engine100k\"}\nRESOURCE {\"cleanup\":true,\"default_metadata_bytes\":268435456,\"default_work_bytes\":536870912,\"entries\":100000,\"first_batch_ms\":null,\"first_paint\":\"not_measured_no_ui\",\"open_ms\":2268.1974,\"operation_id\":\"53d3233a-92a8-4416-93d3-24abd811328a\",\"scenario\":\"engine100k\",\"snapshot_id\":\"61eb4c34-4544-4316-aa27-6e1c623f0fc7\",\"typed_entry_refusal\":\"ResourceLimit\",\"typed_metadata_refusal\":\"ResourceLimit\"}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17712857088,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26270220288
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 18009157632,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26537005056
+      },
+      "processes": [
+        {
+          "pid": 34152,
+          "parent_pid": 27812,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 2.553,
+            "pid": 34152,
+            "working_set": 1679360,
+            "private_bytes": 450560,
+            "process_lifetime_peak_working_set": 1679360,
+            "process_lifetime_peak_commit": 450560
+          },
+          "peak_working_set": 63795200,
+          "peak_private_bytes": 70496256,
+          "samples": 101,
+          "max_interval_ms": 40.115,
+          "last_ms": 3123.543,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 3123.543,
+            "pid": 34152,
+            "working_set": 5267456,
+            "private_bytes": 1118208,
+            "process_lifetime_peak_working_set": 63799296,
+            "process_lifetime_peak_commit": 72126464
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "engine100k-repeat.json",
+      "sha256": "4e1eb89d0ed844af0c37a29ad5a50ca429cd25110308a60469c3669308ac381d",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 34152,
+          "scenario": "engine100k"
+        },
+        {
+          "cleanup": true,
+          "default_metadata_bytes": 268435456,
+          "default_work_bytes": 536870912,
+          "entries": 100000,
+          "first_batch_ms": null,
+          "first_paint": "not_measured_no_ui",
+          "open_ms": 2268.1974,
+          "operation_id": "53d3233a-92a8-4416-93d3-24abd811328a",
+          "scenario": "engine100k",
+          "snapshot_id": "61eb4c34-4544-4316-aa27-6e1c623f0fc7",
+          "typed_entry_refusal": "ResourceLimit",
+          "typed_metadata_refusal": "ResourceLimit"
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-credit-small",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "product-credit-small",
+      "timestamp": "2026-10-19T18:17:16.831655+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10526.18749999965,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":29516,\"scenario\":\"product-credit-small\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-4a05e3aa-9382-4dd1-b394-6daadf534749\",\"phase\":\"host_started\",\"pid\":33656,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":129.41230000000002,\"cancel_to_cleanup_upper_ms\":56.96609999999998,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":129.34390000000002,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":186.3784,\"helper_removed\":true,\"host_pid\":33656,\"operation_id\":\"e758cb0e-8880-49ac-a8d0-cdf5698c90c5\",\"original_connection\":true,\"scenario\":\"product-credit-small\",\"source_writable\":true,\"terminal\":{\"batch_count\":1,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"cancelled\",\"elapsed_ms\":144,\"entry_count\":2,\"files_verified\":0,\"native_error_code\":null,\"status\":\"cancelled\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17823936512,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26180775936
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17804984320,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26165293056
+      },
+      "processes": [
+        {
+          "pid": 29516,
+          "parent_pid": 28936,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 0.978,
+            "pid": 29516,
+            "working_set": 5517312,
+            "private_bytes": 1040384,
+            "process_lifetime_peak_working_set": 5517312,
+            "process_lifetime_peak_commit": 1040384
+          },
+          "peak_working_set": 7532544,
+          "peak_private_bytes": 1134592,
+          "samples": 337,
+          "max_interval_ms": 41.24,
+          "last_ms": 10478.363,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10478.363,
+            "pid": 29516,
+            "working_set": 7532544,
+            "private_bytes": 1134592,
+            "process_lifetime_peak_working_set": 7532544,
+            "process_lifetime_peak_commit": 1155072
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33656,
+          "parent_pid": 29516,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 74.06,
+            "pid": 33656,
+            "working_set": 28921856,
+            "private_bytes": 7536640,
+            "process_lifetime_peak_working_set": 28921856,
+            "process_lifetime_peak_commit": 7540736
+          },
+          "peak_working_set": 38674432,
+          "peak_private_bytes": 12132352,
+          "samples": 335,
+          "max_interval_ms": 33.347999999999956,
+          "last_ms": 10478.363,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10478.363,
+            "pid": 33656,
+            "working_set": 38674432,
+            "private_bytes": 12132352,
+            "process_lifetime_peak_working_set": 38674432,
+            "process_lifetime_peak_commit": 12140544
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33628,
+          "parent_pid": 33656,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-4a05e3aa-9382-4dd1-b394-6daadf534749\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 198.319,
+            "pid": 33628,
+            "working_set": 2297856,
+            "private_bytes": 512000,
+            "process_lifetime_peak_working_set": 2297856,
+            "process_lifetime_peak_commit": 516096
+          },
+          "peak_working_set": 8716288,
+          "peak_private_bytes": 1486848,
+          "samples": 2,
+          "max_interval_ms": 30.888000000000005,
+          "last_ms": 229.207,
+          "exit_observed_ms": 260.09449999401113,
+          "last": {
+            "ms": 229.207,
+            "pid": 33628,
+            "working_set": 8716288,
+            "private_bytes": 1486848,
+            "process_lifetime_peak_working_set": 8716288,
+            "process_lifetime_peak_commit": 1495040
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 28448,
+          "parent_pid": 33656,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-4a05e3aa-9382-4dd1-b394-6daadf534749\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 321.943,
+            "pid": 28448,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 8708096,
+          "peak_private_bytes": 1437696,
+          "samples": 3,
+          "max_interval_ms": 31.259000000000015,
+          "last_ms": 384.154,
+          "exit_observed_ms": 415.0776999958907,
+          "last": {
+            "ms": 384.154,
+            "pid": 28448,
+            "working_set": 8708096,
+            "private_bytes": 1437696,
+            "process_lifetime_peak_working_set": 8708096,
+            "process_lifetime_peak_commit": 1437696
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-credit-small-correctness.json",
+      "sha256": "d3b7d30d6ec941a236546080e81f473055b887b7ee730450d9d91bda1664aee2",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 29516,
+          "scenario": "product-credit-small"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-4a05e3aa-9382-4dd1-b394-6daadf534749",
+          "phase": "host_started",
+          "pid": 33656,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": 129.41230000000002,
+          "cancel_to_cleanup_upper_ms": 56.96609999999998,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": 129.34390000000002,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 186.3784,
+          "helper_removed": true,
+          "host_pid": 33656,
+          "operation_id": "e758cb0e-8880-49ac-a8d0-cdf5698c90c5",
+          "original_connection": true,
+          "scenario": "product-credit-small",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 1,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "cancelled",
+            "elapsed_ms": 144,
+            "entry_count": 2,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-credit-small",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "repeat",
+      "scenario": "product-credit-small",
+      "timestamp": "2026-10-19T18:17:38.277775+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10572.19669999904,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":33288,\"scenario\":\"product-credit-small\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-43afb5fd-1409-43d0-8898-02e987d03fd4\",\"phase\":\"host_started\",\"pid\":33024,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":169.1514,\"cancel_to_cleanup_upper_ms\":48.37420000000003,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":169.0868,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":217.52560000000003,\"helper_removed\":true,\"host_pid\":33024,\"operation_id\":\"f500e047-b1d8-4403-8af2-c4133823d96b\",\"original_connection\":true,\"scenario\":\"product-credit-small\",\"source_writable\":true,\"terminal\":{\"batch_count\":1,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"cancelled\",\"elapsed_ms\":175,\"entry_count\":2,\"files_verified\":0,\"native_error_code\":null,\"status\":\"cancelled\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17817948160,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26187341824
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17818886144,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26174464000
+      },
+      "processes": [
+        {
+          "pid": 33288,
+          "parent_pid": 32920,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.193,
+            "pid": 33288,
+            "working_set": 5500928,
+            "private_bytes": 1024000,
+            "process_lifetime_peak_working_set": 5500928,
+            "process_lifetime_peak_commit": 1024000
+          },
+          "peak_working_set": 7536640,
+          "peak_private_bytes": 1134592,
+          "samples": 339,
+          "max_interval_ms": 38.471000000000004,
+          "last_ms": 10538.428,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10538.428,
+            "pid": 33288,
+            "working_set": 7536640,
+            "private_bytes": 1134592,
+            "process_lifetime_peak_working_set": 7536640,
+            "process_lifetime_peak_commit": 1134592
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33024,
+          "parent_pid": 33288,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 70.449,
+            "pid": 33024,
+            "working_set": 28487680,
+            "private_bytes": 7368704,
+            "process_lifetime_peak_working_set": 28487680,
+            "process_lifetime_peak_commit": 7368704
+          },
+          "peak_working_set": 38752256,
+          "peak_private_bytes": 12197888,
+          "samples": 336,
+          "max_interval_ms": 34.63799999999992,
+          "last_ms": 10506.364,
+          "exit_observed_ms": 10538.427899999078,
+          "last": {
+            "ms": 10506.364,
+            "pid": 33024,
+            "working_set": 38752256,
+            "private_bytes": 12197888,
+            "process_lifetime_peak_working_set": 38752256,
+            "process_lifetime_peak_commit": 12206080
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 22348,
+          "parent_pid": 33024,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-43afb5fd-1409-43d0-8898-02e987d03fd4\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 193.237,
+            "pid": 22348,
+            "working_set": 1671168,
+            "private_bytes": 450560,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 450560
+          },
+          "peak_working_set": 8699904,
+          "peak_private_bytes": 1470464,
+          "samples": 4,
+          "max_interval_ms": 31.585000000000008,
+          "last_ms": 287.558,
+          "exit_observed_ms": 318.1295000031241,
+          "last": {
+            "ms": 287.558,
+            "pid": 22348,
+            "working_set": 8699904,
+            "private_bytes": 1470464,
+            "process_lifetime_peak_working_set": 8699904,
+            "process_lifetime_peak_commit": 1490944
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 26236,
+          "parent_pid": 33024,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-43afb5fd-1409-43d0-8898-02e987d03fd4\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 380.208,
+            "pid": 26236,
+            "working_set": 2256896,
+            "private_bytes": 503808,
+            "process_lifetime_peak_working_set": 2256896,
+            "process_lifetime_peak_commit": 512000
+          },
+          "peak_working_set": 8708096,
+          "peak_private_bytes": 1429504,
+          "samples": 2,
+          "max_interval_ms": 31.614999999999952,
+          "last_ms": 411.823,
+          "exit_observed_ms": 442.8722000011476,
+          "last": {
+            "ms": 411.823,
+            "pid": 26236,
+            "working_set": 8708096,
+            "private_bytes": 1429504,
+            "process_lifetime_peak_working_set": 8708096,
+            "process_lifetime_peak_commit": 1429504
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-credit-small-repeat.json",
+      "sha256": "18e3224ab813d78474076ab001807ea8157a29f1e1ed871185e01188482c1da9",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 33288,
+          "scenario": "product-credit-small"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-43afb5fd-1409-43d0-8898-02e987d03fd4",
+          "phase": "host_started",
+          "pid": 33024,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": 169.1514,
+          "cancel_to_cleanup_upper_ms": 48.37420000000003,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": 169.0868,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 217.52560000000003,
+          "helper_removed": true,
+          "host_pid": 33024,
+          "operation_id": "f500e047-b1d8-4403-8af2-c4133823d96b",
+          "original_connection": true,
+          "scenario": "product-credit-small",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 1,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "cancelled",
+            "elapsed_ms": 175,
+            "entry_count": 2,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-credit-small",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "tool-repair",
+      "scenario": "product-credit-small",
+      "timestamp": "2026-10-19T18:44:27.788515+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10491.893600003095,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":36152,\"scenario\":\"product-credit-small\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-3c736205-df03-4920-8776-8e4aa88fac7b\",\"phase\":\"host_started\",\"pid\":36796,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":147.15300000000002,\"cancel_to_cleanup_upper_ms\":54.94109999999998,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":147.0831,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":202.0941,\"helper_removed\":true,\"host_pid\":36796,\"operation_id\":\"4db9ed6b-e3f1-467b-ba61-2080f65b2040\",\"original_connection\":true,\"scenario\":\"product-credit-small\",\"source_writable\":true,\"terminal\":{\"batch_count\":1,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"cancelled\",\"elapsed_ms\":157,\"entry_count\":2,\"files_verified\":0,\"native_error_code\":null,\"status\":\"cancelled\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 16903966720,
+        "commit_limit": 55570448384,
+        "commit_headroom": 25803206656
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 16926830592,
+        "commit_limit": 55570448384,
+        "commit_headroom": 25833029632
+      },
+      "processes": [
+        {
+          "pid": 36152,
+          "parent_pid": 36112,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.402,
+            "pid": 36152,
+            "working_set": 5509120,
+            "private_bytes": 1024000,
+            "process_lifetime_peak_working_set": 5509120,
+            "process_lifetime_peak_commit": 1024000
+          },
+          "peak_working_set": 7467008,
+          "peak_private_bytes": 1122304,
+          "samples": 337,
+          "max_interval_ms": 32.85200000000032,
+          "last_ms": 10443.804,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10443.804,
+            "pid": 36152,
+            "working_set": 7467008,
+            "private_bytes": 1122304,
+            "process_lifetime_peak_working_set": 7467008,
+            "process_lifetime_peak_commit": 1130496
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 36796,
+          "parent_pid": 36152,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 61.585,
+            "pid": 36796,
+            "working_set": 26537984,
+            "private_bytes": 7258112,
+            "process_lifetime_peak_working_set": 26537984,
+            "process_lifetime_peak_commit": 7262208
+          },
+          "peak_working_set": 38879232,
+          "peak_private_bytes": 12378112,
+          "samples": 335,
+          "max_interval_ms": 32.85200000000032,
+          "last_ms": 10443.804,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10443.804,
+            "pid": 36796,
+            "working_set": 38879232,
+            "private_bytes": 12378112,
+            "process_lifetime_peak_working_set": 38879232,
+            "process_lifetime_peak_commit": 12386304
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 35256,
+          "parent_pid": 36796,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-3c736205-df03-4920-8776-8e4aa88fac7b\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 185.757,
+            "pid": 35256,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 8712192,
+          "peak_private_bytes": 1478656,
+          "samples": 4,
+          "max_interval_ms": 31.75399999999999,
+          "last_ms": 279.1,
+          "exit_observed_ms": 309.7473999951035,
+          "last": {
+            "ms": 279.1,
+            "pid": 35256,
+            "working_set": 8712192,
+            "private_bytes": 1478656,
+            "process_lifetime_peak_working_set": 8712192,
+            "process_lifetime_peak_commit": 1486848
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 35692,
+          "parent_pid": 36796,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-3c736205-df03-4920-8776-8e4aa88fac7b\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 373.072,
+            "pid": 35692,
+            "working_set": 5849088,
+            "private_bytes": 1257472,
+            "process_lifetime_peak_working_set": 5849088,
+            "process_lifetime_peak_commit": 1257472
+          },
+          "peak_working_set": 5849088,
+          "peak_private_bytes": 1257472,
+          "samples": 1,
+          "max_interval_ms": 0,
+          "last_ms": 373.072,
+          "exit_observed_ms": 404.5018999968306,
+          "last": {
+            "ms": 373.072,
+            "pid": 35692,
+            "working_set": 5849088,
+            "private_bytes": 1257472,
+            "process_lifetime_peak_working_set": 5849088,
+            "process_lifetime_peak_commit": 1257472
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-credit-small-tool-repair.json",
+      "sha256": "80d4098668907d8f380921182c08efbe7c39b515915075d60a4be1b21ab9be89",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 36152,
+          "scenario": "product-credit-small"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-3c736205-df03-4920-8776-8e4aa88fac7b",
+          "phase": "host_started",
+          "pid": 36796,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": 147.15300000000002,
+          "cancel_to_cleanup_upper_ms": 54.94109999999998,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": 147.0831,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 202.0941,
+          "helper_removed": true,
+          "host_pid": 36796,
+          "operation_id": "4db9ed6b-e3f1-467b-ba61-2080f65b2040",
+          "original_connection": true,
+          "scenario": "product-credit-small",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 1,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "cancelled",
+            "elapsed_ms": 157,
+            "entry_count": 2,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-credit1gib",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "product-credit1gib",
+      "timestamp": "2026-10-19T18:08:59.692822+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 30269.48650000122,
+      "exit_code": 101,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":31408,\"scenario\":\"product-credit1gib\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-129d474c-6fb7-4fdb-ad9c-3cdc21f435fd\",\"phase\":\"host_started\",\"pid\":33956,\"role\":\"isolated_csharp_product_host\"}\n",
+      "stderr": "\nthread 'main' (11592) panicked at rust\\crates\\nxtools-archive\\examples\\resource_probe.rs:159:158:\nterminal before credit barrier\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "failure": "exit101",
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17442074624,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27238993920
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17344401408,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27149201408
+      },
+      "processes": [
+        {
+          "pid": 31408,
+          "parent_pid": 28820,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.587,
+            "pid": 31408,
+            "working_set": 5496832,
+            "private_bytes": 1036288,
+            "process_lifetime_peak_working_set": 5496832,
+            "process_lifetime_peak_commit": 1036288
+          },
+          "peak_working_set": 7217152,
+          "peak_private_bytes": 1122304,
+          "samples": 972,
+          "max_interval_ms": 40.448999999999614,
+          "last_ms": 30206.262,
+          "exit_observed_ms": 30237.255100000766,
+          "last": {
+            "ms": 30206.262,
+            "pid": 31408,
+            "working_set": 7172096,
+            "private_bytes": 1032192,
+            "process_lifetime_peak_working_set": 7217152,
+            "process_lifetime_peak_commit": 1142784
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33956,
+          "parent_pid": 31408,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 62.75,
+            "pid": 33956,
+            "working_set": 26619904,
+            "private_bytes": 7315456,
+            "process_lifetime_peak_working_set": 26619904,
+            "process_lifetime_peak_commit": 7315456
+          },
+          "peak_working_set": 37785600,
+          "peak_private_bytes": 11612160,
+          "samples": 970,
+          "max_interval_ms": 40.448999999999614,
+          "last_ms": 30206.262,
+          "exit_observed_ms": 30237.255100000766,
+          "last": {
+            "ms": 30206.262,
+            "pid": 33956,
+            "working_set": 35266560,
+            "private_bytes": 9080832,
+            "process_lifetime_peak_working_set": 37797888,
+            "process_lifetime_peak_commit": 11612160
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 34620,
+          "parent_pid": 33956,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-129d474c-6fb7-4fdb-ad9c-3cdc21f435fd\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 184.346,
+            "pid": 34620,
+            "working_set": 1671168,
+            "private_bytes": 450560,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 450560
+          },
+          "peak_working_set": 8704000,
+          "peak_private_bytes": 1536000,
+          "samples": 965,
+          "max_interval_ms": 40.448999999999614,
+          "last_ms": 30174.289,
+          "exit_observed_ms": 30206.26230000198,
+          "last": {
+            "ms": 30174.289,
+            "pid": 34620,
+            "working_set": 8704000,
+            "private_bytes": 1536000,
+            "process_lifetime_peak_working_set": 8704000,
+            "process_lifetime_peak_commit": 1536000
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-credit1gib-correctness.json",
+      "sha256": "d87f949b1240e530ede01d557c6bfbbd329d0f1b252887dfa15d15d2419eec6e",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 31408,
+          "scenario": "product-credit1gib"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-129d474c-6fb7-4fdb-ad9c-3cdc21f435fd",
+          "phase": "host_started",
+          "pid": 33956,
+          "role": "isolated_csharp_product_host"
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-pressure-small",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "product-pressure-small",
+      "timestamp": "2026-10-19T18:17:27.555496+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10569.338100001914,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":31408,\"scenario\":\"product-pressure-small\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-f117b0b8-2383-4f8e-aea6-a8d2d6acf868\",\"phase\":\"host_started\",\"pid\":31196,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":190.1738,\"cancel_to_cleanup_upper_ms\":58.5907,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":190.04399999999998,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":248.7645,\"helper_removed\":true,\"host_pid\":31196,\"operation_id\":\"95a133c8-29ad-4f5e-a05c-bc2bd03bfdad\",\"original_connection\":true,\"scenario\":\"product-pressure-small\",\"source_writable\":true,\"terminal\":{\"batch_count\":1,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"cancelled\",\"elapsed_ms\":204,\"entry_count\":2,\"files_verified\":0,\"native_error_code\":null,\"status\":\"cancelled\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17814917120,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26170314752
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17785606144,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26149859328
+      },
+      "processes": [
+        {
+          "pid": 31408,
+          "parent_pid": 29728,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.037,
+            "pid": 31408,
+            "working_set": 5496832,
+            "private_bytes": 1015808,
+            "process_lifetime_peak_working_set": 5496832,
+            "process_lifetime_peak_commit": 1015808
+          },
+          "peak_working_set": 7548928,
+          "peak_private_bytes": 1122304,
+          "samples": 339,
+          "max_interval_ms": 33.962,
+          "last_ms": 10521.449,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10521.449,
+            "pid": 31408,
+            "working_set": 7548928,
+            "private_bytes": 1122304,
+            "process_lifetime_peak_working_set": 7548928,
+            "process_lifetime_peak_commit": 1126400
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 31196,
+          "parent_pid": 31408,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 65.886,
+            "pid": 31196,
+            "working_set": 27570176,
+            "private_bytes": 7356416,
+            "process_lifetime_peak_working_set": 27570176,
+            "process_lifetime_peak_commit": 7360512
+          },
+          "peak_working_set": 39079936,
+          "peak_private_bytes": 12492800,
+          "samples": 337,
+          "max_interval_ms": 33.44600000000037,
+          "last_ms": 10521.449,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10521.449,
+            "pid": 31196,
+            "working_set": 39079936,
+            "private_bytes": 12492800,
+            "process_lifetime_peak_working_set": 39079936,
+            "process_lifetime_peak_commit": 12500992
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 31024,
+          "parent_pid": 31196,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-f117b0b8-2383-4f8e-aea6-a8d2d6acf868\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 253.701,
+            "pid": 31024,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 8708096,
+          "peak_private_bytes": 1478656,
+          "samples": 3,
+          "max_interval_ms": 31.394999999999982,
+          "last_ms": 315.578,
+          "exit_observed_ms": 346.2409999992815,
+          "last": {
+            "ms": 315.578,
+            "pid": 31024,
+            "working_set": 8708096,
+            "private_bytes": 1478656,
+            "process_lifetime_peak_working_set": 8708096,
+            "process_lifetime_peak_commit": 1486848
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33004,
+          "parent_pid": 31196,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-f117b0b8-2383-4f8e-aea6-a8d2d6acf868\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 440.701,
+            "pid": 33004,
+            "working_set": 7553024,
+            "private_bytes": 1347584,
+            "process_lifetime_peak_working_set": 7553024,
+            "process_lifetime_peak_commit": 1368064
+          },
+          "peak_working_set": 7553024,
+          "peak_private_bytes": 1347584,
+          "samples": 1,
+          "max_interval_ms": 0,
+          "last_ms": 440.701,
+          "exit_observed_ms": 472.47169999900507,
+          "last": {
+            "ms": 440.701,
+            "pid": 33004,
+            "working_set": 7553024,
+            "private_bytes": 1347584,
+            "process_lifetime_peak_working_set": 7553024,
+            "process_lifetime_peak_commit": 1368064
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-pressure-small-correctness.json",
+      "sha256": "7718c4a4e869e15f87d6079a47b9b688a4c1452055944dbd46954c6d4b623d17",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 31408,
+          "scenario": "product-pressure-small"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-f117b0b8-2383-4f8e-aea6-a8d2d6acf868",
+          "phase": "host_started",
+          "pid": 31196,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": 190.1738,
+          "cancel_to_cleanup_upper_ms": 58.5907,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": 190.04399999999998,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 248.7645,
+          "helper_removed": true,
+          "host_pid": 31196,
+          "operation_id": "95a133c8-29ad-4f5e-a05c-bc2bd03bfdad",
+          "original_connection": true,
+          "scenario": "product-pressure-small",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 1,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "cancelled",
+            "elapsed_ms": 204,
+            "entry_count": 2,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-pressure-small",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "repeat",
+      "scenario": "product-pressure-small",
+      "timestamp": "2026-10-19T18:17:49.020602+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10567.421599997033,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":33648,\"scenario\":\"product-pressure-small\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-0d1244da-e90a-49f1-963b-03fc08756a51\",\"phase\":\"host_started\",\"pid\":34520,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":162.48080000000002,\"cancel_to_cleanup_upper_ms\":56.093099999999964,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":162.3434,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":218.57389999999998,\"helper_removed\":true,\"host_pid\":34520,\"operation_id\":\"fb96462e-92d6-4d30-ae4d-13cee08abf41\",\"original_connection\":true,\"scenario\":\"product-pressure-small\",\"source_writable\":true,\"terminal\":{\"batch_count\":1,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"cancelled\",\"elapsed_ms\":172,\"entry_count\":2,\"files_verified\":0,\"native_error_code\":null,\"status\":\"cancelled\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17820008448,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26187354112
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17804382208,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26186199040
+      },
+      "processes": [
+        {
+          "pid": 33648,
+          "parent_pid": 34248,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.176,
+            "pid": 33648,
+            "working_set": 5517312,
+            "private_bytes": 1024000,
+            "process_lifetime_peak_working_set": 5517312,
+            "process_lifetime_peak_commit": 1024000
+          },
+          "peak_working_set": 7557120,
+          "peak_private_bytes": 1138688,
+          "samples": 339,
+          "max_interval_ms": 38.757999999999996,
+          "last_ms": 10518.985,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10518.985,
+            "pid": 33648,
+            "working_set": 7557120,
+            "private_bytes": 1138688,
+            "process_lifetime_peak_working_set": 7557120,
+            "process_lifetime_peak_commit": 1138688
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 34520,
+          "parent_pid": 33648,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 71.678,
+            "pid": 34520,
+            "working_set": 27693056,
+            "private_bytes": 7340032,
+            "process_lifetime_peak_working_set": 27693056,
+            "process_lifetime_peak_commit": 7344128
+          },
+          "peak_working_set": 39145472,
+          "peak_private_bytes": 12537856,
+          "samples": 337,
+          "max_interval_ms": 32.884000000000015,
+          "last_ms": 10518.985,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10518.985,
+            "pid": 34520,
+            "working_set": 39145472,
+            "private_bytes": 12537856,
+            "process_lifetime_peak_working_set": 39145472,
+            "process_lifetime_peak_commit": 12546048
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 31700,
+          "parent_pid": 34520,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-0d1244da-e90a-49f1-963b-03fc08756a51\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 197.108,
+            "pid": 31700,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 8704000,
+          "peak_private_bytes": 1470464,
+          "samples": 4,
+          "max_interval_ms": 31.86500000000001,
+          "last_ms": 291.294,
+          "exit_observed_ms": 322.6538000017172,
+          "last": {
+            "ms": 291.294,
+            "pid": 31700,
+            "working_set": 8704000,
+            "private_bytes": 1470464,
+            "process_lifetime_peak_working_set": 8704000,
+            "process_lifetime_peak_commit": 1478656
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 31464,
+          "parent_pid": 34520,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-0d1244da-e90a-49f1-963b-03fc08756a51\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 383.988,
+            "pid": 31464,
+            "working_set": 1671168,
+            "private_bytes": 450560,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 450560
+          },
+          "peak_working_set": 8712192,
+          "peak_private_bytes": 1441792,
+          "samples": 3,
+          "max_interval_ms": 30.889999999999986,
+          "last_ms": 445.61,
+          "exit_observed_ms": 476.96250000444707,
+          "last": {
+            "ms": 445.61,
+            "pid": 31464,
+            "working_set": 8712192,
+            "private_bytes": 1441792,
+            "process_lifetime_peak_working_set": 8712192,
+            "process_lifetime_peak_commit": 1441792
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-pressure-small-repeat.json",
+      "sha256": "ae4a1f0a53f0c8019717df36c689f9081ed5a9d41500c4e7dca8dcdd93772c7a",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 33648,
+          "scenario": "product-pressure-small"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-0d1244da-e90a-49f1-963b-03fc08756a51",
+          "phase": "host_started",
+          "pid": 34520,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": 162.48080000000002,
+          "cancel_to_cleanup_upper_ms": 56.093099999999964,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": 162.3434,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 218.57389999999998,
+          "helper_removed": true,
+          "host_pid": 34520,
+          "operation_id": "fb96462e-92d6-4d30-ae4d-13cee08abf41",
+          "original_connection": true,
+          "scenario": "product-pressure-small",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 1,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "cancelled",
+            "elapsed_ms": 172,
+            "entry_count": 2,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product-pressure-small",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "tool-repair",
+      "scenario": "product-pressure-small",
+      "timestamp": "2026-10-19T18:44:38.447018+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10496.1919999987,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":28384,\"scenario\":\"product-pressure-small\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-27df8ffd-2a5d-4afc-b064-ac458d6d89fe\",\"phase\":\"host_started\",\"pid\":24320,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":135.6247,\"cancel_to_cleanup_upper_ms\":53.22149999999999,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":135.5093,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":188.84619999999998,\"helper_removed\":true,\"host_pid\":24320,\"operation_id\":\"9b296765-f3be-4578-9c4d-d47f4f2de04e\",\"original_connection\":true,\"scenario\":\"product-pressure-small\",\"source_writable\":true,\"terminal\":{\"batch_count\":1,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"cancelled\",\"elapsed_ms\":144,\"entry_count\":2,\"files_verified\":0,\"native_error_code\":null,\"status\":\"cancelled\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 16929001472,
+        "commit_limit": 55570448384,
+        "commit_headroom": 25836380160
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 16923570176,
+        "commit_limit": 55570448384,
+        "commit_headroom": 25882906624
+      },
+      "processes": [
+        {
+          "pid": 28384,
+          "parent_pid": 36304,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.175,
+            "pid": 28384,
+            "working_set": 5603328,
+            "private_bytes": 1015808,
+            "process_lifetime_peak_working_set": 5603328,
+            "process_lifetime_peak_commit": 1015808
+          },
+          "peak_working_set": 7479296,
+          "peak_private_bytes": 1118208,
+          "samples": 337,
+          "max_interval_ms": 35.764,
+          "last_ms": 10462.436,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10462.436,
+            "pid": 28384,
+            "working_set": 7479296,
+            "private_bytes": 1118208,
+            "process_lifetime_peak_working_set": 7479296,
+            "process_lifetime_peak_commit": 1122304
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 24320,
+          "parent_pid": 28384,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 69.051,
+            "pid": 24320,
+            "working_set": 27725824,
+            "private_bytes": 7356416,
+            "process_lifetime_peak_working_set": 27725824,
+            "process_lifetime_peak_commit": 7360512
+          },
+          "peak_working_set": 39231488,
+          "peak_private_bytes": 12603392,
+          "samples": 334,
+          "max_interval_ms": 32.652000000000044,
+          "last_ms": 10431.667,
+          "exit_observed_ms": 10462.436499998148,
+          "last": {
+            "ms": 10431.667,
+            "pid": 24320,
+            "working_set": 39231488,
+            "private_bytes": 12603392,
+            "process_lifetime_peak_working_set": 39231488,
+            "process_lifetime_peak_commit": 12611584
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 29600,
+          "parent_pid": 24320,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-27df8ffd-2a5d-4afc-b064-ac458d6d89fe\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 192.832,
+            "pid": 29600,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 8708096,
+          "peak_private_bytes": 1482752,
+          "samples": 3,
+          "max_interval_ms": 32.12300000000002,
+          "last_ms": 255.22,
+          "exit_observed_ms": 287.26520000054734,
+          "last": {
+            "ms": 255.22,
+            "pid": 29600,
+            "working_set": 8708096,
+            "private_bytes": 1482752,
+            "process_lifetime_peak_working_set": 8708096,
+            "process_lifetime_peak_commit": 1490944
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 35676,
+          "parent_pid": 24320,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-27df8ffd-2a5d-4afc-b064-ac458d6d89fe\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 318.767,
+            "pid": 35676,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 1671168,
+          "peak_private_bytes": 454656,
+          "samples": 2,
+          "max_interval_ms": 31.15100000000001,
+          "last_ms": 349.918,
+          "exit_observed_ms": 381.423699996958,
+          "last": {
+            "ms": 349.918,
+            "pid": 35676,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product-pressure-small-tool-repair.json",
+      "sha256": "f0f4242be173061c09cdc9c9a8115dcd0e03ebaad68af87cd93b10fe1cc67a3e",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 28384,
+          "scenario": "product-pressure-small"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-27df8ffd-2a5d-4afc-b064-ac458d6d89fe",
+          "phase": "host_started",
+          "pid": 24320,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": 135.6247,
+          "cancel_to_cleanup_upper_ms": 53.22149999999999,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": 135.5093,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 188.84619999999998,
+          "helper_removed": true,
+          "host_pid": 24320,
+          "operation_id": "9b296765-f3be-4578-9c4d-d47f4f2de04e",
+          "original_connection": true,
+          "scenario": "product-pressure-small",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 1,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "cancelled",
+            "elapsed_ms": 144,
+            "entry_count": 2,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "cancelled"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "product100k",
+      "timestamp": "2026-10-19T18:08:29.249752+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10542.885499999102,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":30760,\"scenario\":\"product100k\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-4d23562b-c8b7-4f41-8122-b989347008a4\",\"phase\":\"host_started\",\"pid\":34676,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":null,\"cancel_to_cleanup_upper_ms\":null,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":null,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":354.5633,\"helper_removed\":true,\"host_pid\":34676,\"operation_id\":\"ede3ac41-21b9-4567-9cbf-d570ebb3d22c\",\"original_connection\":true,\"scenario\":\"product100k\",\"source_writable\":true,\"terminal\":{\"batch_count\":0,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"resource_limit\",\"elapsed_ms\":316,\"entry_count\":0,\"files_verified\":0,\"native_error_code\":null,\"status\":\"failed\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17470439424,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27280691200
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17441050624,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27231354880
+      },
+      "processes": [
+        {
+          "pid": 30760,
+          "parent_pid": 31800,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.004,
+            "pid": 30760,
+            "working_set": 5484544,
+            "private_bytes": 1019904,
+            "process_lifetime_peak_working_set": 5484544,
+            "process_lifetime_peak_commit": 1019904
+          },
+          "peak_working_set": 7389184,
+          "peak_private_bytes": 1110016,
+          "samples": 338,
+          "max_interval_ms": 33.15299999999934,
+          "last_ms": 10495.599,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10495.599,
+            "pid": 30760,
+            "working_set": 7389184,
+            "private_bytes": 1110016,
+            "process_lifetime_peak_working_set": 7389184,
+            "process_lifetime_peak_commit": 1130496
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 34676,
+          "parent_pid": 30760,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 65.504,
+            "pid": 34676,
+            "working_set": 27086848,
+            "private_bytes": 7393280,
+            "process_lifetime_peak_working_set": 27086848,
+            "process_lifetime_peak_commit": 7397376
+          },
+          "peak_working_set": 38821888,
+          "peak_private_bytes": 12021760,
+          "samples": 336,
+          "max_interval_ms": 33.15299999999934,
+          "last_ms": 10495.599,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10495.599,
+            "pid": 34676,
+            "working_set": 38793216,
+            "private_bytes": 11968512,
+            "process_lifetime_peak_working_set": 38834176,
+            "process_lifetime_peak_commit": 12021760
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 15584,
+          "parent_pid": 34676,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-4d23562b-c8b7-4f41-8122-b989347008a4\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 192.022,
+            "pid": 15584,
+            "working_set": 1667072,
+            "private_bytes": 446464,
+            "process_lifetime_peak_working_set": 1667072,
+            "process_lifetime_peak_commit": 446464
+          },
+          "peak_working_set": 8163328,
+          "peak_private_bytes": 1458176,
+          "samples": 8,
+          "max_interval_ms": 32.31,
+          "last_ms": 411.276,
+          "exit_observed_ms": 441.9837999957963,
+          "last": {
+            "ms": 411.276,
+            "pid": 15584,
+            "working_set": 8163328,
+            "private_bytes": 1458176,
+            "process_lifetime_peak_working_set": 8163328,
+            "process_lifetime_peak_commit": 1478656
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product100k-correctness.json",
+      "sha256": "29454f707ccfe0a8f11a2e78f128b926803f4af7fc94b8607c69bbe2a3781db3",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 30760,
+          "scenario": "product100k"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-4d23562b-c8b7-4f41-8122-b989347008a4",
+          "phase": "host_started",
+          "pid": 34676,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": null,
+          "cancel_to_cleanup_upper_ms": null,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": null,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 354.5633,
+          "helper_removed": true,
+          "host_pid": 34676,
+          "operation_id": "ede3ac41-21b9-4567-9cbf-d570ebb3d22c",
+          "original_connection": true,
+          "scenario": "product100k",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 0,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "resource_limit",
+            "elapsed_ms": 316,
+            "entry_count": 0,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "failed"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "repeat",
+      "scenario": "product100k",
+      "timestamp": "2026-10-19T18:17:06.145624+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10740.040399999998,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":30800,\"scenario\":\"product100k\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-e70f2cb8-6c65-4d3e-8492-45ea3d05bca8\",\"phase\":\"host_started\",\"pid\":33016,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":null,\"cancel_to_cleanup_upper_ms\":null,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":null,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":383.5998,\"helper_removed\":true,\"host_pid\":33016,\"operation_id\":\"2025f044-df86-4740-8281-b3d91bf21d6d\",\"original_connection\":true,\"scenario\":\"product100k\",\"source_writable\":true,\"terminal\":{\"batch_count\":0,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"resource_limit\",\"elapsed_ms\":345,\"entry_count\":0,\"files_verified\":0,\"native_error_code\":null,\"status\":\"failed\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17830375424,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26192232448
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17816309760,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26178060288
+      },
+      "processes": [
+        {
+          "pid": 30800,
+          "parent_pid": 30292,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 0.995,
+            "pid": 30800,
+            "working_set": 5894144,
+            "private_bytes": 1056768,
+            "process_lifetime_peak_working_set": 5894144,
+            "process_lifetime_peak_commit": 1056768
+          },
+          "peak_working_set": 7532544,
+          "peak_private_bytes": 1134592,
+          "samples": 345,
+          "max_interval_ms": 45.99199999999996,
+          "last_ms": 10707.283,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10707.283,
+            "pid": 30800,
+            "working_set": 7532544,
+            "private_bytes": 1134592,
+            "process_lifetime_peak_working_set": 7532544,
+            "process_lifetime_peak_commit": 1146880
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33016,
+          "parent_pid": 30800,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 70.214,
+            "pid": 33016,
+            "working_set": 27627520,
+            "private_bytes": 7331840,
+            "process_lifetime_peak_working_set": 27627520,
+            "process_lifetime_peak_commit": 7331840
+          },
+          "peak_working_set": 41353216,
+          "peak_private_bytes": 12734464,
+          "samples": 342,
+          "max_interval_ms": 45.99199999999996,
+          "last_ms": 10676.012,
+          "exit_observed_ms": 10707.283099996857,
+          "last": {
+            "ms": 10676.012,
+            "pid": 33016,
+            "working_set": 41308160,
+            "private_bytes": 12660736,
+            "process_lifetime_peak_working_set": 41365504,
+            "process_lifetime_peak_commit": 12738560
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 31736,
+          "parent_pid": 33016,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-e70f2cb8-6c65-4d3e-8492-45ea3d05bca8\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 197.164,
+            "pid": 31736,
+            "working_set": 1671168,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 8724480,
+          "peak_private_bytes": 1556480,
+          "samples": 10,
+          "max_interval_ms": 32.06,
+          "last_ms": 477.619,
+          "exit_observed_ms": 508.63720000052126,
+          "last": {
+            "ms": 477.619,
+            "pid": 31736,
+            "working_set": 8724480,
+            "private_bytes": 1556480,
+            "process_lifetime_peak_working_set": 8724480,
+            "process_lifetime_peak_commit": 1556480
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 33396,
+          "parent_pid": 33016,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-e70f2cb8-6c65-4d3e-8492-45ea3d05bca8\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 570.916,
+            "pid": 33396,
+            "working_set": 2256896,
+            "private_bytes": 516096,
+            "process_lifetime_peak_working_set": 2256896,
+            "process_lifetime_peak_commit": 520192
+          },
+          "peak_working_set": 8359936,
+          "peak_private_bytes": 1433600,
+          "samples": 2,
+          "max_interval_ms": 30.851,
+          "last_ms": 601.767,
+          "exit_observed_ms": 631.80779999675,
+          "last": {
+            "ms": 601.767,
+            "pid": 33396,
+            "working_set": 8359936,
+            "private_bytes": 1433600,
+            "process_lifetime_peak_working_set": 8359936,
+            "process_lifetime_peak_commit": 1449984
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product100k-repeat.json",
+      "sha256": "3798dcc469ce7aad335a8a9ae9dbae536976d8e3ec954a8e0573d130c4bf39dc",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 30800,
+          "scenario": "product100k"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-e70f2cb8-6c65-4d3e-8492-45ea3d05bca8",
+          "phase": "host_started",
+          "pid": 33016,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": null,
+          "cancel_to_cleanup_upper_ms": null,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": null,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 383.5998,
+          "helper_removed": true,
+          "host_pid": 33016,
+          "operation_id": "2025f044-df86-4740-8281-b3d91bf21d6d",
+          "original_connection": true,
+          "scenario": "product100k",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 0,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "resource_limit",
+            "elapsed_ms": 345,
+            "entry_count": 0,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "failed"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "product100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "tool-repair",
+      "scenario": "product100k",
+      "timestamp": "2026-10-19T18:44:17.127646+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 10709.31350000319,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":35424,\"scenario\":\"product100k\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-6abcbdbf-2147-4d19-92be-6eb003a7c77e\",\"phase\":\"host_started\",\"pid\":26900,\"role\":\"isolated_csharp_product_host\"}\nRESOURCE {\"cancel_at_ms\":null,\"cancel_to_cleanup_upper_ms\":null,\"explicit_product_escalation\":\"InvalidRequest\",\"first_batch_ms\":null,\"first_paint\":\"not_measured_no_ui\",\"full_terminal_ms\":367.5196,\"helper_removed\":true,\"host_pid\":26900,\"operation_id\":\"5a9735bf-1530-4347-a5e8-6ce1a7f30c88\",\"original_connection\":true,\"scenario\":\"product100k\",\"source_writable\":true,\"terminal\":{\"batch_count\":0,\"bytes_verified\":0,\"cleanup_complete\":true,\"code\":\"resource_limit\",\"elapsed_ms\":329,\"entry_count\":0,\"files_verified\":0,\"native_error_code\":null,\"status\":\"failed\"}}\n",
+      "stderr": "",
+      "failure": null,
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17165811712,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26128732160
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 16890306560,
+        "commit_limit": 55570448384,
+        "commit_headroom": 25792794624
+      },
+      "processes": [
+        {
+          "pid": 35424,
+          "parent_pid": 26180,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.706,
+            "pid": 35424,
+            "working_set": 5513216,
+            "private_bytes": 1044480,
+            "process_lifetime_peak_working_set": 5513216,
+            "process_lifetime_peak_commit": 1044480
+          },
+          "peak_working_set": 7462912,
+          "peak_private_bytes": 1130496,
+          "samples": 341,
+          "max_interval_ms": 47.33600000000115,
+          "last_ms": 10661.424,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10661.424,
+            "pid": 35424,
+            "working_set": 7462912,
+            "private_bytes": 1130496,
+            "process_lifetime_peak_working_set": 7462912,
+            "process_lifetime_peak_commit": 1150976
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 26900,
+          "parent_pid": 35424,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 68.97,
+            "pid": 26900,
+            "working_set": 27697152,
+            "private_bytes": 7360512,
+            "process_lifetime_peak_working_set": 27697152,
+            "process_lifetime_peak_commit": 7364608
+          },
+          "peak_working_set": 41316352,
+          "peak_private_bytes": 12709888,
+          "samples": 339,
+          "max_interval_ms": 47.33600000000115,
+          "last_ms": 10661.424,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 10661.424,
+            "pid": 26900,
+            "working_set": 41271296,
+            "private_bytes": 12636160,
+            "process_lifetime_peak_working_set": 41328640,
+            "process_lifetime_peak_commit": 12713984
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 22992,
+          "parent_pid": 26900,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-6abcbdbf-2147-4d19-92be-6eb003a7c77e\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 194.204,
+            "pid": 22992,
+            "working_set": 1671168,
+            "private_bytes": 450560,
+            "process_lifetime_peak_working_set": 1671168,
+            "process_lifetime_peak_commit": 450560
+          },
+          "peak_working_set": 8167424,
+          "peak_private_bytes": 1458176,
+          "samples": 8,
+          "max_interval_ms": 31.50400000000002,
+          "last_ms": 410.88,
+          "exit_observed_ms": 442.46900000143796,
+          "last": {
+            "ms": 410.88,
+            "pid": 22992,
+            "working_set": 8167424,
+            "private_bytes": 1458176,
+            "process_lifetime_peak_working_set": 8167424,
+            "process_lifetime_peak_commit": 1478656
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 32936,
+          "parent_pid": 26900,
+          "role": "actual_worker",
+          "executable": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-6abcbdbf-2147-4d19-92be-6eb003a7c77e\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 505.754,
+            "pid": 32936,
+            "working_set": 1667072,
+            "private_bytes": 446464,
+            "process_lifetime_peak_working_set": 1667072,
+            "process_lifetime_peak_commit": 446464
+          },
+          "peak_working_set": 6975488,
+          "peak_private_bytes": 1290240,
+          "samples": 2,
+          "max_interval_ms": 31.102999999999952,
+          "last_ms": 536.857,
+          "exit_observed_ms": 567.4195000028703,
+          "last": {
+            "ms": 536.857,
+            "pid": 32936,
+            "working_set": 6975488,
+            "private_bytes": 1290240,
+            "process_lifetime_peak_working_set": 6975488,
+            "process_lifetime_peak_commit": 1310720
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "product100k-tool-repair.json",
+      "sha256": "76c05a8b55c2663bd2d55c0fc7df4fcf68fc4cfbe5f61926805c4bfb8e571a1d",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 35424,
+          "scenario": "product100k"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-6abcbdbf-2147-4d19-92be-6eb003a7c77e",
+          "phase": "host_started",
+          "pid": 26900,
+          "role": "isolated_csharp_product_host"
+        },
+        {
+          "cancel_at_ms": null,
+          "cancel_to_cleanup_upper_ms": null,
+          "explicit_product_escalation": "InvalidRequest",
+          "first_batch_ms": null,
+          "first_paint": "not_measured_no_ui",
+          "full_terminal_ms": 367.5196,
+          "helper_removed": true,
+          "host_pid": 26900,
+          "operation_id": "5a9735bf-1530-4347-a5e8-6ce1a7f30c88",
+          "original_connection": true,
+          "scenario": "product100k",
+          "source_writable": true,
+          "terminal": {
+            "batch_count": 0,
+            "bytes_verified": 0,
+            "cleanup_complete": true,
+            "code": "resource_limit",
+            "elapsed_ms": 329,
+            "entry_count": 0,
+            "files_verified": 0,
+            "native_error_code": null,
+            "status": "failed"
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+        "--archive-resource-probe",
+        "runner100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "correctness",
+      "scenario": "runner100k",
+      "timestamp": "2026-10-19T17:59:16.271490+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 300.9663000048022,
+      "exit_code": 1,
+      "result": null,
+      "stdout": "",
+      "stderr": "",
+      "failure": "exit1",
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17455144960,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27266895872
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17405698048,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27214303232
+      },
+      "processes": [
+        {
+          "pid": 31260,
+          "parent_pid": 34108,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 1.156,
+            "pid": 31260,
+            "working_set": 3821568,
+            "private_bytes": 1024000,
+            "process_lifetime_peak_working_set": 3821568,
+            "process_lifetime_peak_commit": 1024000
+          },
+          "peak_working_set": 33173504,
+          "peak_private_bytes": 10776576,
+          "samples": 8,
+          "max_interval_ms": 36.965,
+          "last_ms": 225.982,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 225.982,
+            "pid": 31260,
+            "working_set": 33173504,
+            "private_bytes": 10776576,
+            "process_lifetime_peak_working_set": 33173504,
+            "process_lifetime_peak_commit": 10776576
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 32412,
+          "parent_pid": 31260,
+          "role": "isolated_csharp_host",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 193.717,
+            "pid": 32412,
+            "working_set": 1667072,
+            "private_bytes": 450560,
+            "process_lifetime_peak_working_set": 1667072,
+            "process_lifetime_peak_commit": 450560
+          },
+          "peak_working_set": 2068480,
+          "peak_private_bytes": 479232,
+          "samples": 2,
+          "max_interval_ms": 32.264999999999986,
+          "last_ms": 225.982,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 225.982,
+            "pid": 32412,
+            "working_set": 2068480,
+            "private_bytes": 479232,
+            "process_lifetime_peak_working_set": 2068480,
+            "process_lifetime_peak_commit": 516096
+          },
+          "alive_at_end": true
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "runner100k-correctness.json",
+      "sha256": "49a305b716eff97e9409ef9825fb56e304dd3c137240cc797f55fb58b01d719b",
+      "events": []
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+        "--archive-resource-probe",
+        "runner100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "repeat",
+      "scenario": "runner100k",
+      "timestamp": "2026-10-19T18:01:40.455571+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 386.11259999743197,
+      "exit_code": 1,
+      "result": null,
+      "stdout": "",
+      "stderr": "",
+      "failure": "exit1",
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17443340288,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27238055936
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17401319424,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27194740736
+      },
+      "processes": [
+        {
+          "pid": 32852,
+          "parent_pid": 25568,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 1.08,
+            "pid": 32852,
+            "working_set": 7073792,
+            "private_bytes": 1454080,
+            "process_lifetime_peak_working_set": 7073792,
+            "process_lifetime_peak_commit": 1454080
+          },
+          "peak_working_set": 31440896,
+          "peak_private_bytes": 9498624,
+          "samples": 6,
+          "max_interval_ms": 42.121,
+          "last_ms": 167.223,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 167.223,
+            "pid": 32852,
+            "working_set": 31440896,
+            "private_bytes": 9498624,
+            "process_lifetime_peak_working_set": 31440896,
+            "process_lifetime_peak_commit": 9506816
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 7284,
+          "parent_pid": 32852,
+          "role": "actual_worker",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+          "baseline": null,
+          "peak_working_set": 0,
+          "peak_private_bytes": 0,
+          "samples": 0,
+          "max_interval_ms": 0,
+          "last_ms": null,
+          "exit_observed_ms": null,
+          "alive_at_end": true
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "runner100k-repeat.json",
+      "sha256": "487988c543b43c2e98c5e8d99d07f70868c2f654cc6645723e8cfddcf646ea8d",
+      "events": []
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+        "--archive-resource-probe",
+        "runner100k",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "tool-repair",
+      "scenario": "runner100k",
+      "timestamp": "2026-10-19T18:03:46.229978+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 3738.033000001451,
+      "exit_code": 0,
+      "result": null,
+      "stdout": "RESOURCE {\"scenario\":\"runner100k\",\"operation_id\":\"c7c2809d-0603-4b38-9b28-cd35ec3af5e7\",\"debug\":true,\"full_terminal_ms\":3485,\"first_batch_ms\":2456,\"observed_entries\":46710,\"cancel_at_ms\":-1,\"process_exit_observed_ms\":3474,\"cleanup_predisposal_ms\":-1,\"partial_bytes_at_cancel\":0,\"worker_cancel_frame\":null,\"worker_cancel_accept_timestamp\":\"not_exposed\",\"worker_cancel_observe_frame_ms\":-1,\"cancel_to_exit_upper_ms\":-1,\"cancel_to_cleanup_ms\":-1,\"heldSlot\":false,\"heldSource\":false,\"heldJobEmpty\":false,\"Category\":\"stdout_total_limit\",\"ExitCode\":1,\"CleanupComplete\":true,\"source_writable\":true,\"helper_removed\":true,\"active_count\":0,\"metadata_budget\":268435456,\"work_budget\":67108864,\"job_ceiling\":402653184,\"caller\":{\"Role\":\"isolated_csharp_runner_host\",\"ProcessId\":25716,\"Path\":\"D:\\\\Code\\\\NxTools.Next-main\\\\csharp\\\\NxTools.PlatformHost.Tests\\\\bin\\\\Debug\\\\net8.0-windows\\\\NxTools.PlatformHost.Tests.exe\",\"BaselineWorking\":23453696,\"BaselinePrivate\":7979008,\"PeakWorking\":51306496,\"PeakPrivate\":25792512,\"LastWorking\":51306496,\"LastPrivate\":25792512,\"Count\":109,\"requested_interval_ms\":20,\"MaxIntervalMs\":121.33749999999999},\"worker\":{\"Role\":\"actual_rust_worker\",\"ProcessId\":28028,\"Path\":\"D:\\\\Code\\\\NxTools.Next-main\\\\csharp\\\\NxTools.PlatformHost.Tests\\\\bin\\\\Debug\\\\net8.0-windows\\\\NxTools.ArchiveWorker.exe\",\"BaselineWorking\":2256896,\"BaselinePrivate\":516096,\"PeakWorking\":66985984,\"PeakPrivate\":70860800,\"LastWorking\":40341504,\"LastPrivate\":34025472,\"Count\":109,\"requested_interval_ms\":20,\"MaxIntervalMs\":41.58}}\r\n",
+      "stderr": "",
+      "failure": "RuntimeError('unexpected owned child image: C:\\\\Windows\\\\System32\\\\conhost.exe')",
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17532059648,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27340345344
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17531416576,
+        "commit_limit": 55570448384,
+        "commit_headroom": 27332988928
+      },
+      "processes": [
+        {
+          "pid": 25716,
+          "parent_pid": 27092,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+          "baseline": {
+            "ms": 1.322,
+            "pid": 25716,
+            "working_set": 6844416,
+            "private_bytes": 1384448,
+            "process_lifetime_peak_working_set": 6844416,
+            "process_lifetime_peak_commit": 1384448
+          },
+          "peak_working_set": 32194560,
+          "peak_private_bytes": 10051584,
+          "samples": 6,
+          "max_interval_ms": 33.976,
+          "last_ms": 159.083,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 159.083,
+            "pid": 25716,
+            "working_set": 32194560,
+            "private_bytes": 10051584,
+            "process_lifetime_peak_working_set": 32194560,
+            "process_lifetime_peak_commit": 10051584
+          },
+          "alive_at_end": false
+        },
+        {
+          "pid": 28028,
+          "parent_pid": 25716,
+          "role": "actual_worker",
+          "executable": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+          "baseline": {
+            "ms": 127.666,
+            "pid": 28028,
+            "working_set": 1667072,
+            "private_bytes": 454656,
+            "process_lifetime_peak_working_set": 1667072,
+            "process_lifetime_peak_commit": 454656
+          },
+          "peak_working_set": 2256896,
+          "peak_private_bytes": 516096,
+          "samples": 2,
+          "max_interval_ms": 31.417,
+          "last_ms": 159.083,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 159.083,
+            "pid": 28028,
+            "working_set": 2256896,
+            "private_bytes": 516096,
+            "process_lifetime_peak_working_set": 2256896,
+            "process_lifetime_peak_commit": 524288
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "runner100k-tool-repair.json",
+      "sha256": "58aead697bdcbc86b205b75d2507ea9f549a3270624b496c249bdbaa36a1c5b1",
+      "events": [
+        {
+          "scenario": "runner100k",
+          "operation_id": "c7c2809d-0603-4b38-9b28-cd35ec3af5e7",
+          "debug": true,
+          "full_terminal_ms": 3485,
+          "first_batch_ms": 2456,
+          "observed_entries": 46710,
+          "cancel_at_ms": -1,
+          "process_exit_observed_ms": 3474,
+          "cleanup_predisposal_ms": -1,
+          "partial_bytes_at_cancel": 0,
+          "worker_cancel_frame": null,
+          "worker_cancel_accept_timestamp": "not_exposed",
+          "worker_cancel_observe_frame_ms": -1,
+          "cancel_to_exit_upper_ms": -1,
+          "cancel_to_cleanup_ms": -1,
+          "heldSlot": false,
+          "heldSource": false,
+          "heldJobEmpty": false,
+          "Category": "stdout_total_limit",
+          "ExitCode": 1,
+          "CleanupComplete": true,
+          "source_writable": true,
+          "helper_removed": true,
+          "active_count": 0,
+          "metadata_budget": 268435456,
+          "work_budget": 67108864,
+          "job_ceiling": 402653184,
+          "caller": {
+            "Role": "isolated_csharp_runner_host",
+            "ProcessId": 25716,
+            "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+            "BaselineWorking": 23453696,
+            "BaselinePrivate": 7979008,
+            "PeakWorking": 51306496,
+            "PeakPrivate": 25792512,
+            "LastWorking": 51306496,
+            "LastPrivate": 25792512,
+            "Count": 109,
+            "requested_interval_ms": 20,
+            "MaxIntervalMs": 121.33749999999999
+          },
+          "worker": {
+            "Role": "actual_rust_worker",
+            "ProcessId": 28028,
+            "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.ArchiveWorker.exe",
+            "BaselineWorking": 2256896,
+            "BaselinePrivate": 516096,
+            "PeakWorking": 66985984,
+            "PeakPrivate": 70860800,
+            "LastWorking": 40341504,
+            "LastPrivate": 34025472,
+            "Count": 109,
+            "requested_interval_ms": 20,
+            "MaxIntervalMs": 41.58
+          }
+        }
+      ]
+    },
+    {
+      "command": [
+        "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+        "tool-guard-failure",
+        "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-resources-fa3927c9-28d7-4e0a-aaf2-fa046fb57263"
+      ],
+      "attempt": "tool-repair",
+      "scenario": "tool-guard-failure",
+      "timestamp": "2026-10-19T18:44:06.211443+08:00",
+      "debug": true,
+      "cache": "ordinary_access_no_cold_warm_guarantee",
+      "elapsed_ms": 65.77339999785181,
+      "exit_code": 101,
+      "result": null,
+      "stdout": "RESOURCE {\"phase\":\"ready\",\"pid\":9024,\"scenario\":\"tool-guard-failure\"}\nRESOURCE {\"package\":\"C:\\\\Users\\\\Administrator\\\\.pi-desktop\\\\scratch\\\\c15113dd-0357-4913-adab-8ffe48d5aa23\\\\archive-product-resource-0d2d8405-ffd2-4f16-a37e-6fd129b8b79c\",\"phase\":\"host_started\",\"pid\":14928,\"role\":\"isolated_csharp_product_host\"}\n",
+      "stderr": "\nthread 'main' (23996) panicked at rust\\crates\\nxtools-archive\\examples\\resource_probe.rs:157:5:\nassertion `left != right` failed: controlled TEST-tool failure after host ownership\n  left: \"tool-guard-failure\"\n right: \"tool-guard-failure\"\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+      "failure": "exit101",
+      "system_before": {
+        "physical": 34095611904,
+        "available": 17180925952,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26139803648
+      },
+      "system_after": {
+        "physical": 34095611904,
+        "available": 17167593472,
+        "commit_limit": 55570448384,
+        "commit_headroom": 26133204992
+      },
+      "processes": [
+        {
+          "pid": 9024,
+          "parent_pid": 35140,
+          "role": "probe_owner",
+          "executable": "D:\\Code\\NxTools.Next-main\\target\\debug\\examples\\resource_probe.exe",
+          "baseline": {
+            "ms": 1.107,
+            "pid": 9024,
+            "working_set": 2920448,
+            "private_bytes": 626688,
+            "process_lifetime_peak_working_set": 2920448,
+            "process_lifetime_peak_commit": 626688
+          },
+          "peak_working_set": 6189056,
+          "peak_private_bytes": 1056768,
+          "samples": 2,
+          "max_interval_ms": 27.67,
+          "last_ms": 28.777,
+          "exit_observed_ms": null,
+          "last": {
+            "ms": 28.777,
+            "pid": 9024,
+            "working_set": 6189056,
+            "private_bytes": 1056768,
+            "process_lifetime_peak_working_set": 6189056,
+            "process_lifetime_peak_commit": 1056768
+          },
+          "alive_at_end": false
+        }
+      ],
+      "sampling": "20ms requested;50ms descendant discovery;short peaks/short processes may be missed",
+      "record_file": "tool-guard-failure-tool-repair.json",
+      "sha256": "6e95449cde34e840908af79cf18229aa0748cf3997a5fe61413104f9a7df2f1e",
+      "events": [
+        {
+          "phase": "ready",
+          "pid": 9024,
+          "scenario": "tool-guard-failure"
+        },
+        {
+          "package": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\c15113dd-0357-4913-adab-8ffe48d5aa23\\archive-product-resource-0d2d8405-ffd2-4f16-a37e-6fd129b8b79c",
+          "phase": "host_started",
+          "pid": 14928,
+          "role": "isolated_csharp_product_host"
+        }
+      ]
+    }
+  ],
+  "csharp": {
+    "selected": 127,
+    "run": 127,
+    "passed": 127,
+    "skip": 0,
+    "fail": 0,
+    "not_run": 0,
+    "exact_names": [
+      "archive product fixture rejection transport bound",
+      "archive product fixture actual open test privacy",
+      "archive product fixture slow credit budget cancellation",
+      "archive product fixture negotiation crash admission unique terminal",
+      "archive product fixture strict wire validation",
+      "archive product fixture helper protection",
+      "archive product fixture metadata sequence and budgets",
+      "archive product fixture captured cancellation actual cleanup",
+      "archive product fixture timeout is not user cancellation",
+      "archive source delete fixture original session evidence binding",
+      "archive source delete fixture retired replacement replay",
+      "archive source delete fixture partial cancellation privacy",
+      "archive source delete fixture codec full extraction",
+      "archive source delete fixture lease close resolve race",
+      "archive source delete fixture failure cancellation matrix",
+      "archive source delete fixture creation coverage native refusal",
+      "archive source delete fixture once only unknown binding",
+      "archive source delete fixture consent failure projection",
+      "archive TAR time fixture local scope",
+      "archive TAR time fixture edges retention",
+      "archive TAR time fixture PAX global clear",
+      "archive TAR time fixture GNU negative",
+      "archive metadata fixture RAR metadata",
+      "archive metadata fixture ZIP time edges",
+      "archive metadata fixture PAX time edges",
+      "archive metadata fixture stream metadata absence",
+      "archive metadata fixture ADS capability source binding",
+      "archive metadata fixture guarded metadata cleanup",
+      "archive metadata fixture native lifecycle",
+      "archive metadata fixture 7z metadata",
+      "archive metadata fixture TAR PAX modified",
+      "archive metadata fixture Gzip modified",
+      "archive metadata fixture directory finalization",
+      "archive metadata fixture MOTW options and budget",
+      "archive metadata fixture capabilities",
+      "archive metadata fixture MOTW default",
+      "archive metadata fixture ZIP attributes",
+      "archive metadata fixture ZIP UTC modified",
+      "archive metadata fixture ZIP DOS modified",
+      "archive output fixture native failure diagnostics privacy",
+      "archive output fixture nested unicode and unsafe names",
+      "archive output fixture existing target and owned cleanup",
+      "archive output fixture concurrent target and owned junction",
+      "archive output fixture rechecked atomic path overwrite",
+      "archive overwrite fixture target changes before recheck",
+      "archive overwrite fixture failures native occupation capability",
+      "archive overwrite fixture postcommit and cancellation",
+      "archive overwrite fixture exclusive partial ownership",
+      "archive overwrite fixture actual worker integrity and commit lifecycle",
+      "archive overwrite fixture Win32 counted name ABI",
+      "archive outcome fixture actual worker target failures",
+      "archive outcome fixture actual worker terminal diagnostics",
+      "archive outcome fixture actual worker operation isolation",
+      "archive tree creation fixture options diagnostics",
+      "archive tree creation fixture TAR safety",
+      "archive tree creation fixture layout immutable admission",
+      "archive tree creation fixture TXZ levels",
+      "archive tree creation fixture TGZ levels",
+      "archive tree creation fixture TAR plain",
+      "archive tree creation fixture 7z options",
+      "archive tree creation fixture 7z safety",
+      "archive tree creation fixture 7z plain",
+      "archive ZIP creation fixture plain single file",
+      "archive ZIP creation fixture directory levels roots",
+      "archive ZIP creation fixture multiple sources collisions",
+      "archive ZIP creation fixture source changes budgets publication",
+      "archive ZIP creation fixture AES independent interoperability",
+      "archive ZIP creation fixture native source limits reparse",
+      "archive ZIP creation fixture diagnostics options ownership",
+      "archive admission fixture source elements",
+      "archive admission fixture source count",
+      "archive admission fixture source clear",
+      "archive admission fixture exclusion snapshot",
+      "archive admission fixture budget snapshot",
+      "archive admission fixture overwrite authorization",
+      "archive admission fixture legacy authorization",
+      "archive admission fixture bounds and unstable capture",
+      "archive source binding fixture safe parent output",
+      "archive source binding fixture self inclusion guards",
+      "archive source binding fixture namespace replacement",
+      "archive source binding fixture held output namespace",
+      "archive source binding fixture missing internal output",
+      "archive source binding fixture missing internal multi identity",
+      "archive source binding fixture existing internal unchanged",
+      "archive source binding fixture missing external output",
+      "archive source binding fixture preparation failures",
+      "archive admission fixture error compatibility",
+      "archive stream fixture actual worker gzip extraction",
+      "archive stream fixture actual worker gzip creation",
+      "archive stream fixture creation safety and partial read",
+      "archive stream fixture actual worker bzip2 ZIP extraction",
+      "archive stream fixture actual worker TAR extraction safety",
+      "archive stream fixture actual worker TAR Gzip integrity",
+      "archive stream fixture actual worker BZip2 streams integrity",
+      "archive stream fixture actual worker XZ creation",
+      "archive XZ fixture actual worker open test extract",
+      "archive XZ fixture actual worker damage and budgets",
+      "archive XZ fixture actual worker cancellation source protection",
+      "archive stream fixture actual worker Zstd reads safety",
+      "archive ZIP method fixture Zstd actual worker native reads",
+      "archive ZIP method fixture XZ actual worker native reads",
+      "archive ZIP method fixture LZMA actual worker native reads",
+      "archive ZIP method fixture Deflate64 actual worker native reads",
+      "archive ZIP crypto fixture ZipCrypto actual worker native reads",
+      "archive ZIP crypto fixture ZipCrypto descriptor actual worker native reads",
+      "archive ZIP remediation fixture directory and comment boundaries",
+      "archive ZIP remediation fixture AES authentication and safety",
+      "archive ZIP remediation fixture encrypted combinations and ZIP64",
+      "archive ZIP remediation fixture noEOS and working budget",
+      "archive worker fixture suspended admission and job limits",
+      "archive worker fixture framed output and privacy",
+      "archive worker fixture cancellation and bounded admission",
+      "archive worker fixture stuck admission retains slots",
+      "archive worker actual Rust private protocol fixture",
+      "archive codec actual Rust RAR4 RAR5 and 7z fixture",
+      "archive codec actual Rust password budget corruption cancel fixture",
+      "archive extraction actual Rust handle-session fixture",
+      "archive extraction actual Rust 7z handle-session fixture",
+      "archive extraction actual Rust RAR handle-session fixture",
+      "archive remediation actual source lease race barriers fixture",
+      "archive remediation budget admission fixture",
+      "archive remediation actual 7z working budget fixture",
+      "archive remediation actual 7z header classification fixture",
+      "archive remediation actual mapped source race fixture",
+      "archive remediation native Job limit and cleanup fixture",
+      "extension process fixture owned echo and suspended admission",
+      "extension process fixture input and native process limits"
+    ]
+  },
+  "rust": {
+    "archive": {
+      "passed": 138,
+      "failed": 0,
+      "ignored": 0,
+      "groups": 26,
+      "nonempty_groups": 24
+    },
+    "protocol": {
+      "passed": 50,
+      "failed": 0,
+      "ignored": 0,
+      "groups": 1,
+      "nonempty_groups": 1
+    },
+    "ipc": {
+      "passed": 29,
+      "failed": 0,
+      "ignored": 0,
+      "groups": 1,
+      "nonempty_groups": 1
+    },
+    "extensions": {
+      "passed": 7,
+      "failed": 0,
+      "ignored": 0,
+      "groups": 1,
+      "nonempty_groups": 1
+    },
+    "clipboard": {
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "groups": 1,
+      "nonempty_groups": 1
+    }
+  },
+  "ledger": "2026-10-19T18:19:32.3851429+08:00 START archive cargo test -p nxtools-archive --features isolated-codecs --offline --no-fail-fast -- --test-threads=1\n2026-10-19T18:20:49.0337327+08:00 END archive exit=0\n2026-10-19T18:20:49.4648101+08:00 START protocol cargo test -p nxtools-protocol --lib --offline\n2026-10-19T18:20:50.0075545+08:00 END protocol exit=0\n2026-10-19T18:20:50.3843015+08:00 START ipc cargo test -p nxtools-ipc --lib --offline\n2026-10-19T18:20:51.0761614+08:00 END ipc exit=0\n2026-10-19T18:20:51.4593076+08:00 START archive-clippy cargo clippy -p nxtools-archive --features isolated-codecs --tests --example resource_probe --offline -- -D warnings\n2026-10-19T18:20:56.9790610+08:00 END archive-clippy exit=101\n2026-10-19T18:22:17.6817097+08:00 START archive-clippy-fixed cargo clippy -p nxtools-archive --features isolated-codecs --tests --example resource_probe --offline -- -D warnings\n2026-10-19T18:22:26.3073632+08:00 END archive-clippy-fixed exit=0\n2026-10-19T18:22:26.4241355+08:00 START default-clippy cargo clippy -p nxtools-archive --tests --example resource_probe --offline -- -D warnings\n2026-10-19T18:22:34.5842187+08:00 END default-clippy exit=0\n2026-10-19T18:22:34.6894364+08:00 START fmt cargo fmt --all -- --check\n2026-10-19T18:22:39.6111425+08:00 END fmt exit=0\n2026-10-19T18:22:39.7033019+08:00 START workspace-check cargo check --workspace --tests --offline\n2026-10-19T18:22:46.6350617+08:00 END workspace-check exit=0\n2026-10-19T18:22:46.7348748+08:00 START extensions cargo test -p nxtools-extensions --test archive_import --offline\n2026-10-19T18:22:47.3370976+08:00 END extensions exit=0\n2026-10-19T18:22:47.4314699+08:00 START clipboard cargo test -p nxtools-clipboard --lib archive_ --offline\n2026-10-19T18:22:48.9143612+08:00 END clipboard exit=0\n2026-10-19T18:22:49.0316418+08:00 START worker cargo build -p nxtools-archive --features isolated-codecs --offline --bin nxtools-archive-worker\n2026-10-19T18:22:58.7439734+08:00 END worker exit=0\n2026-10-19T18:24:50.7760715+08:00 START CSharp list exact126 names=resource-csharp-selection.json\n2026-10-19T18:24:50.8777059+08:00 END CSharp list exit=0\n2026-10-19T18:24:50.8804625+08:00 START CSharp run exact126 names=resource-csharp-selection.json\n2026-10-19T18:27:46.1123563+08:00 END CSharp run exit=0\n2026-10-19T18:35:41.0469120+08:00 START stable archive cargo test -p nxtools-archive --features isolated-codecs --offline --no-fail-fast -- --test-threads=1\n2026-10-19T18:37:08.1900339+08:00 END stable archive exit=0\n2026-10-19T18:37:08.5946077+08:00 START stable protocol cargo test -p nxtools-protocol --lib --offline\n2026-10-19T18:37:09.0748269+08:00 END stable protocol exit=0\n2026-10-19T18:37:09.4363920+08:00 START stable ipc cargo test -p nxtools-ipc --lib --offline\n2026-10-19T18:37:10.0879255+08:00 END stable ipc exit=0\n2026-10-19T18:37:10.4592927+08:00 START stable clippy cargo clippy -p nxtools-archive -p nxtools-protocol -p nxtools-ipc --features nxtools-archive/isolated-codecs --tests --examples --offline -- -D warnings\n2026-10-19T18:37:19.4846258+08:00 END stable clippy exit=0\n2026-10-19T18:37:19.8878316+08:00 START stable default-clippy cargo clippy -p nxtools-archive -p nxtools-protocol -p nxtools-ipc --tests --examples --offline -- -D warnings\n2026-10-19T18:37:28.1736296+08:00 END stable default-clippy exit=0\n2026-10-19T18:37:28.5437625+08:00 START stable fmt cargo fmt --all -- --check\n2026-10-19T18:37:33.5154026+08:00 END stable fmt exit=1\n2026-10-19T18:38:32.7005734+08:00 START stable archive-fmt cargo fmt -p nxtools-archive -- --check\n2026-10-19T18:38:33.3157699+08:00 END stable archive-fmt exit=0\n2026-10-19T18:38:33.4373410+08:00 START stable workspace-check cargo check --workspace --tests --offline\n2026-10-19T18:38:57.5814563+08:00 END stable workspace-check exit=101\n2026-10-19T18:40:02.0035385+08:00 START stable extensions cargo test -p nxtools-extensions --test archive_import --offline\n2026-10-19T18:40:02.8109623+08:00 END stable extensions exit=0\n2026-10-19T18:40:02.9485216+08:00 START stable clipboard cargo test -p nxtools-clipboard --lib archive_ --offline\n2026-10-19T18:40:10.1456639+08:00 END stable clipboard exit=0\n2026-10-19T18:40:10.2480677+08:00 START stable probe cargo build -p nxtools-archive --features isolated-codecs --offline --example resource_probe\n2026-10-19T18:40:10.8938343+08:00 END stable probe exit=0\n2026-10-19T18:40:10.9933886+08:00 START stable worker cargo build -p nxtools-archive --features isolated-codecs --offline --bin nxtools-archive-worker\n2026-10-19T18:40:11.6056600+08:00 END stable worker exit=0\n2026-10-19T18:40:11.6775728+08:00 START stable CSharp list exact127 (original127-large+newtimeout)\n2026-10-19T18:40:11.7740527+08:00 END stable CSharp list exit=0\n2026-10-19T18:40:11.7756002+08:00 START stable CSharp run exact127 (original127-large+newtimeout)\n2026-10-19T18:43:37.4409418+08:00 END stable CSharp run exit=0\n",
+  "caveats": [
+    "Debug only; no strict cold/warm-cache guarantee",
+    "20ms samples may miss peaks; actual intervals in records",
+    "runner100k external sampler failure retained; internal exact-handle samples in events",
+    "1GiB product first-batch gate failed before cancellation; not passed",
+    "worker cancellation receive/observe times not exposed; exit/cleanup are distinct",
+    "tool-guard-failure exit101 is intentional test-tool cleanup evidence, not product PASS"
+  ]
+}

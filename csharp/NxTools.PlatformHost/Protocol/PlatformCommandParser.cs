@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NxTools.PlatformHost.Windows;
 
 namespace NxTools.PlatformHost.Protocol;
 
@@ -38,6 +39,7 @@ internal sealed record ConfigureClipboardCommand(
     ulong MaxTextBytes = 8UL * 1024 * 1024,
     ulong MaxImageBytes = 64UL * 1024 * 1024,
     ulong MaxImagePixels = 100_000_000);
+internal sealed record SetClipboardCapturePausedCommand(bool Paused);
 internal sealed record SetClipboardHotKeyRecordingCommand(bool Recording);
 internal sealed record ConfigureQuickLaunchCommand(
     bool Enabled,
@@ -58,6 +60,8 @@ internal sealed record SetWindowShadowCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
 internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Width, int Height);
 internal sealed record PresentFixedWindowOverAnchorCommand(long WindowHandle, long AnchorWindowHandle, int Width, int Height);
+internal sealed record PrepareNotificationWindowCommand(long WindowHandle, long SourceWindowHandle, uint SourceProcessId,
+    string Position, int Width, int Height, bool KeepVisible = false);
 internal sealed record MoveWindowCenteredOverCommand(
     long WindowHandle,
     long AnchorWindowHandle,
@@ -102,6 +106,11 @@ internal sealed record ActivateWindowCommand(long WindowHandle);
 internal sealed record BeginWindowResizeCommand(long WindowHandle);
 internal sealed record BeginWindowMoveCommand(long WindowHandle);
 internal sealed record BeginFileDragCommand(string Path, long SourceWindowHandle);
+internal sealed record NativeContextMenuItem(uint Id, string Label, bool Enabled, bool Checked, bool Separator,
+    IReadOnlyList<NativeContextMenuItem> Children);
+internal sealed record ShowContextMenuCommand(long SourceWindowHandle, uint SourceProcessId, int X, int Y,
+    IReadOnlyList<NativeContextMenuItem> Items, long PopupWindowHandle = 0);
+internal sealed record CancelContextMenuCommand(Guid SessionId);
 internal sealed record OpenShellTargetCommand(string Target, string Action);
 internal sealed record ShutdownSystemCommand(ushort DelaySeconds);
 internal sealed record ExportBrowserExtensionCommand(string Format, string Destination);
@@ -135,6 +144,9 @@ internal sealed record PickClipboardArchivePathCommand(string Mode, string Sugge
 internal sealed record PickClipboardStorageDirectoryCommand(string CurrentDirectory);
 internal sealed record PickDirectoryCommand(string CurrentDirectory, string Title);
 internal sealed record PickProgramCommand(string CurrentPath);
+internal sealed record PickExtensionManifestCommand(string CurrentPath);
+internal sealed record PickExtensionRuntimeCommand(string Program, string CurrentPath);
+internal sealed record InspectExtensionRuntimeCommand(string Program, string Executable);
 internal sealed record EnsureIndexerServiceCommand;
 internal sealed record EnsureBrowserNativeMessagingCommand(
     bool Enabled,
@@ -143,6 +155,80 @@ internal sealed record EnsureBrowserNativeMessagingCommand(
 
 internal static class PlatformCommandParser
 {
+    public static PrepareNotificationWindowCommand ParsePrepareNotificationWindow(ProtocolEnvelope envelope)
+    {
+        try
+        {
+            if (GetCommandName(envelope) != "prepare_notification_window") throw new InvalidDataException();
+            var data = envelope.Payload.GetProperty("data");
+            var command = new PrepareNotificationWindowCommand(
+                data.GetProperty("window_handle").GetInt64(), data.GetProperty("source_window_handle").GetInt64(),
+                data.GetProperty("source_process_id").GetUInt32(), data.GetProperty("position").GetString()!,
+                data.GetProperty("width").GetInt32(), data.GetProperty("height").GetInt32(),
+                data.TryGetProperty("keep_visible", out var keepVisible) && keepVisible.GetBoolean());
+            Windows.NotificationWindowPlacement.Validate(command);
+            return command;
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or
+            FormatException or OverflowException or InvalidDataException)
+        { throw new InvalidDataException("Invalid notification window payload."); }
+    }
+
+    public static ShowContextMenuCommand ParseShowContextMenu(ProtocolEnvelope envelope)
+    {
+        // Reject missing/wrong-typed fields before deserialization can supply defaults.
+        try
+        {
+            if (GetCommandName(envelope) != "show_context_menu") throw new InvalidDataException();
+            var data = envelope.Payload.GetProperty("data");
+            _ = data.GetProperty("source_window_handle").GetInt64();
+            _ = data.GetProperty("source_process_id").GetUInt32();
+            _ = data.GetProperty("x").GetInt32();
+            _ = data.GetProperty("y").GetInt32();
+            var count = 0;
+            ValidateMenuWire(data.GetProperty("items"), 1, ref count);
+            var command = data.Deserialize<ShowContextMenuCommand>(JsonDefaults.Options)
+                ?? throw new InvalidDataException();
+            Windows.NativeContextMenuCoordinator.Validate(command);
+            return command;
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or
+            FormatException or OverflowException or InvalidDataException)
+        { throw new InvalidDataException("Invalid native context menu payload."); }
+    }
+
+    private static void ValidateMenuWire(JsonElement items, int depth, ref int count)
+    {
+        if (depth > 4 || items.ValueKind != JsonValueKind.Array || (depth == 1 && items.GetArrayLength() > 128))
+            throw new InvalidDataException();
+        foreach (var item in items.EnumerateArray())
+        {
+            if (++count > 256) throw new InvalidDataException();
+            _ = item.GetProperty("id").GetUInt32();
+            if (item.GetProperty("label").ValueKind != JsonValueKind.String) throw new InvalidDataException();
+            _ = item.GetProperty("enabled").GetBoolean();
+            _ = item.GetProperty("checked").GetBoolean();
+            _ = item.GetProperty("separator").GetBoolean();
+            var children = item.GetProperty("children");
+            if (children.ValueKind != JsonValueKind.Array) throw new InvalidDataException();
+            if (children.GetArrayLength() > 0) ValidateMenuWire(children, depth + 1, ref count);
+        }
+    }
+
+    public static CancelContextMenuCommand ParseCancelContextMenu(ProtocolEnvelope envelope)
+    {
+        try
+        {
+            if (GetCommandName(envelope) != "cancel_context_menu") throw new InvalidDataException();
+            var id = envelope.Payload.GetProperty("data").GetProperty("session_id").GetGuid();
+            if (id == Guid.Empty) throw new InvalidDataException();
+            return new(id);
+        }
+        catch (Exception error) when (error is JsonException or InvalidOperationException or KeyNotFoundException or
+            FormatException or InvalidDataException)
+        { throw new InvalidDataException("Invalid native context menu cancellation."); }
+    }
+
     public static PasteTextCommand ParsePasteText(ProtocolEnvelope envelope)
     {
         var command = GetCommandName(envelope);
@@ -173,6 +259,19 @@ internal static class PlatformCommandParser
             envelope,
             "configure_clipboard",
             "Clipboard configuration command payload was empty.");
+
+    public static SetClipboardCapturePausedCommand ParseSetClipboardCapturePaused(ProtocolEnvelope envelope)
+    {
+        var parsed = Parse<SetClipboardCapturePausedCommand>(envelope,
+            "set_clipboard_capture_paused", "Capture pause payload was empty.");
+        var data = envelope.Payload.GetProperty("data");
+        if (data.ValueKind != JsonValueKind.Object || data.EnumerateObject().Any(property => property.Name != "paused"))
+            throw new InvalidDataException("Capture pause contains unsupported fields.");
+        if (!data.TryGetProperty("paused", out var paused) ||
+            paused.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            throw new InvalidDataException("Capture pause requires an explicit boolean paused field.");
+        return parsed;
+    }
 
     public static SetClipboardHotKeyRecordingCommand ParseSetClipboardHotKeyRecording(
         ProtocolEnvelope envelope) =>
@@ -392,6 +491,9 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
     public static ExtractShellIconCommand ParseExtractShellIcon(ProtocolEnvelope envelope) =>
         Parse<ExtractShellIconCommand>(envelope, "extract_shell_icon", "Shell icon command payload was empty.");
 
+    public static PickArchivePathCommand ParsePickArchivePath(ProtocolEnvelope envelope) =>
+        Parse<PickArchivePathCommand>(envelope, "pick_archive_path", "Archive picker payload was empty.");
+
     public static PickClipboardArchivePathCommand ParsePickClipboardArchivePath(
         ProtocolEnvelope envelope) =>
         Parse<PickClipboardArchivePathCommand>(
@@ -417,6 +519,47 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
             envelope,
             "pick_program",
             "Program picker payload was empty.");
+
+    public static PickExtensionManifestCommand ParsePickExtensionManifest(ProtocolEnvelope envelope)
+    {
+        if (GetCommandName(envelope) != "pick_extension_manifest" ||
+            !envelope.Payload.TryGetProperty("data", out var data) ||
+            data.ValueKind != JsonValueKind.Object ||
+            !data.TryGetProperty("current_path", out var currentPath) ||
+            currentPath.ValueKind != JsonValueKind.String)
+        {
+            throw new InvalidDataException("Invalid extension manifest picker payload.");
+        }
+        return new PickExtensionManifestCommand(currentPath.GetString()!);
+    }
+
+    internal static bool IsExtensionRuntimeProgram(string? program) =>
+        program is "python" or "node" or "powershell" or "pwsh";
+
+    public static PickExtensionRuntimeCommand ParsePickExtensionRuntime(ProtocolEnvelope envelope)
+    {
+        var (program, path) = ParseExtensionRuntime(envelope, "pick_extension_runtime", "current_path");
+        return new(program, path);
+    }
+
+    public static InspectExtensionRuntimeCommand ParseInspectExtensionRuntime(ProtocolEnvelope envelope)
+    {
+        var (program, path) = ParseExtensionRuntime(envelope, "inspect_extension_runtime", "executable");
+        return new(program, path);
+    }
+
+    private static (string Program, string Path) ParseExtensionRuntime(
+        ProtocolEnvelope envelope, string command, string pathField)
+    {
+        if (GetCommandName(envelope) != command ||
+            !envelope.Payload.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
+            !data.TryGetProperty("program", out var program) || program.ValueKind != JsonValueKind.String ||
+            !IsExtensionRuntimeProgram(program.GetString()) ||
+            !data.TryGetProperty(pathField, out var path) || path.ValueKind != JsonValueKind.String ||
+            path.GetString()!.Length >= 32767 || path.GetString()!.Contains('\0'))
+            throw new InvalidDataException("Invalid extension runtime payload.");
+        return (program.GetString()!, path.GetString()!);
+    }
 
     public static EnsureIndexerServiceCommand ParseEnsureIndexerService(ProtocolEnvelope envelope)
     {

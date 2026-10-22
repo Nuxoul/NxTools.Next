@@ -538,12 +538,25 @@ fn category_directory_cannot_escape_through_a_real_junction() {
     let error = engine
         .enqueue(candidate, RequestOrigin::Ui)
         .expect_err("junction escape must be rejected at the real filesystem boundary");
-    assert!(matches!(
-        error,
+    let rejected_escape = matches!(
+        &error,
         nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
             nxtools_download::DownloadOrganizationPolicyError::InvalidCategoryDirectory
         )
-    ));
+    ) || matches!(
+        &error,
+        nxtools_download::DownloadEngineError::DownloadOrganizationPolicy(
+            nxtools_download::DownloadOrganizationPolicyError::Io(native)
+        ) if native.raw_os_error() == Some(448)
+    );
+    assert!(
+        rejected_escape,
+        "isolated junction rejection returned {error:?}"
+    );
+    assert!(
+        engine.tasks().expect("read isolated tasks").is_empty(),
+        "rejected junction must not admit a task"
+    );
     assert!(!outside.path().join("Nested").exists());
 }
 

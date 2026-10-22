@@ -1,0 +1,7 @@
+{"file":".trellis/spec/nxtools-indexer/backend/index.md","reason":"Owner navigation and no unrestricted scan/release evidence boundary"}
+{"file":".trellis/spec/nxtools-indexer/backend/database-guidelines.md","reason":"Mapped base/delta compatibility and persistence fault ownership"}
+{"file":".trellis/spec/shared/verification.md","reason":"Serialized memory-safe Rust and separately authorized LocalSystem restart/search gate"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Verified SwiftList live/startup persistence chains and Listary managed-only limits; read bounded relevant sections"}
+{"file":".trellis/tasks/10-17-indexer-idle-io/prd.md","reason":"Measured sustained write symptom and proportional write/recovery acceptance"}
+{"file":".trellis/tasks/10-17-indexer-idle-io/design.md","reason":"Checksummed append commit, bounded checkpoint and original failure/search contract"}
+{"file":".trellis/tasks/10-17-indexer-idle-io/implement.md","reason":"Red-first actual process byte metric, safe tests and no installed mutation"}

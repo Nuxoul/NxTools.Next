@@ -13,7 +13,7 @@ namespace NxTools.PlatformHost.Windows;
 
 internal sealed partial class WindowsPlatformAdapter
 {
-    internal sealed class EventWindow : NativeWindow, IWindowsPasteOperations
+    internal sealed partial class EventWindow : NativeWindow, IWindowsPasteOperations
     {
         private const int WmHotKey = 0x0312;
         private const int WmClipboardUpdate = 0x031D;
@@ -35,6 +35,8 @@ internal sealed partial class WindowsPlatformAdapter
         private const int WmCenteredResizeRecoveryRequested = 0x800D;
         private const int WmRefreshSystemMotion = 0x800E;
         private const int WmDisplayChange = 0x007E;
+        private const int WmFlushContextMenuPointer = 0x800F;
+        private const int WmClipboardPause = 0x8010;
         private const uint EventSystemForeground = 0x0003;
         private const uint EventSystemMoveSizeEnd = 0x000B;
         private const uint EventObjectCreate = 0x8000;
@@ -84,6 +86,9 @@ internal sealed partial class WindowsPlatformAdapter
         private bool _systemMotionRetryFailed;
         private readonly PendingMotionPublication _pendingMotion = new();
         internal MotionPreferenceSnapshot SystemMotionSnapshot => _systemMotion.Snapshot;
+        private readonly SystemThemePreference _systemTheme = new(new WindowsSystemThemeReader());
+        private readonly PendingThemePublication _pendingTheme = new();
+        internal ThemePreferenceSnapshot SystemThemeSnapshot => _systemTheme.Snapshot;
         private readonly FileDialogRecognitionRetry _fileDialogRecognitionRetry =
             new(FileDialogRecognitionMaxAttempts);
         private readonly FileDialogRecognitionRetry _directorySourceRecognitionRetry =
@@ -97,8 +102,23 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly QuickLaunchSummonDiagnosticGate _quickLaunchSummonDiagnosticGate = new();
         private bool _quickLaunchSuppressInExclusiveFullscreen = true;
         private readonly ConcurrentQueue<DesktopShellConfigurationRequest> _desktopShellConfigurationRequests = new();
-        private readonly ConcurrentQueue<(long WindowHandle, string Directory, string DisplayName)>
-            _resolvedDirectorySources = new();
+        // Event-thread owned: one physical capture and one coalesced source/return intent.
+        // A logical cancellation never frees the occupied native runner slot early.
+        private readonly ConcurrentQueue<ExplorerCaptureCompletion> _resolvedDirectorySources = new();
+        private ExplorerCaptureOperation? _explorerCapture;
+        private DirectoryNavigationContext? _explorerSource;
+        private ExplorerReturnIntent? _explorerReturn;
+        private long _explorerSourceEpoch;
+        private bool _explorerSourceNeedsCapture;
+        private bool _explorerCaptureStopped;
+        private sealed record ExplorerReturnIntent(AutoQuickSwitchCandidate Candidate, Guid CorrelationId, long StartedAt, long RequestedAtUnixMs);
+        private sealed record ExplorerCaptureOperation(long Epoch, long WindowHandle, bool ForReturn, Guid CorrelationId, long StartedAt);
+        private sealed record ExplorerCaptureCompletion(ExplorerCaptureOperation Operation, string? Directory, string? FailureKind);
+        private readonly Func<long, string?> _captureExplorerDirectory = CaptureExplorerDirectory;
+        private readonly Action<Action> _runExplorerWork = work => { _ = Task.Run(work); };
+        private readonly Action<Action> _deferExplorerDelivery;
+        private readonly Func<long, bool> _isExplorerReturnForeground = window =>
+            NativeMethods.IsForegroundWindowForTarget(new IntPtr(window));
         private readonly NativeMethods.WinEventDelegate _foregroundCallback;
         private readonly NativeMethods.WinEventDelegate _fileDialogWindowCallback;
         private IntPtr _foregroundHook;
@@ -169,20 +189,29 @@ internal sealed partial class WindowsPlatformAdapter
                 ? _quickLaunchKeyboardMonitor?.IsInstalled == true
                 : _quickLaunchHotKeyRegistration?.IsAvailable == true);
 
+        private readonly NativeContextMenuCoordinator? _contextMenus;
+
         public EventWindow(
             ChannelWriter<WindowsPlatformEvent> events,
             ForegroundContextProvider foregroundContextProvider,
             IElevatedDirectoryNavigationChannel elevatedDirectoryNavigation,
             IPlatformLog log,
-            ClipboardCaptureDropDiagnosticGate clipboardCaptureDropDiagnosticGate)
+            ClipboardCaptureDropDiagnosticGate clipboardCaptureDropDiagnosticGate,
+            NativeContextMenuCoordinator? contextMenus = null)
         {
             _events = events;
             _foregroundContextProvider = foregroundContextProvider;
             _elevatedDirectoryNavigation = elevatedDirectoryNavigation;
             _log = log;
             _clipboardCaptureDropDiagnosticGate = clipboardCaptureDropDiagnosticGate;
+            _contextMenus = contextMenus;
             _foregroundCallback = OnForegroundChanged;
             _fileDialogWindowCallback = OnFileDialogWindowChanged;
+            _clipboardCapture = CreateClipboardCaptureOperations();
+            _deferExplorerDelivery = delivery =>
+            {
+                _ = NativeMethods.PostMessage(Handle, WmDirectorySourceResolved, IntPtr.Zero, IntPtr.Zero);
+            };
             CreateHandle(new CreateParams
             {
                 Caption = "NxTools.PlatformHost.Events",
@@ -217,6 +246,7 @@ internal sealed partial class WindowsPlatformAdapter
             SystemEvents.DisplaySettingsChanged += OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged += OnSystemUserPreferenceChanged;
             _systemMotion.Refresh(out _);
+            _systemTheme.Refresh(out _);
             _hotKeyRegistration = new ClipboardHotKeyRegistration(
                 new NativeClipboardHotKeyRegistrar(() => Handle, ClipboardHotKeyId),
                 new ClipboardHotKeyBinding(ModAlt, VkC, "Alt+C"));
@@ -252,6 +282,43 @@ internal sealed partial class WindowsPlatformAdapter
                 IntPtr.Zero);
 
             ProcessForeground(_foregroundContextProvider.Capture());
+        }
+
+        // Isolated caller seam: no HWND, hooks, clipboard listener, COM or global input.
+        internal EventWindow(
+            ChannelWriter<WindowsPlatformEvent> events,
+            IPlatformLog log,
+            Func<long, string?> captureExplorerDirectory,
+            Action<Action> runExplorerWork,
+            Action<Action> deferExplorerDelivery,
+            Func<long, bool> isReturnForeground)
+        {
+            _events = events;
+            _log = log;
+            _foregroundContextProvider = new ForegroundContextProvider();
+            _elevatedDirectoryNavigation = null!;
+            _clipboardCaptureDropDiagnosticGate = new();
+            _foregroundCallback = OnForegroundChanged;
+            _fileDialogWindowCallback = OnFileDialogWindowChanged;
+            _captureExplorerDirectory = captureExplorerDirectory;
+            _runExplorerWork = runExplorerWork;
+            _deferExplorerDelivery = deferExplorerDelivery;
+            _isExplorerReturnForeground = isReturnForeground;
+            _clipboardCapture = CreateClipboardCaptureOperations();
+            _autoQuickSwitch.Configure(true);
+        }
+
+        private static string? CaptureExplorerDirectory(long windowHandle) =>
+            ExplorerWindowAdapter.TryGetCurrentDirectory(windowHandle, out var directory, out _)
+                ? directory : null;
+
+        internal void ObserveExplorerDirectorySource(DirectoryNavigationContext source, string processName)
+        {
+            CancelExplorerDirectoryCapture("superseded");
+            _autoQuickSwitch.ObserveDirectorySource(source, DirectorySourceDisplayName(processName, source));
+            _explorerSource = source;
+            _explorerSourceNeedsCapture = true;
+            QueueExplorerDirectoryResolution(source.WindowHandle);
         }
 
         public Task<WindowsCommandResult> EnqueuePaste(
@@ -338,6 +405,7 @@ internal sealed partial class WindowsPlatformAdapter
 
         public void RequestStop()
         {
+            CancelClipboardPauseRequests();
             _ = NativeMethods.PostMessage(Handle, WmClose, IntPtr.Zero, IntPtr.Zero);
         }
 
@@ -419,15 +487,11 @@ internal sealed partial class WindowsPlatformAdapter
         {
             switch (message.Msg)
             {
+                case WmFlushContextMenuPointer:
+                    MonitorPointerPress();
+                    return;
                 case WmClipboardUpdate:
-                    if (_suppressNextClipboardUpdate)
-                    {
-                        _suppressNextClipboardUpdate = false;
-                        return;
-                    }
-                    _pendingClipboardSource = _foregroundContextProvider.Capture();
-                    _clipboardReadAttempts = 0;
-                    TryPublishClipboardContent();
+                    HandleClipboardUpdate();
                     return;
                 case WmHotKey when message.WParam.ToInt32() == ClipboardHotKeyId:
                     if (_clipboardHotKeyDebouncer.TryAccept(Environment.TickCount64))
@@ -439,8 +503,7 @@ internal sealed partial class WindowsPlatformAdapter
                     PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.HotKey);
                     return;
                 case WmTimer when message.WParam.ToInt64() == RetryTimerId:
-                    _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
-                    TryPublishClipboardContent();
+                    HandleClipboardRetry();
                     return;
                 case WmTimer when message.WParam.ToInt64() == PointerMonitorTimerId:
                     MonitorPointerPress();
@@ -495,6 +558,9 @@ internal sealed partial class WindowsPlatformAdapter
                     return;
                 case WmConfigureClipboard:
                     DrainClipboardConfigurationRequests();
+                    return;
+                case WmClipboardPause:
+                    DrainClipboardPauseRequests();
                     return;
                 case WmSetClipboardHotKeyRecording:
                     DrainClipboardHotKeyRecordingRequests();
@@ -803,148 +869,124 @@ internal sealed partial class WindowsPlatformAdapter
             paths.Count > 0 ||
             !string.IsNullOrWhiteSpace(text);
 
-        private void TryPublishClipboardContent()
+        private void ReadClipboardContent(ForegroundContext source, uint sequenceBefore)
         {
-            try
+            // Keep the gate at the actual native read boundary as well as update/retry dispatch.
+            if (Volatile.Read(ref _clipboardCaptureStopped) || !_clipboardPause.MayReadSequence(sequenceBefore)) return;
+            var capturedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var nativeFormats = NativeClipboardFormats.Capture(Handle).ToList();
+            var paths = Clipboard.ContainsFileDropList()
+                ? Clipboard.GetFileDropList()
+                    .Cast<string>()
+                    .Where(static path => !string.IsNullOrWhiteSpace(path))
+                    .Take(1024)
+                    .ToArray()
+                : [];
+            string? promotedFilePath = paths.Length == 1 ? paths[0] : null;
+            ClipboardImageData? imageData = null;
+            var stagingDirectory = Path.Combine(
+                Path.GetTempPath(), "NxTools.Next", "clipboard-staging");
+            var promoted = ClipboardImagePromotion.TryPromote(paths, text: null, stagingDirectory);
+            if (promoted is not null)
             {
-                var source = _pendingClipboardSource ?? _foregroundContextProvider.Capture();
-                if (_captureExclusions.Contains(source.ProcessName))
+                imageData = promoted.Image;
+                paths = promoted.RemainingPaths;
+            }
+            else if (Clipboard.ContainsImage())
+            {
+                using var image = Clipboard.GetImage();
+                if (image is not null)
                 {
-                    _log.Write("info", "clipboard.capture_excluded", null,
-                        new Dictionary<string, object?>
-                        {
-                            ["source_process_name"] = source.ProcessName
-                        });
-                    return;
+                    Directory.CreateDirectory(stagingDirectory);
+                    var path = Path.Combine(stagingDirectory, $"{Guid.NewGuid():N}.png");
+                    image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+                    imageData = new ClipboardImageData(
+                        path,
+                        checked((uint)image.Width),
+                        checked((uint)image.Height));
                 }
-                var capturedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                var sequenceBefore = NativeMethods.GetClipboardSequenceNumber();
-                var nativeFormats = NativeClipboardFormats.Capture(Handle).ToList();
-                var paths = Clipboard.ContainsFileDropList()
-                    ? Clipboard.GetFileDropList()
-                        .Cast<string>()
-                        .Where(static path => !string.IsNullOrWhiteSpace(path))
-                        .Take(1024)
-                        .ToArray()
-                    : [];
-                string? promotedFilePath = paths.Length == 1 ? paths[0] : null;
-                ClipboardImageData? imageData = null;
-                var stagingDirectory = Path.Combine(
-                    Path.GetTempPath(), "NxTools.Next", "clipboard-staging");
-                var promoted = ClipboardImagePromotion.TryPromote(paths, text: null, stagingDirectory);
+            }
+            string? text = null;
+            if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
+            {
+                text = Clipboard.GetText(TextDataFormat.UnicodeText);
+            }
+            if (imageData is null)
+            {
+                promoted = ClipboardImagePromotion.TryPromote(paths, text, stagingDirectory);
                 if (promoted is not null)
                 {
                     imageData = promoted.Image;
                     paths = promoted.RemainingPaths;
                 }
-                else if (Clipboard.ContainsImage())
+            }
+            if (!string.IsNullOrEmpty(text))
+            {
+                var textBytes = (ulong)Encoding.UTF8.GetByteCount(text);
+                if (!_captureLimits.AllowsText(textBytes))
                 {
-                    using var image = Clipboard.GetImage();
-                    if (image is not null)
+                    LogCaptureLimitSkip("text", "max_text_bytes", textBytes, _captureLimits.MaxTextBytes);
+                    text = null;
+                }
+            }
+            if (imageData is not null)
+            {
+                var outputBytes = File.Exists(imageData.StagingPath)
+                    ? (ulong)new FileInfo(imageData.StagingPath).Length
+                    : 0;
+                var reason = _captureLimits.ImageRejectionReason(
+                    imageData.Width, imageData.Height, outputBytes);
+                if (reason is not null)
+                {
+                    LogCaptureLimitSkip(
+                        "image",
+                        reason,
+                        reason == "max_image_pixels"
+                            ? checked((ulong)imageData.Width * imageData.Height)
+                            : outputBytes,
+                        reason == "max_image_pixels"
+                            ? _captureLimits.MaxImagePixels
+                            : _captureLimits.MaxImageBytes);
+                    if (promotedFilePath is not null && paths.Length == 0)
                     {
-                        Directory.CreateDirectory(stagingDirectory);
-                        var path = Path.Combine(stagingDirectory, $"{Guid.NewGuid():N}.png");
-                        image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-                        imageData = new ClipboardImageData(
-                            path,
-                            checked((uint)image.Width),
-                            checked((uint)image.Height));
+                        paths = [promotedFilePath];
                     }
+                    TryDeleteStagedImage(imageData.StagingPath);
+                    imageData = null;
                 }
-                string? text = null;
-                if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
-                {
-                    text = Clipboard.GetText(TextDataFormat.UnicodeText);
-                }
-                if (imageData is null)
-                {
-                    promoted = ClipboardImagePromotion.TryPromote(paths, text, stagingDirectory);
-                    if (promoted is not null)
-                    {
-                        imageData = promoted.Image;
-                        paths = promoted.RemainingPaths;
-                    }
-                }
-                if (!string.IsNullOrEmpty(text))
-                {
-                    var textBytes = (ulong)Encoding.UTF8.GetByteCount(text);
-                    if (!_captureLimits.AllowsText(textBytes))
-                    {
-                        LogCaptureLimitSkip("text", "max_text_bytes", textBytes, _captureLimits.MaxTextBytes);
-                        text = null;
-                    }
-                }
-                if (imageData is not null)
-                {
-                    var outputBytes = File.Exists(imageData.StagingPath)
-                        ? (ulong)new FileInfo(imageData.StagingPath).Length
-                        : 0;
-                    var reason = _captureLimits.ImageRejectionReason(
-                        imageData.Width, imageData.Height, outputBytes);
-                    if (reason is not null)
-                    {
-                        LogCaptureLimitSkip(
-                            "image",
-                            reason,
-                            reason == "max_image_pixels"
-                                ? checked((ulong)imageData.Width * imageData.Height)
-                                : outputBytes,
-                            reason == "max_image_pixels"
-                                ? _captureLimits.MaxImagePixels
-                                : _captureLimits.MaxImageBytes);
-                        if (promotedFilePath is not null && paths.Length == 0)
-                        {
-                            paths = [promotedFilePath];
-                        }
-                        TryDeleteStagedImage(imageData.StagingPath);
-                        imageData = null;
-                    }
-                }
+            }
 
-                if (HasUserClipboardContent(text, imageData, paths))
-                {
-                    var compatibilityFallbackAdded = TryAddImageCompatibilityFallbacks(
-                        sequenceBefore,
-                        imageData,
-                        paths.Length,
-                        text,
-                        nativeFormats,
-                        source);
-                    _log.Write("info", "clipboard.capture_completed", null,
-                        new Dictionary<string, object?>
-                        {
-                            ["sequence_before"] = sequenceBefore,
-                            ["sequence_after"] = NativeMethods.GetClipboardSequenceNumber(),
-                            ["image_compatibility_fallback_added"] = compatibilityFallbackAdded,
-                            ["native_format_count"] = nativeFormats.Count,
-                            ["has_image"] = imageData is not null,
-                            ["file_count"] = paths.Length,
-                            ["has_text"] = !string.IsNullOrEmpty(text),
-                            ["source_process_name"] = source.ProcessName
-                        });
-                    QueueCapturedEvent(text, imageData, paths, nativeFormats, source, capturedAt);
-                }
-                else
-                {
-                    _log.Write("info", "clipboard.capture_skipped", null,
-                        new Dictionary<string, object?>
-                        {
-                            ["reason"] = "no_content",
-                            ["native_format_count"] = nativeFormats.Count
-                        });
-                }
-            }
-            catch (ExternalException) when (++_clipboardReadAttempts < MaxClipboardReadAttempts)
+            if (HasUserClipboardContent(text, imageData, paths))
             {
-                _ = NativeMethods.SetTimer(Handle, (UIntPtr)RetryTimerId, 40, IntPtr.Zero);
+                var compatibilityFallbackAdded = TryAddImageCompatibilityFallbacks(
+                    sequenceBefore,
+                    imageData,
+                    paths.Length,
+                    text,
+                    nativeFormats,
+                    source);
+                _log.Write("info", "clipboard.capture_completed", null,
+                    new Dictionary<string, object?>
+                    {
+                        ["sequence_before"] = sequenceBefore,
+                        ["sequence_after"] = NativeMethods.GetClipboardSequenceNumber(),
+                        ["image_compatibility_fallback_added"] = compatibilityFallbackAdded,
+                        ["native_format_count"] = nativeFormats.Count,
+                        ["has_image"] = imageData is not null,
+                        ["file_count"] = paths.Length,
+                        ["has_text"] = !string.IsNullOrEmpty(text),
+                        ["source_process_name"] = source.ProcessName
+                    });
+                QueueCapturedEvent(text, imageData, paths, nativeFormats, source, capturedAt);
             }
-            catch (Exception error)
+            else
             {
-                _log.Write("error", "clipboard.capture_failed", null, new Dictionary<string, object?>
-                {
-                    ["exception_type"] = error.GetType().FullName,
-                    ["hresult"] = $"0x{error.HResult:X8}"
-                });
+                _log.Write("info", "clipboard.capture_skipped", null,
+                    new Dictionary<string, object?>
+                    {
+                        ["reason"] = "no_content",
+                        ["native_format_count"] = nativeFormats.Count
+                    });
             }
         }
         private void LogCaptureLimitSkip(string kind, string reason, ulong sizeBytesOrPixels, ulong limit)
@@ -1212,6 +1254,10 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void ProcessForeground(ForegroundContext context)
         {
+            if (_explorerReturn is { } pendingReturn && context.WindowHandle != pendingReturn.Candidate.Target.WindowHandle)
+            {
+                ClearExplorerReturn("foreground_left");
+            }
             if (FileDialogSearchHost.CanReuseForeground(
                     _fileDialogSearchEnabled,
                     _fileDialogSearchHostVisible,
@@ -1268,18 +1314,14 @@ internal sealed partial class WindowsPlatformAdapter
                 var displayName = DirectorySourceDisplayName(
                     context.ProcessName,
                     directorySource);
-                _autoQuickSwitch.ObserveDirectorySource(
-                    directorySource,
-                    displayName);
-                if (directorySource.Host.Equals(
-                        DirectoryNavigationAdapter.ExplorerHost,
-                        StringComparison.Ordinal) &&
-                    string.IsNullOrWhiteSpace(
-                        directorySource.CurrentDirectory))
+                if (directorySource.Host.Equals(DirectoryNavigationAdapter.ExplorerHost, StringComparison.Ordinal))
                 {
-                    QueueExplorerDirectoryResolution(
-                        directorySource.WindowHandle,
-                        context.ProcessName);
+                    ObserveExplorerDirectorySource(directorySource, context.ProcessName);
+                }
+                else
+                {
+                    CancelExplorerDirectoryCapture("source_superseded");
+                    _autoQuickSwitch.ObserveDirectorySource(directorySource, displayName);
                 }
                 CancelDirectorySourceRecognition();
                 return;
@@ -1288,6 +1330,7 @@ internal sealed partial class WindowsPlatformAdapter
                 directoryAttempt.Failure?.Fatal != true &&
                 ThirdPartyFileManagerAdapter.IsPotentialHost(context))
             {
+                CancelExplorerDirectoryCapture("source_superseded");
                 _autoQuickSwitch.DiscardPendingSource();
                 ScheduleDirectorySourceRecognition(context.WindowHandle);
                 return;
@@ -1304,6 +1347,7 @@ internal sealed partial class WindowsPlatformAdapter
             CancelDirectorySourceRecognition();
             if (!IsNxToolsDesktopProcess(context.ProcessName))
             {
+                CancelExplorerDirectoryCapture("foreground_left");
                 _autoQuickSwitch.ObserveOther();
             }
         }
@@ -1654,8 +1698,12 @@ internal sealed partial class WindowsPlatformAdapter
         }
 
 
-        private void ProcessRecognizedFileDialog(FileDialogContext fileDialog)
+        internal void ProcessRecognizedFileDialog(FileDialogContext fileDialog)
         {
+            if (_explorerReturn is { } pending && pending.Candidate.Target.WindowHandle != fileDialog.WindowHandle)
+            {
+                ClearExplorerReturn("target_superseded");
+            }
             var target = new DirectoryNavigationContext(
                 DirectoryNavigationAdapter.FileDialogHost,
                 fileDialog.WindowHandle,
@@ -1675,52 +1723,134 @@ internal sealed partial class WindowsPlatformAdapter
             }
         }
 
-        private void QueueExplorerDirectoryResolution(
-            long windowHandle,
-            string processName)
+        private void QueueExplorerDirectoryResolution(long windowHandle)
         {
-            _ = Task.Run(() =>
+            if (_explorerCaptureStopped || _explorerCapture is not null ||
+                _explorerSource is not { } source || source.WindowHandle != windowHandle ||
+                (!_explorerSourceNeedsCapture && _explorerReturn is null))
             {
-                if (!ExplorerWindowAdapter.TryGetCurrentDirectory(
-                        windowHandle,
-                        out var directory,
-                        out _)
-                    || string.IsNullOrWhiteSpace(directory))
+                return;
+            }
+            var intent = _explorerReturn;
+            var operation = new ExplorerCaptureOperation(_explorerSourceEpoch, windowHandle,
+                intent is not null, intent?.CorrelationId ?? Guid.NewGuid(), intent?.StartedAt ?? Stopwatch.GetTimestamp());
+            _explorerCapture = operation; // Install ownership before dispatch, including immediate completions.
+            _explorerSourceNeedsCapture = false;
+            if (intent is null) LogExplorerCapture(operation.CorrelationId, operation.StartedAt, "accepted", "activation");
+            _runExplorerWork(() =>
+            {
+                LogExplorerCapture(operation.CorrelationId, operation.StartedAt, "start", operation.ForReturn ? "return" : "activation");
+                string? directory = null;
+                string? failure = null;
+                try
                 {
-                    return;
+                    directory = _captureExplorerDirectory(windowHandle);
+                    if (string.IsNullOrWhiteSpace(directory)) failure = "capture_failed";
                 }
-                var context = new DirectoryNavigationContext(
-                    DirectoryNavigationAdapter.ExplorerHost,
-                    windowHandle,
-                    directory);
-                _resolvedDirectorySources.Enqueue((
-                    windowHandle,
-                    directory,
-                    DirectorySourceDisplayName(processName, context)));
-                _ = NativeMethods.PostMessage(
-                    Handle,
-                    WmDirectorySourceResolved,
-                    IntPtr.Zero,
-                    IntPtr.Zero);
+                catch (Exception error)
+                {
+                    failure = error.GetType().Name; // Never a raw COM message/path.
+                }
+                _resolvedDirectorySources.Enqueue(new(operation, directory, failure));
+                _deferExplorerDelivery(DrainResolvedDirectorySources);
             });
         }
 
-        private void DrainResolvedDirectorySources()
+        internal void DrainResolvedDirectorySources()
         {
             var changed = false;
-            while (_resolvedDirectorySources.TryDequeue(out var source))
+            while (_resolvedDirectorySources.TryDequeue(out var completion))
             {
-                changed |= _autoQuickSwitch.ResolveDirectorySource(
-                    source.WindowHandle,
-                    source.Directory,
-                    source.DisplayName);
+                var operation = completion.Operation;
+                if (!ReferenceEquals(_explorerCapture, operation)) continue;
+                _explorerCapture = null;
+                // Cancellation already emitted this return's terminal. A late completion cannot
+                // borrow a newer intent or emit a second terminal for the retired correlation.
+                if (operation.ForReturn && _explorerReturn?.CorrelationId != operation.CorrelationId) continue;
+                if (_explorerCaptureStopped || operation.Epoch != _explorerSourceEpoch ||
+                    _explorerSource?.WindowHandle != operation.WindowHandle)
+                {
+                    if (operation.ForReturn) ClearExplorerReturn("stale");
+                    else LogExplorerCapture(operation.CorrelationId, operation.StartedAt, "terminal", "stale");
+                    continue;
+                }
+                if (completion.FailureKind is not null || string.IsNullOrWhiteSpace(completion.Directory))
+                {
+                    if (operation.ForReturn) ClearExplorerReturn(completion.FailureKind ?? "capture_failed");
+                    else
+                    {
+                        LogExplorerCapture(operation.CorrelationId, operation.StartedAt, "terminal", completion.FailureKind ?? "capture_failed");
+                        ClearExplorerReturn("source_failed");
+                    }
+                    continue;
+                }
+                LogExplorerCapture(operation.CorrelationId, operation.StartedAt, "ready", operation.ForReturn ? "return" : "activation");
+                changed |= _autoQuickSwitch.ResolveDirectorySource(operation.WindowHandle, completion.Directory,
+                    DirectorySourceDisplayName("explorer", _explorerSource with { CurrentDirectory = completion.Directory }));
+                if (operation.ForReturn && _explorerReturn is { } intent)
+                {
+                    _explorerReturn = null;
+                    var candidate = intent.Candidate;
+                    var current = _autoQuickSwitch.IsCurrent(candidate) &&
+                        _isExplorerReturnForeground(candidate.Target.WindowHandle);
+                    var published = current && _events.TryWrite(new QuickLaunchAutoSwitchRequestedEvent(
+                        candidate.Target, completion.Directory, intent.RequestedAtUnixMs));
+                    LogExplorerCapture(intent.CorrelationId, intent.StartedAt, "terminal",
+                        published ? "requested" : current ? "event_queue_full" : "stale_target");
+                }
+                else
+                {
+                    LogExplorerCapture(operation.CorrelationId, operation.StartedAt, "terminal", "source_published");
+                }
             }
-            if (changed &&
-                _fileDialogSearchHostVisible &&
-                _activeFileDialogSearchHost is { } snapshot)
+            if (_explorerReturn is { } pending &&
+                (!_autoQuickSwitch.IsCurrent(pending.Candidate) || !_isExplorerReturnForeground(pending.Candidate.Target.WindowHandle)))
+            {
+                ClearExplorerReturn("stale_target");
+            }
+            if (_explorerSource is { } next) QueueExplorerDirectoryResolution(next.WindowHandle);
+            if (changed && _fileDialogSearchHostVisible && _activeFileDialogSearchHost is { } snapshot)
             {
                 PublishFileDialogSearchHost(snapshot, force: true);
             }
+        }
+
+        private void LogExplorerCapture(Guid correlationId, long startedAt, string stage, string outcome)
+        {
+            // Diagnostic failure cannot change admission/completion. No paths, titles or raw errors.
+            try
+            {
+                _log.Write("info", "quick_launch.explorer_source_" + stage, correlationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["source_epoch"] = _explorerSourceEpoch,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds,
+                        ["outcome"] = outcome
+                    });
+            }
+            catch { }
+        }
+
+        private void ClearExplorerReturn(string reason)
+        {
+            if (_explorerReturn is not { } intent) return;
+            _explorerReturn = null;
+            LogExplorerCapture(intent.CorrelationId, intent.StartedAt, "terminal", reason);
+        }
+
+        internal void CancelExplorerDirectoryCapture(string reason, bool stop = false)
+        {
+            ClearExplorerReturn(reason);
+            _explorerSourceEpoch++;
+            _explorerSource = null;
+            _explorerSourceNeedsCapture = false;
+            _explorerCaptureStopped |= stop;
+        }
+
+        internal void ExplorerCaptureWindowUnavailable(long windowHandle)
+        {
+            if (_explorerSource?.WindowHandle == windowHandle) CancelExplorerDirectoryCapture("source_destroyed");
+            else if (_explorerReturn?.Candidate.Target.WindowHandle == windowHandle) ClearExplorerReturn("target_unavailable");
         }
 
         private static string DirectorySourceDisplayName(
@@ -2021,6 +2151,10 @@ internal sealed partial class WindowsPlatformAdapter
             }
 
             var rootWindowHandle = NativeMethods.GetRootWindowHandle(window);
+            if ((eventType is EventObjectDestroy or EventObjectHide) && objectId == ObjIdWindow)
+            {
+                ExplorerCaptureWindowUnavailable(window.ToInt64());
+            }
             if (TaskbarOverlayPlacement.IsTaskbarWindow(window) ||
                 TaskbarOverlayPlacement.IsTaskbarWindow(new IntPtr(rootWindowHandle)))
             {
@@ -2145,7 +2279,7 @@ internal sealed partial class WindowsPlatformAdapter
             UserPreferenceChangedEventArgs eventArgs)
         {
             RequestTaskbarOverlayReposition();
-            // SystemEvents runs on its own broadcast window; marshal SPI reads to our STA.
+            // SystemEvents owns a broadcast window; marshal motion/theme reads to our STA.
             if (!_systemMotionStopped)
             {
                 _ = NativeMethods.PostMessage(Handle, WmRefreshSystemMotion, IntPtr.Zero, IntPtr.Zero);
@@ -2156,14 +2290,17 @@ internal sealed partial class WindowsPlatformAdapter
         {
             if (_systemMotionStopped) return;
             if (_systemMotion.Refresh(out var snapshot)) _pendingMotion.Stage(snapshot);
+            if (_systemTheme.Refresh(out var themeSnapshot)) _pendingTheme.Stage(themeSnapshot);
             PublishPendingSystemMotion();
         }
 
         private void PublishPendingSystemMotion()
         {
             if (_systemMotionStopped) return;
+            var themeStarted = Stopwatch.GetTimestamp();
+            var themeDelivered = _pendingTheme.TryPublish(value => _events.TryWrite(value));
             var delivered = _pendingMotion.TryPublish(value => _events.TryWrite(value));
-            if (_pendingMotion.HasPending)
+            if (_pendingMotion.HasPending || _pendingTheme.HasPending)
             {
                 var timer = NativeMethods.SetTimer(Handle, (UIntPtr)SystemMotionRetryTimerId, 250, IntPtr.Zero);
                 if (timer == UIntPtr.Zero)
@@ -2174,8 +2311,8 @@ internal sealed partial class WindowsPlatformAdapter
                         _systemMotionRetryFailed = true;
                         try
                         {
-                            _log.Write("warning", "system.motion.retry_timer_failed",
-                                _pendingMotion.PendingCorrelationId ?? Guid.Empty,
+                            _log.Write("warning", "system.preference.retry_timer_failed",
+                                _pendingTheme.PendingCorrelationId ?? _pendingMotion.PendingCorrelationId ?? Guid.Empty,
                                 new Dictionary<string, object?>
                                 {
                                     ["native_error_code"] = nativeError == 0 ? -1 : nativeError,
@@ -2192,22 +2329,37 @@ internal sealed partial class WindowsPlatformAdapter
                 _ = NativeMethods.KillTimer(Handle, (UIntPtr)SystemMotionRetryTimerId);
                 _systemMotionRetryFailed = false;
             }
-            if (delivered is null) return;
-            var correlationId = delivered.CorrelationId;
-            var snapshot = new MotionPreferenceSnapshot(delivered.ReducedMotion, delivered.NativeErrorCode);
-            var started = Stopwatch.StartNew();
-            try
+            if (themeDelivered is not null)
             {
-                _log.Write(snapshot.NativeErrorCode == 0 ? "info" : "warning",
-                    "system.motion.preference_changed",
-                    correlationId, new Dictionary<string, object?>
-                    {
-                        ["reduced_motion"] = snapshot.ReducedMotion,
-                        ["native_error_code"] = snapshot.NativeErrorCode,
-                        ["elapsed_ms"] = started.ElapsedMilliseconds
-                    });
+                try
+                {
+                    _log.Write(themeDelivered.NativeErrorCode == 0 ? "info" : "warning",
+                        "system.theme.preference_changed", themeDelivered.CorrelationId,
+                        new Dictionary<string, object?>
+                        {
+                            ["dark"] = themeDelivered.Dark,
+                            ["native_error_code"] = themeDelivered.NativeErrorCode,
+                            ["elapsed_ms"] = Stopwatch.GetElapsedTime(themeStarted).TotalMilliseconds
+                        });
+                }
+                catch { /* Diagnostic delivery cannot affect preference state. */ }
             }
-            catch { /* Diagnostic delivery cannot affect preference state. */ }
+            if (delivered is not null)
+            {
+                var started = Stopwatch.StartNew();
+                try
+                {
+                    _log.Write(delivered.NativeErrorCode == 0 ? "info" : "warning",
+                        "system.motion.preference_changed", delivered.CorrelationId,
+                        new Dictionary<string, object?>
+                        {
+                            ["reduced_motion"] = delivered.ReducedMotion,
+                            ["native_error_code"] = delivered.NativeErrorCode,
+                            ["elapsed_ms"] = started.ElapsedMilliseconds
+                        });
+                }
+                catch { /* Diagnostic delivery cannot affect preference state. */ }
+            }
         }
 
         private void RequestTaskbarOverlayReposition()
@@ -2265,43 +2417,26 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void QueueAutoQuickSwitch(AutoQuickSwitchCandidate candidate)
         {
+            if (candidate.Source.Host.Equals(DirectoryNavigationAdapter.ExplorerHost, StringComparison.Ordinal))
+            {
+                if (_explorerCaptureStopped || !_autoQuickSwitch.IsCurrent(candidate) ||
+                    _explorerSource?.WindowHandle != candidate.SourceWindowHandle) return;
+                ClearExplorerReturn("superseded");
+                _explorerReturn = new(candidate, Guid.NewGuid(), Stopwatch.GetTimestamp(), DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+                LogExplorerCapture(_explorerReturn.CorrelationId, _explorerReturn.StartedAt, "accepted", "return");
+                // Even a ready activation snapshot may predate Explorer navigation. Serialize one fresh
+                // return read AFTER any in-flight activation read, rather than racing the same runner key.
+                QueueExplorerDirectoryResolution(candidate.SourceWindowHandle);
+                return;
+            }
             var requestedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            _ = Task.Run(() =>
+            _runExplorerWork(() =>
             {
                 if (!_autoQuickSwitch.IsCurrent(candidate))
                 {
                     return;
                 }
                 var sourceDirectory = candidate.Source.CurrentDirectory;
-                string? captureError = null;
-                if (string.IsNullOrWhiteSpace(sourceDirectory) &&
-                    candidate.Source.Host.Equals(
-                        DirectoryNavigationAdapter.ExplorerHost,
-                        StringComparison.Ordinal) &&
-                    ExplorerWindowAdapter.TryGetCurrentDirectory(
-                        candidate.SourceWindowHandle,
-                        out var resolvedDirectory,
-                        out captureError))
-                {
-                    sourceDirectory = resolvedDirectory;
-                    if (!string.IsNullOrWhiteSpace(sourceDirectory))
-                    {
-                        _resolvedDirectorySources.Enqueue((
-                            candidate.SourceWindowHandle,
-                            sourceDirectory,
-                            DirectorySourceDisplayName(
-                                "explorer",
-                                candidate.Source with
-                                {
-                                    CurrentDirectory = sourceDirectory
-                                })));
-                        _ = NativeMethods.PostMessage(
-                            Handle,
-                            WmDirectorySourceResolved,
-                            IntPtr.Zero,
-                            IntPtr.Zero);
-                    }
-                }
                 if (string.IsNullOrWhiteSpace(sourceDirectory))
                 {
                     _log.Write("warning", "quick_launch.auto_switch_source_failed", null,
@@ -2309,13 +2444,12 @@ internal sealed partial class WindowsPlatformAdapter
                         {
                             ["source_window_handle"] = candidate.SourceWindowHandle,
                             ["target_window_handle"] = candidate.Target.WindowHandle,
-                            ["error"] = captureError
+                            ["failure_kind"] = "capture_failed"
                         });
                     return;
                 }
                 if (!_autoQuickSwitch.IsCurrent(candidate) ||
-                    !NativeMethods.IsForegroundWindowForTarget(
-                        new IntPtr(candidate.Target.WindowHandle)))
+                    !_isExplorerReturnForeground(candidate.Target.WindowHandle))
                 {
                     return;
                 }
@@ -2330,6 +2464,17 @@ internal sealed partial class WindowsPlatformAdapter
         {
             _events.TryWrite(new ForegroundChangedEvent(context));
         }
+
+        internal void FlushContextMenuPointerPress()
+        {
+            // Worker-only, bounded message barrier; no buffers whose lifetime can outlive timeout.
+            _ = SendMessageTimeoutW(Handle, WmFlushContextMenuPointer, IntPtr.Zero, IntPtr.Zero,
+                0x0002, 200, out _);
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SendMessageTimeoutW(IntPtr window, int message, IntPtr wParam,
+            IntPtr lParam, uint flags, uint timeout, out UIntPtr result);
 
         private void MonitorPointerPress()
         {
@@ -2347,6 +2492,7 @@ internal sealed partial class WindowsPlatformAdapter
             var sampledAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var eventSequence = NextPlatformEventSequence();
             var target = NativeMethods.GetPointerTarget();
+            _contextMenus?.ObservePointerPress(target.WindowHandle, target.RootWindowHandle);
             _events.TryWrite(new GlobalPointerPressedEvent(
                 target.WindowHandle,
                 target.RootWindowHandle,
@@ -2793,6 +2939,7 @@ internal sealed partial class WindowsPlatformAdapter
 
         private WindowsCommandResult ApplyQuickLaunchConfiguration(ConfigureQuickLaunchCommand command)
         {
+            CancelExplorerDirectoryCapture("configuration_changed");
             _autoQuickSwitchEnabled = command.Enabled && command.AutoQuickSwitchEnabled;
             var fileDialogSearchEnabled =
                 command.Enabled && command.FileDialogSearchEnabled;
@@ -3028,13 +3175,15 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void Stop()
         {
+            StopClipboardCapture();
+            CancelExplorerDirectoryCapture("stopped", stop: true);
             ConfigureTrayIcon(false, string.Empty);
             _systemMotionStopped = true;
             _pendingMotion.Stop();
+            _pendingTheme.Stop();
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)SystemMotionRetryTimerId);
             SystemEvents.DisplaySettingsChanged -= OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged -= OnSystemUserPreferenceChanged;
-            _ = NativeMethods.KillTimer(Handle, (UIntPtr)RetryTimerId);
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)PointerMonitorTimerId);
             _ = NativeMethods.KillTimer(
                 Handle,

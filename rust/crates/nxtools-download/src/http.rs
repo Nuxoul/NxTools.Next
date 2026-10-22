@@ -34,6 +34,8 @@ const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// Deadline for a single probe request (headers only). The 30 s transfer
 /// stall timeout is far too long for an interactive dialog.
 const PROBE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
+/// A usable response may briefly collect complementary headers, never wait a full stalled request.
+const PROBE_COMPANION_GRACE: Duration = Duration::from_millis(350);
 
 #[derive(Clone)]
 pub struct HttpDownloadClient {
@@ -162,13 +164,10 @@ impl HttpDownloadClient {
         let probe_started = Instant::now();
         let mut timings = ProbeTimings::default();
 
-        // Probe latency: HEAD and the Range GET run CONCURRENTLY and both are
-        // awaited, so metadata that only one of them carries (for example a
-        // HEAD-only `Content-Disposition`) is never dropped. Each attempt has
-        // its own short deadline instead of the 30 s transfer stall timeout
-        // (the old product used 6 s HEAD / 18 s GET), so one slow request is
-        // bounded. The full GET only runs when both racing probes failed
-        // outright.
+        // Start both methods on the same immutable routed client. Once usable headers arrive,
+        // collect complementary metadata for a bounded grace period (including HEAD-only names).
+        // Dropping an overdue companion cancels it; no detached response can mutate accepted state.
+        // A failed first response still waits for the other attempt before the original GET fallback.
         let head_future = async {
             let started = Instant::now();
             let result = self.probe_attempt(Method::HEAD, request, false).await;
@@ -179,8 +178,23 @@ impl HttpDownloadClient {
             let result = self.probe_attempt(Method::GET, request, true).await;
             (result, started.elapsed().as_millis() as u64)
         };
-        let (head_pair, ranged_result) = tokio::join!(head_future, ranged_future);
-        let head_result = Some(head_pair);
+        tokio::pin!(head_future, ranged_future);
+        let (head_result, ranged_result) = tokio::select! {
+            head = &mut head_future => {
+                let ranged = if head.0.as_ref().is_ok_and(usable_probe_response) {
+                    tokio::time::timeout(PROBE_COMPANION_GRACE, &mut ranged_future).await.ok()
+                } else { Some(ranged_future.await) };
+                (Some(head), ranged)
+            },
+            ranged = &mut ranged_future => {
+                let head = if ranged.0.as_ref().is_ok_and(usable_probe_response) {
+                    tokio::time::timeout(PROBE_COMPANION_GRACE, &mut head_future).await.ok()
+                } else { Some(head_future.await) };
+                (head, Some(ranged))
+            },
+        };
+        timings.head_companion_skipped = head_result.is_none();
+        timings.range_companion_skipped = ranged_result.is_none();
         let head = match head_result {
             Some((result, elapsed_ms)) => {
                 timings.head_ms = Some(elapsed_ms);
@@ -192,17 +206,23 @@ impl HttpDownloadClient {
             None => None,
         };
         let mut ranged_failure = None;
-        timings.range_ms = Some(ranged_result.1);
-        let ranged = match ranged_result.0 {
-            Ok(response) if response.status().is_success() => Some(response),
-            Ok(response) => {
-                ranged_failure = Some(HttpDownloadError::Status(response.status().as_u16()));
-                None
+        let ranged = match ranged_result {
+            Some((result, elapsed_ms)) => {
+                timings.range_ms = Some(elapsed_ms);
+                match result {
+                    Ok(response) if response.status().is_success() => Some(response),
+                    Ok(response) => {
+                        ranged_failure =
+                            Some(HttpDownloadError::Status(response.status().as_u16()));
+                        None
+                    }
+                    Err(error) => {
+                        ranged_failure = Some(error);
+                        None
+                    }
+                }
             }
-            Err(error) => {
-                ranged_failure = Some(error);
-                None
-            }
+            None => None,
         };
         let fallback = if head.is_none() && ranged.is_none() {
             let started = Instant::now();
@@ -269,6 +289,7 @@ impl HttpDownloadClient {
                 last_modified: metadata.last_modified,
             },
             media,
+            resolution: None,
         };
         match probe.media.as_ref() {
             Some(DownloadMediaProbe::Hls(_)) => {
@@ -467,6 +488,7 @@ impl HttpDownloadClient {
             TransferDirective::Pause => return Ok(HlsSegmentDownloadOutcome::Paused),
             TransferDirective::Cancel => return Ok(HlsSegmentDownloadOutcome::Cancelled),
         }
+        let _active_transfer = control.statistics.worker();
         let response_request = self.send(Method::GET, &segment_request, false);
         tokio::pin!(response_request);
         let mut response = tokio::select! {
@@ -543,6 +565,7 @@ impl HttpDownloadClient {
                 () = &mut bandwidth => {}
             }
             output.write_all(&chunk).await?;
+            control.statistics.add_bytes(chunk.len() as u64);
             // Flush per chunk: cancellation and checkpoint cleanup observe the
             // staging file on disk, so buffered bytes must reach the filesystem
             // as they arrive rather than waiting for segment completion.
@@ -754,6 +777,7 @@ impl HttpDownloadClient {
                     downloaded_bytes: segment.downloaded_bytes(),
                 });
             }
+            let _active_transfer = control.task.statistics.worker();
             let response_request = self.send_range(
                 request,
                 &probe.final_url,
@@ -886,6 +910,7 @@ impl HttpDownloadClient {
                             () = &mut bandwidth => {}
                         }
                         writer.write_all(&chunk).await?;
+                        control.task.statistics.add_bytes(chunk.len() as u64);
                         downloaded_bytes = downloaded_bytes
                             .checked_add(chunk.len() as u64)
                             .ok_or(HttpDownloadError::LengthOverflow)?;
@@ -1002,6 +1027,7 @@ impl HttpDownloadClient {
                 });
             }
         }
+        let _active_transfer = control.statistics.worker();
         let response_request = self.send(Method::GET, request, false);
         tokio::pin!(response_request);
         let mut response = tokio::select! {
@@ -1101,6 +1127,7 @@ impl HttpDownloadClient {
                         () = &mut bandwidth => {}
                     }
                     output.write_all(&chunk).await?;
+                    control.statistics.add_bytes(chunk.len() as u64);
                     downloaded_bytes = downloaded_bytes
                         .checked_add(chunk.len() as u64)
                         .ok_or(HttpDownloadError::LengthOverflow)?;
@@ -1416,6 +1443,7 @@ pub struct DownloadTransferControl {
     directive: watch::Sender<TransferDirective>,
     global_rate_limiter: DownloadRateLimiter,
     task_rate_limiter: DownloadRateLimiter,
+    pub(crate) statistics: crate::transfer_statistics::TransferStatistics,
 }
 
 #[derive(Debug, Clone)]
@@ -1464,6 +1492,9 @@ impl DownloadTransferControl {
             directive,
             global_rate_limiter,
             task_rate_limiter,
+            statistics: crate::transfer_statistics::TransferStatistics::new(Some(
+                crate::DownloadTransferStatistics::default(),
+            )),
         }
     }
 
@@ -1670,6 +1701,19 @@ pub struct ProbeTimings {
     pub fallback_ms: Option<u64>,
     pub manifest_ms: Option<u64>,
     pub total_ms: u64,
+    pub head_companion_skipped: bool,
+    pub range_companion_skipped: bool,
+}
+
+fn usable_probe_response(response: &Response) -> bool {
+    if !response.status().is_success() {
+        return false;
+    }
+    let content_type = header_string(response.headers().get(CONTENT_TYPE));
+    valid_probe_range(response)
+        || header_u64(response.headers().get(CONTENT_LENGTH)).is_some()
+        || is_hls_candidate(response.url(), content_type.as_deref())
+        || is_dash_candidate(response.url(), content_type.as_deref())
 }
 
 #[derive(Debug, Clone)]

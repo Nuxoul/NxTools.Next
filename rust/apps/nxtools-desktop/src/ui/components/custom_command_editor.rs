@@ -1,10 +1,12 @@
 use std::rc::Rc;
 
-use gpui::{AnyElement, App, Entity, IntoElement, Window, div, prelude::*, px};
-use gpui_component::button::ButtonVariants;
-use gpui_component::checkbox::Checkbox;
-use gpui_component::input::{Input, InputState};
-use gpui_component::{Sizable, Size};
+use gpui_kit::component::button::ButtonVariants;
+use gpui_kit::component::checkbox::Checkbox;
+use gpui_kit::component::form::{Field, Form};
+use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::{Sizable, Size};
+use gpui_kit::{AnyElement, App, Entity, IntoElement, Window, div, prelude::*, px};
 use nxtools_core::CustomCommandSettings;
 
 use crate::icons::MaterialIcon;
@@ -13,12 +15,11 @@ use crate::ui::components::action::{
     action_button, danger_ghost_button_variant, focusable_content, icon_action,
     labelled_icon_action, primary_button_variant,
 };
-use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,
-    SPACING_16,
-};
+use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+    LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+    TEXT_WORKBENCH_SUPPORT as TEXT_LABEL, UI_MONO_FONT_FAMILY,
 };
 
 const COMMAND_MASTER_WIDTH: f32 = 224.0;
@@ -198,7 +199,6 @@ fn command_master_row(
     let selector = format!("quick-launch-command-{index}");
     let title_selector = format!("quick-launch-command-title-{index}");
     let context_selector = format!("quick-launch-command-context-{index}");
-    let selection_selector = format!("quick-launch-command-selection-{index}");
     let title = if command.title.is_empty() {
         "未命名命令".to_owned()
     } else {
@@ -214,47 +214,27 @@ fn command_master_row(
     } else {
         format!("{keyword} · 已停用")
     };
+    let accessibility_label = format!("{title} {context}");
     let selected_command = command.clone();
-    let content = div()
-        .id(("quick-launch-command", index))
+    let content = ListItem::new(("quick-launch-command", index))
         .debug_selector(move || selector.clone())
+        .accessibility_label(accessibility_label)
+        .selected(selected)
+        .aria_selected(selected)
         .w_full()
         .h(px(COMMAND_MASTER_ROW_HEIGHT))
+        .py_0()
         .flex_none()
-        .relative()
         .border_b_1()
         .border_color(theme.border_subtle)
-        .bg(if selected {
-            theme.element_selected
-        } else {
-            theme.canvas
-        })
         .cursor_pointer()
-        .px(px(SPACING_12))
-        .flex()
-        .items_center()
-        .when(!selected, |row| {
-            row.hover(move |style| style.bg(theme.surface_hover))
-        })
-        .when(selected, |row| {
-            row.child(
-                div()
-                    .debug_selector(move || selection_selector.clone())
-                    .absolute()
-                    .left_0()
-                    .top_0()
-                    .h(px(COMMAND_MASTER_ROW_HEIGHT))
-                    .w(px(2.0))
-                    .bg(theme.accent),
-            )
-        })
         .child(
             div()
                 .min_w_0()
                 .flex_1()
                 .flex()
                 .flex_col()
-                .gap(px(SPACING_4))
+                .gap_0()
                 .child(
                     div()
                         .debug_selector(move || title_selector.clone())
@@ -319,6 +299,7 @@ fn command_detail(
         "选择程序",
     )
     .ghost()
+    .with_size(Size::Medium)
     .on_click(move |_event, window, cx| pick_program(&(), window, cx));
 
     let set_admin = Rc::clone(&actions.set_run_as_admin);
@@ -373,123 +354,101 @@ fn command_detail(
         )
         .child(
             div()
+                .id("quick-launch-command-form-scroll")
+                .debug_selector(|| "quick-launch-command-form-scroll".into())
                 .min_h_0()
                 .flex_1()
+                .overflow_y_scroll()
                 .p(px(SPACING_16))
-                .flex()
-                .flex_col()
-                .gap(px(SPACING_8))
                 .child(
                     div()
+                        .debug_selector(|| "quick-launch-command-form".into())
                         .w_full()
-                        .flex()
-                        .gap(px(SPACING_8))
-                        .child(command_input_field(
-                            theme,
-                            "quick-launch-command-field-keyword",
-                            "关键词",
-                            &inputs.keyword,
-                        ))
-                        .child(command_input_field(
-                            theme,
-                            "quick-launch-command-field-title",
-                            "显示名称",
-                            &inputs.title,
-                        )),
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .items_end()
-                        .gap(px(SPACING_8))
-                        .child(command_input_field(
-                            theme,
-                            "quick-launch-command-field-program",
-                            "程序",
-                            &inputs.program,
-                        ))
-                        .child(bounded_action_slot(
-                            "quick-launch-pick-command-program",
-                            picker_action.into_any_element(),
-                        )),
-                )
-                .child(
-                    div()
-                        .w_full()
-                        .flex()
-                        .gap(px(SPACING_8))
-                        .child(command_input_field(
-                            theme,
-                            "quick-launch-command-field-arguments",
-                            "参数模板",
-                            &inputs.arguments,
-                        ))
-                        .child(command_input_field(
-                            theme,
-                            "quick-launch-command-field-working-directory",
-                            "工作目录",
-                            &inputs.working_directory,
-                        )),
-                )
-                .child(
-                    div()
-                        .h(px(CONTROL_HEIGHT_ACTION))
-                        .w_full()
-                        .flex()
-                        .items_center()
-                        .gap(px(SPACING_16))
-                        .child(admin)
-                        .child(silent)
-                        .child(div().flex_1())
-                        .child(bounded_action_slot(
-                            "quick-launch-save-custom-command",
-                            save_action.into_any_element(),
-                        )),
+                        .child(
+                            Form::new()
+                                .columns(2)
+                                .child(command_input_field(
+                                    theme,
+                                    "quick-launch-command-field-keyword",
+                                    "关键词",
+                                    &inputs.keyword,
+                                ))
+                                .child(command_input_field(
+                                    theme,
+                                    "quick-launch-command-field-title",
+                                    "显示名称",
+                                    &inputs.title,
+                                ))
+                                .child(
+                                    Field::new().label("程序").col_span(2).child(
+                                        div()
+                                            .w_full()
+                                            .flex()
+                                            .items_center()
+                                            .gap_2()
+                                            .child(
+                                                div()
+                                                    .debug_selector(|| {
+                                                        "quick-launch-command-field-program".into()
+                                                    })
+                                                    .flex_1()
+                                                    .min_w_0()
+                                                    .child(
+                                                        Input::new(&inputs.program)
+                                                            .aria_label("程序"),
+                                                    ),
+                                            )
+                                            .child(bounded_action_slot(
+                                                "quick-launch-pick-command-program",
+                                                picker_action.into_any_element(),
+                                            )),
+                                    ),
+                                )
+                                .child(command_input_field(
+                                    theme,
+                                    "quick-launch-command-field-arguments",
+                                    "参数模板",
+                                    &inputs.arguments,
+                                ))
+                                .child(command_input_field(
+                                    theme,
+                                    "quick-launch-command-field-working-directory",
+                                    "工作目录",
+                                    &inputs.working_directory,
+                                ))
+                                .child(
+                                    Field::new().col_span(2).child(
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap_4()
+                                            .child(admin)
+                                            .child(silent),
+                                    ),
+                                )
+                                .footer(bounded_action_slot(
+                                    "quick-launch-save-custom-command",
+                                    save_action.into_any_element(),
+                                )),
+                        ),
                 ),
         )
         .into_any_element()
 }
 
 fn command_input_field(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
     label: &'static str,
     input: &Entity<InputState>,
-) -> AnyElement {
-    div()
-        .min_w_0()
-        .flex_1()
-        .flex()
-        .flex_col()
-        .gap(px(SPACING_4))
-        .child(
-            div()
-                .h(px(LINE_HEIGHT_LABEL))
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .text_color(theme.text_muted)
-                .child(label),
-        )
-        .child(
-            div()
-                .debug_selector(move || selector.into())
-                .h(px(CONTROL_HEIGHT_INPUT))
-                .rounded(px(RADIUS_CONTROL))
-                .border_1()
-                .border_color(theme.border)
-                .bg(theme.canvas)
-                .px(px(SPACING_8))
-                .flex()
-                .items_center()
-                .child(
-                    Input::new(input)
-                        .appearance(false)
-                        .bordered(false)
-                        .focus_bordered(false),
-                ),
-        )
-        .into_any_element()
+) -> Field {
+    Field::new().label(label).child(
+        div()
+            .debug_selector(move || selector.into())
+            .w_full()
+            .min_w_0()
+            .child(Input::new(input).aria_label(label)),
+    )
 }
 
 fn command_checkbox(
@@ -500,16 +459,13 @@ fn command_checkbox(
 ) -> AnyElement {
     div()
         .debug_selector(move || selector.into())
-        .h(px(CONTROL_HEIGHT_ACTION))
+        .h(px(CONTROL_HEIGHT_INPUT))
+        .flex_none()
         .flex()
         .items_center()
         .child(
             Checkbox::new(selector)
                 .checked(checked)
-                .with_size(Size::Small)
-                .h_full()
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
                 .child(label)
                 .on_click(move |checked, window, cx| on_click(*checked, window, cx)),
         )
@@ -519,7 +475,7 @@ fn command_checkbox(
 fn bounded_action_slot(selector: &'static str, action: AnyElement) -> AnyElement {
     div()
         .debug_selector(move || selector.into())
-        .h(px(CONTROL_HEIGHT_ACTION))
+        .h(px(CONTROL_HEIGHT_INPUT))
         .flex_none()
         .flex()
         .items_center()
@@ -534,8 +490,8 @@ mod tests {
     struct CommandFixture {
         selected: Rc<Cell<bool>>,
     }
-    impl gpui::Render for CommandFixture {
-        fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+    impl gpui_kit::Render for CommandFixture {
+        fn render(&mut self, _: &mut Window, _: &mut gpui_kit::Context<Self>) -> impl IntoElement {
             let selected = self.selected.clone();
             div().w(px(COMMAND_MASTER_WIDTH)).child(command_master_row(
                 Theme::zed_dark(),
@@ -546,9 +502,9 @@ mod tests {
             ))
         }
     }
-    #[gpui::test]
-    fn custom_command_master_keyboard_selects_without_executing(cx: &mut gpui::TestAppContext) {
-        cx.update(gpui_component::init);
+    #[gpui_kit::test]
+    fn custom_command_master_keyboard_selects_without_executing(cx: &mut gpui_kit::TestAppContext) {
+        cx.update(gpui_kit::init);
         cx.update(crate::theme::apply_component_theme);
         let selected = Rc::new(Cell::new(false));
         let rendered_selected = selected.clone();
@@ -558,18 +514,30 @@ mod tests {
         window
             .refresh()
             .expect("render actual custom command master row");
+        assert!(
+            window
+                .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+                .iter()
+                .any(|snapshot| snapshot.path().last()
+                    == Some(&gpui_kit::ElementId::from((
+                        "quick-launch-command",
+                        0_usize
+                    )))),
+            "master selection must render real stateless ListItem"
+        );
         let row = window
             .debug_bounds("quick-launch-command-0")
             .expect("master hit bounds");
-        window.update(|window, _| window.focus_next());
+        window.update(|window, cx| window.focus_next(cx));
         window.refresh().expect("focus command row");
-        window.simulate_event(gpui::KeyDownEvent {
-            keystroke: gpui::Keystroke::parse("enter").expect("select key"),
+        window.simulate_event(gpui_kit::KeyDownEvent {
+            keystroke: gpui_kit::Keystroke::parse("enter").expect("select key"),
             is_held: false,
+            prefer_character_input: false,
         });
         assert!(!selected.get(), "selection waits for release");
-        window.simulate_event(gpui::KeyUpEvent {
-            keystroke: gpui::Keystroke::parse("enter").expect("select release"),
+        window.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse("enter").expect("select release"),
         });
         assert!(
             selected.get(),
@@ -580,5 +548,88 @@ mod tests {
             .expect("focused command row remains bounded");
         assert_eq!(window.debug_bounds("quick-launch-command-0"), Some(row));
         assert_eq!(row.size.height, px(40.0));
+    }
+}
+
+#[cfg(test)]
+mod input_adoption_tests {
+    use super::*;
+    struct FieldFixture {
+        input: Entity<InputState>,
+    }
+    impl gpui_kit::Render for FieldFixture {
+        fn render(&mut self, _: &mut Window, _: &mut gpui_kit::Context<Self>) -> impl IntoElement {
+            div().w(px(300.0)).flex().child(command_input_field(
+                Theme::zed_dark(),
+                "adopted-command-input",
+                "关键词",
+                &self.input,
+            ))
+        }
+    }
+    #[gpui_kit::test]
+    fn custom_command_input_has_one_full_width_kit_frame(cx: &mut gpui_kit::TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        let input_slot = Rc::new(std::cell::RefCell::new(None));
+        let retained = input_slot.clone();
+        let (_, window) = cx.add_window_view(move |window, cx| {
+            let input = cx.new(|cx| InputState::new(window, cx));
+            *retained.borrow_mut() = Some(input.clone());
+            let view = cx.new(|_| FieldFixture { input });
+            gpui_kit::base::Root::new(view, window, cx)
+        });
+        window.refresh().expect("actual command field");
+        let input = input_slot
+            .borrow()
+            .as_ref()
+            .expect("original input")
+            .clone();
+        let field = window
+            .debug_bounds("adopted-command-input")
+            .expect("field frame");
+        let actual = window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|snapshot| {
+                    snapshot
+                        .path()
+                        .iter()
+                        .any(|id| id == &gpui_kit::ElementId::from(("input", input.entity_id())))
+                })
+                .expect("actual Kit input snapshot")
+                .bounds()
+        });
+        assert_eq!(
+            actual.size, field.size,
+            "no hand-painted outer frame or inset around the actual Kit Input"
+        );
+        assert_eq!(field.size.height, px(32.0));
+        let identity = input.entity_id();
+        window.simulate_click(actual.center(), gpui_kit::Modifiers::default());
+        window.simulate_input("合成命令");
+        window.run_until_parked();
+        assert_eq!(
+            window.read(|cx| input.read(cx).value().to_string()),
+            "合成命令"
+        );
+        window.refresh().expect("repaint edited original input");
+        assert_eq!(input.entity_id(), identity);
+        let repainted = window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|snapshot| {
+                    snapshot
+                        .path()
+                        .iter()
+                        .any(|id| id == &gpui_kit::ElementId::from(("input", identity)))
+                })
+                .expect("original entity remains the rendered Input")
+                .bounds()
+        });
+        assert_eq!(
+            repainted, actual,
+            "focus/edit must not add a second frame or shift layout"
+        );
     }
 }

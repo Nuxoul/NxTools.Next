@@ -1,3 +1,9 @@
+pub mod archive_browser;
+pub mod archive_job;
+pub mod archive_password;
+pub mod archive_picker;
+pub mod archive_read;
+pub mod desktop_archive_intent;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -74,6 +80,8 @@ pub enum Message {
     PlatformCommandResult(PlatformCommandResult),
     IndexerCommand(IndexerCommand),
     IndexerEvent(IndexerEvent),
+    DesktopArchiveIntent(desktop_archive_intent::DesktopArchiveIntent),
+    DesktopArchiveReceipt(desktop_archive_intent::DesktopArchiveReceipt),
     Error(ProtocolFault),
 }
 
@@ -104,8 +112,13 @@ pub struct Pong {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum PlatformEvent {
+    ArchiveRead(archive_read::ArchiveReadEvent),
+    ArchivePassword(archive_password::ArchivePasswordPrompt),
+    ArchiveJob(Box<archive_job::ArchiveJobEvent>),
+    ArchivePicker(archive_picker::ArchivePickerResult),
     TrayActionRequested(TrayActionRequest),
     SystemMotionPreferenceChanged(SystemMotionPreferenceChanged),
+    SystemThemePreferenceChanged(SystemThemePreferenceChanged),
     ForegroundChanged(ForegroundContext),
     GlobalPointerPressed(PointerPressContext),
     ClipboardCaptured(ClipboardCapture),
@@ -123,6 +136,13 @@ pub enum PlatformEvent {
 pub struct SystemMotionPreferenceChanged {
     pub correlation_id: Uuid,
     pub reduced_motion: bool,
+    pub native_error_code: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SystemThemePreferenceChanged {
+    pub correlation_id: Uuid,
+    pub dark: bool,
     pub native_error_code: i32,
 }
 
@@ -299,8 +319,15 @@ pub struct IndexSettings {
 #[serde(tag = "event", content = "data", rename_all = "snake_case")]
 pub enum IndexerEvent {
     SearchBatch(IndexSearchBatch),
+    SearchFailed(IndexSearchFailure),
     Status(IndexStatus),
     ElevatedDirectoryHelper(ElevatedDirectoryHelperStatus),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexSearchFailure {
+    pub generation: u64,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -351,6 +378,12 @@ pub struct IndexSearchContext {
     pub preferred_directory: Option<String>,
     pub include_files: bool,
     pub include_directories: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retain_kinds_apart: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_homophone_fallback: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recent_modified: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -376,12 +409,19 @@ pub struct IndexSearchItem {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub enum PlatformCommand {
+    ArchiveRead(archive_read::ArchiveReadCommand),
+    ArchiveEntry(archive_browser::ArchiveEntryCommand),
+    ArchiveBrowserRead(archive_read::ArchiveReadCommand),
+    ArchivePasswordReply(archive_password::ArchivePasswordReply),
+    ArchiveJob(Box<archive_job::ArchiveJobCommand>),
+    ArchivePicker(archive_picker::ArchivePickerCommand),
     ConfigureDesktopShell(ConfigureDesktopShellCommand),
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
     PasteImage(PasteImageCommand),
     PasteNativeFormats(PasteNativeFormatsCommand),
     ConfigureClipboard(ConfigureClipboardCommand),
+    SetClipboardCapturePaused(SetClipboardCapturePausedCommand),
     ConfigureQuickLaunch(ConfigureQuickLaunchCommand),
     SetClipboardHotKeyRecording(SetClipboardHotKeyRecordingCommand),
     SetQuickLaunchHotKeyRecording(SetQuickLaunchHotKeyRecordingCommand),
@@ -391,6 +431,7 @@ pub enum PlatformCommand {
     SetWindowBounds(SetWindowBoundsCommand),
     SetWindowBoundsCentered(SetWindowBoundsCenteredCommand),
     PresentFixedWindowOverAnchor(PresentFixedWindowOverAnchorCommand),
+    PrepareNotificationWindow(PrepareNotificationWindowCommand),
     StashWindowBounds(StashWindowBoundsCommand),
     MoveWindowCenteredOverKey(MoveWindowCenteredOverKeyCommand),
     SetTaskbarProgress(SetTaskbarProgressCommand),
@@ -406,6 +447,8 @@ pub enum PlatformCommand {
     BeginWindowResize(BeginWindowResizeCommand),
     BeginWindowMove(BeginWindowMoveCommand),
     BeginFileDrag(BeginFileDragCommand),
+    ShowContextMenu(ShowContextMenuCommand),
+    CancelContextMenu(CancelContextMenuCommand),
     OpenShellTarget(OpenShellTargetCommand),
     PlaySystemNotificationSound,
     ShutdownSystem(ShutdownSystemCommand),
@@ -418,17 +461,77 @@ pub enum PlatformCommand {
     InvokeShellAction(InvokeShellActionCommand),
     ExtractShellIcon(ExtractShellIconCommand),
     PickClipboardArchivePath(PickClipboardArchivePathCommand),
+    PickArchivePath(PickArchivePathCommand),
     PickClipboardStorageDirectory(PickClipboardStorageDirectoryCommand),
     PickDirectory(PickDirectoryCommand),
     PickProgram(PickProgramCommand),
+    PickExtensionManifest(PickExtensionManifestCommand),
+    PickExtensionRuntime(PickExtensionRuntimeCommand),
+    InspectExtensionRuntime(InspectExtensionRuntimeCommand),
     EnsureIndexerService,
     EnsureBrowserNativeMessaging(EnsureBrowserNativeMessagingCommand),
+}
+
+/// Source-client device pixels; Windows adapter owns screen conversion and popup placement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShowContextMenuCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
+    pub x: i32,
+    pub y: i32,
+    /// Nonzero: prepare an independent GPUI surface only; never create an HMENU.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub popup_window_handle: i64,
+    pub items: Vec<ContextMenuItem>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextMenuItem {
+    pub id: u32,
+    pub label: String,
+    pub enabled: bool,
+    pub checked: bool,
+    pub separator: bool,
+    pub children: Vec<ContextMenuItem>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CancelContextMenuCommand {
+    pub session_id: Uuid,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ContextMenuResult {
+    pub selected_id: Option<u32>,
+    pub dismissed_outside: bool,
+}
+
+fn is_zero_i64(value: &i64) -> bool {
+    *value == 0
+}
+
+/// Actual native work-area client viewport and anchor, all in device pixels.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StyledMenuPlacement {
+    pub width: i32,
+    pub height: i32,
+    pub anchor_x: i32,
+    pub anchor_y: i32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigureDesktopShellCommand {
     pub start_on_login_silently: bool,
     pub tray_icon_visible: bool,
+}
+
+/// Runtime capture gate, independent from hotkey registration and persistent enabled state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetClipboardCapturePausedCommand {
+    pub paused: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -487,6 +590,25 @@ pub struct PickDirectoryCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickProgramCommand {
     pub current_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickExtensionManifestCommand {
+    pub current_path: String,
+}
+
+/// Opens an EXE-only picker; selecting a path does not execute or trust it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickExtensionRuntimeCommand {
+    pub program: String,
+    pub current_path: String,
+}
+
+/// Explicit bounded version probe for python/node/powershell/pwsh (not package EXEs).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InspectExtensionRuntimeCommand {
+    pub program: String,
+    pub executable: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -553,6 +675,20 @@ const fn default_clipboard_max_image_pixels() -> u64 {
 const fn default_true() -> bool {
     true
 }
+/// Prepare a hidden passive notification popup at one source-monitor work-area anchor.
+/// Width/height are logical pixels; C# owns DPI conversion and final device-pixel readback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrepareNotificationWindowCommand {
+    pub window_handle: i64,
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
+    pub position: String,
+    pub width: i32,
+    pub height: i32,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub keep_visible: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetWindowTopmostCommand {
     pub window_handle: i64,
@@ -572,6 +708,9 @@ pub struct SetWindowShadowCommand {
     pub window_handle: i64,
     pub enabled: bool,
 }
+/// Applies outer screen x/y with an explicit client/content width/height in
+/// device pixels. C# compensates the live native frame and verifies final client
+/// dimensions; window placement acceptance is not mouse-activation policy.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetWindowBoundsCommand {
     pub window_handle: i64,
@@ -815,6 +954,20 @@ pub struct PickClipboardArchivePathCommand {
     pub suggested_file_name: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PickArchivePathCommand {
+    pub source_hwnd: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ArchivePickerResult {
+    Selected { path: String },
+    Cancelled,
+    Failed,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClipboardArchivePickerMode {
@@ -827,6 +980,7 @@ pub enum ClipboardArchivePickerMode {
 pub enum ShellOpenAction {
     Open,
     SelectInExplorer,
+    OpenWith,
     RunElevated,
     RegistryKey,
     SystemTool,
@@ -1657,6 +1811,8 @@ mod tests {
                     preferred_directory: None,
                     include_files: true,
                     include_directories: true,
+                    retain_kinds_apart: false,
+                    ..Default::default()
                 },
             },
         )));
@@ -1853,6 +2009,65 @@ mod tests {
     }
 
     #[test]
+    fn extension_manifest_picker_round_trips_its_typed_wire_command() {
+        for current_path in ["", r"C:\Packages\扩展.json"] {
+            let envelope = Envelope::new(Message::PlatformCommand(
+                PlatformCommand::PickExtensionManifest(PickExtensionManifestCommand {
+                    current_path: current_path.into(),
+                }),
+            ));
+            let encoded = envelope.encode_line().expect("encode manifest picker");
+            let wire: serde_json::Value =
+                serde_json::from_str(&encoded).expect("manifest picker JSON");
+            assert_eq!(wire["payload"]["command"], "pick_extension_manifest");
+            assert_eq!(wire["payload"]["data"]["current_path"], current_path);
+            assert_eq!(
+                Envelope::decode_line(&encoded).expect("decode manifest picker"),
+                envelope
+            );
+        }
+    }
+
+    #[test]
+    fn extension_runtime_commands_round_trip_typed_wire_fields() {
+        for program in ["python", "node", "powershell", "pwsh"] {
+            let commands = [
+                (
+                    PlatformCommand::PickExtensionRuntime(PickExtensionRuntimeCommand {
+                        program: program.into(),
+                        current_path: String::new(),
+                    }),
+                    "pick_extension_runtime",
+                    "current_path",
+                    "",
+                ),
+                (
+                    PlatformCommand::InspectExtensionRuntime(InspectExtensionRuntimeCommand {
+                        program: program.into(),
+                        executable: r"C:\Runtime\运行.exe".into(),
+                    }),
+                    "inspect_extension_runtime",
+                    "executable",
+                    r"C:\Runtime\运行.exe",
+                ),
+            ];
+            for (command, name, field, expected) in commands {
+                let envelope = Envelope::new(Message::PlatformCommand(command));
+                let encoded = envelope.encode_line().expect("encode runtime command");
+                let wire: serde_json::Value =
+                    serde_json::from_str(&encoded).expect("runtime command JSON");
+                assert_eq!(wire["payload"]["command"], name);
+                assert_eq!(wire["payload"]["data"]["program"], program);
+                assert_eq!(wire["payload"]["data"][field], expected);
+                assert_eq!(
+                    Envelope::decode_line(&encoded).expect("decode runtime command"),
+                    envelope
+                );
+            }
+        }
+    }
+
+    #[test]
     fn typed_process_launch_preserves_argument_boundaries_and_flags() {
         let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::LaunchProcess(
             LaunchProcessCommand {
@@ -1871,5 +2086,200 @@ mod tests {
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode launch"))
             .expect("decode launch");
         assert_eq!(decoded, envelope);
+    }
+}
+
+#[cfg(test)]
+mod installed_feedback_protocol_tests {
+    use super::*;
+
+    #[test]
+    fn open_with_and_system_theme_have_typed_wire_roundtrips() {
+        assert_eq!(
+            serde_json::to_string(&ShellOpenAction::OpenWith).expect("action JSON"),
+            "\"open_with\""
+        );
+        let event = PlatformEvent::SystemThemePreferenceChanged(SystemThemePreferenceChanged {
+            correlation_id: Uuid::new_v4(),
+            dark: false,
+            native_error_code: 0,
+        });
+        let json = serde_json::to_string(&event).expect("theme JSON");
+        assert_eq!(
+            serde_json::from_str::<PlatformEvent>(&json).expect("theme roundtrip"),
+            event
+        );
+    }
+}
+
+#[cfg(test)]
+mod search_retention_tests {
+    use super::*;
+    #[test]
+    fn w3_kind_retention_defaults_off_and_roundtrips_opt_in() {
+        let old =
+            serde_json::json!({"directory":null,"include_files":true,"include_directories":true});
+        let mut context: IndexSearchContext = serde_json::from_value(old).expect("legacy context");
+        assert!(!context.retain_kinds_apart);
+        assert!(!context.allow_homophone_fallback);
+        assert!(!context.recent_modified);
+        let legacy = serde_json::to_value(&context).expect("legacy encoding");
+        assert!(legacy.get("allow_homophone_fallback").is_none());
+        assert!(legacy.get("recent_modified").is_none());
+        context.allow_homophone_fallback = true;
+        context.recent_modified = true;
+        context.retain_kinds_apart = true;
+        let json = serde_json::to_value(&context).expect("context");
+        assert_eq!(json["retain_kinds_apart"], true);
+        assert_eq!(
+            serde_json::from_value::<IndexSearchContext>(json).expect("roundtrip"),
+            context
+        );
+    }
+}
+
+#[cfg(test)]
+mod recent_failure_tests {
+    use super::*;
+    #[test]
+    fn w4_search_failure_has_typed_generation_and_roundtrip() {
+        let event = IndexerEvent::SearchFailed(IndexSearchFailure {
+            generation: 9,
+            reason: "recent_classifier_budget".into(),
+        });
+        let json = serde_json::to_value(&event).expect("failure");
+        assert_eq!(json["event"], "search_failed");
+        assert_eq!(
+            serde_json::from_value::<IndexerEvent>(json).expect("roundtrip"),
+            event
+        );
+    }
+}
+
+#[cfg(test)]
+mod context_menu_tests {
+    use super::*;
+    #[test]
+    fn native_context_menu_roundtrips_tree_client_pixels_and_exact_cancel() {
+        let command = PlatformCommand::ShowContextMenu(ShowContextMenuCommand {
+            source_window_handle: 42,
+            source_process_id: 99,
+            x: 448,
+            y: 30,
+            popup_window_handle: 0,
+            items: vec![ContextMenuItem {
+                id: 0,
+                label: "扩展处理".into(),
+                enabled: true,
+                checked: false,
+                separator: false,
+                children: vec![ContextMenuItem {
+                    id: 7,
+                    label: "按行去重".into(),
+                    enabled: true,
+                    checked: false,
+                    separator: false,
+                    children: vec![],
+                }],
+            }],
+        });
+        let value = serde_json::to_value(&command).expect("wire");
+        assert_eq!(value["command"], "show_context_menu");
+        assert_eq!(
+            serde_json::from_value::<PlatformCommand>(value).expect("roundtrip"),
+            command
+        );
+        let id = Uuid::new_v4();
+        let cancel =
+            PlatformCommand::CancelContextMenu(CancelContextMenuCommand { session_id: id });
+        assert_eq!(
+            serde_json::from_slice::<PlatformCommand>(
+                &serde_json::to_vec(&cancel).expect("cancel wire")
+            )
+            .expect("cancel roundtrip"),
+            cancel
+        );
+        assert!(
+            serde_json::from_str::<ContextMenuResult>(
+                r#"{"selected_id":7,"dismissed_outside":false,"extra":1}"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<ContextMenuResult>(
+                r#"{"selected_id":7,"selected_id":8,"dismissed_outside":false}"#
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn screen_notification_prepare_round_trips_source_and_logical_size() {
+        let command =
+            PlatformCommand::PrepareNotificationWindow(PrepareNotificationWindowCommand {
+                window_handle: 200,
+                source_window_handle: 100,
+                source_process_id: 123,
+                position: "bottom_center".into(),
+                width: 360,
+                height: 136,
+                keep_visible: false,
+            });
+        let value = serde_json::to_value(&command).expect("notification wire");
+        assert_eq!(value["command"], "prepare_notification_window");
+        assert_eq!(value["data"]["source_window_handle"], 100);
+        assert_eq!(value["data"]["width"], 360);
+        assert!(
+            value["data"].get("keep_visible").is_none(),
+            "legacy hidden preparation omits false"
+        );
+        let mut visible = value.clone();
+        visible["data"]["keep_visible"] = serde_json::Value::Bool(true);
+        let adjusted =
+            serde_json::from_value::<PlatformCommand>(visible).expect("visible adjustment");
+        assert!(
+            matches!(&adjusted, PlatformCommand::PrepareNotificationWindow(p) if p.keep_visible)
+        );
+        assert_eq!(
+            serde_json::to_value(adjusted).expect("visible wire")["data"]["keep_visible"],
+            true
+        );
+        assert_eq!(
+            serde_json::from_value::<PlatformCommand>(value).expect("notification roundtrip"),
+            command
+        );
+    }
+}
+
+#[cfg(test)]
+mod capture_pause_tests {
+    use super::*;
+    #[test]
+    fn capture_pause_wire_is_independent_strict_and_boolean() {
+        for paused in [true, false] {
+            let command =
+                PlatformCommand::SetClipboardCapturePaused(SetClipboardCapturePausedCommand {
+                    paused,
+                });
+            let value = serde_json::to_value(&command).expect("pause command");
+            assert_eq!(value["command"], "set_clipboard_capture_paused");
+            assert_eq!(value["data"]["paused"], paused);
+            assert_eq!(
+                serde_json::from_value::<PlatformCommand>(value).expect("roundtrip"),
+                command
+            );
+        }
+        for data in [
+            serde_json::json!({}),
+            serde_json::json!({"paused":"true"}),
+            serde_json::json!({"paused":true,"enabled":false}),
+        ] {
+            assert!(
+                serde_json::from_value::<PlatformCommand>(
+                    serde_json::json!({"command":"set_clipboard_capture_paused","data":data})
+                )
+                .is_err()
+            );
+        }
     }
 }

@@ -1,0 +1,2 @@
+# Download latency and routing
+Approved section5: diagnose discovery/resolver/HEAD/Range/manifest/UI stages, repair proven in-scope slowpath and verify Direct/System/Manual actual routing/cache. No external resource supplied: do not claim all slow URLs fixed; retain metadata/validators/requestcontext/cancel and immutable route. ABDM first, FluxDown clean-room only; no old NxTools downloads inspection, PAC/auth/auto-switch/TLS bypass.

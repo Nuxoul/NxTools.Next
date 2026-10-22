@@ -35,3 +35,6 @@ Test bounded fields/version/acceptance identity at real typed-command seam, malf
 Wrong: expires_at <= now -> remove every state.
 Correct: state != Receiving && expired -> reap; Receiving owner enforces bounded IO.
 ```
+
+## Passive status and EOF lifetime
+`get_snapshot` only connects an existing Download IPC engine; it must never call connect_or_start or spawn a desktop. Explicit task intake retains existing startup policy. Extension transport owns pending requests/Blob lifetime and emits stdin EOF when idle; host run returns on EOF. Add passive-status guard and extension fake-port concurrent/timeout/disconnect/stale/Blob/idle regressions. Native EOF/process exit and exact installed-file updater lock release need separately authorized fixtures, not an unrestricted real browser/service launch. A Windows service may outlive desktop by design; do not kill it by process name.

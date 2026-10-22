@@ -1,0 +1,599 @@
+# Archive manager reference note (Bandizip / Archiver / SupaZip)
+
+Status: **Phase A reference**; [task](../../.trellis/tasks/10-16-archive-manager/prd.md) owns scope/evidence.
+Follow [workflow](README.md); source inspection is not runtime acceptance.
+[Conflicts](../../.trellis/tasks/10-16-archive-manager/research/stream-conflict-sources.md).
+
+## 1. Evidence sources and legal boundary
+
+| Source | Location | What was inspected | Boundary |
+| --- | --- | --- | --- |
+| Bandizip 7.32.0.1 (x64) | `D:\Tool\Bandizip` | `langs\SimpChinese.lang` (all1201 lines: menus/dialogs/settings/error copy), `bz.exe` help, versions, config, icon names, extension strings, EULA | EULA§3 restricts reverse engineering except where applicable law permits. No Bandizip decompilation/disassembly was performed; no proprietary code reuse is proposed. Resources inventory commands, not proof that every feature works in every edition. |
+| Archiver (MIT, Ke Sheng Da) | `D:\Code\Archiver-main` | `core/src/lib.rs`, `gui/src/{main,view,shell,args}.rs`, `gui/ui/app.slint`, `installer/archiver.iss`, `bench/` | MIT: code may be adapted with attribution. Its `unrar` dependency carries the UnRAR license (extract only). GUI is Slint, not reusable. |
+| SupaZip (MIT OR Apache-2.0) | `D:\Code\supazip-master` | `supazip-core/src/{traits,error}.rs`, `formats/*.rs`, GUI and CLI sources, ROADMAP/DESIGN/plan | Its docs claim more than the code does; only source is evidence. GUI is egui, not reusable. |
+| User screenshot | [retained layout reference](../../.trellis/tasks/10-16-archive-manager/assets/bandizip-layout-reference.png) | Bandizip Professional title, `main (5).zip` open, tree/list/comment/status | User-supplied shape reference, not an app-running or license-state check. Original image SHA256 `da5f63eacb75b9ce508d39671e2d4d4180d33d5fd40958b740634545d5ab9488`. |
+
+Legacy follow-up: `git -C D:\Code\NxTools grep -n -I -E 'ZipArchive|SevenZip|SharpCompress|压缩|解压' -- '*.cs' '*.xaml' '*.csproj'` found package/FFmpeg ZIP and image/video compression, not a general archive browser. This covers tracked matching sources only, not all untracked/generated files. `Services/BrowserExtensionPackageService.cs` and `Services/FfmpegInstallerService.cs` are unrelated packaging/install owners; image/video compression is not archive behavior. No old archive-window/native lifecycle was identified to migrate.
+Bandizip is the **interaction reference**, not a pixel or copy source.
+
+## 2. Bandizip feature inventory (from public resources)
+
+Section names refer to `SimpChinese.lang`. This inventory is not an approved scope decision.
+Approved required/optional/excluded delivery and exact capability gates live in the task PRD/design; old MVP/P2 recommendations are superseded.
+
+### 2.1 Formats
+
+- Format strings found in `ark.x64.dll`: 7z ace alz apk arj br bz2 cab deb dmg egg gz img ipa iso jar lha lz lz4 lzh lzma msi nsis rar rar5 sit tar tbz tbz2 tgz txz tzst udf war wim xar xpi xz z zip zipx zpaq zst zstd.
+- **Evidence limitation:** extension strings and icon names are candidates, not verified list/extract/create support. No real-format fixture or interactive Bandizip operation was exercised in this research; edition-specific availability also remains unverified.
+- File-association icon set (`icons\default`): 001 7z alz bz2 cab egg gz iso lha lzh rar tar tbz
+  tbz2 tgz xz zip zipx zpaq.
+- `bz.exe -fmt:` create formats: zip, zipx, exe(SFX), tar, tgz, lzh, iso, 7z, gz, xz.
+  Shell "压缩为" menu adds zpaq.
+- Edit (add/delete/rename) is ZIP only, and is refused for split, SFX or broken archives
+  (`TEXT_ERR_EDIT_ZIPFILE_ONLY_SUPPORTED`, `…SINGLEFILE…`, `…SFX…`, `…BROKENARCH…`).
+- gz/xz cannot hold a folder or several files. The user is told to tick "compress each item
+  separately" instead (`TEXT_MSG_GX_XZ_CANT_ARCHIVE_*`).
+
+### 2.2 Archive window (`[MENU]`, `[SKIN]`, screenshot)
+
+**Menus:**
+
+| Menu | Items |
+| --- | --- |
+| 文件 | Open Ctrl+O; recent files; close F4; new archive Ctrl+N; new window (normal or admin); save as; delete archive (Recycle Bin) Ctrl+Del; delete permanently Shift+Ctrl+Del; open archive location; test Ctrl+T; malware scan Ctrl+I; extract Ctrl+E; exit |
+| 编辑 | Rename F2; add Ins; delete Del; archive comment; settings F5; password manager; find Ctrl+F; copy files to clipboard Ctrl+C; paste files Ctrl+V; copy full paths |
+| 视图 | Start screen F6; folder tree F7; comment pane F8; image preview; status bar; toolbar (large, small, classic, hidden, button picker); list style (icon, list, details, large icons); column settings; always on top; colour settings |
+| 工具 | Repair (ZIP only); password recovery |
+
+**List context menu:** extract all / extract selected / extract here; open (Enter); open with
+associated app; edit F3; open with Bandizip (nested archive); new folder; add; delete; rename;
+select all Ctrl+A; parent folder Backspace.
+
+**Tree context menu:** delete archive; open containing folder.
+
+**Extract split-button menu:** smart extract Ctrl+Shift+S; extract here Ctrl+Shift+C; extract to
+"archive name" folder; extract to desktop; smart extract to desktop.
+
+**Code page menu:** default; Simplified Chinese; Traditional Chinese; Japanese; Korean; 1252; 1250;
+1251; 1254; 737; Arabic; Hebrew; Baltic; Thai; UTF-8; auto-detect.
+
+**Columns (`TEXT_COLUMN_*`):** name, packed size, original size, type, modified, method,
+encryption, CRC, attributes, comment, extra, path.
+
+**Toolbar (screenshot, left to right):** 打开▾, 解压▾, 新建, 添加, 删除, 测试, 扫描, 查看 (column chooser).
+
+**Layout (screenshot):**
+- menu bar, then large icon-over-label toolbar
+- left folder tree whose root is the archive file
+- right details list with a `..` parent row
+- an optional comment pane under the list, showing the archive comment (a 40-hex git hash in the screenshot)
+- a status bar with view-style toggles and `文件: 50, 文件夹: 15, 压缩文件大小: 176 KB`
+
+### 2.3 Dialogs
+
+| Dialog id | Purpose | Controls |
+| --- | --- | --- |
+| IDD_SELECT_FOLDER | Choose extract path | Destination path; all files or selected files; extract into an archive-named subfolder; delete archive after extract; remember settings; new folder |
+| IDD_ARCHIVE | New archive | File list (add, delete, total size); file name + browse; destination folder; format; split size (none, 3/4/5/10/20 MB, 25 MB Gmail, 100/300 MB, 650/700 MB CD, 4 GB FAT32, 4.7 GB DVD, custom); level (0 store, 1 fast, 2 normal, 3 maximum); set password; test after compress; delete source after compress; each item to its own archive; more options; SFX settings; start |
+| IDD_ARCHIVE_ADVANCED | Per-format advanced | **ZIP:** method, encryption algorithm, CPU threads (auto), store symlinks, file comment. **7Z:** method, solid block size (non-solid or solid), encrypt file names. **TAR:** store symlinks, keep hard links |
+| IDD_PASSWORD_INPUT | Password | Password, re-enter (create mode), show password, password manager, apply to all, wrong-password message |
+| IDD_ASK_DUPEFILE | Name conflict | Existing file vs incoming file (size/date); skip, overwrite, or rename (shows the new name); apply to all |
+| IDD_ASK_DROPFILE | Files dropped on an open archive | Open as archive, new archive, or add to current archive; password; delete source after |
+| IDD_ARCHIVING / IDD_EXTRACT | Progress | Pause, stop, close; "don't close when finished"; open destination; minimise to tray; low priority; delete archive after extract |
+| IDD_EDIT_COMMENT | ZIP comment | Text; save as UTF-8; load from .txt |
+| IDD_ASK_EXECUTABLE | Opening an executable from an archive | Warning; don't ask again |
+| IDD_FIND | Find in archive | Query; extract or delete matches |
+| IDD_PASSMAN | Password manager | List of (password, display name); add, edit, delete; master password |
+
+### 2.4 Settings pages (`[IDD_SETTING_*]`, tabs: 常规 文件关联 上下文菜单 解压 压缩 查看 安全 高级 语言)
+
+**General:**
+- Esc exits
+- test archive after add/delete/rename
+- show `[..]`
+- grid lines
+- full-row select
+- single-click opens
+- window snapping
+- update channel (X)
+
+**Association:** per-extension list with groups (archives, UNIX, other, CD/DVD); basic selection; select all; clear; apply now; icon pack; Windows default-apps page.
+
+**Context menu:**
+- Double-click action: open with Bandizip, smart extract, show context menu, smart extract to a folder, or extract to "name" folder. Option to delete the archive after a double-click extract.
+- Extract verbs: here, smart, to "name", each of those plus delete, choose path, as admin, test, open, preview, preview limit, tree preview.
+- Compress verbs: to name.zip, plus delete, plus email, add to, zipx, exe, tar, tgz, lzh, iso, 7z, gz, xz, zpaq, each item to its own zip or 7z, the dialog, as admin, custom name rule (`${NAME}` `%Y %m %d %H %M %S`).
+- Explorer background menu: new folder, cmd (X).
+- Other: disable the menu; cascade it; hide the icon; detect archives by content; show the compress menu even on archives; use the clicked item's name when several are selected; drag-and-drop into a zip in Explorer.
+
+**Extract:**
+- enter the single root folder automatically
+- open the folder after extracting
+- keep the progress window open
+- fast drag-drop for large files
+- extract TGZ/TBZ in one pass, even big ones
+- smart extract puts a single file into a new folder
+- macOS NFD→NFC
+- Unix zip uses UTF-8
+- parallel extract
+- default code page
+- types to "extract all then run" on double-click
+
+**Compress:**
+- don't store the root folder for a single folder
+- UTF-8 names in ZIP; UTF-8 extra field; UTF-8 in tar
+- force ZIP64
+- exclude Thumbs.db
+- NTFS timestamps in ZIP
+- "fast compress" (skip incompressible files)
+- keep the progress window open
+- default level
+- test after compressing
+- new-archive folder: last used, or a fixed folder
+- exclude filter
+
+**View:**
+- image preview without extracting
+- show folder sizes
+- fonts (X)
+- default columns
+- image viewer choice (X)
+- external editor path
+- colours (X)
+
+**Security:** copy Zone.Identifier from downloaded archives; AMSI scan before extract.
+
+**Advanced:**
+- export settings
+- temp folder
+- extra extensions treated as archives
+- delete temp files when the child process exits
+- delete to Recycle Bin
+- recent file history
+- long paths over 260 characters
+- allow Explorer to delete an open archive (FILE_SHARE_DELETE)
+- auto-expand the tree
+- modal operations (X)
+- show the start screen
+- full path in the title bar
+- delete extracted output on cancel
+- preallocate output (SetEndOfFile)
+- compress files locked by other processes (backup semantics)
+
+### 2.5 Behaviors and copy worth matching
+
+**Smart extract (`-target:auto`):** the console help names automatic target choice, and the single-file-folder setting proves a selectable special case. The commonly expected one-top-level-item vs multiple-item rule below is a **proposed Next behavior**, not a runtime-verified Bandizip algorithm: preserve one directory directly, place one file directly unless configured otherwise, and put several top-level items in an archive-stem directory. `-target:name` explicitly selects an archive-name folder.
+
+**Overwrite policy (CLI):** `-aoa` overwrite all, `-aos` skip, `-aou` auto-rename to `name (2).txt`.
+The GUI prompts per file, with "apply to all".
+
+**Pre-extract checks:** missing destination prompts to create it
+(`TEXT_ASK_MAKE_FOLDER`). No write permission prompts to continue or elevate. Low free space
+shows destination, free space and expanded size (`TEXT_ASK_DEST_FOLDER_SPACE_NOT_ENOUGH`).
+
+**Delete source after compress:** if "test" is off, Bandizip asks to turn it on, because deleting
+the source without verification can lose data (`TEXT_ASK_DELSRC_TURN_ON_TEST_ARCHIVE`).
+
+**Opening an entry:** resource text exposes temp extraction and a modified-file write-back prompt (`TEXT_ASK_APPLY_MODIFIED_FILE`), plus an executable warning. This is resource-level evidence only; actual temp lifetime, watcher behavior and native show/focus/cancellation call chains were not inspected in Bandizip.
+
+**Volumes:** the user is told to open the first volume, or offered to jump to it
+(`TEXT_ASK_OPENERR_FIRST_VOLUME`). Missing `.z01` volumes are reported.
+
+**Mojibake hint:** suggests the code-page menu, then auto-detect (`TEXT_NOTICE_AUTODETECTCODEPAGE`).
+
+**Typed error vocabulary (`TEXT_ARKERR_*`):** wrong password, password required, CRC error,
+truncated or corrupt, needs next volume, unsupported method, unsupported encryption, disk full,
+access denied (with UAC variant), path longer than 260, cannot create a symlink (needs admin),
+SFX over 4 GB, out of memory (lower the level), file locked by another process.
+
+## 3. Open-source engine findings
+
+### 3.1 Archiver (`core/src/lib.rs`, MIT)
+
+**Dependencies:**
+
+| Crate | Version / features |
+| --- | --- |
+| `zip` | 9.0.1 (aes-crypto, bzip2, deflate-flate2-zlib-rs, deflate64, lzma, ppmd, xz, zstd) |
+| `sevenz-rust2` | 0.23.0 (compress, aes256) |
+| `unrar` | 0.5.8 (bundled C++; needs `advapi32` link fix) |
+| `tar` | 0.4.46 |
+| `flate2` | 1.1.10 |
+| `bzip2` | 0.6.1 |
+| `liblzma` | 0.4.8 (static, parallel) |
+| `zstd` | 0.14.1 (zstdmt) |
+| other | `walkdir` |
+
+**Formats:**
+- Read and write: ZIP (AES-256 write; ZipCrypto and AES read); 7z (LZMA2, one solid block, AES-256 plus header encryption when a password is set); tar, tgz, tbz2, txz, tzst; single-file gz, bz2, xz, zst.
+- RAR is read-only. No explicit volume workflow or SFX support was found; underlying library volume handling was not proven.
+- Detection is by extension only.
+
+**API shape:**
+- Free functions `list`, `extract(selected)`, `test`, `delete`, `create(CreateOptions{format, level, password})`.
+- `Progress.cancel`/`ProgReader` checks after reads at EOF/1MiB(lib.rs152–165,417–442); blocked I/O is not interrupted. Next [cancel boundaries](../../.trellis/tasks/10-16-archive-manager/worker-cancel-contract.md).
+- `Entry { name, size, compressed, modified: String, is_dir, crc32, encrypted }`.
+
+**Patterns to adapt:**
+- `view::archive_children(entries, prefix)` for pure virtual-folder derivation (`gui/src/view.rs:31`).
+- `safe_join` with tests (`lib.rs:203,1288`).
+- ZIP delete through `raw_copy_file` into `<archive>.rewrite.tmp` and rename.
+- Remove the partial output on create failure or cancel.
+- Parallel ZIP: per-thread temp ZIPs joined with `merge_archive`.
+- Multi-member parallel gzip; xz `memlimit_threading`.
+- Pure-function HKCU registry layout with tests (`gui/src/shell.rs:63`).
+- Bench data generator (`bench/gen_data.py`).
+
+**Pitfalls (do not copy):**
+- Password-needed is detected by matching error strings.
+- Timestamps are pre-formatted strings.
+- 7z `encrypted` is always false.
+- Extraction overwrites silently and leaves partial files after cancel.
+- No code-page handling.
+- Listing a single-file `.gz` decompresses the whole file.
+- 7z is always one solid block.
+- Archiver's checked-in benchmark reports (not rerun here) show about1.2–1.4GB peak RAM for multi-threaded7z/xz on its stated benchmark machine.
+- Classic shell verbs start one process per selected file and sit under "Show more options" on Windows 11.
+
+### 3.2 SupaZip (`supazip-core`, MIT OR Apache-2.0)
+
+**Worth adapting:**
+- A small typed error: `ArchiverError { Io, InvalidArchive, PasswordRequired, WrongPassword, Cancelled, UnsupportedFormat, TooLarge }` (`error.rs:12-41`).
+- [B3 readmission](../../.trellis/tasks/10-16-archive-manager/research/zip-output-readmission-sources.md).
+- Compound-extension detection in `detect_format` (`formats/mod.rs:20-78`).
+- `safe_join` that rejects Prefix and RootDir (`formats/sevenz.rs:141-162`).
+- Password: [B2 seam](../../.trellis/tasks/10-16-archive-manager/research/extract-password-sources.md).
+
+**Pitfalls:**
+- ZIP and 7z copy the whole archive into memory.
+- Errors are matched by string.
+- Creation is non-recursive and loses folder structure; ZIP can store absolute `C:/` paths.
+- A fake Brotli-in-ZIP format.
+- The per-entry limit actually counts the cumulative total.
+- No encoding, overwrite or smart-extract support.
+- `sevenz-rust` 0.6 cannot do solid archives or header encryption.
+
+## 4. NxTools.Next mapping (Rust / C# / GPUI)
+
+| Concern | Owner | Notes |
+| --- | --- | --- |
+| Formats, listing, extract/test/create/modify, encoding, path safety, limits, progress/cancel | Rust: new `rust/crates/nxtools-archive` | No GPUI, no Windows API. Streams from `File` (`Read + Seek`), never whole-archive buffers. |
+| Job queue, browser/dialog state, settings projection | Rust desktop: `ArchiveApplication` entity | Same pattern as `DownloadApplication`. One bounded job manager. |
+| Rendering | GPUI Kit 0.7.1 | Component record in task `design.md` §6. |
+| Pickers, Shell open/reveal, multi-file OLE drag-out, Recycle Bin, file association, Explorer menu registration, ANSI code page, taskbar progress | C# PlatformHost through typed `PlatformCommand`s | Extends the existing `PickDirectory`, `OpenShellTarget`, `BeginFileDrag` and `SetTaskbarProgress`. |
+| Second-instance intents (`--archive-open`, `--archive-extract`, `--archive-compress`) | Desktop launcher → Rust-owned local IPC server → running desktop | Existing `runtime.rs#summon_running_desktop` sends visibility/activation via Rust `nxtools-ipc::handle_summon_connection`; C# is the native pipe client, not the archive-intent router. A typed bounded Rust intent route is new work. |
+
+Existing in-repo ZIP code that must **not** be repurposed as the archive engine:
+- `rust/crates/nxtools-extensions/src/archive.rs` is the extension-package validator. It keeps its own Stored/Deflated allowlist and package budgets.
+- `rust/crates/nxtools-clipboard/src/archive.rs` handles clipboard export/import.
+
+Both show workspace `zip` usage. Manifest caret requirement `zip = 8.3.0` (lock8.6.0, feature
+`deflate-flate2-zlib-rs` only). `ZipFile::name_raw`, `enclosed_name`, `encrypted`, `is_symlink`,
+`ZipArchive::by_index_decrypt` and `ZipWriter::{raw_copy_file, merge_archive, set_comment,
+new_append, abort_file}` exist in the 8.6.0 sources (`read.rs:808,849,981,1005`,
+`zip_archive.rs:521`, `write.rs:621,828,1034,1468,1563,1691`).
+
+## 5. Open questions (unverified)
+
+- **Classic verbs, `MultiSelectModel=Player`:** whether it delivers every selected item to one
+  process on Windows 10/11 is **unverified**. The design must coalesce per-item launches either way.
+- **Volume support:** exact sevenz-rust2 0.23.0 generic Read+Seek/Write+Seek and solid/header APIs have since been inspected; project discovery/missing-part/segmented global I/O remains required Phase E, not delivered by the current small single-volume fixtures.
+- **RAR crate:** exact unrar_sys0.5.8 bundled UnRAR7.1 C++ Windows build and narrow advapi32 linkage passed. Independent RAR4/5/encrypted open/test/output fixtures passed; broad memory/performance/volume acceptance remains open.
+- **Modern Explorer menu:** a Windows 11 top-level menu (`IExplorerCommand` plus a sparse package)
+  is excluded from the approved first release; classic integration and genuine drag are required Phase F work.
+
+## 6. Implementation source verification (Phase A)
+
+- Locked `zip-8.6.0/src/read/zip_archive.rs::SharedBuilder::build` inserts entries into an IndexMap keyed by raw name; duplicate names overwrite. Therefore listing/security preflight must enumerate original central records independently, retain all ordinals and refuse unsafe backend ordinal execution when duplicates exist. `Config` only exposes archive offset, not metadata/allocation limits.
+- `ZipArchive::by_index_raw` avoids password/decode but is still downstream of allocator-heavy construction. `by_index` password rejection uses UnsupportedArchive(PASSWORD_REQUIRED); use independently read encryption flags for required-password typing rather than matching raw error text. InvalidPassword can be probabilistic for ZipCrypto, so ambiguous authentication stays AuthenticationOrDataError.
+- Initial archive implementation reuses existing zip8.6.0 Store/Deflate only; no new codec features/version upgrade yet. Reference sources inspected: Archiver `core/src/lib.rs` public types/list/safe_join and exact registry ZIP readers/config/result. Existing clipboard/extension policies remain independent.
+
+Exact codec follow-up: [capability gates](../../.trellis/tasks/10-16-archive-manager/research/codec-capability-gates.md) records sevenz-rust2=0.23.0 public memory-limit gap, unrar=0.5.8 public cancel/allocation gap, ZIP8.6.0 multi-disk read/write gap and stream candidates. User-approved C# Job-isolated Rust worker has since built on Windows and passed actual independent RAR/7z/native-output fixtures. SupaZip entry paths are under nested `supazip/supazip-core`, not a root-level crate directory.
+
+Current ZIP test/extract no longer constructs ZipArchive a second time after preflight: immutable central record locations validate local signature/flags/method/name/sizes/CRC/bounded extents and stream Store/Deflate via existing flate2/crc32fast. A real mismatched local-name fixture was accepted by ZipArchive before correction and rejected after. Safe no-replace native output is separately fixture-verified; full codec/overwrite/product acceptance is not implied.
+
+Historical Rust30/C#16 and strict-CAS native32 results are retained in task evidence. Current approved overwrite/ZIP preparation and exact counts live only in [checkpoint](../../.trellis/tasks/10-16-archive-manager/phase-a-checkpoint.md);none imply Phase A/first-release completion.
+
+Worker codec source verification: `unrar0.5.8` exposes stream test/typed Code+When but no actual-byte callback in public wrapper; native `UCM_PROCESSDATA` callback can count/cancel and is required before actual-output-budget acceptance. `sevenz-rust2 0.23.0` ArchiveReader.for_each_entries supplies bounded caller streaming, public stream_map/block AES coder for encryption, and typed password/checksum errors. Avoid read_file/read() whole-entry Vec. Exact upstream small fixtures retained under archive tests/fixtures/upstream with hashes and UnRAR license; bsdtar independently listed plainRAR4/RAR5/7z. Archiver core/build.rs confirms narrowly linking advapi32 for bundled UnRAR on Windows without altering upstream sources.
+
+7z extraction follow-up: exact sevenz-rust2 0.23.0 `reader.rs::ArchiveReader::for_each_entries` iterates blocks, then empty entries; block callbacks consume bounded per-file readers with optional CRC wrappers. A callback returning false does not stop the outer block loop, so the caller must retain first error and reject later callbacks. Block integrity can be later than an individual callback; stage exclusive output tokens until full decode and source recheck, then commit. No upstream unpack/read_file (whole-entry Vec) is used. Independent bsdtar extraction verified `lzma.7z/file.txt` as the literal15bytes `this is a file\n`, SHA256 `e0ef7229e64c61596d8be928397e19fcc542ac920c4132106fb1ec2295dd73d1`; solid/non-solid fixture payload hashes were independently observed before implementation.
+
+RAR extraction follow-up: exact UnRAR7.1 `Documentation/RARCallback.md` states `UCM_PROCESSDATA` exposes a read-only buffer for both testing/extraction; return1 continues,-1 cancels. Use RAR_TEST with null native destination, split callback data into <=64KiB acknowledged ArchiveOutput writes while the native buffer is live. Mutex-serialized callback state borrows only a Send output, retains first failure, and never unwinds across C ABI. First enumerate/validate all output names; second header sequence must match expected immutable ordinals before partial creation. Stage tokens until successful native integrity result and final source recheck. Independent bsdtar payload literals: RAR4 VERSION=`unrar-0.4.0`; RAR5 Unicode entry=`foobar\n`. No RAR native filesystem writer or creation API is used.
+
+2026-10-17 acceptance remediation: C# ArchiveSourceLease now protects the same no-reparse
+source namespace/file object before Rust reads and through actual worker cleanup; RAR's two
+path opens are constrained by it, not merely compared headers. Exact UnRAR7.1 dll.cpp/file.cpp
+chain RAROpenArchiveEx→FMF_OPENSHARED→CreateFile was rechecked.7z public block/Coder::properties
+and Archive::read can preflight a bounded synthetic normal-header wrapper containing encoded
+header StreamsInfo without decoding payload; data/encoded-header dictionaries and declared
+decoded header size are checked before relevant decode. Rust owns those budget/format decisions;
+C# owns stable Windows handles and Job memory. Process budget is coherently work+metadata+64MiB
+overhead/default832MiB, not an arbitrary512MiB ceiling. No upstream source patch or dependency
+change. Independent7-Zip24.09 exact encrypted file counts/hashes are recorded in archive fixture
+README; system libarchive's unsupported encrypted reads were not used as an oracle. Current
+Rust31/31,C#16/16+6/6; atomic overwrite separately remains FAIL32. See
+[remediation record](../../.trellis/tasks/10-16-archive-manager/acceptance-remediation.md).
+This supersedes only current implementation evidence, not historical failures or A–F scope.
+
+## Reference overwrite follow-up
+
+[Exact source comparison](../../.trellis/tasks/10-16-archive-manager/research/reference-overwrite-comparison.md): Archiver extraction uses File::create (lib.rs609/630), ZIP rewriting finishes a sibling .rewrite.tmp then fs::rename818; SupaZip extraction similarly truncates directly, while its CLI create syncs a NamedTempFile then persist397. Matching tempfile3.27.0 Windows persist uses MoveFileExW(MOVEFILE_REPLACE_EXISTING), with no expected-old-target identity. Neither reference proves identity-conditioned atomic replacement. Next's non-share-delete target lease is a stronger added contract and causes the independently reproduced native32 self-conflict with its current replacement path. Source inspection is not reference runtime verification; no overwrite semantic amendment is approved by this comparison.
+
+## Approved path-overwrite implementation2026-10-17
+
+The user now approves reference-like complete validated sibling+immediate target recheck+single
+atomic path publish, explicitly accepting target-close→publish TOCTOU; strict target-ID CAS is
+superseded. No truncation/delete/backup-first. C# closes only target check; source lease and
+held no-reparse ancestor/temp capabilities stay live. Windows SDK10.0.26100.0 minwinbase.h /
+winbase.h verifies FileRenameInfoEx22(flags1|2), FILE_RENAME_INFO offsets0/8/16/20 and full
+FileIdInfo18. Bounded local probe found Win32 relative RootDirectory87, full name success;
+an unterminated counted name published suffixTAIL, explicit WCHAR NUL fixed it. Main API is
+SetFileInformationByHandle with parent-handle-derived VOLUME_NAME_GUID path/RootDirectoryNULL;
+no MoveFileEx fallback. Native result/state and post-ID/content checks prevent partial cleanup
+after publication. Original renamed+6new fixtures7/7; actual Rust worker proves CRC failure,
+cancel before/during/after and published-but-unverified output. This supersedes current status,
+not historical strict-CAS FAIL32 or earlier reference inspection. FAT/SMB/old systems untested;
+no absolute race/power-loss guarantee. [Results](../../.trellis/tasks/10-16-archive-manager/overwrite-remediation.md).
+Final integrated29/29 (safe16+source/budget6+overwrite/ABI7), no skips. Native publication count
+is recorded before close/hash, capability50 and uncertain64 retain exact terminal state/code;
+one bounded review's concrete findings were red-tested/fixed. No whole Phase A acceptance.
+
+## Standalone Gzip continuation source check
+
+Rechecked tracked legacy NxTools archive terms: only package/FFmpeg ZIP and image/video owners,
+no general archive UI/lifecycle identified (not an exhaustive generated/untracked search).
+Archiver core/src/lib.rs230–275 decoder/encoder and987–1075 create use streaming Gzip/TAR,
+but list inflates standalone streams and create writes final paths directly; neither is copied.
+Exact already-locked flate2=1.1.9 (MIT/Apache-2.0,zlib-rs,Windows-built) exposes Decompress
+total_in/total_out/Status::StreamEnd. Its Gzip convenience header reader retains variable names/
+comments, so Next will parse bounded RFC1952 headers itself, discard untrusted FNAME/COMMENT,
+stream fixed buffers and require each member's CRC/ISIZE plus explicit Deflate end. Standalone
+listing derives one safe local output name and leaves expanded size unknown; no full inflate to
+populate metadata. Source revision check precedes native output commit; cancellation/failure
+aborts only owned token, final published bytes remain native-owned. No UI/focus/native show/hide
+behavior changes. Independent CPython gzip.compress fixtures and bounded mutations are the oracle.
+
+ZIP12 follow-up: exact bzip2=0.6.1/src/mem.rs exposes Decompress::new(small),
+decompress,total_in/total_out,Status::StreamEnd/MemNeeded. Default libbz2-rs-sys (lock0.2.5)
+is pure Rust, no C toolchain; wrapper MIT/Apache-2.0, libbz2-rs-sys bzip2-1.0.6 license,
+no zip feature/version change. Full derived-work license is retained in THIRD_PARTY_NOTICES.md.
+Small decode has bounded block-size<=900000 and documented approx2300KiB state; Next reserves
+conservative8MiB before constructor, fixed input/output and chunk cancellation. Use low-level
+explicit end rather than convenience reader EOF; ZIP central/local/extents/name/CRC/actual-byte
+checks remain authoritative. CPython ZIP_BZIP2 independently supplies fixture, not self writer.
+
+TAR continuation: inspected exact tar0.4.46 (MIT/Apache-2.0,no build.rs,default xattr
+disabled; Windows dependency filetime) archive.rs285–448 and header.rs193/291/319/364/733.
+Normal entries() read_all's GNU longname/longlink/PAX before caller budgets; do not use it.
+Reuse fixed512-byte Header methods only, independently bound extension bytes/count and checked
+offsets, apply PAX size/path to the real next entry, reject sparse semantics explicitly.
+Archiver561–575/674–685 uses Archive/entries/unpack_in; SupaZip formats/tar.rs uses bounded
+walk but leaf creation is nonrecursive. Neither unpack/create path is copied. Next lists links
+as warnings/skips and extracts regular files through held native tokens, never follows links.
+TAR structural/header/full-stream validation is not a payload-checksum guarantee. Independent
+CPython tarfile.PAX_FORMAT Unicode/empty-dir/file/link fixture drives public red tests.
+
+Compound Gzip/BZip2 disk-spool/integrity/source evidence is preserved in
+[stream research](../../.trellis/tasks/10-16-archive-manager/research/extraction-metadata-sources.md#preserved-compound-stream-reference-evidence); no full-memory archive, early inner publication, mutable-source reopen or BZip2 creation.
+
+Exact XZ0.21.0 source/API/allocation/index/encoder evidence and current boundary:
+[XZ capability note](../../.trellis/tasks/10-16-archive-manager/research/xz-capability.md).
+Single-source verified creation and public XZ/TAR.XZ/.txz reading now pass; exact public/native
+red→green and safety evidence: [XZ read slice](../../.trellis/tasks/10-16-archive-manager/xz-read-evidence.md).
+Zstd exact reference/API/window/error/license/oracle evidence and bounded-read verification:
+[Zstd capability](../../.trellis/tasks/10-16-archive-manager/research/zstd-capability.md).
+
+ZIP methods/crypto: [reads](../../.trellis/tasks/10-16-archive-manager/research/zip-read-capability.md),
+[AES/noEOS fixes](../../.trellis/tasks/10-16-archive-manager/zip-read-remediation.md),
+[create APIs/source contract](../../.trellis/tasks/10-16-archive-manager/zip-create-contract.md).
+
+7z/TAR/TGZ/TXZ: [source/APIs](../../.trellis/tasks/10-16-archive-manager/research/tree-create-capability.md), [evidence](../../.trellis/tasks/10-16-archive-manager/tree-create-evidence.md). Current status only in task checkpoint.
+
+Extraction metadata: [preserved contract/source/fixture/TARmtime navigation](../../.trellis/tasks/10-16-archive-manager/research/reference-metadata-navigation.md).
+
+Source recycling: [verified SDK/API/reference chain and limits](../../.trellis/tasks/10-16-archive-manager/research/source-recycle-native-capability.md).
+
+## Product/resource source navigation
+[Product](../../.trellis/tasks/10-16-archive-manager/product-read-contract.md),
+[resources](../../.trellis/tasks/10-16-archive-manager/research/resource-boundaries.md),
+[finite100k](../../.trellis/tasks/10-16-archive-manager/product-100k-contract.md).
+
+## Windows long-path source follow-up (2026-10-20)
+[Verified sources and limits](../../.trellis/tasks/10-16-archive-manager/research/windows-long-path-sources.md).
+
+ZIP filename encoding: [verified reference chain, candidate and reprojection boundary](../../.trellis/tasks/10-16-archive-manager/research/zip-encoding-sources.md).
+
+## Phase B settings source verification (2026-10-21)
+Rechecked tracked legacy archive terms before new UI work: still packaging/FFmpeg ZIP and image/
+video compression, no general archive settings/window lifecycle identified. Bandizip public
+langs/SimpChinese.lang IDD_SETTING_EXTRACT714–724 and IDD_SETTING_ARCHIVE729–734 retain single-root,
+codepage/root-strip/default-level/exclusion reference vocabulary; Next defaults remain design§5.
+No proprietary native lifecycle or icon is inferred. Existing Next MainWindow constructor→render
+dispatch→official Settings keyed state and original module focus owner are the settings lifecycle;
+no new HWND/show/hide boundary. Presets are configuration only, not browser/operation acceptance.
+Design§5 destination is a strategy, not a fixed path; no settings picker is added. Existing typed
+PickDirectory→WindowsPlatformAdapter→bounded STA/StaDialogRunner remains unchanged for later forms.
+Exact slice invariants/API ledger: [Phase B contract](../../.trellis/tasks/10-16-archive-manager/phase-b-settings-contract.md).
+
+## Phase C browser/entry reference follow-up (2026-10-21)
+Tracked legacy archive search rechecked; no general archive browser lifecycle identified, not
+an exhaustive untracked/generated claim. Archiver gui/src/view.rs::archive_children31,
+parent_prefix195,sort_items109 derive implicit children/parent/directories-first details.
+gui/src/main.rs AppWindow::new115→wire_callbacks→ui.run158 is its Slint native boundary;
+activate669→view_item697→selected extract711→Msg::Done/After::OpenFile→poll300→open_path967
+only opens after extraction success. Temp_view_dir is PID-shared and main159 recursively removes
+it after loop exit; this is NOT safe lease/source-binding evidence and is not copied.
+SupaZip nested supazip/supazip-gui main.rs App/default→eframe::run_native682, UI drains controller
+events and lib.rs AppController::open_archive460 owns busy/read state; no GPUI transplant or
+accepted nested/temp-lease contract inferred. Exact retained layout/lifecycle/cancel/focus/failure
+invariants and new owner seams: [Phase C contract](../../.trellis/tasks/10-16-archive-manager/phase-c-browser-contract.md).
+
+Phase C production entrances verified this turn: main.rs register -> archive/application.rs
+ArchiveReadClient via archive_client_bridge -> original archive read dedicated transport ->
+ArchiveReadSession/ArchiveWorkerRunner. Browser callback -> next-turn application.open_entry ->
+typed ArchiveEntry materialize -> existing source lease/worker selected ordinal/protected output ->
+actual exited cleanup -> ArchiveEntryCache.Seal -> current Rust identity check -> Shell command or
+child browser. Native picker uses existing detached dispatcher and bounded STA/StaDialogRunner;
+the test pre-cancel path does not display a window. Cache release validates file identity/hash/
+metadata/MOTW and only retires owned empty ancestry, never recursive user/config paths.
+Exact executed checks and remaining window-memory/encrypted-entry/expiry-startup gaps are in
+[Phase C partial outcomes](../../.trellis/tasks/10-16-archive-manager/phase-c-browser-outcomes.md).
+These new production entrances are not proof of legacy general-archive support or native UI acceptance.
+
+Phase C closeout verified additional current entrances (2026-10-21):
+ArchiveApplication register -> independent UiStateStore/background load -> keyed open restored
+WindowBounds/ArchiveBrowser.apply_restored_state; native close/F4 snapshot -> deferred retirement
+-> bounded background sibling-temp/sync/rename; no AppConfig.archive geometry or archive paths.
+ArchiveEntryCache constructor -> one background startup sweep; version2 manifest -> fixed-parent
+retire record -> exact root/directory identity + empty deletion, including real restart recovery.
+Browser-only read command -> original ArchiveReadSession/runner/private InteractionPort -> nonsecret
+password ticket event -> Rust masked Dialog -> private bounded reply -> matching original runner.
+Native source identity on password read retries retains original control, never diagnostic attemptID.
+Legacy Archiver source re-read at AppWindow115/ui.run158/recursive cleanup159 and view_item697-715
+confirms selected-success-before-open, but its shared root/global password/recursive delete are NOT
+lease recovery or private-ticket evidence. Exact delivered checks and921/1 integrated/font-gate/
+native-acceptance limits: [closeout outcomes](../../.trellis/tasks/10-16-archive-manager/phase-c-closeout-outcomes.md).
+
+## Phase D operations/launch reference follow-up (2026-10-21)
+
+Rechecked tracked legacy archive terms before Phase D: packaging/FFmpeg ZIP and image/video
+compression, not a general archive operation UI. Archiver gui/src/args.rs::parse28–51 keeps
+OsString/arity; main.rs85–158 parses before AppWindow::new115, wires callbacks136, dispatches
+initial action151–156 then ui.run158. extract_dest24 preserves compound archive stems. Its
+spawn274–298 creates one background task/progress/cancel, poll300–385 owns completion and
+hide/quit339–342; do_extract718–748 snapshots selected paths/destination, start_create485–508
+filters options by capability before invoking core create. These are behavior references, not
+permission to copy its global password, unbounded std channel, path overwrite or recursive temp
+cleanup159. Smart extraction remains the explicitly approved Next rule, not a verified Bandizip
+algorithm. SupaZip nested supazip/supazip-gui lib.rs AppController::default192, apply268,
+dispatch_entry_action335, cancel477, start_progress499/finish507 and main.rs671–695
+App::default→eframe::run_native682 are the controller/native boundaries; its close resets busy/
+progress without worker acknowledgement and its placeholder TestEntry is not copied.
+
+Next Phase D reuse boundary: ArchiveApplication owns immutable drafts/FIFO/presentation; typed
+execution session translates into original ArchiveWorkerRunner.Start→immutable admission→fixed
+held helper→suspended Job→worker/source acquire→original codec/ArchiveOutput→actual exited cleanup.
+Native publication/uncertain/partial-output facts outrank late cancellation. No browser close or
+private complete releases a running slot. Existing extraction plan supplies All/Entries and
+Here/Name/Smart; new worker selection must bind original source revision before ordinal remap.
+Password/conflict/risk/readmission stay original finite InteractionPort mechanisms. Progress
+coalesces at<=10Hz, prompt/terminal lossless/bounded, existing NotificationCenter/taskbar only.
+
+Startup verified main.rs517–546 currently parses launch modes then ordinary summon early return;
+runtime.rs631 summon uses Rust IPC lib.rs handle_connection/handle_summon_connection, where
+client_name alone is not peer authentication. New archive intent must use actual same-user/session/
+executable identity and bounded Rust admission/readiness/ack before that return, never C# roundtrip.
+Protected redirect forwards original args_os, silent/browser/background paths retain their
+presentation policy; archive-origin cold startup creates main hidden/unfocused rather than hide
+after show. Quick Find panel deferred selection→QuickLaunchApplication::execute_native_result
+retains accepted-close and success-only usage/failure owner; intercept only ordinary file Open,
+not Reveal/opaque OpenWith Shell action. Exact implementation/evidence belongs to Phase D records.
+
+Phase D format-policy follow-up: Archiver core/src/lib.rs519–568 was rechecked for original
+metadata/extraction flow. Locked sevenz reader.rs784–796 keeps only the first packed stream;
+archive.rs477–487 exposes the real mapping. Sum independent-block packed streams only; shared
+solid blocks have no per-member ratio. Locked UnRAR arcread.cpp322–335,807–809 and
+rartypes.hpp30 establish unknown-size sentinel0x7fffffff7fffffff; unknown/split/solid member
+sizes do not justify guessed risk ratios. Next reuses original finite output_readmission and
+ZipRisk/InteractionPort, not new codec execution. Known planned sizes authorize at most one
+output-only readmission after zero commits/actual cleanup/source binding. Unknown streams keep
+actual counters. Verified compressed-TAR discovery uses the existing anonymous outer spool,
+bounded by max(output,metadata); overflow before known inner sizes remains ResourceLimit, not a
+shortage. Destination checks use original held native namespace/volume before directory effects;
+no probe write, elevation or guessed free space. Bandizip evidence remains resources only.
+
+## Phase E ZIP capability follow-up (2026-10-22)
+
+New exact-source and small real-format evidence is in
+[ZIP capability gate](../../.trellis/tasks/10-16-archive-manager/research/phase-e-zip-capability.md).
+This verifies limitations, not product support. No earlier-phase research/cache/font/Root repair
+was repeated. Archiver core/src/lib.rs::delete763–825 uses by_index_raw782→raw_copy_file784→
+finish/flush787→path rename818; predictable File::create779/path rename are not Next transactions.
+SupaZip nested core yielded no split/raw-copy/edit implementation in this bounded follow-up.
+
+Locked zip8.6.0 read/zip_archive.rs::read_central_header190–193 rejects unequal end/central disks;
+equal disk numbers do not implement member disk mapping. write.rs::write_central_and_footer
+1896–1958 fixes disk0/ZIP64one-disk; types.rs691–718 fixes member disk0; ZIP64 extra disk_start
+is unused25–35. Current Next formats/zip.rs84/101/127/258–268 rejects nonzero disks and
+engine.rs31–61 opens one File. A generic segmented sink alone cannot supply genuine ZIP volumes.
+
+Two spec-encoded252byte ZIP sets (2disks and3disks, different central/end placement; NOT ordinary
+ZIP chopping) independently pass stock hash-verified7Zip26.00 list/test/extract6commands and
+all4payload hash checks. Existing-artifact API probe: concatenated2disk parses but first member
+fails local header;3disk explicitly unsupported; current public engine returns MissingVolume for
+both last ZIPs despite present siblings. This is not a fresh source build or production Job test.
+
+Raw-copy precision: write.rs1691→1623→1635 regenerates records from read.rs::options1046–1069,
+then copies compressed ranges. Plain CPython control loses0x5455timestamp extra and original
+DOS/internal attrs. Existing independent ZipCrypto control keeps packed SHA256s but loses
+encryption mask0x0001; API returns success, independent7Zip t exit2/Data Errors. AES metadata
+has a public preservation field, but AES preservation was not runtime-tested in this gate.
+Do not treat raw_copy_file or Archiver's pattern as P203 metadata/encryption acceptance.
+
+Required P202/P203 now needs the explicit evidenced backend decision before implementation:
+recommended locked-codec project ZIP disk-relative adapter/record-preserving rewriter, not an
+arbitrary upgrade or external executable backend. Retain immutable set revision/entry IDs,
+bounded exact-volume identity leases, original queue/worker/Job/cancel/native commit and real
+partial-publication facts. Same-source native replacement with held lease/POSIX_SEMANTICS needs
+a real regression; share flags alone prove neither success nor failure. No native expansion
+is authorized/inferred. Scope, actual commands/failures and unrun cases stay in the gate/results.
+
+## Phase E approved adapter and actual same-source native gate (2026-10-22)
+
+The user approved project-owned ZIP container/record adaptation with locked dependencies unchanged;
+the earlier ZIP backend decision is CLOSED. [Implementation contract](../../.trellis/tasks/10-16-archive-manager/phase-e-implementation-contract.md)
+records within-E order/new-target-only split publication. No backend/vendor/crypto engine change.
+Partial zip_container.rs now maps real disk-relative records to a bounded encoded anonymous spool;
+ArchiveEngine::with_zip_volumes explicitly opts in. Production worker does NOT opt in before C#
+all-volume leases exist. zip_volume_candidates returns unpublished anonymous encoded candidates,
+rewrites member/central/end disk coordinates and preserves existing payload codec ownership.
+Small source-generated6volume ZIP independently7Zip list/test/extract succeeds,600byte payload;
+public read/missing/replaced/order/count/budget tests are container evidence,not native P202 delivery.
+
+Actual same-source chain newly verified: ArchiveSourceLease.Open32–48 -> held no-reparse parents/
+read-only file via OutputNative.Open -> CaptureTargetIdentity -> BeginFile(expected,true) -> complete
+candidate/readback -> ArchiveOutputSession.Commit319–379 -> Flush/full target recheck ->
+FileRenameInfoEx flags REPLACE_IF_EXISTS|POSIX_SEMANTICS (OutputNative.RenameReplace662–685).
+The source file handle remains live; actual call fails replace_file/Win3232/FailedBeforeCommit.
+No inference from flags: three exact native fixtures LIST then eachRUN observe1PASS/2FAIL,0skip/
+not_run. Same-path success and late-cancel publication both fail32; changed-native-identity refusal
+passes. Precommit cancellation assertions execute before the late-cancel subcase,not a whole-case PASS.
+Failure proof verifies old archive hash unchanged and held identity stable,zero replacement fact.
+
+Source/archive transaction production code/rights remain unchanged. This is a new concrete native
+boundary decision,not reopening ZIP backend choice. An edit-only final source recheck/lease handoff
+inside the existing one-shot native commit is a proposal requiring confirmation; no globally widened
+sharing,delete/truncate/backup/retry is authorized. Full evidence,retained failures and unrun P203/
+UI/7z/RAR/native volume work belong to the additive implementation results/current checkpoint.
+
+## Phase E current authorized delivery follow-up (2026-10-22)
+
+The historical native32 observations above are unchanged. User now explicitly authorizes edit-only
+final-source-FILE handoff/accepted TOCTOU; this closes the old decision, not the historical failures.
+Current chain: ArchiveSourceLease.OpenForEdit captures fullID/version/hash/target and bounded MOTW;
+worker_zip_edit binds immutable browser source/ordinals, generates/verifies record-preserving ZIP,
+closes original readers, exact-token readback then edit_reads_complete. Original C# output session
+flushes candidate, rechecks still-held source/target, final cancellation, releases FILE only and does
+one existing FileRenameInfoEx replacement. Parent/candidate ownership and ordinary sharing stay.
+
+Current entry points: zip_edit.rs::candidate/structure/renamed_record/write_records;
+zip_container.rs::discover/normalize/split_encoded/relocate/finish_single; worker_volume_output::publish;
+ArchiveVolumeSources constructor/Verify; ArchiveWorkerOutputBridge.PhaseE::HandleExtendedCall;
+ArchiveOutputSession::CommitVerifiedEdit/CommitJournal; Desktop archive draft/forms/jobs/browser.
+ZIP/7z source routing activates only after all-member native acquisition. All split candidates
+readback/flush/verify before first no-replace publication; native journal survives cleaned candidates
+and distinguishes real publication/uncertainty, never set-wide atomicity. Encoder spool is not a volume.
+
+Record support: unchanged local/central extras/comments/attrs/raw names/encrypted bytes/descriptors
+are preserved separately; rename regenerates dependent Unicode/name fields, relocation ZIP64/offsets.
+Known finite extra allowlist; unknown dependent structures,SFX,split,signed application containers
+refuse. Newly added entries use plain Deflate/Stored directories, visibly disclosed; existing crypto
+is not changed. Native edit preserves MOTW/ordinary DOS bits, not arbitrary ADS/ACL/filesystem flags.
+
+Independent oracle identity is hash-verified stock7Zip26.00 (SHA256
+4BCC005758C5E604C0AAA257B6097846A4A708E62A9C0C7471FA360FAD863F1F).
+Genuine RAR fixtures come from libarchive79c571f845dbdd250d69bff9d93ae034f674135e with license/
+uuencoded originals/manifests retained; RAR4three volumes20111bytes and RAR5solid four volumes117398bytes.
+These fixture sources are independent data/oracles, not a replacement product backend. Final current
+results live in phase-e-delivery-outcomes and sole checkpoint. Physical GUI/DPI/UIA/user acceptance
+remains NOT RUN; no F,source recycle,release/system mutation or first-release completion claim.

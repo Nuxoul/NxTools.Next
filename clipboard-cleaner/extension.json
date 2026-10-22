@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "id": "example.clipboard-cleaner",
+  "name": "剪贴板文本整理",
+  "version": "1.0.0",
+  "description": "手动整理选中的文本并创建派生历史条目，保留原内容。",
+  "permissions": [
+    {
+      "id": "clipboard.read",
+      "reason": "读取用户明确选中的文本历史条目"
+    },
+    {
+      "id": "clipboard.write",
+      "reason": "通过宿主创建新的派生文本条目，不覆盖原条目"
+    }
+  ],
+  "runtime": {
+    "program": "python",
+    "timeout_ms": 10000
+  },
+  "files": [
+    "main.py",
+    "test_main.py",
+    "README.md"
+  ],
+  "settings": [
+    {
+      "key": "trim_line_ends",
+      "title": "去除行尾空白",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "collapse_blank_lines",
+      "title": "合并连续空白行",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "trim_outer",
+      "title": "去除首尾空白",
+      "type": "bool",
+      "default": true
+    }
+  ],
+  "handlers": [
+    {
+      "id": "clean",
+      "title": "整理文本并保留原文",
+      "feature": "clipboard",
+      "entry": "action",
+      "action": {
+        "type": "script",
+        "entry_file": "main.py"
+      }
+    }
+  ]
+}

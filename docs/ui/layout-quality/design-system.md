@@ -1,14 +1,14 @@
 # Layout quality design system
 
 ## Status
-Approved work is design documentation plus a browser prototype only. Candidate dimensions/type below are **proposed design values**, not production-token authority until user visual approval and a GPUI feasibility comparison. Retain the [existing behavior/architecture contracts](../../../.trellis/spec/shared/architecture.md), [current UI target matrix](../../../.trellis/spec/shared/ui-design.md) and fixed windows in the [inventory](surface-inventory.md). The last local global-settings correction is evidence, not an automatic whole-app baseline.
+Initial design/prototype approval was followed by explicit local production migration approval after checkpoint42f60a8. First implementation uses opt-in13/20 workbench body and176px/40px named rail, while compact/task/summon typography and native budgets remain unchanged. These values have synthetic GPUI geometry/render evidence, not blanket user/mixed-DPI visual acceptance. Preserve [feature-first contracts](feature-preservation.md), [behavior/architecture](../../../.trellis/spec/shared/architecture.md) and fixed windows in the [inventory](surface-inventory.md). Prototype content is never the authoritative feature inventory.
 
 ## Point of view
 NxTools is a Windows productivity workbench with fast summon surfaces. Borrow Zed's continuous planes, restrained chrome, disciplined start/end slots, subtle actions and clear focus. Do not borrow editor tabs, a project tree, decorative terminal motifs or a metrics dashboard. Quality means a coherent reading/action order and precise geometry under real data, not a familiar palette.
 
 Rejected defaults: repeated title+subtitle+card title; icon-only primary navigation; equal card walls; centralizing every label; reduced Chinese text to create density; spreading controls to distant edges; giant filler sections; whole-view animations. Tighten duplicate copy and hierarchy before reducing type.
 
-## Color roles (unchanged)
+## Color roles (installed-feedback correction)
 | Role | Existing direction | Use |
 | --- | --- | --- |
 | Canvas |#18181b | Continuous working plane |
@@ -16,7 +16,8 @@ Rejected defaults: repeated title+subtitle+card title; icon-only primary navigat
 | Recessed |#121215 | Input/content recess when semantically useful |
 | Border/element |#27272a | Structural dividers and neutral interaction |
 | Primary / secondary / muted text |#f4f4f5 / #a1a1aa / #71717a | Critical / explanatory / nonessential; muted is not ordinary body |
-| Accent / hover |#38bdf8 / #7dd3fc | Primary action, focus, small selection signal; not a large nav fill |
+| Action / hover |#bfc0c4 / #d5d6da | Restrained neutral primary action; no cyan navigation fill |
+| Selection / keyboard focus |#353539 / #9d9ea3 | Separate selected plane and keyboard-only ring; mouse click retains functional focus without persistent outline |
 
 Semantic statuses retain existing green/amber/red. Use label/icon as well as color. No new theme, gradient or saturated status chips for every value. Contrast is inspected on rendering; hex values alone are not compliance evidence.
 
@@ -94,3 +95,5 @@ A budget exception names surface, content reason, measurement, regression, nativ
 4. Only then migrate in canonical order with preserved reference lifecycle tests. Packaging/runtime/DPI/service actions require their own authorization.
 
 [Page blueprints](page-blueprints.md) · [Acceptance matrix](acceptance-matrix.md) · [Migration map](migration-map.md)
+
+2026-10-10 installed user feedback explicitly rejects the earlier cyan action/focus treatment. The neutral semantic roles above supersede#38bdf8/#7dd3fc for desktop product chrome; prototype/browser historical palette remains separate evidence, not current installed approval. Preserve original field/action/keyboard and fixed-client budgets. No 'visual accepted' claim from neutral token tests.

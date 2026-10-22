@@ -3,15 +3,17 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Instant;
 
-use gpui::{
+use gpui_kit::base::Root;
+use gpui_kit::component::button::ButtonVariants;
+use gpui_kit::component::input::{Input, InputState, NumberInput, NumberInputEvent, StepAction};
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::component::{Disableable, Sizable};
+use gpui_kit::{
     AnyWindowHandle, Context, Entity, IntoElement, Render, WeakEntity, Window,
     WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, div,
     prelude::*, px, size,
 };
-use gpui_component::button::ButtonVariants;
-use gpui_component::input::{Input, InputState};
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::{Disableable, Root, Sizable};
 use nxtools_core::{
     AppConfig, NetworkProxyMode, NetworkProxySettings, NetworkSettings, ProcessBlacklistRule,
     ProcessBlacklistSettings, SystemSettings,
@@ -23,19 +25,23 @@ use tracing::{info, warn};
 
 use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
-use crate::ui::components::action::{
-    SegmentedOption, action_button, primary_button_variant, segmented_control,
-};
-use crate::ui::components::field::{field_shell, inline_error};
-use crate::ui::components::settings::{
-    SettingsShellIds, dialog_footer, settings_row, settings_section, settings_shell,
-    settings_toggle,
-};
+use crate::ui::components::action::{SegmentedOption, action_button, primary_action_button};
+use crate::ui::components::field::inline_error;
+use crate::ui::components::settings::{SettingsShellIds, dialog_footer, settings_shell};
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::SPACING_8;
-use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY, TEXT_LABEL};
+use gpui_kit::component::form::{Field, Form};
+use gpui_kit::component::group_box::GroupBoxVariant;
+use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, SettingPage, Settings};
+use gpui_kit::component::switch::Switch;
 
 mod blacklist;
+#[cfg(test)]
+#[path = "network_settings/kit_migration_tests.rs"]
+mod kit_migration_tests;
+#[cfg(test)]
+#[path = "network_settings/notification_tests.rs"]
+mod notification_tests;
 #[cfg(debug_assertions)]
 pub(crate) mod visual_preview;
 
@@ -81,13 +87,13 @@ struct PendingGlobalSettingsApply {
 fn global_shell_failure_message(failure_kind: &str, stage: Option<&str>) -> &'static str {
     match (failure_kind, stage) {
         (_, Some("desktop_executable_unavailable")) => {
-            "找不到通过校验的 NxTools 程序。请修复或重新安装 NxTools 后重试。"
+            "设置已保存，但无法校验当前 NxTools 程序，启动项和托盘设置未应用。请关闭旧版本并从当前安装目录重新启动后重试。"
         }
         (_, Some("startup_registration_failed")) => {
-            "Windows 启动项未能写入当前用户注册表。请检查系统策略或安全软件后重试。"
+            "设置已保存，但 Windows 启动项未能写入当前用户注册表。请检查系统策略或安全软件后重试。"
         }
         (_, Some("tray_icon_failed")) => {
-            "Windows 未能创建或显示 NxTools 托盘图标。请检查通知区域设置后重试。"
+            "设置已保存，但 Windows 未能创建或显示 NxTools 托盘图标。请检查通知区域设置后重试。"
         }
         (_, Some("windows_shell_enqueue_failed")) => {
             "设置已保存，但 Windows 未能安排系统设置更新。请稍后重试；问题持续时请重启 NxTools。"
@@ -194,7 +200,7 @@ impl NetworkSettingsApplication {
             Err(_) => {
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        "global-settings-load",
+                        format!("global-settings-load-{}", uuid::Uuid::new_v4()),
                         "无法读取全局设置",
                         "请检查配置文件是否存在且可读取，然后重试。",
                         cx,
@@ -232,6 +238,9 @@ impl NetworkSettingsApplication {
                 app_id: Some("NxTools.NetworkSettings".into()),
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
+                app_owns_titlebar_drag: false,
+                inactive_frame_interval: None,
+                icon: None,
                 tabbing_identifier: None,
             },
             move |window, cx| {
@@ -276,7 +285,7 @@ impl NetworkSettingsApplication {
             }
             Err(error) => self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
-                    "network-settings-window",
+                    format!("network-settings-window-{}", uuid::Uuid::new_v4()),
                     "无法打开全局设置",
                     error.to_string(),
                     cx,
@@ -382,8 +391,23 @@ impl NetworkSettingsApplication {
             }
         };
         info!(event = "global.settings.persisted", %correlation_id, rule_count = next_config.process_blacklist.entries().len(), elapsed_ms = started_at.elapsed().as_millis(), "global settings durably saved");
-        let shell_changed =
-            self.config.system != system || *self.system_settings.borrow() != system;
+        let shell_changed = self.config.system.start_on_login_silently
+            != system.start_on_login_silently
+            || self.config.system.close_to_tray != system.close_to_tray
+            || self.system_settings.borrow().start_on_login_silently
+                != system.start_on_login_silently
+            || self.system_settings.borrow().close_to_tray != system.close_to_tray;
+        let next_theme = system.theme;
+        cx.defer(move |cx| crate::theme::set_theme_preference(next_theme, cx));
+        let notification_center = self.notifications.clone();
+        let notification_position = system.notification_position;
+        let notification_duration = system.notification_duration_seconds;
+        cx.defer(move |cx| {
+            notification_center.update(cx, |center, cx| {
+                center.set_position(notification_position, cx);
+                center.set_duration_seconds(notification_duration, cx);
+            })
+        });
         self.config = next_config.clone();
         self.publish_live_blacklist(correlation_id, cx);
         if let Err(error) = self.policy.update(settings) {
@@ -461,7 +485,7 @@ impl NetworkSettingsApplication {
         }
         self.notifications.update(cx, |notifications, cx| {
             notifications.show_success(
-                "network-settings-saved",
+                format!("network-settings-saved-{correlation_id}"),
                 "全局设置已保存",
                 "应用规则已更新；后续联网操作将使用保存的代理策略。",
                 cx,
@@ -692,11 +716,19 @@ impl NetworkSettingsApplication {
                 "Windows did not confirm product shell settings reconciliation"
             );
         }
+        let center = self.notifications.clone();
+        let message = global_shell_failure_message(failure_kind, failure_stage).to_owned();
+        let operation_key = format!("network-settings-saved-{}", pending.correlation_id);
+        cx.defer(move |cx| {
+            center.update(cx, |center, cx| {
+                center.show_error(operation_key, "全局设置未能应用", message, cx)
+            })
+        });
         self.draft_busy.set(false);
         if let Some(view) = pending.view {
             let _ = view.update(cx, |view, cx| {
                 view.saving = false;
-                view.error = Some(global_shell_failure_message(failure_kind, failure_stage).into());
+                view.error = None;
                 cx.notify();
             });
         }
@@ -724,6 +756,10 @@ struct NetworkSettingsView {
     mode: NetworkProxyMode,
     start_on_login_silently: bool,
     close_to_tray: bool,
+    theme_preference: nxtools_core::ThemePreference,
+    notification_position: nxtools_core::NotificationPosition,
+    notification_duration: Entity<InputState>,
+    _duration_step: gpui_kit::Subscription,
     host: Entity<InputState>,
     port: Entity<InputState>,
     tab: GlobalSettingsTab,
@@ -763,12 +799,47 @@ impl NetworkSettingsView {
         });
         let process_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("应用进程名，例如 notepad.exe"));
+        let notification_duration = cx.new(|cx| {
+            let mut state = InputState::new(window, cx)
+                .default_value(system.notification_duration_seconds.to_string());
+            state.set_step(None, window, cx);
+            state
+        });
+        let duration_step = cx.subscribe_in(
+            &notification_duration,
+            window,
+            |_, _, event: &NumberInputEvent, window, cx| {
+                let NumberInputEvent::Step(action) = *event;
+                cx.defer_in(window, move |this, window, cx| {
+                    if this.saving {
+                        return;
+                    }
+                    let current = this
+                        .notification_duration
+                        .read(cx)
+                        .value()
+                        .parse::<u32>()
+                        .unwrap_or(nxtools_core::default_notification_duration());
+                    let next = match action {
+                        StepAction::Increment => current.saturating_add(1).min(60),
+                        StepAction::Decrement => current.saturating_sub(1).max(1),
+                    };
+                    this.notification_duration.update(cx, |input, cx| {
+                        input.set_value(next.to_string(), window, cx)
+                    });
+                });
+            },
+        );
         Self {
             theme: Theme::zed_dark(),
             application,
             mode: settings.proxy.mode,
             start_on_login_silently: system.start_on_login_silently,
             close_to_tray: system.close_to_tray,
+            theme_preference: system.theme,
+            notification_position: system.notification_position,
+            notification_duration,
+            _duration_step: duration_step,
             host,
             port,
             tab: GlobalSettingsTab::General,
@@ -785,6 +856,18 @@ impl NetworkSettingsView {
 
     fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.saving {
+            return;
+        }
+        let Ok(notification_duration_seconds) =
+            self.notification_duration.read(cx).value().parse::<u32>()
+        else {
+            self.error = Some("通知停留时间请输入 1–60 秒".into());
+            cx.notify();
+            return;
+        };
+        if !(1..=60).contains(&notification_duration_seconds) {
+            self.error = Some("通知停留时间请输入 1–60 秒".into());
+            cx.notify();
             return;
         }
         if !self.process_input.read(cx).value().trim().is_empty() || self.editing_rule.is_some() {
@@ -829,6 +912,9 @@ impl NetworkSettingsView {
         let system = SystemSettings {
             start_on_login_silently: self.start_on_login_silently,
             close_to_tray: self.close_to_tray,
+            theme: self.theme_preference,
+            notification_position: self.notification_position,
+            notification_duration_seconds,
         };
         let view = cx.entity().downgrade();
         let source_window = window.window_handle();
@@ -853,7 +939,19 @@ impl NetworkSettingsView {
                     let _ = view.update(cx, |view, cx| {
                         view.saving = false;
                         view.draft_busy.set(false);
-                        view.error = Some(error);
+                        view.error = None;
+                        let application = view.application.clone();
+                        cx.defer(move |cx| {
+                            let center = application.read(cx).notifications.clone();
+                            center.update(cx, |center, cx| {
+                                center.show_error(
+                                    format!("network-settings-saved-{correlation_id}"),
+                                    "全局设置未能保存或应用",
+                                    error,
+                                    cx,
+                                )
+                            });
+                        });
                         cx.notify();
                     });
                 }
@@ -863,56 +961,249 @@ impl NetworkSettingsView {
     }
 }
 
+impl NetworkSettingsView {
+    fn render_setting_control(
+        &mut self,
+        slot: usize,
+        cx: &mut Context<Self>,
+    ) -> gpui_kit::AnyElement {
+        match slot {
+            0 => Switch::new("system-start-on-login")
+                .checked(self.start_on_login_silently)
+                .disabled(self.saving)
+                .accessibility_label("开机静默启动")
+                .on_change(cx.listener(|this, requested: &bool, _, cx| {
+                    if !this.saving {
+                        this.start_on_login_silently = *requested;
+                        cx.notify();
+                    }
+                }))
+                .into_any_element(),
+            1 => Switch::new("system-close-to-tray")
+                .checked(self.close_to_tray)
+                .disabled(self.saving)
+                .accessibility_label("关闭到托盘")
+                .on_change(cx.listener(|this, requested: &bool, _, cx| {
+                    if !this.saving {
+                        this.close_to_tray = *requested;
+                        cx.notify();
+                    }
+                }))
+                .into_any_element(),
+            2 => {
+                let selected = match self.mode {
+                    NetworkProxyMode::Direct => "network-settings-proxy-mode-direct",
+                    NetworkProxyMode::System => "network-settings-proxy-mode-system",
+                    NetworkProxyMode::ManualHttp => "network-settings-proxy-mode-manual",
+                };
+                crate::ui::components::action::input_segmented_control(
+                    self.theme,
+                    "network-settings-proxy-mode",
+                    selected,
+                    [
+                        (
+                            "network-settings-proxy-mode-direct",
+                            NetworkProxyMode::Direct,
+                            "直连",
+                        ),
+                        (
+                            "network-settings-proxy-mode-system",
+                            NetworkProxyMode::System,
+                            "系统代理",
+                        ),
+                        (
+                            "network-settings-proxy-mode-manual",
+                            NetworkProxyMode::ManualHttp,
+                            "手动 HTTP",
+                        ),
+                    ]
+                    .into_iter()
+                    .map(|(id, mode, label)| {
+                        SegmentedOption::new(
+                            id,
+                            label,
+                            cx.listener(move |this, _, _, cx| {
+                                if !this.saving {
+                                    this.mode = mode;
+                                    this.error = None;
+                                    cx.notify();
+                                }
+                            }),
+                        )
+                    })
+                    .collect(),
+                    cx,
+                )
+                .into_any_element()
+            }
+            3 => {
+                let disabled = self.mode != NetworkProxyMode::ManualHttp || self.saving;
+                Form::vertical()
+                    .small()
+                    .columns(4)
+                    .child(
+                        Field::new().col_span(3).label("代理地址").child(
+                            div()
+                                .debug_selector(|| "network-settings-proxy-host-field".into())
+                                .w_full()
+                                .child(
+                                    Input::new(&self.host)
+                                        .aria_label("代理地址")
+                                        .disabled(disabled),
+                                ),
+                        ),
+                    )
+                    .child(
+                        Field::new().label("端口").child(
+                            div()
+                                .debug_selector(|| "network-settings-proxy-port-field".into())
+                                .w_full()
+                                .child(
+                                    Input::new(&self.port)
+                                        .aria_label("代理端口")
+                                        .disabled(disabled),
+                                ),
+                        ),
+                    )
+                    .into_any_element()
+            }
+            4 => self.render_blacklist_table(cx),
+            5 => self.render_blacklist_editor(cx),
+            6 => {
+                let view = cx.entity().downgrade();
+                let selected = self.theme_preference;
+                action_button("global-theme-mode", selected.label())
+                    .disabled(self.saving)
+                    .dropdown_menu(move |menu, _, _| {
+                        nxtools_core::ThemePreference::ALL.into_iter().fold(
+                            menu.min_w(px(224.0)),
+                            |menu, preference| {
+                                let view = view.clone();
+                                menu.item(
+                                    PopupMenuItem::new(preference.label())
+                                        .checked(preference == selected)
+                                        .on_click(move |_, _, cx| {
+                                            let view = view.clone();
+                                            cx.defer(move |cx| {
+                                                let _ = view.update(cx, |this, cx| {
+                                                    if !this.saving {
+                                                        this.theme_preference = preference;
+                                                        cx.notify();
+                                                    }
+                                                });
+                                            });
+                                        }),
+                                )
+                            },
+                        )
+                    })
+                    .into_any_element()
+            }
+            7 => {
+                let view = cx.entity().downgrade();
+                let selected = self.notification_position;
+                action_button("global-notification-position", selected.label())
+                    .outline()
+                    .with_size(gpui_kit::component::Size::Medium)
+                    .disabled(self.saving)
+                    .dropdown_menu(move |menu, _, _| {
+                        nxtools_core::NotificationPosition::ALL.into_iter().fold(
+                            menu.min_w(px(160.0)),
+                            |menu, position| {
+                                let view = view.clone();
+                                menu.item(
+                                    PopupMenuItem::new(position.label())
+                                        .checked(position == selected)
+                                        .on_click(move |_, _, cx| {
+                                            let view = view.clone();
+                                            cx.defer(move |cx| {
+                                                let _ = view.update(cx, |this, cx| {
+                                                    if !this.saving {
+                                                        this.notification_position = position;
+                                                        cx.notify();
+                                                    }
+                                                });
+                                            });
+                                        }),
+                                )
+                            },
+                        )
+                    })
+                    .into_any_element()
+            }
+            8 => div()
+                .id("global-notification-duration")
+                .debug_selector(|| "global-notification-duration".into())
+                .w(px(168.0))
+                .child(
+                    NumberInput::new(&self.notification_duration)
+                        .w_full()
+                        .suffix("秒")
+                        .disabled(self.saving),
+                )
+                .into_any_element(),
+            _ => div().into_any_element(),
+        }
+    }
+}
+
 impl Render for NetworkSettingsView {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::theme::observe_theme(_window, cx);
+        self.theme = Theme::active(cx);
         let theme = self.theme;
-        let manual = self.mode == NetworkProxyMode::ManualHttp;
-        let selected_mode_id = match self.mode {
-            NetworkProxyMode::Direct => "network-settings-proxy-mode-direct",
-            NetworkProxyMode::System => "network-settings-proxy-mode-system",
-            NetworkProxyMode::ManualHttp => "network-settings-proxy-mode-manual",
-        };
-        let mode_buttons = segmented_control(
-            theme,
-            "network-settings-proxy-mode",
-            selected_mode_id,
-            [
-                (
-                    "network-settings-proxy-mode-direct",
-                    NetworkProxyMode::Direct,
-                    "直连",
-                ),
-                (
-                    "network-settings-proxy-mode-system",
-                    NetworkProxyMode::System,
-                    "系统代理",
-                ),
-                (
-                    "network-settings-proxy-mode-manual",
-                    NetworkProxyMode::ManualHttp,
-                    "手动 HTTP",
-                ),
-            ]
-            .into_iter()
-            .map(|(id, mode, label)| {
-                SegmentedOption::new(
-                    id,
-                    label,
-                    cx.listener(move |this, _, _, cx| {
-                        if !this.saving {
-                            this.mode = mode;
-                            this.error = None;
-                        }
-                        cx.notify();
-                    }),
+        let owner = cx.entity().downgrade();
+        let ordinary = |slot: usize, title: &'static str, help: &'static str| {
+            let owner = owner.clone();
+            SettingItem::render(move |_, _, app| {
+                let control = owner
+                    .update(app, |view, cx| view.render_setting_control(slot, cx))
+                    .unwrap_or_else(|_| div().into_any_element());
+                crate::ui::components::settings::aligned_setting_row(
+                    format!("global-setting-{slot}"),
+                    title,
+                    help,
+                    format!("global-setting-{slot}-help"),
+                    332.0,
+                    control,
                 )
             })
-            .collect(),
-            cx,
-        );
-        let error = self.error.clone();
-        let start_on_login_silently = self.start_on_login_silently;
-        let close_to_tray = self.close_to_tray;
+            .keywords([title, help])
+        };
+        let complex = |slot: usize, keywords: &'static str| {
+            let owner = owner.clone();
+            SettingItem::render(move |_, _, app| {
+                let control = owner
+                    .update(app, |view, cx| view.render_setting_control(slot, cx))
+                    .unwrap_or_else(|_| div().into_any_element());
+                div()
+                    .w_full()
+                    .min_w_0()
+                    .when(slot != 3, |body| body.px_3())
+                    .child(control)
+            })
+            .keywords([keywords])
+        };
+        let pages = vec![
+            SettingPage::new("常规").resettable(false).group(SettingGroup::new().items([
+                ordinary(0, "开机静默启动", "登录 Windows 后在后台启动，不主动弹出主窗口"),
+                ordinary(1, "关闭到托盘", "关闭主窗口时继续在后台运行；托盘左键恢复，右键可退出"),
+                ordinary(6, "主题", "统一应用于主窗口、设置和辅助窗口；保存后生效"),
+                ordinary(7, "通知位置", "通知相对操作所在屏幕的工作区显示在左上、上中、右上、左下、下中或右下；保存后生效"),
+                ordinary(8, "通知停留时间", "1–60 秒，默认 6 秒；仅影响新通知。鼠标悬停任一通知时暂停整个通知列表的剩余时间，移开后继续倒计时"),
+            ])),
+            SettingPage::new("网络").resettable(false).group(SettingGroup::new().items([
+                ordinary(2, "代理模式", "下载、剪贴板和速启中的实际联网操作共享；本地 IPC 与索引不使用"),
+                complex(3, "代理服务器 地址 端口 HTTP"),
+                SettingItem::render(|_, _, _| div().debug_selector(|| "network-settings-policy-note".into())
+                    .text_sm().child("仅支持 HTTP 代理；修改只影响新开始或重新继续的操作。选择手动 HTTP 后填写地址和端口。\n不支持 PAC 或代理密码；敏感凭据不会写入配置。"))
+                    .keywords(["支持 HTTP PAC 密码"]),
+            ])),
+            SettingPage::new("应用黑名单").resettable(false).group(SettingGroup::new().items([
+                complex(4, "应用黑名单 进程 禁用剪贴板 禁用速启 应用规则"),
+                complex(5, "添加应用 编辑应用 进程名 更新"),
+            ])),
+        ];
         let application = self.application.clone();
         let titlebar = client_titlebar(
             theme,
@@ -926,137 +1217,57 @@ impl Render for NetworkSettingsView {
                 });
             },
         );
-        let navigation = self.render_navigation(cx);
-        let blacklist = self.render_blacklist(cx);
-        let content = div()
-            .flex_1()
-            .h_full()
-            .min_w_0()
-            .min_h_0()
-            .overflow_y_scrollbar()
-            .p(px(20.0))
-            .text_size(px(TEXT_BODY))
-            .line_height(px(LINE_HEIGHT_BODY))
-            .flex()
-            .flex_col()
-            .gap(px(16.0))
-            .when(self.tab == GlobalSettingsTab::General, |content| {
-                content.child(settings_section(
-                    theme,
-                    "network-settings-general-section",
-                    "常规",
-                    vec![
-                        settings_row(
-                            theme,
-                            "开机静默启动",
-                            "登录 Windows 后在后台启动，不主动弹出主窗口",
-                            settings_toggle(
-                                theme,
-                                "system-start-on-login",
-                                start_on_login_silently,
-                                cx.listener(|this, _, _, cx| {
-                                    if !this.saving {
-                                        this.start_on_login_silently =
-                                            !this.start_on_login_silently;
-                                    }
-                                    cx.notify();
-                                }),
-                            ),
-                        ),
-                        settings_row(
-                            theme,
-                            "关闭到托盘",
-                            "关闭主窗口时继续在后台运行；托盘左键恢复，右键可退出",
-                            settings_toggle(
-                                theme,
-                                "system-close-to-tray",
-                                close_to_tray,
-                                cx.listener(|this, _, _, cx| {
-                                    if !this.saving {
-                                        this.close_to_tray = !this.close_to_tray;
-                                    }
-                                    cx.notify();
-                                }),
-                            ),
-                        ),
-                    ],
-                ))
+        let page_seed = [
+            GlobalSettingsTab::General,
+            GlobalSettingsTab::Network,
+            GlobalSettingsTab::Blacklist,
+        ]
+        .iter()
+        .position(|tab| *tab == self.tab)
+        .unwrap_or(0);
+        let settings = Settings::new("global-official-settings")
+            .small()
+            .sidebar_width(px(128.0))
+            .sidebar_size_range(px(128.0)..px(200.0))
+            .with_group_variant(GroupBoxVariant::Normal)
+            .default_selected_index(SelectIndex {
+                page_ix: page_seed,
+                ..Default::default()
             })
-            .when(self.tab == GlobalSettingsTab::Network, |content| {
-                content.child(settings_section(
-                    theme,
-                    "network-settings-network-section",
-                    "网络与代理",
-                    vec![
-                        settings_row(
-                            theme,
-                            "代理模式",
-                            "下载、剪贴板和速启中的实际联网操作共享；本地 IPC 与索引不使用",
-                            mode_buttons,
-                        ),
-                        settings_row(
-                            theme,
-                            "代理服务器",
-                            if manual {
-                                "仅支持 HTTP 代理；修改只影响新开始或重新继续的操作"
-                            } else {
-                                "选择手动 HTTP 后填写地址和端口"
-                            },
+            .pages(pages);
+        let content =
+            div()
+                .debug_selector(|| "global-settings-workspace".into())
+                .size_full()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(div().flex_1().min_h_0().relative().child(settings).when(
+                    self.saving,
+                    |area| {
+                        area.child(
                             div()
-                                .w(px(280.0))
-                                .flex()
-                                .items_center()
-                                .gap(px(SPACING_8))
-                                .child(
-                                    div().flex_1().min_w_0().child(field_shell(
-                                        theme,
-                                        "network-settings-proxy-host-field",
-                                        Input::new(&self.host)
-                                            .appearance(false)
-                                            .bordered(true)
-                                            .disabled(!manual || self.saving)
-                                            .small(),
-                                    )),
-                                )
-                                .child(
-                                    div().w(px(84.0)).child(field_shell(
-                                        theme,
-                                        "network-settings-proxy-port-field",
-                                        Input::new(&self.port)
-                                            .appearance(false)
-                                            .bordered(true)
-                                            .disabled(!manual || self.saving)
-                                            .small(),
-                                    )),
-                                )
-                                .into_any_element(),
-                        ),
-                    ],
+                                .id("global-settings-busy-occluder")
+                                .absolute()
+                                .inset_0()
+                                .occlude()
+                                .on_mouse_down(gpui_kit::MouseButton::Left, |_, _, cx| {
+                                    cx.stop_propagation()
+                                })
+                                .on_click(|_, _, cx| cx.stop_propagation()),
+                        )
+                    },
                 ))
-            })
-            .when(self.tab == GlobalSettingsTab::Blacklist, |content| {
-                content.child(blacklist)
-            })
-            .child(if let Some(error) = error {
-                inline_error(theme, "network-settings-inline-error", error)
-            } else if self.tab == GlobalSettingsTab::Network {
-                div()
-                    .debug_selector(|| "network-settings-policy-note".into())
-                    .text_size(px(TEXT_LABEL))
-                    .text_color(theme.text_muted)
-                    .child("不支持 PAC 或代理密码；敏感凭据不会写入配置。")
-                    .into_any_element()
-            } else {
-                div().into_any_element()
-            })
-            .into_any_element();
-        let content = div()
-            .size_full()
-            .flex()
-            .min_h_0()
-            .child(navigation)
-            .child(content)
-            .into_any_element();
+                .when_some(self.error.clone(), |content, error| {
+                    content.child(
+                        div()
+                            .id("global-settings-error-scroll")
+                            .max_h(px(80.0))
+                            .overflow_y_scroll()
+                            .child(inline_error(theme, "network-settings-inline-error", error)),
+                    )
+                })
+                .into_any_element();
         let footer_application = self.application.clone();
         let footer_actions = div()
             .flex()
@@ -1067,17 +1278,12 @@ impl Render for NetworkSettingsView {
                     .debug_selector(|| "network-settings-cancel".into())
                     .child(
                         action_button("network-settings-cancel-button", "取消")
-                            .h(px(32.0))
-                            .w(px(72.0))
-                            .text_size(px(TEXT_BODY))
-                            .ghost()
                             .disabled(self.saving)
                             .on_click(move |_, _, cx| {
                                 let application = footer_application.clone();
                                 cx.defer(move |cx| {
-                                    application.update(cx, |application, cx| {
-                                        application.close_window(cx);
-                                    });
+                                    application
+                                        .update(cx, |application, cx| application.close_window(cx));
                                 });
                             }),
                     ),
@@ -1086,19 +1292,17 @@ impl Render for NetworkSettingsView {
                 div()
                     .debug_selector(|| "network-settings-save".into())
                     .child(
-                        action_button(
+                        primary_action_button(
                             "network-settings-save-button",
                             if self.saving {
                                 "正在应用…"
                             } else {
                                 "应用"
                             },
+                            theme,
+                            self.saving,
+                            cx,
                         )
-                        .h(px(32.0))
-                        .min_w(px(72.0))
-                        .text_size(px(TEXT_BODY))
-                        .disabled(self.saving)
-                        .custom(primary_button_variant(theme, cx))
                         .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
                     ),
             )
@@ -1143,11 +1347,11 @@ fn parse_network_settings(
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
+    use gpui_kit::{AppContext, Modifiers, TestAppContext, VisualTestContext};
 
     use super::*;
 
-    fn application_fixture(
+    pub(super) fn application_fixture(
         cx: &mut TestAppContext,
         label: &str,
     ) -> (Entity<NetworkSettingsApplication>, PathBuf, NetworkPolicy) {
@@ -1172,6 +1376,10 @@ mod tests {
                     Rc::new(RefCell::new(SystemSettings {
                         start_on_login_silently: false,
                         close_to_tray: false,
+                        theme: nxtools_core::ThemePreference::Dark,
+                        notification_position: Default::default(),
+                        notification_duration_seconds: nxtools_core::default_notification_duration(
+                        ),
                     })),
                     false,
                 )
@@ -1180,9 +1388,44 @@ mod tests {
         (application, directory, policy)
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
+    fn settings_navigation_rows_fill_one_continuous_equal_width_rail(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let (application, directory, _) = application_fixture(cx, "navigation-continuity");
+        cx.update(|cx| application.update(cx, |owner, cx| owner.open_window(cx)));
+        cx.run_until_parked();
+        let handle = cx.read(|cx| application.read(cx).window.expect("settings window"));
+        let mut surface = VisualTestContext::from_window(handle, cx);
+        surface.simulate_resize(size(px(720.0), px(480.0)));
+        for active in 0..3 {
+            surface.refresh().expect("actual official navigation");
+            super::kit_migration_tests::select_page(&mut surface, active);
+            let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+            let rows = (0..3)
+                .map(|index| {
+                    nodes
+                        .iter()
+                        .find(|node| node.path().last() == Some(&format!("0-{index}").into()))
+                        .expect("all original topics")
+                        .bounds()
+                })
+                .collect::<Vec<_>>();
+            assert!((rows[0].size.width - rows[1].size.width).abs() <= px(1.0));
+            assert!((rows[1].size.width - rows[2].size.width).abs() <= px(1.0));
+            assert_eq!(rows[0].left(), rows[1].left());
+            assert_eq!(rows[1].left(), rows[2].left());
+            assert!(
+                rows.iter()
+                    .all(|row| row.size.width > px(0.0) && row.right() <= px(720.0))
+            );
+        }
+        cx.update(|cx| application.update(cx, |owner, cx| owner.close_window(cx)));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[gpui_kit::test]
     fn blacklist_table_local_actions_cancel_failure_and_single_save(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _) = application_fixture(cx, "blacklist-draft");
         let path = directory.join("config.json");
         let before = std::fs::read(&path).expect("before");
@@ -1198,11 +1441,7 @@ mod tests {
         let mut window = VisualTestContext::from_window(handle, cx);
         window.run_until_parked();
         window.refresh().expect("render nav");
-        let tab = window
-            .debug_bounds("global-settings-tab-blacklist")
-            .expect("blacklist tab");
-        window.simulate_click(tab.center(), Modifiers::default());
-        window.run_until_parked();
+        super::kit_migration_tests::select_page(&mut window, 2);
         window.update(|window, cx| {
             view.update(cx, |view, cx| {
                 view.process_input.update(cx, |input, cx| {
@@ -1286,16 +1525,13 @@ mod tests {
             .debug_bounds("global-blacklist-process-field")
             .expect("application input must use an explicit 32px field shell");
         assert_eq!(field.size.height, px(32.0));
-        assert_eq!(add.size.height, field.size.height);
+        assert_eq!(add.size.height, px(24.0));
         assert_eq!(add.center().y, field.center().y);
-        let rail = window
-            .debug_bounds("global-settings-navigation")
-            .expect("settings rail");
-        assert_eq!(rail.size.width, px(128.0));
-        assert!(field.left() >= rail.right() + px(20.0));
+        assert!(field.left() >= px(128.0));
         let toggle = window
             .debug_bounds("global-blacklist-clipboard-cell-0")
             .expect("checkbox");
+        assert!(toggle.right() <= table.right() && toggle.bottom() <= table.bottom());
         let label = window
             .debug_bounds("global-blacklist-label-0")
             .expect("application label");
@@ -1307,44 +1543,31 @@ mod tests {
             app_header.left(),
             "left-aligned application names"
         );
-        for (header_id, marker_id, editor_id) in [
+        let nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        for (header_id, id) in [
             (
                 "global-blacklist-header-clipboard",
-                "global-blacklist-clipboard-0-mark",
-                "global-blacklist-new-clipboard-mark",
+                "global-blacklist-clipboard-0",
             ),
-            (
-                "global-blacklist-header-quick",
-                "global-blacklist-quick-0-mark",
-                "global-blacklist-new-quick-mark",
-            ),
+            ("global-blacklist-header-quick", "global-blacklist-quick-0"),
         ] {
             let header = window.debug_bounds(header_id).expect("column header");
-            let marker = window
-                .debug_bounds(marker_id)
-                .expect("centered checkbox marker");
-            let editor_marker = window
-                .debug_bounds(editor_id)
-                .expect("editor checkbox marker");
-            assert!((header.center().x - marker.center().x).abs() <= px(1.0));
-            assert!((header.center().x - editor_marker.center().x).abs() <= px(1.0));
-            assert_eq!(marker.center().y, label.center().y);
-            assert_eq!(editor_marker.center().y, field.center().y);
+            let checkbox = nodes
+                .iter()
+                .find(|node| node.path().last() == Some(&id.into()))
+                .expect("actual Checkbox");
+            assert!((header.center().x - checkbox.bounds().center().x).abs() <= px(1.0));
+            assert!((checkbox.bounds().center().y - label.center().y).abs() <= px(1.0));
         }
-        window.simulate_click(toggle.center(), Modifiers::default());
+        let toggle_bounds =
+            super::kit_migration_tests::control_bounds(&mut window, "global-blacklist-clipboard-0");
+        window.simulate_click(toggle_bounds.center(), Modifiers::default());
         window.run_until_parked();
         assert!(!window.read(|cx| view.read(cx).rules[0].disable_clipboard));
-        window.simulate_mouse_down(
-            toggle.center(),
-            gpui::MouseButton::Left,
-            Modifiers::default(),
-        );
-        window
-            .refresh()
-            .expect("focus actual clipboard scope action");
+        super::kit_migration_tests::focus_control(&mut window, "global-blacklist-clipboard-0");
         window.simulate_keystrokes("space");
-        window.simulate_event(gpui::KeyUpEvent {
-            keystroke: gpui::Keystroke::parse("space").expect("Space"),
+        window.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse("space").expect("Space"),
         });
         window.run_until_parked();
         assert!(
@@ -1354,8 +1577,8 @@ mod tests {
         window.simulate_keystrokes("tab");
         window.refresh().expect("Tab to quick launch scope action");
         window.simulate_keystrokes("space");
-        window.simulate_event(gpui::KeyUpEvent {
-            keystroke: gpui::Keystroke::parse("space").expect("Space"),
+        window.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse("space").expect("Space"),
         });
         window.run_until_parked();
         assert!(
@@ -1384,7 +1607,16 @@ mod tests {
         window.read(|cx| {
             let view = view.read(cx);
             assert!(!view.saving);
-            assert!(view.error.is_some());
+            assert!(view.error.is_none(), "persistence failure is center-only");
+            assert!(
+                application
+                    .read(cx)
+                    .notifications
+                    .read(cx)
+                    .items()
+                    .iter()
+                    .any(|notice| notice.level == crate::notifications::NotificationLevel::Error)
+            );
             assert!(view.rules.iter().any(|rule| rule.process == "editor"));
         });
         std::fs::write(&path, &before).expect("restore");
@@ -1426,11 +1658,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn global_rules_publish_both_bound_consumers_only_after_durable_success(
         cx: &mut TestAppContext,
     ) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _) = application_fixture(cx, "bound-consumers");
         let path = directory.join("config.json");
         let config = AppConfig::load_from(&path).expect("fixture config");
@@ -1558,8 +1790,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn blacklist_only_apply_skips_shell_when_desired_is_already_applied(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
         let (application, directory, _) = application_fixture(cx, "blacklist-only");
         let (bridge, endpoint) = nxtools_ipc::platform_bridge(8);
         endpoint.set_connected_for_contract_test(true);
@@ -1630,9 +1864,9 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn save_persists_before_publishing_the_shared_policy(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, policy) = application_fixture(cx, "save");
         cx.update(|cx| {
             application.update(cx, |application, cx| application.open_window(cx));
@@ -1685,16 +1919,11 @@ mod tests {
             "content={content:?}, footer={footer:?}"
         );
         let general_section = window
-            .debug_bounds("network-settings-general-section")
-            .expect("shared settings section");
+            .debug_bounds("global-settings-workspace")
+            .expect("official settings workspace");
         assert!(general_section.bottom() <= footer.top());
-        let start_toggle = window
-            .debug_bounds("system-start-on-login")
-            .expect("shared settings toggle");
-        assert_eq!(
-            start_toggle.size,
-            size(px(40.0), px(crate::ui::metrics::CONTROL_HEIGHT_DEFAULT))
-        );
+        let start_toggle =
+            super::kit_migration_tests::control_bounds(&mut window, "system-start-on-login");
         window.simulate_click(start_toggle.center(), Modifiers::default());
         window.run_until_parked();
         window.update(|_, cx| {
@@ -1704,21 +1933,18 @@ mod tests {
             );
         });
         window.refresh().expect("render navigation");
-        let network_tab = window
-            .debug_bounds("global-settings-tab-network")
-            .expect("network tab");
-        window.simulate_click(network_tab.center(), Modifiers::default());
+        super::kit_migration_tests::select_page(&mut window, 1);
         window.run_until_parked();
         window.refresh().expect("render network page");
         let network_section = window
-            .debug_bounds("network-settings-network-section")
-            .expect("network section");
+            .debug_bounds("global-settings-workspace")
+            .expect("official workspace");
         assert_eq!(general_section.size.width, network_section.size.width);
         assert!(network_section.bottom() <= footer.top());
         let mode_group = window
             .debug_bounds("network-settings-proxy-mode")
             .expect("shared segmented proxy mode");
-        assert_eq!(mode_group.size.height, px(28.0));
+        assert_eq!(mode_group.size.height, px(32.0));
         let direct_mode = window
             .debug_bounds("network-settings-proxy-mode-direct")
             .expect("shared segmented direct option");
@@ -1765,9 +1991,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn invalid_proxy_uses_inline_error_above_the_fixed_footer(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _policy) = application_fixture(cx, "inline-error");
         cx.update(|cx| {
             application.update(cx, |application, cx| application.open_window(cx));
@@ -1823,7 +2049,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn persistence_failure_never_publishes_a_tentative_policy(cx: &mut TestAppContext) {
         let (application, directory, policy) = application_fixture(cx, "failed-save");
         std::fs::remove_file(directory.join("config.json")).expect("remove config fixture");
@@ -1852,7 +2078,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn a_pending_windows_apply_cannot_be_overwritten_by_another_save(cx: &mut TestAppContext) {
         let (application, directory, _policy) = application_fixture(cx, "pending-apply");
         let first_correlation = uuid::Uuid::new_v4();
@@ -1896,12 +2122,15 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn close_to_tray_becomes_active_only_after_windows_confirms_it(cx: &mut TestAppContext) {
         let (application, directory, _policy) = application_fixture(cx, "confirmed-shell");
         let desired = SystemSettings {
             start_on_login_silently: true,
             close_to_tray: true,
+            theme: nxtools_core::ThemePreference::Dark,
+            notification_position: Default::default(),
+            notification_duration_seconds: nxtools_core::default_notification_duration(),
         };
         let complete = |application: &mut NetworkSettingsApplication,
                         command_id,
@@ -1960,6 +2189,10 @@ mod tests {
                     SystemSettings {
                         start_on_login_silently: true,
                         close_to_tray: true,
+                        theme: nxtools_core::ThemePreference::Dark,
+                        notification_position: Default::default(),
+                        notification_duration_seconds: nxtools_core::default_notification_duration(
+                        ),
                     },
                     false,
                     cx,
@@ -1973,9 +2206,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn failed_shell_result_keeps_saved_intent_and_settings_window_open(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _policy) = application_fixture(cx, "shell-failure");
         cx.update(|cx| {
             application.update(cx, |application, cx| application.open_window(cx));
@@ -1994,6 +2227,9 @@ mod tests {
         let desired_system = SystemSettings {
             start_on_login_silently: true,
             close_to_tray: true,
+            theme: nxtools_core::ThemePreference::Dark,
+            notification_position: Default::default(),
+            notification_duration_seconds: nxtools_core::default_notification_duration(),
         };
         let config_path = directory.join("config.json");
         let mut persisted = AppConfig::load_from(&config_path).expect("load config fixture");
@@ -2043,17 +2279,17 @@ mod tests {
             assert!(application.pending_apply.is_none());
             let view = view.read(cx);
             assert!(!view.saving);
-            assert_eq!(
-                view.error.as_deref(),
-                Some("Windows 未能创建或显示 NxTools 托盘图标。请检查通知区域设置后重试。")
-            );
+            assert!(view.error.is_none(), "native failure is not form validation");
+            assert!(application.notifications.read(cx).items().iter().any(|notice|
+                notice.level == crate::notifications::NotificationLevel::Error
+                    && notice.message.as_ref() == "设置已保存，但 Windows 未能创建或显示 NxTools 托盘图标。请检查通知区域设置后重试。"));
         });
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn stale_shell_result_does_not_apply_or_close_the_current_window(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _policy) = application_fixture(cx, "stale-shell-result");
         cx.update(|cx| {
             application.update(cx, |application, cx| application.open_window(cx));
@@ -2081,6 +2317,10 @@ mod tests {
                     desired_system: SystemSettings {
                         start_on_login_silently: true,
                         close_to_tray: true,
+                        theme: nxtools_core::ThemePreference::Dark,
+                        notification_position: Default::default(),
+                        notification_duration_seconds: nxtools_core::default_notification_duration(
+                        ),
                     },
                     view: Some(view.downgrade()),
                     source_window: Some(window_handle),
@@ -2131,15 +2371,15 @@ mod tests {
         );
         assert_eq!(
             global_shell_failure_message("platform_result", Some("desktop_executable_unavailable")),
-            "找不到通过校验的 NxTools 程序。请修复或重新安装 NxTools 后重试。"
+            "设置已保存，但无法校验当前 NxTools 程序，启动项和托盘设置未应用。请关闭旧版本并从当前安装目录重新启动后重试。"
         );
         assert_eq!(
             global_shell_failure_message("platform_result", Some("startup_registration_failed")),
-            "Windows 启动项未能写入当前用户注册表。请检查系统策略或安全软件后重试。"
+            "设置已保存，但 Windows 启动项未能写入当前用户注册表。请检查系统策略或安全软件后重试。"
         );
         assert_eq!(
             global_shell_failure_message("platform_result", Some("tray_icon_failed")),
-            "Windows 未能创建或显示 NxTools 托盘图标。请检查通知区域设置后重试。"
+            "设置已保存，但 Windows 未能创建或显示 NxTools 托盘图标。请检查通知区域设置后重试。"
         );
         assert_eq!(
             global_shell_failure_message("platform_timeout", None),
@@ -2155,9 +2395,9 @@ mod tests {
         );
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn cancel_and_titlebar_close_release_the_owned_production_window(cx: &mut TestAppContext) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _policy) = application_fixture(cx, "lifecycle");
         cx.update(|cx| application.update(cx, |application, cx| application.open_window(cx)));
         let first = cx
@@ -2176,7 +2416,7 @@ mod tests {
         let cancel = window
             .debug_bounds("network-settings-cancel")
             .expect("production Cancel action");
-        assert_eq!(cancel.size.height, px(32.0));
+        assert_eq!(cancel.size.height, px(24.0));
         window.simulate_click(cancel.center(), Modifiers::default());
         window.run_until_parked();
         assert!(cx.read(|cx| application.read(cx).window.is_none()));
@@ -2195,7 +2435,7 @@ mod tests {
         let close = window
             .debug_bounds("network-settings-close")
             .expect("shared titlebar close action");
-        assert_eq!(close.size, size(px(28.0), px(28.0)));
+        assert_eq!(close.size, size(px(24.0), px(24.0)));
         window.simulate_click(close.center(), Modifiers::default());
         window.run_until_parked();
         assert!(cx.read(|cx| application.read(cx).window.is_none()));
@@ -2206,11 +2446,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn global_rule_layout_stays_aligned_for_long_many_empty_and_busy_states(
         cx: &mut TestAppContext,
     ) {
-        cx.update(gpui_component::init);
+        cx.update(gpui_kit::init);
         let (application, directory, _) = application_fixture(cx, "layout-states");
         cx.update(|cx| application.update(cx, |owner, cx| owner.open_window(cx)));
         cx.run_until_parked();
@@ -2222,6 +2462,9 @@ mod tests {
             )
         });
         let mut surface = VisualTestContext::from_window(handle, cx);
+        surface.simulate_resize(size(px(720.0), px(480.0)));
+        surface.refresh().expect("official initialization");
+        super::kit_migration_tests::select_page(&mut surface, 2);
         for count in [12, 0] {
             surface.update(|_, cx| {
                 view.update(cx, |view, cx| {
@@ -2260,7 +2503,10 @@ mod tests {
                 field.size.width >= px(200.0),
                 "input remains usable without window inflation"
             );
-            assert!(table.right() <= px(700.0));
+            assert!(
+                table.right() <= px(700.0),
+                "table={table:?} field={field:?}"
+            );
             if count > 0 {
                 let label = surface
                     .debug_bounds("global-blacklist-label-0")
@@ -2285,10 +2531,8 @@ mod tests {
             .debug_bounds("global-blacklist-new-quick")
             .expect("busy scope");
         surface.simulate_click(toggle.center(), Modifiers::default());
-        let tab = surface
-            .debug_bounds("global-settings-tab-general")
-            .expect("busy navigation");
-        surface.simulate_click(tab.center(), Modifiers::default());
+        let general = super::kit_migration_tests::page_bounds(&mut surface, 0);
+        surface.simulate_click(general.center(), Modifiers::default());
         surface.run_until_parked();
         surface.read(|cx| {
             let view = view.read(cx);
@@ -2302,6 +2546,94 @@ mod tests {
             })
         });
         cx.update(|cx| application.update(cx, |owner, cx| owner.close_window(cx)));
+        let _ = std::fs::remove_dir_all(directory);
+    }
+    #[gpui_kit::test]
+    fn notification_position_draft_cancel_and_save_preserve_original_global_transaction(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        let (application, directory, _) = application_fixture(cx, "notification-position");
+        let path = directory.join("config.json");
+        let before = std::fs::read(&path).expect("initial config");
+        application.update(cx, |app, cx| app.open_window(cx));
+        cx.run_until_parked();
+        let (handle, view, center) = application.read_with(cx, |app, _| {
+            (
+                app.window.expect("settings"),
+                app.settings_view.clone().expect("draft"),
+                app.notifications.clone(),
+            )
+        });
+        let mut surface = VisualTestContext::from_window(handle, cx);
+        surface.simulate_resize(size(px(720.0), px(480.0)));
+        surface.update(|window, cx| window.draw(cx).clear(cx));
+        let chooser = surface.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| node.path().last() == Some(&"global-notification-position".into()))
+                .expect("official notification-position Button")
+                .bounds()
+        });
+        assert_eq!(chooser.size.height, px(32.0));
+        view.update(&mut surface, |view, _| {
+            view.notification_position = nxtools_core::NotificationPosition::TopCenter
+        });
+        application.update(&mut surface, |app, cx| app.close_window(cx));
+        assert_eq!(std::fs::read(&path).expect("cancel has no write"), before);
+        assert_eq!(
+            center.read_with(&surface, |center, _| center.position()),
+            nxtools_core::NotificationPosition::BottomRight
+        );
+        application.update(&mut surface, |app, cx| {
+            let mut settings = app.config.system.clone();
+            settings.notification_position = nxtools_core::NotificationPosition::TopCenter;
+            app.apply_global(
+                app.config.network.clone(),
+                settings,
+                app.config.process_blacklist.clone(),
+                uuid::Uuid::new_v4(),
+                None,
+                cx,
+            )
+            .expect("save notification location");
+        });
+        surface.run_until_parked();
+        assert_eq!(
+            AppConfig::load_from(&path)
+                .expect("saved location")
+                .system
+                .notification_position,
+            nxtools_core::NotificationPosition::TopCenter
+        );
+        assert_eq!(
+            center.read_with(&surface, |center, _| center.position()),
+            nxtools_core::NotificationPosition::TopCenter
+        );
+        let good = std::fs::read(&path).expect("last good settings");
+        std::fs::write(&path, b"corrupt fixture").expect("owned persistence failure");
+        application.update(&mut surface, |app, cx| {
+            let mut settings = app.config.system.clone();
+            settings.notification_position = nxtools_core::NotificationPosition::BottomLeft;
+            assert!(
+                app.apply_global(
+                    app.config.network.clone(),
+                    settings,
+                    app.config.process_blacklist.clone(),
+                    uuid::Uuid::new_v4(),
+                    None,
+                    cx
+                )
+                .is_err()
+            );
+        });
+        surface.run_until_parked();
+        assert_eq!(
+            center.read_with(&surface, |center, _| center.position()),
+            nxtools_core::NotificationPosition::TopCenter,
+            "failed persistence never publishes draft position"
+        );
+        std::fs::write(&path, good).expect("restore owned fixture");
         let _ = std::fs::remove_dir_all(directory);
     }
 }

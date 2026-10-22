@@ -1,0 +1,14 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original feature ownership and deferred leased entities"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Pending before dispatch, diagnostics and privacy"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Official Kit composition and state matrix"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop scope"}
+{"file":"docs/reference-code/clipboard.md","reason":"Original popup lifecycle"}
+{"file":"docs/reference-code/gpui-kit-component-index.md","reason":"Compound-first component selection"}
+{"file":".trellis/tasks/10-15-extension-action-feedback/design.md","reason":"Approved first slice design"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Mandatory component-first rules and parent adaptation checks"}
+{"file":"docs/reference-code/gpui-kit-component-table.md","reason":"Current official component selection and locked-version caveats"}
+{"file":".trellis/tasks/10-15-extension-action-feedback/redesign.md","reason":"Later authorized catalog and state-driven interaction design"}
+{"file":".trellis/tasks/10-15-extension-action-feedback/ux-refinement.md","reason":"Later direct submenu/inline feedback/outside-HWND/menu and example authority"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"C# native popup/session/STA/identity/cancel ownership"}
+{"file":".trellis/tasks/10-15-extension-action-feedback/item-feedback.md","reason":"Latest authorized source-item feedback supersedes former above-history placement only"}
+{"file":".trellis/tasks/10-15-extension-action-feedback/bundled-extensions.md","reason":"Authorized correction: compiled existing3 packages, one-time locked config seeding without trust/enable/execute"}

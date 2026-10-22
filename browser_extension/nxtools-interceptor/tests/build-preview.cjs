@@ -1,0 +1,15 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
+const root=path.resolve(__dirname,'..'),out=path.resolve(root,'../../artifacts/ui-extension-redesign');
+fs.mkdirSync(out,{recursive:true});
+let html=fs.readFileSync(path.join(root,'popup.html'),'utf8');
+const prefix='../../browser_extension/nxtools-interceptor/';
+html=html.replace('href="popup-tokens.css"',`href="${prefix}popup-tokens.css"`).replace('href="popup.css"',`href="${prefix}popup.css"`).replace('src="icons/icon-32.png"',`src="${prefix}icons/icon-32.png"`).replace('<script src="popup.js"></script>',`<script src="${prefix}tests/popup-fixture.js"></script><script src="${prefix}popup.js"></script>`).replace('<head>','<head><meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\'; img-src \'self\' data:; media-src \'none\'; connect-src \'none\'; object-src \'none\'">');
+fs.writeFileSync(path.join(out,'preview.html'),html);
+const names=['tasks','capture','selected','preview','media','media-bottom','settings','settings-bottom','empty','offline','long','media-unavailable','error','busy','injected'];
+const sourceFiles=['popup.html','popup.css','popup-tokens.css','popup.js','shadow-styles.js'];
+const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
+const evidence={scope:'Actual production DOM/CSS/scripts + mockedChrome API; no installed extension/native host/real network',sources:sourceFiles.map(f=>({file:f,hash:hash(path.join(root,f))})),images:names.map(n=>({image:n+'.png',hash:hash(path.join(out,n+'.png')),inspected:false}))};
+fs.writeFileSync(path.join(out,'evidence.json'),JSON.stringify(evidence,null,2));
+fs.writeFileSync(path.join(out,'index.html'),`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>浏览器扩展 · 整套新设计</title><style>body{background:#18181b;color:#f4f4f5;font:15px/1.6 system-ui;margin:24px}a{color:#bfc0c4}h1{font-size:26px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(460px,1fr));gap:24px}figure{margin:0;background:#27272a;padding:16px}img{max-width:100%;display:block;margin-top:12px}small{color:#a1a1aa}</style><h1>NxTools 浏览器扩展 · 下载工作台</h1><p>任务、捕获、媒体工具、设置和网页注入界面统一重设计。真实生产代码 + 合成API，网络阻断；未安装扩展或启动桌面端。</p><p><a href="preview.html">打开可交互预览</a> · <a href="checks.json">真实DOM检查</a> · <a href="evidence.json">源码/截图哈希</a></p><div class="grid">${names.map(n=>`<figure id="${n}"><figcaption>${n}<br><small>生产渲染合成状态 · 待实际查看 / 用户验收</small></figcaption><img src="${n}.png" alt="${n}生产界面截图"></figure>`).join('')}</div></html>`);
+console.log('Preview + gallery + source/image hashes generated');

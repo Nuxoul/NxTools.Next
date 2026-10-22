@@ -1,0 +1,13 @@
+# Extension workspace / management UI correction
+
+User installed rejection: extension entry was wrongly placed under Other Tools; must be a direct left WORKSPACE entry immediately below Clipboard. Manager UI/UX rejected. This later brief overrides parent W6-W9 Tools-entry design; no user reapproval question for known requirement.
+
+Scope: main shell module/navigation and extension presentation only. Preserve W6-W9 runtime, original extension application, import/trust/enable/aliases/settings/secrets/events/providers/chains/tool actions/cancellation. No package/install/service/user-data/commit/push. Keep1060x650/min920x480,176rail, Kit0.7.1/GPUI0.3.8, existing neutral theme/YaHei. No alternate keyboard dispatcher or unapproved native/window inflation.
+
+Design: Downloads,QuickFind,Clipboard,Extensions,OtherTools direct navigation. Overview list-first/search+import action, genuine empty/filtered/error states; compact name/version/feature/status rows, metadata only in detail. Import preview and trust decision display exact full-authority warning, no default technical wall. Detail groups/settings/event intents/trust identity separated, SaveCancel reachable. No unrelated controls or duplicate single-page sidebar. Module switching reuses manager entity and preserves local drafts/focus restoration.
+
+Component selection: full official index read; overview candidates List/ListItem+Toolbar/Form/Empty/Alert vs singlepageSettings. Use released public compounds for purpose; existing domain/generation owners remain. True settings retain Settings Page/Group/Item/Field public slots; Form/InputState draft+SaveCancel; no registry/fork/privateAPI. Exact published candidates/API findings and tested exceptions to be recorded in outcomes.
+
+Acceptance: actual production navigation default/min frame + pointer/Tab/KeyUp proves Extensions belowClipboard and no Tools/backTools route. Actual import/preview/cancel/confirmdisabled/enable/alias/save/remove and detail settings/trust/optins/chains/circuit regressions unchanged in intent. New search/empty/import state tests, bounded long content/errors/current dispatch/focus. Full Desktop, strict scoped lint/workspace/fmt/5gates/spec; real renderer visual inspection required for aesthetic claim; headless bounds alone not approvedUI/nativeDPI. No automatic packaging.
+
+History: trellis mem search/extract retrieved only older browser-extension discussion, not specific workspace placement; current explicit user requirement authoritative. Parent W6-W9 recorded Tools placement was incorrect, tests certified wrong requirement. Native role unchanged: no HWND lifecycle/create/show change; one original main window/Root/Sidebar focus owner.

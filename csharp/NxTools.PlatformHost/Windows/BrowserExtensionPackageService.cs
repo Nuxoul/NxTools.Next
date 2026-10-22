@@ -18,7 +18,6 @@ public static class BrowserExtensionPackageService
 
     private static readonly byte[] CrxMagic = "Cr24"u8.ToArray();
     private static readonly byte[] CrxSignatureContext = Encoding.ASCII.GetBytes("CRX3 SignedData\0");
-    private static readonly object SigningKeyGate = new();
 
     public static string DefaultExportFileName =>
         BuildTimestampedExportFileName("NxTools_Chrome_Edge_Extension", ".crx");
@@ -26,14 +25,16 @@ public static class BrowserExtensionPackageService
     public static string DefaultFirefoxExportFileName =>
         BuildTimestampedExportFileName("NxTools_Firefox_Extension", ".xpi");
 
-    public static string ResolveExtensionDirectory()
+    public static string ResolveExtensionDirectory() =>
+        ResolveExtensionDirectory(AppContext.BaseDirectory, Directory.GetCurrentDirectory());
+
+    internal static string ResolveExtensionDirectory(string root, string currentDirectory)
     {
-        var root = AppContext.BaseDirectory;
         var candidates = new[]
         {
             Path.Combine(root, "browser_extension", "nxtools-interceptor"),
             Path.Combine(root, "..", "browser_extension", "nxtools-interceptor"),
-            Path.Combine(Directory.GetCurrentDirectory(), "browser_extension", "nxtools-interceptor"),
+            Path.Combine(currentDirectory, "browser_extension", "nxtools-interceptor"),
         };
 
         return candidates.FirstOrDefault(Directory.Exists) ?? candidates[0];
@@ -49,6 +50,15 @@ public static class BrowserExtensionPackageService
         string format,
         string destinationPath,
         string sourceDirectory,
+        CancellationToken cancellationToken = default) =>
+        ExportWithSigningKey(format, destinationPath, sourceDirectory,
+            BrowserExtensionSigningIdentity.ProductionKeyPath, cancellationToken);
+
+    internal static string ExportWithSigningKey(
+        string format,
+        string destinationPath,
+        string sourceDirectory,
+        string signingKeyPath,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -97,7 +107,7 @@ public static class BrowserExtensionPackageService
             {
                 var zipBytes = CreateZipBytesForCrx(sourceDirectory);
                 cancellationToken.ThrowIfCancellationRequested();
-                var crxBytes = CreateCrx3Bytes(zipBytes);
+                var crxBytes = CreateCrx3Bytes(zipBytes, signingKeyPath);
                 cancellationToken.ThrowIfCancellationRequested();
                 File.WriteAllBytes(tempFile, crxBytes);
             }
@@ -272,11 +282,11 @@ public static class BrowserExtensionPackageService
         }
     }
 
-    private static byte[] CreateCrx3Bytes(byte[] zipBytes)
+    private static byte[] CreateCrx3Bytes(byte[] zipBytes, string signingKeyPath)
     {
-        using var rsa = LoadOrCreateSigningKey();
+        using var rsa = LoadOrCreateSigningKey(signingKeyPath);
         var publicKey = rsa.ExportSubjectPublicKeyInfo();
-        var crxId = SHA256.HashData(publicKey).Take(16).ToArray();
+        var crxId = BrowserExtensionSigningIdentity.CrxId(publicKey);
         var signedHeaderData = EncodeMessage([(1, crxId)]);
         var signatureInput = BuildCrx3SignatureInput(signedHeaderData, zipBytes);
         var signature = rsa.SignData(signatureInput, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
@@ -302,9 +312,8 @@ public static class BrowserExtensionPackageService
         return stream.ToArray();
     }
 
-    private static RSA LoadOrCreateSigningKey()
+    private static RSA LoadOrCreateSigningKey(string keyPath)
     {
-        var keyPath = ResolveSigningKeyPath();
         Directory.CreateDirectory(Path.GetDirectoryName(keyPath)!);
 
         var rsa = RSA.Create(2048);
@@ -318,11 +327,6 @@ public static class BrowserExtensionPackageService
         return rsa;
     }
 
-    private static string ResolveSigningKeyPath() =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "NxTools",
-            "browser_extension_key.pem");
 
     private static byte[] EncodeMessage(IEnumerable<(int FieldNumber, byte[] Value)> fields)
     {

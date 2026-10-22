@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "example.download-link-list",
+  "name": "下载链接清单",
+  "version": "1.0.0",
+  "description": "手动复制所选任务的原始 URL，每行一个或 Markdown；不启动或修改下载。分享前检查 URL 中的敏感参数。",
+  "permissions": [
+    {"id": "downloads.read", "reason": "只按明确选择的任务 ID 逐个读取原始请求 URL，不输出请求头/Cookie。权限声明是信息，不是沙箱。"},
+    {"id": "clipboard.write", "reason": "完整校验后通过 common.copy 请求复制一次清单，不自动粘贴。"}
+  ],
+  "runtime": {"program": "python", "timeout_ms": 30000},
+  "files": ["main.py", "protocol.py", "test_main.py", "README.md"],
+  "settings": [],
+  "handlers": [
+    {"id": "copy-lines", "title": "复制原始链接（每行一个）", "feature": "downloads", "entry": "action", "action": {"type": "script", "entry_file": "main.py"}},
+    {"id": "copy-markdown", "title": "复制原始链接（Markdown）", "feature": "downloads", "entry": "action", "action": {"type": "script", "entry_file": "main.py"}}
+  ]
+}

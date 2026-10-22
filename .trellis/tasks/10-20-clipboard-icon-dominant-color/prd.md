@@ -1,0 +1,5 @@
+# Clipboard source-application icon color correction
+
+User explicitly rejects type-to-color mapping. Gradient hue must follow actual copied-from application icon's dominant color: green icon -> green fade, same icon across Text/Image/Files -> same hue. Preserve8DIPgap/card boundary/natural height/official states/gradient placement/actions.
+
+Acceptance: bounded background PNG extraction on original serialized worker, shared bounded cache keyed by immutable managed source-icon identity; visible rows receive RGB only, no render IO/decode. Transparent pixels ignored; white/black neutral icon background must not swamp a meaningful colored mark; neutral icons remain neutral. Missing/corrupt/oversize/outside managed root -> theme-neutral fallback, never type mapping. No new schema/native/protocol/dependency/install/package/liveuserdata/other-module/delegation actions. Actual synthetic PNG + real worker + production rendered gradient tests prove icon color and type independence, cache reuse/bounds/generation safeguards.

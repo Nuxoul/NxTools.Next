@@ -78,9 +78,11 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     private readonly ShellContextMenuSessionManager _shellActions = new();
     private readonly IElevatedDirectoryNavigationChannel _elevatedDirectoryNavigation;
     private readonly NativeFileDragCoordinator _fileDragCoordinator;
+    private readonly NativeContextMenuCoordinator _contextMenus;
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
     private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate = new();
     private readonly ICompletionSystemActions _completionSystemActions;
+    private readonly ExtensionRuntimeInspector _extensionRuntimeInspector;
     private static readonly CenteredResizeCoordinator CenteredResizeWorkers = new();
     private EventWindow? _window;
     private Exception? _startupError;
@@ -94,6 +96,9 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         _log = log ?? NullPlatformLog.Instance;
         _completionSystemActions = completionSystemActions ?? new WindowsCompletionSystemActions();
         _fileDragCoordinator = new NativeFileDragCoordinator(_log);
+        _contextMenus = new NativeContextMenuCoordinator(_log,
+            flushPointerObservation: () => _window?.FlushContextMenuPointerPress());
+        _extensionRuntimeInspector = new ExtensionRuntimeInspector(_log);
         ThirdPartyFileManagerAdapter.WarmUp();
         _elevatedDirectoryNavigation = new ElevatedDirectoryNavigationClient(
             platformEvent => _events.Writer.TryWrite(platformEvent),
@@ -281,12 +286,22 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public bool QuickLaunchHotKeyAvailable => _window?.QuickLaunchHotKeyAvailable ?? false;
     internal MotionPreferenceSnapshot SystemMotionSnapshot =>
         _window?.SystemMotionSnapshot ?? new MotionPreferenceSnapshot(true, -1);
+    internal ThemePreferenceSnapshot SystemThemeSnapshot =>
+        _window?.SystemThemeSnapshot ?? new ThemePreferenceSnapshot(true, -1);
 
     public Task<WindowsCommandResult> ConfigureClipboardAsync(
         ConfigureClipboardCommand command,
         CancellationToken cancellationToken)
         => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
             .EnqueueClipboardConfiguration(command, cancellationToken);
+
+    public Task<WindowsCommandResult> SetClipboardCapturePausedAsync(
+        SetClipboardCapturePausedCommand command, Guid correlationId, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
+            .EnqueueClipboardPause(command, correlationId, cancellationToken);
+    }
 
     public Task<WindowsCommandResult> SetClipboardHotKeyRecordingAsync(
         SetClipboardHotKeyRecordingCommand command,
@@ -542,6 +557,15 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             NativeMethods.GetAncestorOrSelf(new IntPtr(windowHandle)));
     public WindowsCommandResult SetWindowNoActivate(SetWindowNoActivateCommand command) =>
         NativeMethods.SetWindowNoActivate(new IntPtr(command.WindowHandle), command.Enabled);
+
+    internal static WindowsCommandResult SetNativeWindowNoActivateForTest(long windowHandle, bool enabled) =>
+        NativeMethods.SetWindowNoActivate(new IntPtr(windowHandle), enabled);
+
+    internal static WindowsCommandResult SetNativeWindowBoundsForTest(long windowHandle, int x, int y, int width, int height) =>
+        NativeMethods.SetWindowBounds(new IntPtr(windowHandle), x, y, width, height);
+
+    internal static WindowsCommandResult SetNativeWindowVisibilityForTest(long windowHandle, bool visible) =>
+        NativeMethods.SetWindowVisibility(new IntPtr(windowHandle), visible);
 
     public WindowsCommandResult SetWindowBounds(SetWindowBoundsCommand command) =>
         NativeMethods.SetWindowBounds(
@@ -917,6 +941,12 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         CancellationToken cancellationToken) =>
         _fileDragCoordinator.BeginAsync(command, correlationId, cancellationToken);
 
+    public Task<WindowsCommandResult> ShowContextMenuAsync(ShowContextMenuCommand command, Guid sessionId,
+        CancellationToken cancellationToken) => _contextMenus.ShowAsync(command, sessionId, cancellationToken);
+
+    public WindowsCommandResult CancelContextMenu(CancelContextMenuCommand command) =>
+        _contextMenus.Cancel(command.SessionId);
+
     public Task<WindowsCommandResult> OpenShellTargetAsync(
         OpenShellTargetCommand command,
         Guid diagnosticCorrelationId,
@@ -1281,10 +1311,32 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         CancellationToken cancellationToken = default) =>
         ProgramPicker.Pick(command, cancellationToken);
 
+    public WindowsCommandResult PickExtensionManifest(
+        PickExtensionManifestCommand command,
+        CancellationToken cancellationToken = default,
+        Guid diagnosticCorrelationId = default)
+    {
+        var clock = Stopwatch.StartNew();
+        ExtensionRuntimeDiagnostics.Write(_log, "manifest_pick", "accepted", diagnosticCorrelationId, clock);
+        var result = ExtensionManifestPicker.Pick(command, cancellationToken);
+        ExtensionRuntimeDiagnostics.Write(_log, "manifest_pick", result.Success ? "completed" : result.NativeErrorCode == 995 ? "cancelled" : "failed",
+            diagnosticCorrelationId, clock, result.Success ? (string.IsNullOrEmpty(result.Data) ? "dismissed" : "selected") : "picker_failure", result.NativeErrorCode);
+        return result;
+    }
+
+    public WindowsCommandResult PickExtensionRuntime(PickExtensionRuntimeCommand command,
+        Guid diagnosticCorrelationId, CancellationToken cancellationToken = default) =>
+        ExtensionRuntimePicker.Pick(command, cancellationToken, _log, diagnosticCorrelationId);
+
+    public Task<WindowsCommandResult> InspectExtensionRuntimeAsync(InspectExtensionRuntimeCommand command,
+        Guid diagnosticCorrelationId, CancellationToken cancellationToken = default) =>
+        _extensionRuntimeInspector.InspectAsync(command, diagnosticCorrelationId, cancellationToken);
+
     public Task<WindowsCommandResult> EnsureIndexerServiceAsync(
         EnsureIndexerServiceCommand command,
+        Guid diagnosticCorrelationId,
         CancellationToken cancellationToken) =>
-        IndexerServiceInstaller.EnsureAsync(_log, cancellationToken);
+        IndexerServiceInstaller.EnsureAsync(_log, diagnosticCorrelationId, cancellationToken);
 
     public WindowsCommandResult EnsureBrowserNativeMessaging(
         EnsureBrowserNativeMessagingCommand command,
@@ -1295,7 +1347,48 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         => ResolveApprovedDesktopExecutablePath(
             Environment.GetEnvironmentVariable(DesktopExecutableEnvironmentVariable),
             Path.Combine(IndexerServiceInstaller.ProtectedServiceDirectory(), "NxTools.exe"),
+            Environment.ProcessPath ?? string.Empty,
+            NxTools.PlatformHost.Generated.ReleaseBinaryManifest.DesktopSha256,
             IndexerServiceInstaller.IsApprovedProtectedDesktop);
+
+    internal static string? ResolveApprovedDesktopExecutablePath(
+        string? configuredDesktopExecutable,
+        string protectedDesktopExecutable,
+        string platformHostExecutable,
+        string expectedDesktopHash,
+        Func<string, bool> isApprovedProtected)
+    {
+        var currentPackage = ResolveApprovedDesktopExecutablePath(
+            configuredDesktopExecutable,
+            protectedDesktopExecutable,
+            candidate => IsVerifiedCurrentDesktop(candidate, platformHostExecutable, expectedDesktopHash));
+        return currentPackage ?? ResolveApprovedDesktopExecutablePath(
+            null, protectedDesktopExecutable, isApprovedProtected);
+    }
+
+    private static bool IsVerifiedCurrentDesktop(
+        string candidate,
+        string platformHostExecutable,
+        string expectedDesktopHash)
+    {
+        try
+        {
+            if (expectedDesktopHash.Length != 64 || !expectedDesktopHash.All(char.IsAsciiHexDigit)
+                || string.IsNullOrWhiteSpace(platformHostExecutable)) return false;
+            var hostPath = Path.GetFullPath(platformHostExecutable);
+            if (!string.Equals(Path.GetFileName(hostPath), "NxTools.PlatformHost.exe", StringComparison.OrdinalIgnoreCase)
+                || !File.Exists(hostPath)) return false;
+            var desktopPath = Path.GetFullPath(candidate);
+            var sibling = Path.Combine(Path.GetDirectoryName(hostPath)!, "NxTools.exe");
+            if (!string.Equals(desktopPath, sibling, StringComparison.OrdinalIgnoreCase)) return false;
+            return IndexerServiceInstaller.VerifiedPackagedBinaryHashMatches(desktopPath, expectedDesktopHash);
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or UnauthorizedAccessException
+            or System.Security.SecurityException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 
     internal static string? ResolveApprovedDesktopExecutablePath(
         string? configuredDesktopExecutable,
@@ -1481,7 +1574,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 foregroundContextProvider,
                 elevatedDirectoryNavigation,
                 _log,
-                _clipboardCaptureDropDiagnosticGate);
+                _clipboardCaptureDropDiagnosticGate,
+                _contextMenus);
             _started.Set();
             Application.Run();
         }
@@ -1492,6 +1586,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         }
         finally
         {
+            _window?.StopClipboardCapture();
             _events.Writer.TryComplete(_startupError);
         }
     }
@@ -1503,7 +1598,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             return;
         }
         _disposed = true;
+        _window?.CancelClipboardPauseRequests();
         _shellActions.Dispose();
+        _contextMenus.Dispose();
+        _extensionRuntimeInspector.Dispose();
         _window?.RequestStop();
         if (!_thread.Join(TimeSpan.FromSeconds(5)))
         {

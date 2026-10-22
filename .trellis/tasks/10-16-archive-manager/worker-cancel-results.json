@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "phase": "Phase A — Engine contracts and safety foundation",
+  "status": "Bounded cancellation regressions complete; pending independent acceptance",
+  "scope": "Named small cooperative ENG09 receive/observe/credit/pause/native-cleanup boundaries and precommit SAFE05/SAFE07 only",
+  "not_complete": ["ENG09", "Phase A", "A–F", "arbitrary blocked codec/Win32 interruption", "prompt/finalization/full-format matrix", "UI", "native-user", "deployment"],
+  "implementation": {
+    "cancel_strategy_defect_claimed_fixed": false,
+    "gap": "Previously missing explicit original worker input reception and first work-thread observation facts, separate from native cleanup",
+    "bounded_diagnostic_changes": ["OperationControl first received/observed worker-local elapsed micros and fixed boundary enum", "WorkerFrame optional cancellation object on Cancelled failure only", "Existing ReplyPort/MetadataCredit Cancelled returns record observation after dropping their own mutex"],
+    "native_test_seams": ["nullable first successful native write callback before original native reply", "nullable original stdin frame write completion callback"],
+    "unchanged": ["one original worker control reader", "existing finite queues", "OperationControl cancellation/pause wake semantics", "runner200ms grace/finite ownJob termination", "cleanup-stuck reservations", "budgets/timeouts", "native publication linearization/approvedTOCTOU", "business read DTO/actions", "public pause authority", "dependencies", "resource tools", "source deletion"]
+  },
+  "reference_sources_inspected_before_code": [
+    "D:\\Code\\Archiver-main\\core\\src\\lib.rs:152-165,417-442",
+    "D:\\Code\\supazip-master\\supazip\\supazip-core\\src\\traits.rs:334-337,366-372",
+    "D:\\Code\\NxTools\\Services\\FfmpegInstallerService.cs:61-89"
+  ],
+  "reference_limits": "Source inspection only; no general legacy archive lifecycle found, no blocked-I/O interruption or reference native cleanup proof inferred",
+  "red_green": {
+    "test": "archive cancel boundary fixture actual streaming receive observe cleanup",
+    "red": {"selected": 1, "run": 1, "pass": 0, "skip": 0, "fail": 1, "not_run": 0, "exit": 1, "exact_failure": "missing real worker receive/observe facts", "not_a_claim_old_cancel_failed": true, "root": "archive-cancel-boundary-c6ecd4e9-bac2-49f3-bc2e-7ba0d63bb881"},
+    "directed_green": {"selected": 1, "run": 1, "pass": 1, "skip": 0, "fail": 0, "not_run": 0, "exit": 0, "root": "archive-cancel-boundary-ccb2eaa3-dc60-42a8-9f26-abd8ce86ecdf"},
+    "final_green": {"root": "archive-cancel-boundary-c712f4bb-364d-41cf-97d2-aa4f7be89a39", "included_in_exact6": true},
+    "red_and_all_green_files_retained": true
+  },
+  "actual_zip_streaming": {
+    "boundary": "original C#ForPackage -> suspended child/Job -> actual isolated-codecs Rust worker -> original native output session",
+    "independent_input": ".NET Store ZIP one256KiB member, fixed256byte pattern repeated1024times",
+    "barrier": "after first successful65536byte native write before original reply; original cancel frame written ahead of reply FIFO, not sleep/large-file extension",
+    "send_completion_is_not_reception": true,
+    "actual_worker_terminal": {"op": "failure", "error_code": "Cancelled", "boundary": "native_reply", "process_exit": 0},
+    "write_calls": 1,
+    "write_bytes": 65536,
+    "commit_calls": 0,
+    "files_committed": 0,
+    "cleanup_before_resource_disposal": {"process_job_pumps_drained": true, "active_count": 1, "exited_event_absent": true, "source_still_protected": true, "owned_partial_still65536bytes": true, "old_target_unchanged": true, "foreign_partial_unchanged": true},
+    "admission_barrier": {"second_actual_small_test_worker": true, "both_slots_retained_after_process_exit_before_cleanup": true, "third_rejected": "concurrency_limit"},
+    "after_release": {"cleanup_complete": true, "active_slots": 0, "source_writable_hash_unchanged": true, "own_partial_absent": true, "old_target_and_foreign_partial_retained": true, "fresh_actual_request_admitted_and_succeeded": true},
+    "helper_cleanup": "exact newly copied image hash checked then removed only after DrainAsync"
+  },
+  "worker_credit": {
+    "test": "actual_worker_credit_wait_records_received_then_observed_without_an_ack",
+    "actual_stock_worker_original_stdin": true,
+    "input": "tiny checked-in stored.zip",
+    "first_batch_no_ack": true,
+    "worker_terminal": "failure/Cancelled with metadata_credit observation",
+    "no_subsequent_frames": true,
+    "worker_exit": 0,
+    "not_CSharp_source_lease_or_Job_cleanup_evidence": true,
+    "roots": ["archive-cancel-credit-bfbccd21-ef94-4670-822a-cf0160995417", "archive-cancel-credit-0ea56f75-ca5f-4bc0-a057-0ac453a339d4"]
+  },
+  "original_typed_product": {
+    "test": "explicit_credit_cancel_stops_batches_then_original_connection_readmits_after_cleanup",
+    "chain": "ArchiveReadClient/PlatformBridge original typed pipe -> production ArchiveReadSession -> original runner/Job/source/helper -> actual Rust worker",
+    "fixture": "independent CPython3member tiny ZIP; first sequence0 retained without ACK",
+    "later_batches": 0,
+    "terminal": "owner equals captured original remote cancelled/cleanuptrue",
+    "source_held_before_cancel_released_after_cleanup": true,
+    "same_connection_generation": true,
+    "followup": {"actually_admitted": true, "status": "succeeded", "files_verified": 2, "bytes_verified": 12, "cleanup_complete": true},
+    "helper_released_and_normal_host_exit": true,
+    "worker_receive_observe_timestamps_exposed_here": false,
+    "roots": ["archive-product-chain-1189136a-0cdb-49a8-92be-8e36cc5b2e11", "archive-product-chain-24344c18-7fce-42c5-894f-83b014a19611"]
+  },
+  "paused_control": {
+    "test": "paused_checkpoint_is_really_waiting_then_cancel_wakes_without_resume",
+    "original_OperationControl_Condvar_wait_confirmed": true,
+    "cancel_wakes_without_resume": true,
+    "result": "Cancelled",
+    "boundary": "paused_checkpoint",
+    "received_timestamp_absent_for_local_cancel": true,
+    "public_pause_feature_added": false,
+    "existing_paused_ArchiveEngine_open_regression_passed": true
+  },
+  "measurements": {
+    "clock_rule": "Worker received/observed share one OperationControl Instant; caller times are separate same-caller durations; never subtract cross-process origins",
+    "target_us": 200000,
+    "target_scope": "bounded cooperative observation only, not arbitrary codec/Win32 or cleanup latency",
+    "directed": {"native_reply_received_us": 75468, "native_reply_observed_us": 75494, "native_reply_delta_us": 26, "credit_received_us": 1804, "credit_observed_us": 1818, "credit_delta_us": 14, "paused_caller_wake_us": 79, "extract_caller_send_ms": 26.0136, "extract_caller_cleanup_barrier_ms": 41.8893, "product_caller_cleanup_terminal_us": 44134},
+    "final_regression": {"native_reply_received_us": 51235, "native_reply_observed_us": 51289, "native_reply_delta_us": 54, "credit_received_us": 1758, "credit_observed_us": 1771, "credit_delta_us": 13, "paused_individual_time_serialized": false, "extract_caller_send_ms": 1.7726, "extract_caller_cleanup_barrier_ms": 27.8808, "product_caller_cleanup_terminal_us": 42138},
+    "cleanup_barrier_intentionally_held_after_timestamp_not_final_cleanup_latency": true,
+    "no_best_score_repeat": true
+  },
+  "verification": {
+    "csharp_build_exit": 0,
+    "csharp_build_warnings": 0,
+    "csharp_build_errors": 0,
+    "build_order": "isolated C#apphost first, matching isolated-codecs worker; final worker rebuilt after feature-unifying checks before CSharp execution",
+    "cargo_environment": {"CARGO_BUILD_JOBS": "1", "CARGO_INCREMENTAL": "0", "RUSTFLAGS": "-C codegen-units=256"},
+    "one_machine_lane_worker_relink_serial": true,
+    "csharp_exact": {"selected": 6, "run": 6, "pass": 6, "skip": 0, "fail": 0, "not_run": 0, "list_run_pass_names_equal": true, "list_exit": 0, "run_exit": 0},
+    "rust_affected": {"passed": 77, "failed": 0, "ignored": 0, "groups": 8, "filtered": 2, "excluded": ["default_budget_lists_one_hundred_thousand_independent_entries", "windows_long_source_path_uses_original_product_open_test_and_cleanup"], "exit": 0, "not_full_archive_tests": true},
+    "rust_groups": {"lib": 13, "engine": 13, "product_cancellation": 10, "product_chain": 22, "consumer": 6, "worker_cancel": 1, "worker_extraction": 1, "worker_wire": 11},
+    "strict_clippy_tests_examples_isolated_default_exit": [0, 0],
+    "fmt_all_check_exit": 0,
+    "workspace_check_tests_offline_exit": 0,
+    "workspace_check_is_compilation_not_workspace_tests": true,
+    "foreground_command_ledger": "cancel-boundary-verification.jsonl (7completed command arrays/start/end/exits)",
+    "csharp_names_commands": "cancel-boundary-final-csharp-results.json",
+    "offline": {"checks": 40, "status": "PASS", "new_roots": 7, "raw_files": 26, "baseline_files": 231, "unchanged_baseline_files": 215, "historical_task_files_unchanged": 90, "prior_longpath_raw_files_unchanged": 186, "accepted100k_raw_files_unchanged": 9, "older_resource_raw_files_unchanged": 12, "unrelated_tracked_diff_preserved": true}
+  },
+  "diagnostic_contract": {"first_received_and_first_observed_only": true, "fixed_boundary_enum": true, "ordinary_success_omits_cancellation": true, "missing_values_not_synthesized": true, "paths_members_content_passwords_logged": false, "per_chunk_logging": false, "temporary_DEBUG_probes": false},
+  "history": {"longpath": "windows-long-path-acceptance.md independently PASS", "finite100k": "product-100k-post-status-acceptance.md independently PASS", "product_cancel_P2": "product-read-p2-acceptance.md independently PASS", "old_failure_identity_and_unknown_causes": "unchanged", "native_recycle": "native_protection_unproven/NotAttempted"},
+  "evidence_root": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\30608b1f-4d13-4908-94fc-6b4d37c1bb7d",
+  "offline_evidence": "cancel-boundary-offline-results.json (raw hashes/metrics/logs/source scope)",
+  "review": "No optional subagent review; direct source/lock-order/compatibility checks and actual regressions performed",
+  "documentation_gates": {"spec_contracts": {"documents": 106, "owners": 14, "exit": 0}, "task_context": {"implement_entries": 80, "check_entries": 77, "exit": 0}, "selector_exit": 0, "git_diff_check_exit": 0, "reference_bytes": 32766, "existing_warning": "native-contracts.md35497bytes>32768 injection limit; unchanged", "archive_processes": 0, "archive_test_pipes": 0, "fixed_helpers": 0, "final_hygiene": "cancel-boundary-final-hygiene.json"},
+  "not_run": ["100k", "1GiB", "4GiB+17ZIP64", "memory/performance sampling", "full longpath/overwrite matrix", "resource-tool optimization", "public pause", "new cancel runtime", "source recycle/delete", "unknown directory sweep", "system configuration", "formal Desktop", "installed PlatformHost", "packaging", "signing", "installation", "commit", "push", "Phase B"]
+}

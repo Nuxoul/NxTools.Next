@@ -68,6 +68,7 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
             window_min_size: Some(task_window_minimum_size()),
             window_decorations: Some(WindowDecorations::Client),
             tabbing_identifier: None,
+            ..Default::default()
         },
         move |window, cx| {
             let native = native_window_handle(window).unwrap_or_default();

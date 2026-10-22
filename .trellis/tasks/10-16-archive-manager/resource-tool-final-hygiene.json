@@ -1,0 +1,172 @@
+{
+  "schema": 2,
+  "at": "2026-10-19T21:29:36.012533+08:00",
+  "historical_hashes": [
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\acceptance-review.md",
+      "expected": "A2C02405D4061CD6B885C7EB180AC26C7DFCA8F0CD8F7F62A534651D3C647ABB",
+      "actual": "A2C02405D4061CD6B885C7EB180AC26C7DFCA8F0CD8F7F62A534651D3C647ABB",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\overwrite-acceptance-review.md",
+      "expected": "CF3D98D0C466C945F8BE08FC3DF18FE63EA6CC20407CC28BB2E495D6D0119903",
+      "actual": "CF3D98D0C466C945F8BE08FC3DF18FE63EA6CC20407CC28BB2E495D6D0119903",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\resource-acceptance-contract.md",
+      "expected": "5B3EF171B157C1FA149C7F55E747769378A8F66CD2597017E026D12ED3B38E12",
+      "actual": "5B3EF171B157C1FA149C7F55E747769378A8F66CD2597017E026D12ED3B38E12",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\resource-acceptance-evidence.md",
+      "expected": "6888B1BB3C4035D124BDCC2D546539743C4BA82FAB3817D5DF7D3068FD138DF9",
+      "actual": "6888B1BB3C4035D124BDCC2D546539743C4BA82FAB3817D5DF7D3068FD138DF9",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\resource-acceptance-results.json",
+      "expected": "FE53DEA74EF68C1F9AFEEA1AD728A625E2C3BB3DCCF53086FCD4DD5F7C1247CA",
+      "actual": "FE53DEA74EF68C1F9AFEEA1AD728A625E2C3BB3DCCF53086FCD4DD5F7C1247CA",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\resource-acceptance-review.md",
+      "expected": "BA8AEFBD75AB516631F49CDDBEBAC7D289050266194149CED738895691CC54CA",
+      "actual": "BA8AEFBD75AB516631F49CDDBEBAC7D289050266194149CED738895691CC54CA",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\tree-create-acceptance-review.md",
+      "expected": "5C7D92C857BB47FE116A68DC6AA6F547F38154CF97B31CA61DB2BB9D4E95A84E",
+      "actual": "5C7D92C857BB47FE116A68DC6AA6F547F38154CF97B31CA61DB2BB9D4E95A84E",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\xz-zstd-acceptance-review.md",
+      "expected": "83AB200BAAB28298DCF78F97A90543E6C58A3E1CA0AE6AEC3BE4D479E11B3C9B",
+      "actual": "83AB200BAAB28298DCF78F97A90543E6C58A3E1CA0AE6AEC3BE4D479E11B3C9B",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\zip-aes-acceptance-review.md",
+      "expected": "2B4D0B75BBD5DC59BAB8BA7622F193D723844CF745C29C9236C782682E83B98C",
+      "actual": "2B4D0B75BBD5DC59BAB8BA7622F193D723844CF745C29C9236C782682E83B98C",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\zip-create-acceptance-review.md",
+      "expected": "B993C89746A72FED689C37F8900BECBBC5EC33780841EBD80F7C1DC8C050FBDF",
+      "actual": "B993C89746A72FED689C37F8900BECBBC5EC33780841EBD80F7C1DC8C050FBDF",
+      "unchanged": true
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-16-archive-manager\\zip-read-acceptance-review.md",
+      "expected": "8F5EF3F15FF638B48D464997EBE43FBC07FD7AB005230074595C08E40DCDB0BE",
+      "actual": "8F5EF3F15FF638B48D464997EBE43FBC07FD7AB005230074595C08E40DCDB0BE",
+      "unchanged": true
+    }
+  ],
+  "python_ast": {
+    "status": "PASS",
+    "files": 8
+  },
+  "source_hygiene": {
+    "status": "PASS",
+    "issues": []
+  },
+  "git_diff_check": {
+    "exit": 0,
+    "output": "warning: in the working copy of 'browser_extension/nxtools-interceptor/background.js', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'browser_extension/nxtools-interceptor/tests/shadow-styles.test.js', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost.Tests/Program.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost/Protocol/PlatformCommandParser.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost/Protocol/PlatformPipeClient.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost/Windows/BrowserExtensionPackageService.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.EventWindow.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.NativeMethods.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/architecture/download-ui-lifecycle.ps1', CRLF will be replaced by LF the next time Git touches it\n"
+  },
+  "owned_processes": [],
+  "test_pipes": [],
+  "fixed_helper_absent": true,
+  "small_archives_removed": true,
+  "smoke_output_directories": [],
+  "unknown_scratch_sweep": false,
+  "cleanup_file_evidence": {
+    "at": "2026-10-19T21:23:24.631516+08:00",
+    "removed": [
+      {
+        "path": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-zip-method-yeu3vzia.tjc",
+        "scope": "exact_byte_verified_interrupted_fixture_only",
+        "files": [
+          {
+            "relative": "52fb93a6b505417cbf3c750c377b1b91\\empty.bin",
+            "bytes": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          {
+            "relative": "52fb93a6b505417cbf3c750c377b1b91\\资料\\payload.bin",
+            "bytes": 1050,
+            "sha256": "e886ea86544c0dba2061c9369fea8cf668b61423f6ce0c2c15e012d2bb7c53af"
+          },
+          {
+            "relative": "fad07d962493497980bf88ae7630c836\\资料\\payload.bin",
+            "bytes": 10,
+            "sha256": "7d3eb7b4421724496aeefa2111397dbe044b80e63c4f63f73245d3763c301a8c"
+          },
+          {
+            "relative": "source.zip",
+            "bytes": 643,
+            "sha256": "bdfc5d2824d97db352efa0aa3e86d73ec625ba70b14ba91dc2501ad62adea213"
+          }
+        ]
+      },
+      {
+        "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\small.zip",
+        "sha256": "d11981a5ce97c821acfc87877ed9efad9ed035401e41b3787004b6f625b21268"
+      },
+      {
+        "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\credit.zip",
+        "sha256": "0da73a3074c5ea138c301e7ee1dce1d1e3d730a2e6937f41b89c74a600248afd"
+      },
+      {
+        "path": "D:\\Code\\NxTools.Next-main\\tests\\performance\\archive-resources\\__pycache__\\run.cpython-313.pyc",
+        "scope": "task_python_bytecode"
+      }
+    ],
+    "retained_evidence": [
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\entries.jsonl",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\fixture-summary.json",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\owned-resource-fixtures",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\tool-stop-small-correctness-samples.jsonl",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\tool-stop-small-correctness.json",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-472e22b0-0c6f-497b-9ccb-204bde1da998\\probe-owner",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-472e22b0-0c6f-497b-9ccb-204bde1da998\\status.json",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-472e22b0-0c6f-497b-9ccb-204bde1da998\\stop.json",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-9a0c3e2e-c27e-4d4d-90e8-9250009795fb\\probe-owner",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-9a0c3e2e-c27e-4d4d-90e8-9250009795fb\\status.json",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-b0cd5493-215d-4e97-9adf-c2c7d1eca427\\status.json",
+      "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-b0cd5493-215d-4e97-9adf-c2c7d1eca427\\stop.json"
+    ],
+    "fixed_helper_absent": true,
+    "smoke_outputs_absent": true
+  },
+  "restrictions": "No Release/productinstalled/native recycle/user archive/commit/push; unrelated dirty preserved",
+  "final_document_gates": [
+    {
+      "name": "spec",
+      "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\resource-tool-closeout-spec.log",
+      "exit": 0
+    },
+    {
+      "name": "catalog",
+      "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\resource-tool-closeout-catalog.log",
+      "exit": 0
+    },
+    {
+      "name": "context",
+      "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\resource-tool-closeout-context.log",
+      "exit": 0
+    },
+    {
+      "name": "selector",
+      "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\resource-tool-closeout-selector.log",
+      "exit": 0
+    }
+  ]
+}

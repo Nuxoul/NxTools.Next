@@ -1,0 +1,28 @@
+
+7-Zip 26.00 (x64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-02-12
+
+Scanning the drive for archives:
+1 file, 155 bytes (1 KiB)
+
+Listing archive: x86-bcj-lzma2.7z
+
+--
+Path = x86-bcj-lzma2.7z
+Type = 7z
+Physical Size = 155
+Headers Size = 106
+Method = LZMA2:12 BCJ
+Solid = -
+Blocks = 1
+
+----------
+Path = x86.bin
+Size = 4096
+Packed Size = 49
+Modified = 
+Attributes = A
+CRC = 06AA0A9A
+Encrypted = -
+Method = BCJ LZMA2:12
+Block = 0
+

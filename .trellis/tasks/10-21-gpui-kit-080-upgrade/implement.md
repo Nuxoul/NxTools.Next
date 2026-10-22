@@ -1,0 +1,6 @@
+1. Save dirty baseline, reread specs/released sources and existing patch contracts; add red-capable coherent-graph/provenance gate.
+2. Import verified0.8.0/0.3.9source copies, apply exactly two narrow file patches, update root pin/patch selection and Cargo.lock without unrelated dependency churn. Resolve release-only API compatibility.
+3. Focused Clipboardinput/history/preview/notifications/settings plus fullDesktoponce, strictDesktoptestClippy/workspace, lifecycle/provenance/spec/catalog/scopedfmt. Fix concrete release regressions; preserve unrelated integration work.
+4. Sync currentversion/reference/provenance/spec authority and outcomes with exactresults/remaining native/visual/install limits. No package/deploy/launch or newMarkdowneditor.
+
+Completed source/compiled/static closeout: coherent Kit0.8.0/defaultpre0.3.9; exactly two narrow carried vendor patches, two Desktop release-semantic test adaptations only. Focused input8/panel38/preview17/presentation14/notifications34; initial full977/2 -> precise test expectation fixes -> final979/0, strict testClippy/workspace PASS. Provenance/catalog/spec108docs/14owners, seven lifecycle gates, scopedfmt/diff checks PASS. Exact logs and unperformed native/physical/installed/visual acceptance are in outcomes.md. No packaging/install/launch/commit/archive.

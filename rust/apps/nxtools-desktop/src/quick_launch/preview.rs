@@ -494,7 +494,8 @@ impl QuickLaunchPreview {
 impl Render for QuickLaunchPreview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::ui::motion::observe_motion(window, cx);
-        let theme = Theme::zed_dark();
+        crate::theme::observe_theme(window, cx);
+        let theme = Theme::active(cx);
         let application = self.application.clone();
         let appearance_generation = self.appearance_generation;
         let is_exiting = self.is_exiting;
@@ -521,22 +522,36 @@ impl Render for QuickLaunchPreview {
                 .vertical_scrollbar(&self.text_scroll)
                 .p(px(SPACING_12))
                 .min_w_0()
-                .text_size(px(TEXT_BODY))
-                .line_height(px(LINE_HEIGHT_BODY))
-                .text_color(theme.text_secondary)
-                .font_family(UI_MONO_FONT_FAMILY)
-                .whitespace_normal()
-                .flex()
-                .flex_col()
-                .items_start()
-                .justify_start()
                 .child(
                     div()
                         .debug_selector(|| "quick-launch-preview-text-copy".into())
                         .w_full()
                         .min_w_0()
-                        .whitespace_normal()
-                        .child(text.clone()),
+                        .child(crate::ui::markdown_document::cached_view(
+                            "quick-launch-preview-document".into(),
+                            text,
+                            if Path::new(&self.payload.target)
+                                .extension()
+                                .and_then(|extension| extension.to_str())
+                                .is_some_and(|extension| {
+                                    extension.eq_ignore_ascii_case("md")
+                                        || extension.eq_ignore_ascii_case("markdown")
+                                })
+                            {
+                                crate::ui::markdown_document::DocumentMode::Markdown
+                            } else {
+                                match crate::ui::markdown_document::automatic_mode(text) {
+                                    crate::ui::markdown_document::DocumentMode::Literal(
+                                        language,
+                                    ) => crate::ui::markdown_document::DocumentMode::Literal(
+                                        language,
+                                    ),
+                                    _ => crate::ui::markdown_document::DocumentMode::Literal(None),
+                                }
+                            },
+                            window,
+                            cx,
+                        )),
                 )
                 .when(*truncated, |content| {
                     content.child(
@@ -607,11 +622,12 @@ impl Render for QuickLaunchPreview {
                     )
                     .child(
                         div()
+                            .debug_selector(|| "quick-launch-preview-detail".into())
                             .w_full()
                             .min_w_0()
-                            .h(px(LINE_HEIGHT_LABEL))
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .h(px(LINE_HEIGHT_BODY))
+                            .text_size(px(TEXT_BODY))
+                            .line_height(px(LINE_HEIGHT_BODY))
                             .text_color(theme.text_secondary)
                             .truncate()
                             .child(self.payload.detail.clone()),
@@ -619,6 +635,7 @@ impl Render for QuickLaunchPreview {
                     .when(has_timestamps, |header| {
                         header.child(
                             div()
+                                .debug_selector(|| "quick-launch-preview-timestamps".into())
                                 .w_full()
                                 .min_w_0()
                                 .flex()
@@ -671,9 +688,8 @@ impl Render for QuickLaunchPreview {
                     .min_w_0()
                     .flex()
                     .items_center()
-                    .font_family(UI_MONO_FONT_FAMILY)
-                    .text_size(px(TEXT_LABEL))
-                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_size(px(TEXT_BODY))
+                    .line_height(px(LINE_HEIGHT_BODY))
                     .text_color(theme.text_muted)
                     .truncate()
                     .child(self.payload.target.clone()),

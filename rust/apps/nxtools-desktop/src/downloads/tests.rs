@@ -1,6 +1,10 @@
 //! Tests for the parent module. Extracted from the parent file so the
 //! runtime code stays readable.
 
+use super::polish_tests::{
+    official_download_group_bounds, official_download_navigation_bounds, reveal_download_setting,
+    select_official_download_page,
+};
 use super::*;
 
 #[test]
@@ -27,35 +31,89 @@ fn category_search_matches_name_directory_and_extension_without_unbounded_metada
 
 #[test]
 fn category_keyboard_highlight_is_visually_distinct_from_committed_selection() {
-    let theme = Theme::zed_dark();
-
-    assert_eq!(
-        category_choice_background(theme, true, false),
-        theme.accent_soft
+    let source = include_str!("new_download_view.rs");
+    assert!(
+        source.contains(".selected(highlighted)")
+            && source.contains(".secondary_selected(selected)"),
+        "actual ListItem distinguishes keyboard highlight from committed selection"
     );
-    assert_eq!(
-        category_choice_background(theme, false, true),
-        theme.element_selected
-    );
-    assert_ne!(
-        category_choice_background(theme, true, false),
-        category_choice_background(theme, false, true),
-        "the committed selection and the single keyboard highlight need distinct surfaces"
+    assert!(
+        !source.contains("category_choice_background("),
+        "retired custom palette does not paint category selection"
     );
 }
 
-use gpui::{AppContext, Modifiers, TestAppContext, VisualTestContext};
+use gpui_kit::{AppContext, Modifiers, TestAppContext, VisualTestContext};
+
+#[gpui_kit::test]
+fn new_download_terminal_failure_keeps_confirmed_draft_without_inline_notice(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (application, directory) = download_application_for_window_test(cx, "terminal-feedback");
+    application.update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (handle, view) = cx.read(|cx| {
+        let app = application.read(cx);
+        (
+            app.new_download_window.expect("production window"),
+            app.new_download_view.clone().expect("production view"),
+        )
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    let (input, idempotency) = surface.read(|cx| {
+        (
+            view.read(cx).url.entity_id(),
+            view.read(cx).submission_idempotency_key,
+        )
+    });
+    view.update_in(&mut surface, |view, _, cx| {
+        view.submitting = true;
+        view.finish_submission_failure("合成引擎拒绝；没有启动网络任务".into(), cx);
+        assert!(!view.submitting);
+        assert!(
+            view.error.is_none(),
+            "terminal operation feedback is not form validation"
+        );
+        assert_eq!(view.url.entity_id(), input);
+        assert_eq!(view.submission_idempotency_key, idempotency);
+    });
+    view.update_in(&mut surface, |view, _, cx| {
+        view.probing = true;
+        view.finish_probe_failure("合成探测通道失败".into(), cx);
+        assert!(!view.probing);
+        assert!(
+            view.error.is_none(),
+            "remote probe failure is not input validation"
+        );
+    });
+    surface.run_until_parked();
+    application.read_with(&surface, |app, cx| {
+        assert!(
+            app.new_download_window.is_some(),
+            "retry retains source window"
+        );
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.level == crate::notifications::NotificationLevel::Error)
+        );
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}
 
 #[test]
 fn multiline_header_placeholder_stays_on_one_line_for_windows_directwrite() {
     assert!(!DEFAULT_REQUEST_HEADERS_PLACEHOLDER.contains(['\r', '\n']));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn download_task_icons_use_the_typed_shell_boundary_and_publish_by_task_id(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory, platform_endpoint) =
         download_application_for_window_test_with_platform(cx, "task-shell-icons");
     platform_endpoint.set_connected_for_contract_test(true);
@@ -173,9 +231,9 @@ fn download_task_icons_use_the_typed_shell_boundary_and_publish_by_task_id(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn stale_progress_envelopes_are_rejected_before_touching_cached_progress(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, _directory) = download_application_for_window_test(cx, "stale-progress");
     let task_id = DownloadTaskId::new();
     let cached = DownloadProgress {
@@ -210,9 +268,9 @@ fn stale_progress_envelopes_are_rejected_before_touching_cached_progress(cx: &mu
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn authoritative_snapshot_refresh_discards_live_progress_cache(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, _directory) = download_application_for_window_test(cx, "snapshot-progress");
     let task_id = DownloadTaskId::new();
     cx.update(|cx| {
@@ -547,11 +605,32 @@ fn completed_reveal_uses_existing_file_directory_or_save_directory_fallback() {
         .is_dir()
     );
 
+    assert!(
+        resolve_download_artifact_target(Some(&directory), &directory, ShellOpenAction::OpenWith)
+            .is_err()
+    );
+    assert_eq!(
+        resolve_download_artifact_target(Some(&file), &directory, ShellOpenAction::OpenWith),
+        Ok((file.clone(), false))
+    );
+    let missing_directory = directory.join("missing-directory");
+    assert!(
+        resolve_download_artifact_target(
+            None,
+            &missing_directory,
+            ShellOpenAction::SelectInExplorer
+        )
+        .is_err()
+    );
+    assert!(
+        !missing_directory.exists(),
+        "opening a folder must not create it"
+    );
     let _ = std::fs::remove_dir_all(directory);
 }
-#[gpui::test]
+#[gpui_kit::test]
 fn taskbar_overlay_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "taskbar-overlay");
 
     cx.update(|cx| {
@@ -570,9 +649,9 @@ fn taskbar_overlay_window_opens_without_reentering_download_application(cx: &mut
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn stale_native_taskbar_overlay_close_cannot_cancel_the_current_edit(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "taskbar-overlay-stale-close");
     cx.update(|cx| {
@@ -632,11 +711,11 @@ fn stale_native_taskbar_overlay_close_cannot_cancel_the_current_edit(cx: &mut Te
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_taskbar_overlay_keeps_information_geometry_stable_in_edit_mode(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "taskbar-overlay-geometry");
     let settings = DownloadTaskbarProgressOverlaySettings {
@@ -746,9 +825,9 @@ fn production_taskbar_overlay_keeps_information_geometry_stable_in_edit_mode(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn new_download_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "new-download-window");
 
     cx.update(|cx| {
@@ -761,9 +840,9 @@ fn new_download_window_opens_without_reentering_download_application(cx: &mut Te
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "production-category-menu");
     let categories = (0..32)
@@ -852,14 +931,14 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
         .debug_bounds("download-new-directory-picker")
         .expect("production directory picker");
     let file_name_label = window
-        .debug_bounds("download-new-file-name-control-label")
-        .expect("production file-name label");
+        .debug_bounds("download-new-file-name-field-label")
+        .expect("production Form file-name label");
     let file_name_control = window
         .debug_bounds("download-new-file-name-control")
         .expect("production file-name control");
     let category_label = window
-        .debug_bounds("download-new-category-control-label")
-        .expect("production category label");
+        .debug_bounds("download-new-category-field-label")
+        .expect("production Form category label");
     let category_trigger = window
         .debug_bounds("download-new-category-trigger")
         .expect("production category trigger");
@@ -871,8 +950,8 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
     ] {
         assert_eq!(
             label.size.height,
-            px(LINE_HEIGHT_LABEL),
-            "{name} label must use the shared Label line height"
+            px(22.5),
+            "{name} label uses released Form text_sm natural line height"
         );
     }
     for (name, control) in [
@@ -887,22 +966,22 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
             "{name} control must use the shared 32 px input tier"
         );
     }
-    assert_eq!(directory_picker.size, gpui::size(px(28.0), px(28.0)));
+    assert_eq!(directory_picker.size, gpui_kit::size(px(32.0), px(32.0)));
     let url_paste = window
         .debug_bounds("download-new-url-paste")
         .expect("production URL paste button");
-    assert_eq!(url_paste.size, gpui::size(px(28.0), px(28.0)));
+    assert_eq!(url_paste.size, gpui_kit::size(px(32.0), px(32.0)));
     assert!(
         (url_paste.right().as_f32() - (form_grid.right().as_f32() - 16.0)).abs() <= 1.0,
         "the URL paste button sits at the right edge of the form width"
     );
     assert!(
-        (url_control.left().as_f32() - (form_grid.left().as_f32() + 16.0)).abs() <= 1.0
+        (url_control.left().as_f32() - (form_grid.left().as_f32() + 16.0 + 76.0)).abs() <= 1.0
             && (url_control.right().as_f32() - (form_grid.right().as_f32() - 16.0)).abs() <= 1.0,
         "URL control row must fill the padded form width"
     );
     assert!(
-        (directory_row.left().as_f32() - file_name_field.left().as_f32()).abs() <= 1.0
+        (directory_label.left().as_f32() - file_name_field.left().as_f32()).abs() <= 1.0
             && (directory_row.right().as_f32() - category_field.right().as_f32()).abs() <= 1.0,
         "directory path row must fill the file/category form column"
     );
@@ -949,7 +1028,7 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
                 .read(cx)
                 .category_scroll
                 .max_offset()
-                .height
+                .y
                 > px(0.0)
         }),
         "all 32 categories must share one genuinely scrollable ListBox"
@@ -965,8 +1044,8 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
         .expect("first category name line");
     assert_eq!(first_title.size.height, px(LINE_HEIGHT_BODY));
     assert_eq!(first_directory.size.height, px(LINE_HEIGHT_LABEL));
-    let category_content_left = first_category.left().as_f32() + SPACING_8;
-    let category_content_right = first_category.right().as_f32() - SPACING_8;
+    let category_content_left = first_category.left().as_f32() + 12.0;
+    let category_content_right = first_category.right().as_f32() - 12.0;
     assert!(
         first_title.top() >= first_category.top()
             && first_title.bottom() <= first_directory.top()
@@ -975,7 +1054,7 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
             && (first_title.right().as_f32() - category_content_right).abs() <= 1.0
             && (first_directory.left().as_f32() - category_content_left).abs() <= 1.0
             && (first_directory.right().as_f32() - category_content_right).abs() <= 1.0,
-        "category name and directory must remain two bounded rows"
+        "category bounded rows: option={first_category:?} title={first_title:?} directory={first_directory:?}"
     );
     let executor = cx.executor();
     window.simulate_mouse_move(first_category.center(), None, Modifiers::default());
@@ -993,7 +1072,7 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
     let titlebar = window
         .debug_bounds("download-new-titlebar")
         .expect("production new-download titlebar");
-    let outside_popover = gpui::point(titlebar.left() + px(24.0), titlebar.center().y);
+    let outside_popover = gpui_kit::point(titlebar.left() + px(24.0), titlebar.center().y);
     assert!(
         !popover.contains(&outside_popover),
         "the outside-click fixture must remain outside the production Popover"
@@ -1115,11 +1194,11 @@ fn production_new_download_category_form_and_bounded_menu_remain_readable(cx: &m
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "production-delayed-start-popover");
     let (completion, completed) = std::sync::mpsc::sync_channel(1);
@@ -1199,8 +1278,8 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
     for (name, button) in [("clear", clear_button), ("confirm", confirm_button)] {
         assert_eq!(
             button.size.height,
-            px(CONTROL_HEIGHT_ACTION),
-            "schedule {name} hit target must use the shared action tier"
+            px(24.0),
+            "schedule {name} uses official Small action tier"
         );
         assert!(button.left() >= action_row.left() && button.right() <= action_row.right());
         assert!(button.top() >= action_row.top() && button.bottom() <= action_row.bottom());
@@ -1233,8 +1312,8 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
             .debug_bounds(selector)
             .unwrap_or_else(|| panic!("missing shared schedule {name} action"));
         assert!(
-            (28.0..=30.0).contains(&action.size.height.as_f32()),
-            "schedule {name} must use the shared 28px tier, got {}px",
+            (24.0..=30.0).contains(&action.size.height.as_f32()),
+            "schedule {name} must use its Kit official size tier, got {}px",
             action.size.height.as_f32()
         );
     }
@@ -1295,6 +1374,23 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
         .refresh()
         .expect("render modified production schedule draft");
     assert_eq!(window.read(|cx| view.read(cx).scheduled_date), draft_date);
+    let schedule = window
+        .debug_bounds("download-new-footer-secondary-schedule-action")
+        .expect("current actual schedule button");
+    let clear = window
+        .debug_bounds("download-new-schedule-clear-action")
+        .expect("current Clear action");
+    let popup = window
+        .debug_bounds("download-new-schedule-popover-shell")
+        .expect("schedule popup");
+    assert!(
+        !popup.contains(&schedule.center()),
+        "schedule popup must leave trigger operable: trigger={schedule:?} popup={popup:?} clear={clear:?}"
+    );
+    assert!(
+        !clear.contains(&schedule.center()),
+        "popover Clear must not overlap trigger: trigger={schedule:?} clear={clear:?}"
+    );
     window.simulate_click(schedule.center(), Modifiers::default());
     window.run_until_parked();
     window
@@ -1329,7 +1425,7 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
     let titlebar = window
         .debug_bounds("download-new-titlebar")
         .expect("production new-download titlebar");
-    let outside_popover = gpui::point(titlebar.right() - px(80.0), titlebar.center().y);
+    let outside_popover = gpui_kit::point(titlebar.right() - px(80.0), titlebar.center().y);
     assert!(
         !shell.contains(&outside_popover),
         "the outside-click fixture must remain outside the production schedule Popover"
@@ -1393,7 +1489,7 @@ fn browser_download_window_starts_at_compact_probe_height() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn browser_probe_window_options_allow_the_compact_native_minimum(cx: &mut TestAppContext) {
     let compact = new_download_window_size(false);
     let options = cx.update(|cx| new_download_window_options(WindowBounds::centered(compact, cx)));
@@ -1410,11 +1506,11 @@ fn browser_probe_window_options_allow_the_compact_native_minimum(cx: &mut TestAp
     assert_eq!(minimum.height.as_f32(), compact.height.as_f32());
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn browser_download_window_shrinks_to_compact_height_while_probe_is_unconfirmed(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "browser-probe-window-height");
     let request = DownloadRequest {
@@ -1461,24 +1557,164 @@ fn browser_download_window_shrinks_to_compact_height_while_probe_is_unconfirmed(
             .update(cx, |_, window, _| window.bounds().size.height.as_f32())
             .expect("read browser download window bounds")
     });
-    // The auto-probe of the browser handoff URL fails fast (nothing listens
-    // on port 9), which surfaces the inline error strip. The dialog must
-    // grow by exactly the error reserve instead of squeezing the footer.
+    // A failed remote probe is an operation notice, not an input-validation row.
+    // Keep the compact form, source draft and retry path without reflowing its footer.
     let compact = new_download_window_size(false).height.as_f32();
-    assert_eq!(
-        height,
-        compact + f32::from(NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT),
-        "a failed browser probe must reserve the inline error row, not the confirmed form"
-    );
+    assert_eq!(height, compact, "probe failure must not add a page banner");
+    cx.read(|cx| {
+        let app = application.read(cx);
+        let view = app
+            .new_download_view
+            .as_ref()
+            .expect("retryable view")
+            .read(cx);
+        assert!(!view.probing);
+        assert!(view.probe.is_none());
+        assert!(view.error.is_none());
+        assert_eq!(view.url.read(cx).value(), "http://127.0.0.1:9/browser.bin");
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.id.starts_with("download-probe-")
+                    && notice.level == crate::notifications::NotificationLevel::Error)
+        );
+    });
 
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
+fn download_terminal_feedback_keeps_distinct_probe_and_submission_invocations(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (application, directory) =
+        download_application_for_window_test(cx, "notification-identities");
+    application.update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let view = application.read_with(cx, |app, _| {
+        app.new_download_view.clone().expect("production draft")
+    });
+    view.update(cx, |view, cx| {
+        view.finish_probe_failure("first probe".into(), cx)
+    });
+    cx.run_until_parked();
+    view.update(cx, |view, cx| {
+        view.finish_probe_failure("second probe".into(), cx)
+    });
+    cx.run_until_parked();
+    view.update(cx, |view, cx| {
+        view.finish_submission_failure("submission".into(), cx)
+    });
+    cx.run_until_parked();
+    application.read_with(cx, |app, cx| {
+        let notices = app.notifications.read(cx).items();
+        assert_eq!(notices.len(), 3);
+        assert_eq!(
+            notices
+                .iter()
+                .filter(|notice| notice.id.starts_with("download-probe-"))
+                .count(),
+            2
+        );
+        assert_eq!(
+            notices
+                .iter()
+                .filter(|notice| notice.id.starts_with("download-submit-"))
+                .count(),
+            1
+        );
+        for (index, notice) in notices.iter().enumerate() {
+            assert!(notices[..index].iter().all(|other| other.id != notice.id));
+            assert_eq!(notice.level, crate::notifications::NotificationLevel::Error);
+        }
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn browser_export_terminal_routing_keeps_invocations_separate_and_ignores_duplicate_results(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (application, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "export-notification-identity");
+    endpoint.set_connected_for_contract_test(true);
+    let mut keys = Vec::new();
+    for format in ["chrome", "firefox"] {
+        let id = uuid::Uuid::new_v4();
+        application.update(cx, |app, _| {
+            app.request_browser_extension_export(format, id)
+                .expect("accepted export")
+        });
+        let command = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .find(|command| {
+                matches!(
+                    command.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::ExportBrowserExtension(_)
+                    )
+                )
+            })
+            .expect("typed export command");
+        assert_eq!(
+            command.id, id,
+            "notification invocation ID crosses the native command boundary"
+        );
+        assert!(matches!(
+            command.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExportBrowserExtension(_))
+        ));
+        let result = PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: Some("synthetic-extension.zip".into()),
+        };
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: id,
+                    result: result.clone(),
+                },
+                cx,
+            );
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: id,
+                    result,
+                },
+                cx,
+            );
+        });
+        cx.run_until_parked();
+        keys.push(format!("download-browser-export-{id}"));
+        application.read_with(cx, |app, cx| {
+            assert!(app.pending_extension_export.is_none());
+            let notices = app.notifications.read(cx).items();
+            assert_eq!(notices.len(), keys.len());
+            for key in &keys {
+                let notice = notices
+                    .iter()
+                    .find(|notice| notice.id.as_ref() == key.as_str())
+                    .expect("invocation terminal");
+                assert_eq!(
+                    notice.level,
+                    crate::notifications::NotificationLevel::Success
+                );
+            }
+        });
+    }
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
 fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "new-download-probe-summary");
 
@@ -1520,6 +1756,7 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
         .read(|cx| application.read(cx).new_download_view.clone())
         .expect("production new-download view");
     let probe = DownloadProbe {
+        resolution: None,
         final_url: "https://example.test/archive.bin".into(),
         file_name: Some("archive.bin".into()),
         total_bytes: Some(64 * 1024 * 1024),
@@ -1611,9 +1848,9 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
         "probe inspector must occupy the right rail beside the destination fields"
     );
     for (selector, expected_height) in [
-        ("download-new-probe-status", LINE_HEIGHT_LABEL),
+        ("download-new-probe-status", LINE_HEIGHT_BODY),
         ("download-new-probe-size", LINE_HEIGHT_BODY),
-        ("download-new-probe-capability", LINE_HEIGHT_META),
+        ("download-new-probe-capability", LINE_HEIGHT_BODY),
     ] {
         let row = window
             .debug_bounds(selector)
@@ -1715,9 +1952,9 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "new-download-error-reserve");
 
@@ -1746,7 +1983,7 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
             // hits; it sets the error and reserves the row.
             view.update(cx, |view, cx| {
                 view.url.update(cx, |input, cx| {
-                    input.set_value("not a valid url", window, cx);
+                    input.replace_all("not a valid url", window, cx);
                 });
                 view.begin_probe(window, cx);
             });
@@ -1780,14 +2017,14 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn confirmed_new_download_submit_error_keeps_the_footer_inside_the_window(cx: &mut TestAppContext) {
     // The user report: after a probe was confirmed the dialog showed the
     // file inspector, and a submission failure squeezed the form — the
     // window stayed at the compact error height, so the file-name row and
     // the footer were pushed out of the fixed-size window. The error
     // reserve must stack onto the confirmed layout height.
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "new-download-confirmed-error");
     let application_for_window = application.clone();
@@ -1849,6 +2086,7 @@ fn confirmed_new_download_submit_error_keeps_the_footer_inside_the_window(cx: &m
         view.update(cx, |view, cx| {
             view.confirmed_request = Some(request);
             view.probe = Some(DownloadProbe {
+                resolution: None,
                 final_url: "https://example.test/file.bin".into(),
                 file_name: Some("file.bin".into()),
                 total_bytes: Some(1024),
@@ -1877,7 +2115,7 @@ fn confirmed_new_download_submit_error_keeps_the_footer_inside_the_window(cx: &m
     window.update(|window, cx| {
         let directory_input = view.read(cx).directory.clone();
         directory_input.update(cx, |input, cx| {
-            input.set_value("", window, cx);
+            input.replace_all("", window, cx);
         });
         view.update(cx, |view, cx| {
             view.submit(DownloadSubmitMode::StartNow, window, cx);
@@ -1951,9 +2189,9 @@ fn new_download_footer_maps_exactly_one_action_to_primary_emphasis() {
     }
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "new-download-layout");
     let application_for_window = application.clone();
     let default_directory = directory.clone();
@@ -2017,6 +2255,7 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
         view.update(cx, |view, cx| {
             view.confirmed_request = Some(request);
             view.probe = Some(DownloadProbe {
+                resolution: None,
                 final_url: "https://example.test/file.bin".into(),
                 file_name: Some("file.bin".into()),
                 total_bytes: Some(1024),
@@ -2165,7 +2404,7 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
             .unwrap_or_else(|| panic!("missing {name} footer action role"));
         assert_eq!(
             action.size.height,
-            px(CONTROL_HEIGHT_ACTION),
+            px(24.0),
             "{name} footer action must use the exact shared action tier"
         );
         assert_eq!(role, action, "{name} role must identify the visible action");
@@ -2175,7 +2414,7 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
         .expect("refresh footer utility");
     assert_eq!(
         refresh.size,
-        size(px(CONTROL_HEIGHT_ACTION), px(CONTROL_HEIGHT_ACTION)),
+        size(px(24.0), px(24.0)),
         "refresh must remain a square shared action"
     );
     let footer_actions = [
@@ -2266,7 +2505,7 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
     });
     window.refresh().expect("render modified schedule draft");
     window.simulate_click(
-        gpui::point(root.left() + px(3.0), root.top() + px(17.0)),
+        gpui_kit::point(root.left() + px(3.0), root.top() + px(17.0)),
         Modifiers::default(),
     );
     window.run_until_parked();
@@ -2296,9 +2535,9 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "new-download-hls-quality");
     let application_for_window = application.clone();
@@ -2357,6 +2596,7 @@ fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut Tes
         view.update(cx, |view, cx| {
             view.confirmed_request = Some(request);
             view.probe = Some(DownloadProbe {
+                resolution: None,
                 final_url: "https://example.test/master.m3u8".into(),
                 file_name: Some("master.m3u8".into()),
                 total_bytes: Some(512),
@@ -2403,47 +2643,27 @@ fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut Tes
     let first_row = window
         .debug_bounds("download-hls-quality-0")
         .expect("first HLS quality row");
-    let first_radio = window
-        .debug_bounds("download-hls-quality-0-radio")
-        .expect("first HLS radio control");
+    let first_radio = kit_media_radio_snapshot(window, "download-hls-quality-group", 0);
     let first_title = window
         .debug_bounds("download-hls-quality-0-title")
         .expect("first HLS quality title");
     let first_detail = window
         .debug_bounds("download-hls-quality-0-detail")
         .expect("first HLS quality detail");
-    assert!(first_row.contains(&first_radio.origin));
-    assert!(first_row.contains(&first_radio.bottom_right()));
-    assert!(first_row.contains(&first_title.origin));
-    assert!(first_row.contains(&first_detail.bottom_right()));
+    assert_eq!(first_radio.role(), Some(gpui_kit::Role::RadioButton));
+    assert_eq!(first_radio.checked(), Some(true));
+    assert_eq!(
+        first_radio.bounds().size.height,
+        px(SETTINGS_ROW_MIN_HEIGHT)
+    );
     assert_eq!(first_row.size.height, px(SETTINGS_ROW_MIN_HEIGHT));
-    assert_eq!(first_radio.size, size(px(14.0), px(14.0)));
-    assert_eq!(first_title.size.height, px(LINE_HEIGHT_BODY));
-    assert_eq!(first_detail.size.height, px(LINE_HEIGHT_LABEL));
+    assert!(first_title.left() >= first_row.left() && first_detail.right() <= first_row.right());
+    assert!(first_detail.bottom() <= first_row.bottom());
     assert_eq!(first_title.left(), first_detail.left());
     assert!(first_title.bottom() <= first_detail.top());
-    let first_selected_dot = window
-        .debug_bounds("download-hls-quality-0-radio-selected")
-        .expect("selected HLS radio dot");
     assert_eq!(
-        first_selected_dot.size,
-        size(px(RADIO_SELECTION_DOT_SIZE), px(RADIO_SELECTION_DOT_SIZE))
-    );
-    assert!(
-        first_radio.contains(&first_selected_dot.origin)
-            && first_radio.contains(&first_selected_dot.bottom_right()),
-        "the selected concrete quality must show a filled radio marker"
-    );
-    assert!(
-        window
-            .debug_bounds("download-hls-quality-1-radio-selected")
-            .is_none(),
-        "an unselected concrete quality must remain visually distinct"
-    );
-    assert!(
-        window
-            .debug_bounds("download-hls-quality-1-radio-unselected")
-            .is_some()
+        kit_media_radio_snapshot(window, "download-hls-quality-group", 1).checked(),
+        Some(false)
     );
     let lower_quality = window
         .debug_bounds("download-hls-quality-1")
@@ -2455,16 +2675,14 @@ fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut Tes
         window.read(|cx| view.read(cx).selected_hls_variant),
         Some(1)
     );
-    assert!(
-        window
-            .debug_bounds("download-hls-quality-1-radio-selected")
-            .is_some()
+    assert_eq!(
+        kit_media_radio_snapshot(window, "download-hls-quality-group", 1).checked(),
+        Some(true)
     );
-    assert!(
-        window
-            .debug_bounds("download-hls-quality-0-radio-unselected")
-            .is_some(),
-        "the previous concrete quality must render its current unselected state"
+    assert_eq!(
+        kit_media_radio_snapshot(window, "download-hls-quality-group", 0).checked(),
+        Some(false),
+        "previous Radio becomes unselected"
     );
     let add_to_queue = window
         .debug_bounds("download-add-to-queue")
@@ -2516,6 +2734,7 @@ fn hls_variant_without_resolution_is_not_presented_as_automatic_quality() {
 #[test]
 fn media_probe_window_height_tracks_the_visible_choice_rows() {
     let dash_probe = DownloadProbe {
+        resolution: None,
         final_url: "https://example.test/manifest.mpd".into(),
         file_name: Some("manifest.mpd".into()),
         total_bytes: None,
@@ -2567,6 +2786,7 @@ fn media_probe_window_height_tracks_the_visible_choice_rows() {
         subtitles_group: None,
     };
     let hls_probe = DownloadProbe {
+        resolution: None,
         final_url: "https://example.test/master.m3u8".into(),
         file_name: Some("master.m3u8".into()),
         total_bytes: None,
@@ -2589,9 +2809,9 @@ fn media_probe_window_height_tracks_the_visible_choice_rows() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "new-download-dash-tracks");
     let application_for_window = application.clone();
@@ -2677,6 +2897,7 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
         view.update(cx, |view, cx| {
             view.confirmed_request = Some(request);
             view.probe = Some(DownloadProbe {
+                resolution: None,
                 final_url: "https://example.test/manifest.mpd".into(),
                 file_name: Some("manifest.mpd".into()),
                 total_bytes: None,
@@ -2694,39 +2915,22 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
     let first_video_row = window
         .debug_bounds("download-dash-video-track-0")
         .expect("first DASH video track row");
-    let first_video_radio = window
-        .debug_bounds("download-dash-video-track-0-radio")
-        .expect("first DASH video radio control");
+    let first_video_radio = kit_media_radio_snapshot(window, "视频", 0);
     let first_video_title = window
         .debug_bounds("download-dash-video-track-0-title")
         .expect("first DASH video title");
     let first_video_detail = window
         .debug_bounds("download-dash-video-track-0-detail")
         .expect("first DASH video detail");
-    assert!(first_video_row.contains(&first_video_radio.origin));
-    assert!(first_video_row.contains(&first_video_detail.bottom_right()));
+    assert_eq!(first_video_radio.role(), Some(gpui_kit::Role::RadioButton));
+    assert_eq!(first_video_radio.checked(), Some(true));
     assert_eq!(first_video_row.size.height, px(SETTINGS_ROW_MIN_HEIGHT));
-    assert_eq!(first_video_radio.size, size(px(14.0), px(14.0)));
-    assert_eq!(first_video_title.size.height, px(LINE_HEIGHT_BODY));
-    assert_eq!(first_video_detail.size.height, px(LINE_HEIGHT_LABEL));
+    assert!(first_video_detail.bottom() <= first_video_row.bottom());
     assert_eq!(first_video_title.left(), first_video_detail.left());
     assert!(first_video_title.bottom() <= first_video_detail.top());
-    let first_video_dot = window
-        .debug_bounds("download-dash-video-track-0-radio-selected")
-        .expect("selected DASH video radio dot");
     assert_eq!(
-        first_video_dot.size,
-        size(px(RADIO_SELECTION_DOT_SIZE), px(RADIO_SELECTION_DOT_SIZE))
-    );
-    assert!(
-        window
-            .debug_bounds("download-dash-video-track-1-radio-selected")
-            .is_none()
-    );
-    assert!(
-        window
-            .debug_bounds("download-dash-video-track-1-radio-unselected")
-            .is_some()
+        kit_media_radio_snapshot(window, "视频", 1).checked(),
+        Some(false)
     );
     let lower_video = window
         .debug_bounds("download-dash-video-track-1")
@@ -2739,15 +2943,13 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
         window.read(|cx| view.read(cx).selected_dash_video_track),
         Some(1)
     );
-    assert!(
-        window
-            .debug_bounds("download-dash-video-track-1-radio-selected")
-            .is_some()
+    assert_eq!(
+        kit_media_radio_snapshot(window, "视频", 1).checked(),
+        Some(true)
     );
-    assert!(
-        window
-            .debug_bounds("download-dash-video-track-0-radio-unselected")
-            .is_some()
+    assert_eq!(
+        kit_media_radio_snapshot(window, "视频", 0).checked(),
+        Some(false)
     );
     let audio = window
         .debug_bounds("download-dash-audio-track-0")
@@ -2759,11 +2961,10 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
         window.read(|cx| view.read(cx).selected_dash_audio_track),
         None
     );
-    assert!(
-        window
-            .debug_bounds("download-dash-audio-track-0-radio-unselected")
-            .is_some(),
-        "cancelling the optional audio track must render an empty radio"
+    assert_eq!(
+        kit_media_radio_snapshot(window, "音频", 0).checked(),
+        Some(false),
+        "optional audio click-to-clear renders unselected Radio"
     );
     let media = window.read(|cx| {
         let view = view.read(cx);
@@ -2803,9 +3004,9 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn browser_prefilled_download_window_preserves_private_request_context(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "browser-prefilled-download");
     let application_for_window = application.clone();
@@ -2877,11 +3078,11 @@ fn browser_prefilled_download_window_preserves_private_request_context(cx: &mut 
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn browser_blob_window_is_prefilled_from_staged_metadata_without_network_probe(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "browser-prefilled-blob");
     let application_for_window = application.clone();
@@ -2940,7 +3141,7 @@ fn browser_blob_window_is_prefilled_from_staged_metadata_without_network_probe(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-fn download_application_for_window_test(
+pub(super) fn download_application_for_window_test(
     cx: &mut TestAppContext,
     label: &str,
 ) -> (Entity<DownloadApplication>, PathBuf) {
@@ -3015,11 +3216,11 @@ fn download_application_for_window_test_with_platform(
     (application, directory, platform_endpoint)
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn schedule_dialog_uses_shared_shell_and_preserves_cancel_close_apply_lifecycle(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "schedule-window");
 
     cx.update(|cx| {
@@ -3047,8 +3248,8 @@ fn schedule_dialog_uses_shared_shell_and_preserves_cancel_close_apply_lifecycle(
     let apply = window
         .debug_bounds("download-schedule-primary-apply-action")
         .expect("schedule apply primary action");
-    assert_eq!(cancel.size.height, px(CONTROL_HEIGHT_ACTION));
-    assert_eq!(apply.size.height, px(CONTROL_HEIGHT_ACTION));
+    assert_eq!(cancel.size.height, px(24.0));
+    assert_eq!(apply.size.height, px(24.0));
     assert!(cancel.right() <= apply.left());
     window.simulate_click(cancel.center(), Modifiers::default());
     window.run_until_parked();
@@ -3120,11 +3321,11 @@ fn schedule_dialog_uses_shared_shell_and_preserves_cancel_close_apply_lifecycle(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn delete_dialog_uses_shared_danger_semantics_and_closes_only_after_a_decision(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "delete-dialog-shell");
     let task_id = cx.read(|cx| {
         application
@@ -3195,8 +3396,8 @@ fn delete_dialog_uses_shared_danger_semantics_and_closes_only_after_a_decision(
     let confirm = first_window
         .debug_bounds("download-delete-danger-confirm-action")
         .expect("delete danger confirmation action");
-    assert_eq!(cancel.size.height, px(CONTROL_HEIGHT_ACTION));
-    assert_eq!(confirm.size.height, px(CONTROL_HEIGHT_ACTION));
+    assert_eq!(cancel.size.height, px(24.0));
+    assert_eq!(confirm.size.height, px(24.0));
     assert!(cancel.right() <= confirm.left());
     first_window.simulate_click(cancel.center(), Modifiers::default());
     first_window.run_until_parked();
@@ -3273,9 +3474,9 @@ fn delete_dialog_uses_shared_danger_semantics_and_closes_only_after_a_decision(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_general_page_mounts_the_double_click_action_control(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "download-double-click-control");
 
@@ -3297,18 +3498,9 @@ fn settings_general_page_mounts_the_double_click_action_control(cx: &mut TestApp
         "settings view must carry the double-click state"
     );
     let general_source = include_str!("../downloads/settings_view.rs");
-    let general_page = general_source
-        .split("DownloadSettingsPage::General => div()")
-        .nth(1)
-        .and_then(|source| {
-            source
-                .split("DownloadSettingsPage::Request => div()")
-                .next()
-        })
-        .expect("general page render source");
     assert!(
-        general_page.contains("double_click_action,"),
-        "the list double-click control must render on the general page"
+        general_source.contains("(DownloadSettingsPage::General, 4) => double_click_action"),
+        "the same double-click control belongs to official General item4"
     );
     assert!(
         general_source.contains("download-settings-double-click-action"),
@@ -3317,9 +3509,9 @@ fn settings_general_page_mounts_the_double_click_action_control(cx: &mut TestApp
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn download_settings_window_opens_without_reentering_download_application(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "download-settings-window");
 
@@ -3352,11 +3544,11 @@ fn download_settings_window_opens_without_reentering_download_application(cx: &m
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn completion_feedback_crosses_the_bounded_platform_transport_once_per_batch(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let directory = unique_download_settings_test_directory("completion-feedback");
     std::fs::create_dir_all(&directory).expect("create completion feedback directory");
     let mut config = AppConfig::default();
@@ -3475,11 +3667,11 @@ fn completed_task_window_maps_exactly_one_action_to_primary_emphasis() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory, platform_endpoint) =
         download_application_for_window_test_with_platform(cx, "task-window-shared-skeleton");
     platform_endpoint.set_connected_for_contract_test(true);
@@ -3572,14 +3764,14 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     let progress_metrics = window
         .debug_bounds("download-window-progress-metrics")
         .expect("aligned progress metrics");
-    let progress_path = window
-        .debug_bounds("download-window-progress-path")
-        .expect("bounded destination line");
+    let capabilities = window
+        .debug_bounds("download-window-progress-capabilities")
+        .expect("resume/limit state");
     assert!(progress_percent.size.height >= px(16.0));
     assert!(progress_identity.bottom() <= progress_track.top());
     assert!(progress_track.bottom() <= progress_metrics.top());
-    assert!(progress_metrics.bottom() <= progress_path.top());
-    assert!(progress_path.bottom() <= footer.top());
+    assert!(progress_metrics.bottom() <= capabilities.top());
+    assert!(capabilities.bottom() <= footer.top());
     while platform_endpoint
         .try_receive_command_for_contract_test()
         .is_ok()
@@ -3643,6 +3835,12 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     let failure_detail = window
         .debug_bounds("download-window-failure-detail")
         .expect("readable multi-line failure detail");
+    assert!(
+        window
+            .debug_bounds("download-window-failure-kit-alert")
+            .is_some(),
+        "queue10 actual task failure Alert"
+    );
     let failed_footer = window
         .debug_bounds("download-task-window-footer")
         .expect("failed footer");
@@ -3729,9 +3927,9 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         .debug_bounds("download-complete-primary-open-action")
         .expect("completed open primary action");
     for action in [drag_action, reveal_action, open_action] {
-        assert_eq!(action.size.height, px(CONTROL_HEIGHT_ACTION));
+        assert_eq!(action.size.height, px(24.0));
     }
-    assert_eq!(drag_action.size.width, px(CONTROL_HEIGHT_ACTION));
+    assert_eq!(drag_action.size.width, px(24.0));
     assert!(drag_action.right() <= reveal_action.left());
     assert!(reveal_action.right() <= open_action.left());
     assert!(
@@ -3814,7 +4012,7 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
                         success: false,
                         error: Some("Explorer activation failed".into()),
                         native_error_code: Some(5),
-                        data: None,
+                        data: Some("explorer_window_not_found".into()),
                     },
                 },
                 cx,
@@ -3824,6 +4022,17 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     assert!(
         cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
         "a failed Shell action must leave the completed window available for retry"
+    );
+    assert!(
+        task_window_handle.update(cx, |_, _, _| ()).is_ok(),
+        "real Explorer lookup failure keeps the presentation alive"
+    );
+    assert!(
+        !cx.read(|cx| application
+            .read(cx)
+            .pending_artifact_actions
+            .contains_key(&reveal_envelope.id)),
+        "native failure retires the pending command so retry is possible"
     );
 
     window.simulate_click(reveal_action.center(), Modifiers::default());
@@ -3892,12 +4101,38 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         application.update(cx, |application, cx| {
             application.handle_platform_notification(
                 PlatformNotification::CommandResult {
+                    correlation_id: uuid::Uuid::new_v4(),
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some("foreground_confirmed".into()),
+                    },
+                },
+                cx,
+            );
+        })
+    });
+    assert!(
+        cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
+        "unrelated native success cannot close a pending completion popup"
+    );
+    assert!(cx.read(|cx| {
+        application
+            .read(cx)
+            .pending_artifact_actions
+            .contains_key(&reveal_retry.id)
+    }));
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
                     correlation_id: reveal_retry.id,
                     result: PlatformCommandResult {
                         success: true,
                         error: None,
                         native_error_code: None,
-                        data: None,
+                        data: Some("target_confirmed_foreground_not_confirmed".into()),
                     },
                 },
                 cx,
@@ -3908,6 +4143,16 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         !cx.read(|cx| application.read(cx).task_windows.contains_key(&task_id)),
         "a confirmed reveal must close its originating completed window"
     );
+    assert!(
+        task_window_handle.update(cx, |_, _, _| ()).is_err(),
+        "matching correlated native success removes the actual window, not only registration"
+    );
+    assert!(!cx.read(|cx| {
+        application
+            .read(cx)
+            .pending_artifact_actions
+            .contains_key(&reveal_retry.id)
+    }));
 
     cx.update(|cx| {
         application.update(cx, |application, cx| {
@@ -3942,6 +4187,144 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
         .try_receive_command_for_contract_test()
         .is_ok()
     {}
+    // A successful result for a retired generation or the main list cannot close this replacement.
+    for origin in [
+        Some(TaskWindowIdentity {
+            native_window_handle: 42,
+            generation,
+        }),
+        None,
+    ] {
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                if let Some(identity) = origin {
+                    application.open_task_artifact_from_task_window(
+                        task_id,
+                        ShellOpenAction::SelectInExplorer,
+                        identity,
+                        cx,
+                    );
+                } else {
+                    application.open_task_artifact(task_id, ShellOpenAction::SelectInExplorer, cx);
+                }
+            })
+        });
+        let envelope = platform_endpoint
+            .try_receive_command_for_contract_test()
+            .expect("Shell command");
+        cx.update(|cx| {
+            application.update(cx, |application, cx| {
+                application.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: envelope.id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some("foreground_confirmed".into()),
+                        },
+                    },
+                    cx,
+                );
+            })
+        });
+        assert!(
+            reopened_handle.update(cx, |_, _, _| ()).is_ok(),
+            "stale generation/main-list success must preserve replacement window"
+        );
+        assert_eq!(
+            cx.read(|cx| application
+                .read(cx)
+                .task_windows
+                .get(&task_id)
+                .expect("replacement")
+                .generation),
+            reopened_generation
+        );
+    }
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            let entry = application
+                .task_windows
+                .get(&task_id)
+                .expect("current completed window");
+            let identity = TaskWindowIdentity {
+                native_window_handle: entry.native_window_handle,
+                generation: entry.generation,
+            };
+            application.open_task_artifact_from_task_window(
+                task_id,
+                ShellOpenAction::OpenWith,
+                identity,
+                cx,
+            );
+        });
+    });
+    let chooser = platform_endpoint
+        .try_receive_command_for_contract_test()
+        .expect("Open With command");
+    assert!(
+        matches!(chooser.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(ref command)) if command.action == ShellOpenAction::OpenWith)
+    );
+    let notifications_before =
+        cx.read(|cx| application.read(cx).notifications.read(cx).items().len());
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            assert!(
+                application
+                    .pending_artifact_actions
+                    .contains_key(&chooser.id),
+                "pending identity installed before result"
+            );
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: chooser.id,
+                    result: PlatformCommandResult {
+                        success: false,
+                        error: None,
+                        native_error_code: None,
+                        data: Some("cancelled".into()),
+                    },
+                },
+                cx,
+            );
+            assert!(
+                !application
+                    .pending_artifact_actions
+                    .contains_key(&chooser.id)
+            );
+            assert!(
+                application.task_windows.contains_key(&task_id),
+                "cancel retains originating task window"
+            );
+        })
+    });
+    assert_eq!(
+        cx.read(|cx| application.read(cx).notifications.read(cx).items().len()),
+        notifications_before,
+        "cancel is not a failure toast"
+    );
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: chooser.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some("open_with_completed".into()),
+                    },
+                },
+                cx,
+            );
+        })
+    });
+    assert!(
+        reopened_handle.update(cx, |_, _, _| ()).is_ok(),
+        "late success after chooser cancellation cannot close its popup"
+    );
+
     window.simulate_click(open_action.center(), Modifiers::default());
     window.run_until_parked();
     let open_envelope = platform_endpoint
@@ -3982,9 +4365,9 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "shutdown-countdown-window");
     let task_id = cx.read(|cx| {
@@ -4038,12 +4421,49 @@ fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppCont
     let arm = task_window
         .debug_bounds("download-window-shutdown-arm-button")
         .expect("task-local shutdown arm");
-    // Every task-window footer button shares one height; a drift here is
-    // the "buttons don't match" regression the user reported.
-    assert_eq!(arm.size.height, px(CONTROL_HEIGHT_ACTION));
+    assert!(
+        arm.size.height > px(0.0) && arm.size.height <= px(32.0),
+        "official Small Checkbox inside original footer"
+    );
+    let footer = task_window
+        .debug_bounds("download-task-window-footer")
+        .expect("original footer");
+    assert!(arm.top() >= footer.top() && arm.bottom() <= footer.bottom());
     task_window.simulate_click(arm.center(), Modifiers::default());
     task_window.run_until_parked();
     assert!(cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)));
+    task_window.update(|window, _| window.activate_window());
+    task_window.run_until_parked();
+    task_window.update(|window, cx| {
+        for _ in 0..3 {
+            window.focus_next(cx);
+        }
+    });
+    task_window
+        .refresh()
+        .expect("Tab focuses real Toolbar Checkbox");
+    assert!(
+        task_window
+            .update(|window, cx| window.focused(cx))
+            .is_some()
+    );
+    for expected in [false, true] {
+        task_window.simulate_event(gpui_kit::KeyDownEvent {
+            keystroke: gpui_kit::Keystroke::parse("space").expect("Checkbox Space"),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        task_window.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse("space").expect("Checkbox release"),
+        });
+        task_window.run_until_parked();
+        task_window.refresh().expect("controlled shutdown Checkbox");
+        assert_eq!(
+            cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)),
+            expected,
+            "one real Checkbox release toggles task-local intent once"
+        );
+    }
 
     cx.update(|cx| {
         application.update(cx, |application, cx| {
@@ -4080,8 +4500,8 @@ fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppCont
     let shutdown_now = shutdown_window
         .debug_bounds("download-shutdown-danger-now-action")
         .expect("shutdown danger action");
-    assert_eq!(cancel.size.height, px(CONTROL_HEIGHT_ACTION));
-    assert_eq!(shutdown_now.size.height, px(CONTROL_HEIGHT_ACTION));
+    assert_eq!(cancel.size.height, px(24.0));
+    assert_eq!(shutdown_now.size.height, px(24.0));
     assert!(shutdown_now.right() <= cancel.left());
     shutdown_window.simulate_click(cancel.center(), Modifiers::default());
     shutdown_window.run_until_parked();
@@ -4095,9 +4515,9 @@ fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppCont
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn a_native_task_window_close_releases_the_keyed_lifecycle_registration(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "native-close-lifecycle");
     let task_id = cx.read(|cx| {
@@ -4187,9 +4607,9 @@ fn a_native_task_window_close_releases_the_keyed_lifecycle_registration(cx: &mut
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn native_shutdown_window_close_cancels_the_countdown(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "shutdown-native-close");
     let task_id = DownloadTaskId::new();
@@ -4229,9 +4649,9 @@ fn native_shutdown_window_close_cancels_the_countdown(cx: &mut TestAppContext) {
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn stale_shutdown_arm_click_cannot_arm_a_task_that_already_terminated(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "shutdown-stale-arm");
     let task_id = cx.read(|cx| {
         application
@@ -4303,9 +4723,9 @@ fn stale_shutdown_arm_click_cannot_arm_a_task_that_already_terminated(cx: &mut T
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn shutdown_now_crosses_the_typed_platform_boundary_and_closes_on_success(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let directory = unique_download_settings_test_directory("shutdown-platform-boundary");
     std::fs::create_dir_all(&directory).expect("create shutdown boundary directory");
     let engine = DownloadEngine::open_in_memory().expect("open shutdown boundary engine");
@@ -4408,9 +4828,9 @@ fn shutdown_now_crosses_the_typed_platform_boundary_and_closes_on_success(cx: &m
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn closing_download_settings_always_leaves_taskbar_overlay_edit_mode(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "settings-edit-close");
     let correlation_id = uuid::Uuid::new_v4();
 
@@ -4432,9 +4852,9 @@ fn closing_download_settings_always_leaves_taskbar_overlay_edit_mode(cx: &mut Te
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn native_move_size_end_closes_only_the_matching_taskbar_edit_gesture(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "taskbar-edit-native-finish");
     cx.update(|cx| {
@@ -4477,9 +4897,9 @@ fn native_move_size_end_closes_only_the_matching_taskbar_edit_gesture(cx: &mut T
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn ffmpeg_platform_timeout_releases_picker_and_page_operations(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "ffmpeg-platform-timeout");
     let (picker_id, page_id) = cx.update(|cx| {
@@ -4503,9 +4923,9 @@ fn ffmpeg_platform_timeout_releases_picker_and_page_operations(cx: &mut TestAppC
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_auto_download_commits_managed_ffmpeg_without_manual_save(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "ffmpeg-auto-install");
     let config_path = directory.join("config.json");
     AppConfig::default()
@@ -4540,9 +4960,8 @@ fn settings_auto_download_commits_managed_ffmpeg_without_manual_save(cx: &mut Te
         .refresh()
         .expect("render FFmpeg auto-install settings");
     window.run_until_parked();
-    let transfer_navigation = window
-        .debug_bounds("download-settings-nav-transfer")
-        .expect("transfer settings navigation");
+    let transfer_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::Transfer);
     window.simulate_click(transfer_navigation.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render FFmpeg install section");
@@ -4606,9 +5025,9 @@ fn settings_auto_download_commits_managed_ffmpeg_without_manual_save(cx: &mut Te
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_media_tools_gives_the_ffmpeg_path_a_full_width_row(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "ffmpeg-settings-layout");
     let application_for_window = application.clone();
@@ -4618,16 +5037,15 @@ fn settings_media_tools_gives_the_ffmpeg_path_a_full_width_row(cx: &mut TestAppC
         DownloadSettingsView::new(application_for_window, initial, window, cx)
     });
     window.refresh().expect("render FFmpeg settings layout");
-    let transfer_navigation = window
-        .debug_bounds("download-settings-nav-transfer")
-        .expect("transfer settings navigation");
+    window.simulate_resize(size(px(984.0), px(650.0)));
+    let transfer_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::Transfer);
     window.simulate_click(transfer_navigation.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render transfer settings layout");
 
-    let section = window
-        .debug_bounds("download-settings-media-tools-section")
-        .expect("media tools section");
+    let _ = reveal_download_setting(window, "download-settings-ffmpeg-control");
+    let section = official_download_group_bounds(window, DownloadSettingsPage::Transfer, 1);
     let control = window
         .debug_bounds("download-settings-ffmpeg-control")
         .expect("FFmpeg path control");
@@ -4642,11 +5060,11 @@ fn settings_media_tools_gives_the_ffmpeg_path_a_full_width_row(cx: &mut TestAppC
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory, platform_endpoint) =
         download_application_for_window_test_with_platform(cx, "settings-section-widths");
     platform_endpoint.set_connected_for_contract_test(true);
@@ -4703,23 +5121,13 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     assert_eq!(shell_content.bottom(), shell_footer.top());
     assert_eq!(shell_footer.bottom(), shell.bottom());
 
-    let navigation_title = window
-        .debug_bounds("download-settings-nav-general-title")
-        .expect("general navigation title");
-    let navigation_description = window
-        .debug_bounds("download-settings-nav-general-description")
-        .expect("general navigation description");
-    assert_eq!(navigation_title.size.height, px(LINE_HEIGHT_BODY));
-    assert_eq!(navigation_description.size.height, px(LINE_HEIGHT_LABEL));
-
-    let row_title = window
-        .debug_bounds("download-settings-row-默认保存目录-title")
-        .expect("default directory row title");
-    let row_description = window
-        .debug_bounds("download-settings-row-默认保存目录-description")
-        .expect("default directory row description");
-    assert_eq!(row_title.size.height, px(LINE_HEIGHT_BODY));
-    assert_eq!(row_description.size.height, px(LINE_HEIGHT_LABEL));
+    let navigation =
+        official_download_navigation_bounds(&mut window, DownloadSettingsPage::General);
+    assert!(navigation.size.height >= px(28.0));
+    let help = window
+        .debug_bounds("download-settings-默认保存目录-help")
+        .expect("full help Tooltip trigger");
+    assert!(help.size.width <= px(24.0));
 
     for (name, selector) in [
         ("cancel", "download-settings-cancel"),
@@ -4730,62 +5138,43 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
             .unwrap_or_else(|| panic!("missing {name} settings action"));
         assert_eq!(
             action.size.height,
-            px(28.0),
-            "{name} must use the shared 28px action tier"
+            px(24.0),
+            "{name} must use the released Kit Small action tier"
         );
     }
 
-    let save = window
-        .debug_bounds("download-settings-section-保存")
-        .expect("save section");
+    let save = official_download_group_bounds(&mut window, DownloadSettingsPage::General, 1);
     let expected_left = save.origin.x.as_f32();
     let expected_width = save.size.width.as_f32();
-    macro_rules! assert_section {
-        ($name:literal, $selector:literal) => {{
-            let bounds = window
-                .debug_bounds($selector)
-                .unwrap_or_else(|| panic!("missing {} section", $name));
-            assert!(
-                (bounds.origin.x.as_f32() - expected_left).abs() <= 1.0,
-                "{} starts at {}px instead of {expected_left}px",
-                $name,
-                bounds.origin.x.as_f32()
-            );
-            assert!(
-                (bounds.size.width.as_f32() - expected_width).abs() <= 1.0,
-                "{} is {}px wide instead of the shared {expected_width}px content width",
-                $name,
-                bounds.size.width.as_f32()
-            );
-        }};
-    }
+    assert!(
+        expected_width >= 700.0,
+        "official group padding retains a useful full content column"
+    );
     macro_rules! open_page {
         ($selector:literal) => {{
-            let navigation = window
-                .debug_bounds($selector)
-                .expect("settings page navigation");
-            window.simulate_click(navigation.center(), Modifiers::default());
-            window.run_until_parked();
-            window.refresh().expect("render selected settings page");
+            let page = match $selector {
+                "download-settings-nav-general" => DownloadSettingsPage::General,
+                "download-settings-nav-request" => DownloadSettingsPage::Request,
+                "download-settings-nav-transfer" => DownloadSettingsPage::Transfer,
+                "download-settings-nav-window" => DownloadSettingsPage::Window,
+                _ => DownloadSettingsPage::Diagnostics,
+            };
+            select_official_download_page(&mut window, page);
             assert_eq!(
                 window
                     .debug_bounds("download-settings-shell-footer")
-                    .expect("stable settings footer"),
-                shell_footer,
-                "switching settings pages must not move the shared footer"
+                    .expect("footer"),
+                shell_footer
             );
         }};
     }
-    assert_section!("分类与重名", "download-settings-section-分类与重名");
+    let active = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
     assert!(
-        window
-            .debug_bounds("download-settings-section-传输")
-            .is_none(),
-        "inactive pages must not remain in one oversized scrolling column"
-    );
-    assert!(
-        expected_width >= 760.0,
-        "settings content remains unexpectedly narrow at {expected_width}px"
+        active
+            .iter()
+            .filter(|snapshot| snapshot.role() == Some(gpui_kit::Role::Group))
+            .all(|snapshot| snapshot.label() != Some("传输")),
+        "inactive content unmounts"
     );
 
     let initial_automatic_categories =
@@ -4802,8 +5191,10 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     );
 
     open_page!("download-settings-nav-request");
-    assert_section!("请求上下文", "download-settings-section-请求上下文");
-    assert_section!("证书校验", "download-settings-section-证书校验");
+    let request_group =
+        official_download_group_bounds(&mut window, DownloadSettingsPage::Request, 0);
+    assert!((request_group.left().as_f32() - expected_left).abs() <= 1.0);
+    assert!((request_group.size.width.as_f32() - expected_width).abs() <= 1.0);
     let request_form = window
         .debug_bounds("download-settings-request-context-form")
         .expect("request-context form");
@@ -4819,9 +5210,8 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     let cookie_label = window
         .debug_bounds("download-settings-default-cookie-field-label")
         .expect("Cookie field label");
-    let certificate_section = window
-        .debug_bounds("download-settings-section-证书校验")
-        .expect("certificate policy section");
+    let certificate_section =
+        official_download_group_bounds(&mut window, DownloadSettingsPage::Request, 1);
     let certificate_toggle = window
         .debug_bounds("download-settings-accept-invalid-certificates")
         .expect("certificate policy toggle");
@@ -4830,10 +5220,15 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     assert_eq!(header_field.origin.x, cookie_field.origin.x);
     assert_eq!(header_field.size.width, cookie_field.size.width);
     assert_eq!(header_label.origin.x, cookie_label.origin.x);
-    assert!(request_form.contains(&header_field.origin));
-    assert!(request_form.contains(&header_field.bottom_right()));
-    assert!(request_form.contains(&cookie_field.origin));
-    assert!(request_form.contains(&cookie_field.bottom_right()));
+    for field in [header_field, cookie_field] {
+        assert!(
+            field.left() >= request_form.left()
+                && field.right() <= request_form.right()
+                && field.top() >= request_form.top()
+                && field.bottom() <= request_form.bottom(),
+            "form={request_form:?} field={field:?}"
+        );
+    }
     assert!(certificate_section.bottom() <= shell_footer.top());
 
     let long_header = (0..48)
@@ -4849,10 +5244,10 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     });
     window.update(|window, cx| {
         header_input.update(cx, |input, cx| {
-            input.set_value(&long_header, window, cx);
+            input.replace_all(long_header.clone(), window, cx);
         });
         cookie_input.update(cx, |input, cx| {
-            input.set_value("session=bounded", window, cx);
+            input.replace_all("session=bounded", window, cx);
         });
     });
     window.run_until_parked();
@@ -4872,11 +5267,9 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
         "long Header content must not move or resize the settings footer"
     );
     assert_eq!(
-        window
-            .debug_bounds("download-settings-section-证书校验")
-            .expect("stable certificate section after long Header input"),
+        official_download_group_bounds(&mut window, DownloadSettingsPage::Request, 1),
         certificate_section,
-        "long Header content must not move the separate certificate policy section"
+        "long Header never moves separate certificate group"
     );
     assert!(
         cx.read(|cx| {
@@ -4896,71 +5289,27 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
         "the production certificate toggle must update the same request-settings draft"
     );
     open_page!("download-settings-nav-transfer");
-    assert_section!("传输", "download-settings-section-传输");
-    assert_section!("媒体工具", "download-settings-section-媒体工具");
-    let media_rows = [
-        "download-settings-stacked-row-FFmpeg 可执行文件",
-        "download-settings-stacked-row-自动安装",
-        "download-settings-stacked-row-公开下载来源",
-    ]
-    .map(|selector| {
-        window
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("missing FFmpeg sequence row {selector}"))
-    });
-    assert!(
-        media_rows.windows(2).all(|rows| {
-            (rows[0].origin.x.as_f32() - rows[1].origin.x.as_f32()).abs() <= 1.0
-                && (rows[0].size.width.as_f32() - rows[1].size.width.as_f32()).abs() <= 1.0
-                && rows[1].origin.y.as_f32() > rows[0].origin.y.as_f32()
-        }),
-        "FFmpeg setup must render as three ordered full-width rows"
-    );
-    assert!(
-        media_rows
-            .iter()
-            .all(|row| row.size.height.as_f32() <= 72.0),
-        "FFmpeg setup rows must stay on the dense 72 px sequence tier"
-    );
-    let ffmpeg_path_control = window
-        .debug_bounds("download-settings-ffmpeg-control")
-        .expect("full-width FFmpeg path control");
-    let ffmpeg_install_actions = window
-        .debug_bounds("download-settings-ffmpeg-install-actions")
-        .expect("full-width FFmpeg install action rail");
-    let ffmpeg_source_actions = window
-        .debug_bounds("download-settings-ffmpeg-source-actions")
-        .expect("full-width FFmpeg source action rail");
-    assert!(
-        [
-            ffmpeg_path_control,
-            ffmpeg_install_actions,
-            ffmpeg_source_actions
-        ]
-        .windows(2)
-        .all(|controls| {
-            (controls[0].origin.x.as_f32() - controls[1].origin.x.as_f32()).abs() <= 1.0
-                && (controls[0].size.width.as_f32() - controls[1].size.width.as_f32()).abs() <= 1.0
-        }),
-        "path, managed install and public sources must share one full-width left control rail"
-    );
-    assert!(
-        ffmpeg_path_control.size.width.as_f32()
-            >= media_rows[0].size.width.as_f32() - SPACING_8 * 2.0 - 2.0,
-        "the executable path must consume the full sequence-row content width"
-    );
-    let install_button = window
-        .debug_bounds("download-settings-ffmpeg-install")
-        .expect("primary managed-install action");
-    let gyan_button = window
-        .debug_bounds("download-settings-ffmpeg-gyan")
-        .expect("quiet Gyan fallback action");
-    assert!(
-        (install_button.origin.x.as_f32() - ffmpeg_install_actions.origin.x.as_f32()).abs() <= 1.0
-            && (gyan_button.origin.x.as_f32() - ffmpeg_source_actions.origin.x.as_f32()).abs()
-                <= 1.0,
-        "managed install and public fallbacks must begin at the shared left rail"
-    );
+    for selector in [
+        "download-settings-connection-limit-field",
+        "download-settings-concurrent-tasks-field",
+        "download-settings-adaptive-segments",
+        "download-settings-adaptive-max-field",
+        "download-settings-adaptive-min-field",
+        "download-settings-speed-limit-field",
+    ] {
+        let control = reveal_download_setting(&mut window, selector);
+        assert!(
+            control.left() >= px(expected_left)
+                && control.right() <= px(expected_left + expected_width)
+        );
+    }
+    let ffmpeg = reveal_download_setting(&mut window, "download-settings-ffmpeg-control");
+    let media = official_download_group_bounds(&mut window, DownloadSettingsPage::Transfer, 1);
+    assert!(ffmpeg.size.width >= media.size.width - px(32.0));
+    let install = reveal_download_setting(&mut window, "download-settings-ffmpeg-install");
+    let sources = reveal_download_setting(&mut window, "download-settings-ffmpeg-source-actions");
+    assert_eq!(ffmpeg.left(), sources.left());
+    assert!(install.left() >= media.left());
     window.update(|_, cx| {
         application.update(cx, |application, cx| {
             application.set_ffmpeg_install_state(
@@ -4972,337 +5321,52 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
                     cancelling: false,
                 },
                 cx,
-            );
-        });
+            )
+        })
     });
     window.run_until_parked();
-    window
-        .refresh()
-        .expect("render active FFmpeg installation in production settings");
-    let installing_media_rows = [
-        "download-settings-stacked-row-FFmpeg 可执行文件",
-        "download-settings-stacked-row-自动安装",
-        "download-settings-stacked-row-公开下载来源",
-    ]
-    .map(|selector| {
-        window
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("missing active FFmpeg sequence row {selector}"))
-    });
+    let cancel = reveal_download_setting(&mut window, "download-settings-ffmpeg-cancel");
+    assert!(cancel.bottom() <= shell_footer.top());
     assert_eq!(
-        installing_media_rows, media_rows,
-        "install progress and Cancel must not move or resize the FFmpeg sequence rows"
-    );
-    assert_eq!(
-        window
-            .debug_bounds("download-settings-shell-footer")
-            .expect("fixed footer during FFmpeg installation"),
-        shell_footer,
-        "install progress and Cancel must not move the fixed settings footer"
-    );
-    let active_cancel = window
-        .debug_bounds("download-settings-ffmpeg-cancel")
-        .expect("quiet Cancel action during FFmpeg installation");
-    assert!(
-        installing_media_rows[1].contains(&active_cancel.origin)
-            && installing_media_rows[1].contains(&active_cancel.bottom_right()),
-        "the active Cancel action must remain inside the automatic-install row"
+        window.debug_bounds("download-settings-shell-footer"),
+        Some(shell_footer)
     );
     window.update(|_, cx| {
         application.update(cx, |application, cx| {
-            application.set_ffmpeg_install_state(FfmpegInstallViewState::Idle, cx);
-        });
+            application.set_ffmpeg_install_state(FfmpegInstallViewState::Idle, cx)
+        })
     });
     window.run_until_parked();
-    let first_transfer_cell = window
-        .debug_bounds("download-settings-grid-传输-0")
-        .expect("first transfer grid cell");
-    let second_transfer_cell = window
-        .debug_bounds("download-settings-grid-传输-1")
-        .expect("second transfer grid cell");
-    assert!(
-        (first_transfer_cell.origin.y.as_f32() - second_transfer_cell.origin.y.as_f32()).abs()
-            <= 1.0,
-        "the first two transfer settings are not in the same grid row"
-    );
-    assert!(
-        (first_transfer_cell.size.width.as_f32() - second_transfer_cell.size.width.as_f32()).abs()
-            <= 1.0
-            && (first_transfer_cell.size.width.as_f32()
-                + second_transfer_cell.size.width.as_f32()
-                + 3.0
-                - expected_width)
-                .abs()
-                <= 2.0,
-        "transfer grid cells must equally fill the {expected_width}px section after its two 1px borders and 1px center seam; actual widths were {}px and {}px",
-        first_transfer_cell.size.width.as_f32(),
-        second_transfer_cell.size.width.as_f32()
-    );
-    let transfer_section = window
-        .debug_bounds("download-settings-section-传输")
-        .expect("continuous transfer settings section");
-    let transfer_matrix_selectors = [
-        (
-            "download-settings-matrix-传输-row-0",
-            "download-settings-matrix-传输-cell-0-left",
-            "download-settings-matrix-传输-seam-0",
-            "download-settings-matrix-传输-cell-0-right",
-        ),
-        (
-            "download-settings-matrix-传输-row-1",
-            "download-settings-matrix-传输-cell-1-left",
-            "download-settings-matrix-传输-seam-1",
-            "download-settings-matrix-传输-cell-1-right",
-        ),
-        (
-            "download-settings-matrix-传输-row-2",
-            "download-settings-matrix-传输-cell-2-left",
-            "download-settings-matrix-传输-seam-2",
-            "download-settings-matrix-传输-cell-2-right",
-        ),
-    ];
-    let mut transfer_rows = Vec::new();
-    for (row_index, (row_selector, left_selector, seam_selector, right_selector)) in
-        transfer_matrix_selectors.into_iter().enumerate()
-    {
-        let row = window
-            .debug_bounds(row_selector)
-            .unwrap_or_else(|| panic!("missing transfer matrix row {row_index}"));
-        let left = window
-            .debug_bounds(left_selector)
-            .unwrap_or_else(|| panic!("missing left transfer cell {row_index}"));
-        let seam = window
-            .debug_bounds(seam_selector)
-            .unwrap_or_else(|| panic!("missing transfer seam {row_index}"));
-        let right = window
-            .debug_bounds(right_selector)
-            .unwrap_or_else(|| panic!("missing right transfer cell {row_index}"));
-        assert!(
-            (left.origin.y.as_f32() - right.origin.y.as_f32()).abs() <= 1.0
-                && (left.size.height.as_f32() - right.size.height.as_f32()).abs() <= 1.0,
-            "transfer matrix row {row_index} must share one vertical baseline"
-        );
-        assert!(
-            (seam.size.width.as_f32() - 1.0).abs() <= 0.5
-                && (left.origin.x.as_f32() + left.size.width.as_f32() - seam.origin.x.as_f32())
-                    .abs()
-                    <= 1.0
-                && (seam.origin.x.as_f32() + seam.size.width.as_f32() - right.origin.x.as_f32())
-                    .abs()
-                    <= 1.0,
-            "transfer matrix row {row_index} must use one 1 px center seam without card gaps"
-        );
-        assert!(
-            (left.size.width.as_f32() - right.size.width.as_f32()).abs() <= 2.0,
-            "transfer matrix row {row_index} must split the parent into equal cells"
-        );
-        assert!(
-            left.origin.x.as_f32() >= transfer_section.origin.x.as_f32()
-                && right.origin.x.as_f32() + right.size.width.as_f32()
-                    <= transfer_section.origin.x.as_f32()
-                        + transfer_section.size.width.as_f32()
-                        + 1.0,
-            "transfer matrix row {row_index} must stay inside the section width"
-        );
-        transfer_rows.push(row);
-    }
-    assert!(
-        transfer_rows
-            .windows(2)
-            .all(
-                |rows| (rows[0].origin.x.as_f32() - rows[1].origin.x.as_f32()).abs() <= 1.0
-                    && (rows[0].size.width.as_f32() - rows[1].size.width.as_f32()).abs() <= 1.0
-            ),
-        "all transfer matrix rows must share one parent-width geometry"
-    );
-    let left_control_edges = [
-        "download-settings-connection-limit-field",
-        "download-settings-adaptive-segments",
-        "download-settings-adaptive-min-field",
-    ]
-    .map(|selector| {
-        let bounds = window
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("missing transfer control {selector}"));
-        bounds.origin.x.as_f32() + bounds.size.width.as_f32()
-    });
-    let right_control_edges = [
-        "download-settings-concurrent-tasks-field",
-        "download-settings-adaptive-max-field",
-        "download-settings-speed-limit-field",
-    ]
-    .map(|selector| {
-        let bounds = window
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("missing transfer control {selector}"));
-        bounds.origin.x.as_f32() + bounds.size.width.as_f32()
-    });
-    assert!(
-        left_control_edges
-            .windows(2)
-            .all(|edges| (edges[0] - edges[1]).abs() <= 1.0)
-            && right_control_edges
-                .windows(2)
-                .all(|edges| (edges[0] - edges[1]).abs() <= 1.0),
-        "transfer controls must align to stable left and right trailing rails"
-    );
     open_page!("download-settings-nav-window");
-    assert_section!("任务窗口", "download-settings-section-任务窗口");
-    assert_section!("任务栏进度", "download-settings-section-任务栏进度");
-    let window_matrix_sections = [
-        ("任务窗口", "download-settings-section-任务窗口", 2_usize),
-        (
-            "任务栏进度",
-            "download-settings-section-任务栏进度",
-            7_usize,
-        ),
-    ];
-    for (title, section_selector, row_count) in window_matrix_sections {
-        let section = window
-            .debug_bounds(section_selector)
-            .unwrap_or_else(|| panic!("missing {title} matrix section"));
-        for row_index in 0..row_count {
-            let (row_selector, left_selector, seam_selector, right_selector) = match title {
-                "任务窗口" => [
-                    (
-                        "download-settings-matrix-任务窗口-row-0",
-                        "download-settings-matrix-任务窗口-cell-0-left",
-                        "download-settings-matrix-任务窗口-seam-0",
-                        "download-settings-matrix-任务窗口-cell-0-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务窗口-row-1",
-                        "download-settings-matrix-任务窗口-cell-1-left",
-                        "download-settings-matrix-任务窗口-seam-1",
-                        "download-settings-matrix-任务窗口-cell-1-right",
-                    ),
-                ][row_index],
-                "任务栏进度" => [
-                    (
-                        "download-settings-matrix-任务栏进度-row-0",
-                        "download-settings-matrix-任务栏进度-cell-0-left",
-                        "download-settings-matrix-任务栏进度-seam-0",
-                        "download-settings-matrix-任务栏进度-cell-0-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务栏进度-row-1",
-                        "download-settings-matrix-任务栏进度-cell-1-left",
-                        "download-settings-matrix-任务栏进度-seam-1",
-                        "download-settings-matrix-任务栏进度-cell-1-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务栏进度-row-2",
-                        "download-settings-matrix-任务栏进度-cell-2-left",
-                        "download-settings-matrix-任务栏进度-seam-2",
-                        "download-settings-matrix-任务栏进度-cell-2-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务栏进度-row-3",
-                        "download-settings-matrix-任务栏进度-cell-3-left",
-                        "download-settings-matrix-任务栏进度-seam-3",
-                        "download-settings-matrix-任务栏进度-cell-3-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务栏进度-row-4",
-                        "download-settings-matrix-任务栏进度-cell-4-left",
-                        "download-settings-matrix-任务栏进度-seam-4",
-                        "download-settings-matrix-任务栏进度-cell-4-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务栏进度-row-5",
-                        "download-settings-matrix-任务栏进度-cell-5-left",
-                        "download-settings-matrix-任务栏进度-seam-5",
-                        "download-settings-matrix-任务栏进度-cell-5-right",
-                    ),
-                    (
-                        "download-settings-matrix-任务栏进度-row-6",
-                        "download-settings-matrix-任务栏进度-cell-6-left",
-                        "download-settings-matrix-任务栏进度-seam-6",
-                        "download-settings-matrix-任务栏进度-cell-6-right",
-                    ),
-                ][row_index],
-                _ => unreachable!(),
-            };
-            let row = window
-                .debug_bounds(row_selector)
-                .expect("window matrix row");
-            let left = window
-                .debug_bounds(left_selector)
-                .expect("window matrix left cell");
-            let seam = window
-                .debug_bounds(seam_selector)
-                .expect("window matrix seam");
-            let right = window
-                .debug_bounds(right_selector)
-                .expect("window matrix right cell");
-            assert_eq!(left.origin.y, right.origin.y);
-            assert_eq!(left.size.height, right.size.height);
-            assert!((left.size.width.as_f32() - right.size.width.as_f32()).abs() <= 2.0);
-            assert!((seam.size.width.as_f32() - 1.0).abs() <= 0.5);
-            assert!(section.contains(&row.origin));
-            assert!(section.contains(&row.bottom_right()));
-        }
-    }
-    let task_window_left_edges = [
+    for selector in [
         "download-settings-progress-window",
-        "download-settings-completion-sound",
-    ]
-    .map(|selector| {
-        let bounds = window.debug_bounds(selector).expect("task-window control");
-        bounds.origin.x.as_f32() + bounds.size.width.as_f32()
-    });
-    let task_window_right_edges = [
         "download-settings-completion-window",
+        "download-settings-completion-sound",
         "download-settings-completion-directory",
-    ]
-    .map(|selector| {
-        let bounds = window.debug_bounds(selector).expect("task-window control");
-        bounds.origin.x.as_f32() + bounds.size.width.as_f32()
-    });
-    let taskbar_left_edges = [
+        "download-settings-task-removal-delete-file",
         "download-settings-taskbar-overlay",
-        "download-settings-taskbar-anchor",
-        "download-settings-taskbar-x-field",
-        "download-settings-taskbar-width-field",
-        "download-settings-taskbar-show-progress",
-        "download-settings-taskbar-show-remaining",
-        "download-settings-taskbar-show-tasks",
-    ]
-    .map(|selector| {
-        let bounds = window.debug_bounds(selector).expect("taskbar left control");
-        bounds.origin.x.as_f32() + bounds.size.width.as_f32()
-    });
-    let taskbar_right_edges = [
         "download-settings-taskbar-edit",
+        "download-settings-taskbar-anchor",
         "download-settings-taskbar-progress-mode",
+        "download-settings-taskbar-x-field",
         "download-settings-taskbar-y-field",
+        "download-settings-taskbar-width-field",
         "download-settings-taskbar-height-field",
+        "download-settings-taskbar-show-progress",
         "download-settings-taskbar-show-speed",
+        "download-settings-taskbar-show-remaining",
         "download-settings-taskbar-show-bytes",
+        "download-settings-taskbar-show-tasks",
         "download-settings-taskbar-show-connections",
-    ]
-    .map(|selector| {
-        let bounds = window
-            .debug_bounds(selector)
-            .expect("taskbar right control");
-        bounds.origin.x.as_f32() + bounds.size.width.as_f32()
-    });
-    for edges in [
-        task_window_left_edges.as_slice(),
-        task_window_right_edges.as_slice(),
-        taskbar_left_edges.as_slice(),
-        taskbar_right_edges.as_slice(),
     ] {
-        assert!(
-            edges
-                .windows(2)
-                .all(|pair| (pair[0] - pair[1]).abs() <= 1.0),
-            "window and taskbar controls must align to stable trailing rails"
-        );
+        let bounds = reveal_download_setting(&mut window, selector);
+        assert!(bounds.right() <= px(expected_left + expected_width));
+        assert!(bounds.bottom() <= shell_footer.top());
     }
     open_page!("download-settings-nav-diagnostics");
-    assert_section!("诊断", "download-settings-section-诊断");
-
+    let diagnostics_group =
+        official_download_group_bounds(&mut window, DownloadSettingsPage::Diagnostics, 0);
+    let expected_width = diagnostics_group.size.width.as_f32() - 32.0;
     for (label, row_selector, value_selector, actions_selector, copy_selector, open_selector) in [
         (
             "配置",
@@ -5357,7 +5421,13 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
                 size(px(28.0), px(28.0)),
                 "{label} {action_name} must use the shared square action tier"
             );
-            assert!(actions.contains(&action.origin) && actions.contains(&action.bottom_right()));
+            assert!(
+                action.left() >= actions.left()
+                    && action.top() >= actions.top()
+                    && action.right() <= actions.right()
+                    && action.bottom() <= actions.bottom(),
+                "rail={actions:?} action={action:?}"
+            );
         }
     }
 
@@ -5543,6 +5613,14 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
             .iter()
             .any(|item| item.title.as_ref() == "无法复制诊断路径")
     }));
+    let before_late_reply = cx.read(|cx| {
+        notifications
+            .read(cx)
+            .items()
+            .iter()
+            .map(|item| (item.id.clone(), item.generation()))
+            .collect::<Vec<_>>()
+    });
     window.update(|_, cx| {
         application.update(cx, |application, cx| {
             application.handle_platform_notification(
@@ -5559,13 +5637,16 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
             );
         });
     });
-    assert!(cx.read(|cx| {
-        notifications
+    assert_eq!(
+        cx.read(|cx| notifications
             .read(cx)
             .items()
             .iter()
-            .all(|item| item.title.as_ref() != "路径已复制")
-    }));
+            .map(|item| (item.id.clone(), item.generation()))
+            .collect::<Vec<_>>()),
+        before_late_reply,
+        "late reply cannot add or replace a notice; earlier successful independent copies remain"
+    );
 
     open_page!("download-settings-nav-general");
     assert_eq!(
@@ -5594,11 +5675,11 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_editor(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let executor = cx.executor();
     let (application, directory) =
         download_application_for_window_test(cx, "category-settings-layout");
@@ -5643,14 +5724,20 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     let category_master = window
         .debug_bounds("download-settings-category-master")
         .expect("category master list");
-    let first_marker = window
-        .debug_bounds("download-settings-category-0-marker")
-        .expect("selected category edge");
-    assert_eq!(first_marker.size.width, px(2.0));
-    assert!(category_master.contains(&category_item.origin));
-    assert!(category_master.contains(&category_item.bottom_right()));
-    assert!(category_item.contains(&first_marker.origin));
-    assert!(category_item.contains(&first_marker.bottom_right()));
+    let category_nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    let selected_row = category_nodes
+        .iter()
+        .find(|node| {
+            node.path().last() == Some(&gpui_kit::ElementId::from("download-settings-category-0"))
+        })
+        .expect("real selected ListItem");
+    assert_eq!(selected_row.selected(), Some(true));
+    assert!(
+        category_item.left() >= category_master.left()
+            && category_item.right() <= category_master.right()
+            && category_item.top() >= category_master.top()
+            && category_item.bottom() <= category_master.bottom()
+    );
 
     let name_label = window
         .debug_bounds("download-settings-category-name-field-label")
@@ -5668,17 +5755,17 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     assert_eq!(extensions_label.origin.y, url_label.origin.y);
 
     let name_cell = window
-        .debug_bounds("download-settings-category-name-cell")
-        .expect("category name cell");
+        .debug_bounds("download-settings-category-name-field")
+        .expect("Form name control");
     let directory_cell = window
-        .debug_bounds("download-settings-category-directory-cell")
-        .expect("category directory cell");
+        .debug_bounds("download-settings-category-directory-field")
+        .expect("Form directory control");
     let extensions_cell = window
-        .debug_bounds("download-settings-category-extensions-cell")
-        .expect("category extensions cell");
+        .debug_bounds("download-settings-category-extensions-field")
+        .expect("Form extensions control");
     let url_cell = window
-        .debug_bounds("download-settings-category-url-cell")
-        .expect("category URL cell");
+        .debug_bounds("download-settings-category-url-field")
+        .expect("Form URL control");
     assert_eq!(name_cell.origin.y, directory_cell.origin.y);
     assert_eq!(extensions_cell.origin.y, url_cell.origin.y);
     assert!((name_cell.size.width.as_f32() - directory_cell.size.width.as_f32()).abs() <= 1.0);
@@ -5703,22 +5790,18 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
             "all category editor fields must use the shared 32px input tier"
         );
     }
-    for (cell, description_selector) in [
-        (
-            directory_cell,
-            "download-settings-category-directory-field-description",
-        ),
-        (
-            extensions_cell,
-            "download-settings-category-extensions-field-description",
-        ),
-        (url_cell, "download-settings-category-url-field-description"),
+    let form = window
+        .debug_bounds("download-settings-category-form")
+        .expect("actual bounded Form");
+    for selector in [
+        "download-settings-category-directory-field-help",
+        "download-settings-category-extensions-field-help",
+        "download-settings-category-url-field-help",
     ] {
-        let description = window
-            .debug_bounds(description_selector)
-            .unwrap_or_else(|| panic!("missing {description_selector}"));
-        assert!(cell.contains(&description.origin));
-        assert!(cell.contains(&description.bottom_right()));
+        let help = window
+            .debug_bounds(selector)
+            .expect("Form field Tooltip help");
+        assert!(form.contains(&help.origin) && form.contains(&help.bottom_right()));
     }
 
     let initial_presentation_revision =
@@ -5736,13 +5819,13 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     });
     window.update(|window, cx| {
         directory_input.update(cx, |input, cx| {
-            input.set_value(presentation_root, window, cx);
+            input.replace_all(presentation_root, window, cx);
         });
         category_name_input.update(cx, |input, cx| {
-            input.set_value("压缩与归档文件", window, cx);
+            input.replace_all("压缩与归档文件", window, cx);
         });
         category_directory_input.update(cx, |input, cx| {
-            input.set_value(long_relative_directory, window, cx);
+            input.replace_all(long_relative_directory, window, cx);
         });
     });
     window.run_until_parked();
@@ -5770,8 +5853,16 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     let edited_category_item = window
         .debug_bounds("download-settings-category-0")
         .expect("edited category master row");
+    window.simulate_mouse_move(
+        gpui_kit::point(px(1.0), px(1.0)),
+        None,
+        Modifiers::default(),
+    );
+    window.refresh().expect("outside hover frame");
     window.simulate_mouse_move(edited_category_item.center(), None, Modifiers::default());
-    executor.advance_clock(Duration::from_millis(600));
+    window.refresh().expect("inside hover frame");
+    window.run_until_parked();
+    executor.advance_clock(Duration::from_millis(700));
     window.run_until_parked();
     window.refresh().expect("render category directory tooltip");
     assert!(
@@ -5793,7 +5884,10 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     assert!(category_heading.contains(&category_heading_title.origin));
     assert!(category_heading.contains(&category_heading_title.bottom_right()));
     assert!(category_heading.contains(&enabled_toggle.origin));
-    assert!(category_heading.contains(&enabled_toggle.bottom_right()));
+    assert!(
+        enabled_toggle.right() <= category_heading.right()
+            && enabled_toggle.bottom() <= category_heading.bottom()
+    );
 
     let action_toolbar = window
         .debug_bounds("download-settings-category-action-toolbar")
@@ -5816,17 +5910,25 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     for action in [move_up_button, move_down_button, delete_button] {
         assert_eq!(
             action.size.height,
-            px(crate::ui::metrics::CONTROL_HEIGHT_ACTION),
-            "category tools must use the shared 28px action tier"
+            px(24.0),
+            "category tools must use the released Kit Small action tier"
         );
         assert!(action_toolbar.contains(&action.origin));
-        assert!(action_toolbar.contains(&action.bottom_right()));
+        assert!(
+            action.right() <= action_toolbar.right() && action.bottom() <= action_toolbar.bottom()
+        );
     }
     assert_eq!(move_up_button.origin.y, move_down_button.origin.y);
     assert!(order_group.contains(&move_up_button.origin));
-    assert!(order_group.contains(&move_up_button.bottom_right()));
+    assert!(
+        move_up_button.right() <= order_group.right()
+            && move_up_button.bottom() <= order_group.bottom()
+    );
     assert!(order_group.contains(&move_down_button.origin));
-    assert!(order_group.contains(&move_down_button.bottom_right()));
+    assert!(
+        move_down_button.right() <= order_group.right()
+            && move_down_button.bottom() <= order_group.bottom()
+    );
     assert!(
         delete_button.origin.x >= order_group.bottom_right().x + px(SPACING_12),
         "destructive category action must be spatially separated from ordering tools"
@@ -5867,10 +5969,15 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     let disabled_detail = window
         .debug_bounds("download-settings-category-0-detail")
         .expect("disabled category directory remains readable");
-    assert!(disabled_row.contains(&disabled_title.origin));
-    assert!(disabled_row.contains(&disabled_title.bottom_right()));
-    assert!(disabled_row.contains(&disabled_detail.origin));
-    assert!(disabled_row.contains(&disabled_detail.bottom_right()));
+    for content in [disabled_title, disabled_detail] {
+        assert!(
+            content.left() >= disabled_row.left()
+                && content.right() <= disabled_row.right()
+                && content.top() >= disabled_row.top()
+                && content.bottom() <= disabled_row.bottom(),
+            "disabled label must fit real ListItem: row={disabled_row:?} content={content:?}"
+        );
+    }
 
     let second_category = window
         .debug_bounds("download-settings-category-1")
@@ -5886,11 +5993,16 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
         cx.read(|cx| settings_view.read(cx).selected_category),
         Some(1)
     );
-    assert!(
+    assert_eq!(
         window
-            .debug_bounds("download-settings-category-1-marker")
-            .is_some(),
-        "the clicked master row must own the selected edge"
+            .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+            .iter()
+            .find(|node| node.path().last()
+                == Some(&gpui_kit::ElementId::from("download-settings-category-1")))
+            .expect("clicked real ListItem")
+            .selected(),
+        Some(true),
+        "clicked master row owns selected semantics"
     );
     assert!(
         window
@@ -5899,9 +6011,7 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
         "switching categories must keep the selected category's directory editor visible"
     );
 
-    let move_down = window
-        .debug_bounds("download-settings-category-down-control")
-        .expect("category move-down action");
+    let move_down = reveal_download_setting(&mut window, "download-settings-category-down-control");
     window.simulate_click(move_down.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render category after moving down");
@@ -6008,7 +6118,7 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
             .unwrap_or_else(|| panic!("missing {name} control"));
         assert_eq!(
             bounds.size.height,
-            px(crate::ui::metrics::CONTROL_HEIGHT_ACTION),
+            px(24.0),
             "{name} must use the shared action tier"
         );
     }
@@ -6018,13 +6128,13 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
             .expect("category enabled toggle")
             .size
             .height,
-        px(crate::ui::metrics::CONTROL_HEIGHT_DEFAULT),
-        "settings toggles keep their compact shared tier"
+        px(16.0),
+        "settings toggles keep the released Kit Small track tier"
     );
 
-    let directory_picker = window
-        .debug_bounds("download-settings-pick-directory")
-        .expect("directory picker button");
+    select_official_download_page(&mut window, DownloadSettingsPage::Request);
+    select_official_download_page(&mut window, DownloadSettingsPage::General);
+    let directory_picker = reveal_download_setting(&mut window, "download-settings-pick-directory");
     window.simulate_mouse_move(directory_picker.center(), None, Modifiers::default());
     executor.advance_clock(Duration::from_millis(600));
     window.run_until_parked();
@@ -6036,9 +6146,8 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
         "the production directory picker exposes its Chinese tooltip"
     );
 
-    let transfer_navigation = window
-        .debug_bounds("download-settings-nav-transfer")
-        .expect("transfer navigation");
+    let transfer_navigation =
+        official_download_navigation_bounds(&mut window, DownloadSettingsPage::Transfer);
     window.simulate_click(transfer_navigation.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render transfer action sizes");
@@ -6056,13 +6165,12 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
             .unwrap_or_else(|| panic!("missing {name} action"));
         assert_eq!(
             action.size.height,
-            px(crate::ui::metrics::CONTROL_HEIGHT_ACTION),
-            "{name} must use the shared action tier"
+            px(24.0),
+            "{name} must use the released Kit Small action tier"
         );
     }
-    let ffmpeg_picker = window
-        .debug_bounds("download-settings-pick-ffmpeg-button")
-        .expect("FFmpeg picker button");
+    let ffmpeg_picker =
+        reveal_download_setting(&mut window, "download-settings-pick-ffmpeg-button");
     window.simulate_mouse_move(ffmpeg_picker.center(), None, Modifiers::default());
     executor.advance_clock(Duration::from_millis(600));
     window.run_until_parked();
@@ -6091,9 +6199,9 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_auto_download_cancel_click_reaches_the_operation_control(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "ffmpeg-auto-install-cancel");
     AppConfig::default()
@@ -6120,9 +6228,8 @@ fn settings_auto_download_cancel_click_reaches_the_operation_control(cx: &mut Te
     });
     window.refresh().expect("render FFmpeg cancel settings");
     window.run_until_parked();
-    let transfer_navigation = window
-        .debug_bounds("download-settings-nav-transfer")
-        .expect("transfer settings navigation");
+    let transfer_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::Transfer);
     window.simulate_click(transfer_navigation.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render FFmpeg cancel section");
@@ -6152,11 +6259,11 @@ fn settings_auto_download_cancel_click_reaches_the_operation_control(cx: &mut Te
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let directory = unique_download_settings_test_directory("window");
     let selected_directory = directory.join("selected");
     std::fs::create_dir_all(&selected_directory).expect("create selected directory");
@@ -6195,33 +6302,39 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     });
     window.refresh().expect("render download settings window");
     window.run_until_parked();
-    assert!(window.debug_bounds("download-settings-scroll").is_some());
+    assert!(
+        window
+            .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+            .iter()
+            .any(|snapshot| snapshot
+                .path()
+                .iter()
+                .any(|id| id == &gpui_kit::ElementId::from("settings-sidebar")))
+    );
     window.update(|window, cx| {
         settings.update(cx, |settings, cx| {
             settings.default_request_headers.update(cx, |input, cx| {
-                input.set_value(
+                input.replace_all(
                     "X-NxTools-Default: desktop\nReferer: https://example.test/",
                     window,
                     cx,
                 );
             });
             settings.default_cookie.update(cx, |input, cx| {
-                input.set_value("session=desktop", window, cx);
+                input.replace_all("session=desktop", window, cx);
             });
         });
     });
-    let request_navigation = window
-        .debug_bounds("download-settings-nav-request")
-        .expect("request settings navigation");
+    let request_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::Request);
     window.simulate_click(request_navigation.center(), Modifiers::default());
     window.run_until_parked();
     let certificate_toggle = window
         .debug_bounds("download-settings-accept-invalid-certificates")
         .expect("certificate policy toggle");
     window.simulate_click(certificate_toggle.center(), Modifiers::default());
-    let general_navigation = window
-        .debug_bounds("download-settings-nav-general")
-        .expect("general settings navigation");
+    let general_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::General);
     window.simulate_click(general_navigation.center(), Modifiers::default());
     window.run_until_parked();
     let automatic_categories = window
@@ -6252,15 +6365,15 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
             let category = settings.categories.last().expect("new category editor");
             category
                 .name
-                .update(cx, |input, cx| input.set_value("镜像包", window, cx));
+                .update(cx, |input, cx| input.replace_all("镜像包", window, cx));
             category
                 .save_directory
-                .update(cx, |input, cx| input.set_value("Mirrors", window, cx));
+                .update(cx, |input, cx| input.replace_all("Mirrors", window, cx));
             category
                 .extensions
-                .update(cx, |input, cx| input.set_value("img, iso", window, cx));
+                .update(cx, |input, cx| input.replace_all("img, iso", window, cx));
             category.url_patterns.update(cx, |input, cx| {
-                input.set_value("https://mirror.example/*", window, cx)
+                input.replace_all("https://mirror.example/*", window, cx)
             });
         });
     });
@@ -6293,9 +6406,8 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
         window.read(|cx| settings.read(cx).directory.read(cx).value().to_string()),
         selected_directory.display().to_string()
     );
-    let transfer_navigation = window
-        .debug_bounds("download-settings-nav-transfer")
-        .expect("transfer settings navigation");
+    let transfer_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::Transfer);
     window.simulate_click(transfer_navigation.center(), Modifiers::default());
     window.run_until_parked();
     window.refresh().expect("render media tools section");
@@ -6393,17 +6505,10 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
             });
         });
     }
-    let window_navigation = window
-        .debug_bounds("download-settings-nav-window")
-        .expect("window settings navigation");
+    let window_navigation =
+        official_download_navigation_bounds(window, DownloadSettingsPage::Window);
     window.simulate_click(window_navigation.center(), Modifiers::default());
     window.run_until_parked();
-    window.update(|_, cx| {
-        settings.update(cx, |settings, cx| {
-            settings.scroll.scroll_to_bottom();
-            cx.notify();
-        });
-    });
     window.run_until_parked();
     let completion_toggle = window
         .debug_bounds("download-settings-completion-window")
@@ -6517,9 +6622,8 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     cancel_window
         .refresh()
         .expect("render cancelled settings draft");
-    let window_navigation = cancel_window
-        .debug_bounds("download-settings-nav-window")
-        .expect("window settings navigation");
+    let window_navigation =
+        official_download_navigation_bounds(cancel_window, DownloadSettingsPage::Window);
     cancel_window.simulate_click(window_navigation.center(), Modifiers::default());
     cancel_window.run_until_parked();
     let progress_toggle = cancel_window
@@ -6541,7 +6645,7 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     std::fs::remove_dir_all(directory).expect("remove settings fixture");
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext) {
     let directory = unique_download_settings_test_directory("rollback");
     std::fs::create_dir_all(&directory).expect("create rollback directory");
@@ -6592,6 +6696,7 @@ fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext
                     adaptive_segment_min_mib: 3,
                     max_concurrent_tasks: 7,
                     global_speed_limit_bytes_per_second: Some(1024 * 1024),
+                    background_speed_limit: Default::default(),
                     show_progress_window: false,
                     show_completion_window: false,
                     completion_sound_enabled: true,
@@ -6985,10 +7090,10 @@ fn task_windows_use_compact_content_driven_phase_sizes() {
 #[test]
 fn probe_resize_delegates_move_size_recovery_to_platform_host() {
     let source = include_str!("../downloads/new_download_view.rs");
-    assert!(source.contains("fn apply_new_download_window_resize("));
+    assert!(source.contains("fn apply_new_download_window_resize_with_correlation("));
     assert!(source.contains("PlatformCommand::SetWindowBoundsCentered"));
     assert!(source.contains("this.probe_generation != generation"));
-    assert!(!source.contains("gpui::Timer::after(retry_delay)"));
+    assert!(!source.contains("gpui_kit::Timer::after(retry_delay)"));
     assert!(!source.contains("Duration::from_millis(4_000)"));
     assert_eq!(
         source.matches("window.resize(window_size)").count(),
@@ -7025,18 +7130,15 @@ fn task_window_phase_resize_delegates_geometry_to_the_native_side() {
 
 #[test]
 fn progress_window_exposes_expandable_segment_details() {
-    // The user report: the second-level window had no way to inspect the
-    // dynamic split state. The progress view must carry an expand toggle,
-    // a details panel and old-NxTools-style per-segment dots, and the
-    // thread metric must follow the live segment count instead of the
-    // static connection budget.
+    // Approved monitor retains disclosure/native budget and replaces minimal
+    // dots with explicit number/status/downloaded/total columns.
     let source = include_str!("../downloads/task_window.rs");
     for marker in [
         "download-window-details-toggle",
         "download-window-details",
-        "download-window-segment-dots",
+        "download-window-segment-table",
         "TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT",
-        "\"分段\"",
+        "分段进度：序号、状态、已下载、总大小",
     ] {
         assert!(
             source.contains(marker),
@@ -7046,22 +7148,39 @@ fn progress_window_exposes_expandable_segment_details() {
 }
 
 #[test]
-fn segment_dot_ratio_bounds_each_segment_progress() {
+fn segment_status_never_fabricates_completion_for_unknown_size() {
     let segment = |downloaded: u64, total: Option<u64>| nxtools_download::DownloadSegmentProgress {
         segment_index: 0,
         downloaded_bytes: downloaded,
         total_bytes: total,
     };
-    assert_eq!(segment_dot_ratio(&segment(0, Some(100))), 0.0);
-    assert_eq!(segment_dot_ratio(&segment(50, Some(100))), 0.5);
-    assert_eq!(segment_dot_ratio(&segment(150, Some(100))), 1.0);
-    assert_eq!(segment_dot_ratio(&segment(10, None)), 1.0);
-    assert_eq!(segment_dot_ratio(&segment(0, None)), 0.0);
-    assert_eq!(segment_dot_ratio(&segment(0, Some(0))), 0.0);
     assert_eq!(
-        segment_progress_summary(&[]),
-        "尚未分段",
-        "an unsegmented transfer explains its single-connection mode"
+        segment_display_status(&segment(0, Some(100)), DownloadStatus::Downloading),
+        "等待"
+    );
+    assert_eq!(
+        segment_display_status(&segment(50, Some(100)), DownloadStatus::Downloading),
+        "传输中"
+    );
+    assert_eq!(
+        segment_display_status(&segment(150, Some(100)), DownloadStatus::Downloading),
+        "已完成"
+    );
+    assert_eq!(
+        segment_display_status(&segment(10, None), DownloadStatus::Downloading),
+        "传输中"
+    );
+    assert_eq!(
+        segment_display_status(&segment(10, Some(0)), DownloadStatus::Paused),
+        "已暂停"
+    );
+    assert_eq!(
+        segment_display_status(&segment(10, None), DownloadStatus::Failed),
+        "失败"
+    );
+    assert_eq!(
+        segment_display_status(&segment(10, None), DownloadStatus::Cancelled),
+        "已取消"
     );
 }
 
@@ -7333,6 +7452,7 @@ fn probe_completion_hydrates_the_visible_file_name_input() {
 #[test]
 fn hls_probe_resolves_manifest_name_to_transport_stream_artifact() {
     let probe = DownloadProbe {
+        resolution: None,
         final_url: "https://example.test/high/index.m3u8".into(),
         file_name: Some("index.m3u8".into()),
         total_bytes: None,
@@ -7411,11 +7531,11 @@ fn snapshot_refresh_error_is_bounded_and_keeps_a_user_visible_prefix() {
     assert!(error.chars().count() <= 190);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn retrying_an_expanded_task_window_resets_details_and_native_progress_height(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory, platform_endpoint) =
         download_application_for_window_test_with_platform(cx, "task-window-retry-details");
     platform_endpoint.set_connected_for_contract_test(true);
@@ -7592,9 +7712,9 @@ fn retrying_an_expanded_task_window_resets_details_and_native_progress_height(
         .expect("render retried progress task window");
     assert!(
         window
-            .debug_bounds("download-window-progress-path")
+            .debug_bounds("download-window-progress-capabilities")
             .is_some(),
-        "restored progress must render the collapsed content path"
+        "restored progress must render the collapsed capabilities"
     );
     assert!(!cx.read(|cx| task_view.read(cx).details_expanded));
     let retry_resize = std::iter::from_fn(|| {
@@ -7683,11 +7803,11 @@ fn confirmed_download_inspector_motion_is_generation_scoped_and_opacity_only() {
     assert!(!animation.contains("SetWindowBoundsCentered"));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn invalid_probe_retires_confirmed_generation_and_keeps_compact_error_visible(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "invalid-probe-generation");
     application.update(cx, |application, cx| {
@@ -7735,9 +7855,9 @@ fn invalid_probe_retires_confirmed_generation_and_keeps_compact_error_visible(
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn compact_probe_error_replaces_guidance_before_native_reserve_arrives(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "compact-error-feedback");
     application.update(cx, |application, cx| {
@@ -7773,9 +7893,9 @@ fn compact_probe_error_replaces_guidance_before_native_reserve_arrives(cx: &mut 
     let _ = std::fs::remove_dir_all(directory);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn media_submit_error_preserves_all_probe_rows_and_native_target(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (application, directory) = download_application_for_window_test(cx, "media-submit-layout");
     application.update(cx, |application, cx| {
         application.open_new_download_window(cx)
@@ -7802,6 +7922,7 @@ fn media_submit_error_preserves_all_probe_rows_and_native_target(cx: &mut TestAp
     surface.update(|window, cx| {
         view.update(cx, |view, cx| {
             view.probe = Some(DownloadProbe {
+                resolution: None,
                 final_url: "https://example.test/master.m3u8".into(),
                 file_name: Some("master.ts".into()),
                 total_bytes: None,
@@ -7843,5 +7964,235 @@ fn media_submit_error_preserves_all_probe_rows_and_native_target(cx: &mut TestAp
         surface.debug_bounds("download-hls-quality-options"),
         surface.debug_bounds("download-new-confirmed-form")
     );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+fn kit_media_radio_snapshot(
+    window: &mut VisualTestContext,
+    group: &'static str,
+    index: usize,
+) -> gpui_kit::base::test_support::ElementSnapshot {
+    window
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| {
+            node.role() == Some(gpui_kit::Role::RadioButton)
+                && node.path().contains(&gpui_kit::ElementId::from(group))
+                && node.path().last() == Some(&gpui_kit::ElementId::from(index))
+        })
+        .expect("actual current-frame media Radio")
+}
+
+#[gpui_kit::test]
+fn foreground_background_cap_preserves_latest_manual_limit_and_restores_on_disconnect(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (application, directory) = download_application_for_window_test(cx, "foreground-cap");
+    let foreground = |process_id| {
+        PlatformNotification::Event(PlatformEvent::ForegroundChanged(
+            nxtools_protocol::ForegroundContext {
+                window_handle: 42,
+                focus_window_handle: 42,
+                process_id,
+                process_name: "synthetic.exe".into(),
+                window_title: String::new(),
+            },
+        ))
+    };
+    cx.update(|cx| {
+        application.update(cx, |application, cx| {
+            application.config.download.background_speed_limit =
+                nxtools_core::BackgroundDownloadLimitSettings {
+                    enabled: true,
+                    bytes_per_second: 2048,
+                };
+            application
+                .set_global_speed_limit(Some(4096), uuid::Uuid::new_v4())
+                .expect("manual limit");
+            application
+                .handle_platform_notification(foreground(std::process::id().saturating_add(1)), cx);
+            assert_eq!(
+                application.engine.effective_global_speed_limit(),
+                Some(2048)
+            );
+            assert_eq!(application.engine.global_speed_limit(), Some(4096));
+            application
+                .set_global_speed_limit(Some(1024), uuid::Uuid::new_v4())
+                .expect("lower manual limit");
+            assert_eq!(
+                application.engine.effective_global_speed_limit(),
+                Some(1024)
+            );
+            application.handle_platform_notification(foreground(std::process::id()), cx);
+            assert_eq!(
+                application.engine.effective_global_speed_limit(),
+                Some(1024)
+            );
+            application
+                .set_global_speed_limit(None, uuid::Uuid::new_v4())
+                .expect("manual unlimited");
+            application
+                .handle_platform_notification(foreground(std::process::id().saturating_add(1)), cx);
+            assert_eq!(
+                application.engine.effective_global_speed_limit(),
+                Some(2048)
+            );
+            application.config.download.background_speed_limit.enabled = false;
+            application
+                .apply_background_speed_policy(uuid::Uuid::new_v4())
+                .expect("disable temporary policy");
+            assert_eq!(application.engine.effective_global_speed_limit(), None);
+            application.config.download.background_speed_limit.enabled = true;
+            application
+                .apply_background_speed_policy(uuid::Uuid::new_v4())
+                .expect("enable temporary policy");
+            application.handle_platform_notification(
+                PlatformNotification::Disconnected {
+                    generation: 1,
+                    pending_command_ids: Vec::new(),
+                },
+                cx,
+            );
+            assert_eq!(application.engine.effective_global_speed_limit(), None);
+            assert_eq!(application.engine.global_speed_limit(), None);
+        })
+    });
+    drop(application);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn confirmed_extension_receipt_rejection_does_not_reparse_or_create_task(cx: &mut TestAppContext) {
+    struct CountResolver(std::sync::atomic::AtomicUsize);
+    impl nxtools_download::DownloadRequestResolver for CountResolver {
+        fn identity(&self) -> nxtools_download::DownloadResolverIdentity {
+            nxtools_download::DownloadResolverIdentity {
+                content_version: "fixture".into(),
+                settings_version: "settings".into(),
+            }
+        }
+        fn resolve<'a>(
+            &'a self,
+            _: &'a DownloadRequest,
+            _: &'a nxtools_download::DownloadResolutionOperation,
+        ) -> nxtools_download::DownloadResolutionFuture<'a> {
+            Box::pin(async move {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Err(nxtools_download::DownloadResolutionError::Rejected)
+            })
+        }
+    }
+    cx.update(gpui_kit::init);
+    let (application, directory) =
+        download_application_for_window_test(cx, "extension-receipt-reject");
+    let resolver = std::sync::Arc::new(CountResolver(std::sync::atomic::AtomicUsize::new(0)));
+    cx.read(|cx| {
+        application
+            .read(cx)
+            .engine
+            .set_request_resolver(resolver.clone())
+    })
+    .expect("inject");
+    let application_for_window = application.clone();
+    let output = directory.clone();
+    let slot = Rc::new(RefCell::new(None));
+    let mount = slot.clone();
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| {
+            NewDownloadView::new(
+                NewDownloadViewInit {
+                    application: application_for_window,
+                    default_directory: output,
+                    default_connection_limit: 1,
+                    default_adaptive_segment_policy: Default::default(),
+                    categories: DownloadSettings::default().categories,
+                    initial_source: None,
+                },
+                window,
+                cx,
+            )
+        });
+        *mount.borrow_mut() = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let view = slot.borrow().clone().expect("view");
+    window.update(|window, cx| {
+        let url = view.read(cx).url.clone();
+        url.update(cx, |input, cx| {
+            input.set_value("https://fixture.test/file", window, cx)
+        });
+        let name = view.read(cx).file_name.clone();
+        name.update(cx, |input, cx| input.set_value("chosen.bin", window, cx));
+        let request = view.read(cx).request(cx).expect("request");
+        view.update(cx, |view, cx| {
+            view.confirmed_request = Some(request.clone());
+            view.probe = Some(DownloadProbe {
+                final_url: request.source_url.clone(),
+                file_name: request.file_name.clone(),
+                total_bytes: Some(1),
+                supports_ranges: false,
+                content_type: None,
+                validator: Default::default(),
+                media: None,
+                resolution: Some(Box::new(nxtools_download::DownloadProbeResolution {
+                    receipt: uuid::Uuid::new_v4(),
+                    expires_at_unix_ms: 0,
+                    effective_request: request.clone(),
+                    provenance: nxtools_download::DownloadResolutionProvenance {
+                        original_request: request,
+                        resolver: nxtools_download::DownloadResolverIdentity {
+                            content_version: "fixture".into(),
+                            settings_version: "settings".into(),
+                        },
+                        stages: Vec::new(),
+                        operation_id: uuid::Uuid::new_v4(),
+                        correlation_id: uuid::Uuid::new_v4(),
+                        session_generation: 1,
+                        bypassed: false,
+                        extension_causality: None,
+                    },
+                })),
+            });
+            view.submit(DownloadSubmitMode::QueueOnly, window, cx);
+        });
+    });
+    window.run_until_parked();
+    assert_eq!(
+        resolver.0.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "receipt failure must not silently resolve again"
+    );
+    cx.read(|cx| {
+        assert!(
+            application
+                .read(cx)
+                .engine
+                .tasks()
+                .expect("tasks")
+                .is_empty()
+        );
+        assert!(!view.read(cx).submitting);
+        assert!(
+            view.read(cx).error.is_none(),
+            "no duplicate inline operation notice"
+        );
+        assert_eq!(
+            view.read(cx).url.read(cx).value(),
+            "https://fixture.test/file"
+        );
+        assert_eq!(view.read(cx).file_name.read(cx).value(), "chosen.bin");
+        assert!(
+            application
+                .read(cx)
+                .notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.id.starts_with("download-submit-")
+                    && notice.level == crate::notifications::NotificationLevel::Error)
+        );
+        assert!(view.read(cx).confirmed_request.is_some());
+    });
     let _ = std::fs::remove_dir_all(directory);
 }

@@ -1,0 +1,6 @@
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Production state/action/geometry, identity, callback and native budget regression contracts"}
+{"file":".trellis/spec/shared/verification.md","reason":"Do not infer aesthetic/native acceptance from source gates or passing tests"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Control-state matrix, focus/reduced motion and preserved native budgets"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Single dispatch, pending identity, lease-safe effects and saved-versus-applied semantics"}
+{"file":"docs/ui/layout-quality/feature-preservation.md","reason":"No feature deletion, ignored assertions, hidden actions or window inflation to fit controls"}
+{"file":".trellis/tasks/10-10-gpui-kit-component-visual-migration/research/kit-release-contracts.md","reason":"Compare actual adoption against released component defaults, not legacy visual constants"}

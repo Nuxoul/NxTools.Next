@@ -26,6 +26,10 @@ try {
     & '.\tests\architecture\quick-launch-lifecycle.ps1'
     & '.\tests\architecture\indexer-lifecycle.ps1'
     & '.\tests\architecture\desktop-shell-lifecycle.ps1'
+    & '.\tests\architecture\platformhost-test-selection.ps1'
+    & '.\tests\architecture\browser-signing-isolation.ps1'
+    & '.\tests\architecture\trusted-release-sequence.ps1'
+    & '.\tests\architecture\installer-exact-file-rollback.ps1'
 
     cargo fmt --all --check
     Assert-NativeSuccess 'cargo fmt'
@@ -55,8 +59,8 @@ try {
     dotnet run `
         --project '.\csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj' `
         -c $Configuration `
-        --no-build
-    Assert-NativeSuccess 'C# protocol tests'
+        --no-build -- --fixtures
+    Assert-NativeSuccess 'C# isolated fixture tests'
 }
 finally {
     Pop-Location

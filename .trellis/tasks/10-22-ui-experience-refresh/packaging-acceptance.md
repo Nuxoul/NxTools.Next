@@ -1,0 +1,13 @@
+# User-run acceptance package — 2026-10-22
+
+User explicitly requested packaging for personal acceptance, superseding only the earlier no-packaging boundary. No install, formal product launch, protected deployment, real service operation, commit or archival was performed. Existing publisher key reused; ledger19 ->20, no replacement identity/unsigned downgrade.
+
+Foreground wrapper completed2026-10-22 18:13:01–18:29:33+08:00. Two earlier background launch attempts ended before sequence reservation/Cargo; no survivors, ledger remained19. Finalpackage20successful. Existingpackage19/installer backedupinscratch release-package-20261022. FixedRust1.96PATH/jobs1/incremental0/codegen256/offline and committed-memory23.56GiB>=6preflight retained. Package uses existingSkipVerification toavoidunfilteredworkspace/nativevolumechecksandknownunchangedupstreameditorClippy; prior scopedverificationisnotrelabelledasnewtestexecution.
+
+Output: `artifacts/installer/NxTools.Next-setup-0.7.0.exe`,21,883,965bytes,generated18:29:33+08:00;SHA256 FB1415E1BD8E9983354C72EAEC7FD7F5EAA5C84E54B8B0EF57B641181223FB58. ReleaseID44ac50ea-85b9-49a1-a60f-99b0960e591f,sequence20,38signedfiles. SamepublicSPKISHA25603e979d5c6babda29aa217b7ce72268aab12870bda46a9072397fe52ba083b69.
+
+Actualchecks: Releasecompile/PlatformHostpublish/PEsubsystem/icon/bundledresources/InnoPASS,compilerwarnings0;5installerruntime+5BrowserHostreplacement/rollbackisolatedscenariosPASS. IndependentPythoncryptographyRSA3072-PSS/SHA256verifyusingpreviouspublicanchorPASS;all38filehashes/sizes,5buildoutputmatches,currentextension/licenses,packagedhostpublicanchor/3embeddedRustapprovalsPASS. No privatekeyreadbyindependentverifier/materialpackaged. AuthenticodeNotSigned,distinctfromvalidprojectreleasesignature.
+
+InstalledNxToolsIndexerV1andNxToolsUpdateV1remainRunningatprotectedProgramDatapaths; package-scriptservicestopconditiondidnotmatch. Noformalproductlaunch/servicecommand. AnotherindependentCargostartedafterpackagecompletion;notstopped/duplicated.
+
+Currenttreepackagingincludesparallelchanges; existingpackagepipelineomitsArchiveWorker,sofullArchiveacceptancenotavailable. PhysicalIME/mixedDPI/reader/user/installedacceptancependinguser. Deliverableinstructions/hash/evidenceareinartifacts/installer;fulllogandevidenceinscratchrelease-package-20261022. Source-onlyoutcomesremainhistorical;thissupplementrecordsnewpackagingauthorizationandactualresult.

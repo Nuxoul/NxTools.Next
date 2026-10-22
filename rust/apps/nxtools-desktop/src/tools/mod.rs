@@ -1,3 +1,4 @@
+pub(crate) mod currency;
 pub(crate) mod link_detector;
 pub(crate) mod link_panel;
 

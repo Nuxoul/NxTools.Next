@@ -11,7 +11,7 @@ pub(super) struct PendingNewDownloadHandoff {
     pub(super) command_id: uuid::Uuid,
     started_at: Instant,
     source: AnyWindowHandle,
-    source_view: gpui::WeakEntity<NewDownloadView>,
+    source_view: gpui_kit::WeakEntity<NewDownloadView>,
     generation: u64,
     target: AnyWindowHandle,
     target_view: Entity<NewDownloadView>,
@@ -23,7 +23,7 @@ impl DownloadApplication {
     fn fixed_source_is_current(
         &self,
         source: AnyWindowHandle,
-        view: &gpui::WeakEntity<NewDownloadView>,
+        view: &gpui_kit::WeakEntity<NewDownloadView>,
         generation: u64,
         cx: &App,
     ) -> bool {
@@ -43,7 +43,7 @@ impl DownloadApplication {
     pub(crate) fn create_fixed_confirmation(
         &mut self,
         source: AnyWindowHandle,
-        source_view: gpui::WeakEntity<NewDownloadView>,
+        source_view: gpui_kit::WeakEntity<NewDownloadView>,
         generation: u64,
         operation_id: uuid::Uuid,
         cx: &mut Context<Self>,
@@ -250,7 +250,7 @@ impl DownloadApplication {
         cx.defer(move |cx| {
             let _ = target.update(cx, |_, window, cx| {
                 let _ = view.update(cx, |view, cx| {
-                    view.file_name.focus_handle(cx).focus(window);
+                    view.file_name.focus_handle(cx).focus(window, cx);
                     cx.notify();
                 });
             });
@@ -335,34 +335,51 @@ impl DownloadApplication {
         }
     }
 
-    /// Publishes the export status into the settings view when it is open.
-    /// Safe cross-entity write: the result arrives on the app's own update
-    /// turn, never while the view itself is leased.
-    pub(crate) fn publish_extension_export_status(&self, status: String, cx: &mut Context<Self>) {
-        cx.emit(DownloadApplicationEvent::BrowserExtensionExportCompleted { status });
+    /// The shared screen center survives closing the settings window during export.
+    pub(crate) fn publish_extension_export_status(
+        &self,
+        operation_id: uuid::Uuid,
+        status: String,
+        cx: &mut Context<Self>,
+    ) {
+        let center = self.notifications.clone();
+        let level = if status.starts_with("导出失败") {
+            crate::notifications::NotificationLevel::Error
+        } else if status.starts_with("已取消") {
+            crate::notifications::NotificationLevel::Info
+        } else {
+            crate::notifications::NotificationLevel::Success
+        };
+        let notification = crate::notifications::AppNotification::new(
+            format!("download-browser-export-{operation_id}"),
+            level,
+            "浏览器扩展导出",
+            status,
+        );
+        cx.defer(move |cx| center.update(cx, |center, cx| center.push(notification, cx)));
     }
 
     pub(crate) fn request_browser_extension_export(
         &mut self,
         format: &'static str,
+        operation_id: uuid::Uuid,
     ) -> Result<(), String> {
         if self.pending_extension_export.is_some() {
             return Err("已有导出任务在进行".into());
         }
-        match self
-            .platform
-            .send_command(PlatformCommand::ExportBrowserExtension(
-                ExportBrowserExtensionCommand {
-                    format: format.into(),
-                    destination: String::new(),
-                },
-            )) {
+        self.pending_extension_export = Some(PendingExtensionExport {
+            command_id: operation_id,
+            format,
+            started_at: Instant::now(),
+        });
+        match self.platform.send_command_with_id(
+            PlatformCommand::ExportBrowserExtension(ExportBrowserExtensionCommand {
+                format: format.into(),
+                destination: String::new(),
+            }),
+            operation_id,
+        ) {
             Ok(command_id) => {
-                self.pending_extension_export = Some(PendingExtensionExport {
-                    command_id,
-                    format,
-                    started_at: Instant::now(),
-                });
                 info!(
                     event = "download.browser_extension.export_accepted",
                     %command_id,
@@ -372,6 +389,7 @@ impl DownloadApplication {
                 Ok(())
             }
             Err(error) => {
+                self.pending_extension_export = None;
                 warn!(
                     event = "download.browser_extension.export_rejected",
                     %error,
@@ -635,6 +653,7 @@ impl DownloadApplication {
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let close_application = application.clone();

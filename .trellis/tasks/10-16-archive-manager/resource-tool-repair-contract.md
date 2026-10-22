@@ -1,0 +1,28 @@
+# Resource-tool repair contract
+
+Canonical **Phase A — Engine contracts and safety foundation**. Tool-only correction of the independent resource review's P1 safe stop and P2 sampling/timing findings. Historical resource contracts, review, results and reports are immutable evidence; no codec, budget, product timeout, wire permission, publication or recycle change.
+
+## Owners and bounded stop
+
+- Python owns its exact Popen child handle/PID/executable, bounded readers/sampler, and a fresh UUID control directory under its marked fixture root. A per-run ID is carried through `NXTOOLS_RESOURCE_RUN_ID`; `NXTOOLS_RESOURCE_CONTROL` identifies only that test directory. No PlatformCommand or generic remote deletion/termination endpoint.
+- Python receives physical/commit/disk thresholds, sampler deadline/failure, driver wait/parse/other exceptions. One locked first-wins request writes `stop.json` with matching run ID and fixed reason. Repeats/concurrent/late requests do not dispatch another stop or start another scenario. Probe polling checks the same ID. Tests inject guards/counters/barriers, never real system pressure.
+- C# probe owns its runner, native-handle-derived worker identity, helper copy, source/output fixture and sampler. Stop calls original runner.Cancel/Stop, then DrainAsync. Rust probe owns engine OperationControl or original product operation/client/pipe/server plus exact isolated test host and helper package. Direct-worker driver uses existing private cancel, not a new product runtime.
+- State: `Running -> StopRequested -> Cancelling -> Draining -> Cleaned`. `Cleaned` requires actual worker/process/pumps/Job drainage and source/helper/partial/slot release at their original owner. Receipt/local Cancelled/root disappearance alone is not cleanup. Init failures run the same owned-resource finally/guard.
+- Cooperation wait is finite (10s after stop, with bounded final observation); only then may the driver terminate verified owned handles, recording `Forced`, fixed reason, exact targets and native failures. No name-based kill. Missing owner confirmation is `OutcomeUnknown`/`CleanupIncomplete`, never fabricated true. No recursive scratch sweep or uncertain partial deletion. Existing native Job fallback remains the only Job owner.
+- Control status is bounded JSON, atomically replaced by the single probe owner, containing run ID, state, exact identities and separate cleanup facts. It is evidence, not permission. Probe/driver failures are retained even if operation exits zero. Readers, sample counts (<=10000/process), error details and joins are bounded; no replacement workers or unattended background work.
+
+## Measurement validity
+
+Every scenario requires probe owner; product scenarios additionally require isolated C# host and actual worker, runner scenarios require actual worker, direct-worker root is also the actual worker. Bind exact PID/image and original parent/operation provenance; conhost is not a worker. Retain acquisition/image/counter attempts, successes, failures/native codes, including records with zero successes. Finite startup retries may recover; missing roles, unverified identity or zero valid samples is Incomplete/Unavailable, never PASS/zero MiB. C# success increments only after both counters succeed, committing peaks atomically. Requested and actual intervals and possible missed peaks remain explicit.
+
+Separate `operation`, `measurement`, `stop` and `cleanup` fields. Overall resource PASS requires successful expected operation, complete required-role measurement, no stop/failure/force, confirmed cleanup. Summaries preserve every attempt and reason. Old schema is Legacy/missing-contract-fields; retained C# runner times are setup-inclusive, not recomputed.
+
+## Time domains and implementation boundary
+
+C# setup clock starts on probe entry. Operation clock starts immediately before original runner.Start and all first_batch/full_terminal/cancel/exit/pre-disposal-cleanup stamps use that origin. Setup is saved separately. Cancel differences remain in one domain; first batch is not first paint. A virtual clock/setup barrier proves setup changes do not advance operation time without performance thresholds.
+
+Expected changes: Python run/fixture/summary plus tool unit tests; C# ArchiveResourceProbe and dedicated fixture tests/catalog registration; Rust resource example/support only; tool README, necessary owner guidance, task context, independent repair evidence and the unique current checkpoint. No unrelated Desktop/Clipboard formatting. Red -> green order: safe stop, missing-sample validity, dispatch timing (independent C# work may proceed alongside Python). One bounded actual small-fixture sampling smoke only; small real runner/Job/worker partial barrier is functional regression, not a large performance repeat. Controlled uncooperative fixture is reported separately.
+
+## Verification and stop boundary
+
+Run new deterministic Python/AST and C# list-then-run regressions, complete Archive isolated tests, Protocol/IPC, strict touched-owner Clippy tests/examples default+isolated, C# build, scoped/global fmt, one workspace check, shared ZIP regressions and exact original C# selection excluding only large ZIP64 plus additions. Single machine Cargo lane with required memory env; C# apphost built first; real worker tests never overlap relinking. Persist counts/exits/logs including unrelated failures, immutable-history hashes and exact owned process/pipe/helper/fixture cleanup. Final spec/catalog/task/selector/diff/conflict/DEBUG gates. No Release, install, formal Desktop/installed host, user archives, native recycle, commit/push or next phase.

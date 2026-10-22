@@ -410,6 +410,7 @@ impl DownloadApplication {
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let close_application = application.clone();

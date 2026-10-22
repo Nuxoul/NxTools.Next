@@ -1,16 +1,19 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, ensure};
 use nxtools_finder::search_char_mask;
 use tracing::warn;
 
 mod cache;
+mod time_metadata;
+#[cfg(windows)]
+pub(crate) use time_metadata::read_last_write_by_id;
 
 pub(crate) use cache::{load_system_snapshot, persist_system_delta, persist_system_snapshot};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MftEntry {
     pub identity: Option<MftIdentity>,
     pub path: String,
@@ -102,7 +105,7 @@ pub(crate) struct MftIdentity {
     pub parent_reference: u64,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MftOverlay {
     pub replacements: HashMap<u64, MftEntry>,
     pub deleted: HashSet<u64>,
@@ -119,13 +122,16 @@ pub(crate) struct MftSnapshot {
     pub mount_point: String,
     pub journal_id: Option<u64>,
     pub next_usn: Option<i64>,
+    base_next_usn: Option<i64>,
     base: MftBase,
     owned_name_masks: Option<Arc<Vec<u64>>>,
+    pub(crate) search_data: Option<Arc<crate::search_data::BaseSearchData>>,
     pub overlay: MftOverlay,
     visible_count: usize,
     reference_index: Arc<HashMap<u64, usize>>,
     children_index: Arc<HashMap<u64, Vec<u64>>>,
     cache_path: Option<PathBuf>,
+    delta_checkpoint: Arc<Mutex<Option<cache::DeltaCheckpoint>>>,
 }
 
 impl MftSnapshot {
@@ -153,17 +159,24 @@ impl MftSnapshot {
                 .map(|entry| search_char_mask(&entry.name))
                 .collect(),
         ));
+        let search_data = crate::search_data::BaseSearchData::build(entries.len(), |row| {
+            entries.get(row).map(|entry| entry.name.as_str())
+        })
+        .map(Arc::new);
         Self {
             mount_point: mount_point.into(),
             journal_id,
             next_usn,
+            base_next_usn: next_usn,
             base: MftBase::Owned(Arc::new(entries)),
             owned_name_masks,
+            search_data,
             overlay: MftOverlay::default(),
             visible_count,
             reference_index: Arc::new(reference_index),
             children_index: Arc::new(children_index),
             cache_path: None,
+            delta_checkpoint: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -175,17 +188,23 @@ impl MftSnapshot {
         mapped: cache::MappedSnapshot,
         cache_path: PathBuf,
     ) -> Self {
+        let search_data =
+            crate::search_data::BaseSearchData::build(mapped.len(), |row| mapped.name(row))
+                .map(Arc::new);
         Self {
             mount_point,
             journal_id,
             next_usn,
+            base_next_usn: next_usn,
             base: MftBase::Mapped(Arc::new(mapped)),
             owned_name_masks: None,
+            search_data,
             overlay: MftOverlay::default(),
             visible_count,
             reference_index: Arc::new(HashMap::new()),
             children_index: Arc::new(HashMap::new()),
             cache_path: Some(cache_path),
+            delta_checkpoint: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -204,6 +223,7 @@ impl MftSnapshot {
 
     fn set_cache_path(&mut self, path: PathBuf) {
         self.cache_path = Some(path);
+        self.delta_checkpoint = Arc::new(Mutex::new(None));
     }
 
     fn cache_path(&self) -> Option<&Path> {
@@ -301,8 +321,27 @@ struct RawMftRecord {
     parent_reference: u64,
     name: String,
     is_directory: bool,
+    modified_at_unix_ms: Option<i64>,
 }
 
+#[cfg(any(windows, test))]
+// Injection seam shared by production enumeration and synthetic native-boundary fixtures.
+fn hydrate_record_times_while(
+    records: &mut [RawMftRecord],
+    mut read: impl FnMut(u64) -> Option<i64>,
+    is_current: &impl Fn() -> bool,
+) -> bool {
+    for (index, record) in records.iter_mut().enumerate() {
+        if !is_current() {
+            return false;
+        }
+        record.modified_at_unix_ms = read(record.file_reference);
+        if index.is_multiple_of(64) {
+            std::thread::yield_now();
+        }
+    }
+    is_current()
+}
 fn snapshot_from_records(
     mount_point: &str,
     journal_id: Option<u64>,
@@ -346,7 +385,7 @@ fn snapshot_from_records(
                 name: record.name.clone(),
                 is_directory: record.is_directory,
                 size_bytes: None,
-                modified_at_unix_ms: None,
+                modified_at_unix_ms: record.modified_at_unix_ms,
             });
         }
     }
@@ -456,6 +495,7 @@ fn parse_enumeration_batch(buffer: &[u8]) -> Result<(u64, Vec<RawMftRecord>)> {
                     parent_reference: read_u64(buffer, offset + 16)?,
                     name,
                     is_directory: read_u32(buffer, offset + 52)? & 0x10 != 0,
+                    modified_at_unix_ms: None,
                 });
             }
         }
@@ -531,7 +571,10 @@ mod windows {
         FSCTL_ENUM_USN_DATA, FSCTL_QUERY_USN_JOURNAL, MFT_ENUM_DATA_V0, USN_JOURNAL_DATA_V0,
     };
 
-    use super::{MftSnapshot, RawMftRecord, parse_enumeration_batch, snapshot_from_records};
+    use super::{
+        MftSnapshot, RawMftRecord, hydrate_record_times_while, parse_enumeration_batch,
+        snapshot_from_records,
+    };
 
     const ENUMERATION_BUFFER_BYTES: usize = 1024 * 1024;
 
@@ -655,6 +698,13 @@ mod windows {
                 next_reference > request.StartFileReferenceNumber || batch.is_empty(),
                 "MFT enumeration did not advance its continuation reference"
             );
+            // Enumeration's USN timestamp is not last-write. Hydrate this bounded batch on
+            // the snapshot worker, never in a search or an idle maintenance pass.
+            let _ = hydrate_record_times_while(
+                &mut batch,
+                |reference| super::read_last_write_by_id(handle, reference),
+                &|| true,
+            );
             records.append(&mut batch);
             if next_reference <= request.StartFileReferenceNumber {
                 break;
@@ -680,6 +730,69 @@ mod tests {
     use super::*;
 
     #[test]
+    fn w4_mft_metadata_seam_publishes_true_time_and_keeps_failure_unknown() {
+        let mut records = vec![
+            RawMftRecord {
+                file_reference: (3_u64 << 48) | 10,
+                parent_reference: 5,
+                name: "notes.txt".into(),
+                is_directory: false,
+                modified_at_unix_ms: None,
+            },
+            RawMftRecord {
+                file_reference: 11,
+                parent_reference: 5,
+                name: "denied.txt".into(),
+                is_directory: false,
+                modified_at_unix_ms: None,
+            },
+        ];
+        let mut seen = Vec::new();
+        assert!(hydrate_record_times_while(
+            &mut records,
+            |reference| {
+                seen.push(reference);
+                (reference == ((3_u64 << 48) | 10)).then_some(1234)
+            },
+            &|| true
+        ));
+        assert_eq!(seen, [(3_u64 << 48) | 10, 11]);
+        let snapshot = snapshot_from_records("C:\\", Some(17), Some(100), records);
+        assert_eq!(
+            snapshot
+                .visible_entry((3_u64 << 48) | 10)
+                .expect("file")
+                .modified_at_unix_ms,
+            Some(1234)
+        );
+        assert_eq!(
+            snapshot
+                .visible_entry(11)
+                .expect("unknown metadata file")
+                .modified_at_unix_ms,
+            None
+        );
+        assert_eq!(snapshot.next_usn, Some(100));
+    }
+
+    #[test]
+    fn w4_mft_metadata_seam_cancel_reads_nothing() {
+        let mut records = vec![RawMftRecord {
+            file_reference: 10,
+            parent_reference: 5,
+            name: "notes.txt".into(),
+            is_directory: false,
+            modified_at_unix_ms: None,
+        }];
+        assert!(!hydrate_record_times_while(
+            &mut records,
+            |_| panic!("cancel must not read"),
+            &|| false
+        ));
+        assert_eq!(records[0].modified_at_unix_ms, None);
+    }
+
+    #[test]
     fn mft_parent_references_reconstruct_a_descendant_path() {
         let snapshot = snapshot_from_records(
             r"C:\",
@@ -690,18 +803,21 @@ mod tests {
                     file_reference: 5,
                     parent_reference: 5,
                     name: ".".into(),
+                    modified_at_unix_ms: None,
                     is_directory: true,
                 },
                 RawMftRecord {
                     file_reference: 10,
                     parent_reference: 5,
                     name: "Work".into(),
+                    modified_at_unix_ms: None,
                     is_directory: true,
                 },
                 RawMftRecord {
                     file_reference: 11,
                     parent_reference: 10,
                     name: "Budget.xlsx".into(),
+                    modified_at_unix_ms: None,
                     is_directory: false,
                 },
             ],
@@ -802,12 +918,14 @@ mod tests {
                     file_reference: (3_u64 << 48) | 10,
                     parent_reference: root_reference,
                     name: "Work".into(),
+                    modified_at_unix_ms: None,
                     is_directory: true,
                 },
                 RawMftRecord {
                     file_reference: (8_u64 << 48) | 11,
                     parent_reference: (3_u64 << 48) | 10,
                     name: "Budget.xlsx".into(),
+                    modified_at_unix_ms: None,
                     is_directory: false,
                 },
             ],
@@ -831,18 +949,21 @@ mod tests {
                     file_reference: 10,
                     parent_reference: 11,
                     name: "first".into(),
+                    modified_at_unix_ms: None,
                     is_directory: true,
                 },
                 RawMftRecord {
                     file_reference: 11,
                     parent_reference: 10,
                     name: "second".into(),
+                    modified_at_unix_ms: None,
                     is_directory: true,
                 },
                 RawMftRecord {
                     file_reference: 12,
                     parent_reference: 99,
                     name: "orphan.txt".into(),
+                    modified_at_unix_ms: None,
                     is_directory: false,
                 },
             ],

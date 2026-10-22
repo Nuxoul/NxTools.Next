@@ -1,0 +1,19 @@
+{
+  "scoped_files": 16,
+  "conflict_debug_whitespace_findings": [],
+  "python_ast": "PASS",
+  "independent_report_hashes": "unchanged",
+  "historical_checkpoint_sha256": "ec40d4289d8102252f7855dd50f82b86b4899a058cd92dc0e0783f1a7220d78f",
+  "initial_dirty_paths": 438,
+  "missing_initial_dirty_paths": [],
+  "cleanup": {
+    "Timestamp": "2026-10-19T18:49:22.8414225+08:00",
+    "OwnedPackageAbsent": true,
+    "LargeFixturesAbsent": true,
+    "FixedTestHelperAbsent": true,
+    "FixedProductHelperAbsent": true,
+    "ResourceOutputDirectories": 0,
+    "ArchiveTestPipes": 0
+  },
+  "production_change": "Only ArchiveReadSession.OnRunnerEvent timeoutcause priority; source/Job/output/codec/wire/dependencies untouched by this slice"
+}

@@ -510,6 +510,14 @@ pub fn run_with_host_policy(
             return Err(error);
         }
     };
+    run_connected_command(command, &mut client)
+}
+
+fn run_connected_command(
+    command: CliCommand,
+    client: &mut DownloadIpcClient,
+) -> Result<(), CliError> {
+    let json_output = command.json_output();
     let result = match command {
         CliCommand::Add {
             url,
@@ -520,7 +528,7 @@ pub fn run_with_host_policy(
             idempotency_key,
             json,
         } => run_add(
-            &mut client,
+            client,
             AddOptions {
                 url,
                 directory,
@@ -531,23 +539,23 @@ pub fn run_with_host_policy(
                 json_output: json,
             },
         ),
-        CliCommand::List { filter, json } => run_list(&mut client, filter, json),
+        CliCommand::List { filter, json } => run_list(client, filter, json),
         CliCommand::Show {
             task_id,
             watch,
             json,
-        } => run_show(&mut client, task_id, watch, json),
+        } => run_show(client, task_id, watch, json),
         CliCommand::Action {
             action,
             task_ids,
             delete_file,
             json,
-        } => run_action(&mut client, action, task_ids, delete_file, json),
+        } => run_action(client, action, task_ids, delete_file, json),
         CliCommand::Schedule {
             queue_id,
             schedule,
             json,
-        } => run_schedule(&mut client, queue_id, schedule, json),
+        } => run_schedule(client, queue_id, schedule, json),
     };
     match result {
         Err(mut error) if json_output && !error.message.is_empty() => {
@@ -603,10 +611,7 @@ fn run_schedule(
             Ok(())
         }
         DownloadCommandOutcome::Rejected { fault } => {
-            print_fault(request_id, &fault, json_output);
-            let mut error = error_from_fault(fault, false);
-            error.message.clear();
-            Err(error)
+            Err(reported_fault_error(request_id, fault, json_output, false))
         }
         _ => Err(unexpected_result("schedule")),
     }
@@ -675,10 +680,7 @@ fn run_add(client: &mut DownloadIpcClient, options: AddOptions) -> Result<(), Cl
             Ok(())
         }
         DownloadCommandOutcome::Rejected { fault } => {
-            print_fault(request_id, &fault, json_output);
-            let mut error = error_from_fault(fault, true);
-            error.message.clear();
-            Err(error)
+            Err(reported_fault_error(request_id, fault, json_output, true))
         }
         _ => Err(CliError {
             exit_code: EXIT_OPERATION_FAILED,
@@ -727,10 +729,7 @@ fn run_list(
             Ok(())
         }
         DownloadCommandOutcome::Rejected { fault } => {
-            print_fault(request_id, &fault, json_output);
-            let mut error = error_from_fault(fault, false);
-            error.message.clear();
-            Err(error)
+            Err(reported_fault_error(request_id, fault, json_output, false))
         }
         _ => Err(unexpected_result("list")),
     }
@@ -1126,6 +1125,19 @@ fn print_json(request_id: Uuid, ok: bool, result: Option<Value>, error: Option<V
     );
 }
 
+// This fault has already reached stdout/stderr; callers must not emit it again.
+fn reported_fault_error(
+    request_id: Uuid,
+    fault: DownloadFault,
+    json_output: bool,
+    request_rejected: bool,
+) -> CliError {
+    print_fault(request_id, &fault, json_output);
+    let mut error = error_from_fault(fault, request_rejected);
+    error.message.clear();
+    error
+}
+
 fn print_fault(request_id: Uuid, fault: &DownloadFault, json_output: bool) {
     if json_output {
         print_json(request_id, false, None, Some(safe_fault_value(fault)));
@@ -1458,3 +1470,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod output_tests;

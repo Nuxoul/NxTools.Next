@@ -1,0 +1,10 @@
+# Implementation plan (user approved)
+
+1. Read matching owner specs/shared contracts and reference Install.cpp call chain, update reference note with verified ZIP/placement invariants. Confirm exact published Dialog Root/content/footer/close/focus and Accordion APIs. Add red-capable real ZIP intake and current confirmation-composition regression before product changes.
+2. Implement bounded ZIP intake in Extensions using existing zip dependency; tests for root/wrapper/declarative/script, traversal/reserved/alias/links/duplicate/corruption/encryption/size/count/CRC/missing manifests or files. No outside filesystem writes. Reuse original immutable staging, Core atomic config section merge and trust semantics; actual confirm/reopen/source-deletion/cancel/replace-failure fixtures.
+3. Change native picker and ordinary Desktop import to ZIP only, preserve original platform reader/correlation. Fixed errors and retry, preview generations/pending IDs. Update manifest-picker fixture and author package-format examples/docs without executing plugins.
+4. Replace raw confirmation text with actual released Kit Dialog, metadata/capability/permission groups and collapsed technical details, fixed32px footer. Test real current-frame pointer/keyboard/Escape/close/duplicate submit/current candidate/error/minimum scroll/focus/deferred lease boundaries. Preserve prior runtime settings.
+5. Parent-serialized required memory env Cargo tests/scoped Clippy/workspace --tests/fmt; safe C# fixtures; affected UI lifecycle gates/spec/diff/new-file whitespace/probe checks. No unfiltered volume/service test, packaging or install.
+6. Isolated owned GPUI confirmation captures Light/Dark default/minimum/replace/long content; individually inspect requested changed states, record technical vs user/native acceptance. Update outcomes/executable contracts/usage and task review status. No commit/push.
+
+Rollback boundary: preserve unrelated dirty work; no global restore. All temporary inputs/processes/config live under owned scratch/test directories. Rejected/failed archives cannot publish registry or overwrite last-good package.

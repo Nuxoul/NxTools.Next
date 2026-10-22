@@ -1285,3 +1285,104 @@ Focused index state/admission and temporary pipe regressions pass. They do not s
 - Eligible custom nodes are launcher results (including recent-directory results only when navigation is eligible), activatable built-in/Shell/submenu action rows, attached file-dialog results and its available default-source row. Settings navigation/toggles/refresh already use Button or shared keyboard-capable controls. Preview title/path/text/image/metadata are passive content, not actions: they must not acquire keyboard focus.
 - Preserve keyed focus across repaint without adding a second Enter/Space handler: the shared tracked-focus click boundary activates on KeyUp once; disabled rows have no tab stop or dispatch. Row activation selects that row locally before deferring application effects. Arrow/Right/Escape from a focused row return to the existing search-owned navigation/IME controller; keyboard selection uses the same deferred generation-scoped preview controller. Keep first-stationary-hover gating, searchable nested action levels and parent restoration.
 - Layout invariants remain 40px result height / 26px icon slot / 48px trailing rail, 4px text gap (18+4+16=38 inside 40), 8/12px rail spacing, control radius3 and existing floating radius6. Preserve measured 42px launcher header and 72/30px preview rails in the 400×410 shell; these fixed content budgets are not permission to blindly enlarge the HWND. Native hidden → noactivate → final pixel bounds → show and primary HWND/input restoration, cancellation and failure overlays remain untouched.
+
+### Advanced layout reference ledger synchronization (2026-10-09)
+Pre-edit ledger `advanced-ui-reference-ledger.md` recorded the managed Listary boundary only: `.diagnostics/listary-managed/Listary/Core/OptionsWindow/CommandOptionsViewModel.cs`:52–103 keeps observable master collection/selected item; `Core/Commands/CustomCommandViewModel.cs`:70–99,123–149 keeps program/arguments/workdir/admin/silent distinct. Old NxTools has no custom-command implementation; no Listary native engine source is claimed. Reference Apply ownership does not authorize inventing a Next transaction. Zed ButtonLike:797–860 supplies bounded enabled/focus/action slots, ListItem:69–103 continuous selection/start/end slots, not domain behavior.
+
+Current main_window/quick_launch_page.rs callbacks for automatic/manual volume scope, path selection/removal/picker, command inputs/actions and diagnostics snapshot/clear/open retain deferred persistence/generation ownership. All five fields/eight actions, enabled/admin/silent, automatic empty-vector semantics, exclusion key policy and exact path/log access survive32px form controls and workbench13/20+12/18 roles. Final production bounds/actions and limits: [remaining audit](../audits/2026-10-09-remaining-ui-layout-migration.md).
+
+## Quick Find settings Switch/styled Input adoption (2026-10-11)
+User authorizes replacing three Button-based settings toggles and the five custom
+command input frames only, leaving approved launcher/other controls unchanged.
+Rechecked quick_launch_page.rs callbacks to set_auto_quick_switch,
+set_file_dialog_search,set_exclusive_fullscreen_suppression: each defers original
+application update/persistence; use controlled Switch requested bool, one handler.
+Rechecked managed CustomCommandViewModel.cs launch/admin/silent/working-directory
+distinction (managed boundary only). No legacy NxTools custom-command surface.
+custom_command_editor.rs retains keyword/title/program/arguments/working-directory
+InputState entities; remove manual div frame/appearance suppression and use released
+default Input. Existing master selection edits, not executes; save/picker/checkbox
+owners remain. Native windows/Root/bootstrap/show-hide unchanged. Published Kit
+Switch::on_change single controlled callback/default36x20 and Input default32px
+inspected before edit. Real component/render/keyboard/persistence gates required.
+
+Outcome: actual controlled Switch callbacks pass the requested value through the
+existing deferred setters, section persistence and ConfigureQuickLaunch command.
+Retain32px page control slot while default track stays36x20. Command fields retain
+all original InputState entities and default32px single frames. Production
+pointer/Space/checked/disk/typed-payload and editor/picker/save/minimum regressions
+pass; final545/545. Four isolated96DPI production captures actually inspected;
+new settings user approval and physical/highDPI/reader/installed acceptance pending.
+Exact evidence and remaining gaps: owning component migration implement.md and
+adoption-ledger.md. Launcher and native show/hide/focus behavior not changed.
+
+## Settings compound adoption prerequisite — 2026-10-11
+Rechecked managed OptionsWindowViewModel and CommandOptionsViewModel (stable pages/
+selected command, managed boundary only); old NxTools has no matching Quick Find
+settings surface. Current Next select_quick_launch_settings_page clears exclusion
+selection, resets bounded scroll and changes the keyboard scope; diagnostics is
+mounted only for its selected page. Input entities/drafts/picker generations and
+original section setters/native lifetimes stay authoritative. Released Settings
+owns private keyed SettingsState; default_selected_index is initialization, internal
+Sidebar handlers only update that state, search Input is constructed unconditionally.
+Public Settings has no page-change/control or search-disable builder; Page/Group
+render visibility is nonpublic. These must be verified in real release fixtures
+before deciding integration/exception; do not add search/resize/reset or a parallel
+controller/upstream fork silently. This review does not change native boundaries.
+
+Official Settings integration outcome (2026-10-11): user explicitly allows built-in
+search/presentation features while retaining all prior functions. Released0.7.1
+Settings/Page/Group/Item/Field adopted without patch/dependency change; custom
+navigation/row/header/scroll controller removed. Initial-page seed is not current
+private selection; exclusion shortcuts bind actual mounted content/focus, while
+Settings owns search/selection/filter/scroll. Ordinary titles/group grammar official;
+complex volume/path/editor/diagnostic content uses public per-item slots. Command
+detail is real Form/Field on original entities. Section saves/typed commands/hotkey/
+picker correlation/cancel/stale/edit-not-execute survive549tests; new search/no-match/
+clear and focused-index/minimum-scroll-Save regressions pass. All5topic96DPI owned
+captures actually inspected; user/physical/highDPI/reader/installed pending. Exact
+evidence and remaining business-content/adoption gaps in owning implement.md/ledger.
+
+## Queue01 remaining Quick Find presentation recheck — 2026-10-11
+Rechecked managed DialogSearchWindowFactory::CreateWindow -> DialogSearchWindow
+constructor/ShowWindow/ah -> SearchWindowBase::method_7/ShowWindow/PutCursorToEnd:
+one auxiliary surface, host-relative device-to-logical placement, explicit activation
+flag and focus after Show only when requested. No proprietary native-engine source.
+SwiftList current entries are App/Services/InlineSearch/InlineSearchManager.cs::
+EnsureWindowCreated (EnsureHandle -> PositionWindowImmediate -> Show -> captured host
+edit-focus restore), App/Views/InlineSearchWindow/Helpers/InlineSearchWindowPositioner.cs
+and App/Views/Settings/IndexSettings/{LocalTab,ExclusionsTab}.xaml. These verified
+paths supplement the historical index; their different styling/lifecycle is not
+transplanted. CommandOptionsViewModel collection/SelectedCommand/Apply and
+FileSearchIndexDebugViewModel::DoLog -> Class387::method_5 rechecked. Old NxTools
+has no matching Quick Find surface.
+Next invariants: original attached InputState/query/IME/debounce/selected/uniform
+scroll/generation,500px desired width/36px rail/264px overlap and hidden HWND owner/
+topmost/placement/visibility remain; no native callback changes. Volume automatic
+empty-vector/manual canonicalization, path frozen deletion/tooltip/one update,
+command master edit-not-execute/draft/picker/save and diagnostic snapshot/clear/log
+actions retain original deferred owners. Released0.7.1 InputGroup/addons, stateless
+ListItem public children/selected/suffix and DescriptionList AnyElement values are
+presentation candidates, not authorization for another search/list controller.
+Owning cumulative outcome: .trellis/tasks/10-10-gpui-kit-component-visual-migration/
+ui-queue-outcomes.md, item01. Tests and actual adoption are recorded there separately.
+
+### Indexer persistence fault visibility (2026-10-13)
+Reference review: Listary managed/session evidence above preserves last-good availability; native engine source is unavailable. SwiftList `Core/DriveMonitoring/DriveRecovery.cs::RestoreOrRebuild/TrySaveDriveCache` restores/catches up a drive and keeps its usable runtime when cache save fails; `Core/DriveMonitoring/UsnMonitor.cs` separates bounded journal resume/reindex/cancellation. These sources do not expose Next's last_error contract and are not copied as error-state policy.
+
+Verified Next chain: poll_journals -> cursor/delta persist -> immutable snapshot publication -> refresh_last_error -> maintenance status event; UpdateSettings -> apply_settings -> durable settings write -> correlated Status reply. Current failures are logged then omitted from state; NoChange/RebuildRequired clear poll faults while persistence has no separate owner, and equal desired settings skip a failed-save retry. Four production-maintenance injected regressions failed before correction, while synthetic last-good search remained available. Preserve existing save-attempt-before-memory-publication order, base+delta format, session/generation/admission and scope rules. Persistence faults require their own per-volume/setting state, survive unrelated healthy work, and clear only after successful corresponding save. RebuildRequired remains maintenance, not failure. No UI/layout/focus/native window or actual service operation in this slice; packaged LocalSystem restart/base+delta/search/idleCPU remains separately authorized.
+
+## Installed right-action clipping / first-return source race (2026-10-13)
+Recent-directory behavior above retains one original list/controller/action. Released Kit0.7.1 Button child-content path adds ordinary horizontal padding; current28px history childIcon left only8px of15px inside paint mask in real GPUI red. Public Button::icon slot now used with no child content, same tooltip/accessible action/InputState; temporary paint probe removed. Final actual target/containment/click test passes in658Desktop suite; no installed/DPI visual claim.
+Rechecked indexed Listary Class334/Class337 async current-folder return and Class342/Class335/SearchWindowBase passive show chain plus SwiftList FileDialogNavigationTracker first-observation exclusion. Native proprietary Listary engine remains unavailable. EventWindow formerly launched competing ExplorerCurrentDirectory reads under concurrency1 after consuming the return candidate; held-capture production-caller red yielded no switch. One source epoch/active capture/pending return now serializes a fresh return read and admits at most one current foreground switch. Exact6safe caller fixtures plus existing tracker/selection/4fake-native fixtures final14passed. No new global polling/STA/cache, no stale snapshot reuse or native navigation success assumption.
+Actual user's first-use timing remains unconfirmed; no end-to-end Rust/native-visible measurement. Reference/invariants/red/green: [dialog outcomes](../../.trellis/tasks/10-13-installed-lifecycle-feedback/dialog-outcomes.md); [integrated scope](../../.trellis/tasks/10-13-installed-lifecycle-feedback/outcomes.md). No package/service/live Shell operations.
+
+### Sustained indexer idle I/O correction — 2026-10-17
+Reverified Listary managed `.diagnostics/listary-managed/Listary/Core/FileSearch/Class387.cs` native-engine creation/selected-volume/rebuild/status and `Listary/MiniCore/IndexerInfo.cs` state/updating/count boundary only; native USN/cache source remains unavailable. Old NxTools has no Quick Launch/indexer implementation. SwiftList exact live chain `Core/DriveMonitoring/UsnMonitor.cs:60-100,127-172` -> `Core/Indexer/Usn/UsnIndexerExtensions.cs:25-32,38-121` applies nonempty live batches with bounded sleeps but does NOT save per batch. Startup `Core/SearchEngineInitializer.cs:84-125`/recovery `DriveRecovery.cs:32-36,74-89` catches up then saves through `IndexCacheManager.cs:73-93` -> `LiveIndex.Compact(force:true)` -> `Persistence/SnapshotWriter.cs:220-258` full atomic rewrite, even after no-change catch-up. `LiveIndex.Compact(force:false)` skips empty delta, but no current local-journal periodic save caller was found. Monitor `_startUsn` advances privately; the concrete live Apply call carries no cursor, so do not claim the reference durably checkpoints each live batch. ProgramData cache on monitored volume can feed its own records into memory, but absent per-live-batch save it is not an immediate steady-state disk rewrite loop.
+Measured Next sequence15 LocalSystem PID5288 reads0/writes2,499,201bytes/s average over16.79seconds; C-drive2.38MBdelta replaced nearly everysecond and self-cache rows change. Actual Next chain `usn::windows::poll_snapshot` classifies records-nonempty -> `IndexerService::poll_journals` saves CursorAdvanced/Updated -> `mft::persist_system_delta` -> full cumulative overlay temp/sync/replace. Real isolated production-writer regression:2,761,844-byte overlay,three one-row updates write8,285,532bytes. Fix authority is same live search/durable last-good/base+delta recovery with proportional incremental persistence, not disabled indexing, blanket exclusions or just longer polling. New exact entries/cache recovery contracts are recorded in `.trellis/tasks/10-17-indexer-idle-io/`; service restart/package/search/physical-disk attribution remain separately gated.
+
+### Enter / IME gesture review — 2026-10-20
+Rechecked Listary managed SearchWindowBase constructor, ShowWindow -> Show/PutCursorToEnd, ActivateWindow and input KeyBindings; proprietary native engine/IME routing is not available. Current SwiftList path is `D:\Code\SwiftList-main\App\Views\QuickSearchWindow\Helpers\QuickSearchWindowInputHandler.cs::HandleWindowPreviewKeyDown`: Key.ImeProcessed Enter falls through without result execution, ordinary Enter dispatches selected result. Constructor/controller lifecycle remains the popup chain indexed above. Preserve activating main input, one existing panel/action owner, IME confirmation safety, immutable result/query generation, search-pending rejection and original close/result policy. No reference code copied. Next production InputState marked/commit/cancel -> InputEvent::Change/PressEnter -> activate_selected -> deferred identity check -> execute_native_result -> PlatformBridge is the regression seam. Kit0.7.1 Base input/base/state.rs emits Change on commit, not preedit/cancel; a confirming native key may never produce PressEnter. Tests must assert actual pending action/type, not any platform command (icons also enqueue commands).
+
+## Approved unified preview and optional result separation (2026-10-22 prerequisite)
+Rechecked Listary managed SearchWindowBase constructor/key/selection/scroll/showfocus and LauncherSearchWindow base/PreviewPopup/location/workingarea; SwiftList QuickLookManager constructor/owner generations/hide/reuse/provider cleanup. NativeListaryengine remainsopaque. User now requests same Markdown component for bounded QuickLaunch text/Markdown previews plus optional4DIP external resultgap(defaultseparated,continuous0). Read [fixededitorchain](markdown-editor.md). Same previewgeneration/onepassiveHWND/nativehidden-noactivate-bounds-frame-show and fixedsize/searchinputfocus remain; files never rewritten. Plaincode/config rendered literally, no Markdown corruption/implicitlinks/images. uniform_list result/action/recent selection/keys/nativegesture and contentheight remain, actualslotstride changes only by gap outside hitarea; no gapclick/preview/indexservice reconfiguration. Source/compiled/native/visual/physical levels separate.

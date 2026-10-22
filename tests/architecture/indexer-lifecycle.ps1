@@ -82,10 +82,13 @@ $joinedCsharp = $csharpSource -join "`n"
 if ($joinedCsharp -match 'IndexSearchBatch|IndexSearchRequest|MftSnapshot|FSCTL_ENUM_USN_DATA') {
     throw 'Architecture regression: file indexing and query generations belong to Rust, not PlatformHost.'
 }
-if ($joinedCsharp -notmatch 'ShouldRequestInitialAuthorization\(ServiceExists\(\)\)' -or
-    $joinedCsharp -notmatch 'ShouldRequestInitialAuthorization\(bool serviceExists\) => !serviceExists' -or
-    $joinedCsharp -notmatch '(?s)if \(!ShouldRequestInitialAuthorization\(ServiceExists\(\)\)\).*?Verb = "runas"') {
-    throw 'Indexer deployment regression: an existing service must never enter the one-time UAC runas branch.'
+if ($joinedCsharp -notmatch 'DecideDeployment\(' -or
+    $joinedCsharp -notmatch 'ServiceDeploymentDecision.Reuse : ServiceDeploymentDecision.Upgrade' -or
+    $joinedCsharp -notmatch '!healthy \|\| !Valid\(approved\)' -or
+    $joinedCsharp -notmatch 'upgrade_authorization_requested' -or
+    $joinedCsharp -notmatch 'platform.InstallAsync\(correlationId, cancellationToken\)' -or
+    $joinedCsharp -notmatch 'TryParseInstallArguments') {
+    throw 'Indexer deployment regression: matching atomic tuple reuses; healthy older tuple requires explicit correlated UAC; damaged tuple fails closed.'
 }
 
 if ($joinedCsharp -notmatch 'ensure_indexer_service' -or

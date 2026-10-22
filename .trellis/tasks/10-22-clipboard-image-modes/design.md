@@ -1,0 +1,2 @@
+# Existing owner
+Core serde-default ClipboardImageViewMode + original Clipboard section merge; MainWindow official Settings/Select32 with complete descriptions. Rust pure layout separates work-area viewport/image dimensions, uses verified Windows PlatformDisplay.visible_bounds rcWork and actualDPI. Preserve adjacent-right/left placement, no new position setting/C# command. Original preview controller/generation/ACK/frame owns reuse; reset scroll on target/mode, only overflowing axes scroll; retain decode budgets and complete original paste.

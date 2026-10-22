@@ -31,6 +31,7 @@ pub(crate) fn download_settings_window_options(cx: &App) -> WindowOptions {
         window_min_size: Some(window_size),
         window_decorations: Some(WindowDecorations::Client),
         tabbing_identifier: None,
+        ..Default::default()
     }
 }
 
@@ -230,45 +231,26 @@ pub(crate) fn completed_task_window_action(
     cx: &App,
 ) -> Button {
     let spec = action.spec();
-    let button = match spec.label {
-        Some(label) => {
-            action_button(spec.button_id, label).icon(Icon::new(spec.icon).size(px(14.0)))
-        }
-        None => icon_action_button(spec.button_id, spec.icon),
-    };
     let button = match spec.emphasis {
-        CompletedTaskWindowEmphasis::Primary => button.custom(primary_button_variant(theme, cx)),
-        CompletedTaskWindowEmphasis::Outline => button.outline(),
+        CompletedTaskWindowEmphasis::Primary => {
+            crate::ui::components::action::primary_action_button(
+                spec.button_id,
+                spec.label.unwrap_or_default(),
+                theme,
+                false,
+                cx,
+            )
+            .icon(Icon::new(spec.icon).size(px(14.0)))
+        }
+        CompletedTaskWindowEmphasis::Outline => match spec.label {
+            Some(label) => {
+                action_button(spec.button_id, label).icon(Icon::new(spec.icon).size(px(14.0)))
+            }
+            None => icon_action_button(spec.button_id, spec.icon),
+        }
+        .outline(),
     };
     button.debug_selector(move || spec.role_selector.into())
-}
-
-pub(crate) fn download_window_metric(
-    theme: Theme,
-    label: &'static str,
-    value: String,
-) -> impl IntoElement {
-    div()
-        .min_w_0()
-        .flex_1()
-        .flex()
-        .flex_col()
-        .gap(px(0.0))
-        .child(
-            div()
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .text_color(theme.text_secondary)
-                .child(label),
-        )
-        .child(
-            div()
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .font_weight(FontWeight::MEDIUM)
-                .truncate()
-                .child(value),
-        )
 }
 
 pub(crate) fn download_window_titlebar(theme: Theme, title: &'static str) -> impl IntoElement {
@@ -316,10 +298,6 @@ pub(crate) fn download_settings_titlebar(
     )
 }
 
-pub(crate) fn download_primary_button_variant(theme: Theme, cx: &gpui::App) -> ButtonCustomVariant {
-    crate::ui::components::action::primary_button_variant(theme, cx)
-}
-
 pub(crate) fn download_window_close_button(theme: Theme) -> impl IntoElement {
     icon_action("download-window-close", MaterialIcon::Close, "关闭下载窗口")
         .danger()
@@ -331,8 +309,10 @@ pub(crate) fn download_window_close_button(theme: Theme) -> impl IntoElement {
         .on_click(|_, window, _| window.remove_window())
 }
 
-pub(crate) fn download_task_status(status: DownloadStatus) -> (&'static str, gpui::Rgba) {
-    let theme = Theme::zed_dark();
+pub(crate) fn download_task_status(
+    status: DownloadStatus,
+    theme: Theme,
+) -> (&'static str, gpui_kit::Rgba) {
     match status {
         DownloadStatus::Created => ("等待开始", theme.text_muted),
         DownloadStatus::Probing => ("正在探测", theme.accent),

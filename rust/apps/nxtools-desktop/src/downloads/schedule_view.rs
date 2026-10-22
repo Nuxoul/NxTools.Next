@@ -1,10 +1,16 @@
 use super::*;
+use gpui_kit::component::button::{Toggle, ToggleVariants as _};
+use gpui_kit::component::dialog::{DialogContent, DialogFooter};
+use gpui_kit::component::form::{Field, Form};
+use gpui_kit::component::status_bar::StatusBar;
+use gpui_kit::component::switch::Switch;
+use gpui_kit::component::time_field::{HourCycle, TimeField, TimeFieldState, TimePrecision};
 
 pub(crate) struct DownloadScheduleView {
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
-    pub(crate) start_time: Entity<InputState>,
-    pub(crate) stop_time: Entity<InputState>,
+    pub(crate) start_time: Entity<TimeFieldState>,
+    pub(crate) stop_time: Entity<TimeFieldState>,
     pub(crate) days: HashSet<DownloadWeekday>,
     pub(crate) enabled_start: bool,
     pub(crate) enabled_stop: bool,
@@ -31,15 +37,20 @@ impl DownloadScheduleView {
             .as_ref()
             .map_or(7 * 60 + 30, |daily| daily.stop_minute);
         let start_time = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(format_clock_minute(start_minute))
-                .placeholder("HH:MM")
+            TimeFieldState::new(window, cx)
+                .precision(TimePrecision::Minute)
+                .hour_cycle(HourCycle::H23)
         });
         let stop_time = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(format_clock_minute(stop_minute))
-                .placeholder("HH:MM")
+            TimeFieldState::new(window, cx)
+                .precision(TimePrecision::Minute)
+                .hour_cycle(HourCycle::H23)
         });
+        for (state, minute) in [(&start_time, start_minute), (&stop_time, stop_minute)] {
+            let time = NaiveTime::from_hms_opt(u32::from(minute / 60), u32::from(minute % 60), 0)
+                .unwrap_or(NaiveTime::MIN);
+            state.update(cx, |state, cx| state.set_time(time, window, cx));
+        }
         let days = daily.as_ref().map_or_else(
             || DownloadWeekday::ALL.into_iter().collect(),
             |daily| daily.days.iter().copied().collect(),
@@ -57,6 +68,26 @@ impl DownloadScheduleView {
             error: None,
         }
     }
+    pub(super) fn finish_save_failure(&mut self, message: String, cx: &mut Context<Self>) {
+        self.saving = false;
+        self.error = None;
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            let center = application.read(cx).notifications.clone();
+            center.update(cx, |center, cx| {
+                center.push(
+                    crate::notifications::AppNotification::new(
+                        "download-task-action",
+                        crate::notifications::NotificationLevel::Error,
+                        "无法保存每日计划",
+                        message,
+                    ),
+                    cx,
+                )
+            });
+        });
+        cx.notify();
+    }
 
     pub(crate) fn save(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.saving {
@@ -66,8 +97,8 @@ impl DownloadScheduleView {
             self.enabled_start,
             self.enabled_stop,
             &self.days,
-            self.start_time.read(cx).value().trim(),
-            self.stop_time.read(cx).value().trim(),
+            &self.start_time.read(cx).time().format("%H:%M").to_string(),
+            &self.stop_time.read(cx).time().format("%H:%M").to_string(),
         ) {
             Ok(schedule) => schedule,
             Err(error) => {
@@ -90,9 +121,7 @@ impl DownloadScheduleView {
             });
             if let Err(error) = result {
                 view.update(cx, |view, cx| {
-                    view.saving = false;
-                    view.error = Some(error);
-                    cx.notify();
+                    view.finish_save_failure(error, cx);
                 });
             }
         });
@@ -100,47 +129,32 @@ impl DownloadScheduleView {
 }
 
 impl Render for DownloadScheduleView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
         let theme = self.theme;
         let mut weekdays = div().flex().items_center().gap(px(SPACING_4));
         for (index, day) in DownloadWeekday::ALL.into_iter().enumerate() {
             let selected = self.days.contains(&day);
             weekdays = weekdays.child(
-                Button::new(("download-schedule-day", index))
-                    .ghost()
+                div()
                     .debug_selector(move || format!("download-schedule-day-{index}"))
-                    .w(px(40.0))
-                    .h(px(CONTROL_HEIGHT_ACTION))
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(if selected {
-                        theme.accent
-                    } else {
-                        theme.border_subtle
-                    })
-                    .bg(if selected {
-                        theme.accent_soft
-                    } else {
-                        theme.canvas
-                    })
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .text_size(px(TEXT_LABEL))
-                    .line_height(px(LINE_HEIGHT_LABEL))
-                    .text_color(if selected {
-                        theme.accent_text
-                    } else {
-                        theme.text_secondary
-                    })
-                    .label(day.short_label())
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        if !this.days.insert(day) {
-                            this.days.remove(&day);
-                        }
-                        this.error = None;
-                        cx.notify();
-                    })),
+                    .child(
+                        Toggle::new(("download-schedule-day", index))
+                            .small()
+                            .outline()
+                            .checked(selected)
+                            .label(day.short_label())
+                            .on_click(cx.listener(move |this, requested: &bool, _, cx| {
+                                if *requested {
+                                    this.days.insert(day);
+                                } else {
+                                    this.days.remove(&day);
+                                }
+                                this.error = None;
+                                cx.notify();
+                            })),
+                    ),
             );
         }
         let start_control = schedule_trigger_row(
@@ -150,8 +164,8 @@ impl Render for DownloadScheduleView {
             self.enabled_start,
             &self.start_time,
             "download-schedule-start-toggle",
-            cx.listener(|this, _, _, cx| {
-                this.enabled_start = !this.enabled_start;
+            cx.listener(|this, requested: &bool, _, cx| {
+                this.enabled_start = *requested;
                 this.error = None;
                 cx.notify();
             }),
@@ -163,8 +177,8 @@ impl Render for DownloadScheduleView {
             self.enabled_stop,
             &self.stop_time,
             "download-schedule-stop-toggle",
-            cx.listener(|this, _, _, cx| {
-                this.enabled_stop = !this.enabled_stop;
+            cx.listener(|this, requested: &bool, _, cx| {
+                this.enabled_stop = *requested;
                 this.error = None;
                 cx.notify();
             }),
@@ -185,24 +199,19 @@ impl Render for DownloadScheduleView {
                 });
             },
         );
-        let body = div()
+        let body = DialogContent::new()
             .size_full()
+            .min_h_0()
+            .overflow_hidden()
             .px(px(SPACING_12))
             .py(px(SPACING_8))
-            .flex()
-            .flex_col()
+            .when(self.error.is_some(), |body| body.py(px(SPACING_4)))
             .gap(px(SPACING_8))
             .child(
-                div()
+                StatusBar::new()
                     .h(px(32.0))
-                    .px(px(SPACING_8))
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .flex()
-                    .items_center()
-                    .child(
+                    .flex_none()
+                    .left(
                         div()
                             .flex_1()
                             .text_size(px(TEXT_BODY))
@@ -210,7 +219,7 @@ impl Render for DownloadScheduleView {
                             .text_color(theme.text_secondary)
                             .child("默认下载队列"),
                     )
-                    .child(
+                    .right(
                         div()
                             .text_size(px(TEXT_LABEL))
                             .line_height(px(LINE_HEIGHT_LABEL))
@@ -227,37 +236,43 @@ impl Render for DownloadScheduleView {
                     ),
             )
             .child(
-                div()
-                    .h(px(44.0))
-                    .px(px(SPACING_8))
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .flex()
-                    .items_center()
-                    .child(
-                        div()
-                            .w(px(82.0))
-                            .text_size(px(TEXT_BODY))
-                            .line_height(px(LINE_HEIGHT_BODY))
-                            .text_color(theme.text_secondary)
-                            .child("生效星期"),
-                    )
-                    .child(weekdays),
+                Form::horizontal().small().label_width(px(82.0)).child(
+                    Field::new()
+                        .label("生效星期")
+                        .items_center()
+                        .gap_0()
+                        .min_h(px(32.0))
+                        .child(weekdays),
+                ),
             )
             .child(start_control)
             .child(stop_control)
             .when_some(self.error.clone(), |body, error| {
-                body.child(download_inline_error(theme, error))
+                let complete_error = error.clone();
+                body.child(
+                    div()
+                        .id("download-schedule-validation")
+                        .debug_selector(|| "download-schedule-validation".into())
+                        .w_full()
+                        .h(px(2.0 * LINE_HEIGHT_BODY))
+                        .flex_none()
+                        .overflow_hidden()
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .text_color(theme.danger)
+                        .whitespace_normal()
+                        .line_clamp(2)
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(complete_error.clone()).build(window, cx)
+                        })
+                        .child(error),
+                )
             })
             .into_any_element();
         let footer = dialog_footer(
-            div()
+            DialogFooter::new()
                 .size_full()
-                .flex()
                 .items_center()
-                .gap(px(SPACING_8))
                 .child(
                     div()
                         .flex_1()
@@ -281,17 +296,18 @@ impl Render for DownloadScheduleView {
                         }),
                 )
                 .child(
-                    action_button(
+                    crate::ui::components::action::primary_action_button(
                         "download-schedule-save",
                         if self.saving {
                             "正在应用…"
                         } else {
                             "应用"
                         },
+                        theme,
+                        self.saving,
+                        cx,
                     )
                     .debug_selector(|| "download-schedule-primary-apply-action".into())
-                    .custom(primary_button_variant(theme, cx))
-                    .disabled(self.saving)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.save(window, cx);
                     })),
@@ -318,100 +334,81 @@ pub(crate) fn schedule_trigger_row(
     title: &'static str,
     description: &'static str,
     enabled: bool,
-    input: &Entity<InputState>,
+    input: &Entity<TimeFieldState>,
     id: &'static str,
-    on_toggle: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_toggle: impl Fn(&bool, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
-    div()
-        .h(px(44.0))
-        .px(px(SPACING_8))
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface)
-        .flex()
-        .items_center()
+    Form::horizontal()
+        .small()
+        .label_width(px(212.0))
         .child(
-            div()
-                .flex_1()
-                .flex()
-                .flex_col()
-                .gap(px(SPACING_4))
+            Field::new()
+                .items_center()
+                .gap_0()
+                .min_h(px(32.0))
+                .label_fn(move |_, _| {
+                    div()
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(SPACING_4))
+                        .child(
+                            div()
+                                .debug_selector(move || format!("{id}-title"))
+                                .truncate()
+                                .child(title),
+                        )
+                        .child(crate::ui::components::tooltip::description_help(
+                            format!("{id}-description"),
+                            description,
+                        ))
+                })
                 .child(
                     div()
-                        .text_size(px(TEXT_BODY))
-                        .line_height(px(LINE_HEIGHT_BODY))
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .text_color(theme.text_muted)
-                        .child(description),
+                        .flex()
+                        .items_center()
+                        .child(
+                            div()
+                                .debug_selector(move || id.into())
+                                .w(px(50.0))
+                                .h(px(32.0))
+                                .flex_none()
+                                .mr(px(SPACING_8))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    Switch::new(id)
+                                        .checked(enabled)
+                                        .accessibility_label(title)
+                                        .on_change(on_toggle),
+                                ),
+                        )
+                        .child(if enabled {
+                            div()
+                                .debug_selector(move || format!("{id}-input"))
+                                .flex_none()
+                                .w(px(114.0))
+                                .child(TimeField::new(input).w_full())
+                                .into_any_element()
+                        } else {
+                            div()
+                                .debug_selector(move || format!("{id}-disabled"))
+                                .h(px(32.0))
+                                .flex_none()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .w(px(114.0))
+                                .text_size(px(TEXT_BODY))
+                                .line_height(px(LINE_HEIGHT_BODY))
+                                .text_color(theme.text_muted)
+                                .text_center()
+                                .child("未启用")
+                                .into_any_element()
+                        }),
                 ),
         )
-        .child(
-            div()
-                .id(id)
-                .debug_selector(move || id.into())
-                .h(px(BADGE_HEIGHT))
-                .w(px(50.0))
-                .mr(px(SPACING_8))
-                .rounded(px(RADIUS_CONTROL))
-                .border_1()
-                .border_color(if enabled {
-                    theme.accent
-                } else {
-                    theme.border_subtle
-                })
-                .bg(if enabled {
-                    theme.accent_soft
-                } else {
-                    theme.canvas
-                })
-                .cursor_pointer()
-                .flex()
-                .items_center()
-                .justify_center()
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .text_color(if enabled {
-                    theme.accent_text
-                } else {
-                    theme.text_muted
-                })
-                .child(if enabled { "开启" } else { "关闭" })
-                .on_click(on_toggle),
-        )
-        .child(if enabled {
-            div()
-                .w(px(82.0))
-                .h(px(28.0))
-                .rounded(px(RADIUS_CONTROL))
-                .border_1()
-                .border_color(theme.border_subtle)
-                .bg(theme.canvas)
-                .px(px(SPACING_8))
-                .flex()
-                .items_center()
-                .child(
-                    Input::new(input)
-                        .appearance(false)
-                        .bordered(false)
-                        .focus_bordered(true),
-                )
-                .into_any_element()
-        } else {
-            div()
-                .w(px(82.0))
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .text_color(theme.text_muted)
-                .text_center()
-                .child("未启用")
-                .into_any_element()
-        })
         .into_any_element()
 }
 
@@ -462,10 +459,6 @@ pub(crate) fn build_download_schedule(
             enabled_stop,
         },
     }))
-}
-
-pub(crate) fn format_clock_minute(value: u16) -> String {
-    format!("{:02}:{:02}", value / 60, value % 60)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

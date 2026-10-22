@@ -1,0 +1,12 @@
+{
+  "id": "clipboard-content-height",
+  "name": "clipboard-content-height",
+  "title": "Fix clipped Clipboard rows and preview with measured rich layout",
+  "status": "in_progress",
+  "package": "nxtools-desktop",
+  "dev_type": "frontend",
+  "priority": "P1",
+  "implementation_complete": true,
+  "verification_status": "blocked",
+  "blocked_by": "Unrelated concurrent Archive source currently fails to parse at archive/ui_state.rs:272; final Desktop strict tests/workspace/full suite cannot compile. See outcomes.md."
+}

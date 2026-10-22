@@ -31,6 +31,9 @@ const DELTA_MAGIC: u64 = 0x0041_544C_4544_4D4E; // "NMDELTA\0"
 const DELTA_HEADER_SIZE: usize = 64;
 const DELTA_RECORD_SIZE: usize = 56;
 
+mod journal;
+pub(super) use journal::DeltaCheckpoint;
+
 pub(super) struct MappedSnapshot {
     map: Mmap,
     records_offset: usize,
@@ -358,33 +361,72 @@ impl MappedSnapshot {
 
 pub(crate) fn load_system_snapshot(mount_point: &str) -> Result<Option<MftSnapshot>> {
     let (directory, prefix) = system_cache_location(mount_point);
-    let candidates = cache_candidates(&directory, &prefix)?;
+    load_cached_snapshot(&directory, &prefix, mount_point)
+}
+
+fn load_cached_snapshot(
+    directory: &Path,
+    prefix: &str,
+    mount_point: &str,
+) -> Result<Option<MftSnapshot>> {
+    let candidates = cache_candidates(directory, prefix)?;
     if candidates.is_empty() {
         return Ok(None);
     }
-    let mut opened = None;
+    type Candidate = (
+        PathBuf,
+        (MappedSnapshot, Option<u64>, Option<i64>, usize),
+        Option<PersistedDelta>,
+    );
+    let mut opened: Option<Candidate> = None;
     let mut errors = Vec::new();
     for path in candidates {
-        match MappedSnapshot::open(&path, mount_point) {
-            Ok(snapshot) => {
-                opened = Some((path, snapshot));
-                break;
+        let (mapped, journal_id, next_usn, visible_count) =
+            match MappedSnapshot::open(&path, mount_point) {
+                Ok(base) => base,
+                Err(error) => {
+                    errors.push(format!("{}: {error}", path.display()));
+                    continue;
+                }
+            };
+        let delta = if delta_path(&path).is_file() {
+            match load_delta_for_base(&path, mount_point, journal_id, next_usn, mapped.len()) {
+                Ok(delta) => Some(delta),
+                Err(_) => {
+                    warn!(
+                        event = "indexer.cache.delta_rejected",
+                        "invalid delta rejected; base remains available for journal catch-up"
+                    );
+                    None
+                }
             }
-            Err(error) => errors.push(format!("{}: {error}", path.display())),
+        } else {
+            None
+        };
+        let effective_cursor = delta.as_ref().map_or(next_usn, |delta| delta.next_usn);
+        if let Some((_, (_, selected_journal, selected_cursor, _), selected_delta)) = &opened {
+            let selected_effective = selected_delta
+                .as_ref()
+                .map_or(*selected_cursor, |delta: &PersistedDelta| delta.next_usn);
+            if *selected_journal != journal_id || selected_effective >= effective_cursor {
+                continue;
+            }
         }
+        opened = Some((path, (mapped, journal_id, next_usn, visible_count), delta));
     }
-    let Some((path, (mapped, journal_id, next_usn, visible_count))) = opened else {
+    let Some((path, (mapped, journal_id, next_usn, visible_count), delta)) = opened else {
         bail!(
             "no valid persisted snapshot remained: {}",
             errors.join("; ")
         );
     };
-    cleanup_obsolete_cache_files(&directory, &prefix, &path);
+    // All losing mappings are dropped before cleanup; retain the pair with newest committed
+    // cursor within this journal, not merely a later-written stale compaction base.
+    cleanup_obsolete_cache_files(directory, prefix, &path);
     info!(
         mount_point,
         rows = mapped.len(),
-        cache = %path.display(),
-        "opened persisted MFT snapshot"
+        "opened persisted MFT base/delta pair"
     );
     let mut snapshot = MftSnapshot::from_mapped(
         mount_point.to_owned(),
@@ -392,33 +434,38 @@ pub(crate) fn load_system_snapshot(mount_point: &str) -> Result<Option<MftSnapsh
         next_usn,
         visible_count,
         mapped,
-        path.clone(),
+        path,
     );
-    let delta_path = delta_path(&path);
-    if delta_path.is_file() {
-        match load_delta(&delta_path, journal_id) {
-            Ok(delta) => {
-                snapshot.restore_delta(
-                    delta.journal_id,
-                    delta.next_usn,
-                    delta.visible_count,
-                    delta.overlay,
-                );
-                info!(
-                    mount_point,
-                    replacements = snapshot.overlay.replacements.len(),
-                    deleted = snapshot.overlay.deleted.len(),
-                    "restored persisted MFT delta"
-                );
-            }
-            Err(error) => warn!(
-                mount_point,
-                %error,
-                "ignored invalid persisted MFT delta; journal catch-up will repair it"
-            ),
-        }
+    if let Some(delta) = delta {
+        *snapshot
+            .delta_checkpoint
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = delta.checkpoint;
+        snapshot.restore_delta(
+            delta.journal_id,
+            delta.next_usn,
+            delta.visible_count,
+            delta.overlay,
+        );
     }
     Ok(Some(snapshot))
+}
+
+fn load_delta_for_base(
+    base_path: &Path,
+    mount_point: &str,
+    journal_id: Option<u64>,
+    base_cursor: Option<i64>,
+    rows: usize,
+) -> Result<PersistedDelta> {
+    let path = delta_path(base_path);
+    let bytes = fs::read(&path).context("read paired index delta")?;
+    if journal::is_journal(&bytes) {
+        journal::validate_base_binding(&bytes, base_path, mount_point, base_cursor, rows)?;
+        journal::decode(&bytes, journal_id)
+    } else {
+        load_delta(&path, journal_id)
+    }
 }
 
 pub(crate) fn persist_system_snapshot(snapshot: &mut MftSnapshot) -> Result<()> {
@@ -446,7 +493,7 @@ pub(crate) fn persist_system_delta(snapshot: &MftSnapshot) -> Result<()> {
         .cache_path()
         .context("snapshot has no persisted base for its delta")?;
     let path = delta_path(cache_path);
-    persist_delta(snapshot, &path)
+    journal::persist(snapshot, &path)
 }
 
 fn delta_path(snapshot_path: &Path) -> PathBuf {
@@ -531,10 +578,14 @@ struct PersistedDelta {
     next_usn: Option<i64>,
     visible_count: usize,
     overlay: MftOverlay,
+    checkpoint: Option<DeltaCheckpoint>,
 }
 
 fn load_delta(path: &Path, expected_journal_id: Option<u64>) -> Result<PersistedDelta> {
     let bytes = fs::read(path).with_context(|| format!("read index delta {}", path.display()))?;
+    if journal::is_journal(&bytes) {
+        return journal::decode(&bytes, expected_journal_id);
+    }
     ensure!(
         bytes.len() >= DELTA_HEADER_SIZE,
         "index delta header was truncated"
@@ -631,6 +682,7 @@ fn load_delta(path: &Path, expected_journal_id: Option<u64>) -> Result<Persisted
         journal_id,
         next_usn,
         visible_count,
+        checkpoint: None,
         overlay: MftOverlay {
             replacements,
             deleted,
@@ -638,6 +690,7 @@ fn load_delta(path: &Path, expected_journal_id: Option<u64>) -> Result<Persisted
     })
 }
 
+#[cfg(test)]
 fn persist_delta(snapshot: &MftSnapshot, path: &Path) -> Result<()> {
     let parent = path.parent().context("delta path omitted its directory")?;
     fs::create_dir_all(parent)
@@ -1007,6 +1060,67 @@ mod tests {
             r"C:\Work\Budget.xlsx"
         );
         assert_eq!(mapped.children(10), vec![11]);
+        // R8 runtime-only search derivation from the real mapped-cache constructor.
+        // Persistence bytes/layout above are unchanged; only hot names are grouped.
+        let restored = MftSnapshot::from_mapped(
+            r"C:\".into(),
+            journal_id,
+            next_usn,
+            visible_count,
+            mapped,
+            path,
+        );
+        let request = nxtools_protocol::IndexSearchRequest {
+            generation: 1,
+            query: "'budget".into(),
+            limit: 20,
+            context: nxtools_protocol::IndexSearchContext::default(),
+        };
+        let query = nxtools_finder::FileQuery::parse(&request.query);
+        assert_eq!(
+            restored
+                .search_data
+                .as_ref()
+                .expect("mapped runtime groups")
+                .groups
+                .len(),
+            2
+        );
+        assert_eq!(
+            crate::search_snapshots_while(
+                std::slice::from_ref(&restored),
+                &nxtools_protocol::IndexSettings::default(),
+                &request,
+                || true
+            ),
+            crate::legacy_search_name_only_snapshots_while(
+                std::slice::from_ref(&restored),
+                &nxtools_protocol::IndexSettings::default(),
+                &request,
+                &query,
+                20,
+                &|| true
+            )
+        );
+        let recent_request = nxtools_protocol::IndexSearchRequest {
+            query: "recent:".into(),
+            context: nxtools_protocol::IndexSearchContext {
+                include_files: true,
+                include_directories: false,
+                recent_modified: true,
+                ..Default::default()
+            },
+            ..request.clone()
+        };
+        let recent = crate::search_snapshots_while(
+            std::slice::from_ref(&restored),
+            &nxtools_protocol::IndexSettings::default(),
+            &recent_request,
+            || true,
+        )
+        .expect("mapped recent");
+        assert_eq!(recent.len(), 1);
+        assert_eq!(recent[0].modified_at_unix_ms, Some(7));
     }
 
     #[test]
@@ -1060,6 +1174,40 @@ mod tests {
                 .path,
             r"C:\Work\new.txt"
         );
+        assert_eq!(
+            delta
+                .overlay
+                .replacements
+                .get(&12)
+                .expect("time preserved")
+                .modified_at_unix_ms,
+            Some(9)
+        );
+        snapshot.overlay = delta.overlay;
+        let recent = crate::recent::search_recent_modified(
+            std::slice::from_ref(&snapshot),
+            &nxtools_protocol::IndexSettings::default(),
+            &nxtools_protocol::IndexSearchRequest {
+                generation: 1,
+                query: String::new(),
+                limit: 20,
+                context: nxtools_protocol::IndexSearchContext {
+                    include_files: true,
+                    ..Default::default()
+                },
+            },
+            100,
+            &|| true,
+        )
+        .expect("within budget")
+        .expect("persisted delta recent");
+        assert_eq!(
+            recent
+                .iter()
+                .map(|item| item.modified_at_unix_ms)
+                .collect::<Vec<_>>(),
+            vec![Some(9)]
+        );
     }
 
     #[test]
@@ -1090,5 +1238,155 @@ mod tests {
         assert!(keep_delta.is_file());
         assert!(root.join("unrelated.txt").is_file());
         assert!(obsolete.iter().all(|name| !root.join(name).exists()));
+    }
+}
+
+#[cfg(test)]
+mod persistence_fault_tests {
+    use super::*;
+    use crate::{IndexerService, JournalMaintenance, VolumeDescriptor};
+    use nxtools_protocol::{IndexPhase, IndexSearchContext, IndexSearchRequest};
+
+    #[test]
+    fn persistence_fault_real_delta_publish_retains_search_and_recovers_current_cursor() {
+        let directory = tempfile::tempdir().expect("isolated base and delta directory");
+        let base_path = directory.path().join("volume.idx");
+        let mut snapshot = MftSnapshot::from_entries(
+            r"C:\",
+            Some(17),
+            Some(100),
+            vec![MftEntry {
+                identity: None,
+                path: r"C:\kept.txt".into(),
+                name: "kept.txt".into(),
+                is_directory: false,
+                size_bytes: Some(4),
+                modified_at_unix_ms: None,
+            }],
+        );
+        persist_snapshot(&snapshot, &base_path).expect("last-good base");
+        snapshot.set_cache_path(base_path.clone());
+        let blocked_delta = delta_path(&base_path);
+        fs::create_dir(&blocked_delta).expect("obstruct atomic delta publication");
+        let mut service =
+            IndexerService::from_volume_descriptors([VolumeDescriptor::new(r"C:\", "NTFS")]);
+        service.rebuild_with(|_| Ok(snapshot.clone()));
+        service.poll_journals(&|snapshot| {
+            let mut updated = snapshot.clone();
+            updated.next_usn = Some(110);
+            Ok(crate::usn::JournalPoll::CursorAdvanced(updated))
+        });
+        assert_eq!(service.status.phase, IndexPhase::Ready);
+        assert_eq!(service.status.drives[0].next_usn, Some(110));
+        let error = service
+            .status
+            .last_error
+            .as_deref()
+            .expect("real atomic publish failure visible");
+        assert!(error.contains("index persistence"));
+        assert!(!error.contains(directory.path().to_string_lossy().as_ref()));
+        assert_eq!(
+            service
+                .search_snapshot(&IndexSearchRequest {
+                    generation: 1,
+                    query: "kept".into(),
+                    limit: 20,
+                    context: IndexSearchContext {
+                        include_files: true,
+                        include_directories: true,
+                        ..Default::default()
+                    },
+                })
+                .len(),
+            1
+        );
+        assert!(
+            base_path.is_file(),
+            "failed delta write preserves last-good base"
+        );
+        fs::remove_dir(&blocked_delta).expect("recover delta publish target");
+        let maintenance = service.poll_journals(&|_| Ok(crate::usn::JournalPoll::NoChange));
+        assert!(matches!(maintenance, JournalMaintenance::StatusChanged));
+        assert!(service.status.last_error.is_none());
+        let restored = load_delta(&blocked_delta, Some(17)).expect("committed delta reload");
+        assert_eq!(restored.next_usn, Some(110));
+    }
+}
+
+#[cfg(all(test, windows))]
+mod idle_io_tests {
+    use super::*;
+
+    #[allow(unsafe_code)]
+    fn written_bytes() -> u64 {
+        use windows_sys::Win32::System::Threading::{GetProcessIoCounters, IO_COUNTERS};
+        let mut counters: IO_COUNTERS = unsafe { std::mem::zeroed() };
+        assert_ne!(
+            unsafe { GetProcessIoCounters(GetCurrentProcess(), &mut counters) },
+            0,
+            "read own process I/O counters"
+        );
+        counters.WriteTransferCount
+    }
+
+    #[test]
+    fn idle_io_small_updates_do_not_rewrite_megabyte_overlay() {
+        let directory = tempfile::tempdir().expect("isolated incremental cache");
+        let base = directory.path().join("volume.idx");
+        let mut snapshot = MftSnapshot::from_entries(r"C:\", Some(17), Some(100), Vec::new());
+        snapshot.set_cache_path(base.clone());
+        for reference in 0..12_000 {
+            snapshot.overlay.replacements.insert(
+                reference,
+                MftEntry {
+                    identity: Some(MftIdentity {
+                        file_reference: reference,
+                        parent_reference: 5,
+                    }),
+                    path: format!("C:\\{}\\file-{reference}.txt", "synthetic".repeat(16)),
+                    name: format!("file-{reference}.txt"),
+                    is_directory: false,
+                    size_bytes: None,
+                    modified_at_unix_ms: Some(1),
+                },
+            );
+        }
+        persist_system_delta(&snapshot).expect("initial durable overlay");
+        let initial_size = fs::metadata(delta_path(&base))
+            .expect("initial delta")
+            .len();
+        assert!(initial_size > 2 * 1024 * 1024);
+        let before = written_bytes();
+        for tick in 1..=3 {
+            snapshot.next_usn = Some(100 + tick);
+            snapshot
+                .overlay
+                .replacements
+                .get_mut(&11)
+                .expect("one changed row")
+                .modified_at_unix_ms = Some(tick + 1);
+            persist_system_delta(&snapshot).expect("small incremental commit");
+        }
+        let written = written_bytes() - before;
+        eprintln!(
+            "idle_io: initial_overlay_bytes={initial_size}, three_single_row_commit_bytes={written}"
+        );
+        assert!(
+            written < 32 * 1024,
+            "three one-row commits must not rewrite a {initial_size}-byte overlay: actual process writes={written}"
+        );
+        let restored =
+            load_delta(&delta_path(&base), Some(17)).expect("durable incremental replay");
+        assert_eq!(restored.next_usn, Some(103));
+        assert_eq!(restored.overlay.replacements.len(), 12_000);
+        assert_eq!(
+            restored
+                .overlay
+                .replacements
+                .get(&11)
+                .expect("restored row")
+                .modified_at_unix_ms,
+            Some(4)
+        );
     }
 }

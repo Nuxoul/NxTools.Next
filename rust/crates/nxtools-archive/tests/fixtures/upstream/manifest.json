@@ -1,0 +1,42 @@
+﻿[
+    {
+        "fixture":  "solid.7z",
+        "source":  "sevenz-rust2-0.23.0\\tests\\resources\\solid.7z",
+        "sha256":  "f3baded396d9ce01a2c591585db5bc168916de70de4a83644a41273befd6ec20"
+    },
+    {
+        "fixture":  "rar5-header-encrypted.rar",
+        "source":  "unrar-0.5.8\\data\\comment-hpw-password.rar",
+        "sha256":  "dd47390a7fc73391183b38a4c140b595fdd52ab22afbdfa4e41db5023fc55f1b"
+    },
+    {
+        "fixture":  "non-solid.7z",
+        "source":  "sevenz-rust2-0.23.0\\tests\\resources\\non_solid.7z",
+        "sha256":  "74f9154d8794914b661405d7807e3c02536e49f64f05e0ce0f691b3e211afb43"
+    },
+    {
+        "fixture":  "rar4.rar",
+        "source":  "unrar-0.5.8\\data\\version.rar",
+        "sha256":  "2c595ee9aaea2c837bd0e11a659b9b62b46251f18ab7b6675748da0fadd34460"
+    },
+    {
+        "fixture":  "lzma.7z",
+        "source":  "sevenz-rust2-0.23.0\\tests\\resources\\single_file_with_content_lzma.7z",
+        "sha256":  "a43f55650b5c84d9c51654d9a172dc9c2279f169cf8ad44eabe877d32c778346"
+    },
+    {
+        "fixture":  "encrypted.7z",
+        "source":  "sevenz-rust2-0.23.0\\tests\\resources\\encrypted.7z",
+        "sha256":  "ea3e538426be3fe908ed804f31d169610322ec87a1a9ad4901a526a2d632a50e"
+    },
+    {
+        "fixture":  "rar5.rar",
+        "source":  "unrar-0.5.8\\data\\unicode-entry.rar",
+        "sha256":  "404c872a59c60f5040586065a4f0b30478139a405284154479cc9b57f7bf2815"
+    },
+    {
+        "fixture":  "rar4-encrypted.rar",
+        "source":  "unrar-0.5.8\\data\\crypted.rar",
+        "sha256":  "3215288892bfae2e641786952ab2547ea72cdd58c9c544604cd63e242fa07318"
+    }
+]

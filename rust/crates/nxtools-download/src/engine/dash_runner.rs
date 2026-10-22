@@ -149,6 +149,7 @@ pub(crate) async fn run_dash_task(
         content_type: Some("application/dash+xml".into()),
         validator: crate::ResourceValidator::default(),
         media: Some(crate::DownloadMediaProbe::Dash(manifest.probe())),
+        resolution: None,
     };
     let (temporary_path, final_path) =
         HttpDownloadClient::artifact_paths(request, &probe, task_id)?;
@@ -241,6 +242,8 @@ pub(crate) async fn run_dash_task(
                     .is_some_and(|fragment| fragment.state == DownloadSegmentState::Completed)
                 {
                     adopted_fragments = adopted_fragments.saturating_add(1);
+                    // An uncheckpointed fragment has no durable measured interval.
+                    control.statistics.invalidate();
                 }
                 inner.store.save_dash_fragment_checkpoint(
                     task_id,
@@ -1121,8 +1124,8 @@ pub(crate) fn transition_dash_stopped(
         .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
     state.transfer.downloaded_bytes = downloaded_bytes;
     state.task.transition_to(status, now_unix_ms())?;
-    state.control = None;
     inner.persist(state)?;
+    state.control = None;
     inner.emit(DownloadEvent::TaskChanged {
         task: Box::new(state.task.clone()),
     });

@@ -98,15 +98,39 @@ impl IndexerBridge {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct DesktopInstanceConflict;
+impl std::fmt::Display for DesktopInstanceConflict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("another desktop instance is already running")
+    }
+}
+impl std::error::Error for DesktopInstanceConflict {}
+
+fn acquire_desktop_instance(paths: &AppPaths, wait: Duration) -> Result<SingleInstanceGuard> {
+    SingleInstanceGuard::acquire_with_timeout(paths, "desktop", wait).map_err(|error| {
+        // Translate the core lock boundary once; callers never infer races from contextual startup errors.
+        if error.to_string() == "another desktop instance is already running" {
+            anyhow::Error::new(DesktopInstanceConflict)
+        } else {
+            error
+        }
+    })
+}
+
 pub struct DesktopRuntime {
     pub config: AppConfig,
     pub config_path: PathBuf,
     pub log_dir: PathBuf,
     pub platform_bridge: Option<nxtools_ipc::PlatformBridge>,
     pub indexer_bridge: Option<IndexerBridge>,
+    pub archive_launches: Option<nxtools_ipc::desktop_archive_intent::ArchiveIntentReceiver>,
     pub clipboard_worker: Option<ClipboardCaptureWorkerHandle>,
     pub finder_catalog: Option<FinderCatalog>,
     pub download_engine: Option<DownloadEngine>,
+    pub(crate) extension_service: crate::extensions::service::ExtensionService,
+    pub(crate) extension_ui_calls:
+        Option<AsyncReceiver<crate::extensions::feature_adapters::UiHostCall>>,
     pub network_policy: NetworkPolicy,
     pub download_default_directory: PathBuf,
     pub download_database_path: PathBuf,
@@ -117,9 +141,12 @@ pub struct DesktopRuntime {
     _indexer: Option<IndexerSupervisor>,
 }
 impl DesktopRuntime {
-    pub fn initialize(instance_wait: Duration) -> Result<Self> {
+    pub fn initialize(
+        instance_wait: Duration,
+        initial_archive: Option<nxtools_protocol::desktop_archive_intent::DesktopArchiveIntent>,
+    ) -> Result<Self> {
         let paths = AppPaths::discover()?;
-        let instance = SingleInstanceGuard::acquire_with_timeout(&paths, "desktop", instance_wait)?;
+        let instance = acquire_desktop_instance(&paths, instance_wait)?;
         let log_guard = init_file_logging(&paths, "desktop")?;
         let config = AppConfig::load_or_create(&paths)?;
         let config_path = paths.config_file();
@@ -154,12 +181,28 @@ impl DesktopRuntime {
         let (download_engine, network_policy) =
             open_download_engine_from_config(download_database_path.clone(), &config)
                 .context("failed to initialize the download engine")?;
+        let (extension_service, extension_ui_calls) =
+            crate::extensions::service::ExtensionService::new(
+                &download_engine,
+                config.extensions.clone(),
+                Some(clipboard_worker.clone()),
+                true,
+            )?;
         start_download_host(download_engine.clone())?;
         let download_default_directory = std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
             .map(|home| home.join("Downloads"))
             .unwrap_or_else(|| paths.data_dir.join("downloads"));
         let (platform_bridge, platform_server) = nxtools_ipc::platform_bridge(256);
+        let (archive_intents, archive_launches) =
+            nxtools_ipc::desktop_archive_intent::archive_intent_channel();
+        if let Some(intent) = initial_archive {
+            let receipt = archive_intents.submit(intent);
+            if let Some(failure) = receipt.failure {
+                return Err(failure.into());
+            }
+        }
+        let platform_server = platform_server.with_archive_intents(archive_intents);
         start_platform_server(config.platform_pipe_name.clone(), platform_server)?;
         let platform_host = PlatformHostSupervisor::launch_if_packaged()?;
         let (indexer_bridge, indexer_endpoint) = indexer_bridge(256);
@@ -171,9 +214,12 @@ impl DesktopRuntime {
             log_dir: paths.log_dir,
             platform_bridge: Some(platform_bridge),
             indexer_bridge: Some(indexer_bridge),
+            archive_launches: Some(archive_launches),
             clipboard_worker: Some(clipboard_worker),
             finder_catalog: Some(finder_catalog),
             download_engine: Some(download_engine),
+            extension_service,
+            extension_ui_calls,
             network_policy,
             download_default_directory,
             download_database_path,
@@ -188,12 +234,18 @@ impl DesktopRuntime {
 
 pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
     let paths = AppPaths::discover()?;
-    let _instance = SingleInstanceGuard::acquire_with_timeout(&paths, "desktop", instance_wait)?;
+    let _instance = acquire_desktop_instance(&paths, instance_wait)?;
     let _log_guard = init_file_logging(&paths, "download-host")?;
     let config = AppConfig::load_or_create(&paths)?;
     let (engine, _network_policy) =
         open_download_engine_from_config(paths.data_dir.join("downloads.sqlite3"), &config)
             .context("failed to initialize the background download engine")?;
+    let (_extensions, _) = crate::extensions::service::ExtensionService::new(
+        &engine,
+        config.extensions.clone(),
+        None,
+        false,
+    )?;
     let background_events = engine
         .take_event_receiver()
         .context("failed to attach the background engine event drain")?;
@@ -603,6 +655,25 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
         .args(["--parent-pid", &std::process::id().to_string()])
         .creation_flags(CREATE_NO_WINDOW)
         .spawn()
+}
+
+/// No main-HWND hint is needed: a cold owner's archive queue is ready before GPUI registration.
+pub(crate) fn forward_running_archive(
+    intent: &nxtools_protocol::desktop_archive_intent::DesktopArchiveIntent,
+) -> Result<bool> {
+    let paths = AppPaths::discover()?;
+    if !SingleInstanceGuard::is_locked(&paths, "desktop") {
+        return Ok(false);
+    }
+    let pipe_name = if paths.config_file().is_file() {
+        AppConfig::load_from(&paths.config_file())
+            .context("archive launch configuration unavailable")?
+            .platform_pipe_name
+    } else {
+        DEFAULT_PLATFORM_PIPE_NAME.into()
+    };
+    nxtools_ipc::desktop_archive_intent::forward_archive_intent(&pipe_name, intent)?;
+    Ok(true)
 }
 
 /// Summons the main window of an already-running desktop instance. A second

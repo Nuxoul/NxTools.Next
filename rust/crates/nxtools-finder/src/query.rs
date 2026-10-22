@@ -1,3 +1,5 @@
+use crate::pinyin::PinyinTerm;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MatchKind {
     Fuzzy,
@@ -13,6 +15,7 @@ struct QueryTerm {
     kind: MatchKind,
     excluded: bool,
     case_sensitive: bool,
+    pinyin: Option<PinyinTerm>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -102,6 +105,68 @@ impl FileQuery {
         }
     }
 
+    /// Bounded no-result fallback; callers must finish ordinary matching first.
+    /// Parsed drive/path/parent/excluded and explicit matching terms are never rewritten.
+    pub fn homophone_variants(&self) -> Vec<Self> {
+        if self.path_pattern.is_some() || self.directory_scope.is_some() {
+            return Vec::new();
+        }
+        let mut variants = vec![self.clone()];
+        let mut changed = false;
+        for (branch, terms) in self.alternatives.iter().enumerate() {
+            for (index, term) in terms.iter().enumerate() {
+                if term.excluded || term.kind != MatchKind::Fuzzy || term.case_sensitive {
+                    continue;
+                }
+                let spellings = crate::pinyin::homophone_spellings(&term.text);
+                if spellings.is_empty() {
+                    continue;
+                }
+                changed = true;
+                let mut next = Vec::new();
+                for variant in &variants {
+                    for spelling in &spellings {
+                        let mut variant = variant.clone();
+                        let replacement = &mut variant.alternatives[branch][index];
+                        replacement.text = spelling.clone();
+                        replacement.pinyin = PinyinTerm::new(spelling);
+                        next.push(variant);
+                        if next.len() == 8 {
+                            break;
+                        }
+                    }
+                    if next.len() == 8 {
+                        break;
+                    }
+                }
+                variants = next;
+            }
+        }
+        if !changed {
+            return Vec::new();
+        }
+        for variant in &mut variants {
+            variant.required_name_masks = variant
+                .alternatives
+                .iter()
+                .map(|terms| {
+                    terms
+                        .iter()
+                        .filter(|term| !term.excluded)
+                        .fold(0, |mask, term| mask | search_char_mask(&term.text))
+                })
+                .collect();
+        }
+        variants
+    }
+
+    pub fn homophone_match_ranges(&self, name: &str) -> Vec<std::ops::Range<usize>> {
+        self.homophone_variants()
+            .into_iter()
+            .find(|variant| variant.score_name(name).is_some())
+            .map_or_else(Vec::new, |variant| variant.match_ranges(name))
+    }
+
     pub fn bypasses_exclusions(&self) -> bool {
         self.bypass_exclusions
     }
@@ -116,9 +181,66 @@ impl FileQuery {
     pub fn name_mask_may_match(&self, candidate_mask: u64) -> bool {
         self.required_name_masks.is_empty()
             || self
-                .required_name_masks
+                .alternatives
                 .iter()
-                .any(|required| candidate_mask & required == *required)
+                .zip(&self.required_name_masks)
+                .any(|(terms, required)| {
+                    candidate_mask & required == *required
+                        || (candidate_mask & (1_u64 << 63) != 0
+                            && terms.iter().any(|term| term.pinyin.is_some()))
+                })
+    }
+
+    /// A necessary contiguous ASCII requirement, never a fuzzy/compound shortcut.
+    pub fn required_ascii_substring(&self) -> Option<&str> {
+        if !self.is_name_only() || self.alternatives.len() != 1 {
+            return None;
+        }
+        let terms = &self.alternatives[0];
+        if terms.len() != 1 {
+            return None;
+        }
+        let term = &terms[0];
+        (!term.excluded
+            && term.kind != MatchKind::Fuzzy
+            && term.text.is_ascii()
+            // An unclosed exact quote can absorb OR/compound syntax as literal
+            // text. Keep that grammar, but do not accelerate complex-looking input.
+            && !term.text.contains(['|', '!'])
+            && !term.text.chars().any(char::is_whitespace)
+            && term.text.len() >= 3
+            && term.text.len() <= 256)
+            .then_some(term.text.as_str())
+    }
+
+    /// Same grammar/rank with a catalog-owned lowercase name (no per-query fold).
+    pub(crate) fn score_prepared(&self, name: &str, folded: &str, path: &str) -> Option<i64> {
+        if !self.is_name_only() {
+            return self.score_literal(name, path);
+        }
+        self.alternatives
+            .iter()
+            .filter_map(|terms| {
+                let mut score = 0;
+                for term in terms {
+                    let matched = if term.case_sensitive {
+                        score_term(term.kind, &term.text, name)
+                    } else if term.text.is_ascii() && name.is_ascii() {
+                        score_ascii_case_insensitive(term.kind, &term.text, name)
+                    } else {
+                        score_term(term.kind, &term.text, folded)
+                    };
+                    if term.excluded {
+                        if matched.is_some() {
+                            return None;
+                        }
+                    } else {
+                        score += matched?;
+                    }
+                }
+                Some(score)
+            })
+            .max()
     }
 
     pub fn score_name(&self, name: &str) -> Option<i64> {
@@ -127,11 +249,19 @@ impl FileQuery {
         }
         self.alternatives
             .iter()
-            .filter_map(|terms| score_terms(terms, name))
+            .filter_map(|terms| score_terms(terms, name, true))
             .max()
     }
 
     pub fn score(&self, name: &str, path: &str) -> Option<i64> {
+        self.score_internal(name, path, true)
+    }
+
+    pub(crate) fn score_literal(&self, name: &str, path: &str) -> Option<i64> {
+        self.score_internal(name, path, false)
+    }
+
+    fn score_internal(&self, name: &str, path: &str, allow_pinyin: bool) -> Option<i64> {
         if self.drive.is_some_and(|drive| {
             path.as_bytes()
                 .first()
@@ -152,12 +282,47 @@ impl FileQuery {
                 .then_some(4_000);
         }
         if !self.parent_terms.is_empty() {
-            score_terms(&self.parent_terms, path)?;
+            score_terms(&self.parent_terms, path, false)?;
         }
         self.alternatives
             .iter()
-            .filter_map(|terms| score_terms(terms, name))
+            .filter_map(|terms| score_terms(terms, name, allow_pinyin))
             .max()
+    }
+
+    /// UTF-8 ranges use the same positive terms and pinyin admission as scoring.
+    /// Literal highlighting retains the existing contiguous-before-subsequence policy.
+    pub fn match_ranges(&self, name: &str) -> Vec<std::ops::Range<usize>> {
+        let mut ranges = self
+            .alternatives
+            .iter()
+            .flatten()
+            .filter(|term| !term.excluded)
+            .flat_map(|term| {
+                let literal = literal_match_ranges(name, &term.text);
+                if literal.is_empty() {
+                    term.pinyin
+                        .as_ref()
+                        .and_then(|term| term.find(name))
+                        .into_iter()
+                        .collect()
+                } else {
+                    literal
+                }
+            })
+            .collect::<Vec<_>>();
+        ranges.sort_by_key(|range| (range.start, range.end));
+        let mut merged: Vec<std::ops::Range<usize>> = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            if let Some(previous) = merged.last_mut()
+                && range.start <= previous.end
+            {
+                previous.end = previous.end.max(range.end);
+            } else {
+                merged.push(range);
+            }
+        }
+        merged
     }
 }
 
@@ -243,7 +408,7 @@ fn parse_drive_selector(part: &str) -> Option<char> {
         .then_some(drive)
 }
 
-fn score_terms(terms: &[QueryTerm], name: &str) -> Option<i64> {
+fn score_terms(terms: &[QueryTerm], name: &str, allow_pinyin: bool) -> Option<i64> {
     let mut score = 0_i64;
     let mut folded_name = None;
     for term in terms {
@@ -260,7 +425,15 @@ fn score_terms(terms: &[QueryTerm], name: &str) -> Option<i64> {
                 return None;
             }
         } else {
-            score += term_score?;
+            score += term_score.or_else(|| {
+                if !allow_pinyin || name.is_ascii() {
+                    return None;
+                }
+                let span = term.pinyin.as_ref()?.find(name)?;
+                // New pinyin is below the ordinary fuzzy tier; direct scores do
+                // not change. Start/span favor a whole name over a late fragment.
+                Some(1_000 - span.start.min(255) as i64 - span.len().min(255) as i64)
+            })?;
         }
     }
     Some(score)
@@ -381,6 +554,9 @@ fn parse_term(raw: &str, force_exact: bool, force_word_boundary_exact: bool) -> 
         kind,
         excluded,
         case_sensitive,
+        pinyin: (!excluded && kind == MatchKind::Fuzzy)
+            .then(|| PinyinTerm::new(&text.to_lowercase()))
+            .flatten(),
     })
 }
 
@@ -421,6 +597,41 @@ fn fuzzy_subsequence_score(pattern: &str, candidate: &str) -> Option<i64> {
     Some(2_000 - span as i64)
 }
 
+fn literal_match_ranges(text: &str, pattern: &str) -> Vec<std::ops::Range<usize>> {
+    let characters = text.char_indices().collect::<Vec<_>>();
+    let pattern = pattern.chars().collect::<Vec<_>>();
+    if pattern.is_empty() || pattern.len() > characters.len() {
+        return Vec::new();
+    }
+    let matches = |left: char, right: char| left.to_lowercase().eq(right.to_lowercase());
+    for start in 0..=characters.len() - pattern.len() {
+        if pattern
+            .iter()
+            .enumerate()
+            .all(|(offset, query)| matches(characters[start + offset].1, *query))
+        {
+            let end = characters
+                .get(start + pattern.len())
+                .map_or(text.len(), |(index, _)| *index);
+            return std::iter::once(characters[start].0..end).collect();
+        }
+    }
+    let mut ranges = Vec::with_capacity(pattern.len());
+    let mut offset = 0;
+    for query in pattern {
+        let Some((relative, (index, character))) = characters[offset..]
+            .iter()
+            .enumerate()
+            .find(|(_, (_, character))| matches(*character, query))
+        else {
+            return Vec::new();
+        };
+        ranges.push(*index..*index + character.len_utf8());
+        offset += relative + 1;
+    }
+    ranges
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,5 +670,85 @@ mod tests {
                 .score_name("helium.exe")
                 .is_some()
         );
+    }
+}
+
+#[cfg(test)]
+mod prepared_tests {
+    use super::*;
+
+    #[test]
+    fn r8_substring_eligibility_does_not_reinterpret_quoted_or_compound_input() {
+        for raw in [
+            "'needle | notes",
+            "'needle !old",
+            "'needle txt",
+            "'needle|notes",
+            "'needle!old",
+            "'needle' | notes",
+            "^needle | notes",
+            "\"needle\" | notes",
+            "'needle' !old",
+            "\"needle txt\"",
+        ] {
+            assert!(
+                FileQuery::parse(raw).required_ascii_substring().is_none(),
+                "{raw}"
+            );
+        }
+        // An unclosed leading apostrophe owns the remainder as one exact term.
+        // Eligibility must fall back, not change that existing quote grammar.
+        let literal = FileQuery::parse("'needle | notes");
+        assert!(literal.score_name("needle | notes.txt").is_some());
+        assert!(literal.score_name("notes.txt").is_none());
+        let alternative = FileQuery::parse("'needle' | notes");
+        assert!(alternative.score_name("needle.txt").is_some());
+        assert!(alternative.score_name("notes.txt").is_some());
+        for raw in ["'needle", "'needle'", "\"needle\"", "^needle", "needle$"] {
+            assert_eq!(
+                FileQuery::parse(raw).required_ascii_substring(),
+                Some("needle")
+            );
+        }
+    }
+
+    #[test]
+    fn r8_prepared_name_matches_legacy_byte_offsets_boundaries_and_unicode() {
+        for name in [
+            "VS Code",
+            "Visual Studio Code",
+            "aa_fooBAR",
+            " foo ",
+            "éFoo",
+            "Kelvin",
+            "İSTANBUL",
+            "计算器",
+        ] {
+            let folded = name.to_lowercase();
+            for raw in [
+                "vsc",
+                "foo",
+                "'foo'",
+                "^foo",
+                "foo$",
+                "'foo",
+                "é",
+                "k",
+                "i",
+                "计",
+                "foo | code",
+                "foo !bar",
+                "!absent",
+                "C: foo",
+                "::Work foo",
+            ] {
+                let query = FileQuery::parse(raw);
+                assert_eq!(
+                    query.score_prepared(name, &folded, r"C:\Work\foo.lnk"),
+                    query.score_literal(name, r"C:\Work\foo.lnk"),
+                    "name={name}, query={raw}"
+                );
+            }
+        }
     }
 }

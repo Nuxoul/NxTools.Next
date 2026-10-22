@@ -1,3 +1,5 @@
+#[path = "quick_launch/archive_open.rs"]
+mod archive_open;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::File;
@@ -9,7 +11,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use chrono::{DateTime, Local};
-use gpui::{
+use gpui_kit::base::Root;
+use gpui_kit::component::input::{InputEvent, InputState};
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::{
     Animation, AnimationExt, AnyElement, AnyWindowHandle, App, Bounds, Context, Div, Entity,
     EntityInputHandler, EventEmitter, Focusable, HighlightStyle, Image, ImageFormat, ImageSource,
     IntoElement, ObjectFit, Pixels, Render, ScrollHandle, ScrollStrategy, Size, StyledText,
@@ -17,9 +22,6 @@ use gpui::{
     WindowBounds, WindowDecorations, WindowKind, WindowOptions, div, ease_out_quint, img, point,
     prelude::*, px, size, uniform_list,
 };
-use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::{PixelsExt, Root};
 use nxtools_core::{
     AppConfig, ClipboardHotKey, ClipboardHotKeyModifier, ProcessBlacklistFeature,
     QuickLaunchSettings,
@@ -49,7 +51,7 @@ use tracing::{error, info, warn};
 use crate::icons::{MaterialIcon, shell_icon_path_is_renderable};
 use crate::notifications::NotificationCenter;
 use crate::runtime::{IndexerBridge, IndexerNotification};
-use crate::theme::{Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
+use crate::theme::{Theme, UI_FONT_FAMILY};
 use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
@@ -64,6 +66,9 @@ use crate::ui::{
 
 mod file_dialog_search;
 use file_dialog_search::FileDialogSearchSession;
+
+#[cfg(debug_assertions)]
+pub(crate) mod visual_preview;
 
 /// Count-only index status changes are file-churn telemetry: they coalesce
 /// into at most one log record per interval while structural changes always
@@ -87,6 +92,10 @@ fn should_manage_indexer_service() -> bool {
     std::env::current_exe()
         .map(|executable| should_manage_indexer_service_for_executable(&executable))
         .unwrap_or(true)
+}
+
+fn indexer_deployment_requires_protected_restart(result: &PlatformCommandResult) -> bool {
+    result.success && matches!(result.data.as_deref(), Some("installed" | "upgraded"))
 }
 
 pub(crate) fn should_log_index_status_change(
@@ -142,9 +151,10 @@ const QUICK_LAUNCH_IMAGE_PIXEL_LIMIT: u64 = 16_000_000;
 const QUICK_LAUNCH_PREVIEW_STAGING_COORDINATE: i32 = -32_000;
 const QUICK_LAUNCH_PANEL_STAGING_COORDINATE: i32 = -30_000;
 mod actions;
+mod extension_providers;
 mod icon;
 mod panel;
-mod preview;
+pub(crate) mod preview;
 mod search;
 
 use self::actions::*;
@@ -232,6 +242,7 @@ pub(crate) struct QuickLaunchApplication {
     index_search: IndexSearchSession,
     last_local_search_us: Option<u64>,
     last_count_status_log: Option<Instant>,
+    extension_providers: extension_providers::ExtensionProviders,
 }
 
 impl EventEmitter<QuickLaunchApplicationEvent> for QuickLaunchApplication {}
@@ -249,6 +260,60 @@ struct PendingProgramPicker {
     started_at: Instant,
 }
 impl QuickLaunchApplication {
+    pub(crate) fn extension_search(&self, query: &str) -> nxtools_extensions::HostReply {
+        match self.catalog.borrow().search_with_packages(query,&[],&self.config.quick_launch.custom_commands,&self.config.extensions,32) {
+            Ok(results)=>nxtools_extensions::HostReply{success:true,value:serde_json::Value::Array(results.into_iter().map(|result|serde_json::json!({"id":result.entry.id,"title":result.entry.name,"target":result.entry.target})).collect())},
+            Err(_)=>nxtools_extensions::HostReply::error("search_failed"),
+        }
+    }
+    pub(crate) fn extension_set_query(
+        &mut self,
+        query: String,
+        cancellation: tokio::sync::watch::Receiver<bool>,
+        reply: async_channel::Sender<nxtools_extensions::HostReply>,
+        cx: &mut Context<Self>,
+    ) {
+        if query.len() > 4096 || *cancellation.borrow() {
+            let _ = reply.try_send(nxtools_extensions::HostReply::error("invalid_or_cancelled"));
+            return;
+        }
+        let Some(popup) = self.popup.clone() else {
+            let _ = reply.try_send(nxtools_extensions::HostReply::error("ui_unavailable"));
+            return;
+        };
+        cx.defer(move |cx| {
+            let result = popup
+                .window
+                .update(cx, |_, window, cx| {
+                    if *cancellation.borrow() {
+                        return false;
+                    }
+                    let input = popup
+                        .panel
+                        .update(cx, |panel, _| {
+                            panel.is_open.then(|| panel.search_input.clone())
+                        })
+                        .ok()
+                        .flatten();
+                    if let Some(input) = input {
+                        input.update(cx, |input, cx| input.set_value(query, window, cx));
+                        true
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+            let _ = reply.try_send(if result {
+                nxtools_extensions::HostReply {
+                    success: true,
+                    value: serde_json::json!({}),
+                }
+            } else {
+                nxtools_extensions::HostReply::error("ui_unavailable")
+            });
+        });
+    }
+
     pub(crate) fn new(
         catalog: FinderCatalog,
         platform: Rc<PlatformBridge>,
@@ -300,6 +365,7 @@ impl QuickLaunchApplication {
             index_search: IndexSearchSession::default(),
             last_local_search_us: None,
             last_count_status_log: None,
+            extension_providers: Default::default(),
         }
     }
 
@@ -334,6 +400,21 @@ impl QuickLaunchApplication {
 
     pub(crate) fn settings(&self) -> QuickLaunchSettings {
         self.config.quick_launch.clone()
+    }
+
+    pub(crate) fn extension_config_snapshot(&self) -> (AppConfig, PathBuf) {
+        (self.config.clone(), self.config_path.clone())
+    }
+
+    pub(crate) fn apply_extension_snapshot(
+        &mut self,
+        packages: nxtools_extensions::PackageRegistry,
+        cx: &mut Context<Self>,
+    ) {
+        self.cancel_extension_providers();
+        self.config.extensions = packages;
+        self.refresh_indexed_results(cx);
+        cx.notify();
     }
 
     pub(crate) fn catalog_status(&self) -> CatalogStatus {
@@ -488,24 +569,26 @@ impl QuickLaunchApplication {
         if self.indexer_service_bootstrap.pending.is_some() {
             return;
         }
+        let command_id = uuid::Uuid::new_v4();
+        self.indexer_service_bootstrap.begin(command_id, automatic);
         match self
             .platform
-            .send_command(PlatformCommand::EnsureIndexerService)
+            .send_command_with_id(PlatformCommand::EnsureIndexerService, command_id)
         {
-            Ok(command_id) => {
-                self.indexer_service_bootstrap.begin(command_id, automatic);
+            Ok(_) => {
                 if !automatic {
                     self.notifications.update(cx, |notifications, cx| {
                         notifications.show_info(
                             "quick-launch-indexer-service",
                             "正在准备索引服务",
-                            "首次安装会显示一次 Windows 授权窗口，主程序仍以普通权限运行。",
+                            "首次安装或版本升级需要 Windows 授权；主程序仍以普通权限运行。",
                             cx,
                         );
                     });
                 }
             }
             Err(error) => {
+                self.indexer_service_bootstrap.finish(command_id);
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
                         "quick-launch-indexer-service",
@@ -839,6 +922,20 @@ impl QuickLaunchApplication {
         notification: IndexerNotification,
         cx: &mut Context<Self>,
     ) {
+        if let IndexerNotification::Event(IndexerEvent::SearchFailed(failure)) = &notification {
+            if failure.generation == self.index_search.generation {
+                self.index_search.complete = true;
+                self.index_search.items.clear();
+                if let Some(popup) = self.popup.clone() {
+                    let _ = popup.panel.update(cx, |panel, cx| {
+                        panel.results.clear();
+                        panel
+                            .set_error("最近修改查询超出安全处理预算，请缩小范围后重试".into(), cx);
+                    });
+                }
+            }
+            return;
+        }
         if let IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) = &notification
             && self.handle_file_dialog_search_batch(batch, cx)
         {
@@ -872,6 +969,7 @@ impl QuickLaunchApplication {
                 }
             }
             IndexerNotification::Event(IndexerEvent::Status(_)) => {}
+            IndexerNotification::Event(IndexerEvent::SearchFailed(_)) => {}
             IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) => info!(
                 batch_generation = batch.generation,
                 active_generation = self.index_search.generation,
@@ -1275,8 +1373,13 @@ impl QuickLaunchApplication {
                     self.hide_popup(cx);
                 }
             }
-            PlatformEvent::TrayActionRequested(_)
+            PlatformEvent::ArchiveRead(_)
+            | PlatformEvent::ArchivePassword(_)
+            | PlatformEvent::ArchiveJob(_)
+            | PlatformEvent::ArchivePicker(_)
+            | PlatformEvent::TrayActionRequested(_)
             | PlatformEvent::SystemMotionPreferenceChanged(_)
+            | PlatformEvent::SystemThemePreferenceChanged(_)
             | PlatformEvent::ClipboardCaptured(_)
             | PlatformEvent::ClipboardPanelRequested(_)
             | PlatformEvent::TaskbarOverlayEditGestureFinished(_) => {}
@@ -1587,7 +1690,7 @@ impl QuickLaunchApplication {
             return;
         }
         if let Some(automatic) = self.indexer_service_bootstrap.finish(correlation_id) {
-            if result.success && result.data.as_deref() == Some("installed") {
+            if indexer_deployment_requires_protected_restart(&result) {
                 match crate::launch_protected_desktop_after_current_exit() {
                     Ok(true) => {
                         info!("restarting the desktop from the protected service package");
@@ -1615,13 +1718,13 @@ impl QuickLaunchApplication {
                     notifications.show_success(
                         "quick-launch-indexer-service",
                         "索引服务已就绪",
-                        "正在连接服务并建立 NTFS 文件索引。",
+                        "正在连接已授权版本的索引服务；现有快照由服务恢复。",
                         cx,
                     );
                 } else {
                     notifications.show_error(
                         "quick-launch-indexer-service",
-                        "索引服务未安装",
+                        "索引服务暂不可用",
                         reason,
                         cx,
                     );
@@ -1821,7 +1924,8 @@ impl QuickLaunchApplication {
                 self.begin_window_activation(popup.native_window_handle);
                 let _ = popup.window.update(cx, |_, window, app| {
                     let _ = popup.panel.update(app, |panel, cx| {
-                        panel.set_error(
+                        panel.notify_operation(
+                            crate::notifications::NotificationLevel::Error,
                             format!(
                                 "{} {} 失败：{reason}",
                                 quick_launch_action_label(&pending_action.action),
@@ -2015,6 +2119,9 @@ impl QuickLaunchApplication {
         } else {
             &[]
         };
+        if recent_modified_filter(query).is_some() {
+            return recent_modified_results(indexed);
+        }
         let indexed = indexed
             .iter()
             .map(|item| {
@@ -2031,18 +2138,28 @@ impl QuickLaunchApplication {
                 }
             })
             .collect::<Vec<_>>();
-        self.catalog
-            .borrow()
-            .search_with_sources(
+        let catalog = self.catalog.borrow();
+        let results = if self.index_search.query == query && !self.index_search.complete {
+            catalog.search_with_packages_normal(
                 query,
                 &indexed,
                 &self.config.quick_launch.custom_commands,
+                &self.config.extensions,
                 RESULT_LIMIT,
             )
-            .unwrap_or_else(|error| {
-                error!(%error, query_length = query.chars().count(), "quick-launch unified search failed");
-                Vec::new()
-            })
+        } else {
+            catalog.search_with_packages(
+                query,
+                &indexed,
+                &self.config.quick_launch.custom_commands,
+                &self.config.extensions,
+                RESULT_LIMIT,
+            )
+        };
+        self.merge_extension_rows(query, results.unwrap_or_else(|error| {
+            error!(%error, query_length = query.chars().count(), "quick-launch unified search failed");
+            Vec::new()
+        }))
     }
 
     fn search_and_request_icons(
@@ -2050,15 +2167,41 @@ impl QuickLaunchApplication {
         query: &str,
         cx: &mut Context<Self>,
     ) -> QuickLaunchSearchUpdate {
-        let index_request = self.index_search.begin(query, INDEX_CANDIDATE_LIMIT);
+        let local_search_started = Instant::now();
+        self.begin_extension_providers(query, cx);
+        let recent_mode = recent_modified_filter(query).is_some();
+        let local_results = if recent_mode {
+            Vec::new()
+        } else {
+            self.catalog
+                .borrow()
+                .search_with_packages_normal(
+                    query,
+                    &[],
+                    &self.config.quick_launch.custom_commands,
+                    &self.config.extensions,
+                    RESULT_LIMIT,
+                )
+                .unwrap_or_else(|_| {
+                    warn!(
+                        reason = "local_search_failed",
+                        query_length = query.chars().count(),
+                        "quick-launch ordinary local search failed"
+                    );
+                    Vec::new()
+                })
+        };
+        let mut index_request = self.index_search.begin(query, INDEX_CANDIDATE_LIMIT);
+        index_request.context.allow_homophone_fallback = !recent_mode && local_results.is_empty();
         let generation = index_request.generation;
         let indexer_connected = self.indexer.is_connected();
         let index_available = index_status_has_searchable_snapshot(self.index_status.as_ref());
         let search_indexer = should_search_indexer(indexer_connected, index_available)
-            && query_requests_file_index_with_commands(
-                query,
-                &self.config.quick_launch.custom_commands,
-            );
+            && (recent_modified_filter(query).is_some()
+                || query_requests_file_index_with_commands(
+                    query,
+                    &self.config.quick_launch.custom_commands,
+                ));
         let search_queued = if query.trim().is_empty() || !search_indexer {
             false
         } else {
@@ -2073,12 +2216,14 @@ impl QuickLaunchApplication {
                 }
             }
         };
+        self.index_search.complete = !search_queued;
         info!(
             generation,
             query_length = query.chars().count(),
             indexer_connected,
             index_available,
             search_queued,
+            allow_homophone_fallback = !recent_mode && local_results.is_empty(),
             "quick-launch query provider state"
         );
         if !should_publish_immediate_results(search_indexer, search_queued) {
@@ -2087,8 +2232,11 @@ impl QuickLaunchApplication {
                 pending: true,
             };
         }
-        let local_search_started = Instant::now();
-        let results = self.combined_results(query);
+        let results = if search_queued {
+            local_results
+        } else {
+            self.combined_results(query)
+        };
         self.last_local_search_us = Some(elapsed_microseconds(local_search_started));
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
         // Local rows publish immediately; `pending` keeps the bounded "正在搜索"
@@ -2180,7 +2328,7 @@ impl QuickLaunchApplication {
                 .spawn(async move { scan_application_roots(&roots) })
                 .await;
             if let Some(this) = this.upgrade() {
-                let _ = this.update(cx, |application, cx| {
+                this.update(cx, |application, cx| {
                     application.finish_catalog_refresh(snapshot, cx);
                 });
             }
@@ -2549,6 +2697,9 @@ impl QuickLaunchApplication {
                 app_id: Some("NxTools.QuickLaunchPreview".into()),
                 window_min_size: Some(preview_size),
                 window_decorations: Some(WindowDecorations::Client),
+                app_owns_titlebar_drag: false,
+                inactive_frame_interval: None,
+                icon: None,
                 tabbing_identifier: None,
             },
             move |window, cx| {
@@ -2941,7 +3092,7 @@ impl QuickLaunchApplication {
             let Some(this) = this.upgrade() else {
                 return;
             };
-            let _ = this.update(cx, |application, cx| {
+            this.update(cx, |application, cx| {
                 if application
                     .failed_icon_resources
                     .get(&resource_key)
@@ -3044,6 +3195,70 @@ impl QuickLaunchApplication {
         trigger: QuickLaunchActionTrigger,
         cx: &mut Context<Self>,
     ) {
+        let action_correlation_id = uuid::Uuid::new_v4();
+        if result.entry.id.starts_with("extension-script:")
+            && !self.extension_result_current(&result, &query)
+        {
+            return;
+        }
+        if result.entry.id.starts_with("extension-script:")
+            && matches!(
+                action,
+                QuickLaunchAction::RunElevated | QuickLaunchAction::Shell { .. }
+            )
+        {
+            return;
+        }
+        if result.entry.id.starts_with("extension-script:") {
+            self.verify_and_execute_extension(result, action, query, trigger, cx);
+            return;
+        }
+        if result.entry.id.starts_with("extension:") {
+            let current = self
+                .catalog
+                .borrow()
+                .search_with_packages_normal(
+                    &query,
+                    &[],
+                    &self.config.quick_launch.custom_commands,
+                    &self.config.extensions,
+                    RESULT_LIMIT,
+                )
+                .is_ok_and(|rows| {
+                    rows.iter().any(|row| {
+                        row.entry.id == result.entry.id
+                            && row.entry.target == result.entry.target
+                            && row.action == result.action
+                    })
+                });
+            if !current {
+                warn!(event = "quick_launch.action.rejected", correlation_id=%action_correlation_id,
+                    reason="extension_retired_or_changed", "retired extension action rejected");
+                if let Some(popup) = self.popup.clone() {
+                    let _ = popup.panel.update(cx, |panel, cx| {
+                        panel.notify_operation(
+                            crate::notifications::NotificationLevel::Error,
+                            "扩展已停用或更新，请重新搜索后再执行".into(),
+                            cx,
+                        )
+                    });
+                }
+                return;
+            }
+        }
+        self.execute_native_result(result, action, query, trigger, cx);
+    }
+    fn execute_native_result(
+        &mut self,
+        result: SearchResult,
+        action: QuickLaunchAction,
+        query: String,
+        trigger: QuickLaunchActionTrigger,
+        cx: &mut Context<Self>,
+    ) {
+        if self.try_archive_open(&result, &action, &query, trigger, cx) {
+            return;
+        }
         let started_at = Instant::now();
         let action_correlation_id = uuid::Uuid::new_v4();
         let execute_session_id = self.popup_session_id;
@@ -3086,7 +3301,11 @@ impl QuickLaunchApplication {
             );
             if let Some(popup) = self.popup.clone() {
                 let _ = popup.panel.update(cx, |panel, cx| {
-                    panel.set_error("系统工具没有可定位的快捷方式".into(), cx);
+                    panel.notify_operation(
+                        crate::notifications::NotificationLevel::Error,
+                        "系统工具没有可定位的快捷方式".into(),
+                        cx,
+                    );
                 });
             }
             return;
@@ -3150,7 +3369,11 @@ impl QuickLaunchApplication {
                 );
                 if let Some(popup) = self.popup.clone() {
                     let _ = popup.panel.update(cx, |panel, cx| {
-                        panel.set_error(format!("Windows 适配器不可用：{error}"), cx);
+                        panel.notify_operation(
+                            crate::notifications::NotificationLevel::Error,
+                            format!("Windows 适配器不可用：{error}"),
+                            cx,
+                        );
                     });
                 }
             }
@@ -3228,6 +3451,7 @@ impl QuickLaunchApplication {
                     visible: true,
                 },
             ));
+        let row_style = self.config.quick_launch.row_style;
         let _ = popup.window.update(cx, |_, window, app| {
             window.resize(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT)));
             let _ = popup.panel.update(app, |panel, cx| {
@@ -3239,6 +3463,7 @@ impl QuickLaunchApplication {
                     window,
                     cx,
                 );
+                panel.row_style = row_style;
             });
         });
         self.schedule_popup_reveal(popup.clone(), target_x, target_y, cx);
@@ -3329,6 +3554,7 @@ impl QuickLaunchApplication {
         let captured_navigation_context = navigation_context.clone();
         let panel_slot = Rc::new(RefCell::new(None));
         let native_slot = Rc::new(RefCell::new(0_i64));
+        let row_style = self.config.quick_launch.row_style;
         let opened_panel_slot = Rc::clone(&panel_slot);
         let opened_native_slot = Rc::clone(&native_slot);
         let opened = cx.open_window(
@@ -3346,6 +3572,9 @@ impl QuickLaunchApplication {
                 app_id: Some("NxTools.QuickLaunch".into()),
                 window_min_size: Some(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT))),
                 window_decorations: Some(WindowDecorations::Client),
+                app_owns_titlebar_drag: false,
+                inactive_frame_interval: None,
+                icon: None,
                 tabbing_identifier: None,
             },
             move |window, cx| {
@@ -3369,7 +3598,7 @@ impl QuickLaunchApplication {
                     ));
                 }
                 let panel = cx.new(|cx| {
-                    QuickLaunchPanel::new(
+                    let mut panel = QuickLaunchPanel::new(
                         results,
                         target,
                         navigation_context,
@@ -3377,7 +3606,9 @@ impl QuickLaunchApplication {
                         application,
                         window,
                         cx,
-                    )
+                    );
+                    panel.row_style = row_style;
+                    panel
                 });
                 *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
                 cx.new(|cx| Root::new(panel, window, cx))
@@ -3450,7 +3681,7 @@ impl QuickLaunchApplication {
             let Some(this) = this.upgrade() else {
                 return;
             };
-            let _ = this.update(cx, |application, cx| {
+            this.update(cx, |application, cx| {
                 let recorded = match recorded {
                     Ok(Some(recorded)) => recorded,
                     Ok(None) => return,
@@ -3647,6 +3878,7 @@ fn apply_indexer_notification(
         }
         IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) => index_search.apply(batch),
         IndexerNotification::Event(IndexerEvent::ElevatedDirectoryHelper(_)) => false,
+        IndexerNotification::Event(IndexerEvent::SearchFailed(_)) => false,
         IndexerNotification::Disconnected => {
             *index_status = None;
             index_search.invalidate();
@@ -3658,3 +3890,47 @@ fn apply_indexer_notification(
 mod polish_tests;
 #[cfg(test)]
 mod tests;
+
+impl QuickLaunchApplication {
+    pub(crate) fn set_row_style(
+        &mut self,
+        style: nxtools_core::QuickLaunchRowStyle,
+        cx: &mut Context<Self>,
+    ) {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started = Instant::now();
+        info!(event="quick_launch.row_style_save_started", %correlation_id, ?style);
+        match AppConfig::update_section(&self.config_path, |config| {
+            config.quick_launch.row_style = style
+        }) {
+            Ok(merged) => {
+                self.config = merged;
+                if let Some(popup) = self.popup.clone() {
+                    cx.defer(move |cx| {
+                        let _ = popup.panel.update(cx, |panel, cx| {
+                            panel.row_style = style;
+                            panel.dismiss_preview(cx);
+                            cx.notify();
+                        });
+                    });
+                }
+                info!(event="quick_launch.row_style_saved", %correlation_id, ?style, elapsed_ms=started.elapsed().as_millis());
+            }
+            Err(_) => {
+                warn!(event="quick_launch.row_style_save_failed", %correlation_id, reason="config_commit",elapsed_ms=started.elapsed().as_millis());
+                let notices = self.notifications.clone();
+                cx.defer(move |cx| {
+                    notices.update(cx, |notices, cx| {
+                        notices.show_error(
+                            "quick-launch-row-style",
+                            "速启列表设置",
+                            "保存失败，仍使用原来的列表样式。",
+                            cx,
+                        )
+                    })
+                });
+            }
+        }
+        cx.notify();
+    }
+}

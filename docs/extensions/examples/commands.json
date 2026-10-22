@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "id": "example.commands",
+  "name": "示例命令包",
+  "version": "1.0.0",
+  "description": "声明式命令示例：导入后停用，启用后仅在用户执行时打开目标。请修改合成路径。",
+  "permissions": [
+    { "id": "network", "reason": "由默认浏览器打开网站搜索结果" },
+    { "id": "processes", "reason": "用户明确执行程序命令" },
+    { "id": "files.read", "reason": "用户明确打开指定文件夹" }
+  ],
+  "handlers": [
+    {
+      "id": "web",
+      "title": "搜索示例网站",
+      "feature": "quick_launch",
+      "entry": "command",
+      "keywords": ["exampleweb"],
+      "action": { "type": "website", "url_template": "https://example.test/search?q={query}" }
+    },
+    {
+      "id": "program",
+      "title": "运行示例程序",
+      "feature": "quick_launch",
+      "entry": "command",
+      "keywords": ["exampleprogram"],
+      "action": {
+        "type": "program",
+        "executable": "C:\\Fixture\\tool.exe",
+        "argument_template": "--name %s",
+        "working_directory": "C:\\Fixture"
+      }
+    },
+    {
+      "id": "places",
+      "title": "示例目录列表",
+      "feature": "quick_launch",
+      "entry": "command",
+      "keywords": ["exampleplaces"],
+      "action": {
+        "type": "items",
+        "items": [
+          { "id": "docs", "title": "文档目录", "action": { "type": "folder", "path": "C:\\Fixture\\Docs" } },
+          { "id": "source", "title": "源码目录", "action": { "type": "folder", "path": "C:\\Fixture\\Source" } }
+        ]
+      }
+    }
+  ]
+}

@@ -1,48 +1,32 @@
-use std::fs::{self, File, OpenOptions};
-use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant, SystemTime};
+use std::fs;
+use std::path::Path;
+use std::time::SystemTime;
+#[cfg(test)]
+use std::{path::PathBuf, time::Duration};
 
-use anyhow::{Context, Result, bail};
-use directories::ProjectDirs;
+use anyhow::{Context, Result};
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
-use tracing_subscriber::EnvFilter;
 
-#[derive(Debug, Clone)]
-pub struct AppPaths {
-    pub config_dir: PathBuf,
-    pub data_dir: PathBuf,
-    pub cache_dir: PathBuf,
-    pub log_dir: PathBuf,
-}
-
-impl AppPaths {
-    pub fn discover() -> Result<Self> {
-        let dirs = ProjectDirs::from("dev", "NxTools", "NxTools.Next")
-            .context("Windows did not provide application data directories")?;
-        let paths = Self {
-            config_dir: dirs.config_dir().to_path_buf(),
-            data_dir: dirs.data_dir().to_path_buf(),
-            cache_dir: dirs.cache_dir().to_path_buf(),
-            log_dir: dirs.data_local_dir().join("logs"),
-        };
-        paths.ensure_created()?;
-        Ok(paths)
-    }
-
-    fn ensure_created(&self) -> Result<()> {
-        for path in [
-            &self.config_dir,
-            &self.data_dir,
-            &self.cache_dir,
-            &self.log_dir,
-        ] {
-            fs::create_dir_all(path)
-                .with_context(|| format!("failed to create {}", path.display()))?;
-        }
-        Ok(())
-    }
-}
+pub mod archive;
+#[cfg(test)]
+mod archive_tests;
+#[cfg(test)]
+mod bundled_extension_tests;
+mod bundled_extensions;
+mod extensions;
+mod instance;
+mod logging;
+mod paths;
+pub use archive::{
+    ArchiveCompressionLevel, ArchiveConflictPolicy, ArchiveCreateFormat, ArchiveDestination,
+    ArchiveFilenameEncoding, ArchiveSettings,
+};
+pub use instance::SingleInstanceGuard;
+#[cfg(test)]
+use logging::delete_expired_logs;
+pub use logging::{LogGuard, init_file_logging};
+pub use paths::AppPaths;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProcessBlacklistFeature {
@@ -226,6 +210,10 @@ pub struct AppConfig {
     pub process_blacklist: ProcessBlacklistSettings,
     #[serde(default)]
     pub download: DownloadSettings,
+    #[serde(default)]
+    pub archive: ArchiveSettings,
+    #[serde(default)]
+    pub extensions: nxtools_extensions::PackageRegistry,
 }
 
 impl Default for AppConfig {
@@ -240,15 +228,139 @@ impl Default for AppConfig {
             quick_launch: QuickLaunchSettings::default(),
             process_blacklist: ProcessBlacklistSettings::default(),
             download: DownloadSettings::default(),
+            archive: ArchiveSettings::default(),
+            extensions: Default::default(),
         }
     }
 }
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemePreference {
+    System,
+    Light,
+    #[default]
+    Dark,
+    CatppuccinLatte,
+    CatppuccinFrappe,
+    CatppuccinMacchiato,
+    CatppuccinMocha,
+    GruvboxLight,
+    GruvboxDark,
+    SolarizedLight,
+    SolarizedDark,
+}
+
+impl ThemePreference {
+    pub const ALL: [Self; 11] = [
+        Self::System,
+        Self::Light,
+        Self::Dark,
+        Self::CatppuccinLatte,
+        Self::CatppuccinFrappe,
+        Self::CatppuccinMacchiato,
+        Self::CatppuccinMocha,
+        Self::GruvboxLight,
+        Self::GruvboxDark,
+        Self::SolarizedLight,
+        Self::SolarizedDark,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::System => "跟随系统",
+            Self::Light => "默认浅色",
+            Self::Dark => "默认深色",
+            Self::CatppuccinLatte => "Catppuccin Latte",
+            Self::CatppuccinFrappe => "Catppuccin Frappe",
+            Self::CatppuccinMacchiato => "Catppuccin Macchiato",
+            Self::CatppuccinMocha => "Catppuccin Mocha",
+            Self::GruvboxLight => "Gruvbox Light",
+            Self::GruvboxDark => "Gruvbox Dark",
+            Self::SolarizedLight => "Solarized Light",
+            Self::SolarizedDark => "Solarized Dark",
+        }
+    }
+
+    pub const fn is_dark(self, system_dark: bool) -> bool {
+        match self {
+            Self::System => system_dark,
+            Self::Light | Self::CatppuccinLatte | Self::GruvboxLight | Self::SolarizedLight => {
+                false
+            }
+            _ => true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BackgroundDownloadLimitSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_background_download_rate")]
+    pub bytes_per_second: u64,
+}
+const fn default_background_download_rate() -> u64 {
+    1024 * 1024
+}
+impl Default for BackgroundDownloadLimitSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            bytes_per_second: default_background_download_rate(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationPosition {
+    TopLeft,
+    TopCenter,
+    TopRight,
+    BottomLeft,
+    BottomCenter,
+    #[default]
+    BottomRight,
+}
+impl NotificationPosition {
+    pub const ALL: [Self; 6] = [
+        Self::TopLeft,
+        Self::TopCenter,
+        Self::TopRight,
+        Self::BottomLeft,
+        Self::BottomCenter,
+        Self::BottomRight,
+    ];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::TopLeft => "左上",
+            Self::TopCenter => "上中",
+            Self::TopRight => "右上",
+            Self::BottomLeft => "左下",
+            Self::BottomCenter => "下中",
+            Self::BottomRight => "右下",
+        }
+    }
+    pub const fn is_top(self) -> bool {
+        matches!(self, Self::TopLeft | Self::TopCenter | Self::TopRight)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SystemSettings {
     #[serde(default)]
     pub start_on_login_silently: bool,
     #[serde(default = "default_close_to_tray")]
     pub close_to_tray: bool,
+    #[serde(default)]
+    pub theme: ThemePreference,
+    #[serde(default)]
+    pub notification_position: NotificationPosition,
+    #[serde(
+        default = "default_notification_duration",
+        deserialize_with = "deserialize_notification_duration"
+    )]
+    pub notification_duration_seconds: u32,
 }
 
 impl Default for SystemSettings {
@@ -256,8 +368,20 @@ impl Default for SystemSettings {
         Self {
             start_on_login_silently: false,
             close_to_tray: default_close_to_tray(),
+            theme: ThemePreference::default(),
+            notification_position: NotificationPosition::default(),
+            notification_duration_seconds: default_notification_duration(),
         }
     }
+}
+
+pub const fn default_notification_duration() -> u32 {
+    6
+}
+fn deserialize_notification_duration<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u32, D::Error> {
+    u32::deserialize(deserializer).map(|seconds| seconds.clamp(1, 60))
 }
 
 const fn default_close_to_tray() -> bool {
@@ -387,6 +511,8 @@ pub struct DownloadSettings {
     pub task_removal_deletes_file: bool,
     #[serde(default)]
     pub taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings,
+    #[serde(default)]
+    pub background_speed_limit: BackgroundDownloadLimitSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -514,6 +640,7 @@ impl Default for DownloadSettings {
             open_directory_on_completion: false,
             task_removal_deletes_file: true,
             taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
+            background_speed_limit: BackgroundDownloadLimitSettings::default(),
         }
     }
 }
@@ -545,6 +672,8 @@ const fn default_taskbar_overlay_height() -> u32 {
 impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
+        self.background_speed_limit.bytes_per_second =
+            self.background_speed_limit.bytes_per_second.max(1);
         for category in &mut self.categories {
             category.id = category.id.trim().to_owned();
             category.name = category.name.trim().to_owned();
@@ -691,6 +820,29 @@ fn default_download_categories() -> Vec<DownloadCategorySettings> {
     ]
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickLaunchRowStyle {
+    Continuous,
+    #[default]
+    Separated,
+}
+impl QuickLaunchRowStyle {
+    pub const ALL: [Self; 2] = [Self::Continuous, Self::Separated];
+    pub const fn gap(self) -> f32 {
+        match self {
+            Self::Continuous => 0.0,
+            Self::Separated => 4.0,
+        }
+    }
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Continuous => "连续列表",
+            Self::Separated => "分隔列表",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuickLaunchSettings {
     #[serde(default = "default_true")]
@@ -701,6 +853,8 @@ pub struct QuickLaunchSettings {
     pub file_dialog_search: bool,
     #[serde(default = "default_true")]
     pub suppress_in_exclusive_fullscreen: bool,
+    #[serde(default)]
+    pub row_style: QuickLaunchRowStyle,
     #[serde(default = "default_quick_launch_hotkey")]
     pub hotkey: ClipboardHotKey,
     #[serde(default)]
@@ -718,6 +872,7 @@ impl Default for QuickLaunchSettings {
             auto_quick_switch: true,
             file_dialog_search: true,
             suppress_in_exclusive_fullscreen: true,
+            row_style: QuickLaunchRowStyle::default(),
             hotkey: default_quick_launch_hotkey(),
             indexed_volumes: Vec::new(),
             excluded_paths: Vec::new(),
@@ -783,12 +938,114 @@ impl LinkPanelPosition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct CurrencyConversionSettings {
+    pub enabled: bool,
+    pub target: String,
+}
+impl Default for CurrencyConversionSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            target: "CNY".into(),
+        }
+    }
+}
+impl CurrencyConversionSettings {
+    /// Common localized display names; live currency availability belongs to Desktop's provider catalog.
+    pub const COMMON_CURRENCIES: &'static [(&'static str, &'static str)] = &[
+        ("CNY", "人民币"),
+        ("USD", "美元"),
+        ("EUR", "欧元"),
+        ("CAD", "加元"),
+        ("GBP", "英镑"),
+        ("JPY", "日元"),
+        ("HKD", "港币"),
+        ("AUD", "澳元"),
+        ("NZD", "新西兰元"),
+        ("SGD", "新加坡元"),
+        ("CHF", "瑞士法郎"),
+        ("KRW", "韩元"),
+        ("TWD", "新台币"),
+        ("INR", "印度卢比"),
+        ("THB", "泰铢"),
+        ("MYR", "林吉特"),
+        ("IDR", "印尼盾"),
+        ("PHP", "菲律宾比索"),
+        ("VND", "越南盾"),
+        ("SEK", "瑞典克朗"),
+        ("NOK", "挪威克朗"),
+        ("DKK", "丹麦克朗"),
+        ("PLN", "波兰兹罗提"),
+        ("CZK", "捷克克朗"),
+        ("HUF", "匈牙利福林"),
+        ("TRY", "土耳其里拉"),
+        ("BRL", "巴西雷亚尔"),
+        ("MXN", "墨西哥比索"),
+        ("ZAR", "南非兰特"),
+        ("AED", "阿联酋迪拉姆"),
+        ("SAR", "沙特里亚尔"),
+    ];
+    pub fn valid_code(code: &str) -> bool {
+        (2..=16).contains(&code.len())
+            && code.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            && code.bytes().any(|byte| byte.is_ascii_alphabetic())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ClipboardImageViewMode {
+    #[default]
+    Auto,
+    Fit,
+    Panorama,
+    Light,
+    Mini,
+    Compact,
+}
+impl ClipboardImageViewMode {
+    pub const ALL: [Self; 6] = [
+        Self::Auto,
+        Self::Fit,
+        Self::Panorama,
+        Self::Light,
+        Self::Mini,
+        Self::Compact,
+    ];
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Auto => "自动",
+            Self::Fit => "适应",
+            Self::Panorama => "全景",
+            Self::Light => "轻量",
+            Self::Mini => "迷你",
+            Self::Compact => "小巧",
+        }
+    }
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::Auto => "根据相邻可用位置最大化显示；超宽或超高图片可滚动查看。",
+            Self::Fit => "始终完整显示整张图片，不应用滚动或导航。",
+            Self::Panorama => "按原始像素 1:1 显示，超出浮窗的部分可滚动查看。",
+            Self::Light => "自动显示，浮窗短边不超过 800 屏幕像素。",
+            Self::Mini => "自动显示，浮窗短边不超过 500 屏幕像素。",
+            Self::Compact => "自动显示，浮窗短边不超过 300 屏幕像素。",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClipboardSettings {
     pub enabled: bool,
     pub capture_images: bool,
     pub capture_files: bool,
+    #[serde(default)]
+    pub image_view_mode: ClipboardImageViewMode,
     #[serde(default = "default_true")]
     pub link_detector_enabled: bool,
+    #[serde(default)]
+    pub currency_conversion: CurrencyConversionSettings,
     #[serde(default)]
     pub link_panel_position: LinkPanelPosition,
     #[serde(default = "default_link_panel_auto_hide_ms")]
@@ -823,7 +1080,9 @@ impl Default for ClipboardSettings {
             enabled: true,
             capture_images: true,
             capture_files: true,
+            image_view_mode: ClipboardImageViewMode::default(),
             link_detector_enabled: true,
+            currency_conversion: CurrencyConversionSettings::default(),
             link_panel_position: LinkPanelPosition::default(),
             link_panel_auto_hide_ms: 6_000,
             link_panel_auto_open_browser: false,
@@ -976,6 +1235,11 @@ fn default_clipboard_excluded_processes() -> Vec<String> {
 
 impl ClipboardSettings {
     pub fn normalize(&mut self) {
+        self.currency_conversion.target =
+            self.currency_conversion.target.trim().to_ascii_uppercase();
+        if !CurrencyConversionSettings::valid_code(&self.currency_conversion.target) {
+            self.currency_conversion.target = "CNY".into();
+        }
         // Capture is a single product capability now. Keep these legacy fields on the wire so
         // older configs remain readable, but do not leave users stuck with hidden disabled flags.
         self.enabled = true;
@@ -1132,19 +1396,13 @@ impl AppConfig {
         let mut config: Self = serde_json::from_str(&json)
             .with_context(|| format!("failed to parse {}", path.display()))?;
         config.normalize();
+        config.extensions.validate().map_err(anyhow::Error::new)?;
+        config.archive.validate().map_err(anyhow::Error::msg)?;
         Ok(config)
     }
 
     pub fn load_or_create(paths: &AppPaths) -> Result<Self> {
-        let path = paths.config_file();
-        if path.exists() {
-            Self::load_from(&path)
-        } else {
-            let config = Self::default();
-            fs::write(&path, serde_json::to_string_pretty(&config)?)
-                .with_context(|| format!("failed to write {}", path.display()))?;
-            Ok(config)
-        }
+        bundled_extensions::load_or_create(paths)
     }
 
     fn normalize(&mut self) {
@@ -1201,6 +1459,8 @@ impl AppConfig {
     /// temporary file, flushed to disk, then renamed over the target. A crash
     /// or power loss leaves either the old or the new file, never a torn one.
     pub fn save_to(&self, path: &Path) -> Result<()> {
+        self.extensions.validate().map_err(anyhow::Error::new)?;
+        self.archive.validate().map_err(anyhow::Error::msg)?;
         let json = serde_json::to_string_pretty(self)?;
         let file_name = path
             .file_name()
@@ -1235,11 +1495,19 @@ impl AppConfig {
     /// caller's fields are changed, and the merged result is returned so the
     /// caller can refresh its cache.
     ///
-    /// The file must already exist and parse. A missing file means something
-    /// removed or moved it; recreating it from defaults would silently reset
-    /// every section this caller does not own, so that is an error. A file that
-    /// cannot be parsed is likewise never silently replaced.
+    /// The file must already exist and parse. A missing or corrupt target
+    /// must never recreate unrelated settings from defaults.
     pub fn update_section(path: &Path, mutate: impl FnOnce(&mut Self)) -> Result<Self> {
+        Self::try_update_section(path, |config| {
+            mutate(config);
+            Ok(())
+        })
+    }
+
+    pub(crate) fn try_update_section(
+        path: &Path,
+        mutate: impl FnOnce(&mut Self) -> Result<()>,
+    ) -> Result<Self> {
         let lock_path = path.with_extension("json.lock");
         let lock = fs::OpenOptions::new()
             .create(true)
@@ -1251,13 +1519,19 @@ impl AppConfig {
             .with_context(|| format!("failed to lock {}", lock_path.display()))?;
         let result = (|| {
             let mut config = Self::load_from(path)?;
-            mutate(&mut config);
+            mutate(&mut config)?;
             config.normalize();
             config.save_to(path)?;
             Ok(config)
         })();
         let _ = FileExt::unlock(&lock);
         result
+    }
+
+    /// Validates operation presets and commits only the archive section.
+    pub fn update_archive_settings(path: &Path, settings: ArchiveSettings) -> Result<Self> {
+        settings.validate().map_err(anyhow::Error::msg)?;
+        Self::update_section(path, |config| config.archive = settings)
     }
 
     pub fn update_download_settings(path: &Path, mut settings: DownloadSettings) -> Result<Self> {
@@ -1307,7 +1581,17 @@ impl AppConfig {
         path: &Path,
         settings: QuickLaunchSettings,
     ) -> Result<Self> {
-        Self::update_section(path, |config| config.quick_launch = settings)
+        Self::try_update_section(path, |config| {
+            let manual = settings
+                .custom_commands
+                .iter()
+                .filter(|command| command.enabled)
+                .map(|command| command.keyword.clone())
+                .collect::<Vec<_>>();
+            config.extensions.validate_manual_keywords(&manual)?;
+            config.quick_launch = settings;
+            Ok(())
+        })
     }
 
     pub fn update_clipboard_settings(path: &Path, settings: ClipboardSettings) -> Result<Self> {
@@ -1390,147 +1674,6 @@ fn normalize_unique_paths(paths: &mut Vec<String>) {
         }
         !path.is_empty() && seen.insert(path.to_ascii_lowercase())
     });
-}
-
-impl AppPaths {
-    pub fn config_file(&self) -> PathBuf {
-        self.config_dir.join("config.json")
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ThemePreference {
-    Dark,
-    Light,
-    System,
-}
-
-pub struct SingleInstanceGuard {
-    _file: File,
-}
-
-impl SingleInstanceGuard {
-    pub fn acquire(paths: &AppPaths, process_name: &str) -> Result<Self> {
-        Self::acquire_with_timeout(paths, process_name, Duration::ZERO)
-    }
-
-    /// Returns whether another process currently holds the instance lock.
-    ///
-    /// This is intentionally separate from reading the hint file: a crashed
-    /// process can leave its last window handle behind after releasing the
-    /// lock, and that handle must not trigger a stale IPC summon.
-    pub fn is_locked(paths: &AppPaths, process_name: &str) -> bool {
-        let path = paths.cache_dir.join(format!("{process_name}.lock"));
-        let Ok(file) = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path)
-        else {
-            return true;
-        };
-        file.try_lock_exclusive().is_err()
-    }
-
-    /// Persists a fresh hint file for this instance. Callers update the
-    /// window handle after the main window exists; a second launch reads it
-    /// to summon the running instance instead of failing.
-    pub fn capture_hints(paths: &AppPaths, process_name: &str) {
-        let hint_path = paths.cache_dir.join(format!("{process_name}.hints"));
-        let _ = std::fs::write(hint_path, std::process::id().to_string());
-    }
-
-    /// Reads the running instance's main-window handle recorded by the
-    /// desktop at startup. Returns 0 when no valid hint exists.
-    pub fn read_main_window_handle(paths: &AppPaths, process_name: &str) -> i64 {
-        let hint_path = paths.cache_dir.join(format!("{process_name}.hints"));
-        std::fs::read_to_string(hint_path)
-            .ok()
-            .and_then(|text| text.trim().parse::<i64>().ok())
-            .unwrap_or(0)
-    }
-
-    /// Records the main window handle into the hint file.
-    pub fn record_main_window_handle(paths: &AppPaths, process_name: &str, handle: i64) {
-        let hint_path = paths.cache_dir.join(format!("{process_name}.hints"));
-        let _ = std::fs::write(hint_path, handle.to_string());
-    }
-
-    pub fn acquire_with_timeout(
-        paths: &AppPaths,
-        process_name: &str,
-        timeout: Duration,
-    ) -> Result<Self> {
-        let path = paths.cache_dir.join(format!("{process_name}.lock"));
-        let deadline = Instant::now() + timeout;
-        loop {
-            let file = OpenOptions::new()
-                .create(true)
-                .truncate(false)
-                .read(true)
-                .write(true)
-                .open(&path)
-                .with_context(|| format!("failed to open {}", path.display()))?;
-
-            if file.try_lock_exclusive().is_ok() {
-                return Ok(Self { _file: file });
-            }
-            if Instant::now() >= deadline {
-                bail!("another {process_name} instance is already running");
-            }
-            std::thread::sleep(Duration::from_millis(50));
-        }
-    }
-}
-
-pub type LogGuard = tracing_appender::non_blocking::WorkerGuard;
-
-pub fn init_file_logging(paths: &AppPaths, process_name: &str) -> Result<LogGuard> {
-    delete_expired_logs(
-        &paths.log_dir,
-        process_name,
-        Duration::from_secs(14 * 24 * 60 * 60),
-    );
-    let appender = tracing_appender::rolling::daily(&paths.log_dir, format!("{process_name}.log"));
-    let (writer, guard) = tracing_appender::non_blocking(appender);
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_ansi(false)
-        .with_writer(writer)
-        .try_init()
-        .map_err(|error| anyhow::anyhow!("failed to initialize logging: {error}"))?;
-    Ok(guard)
-}
-
-fn delete_expired_logs(log_dir: &Path, process_name: &str, retention: Duration) {
-    let prefix = format!("{process_name}.log.");
-    let Some(cutoff) = SystemTime::now().checked_sub(retention) else {
-        return;
-    };
-    let Ok(entries) = fs::read_dir(log_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_process_log = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with(&prefix));
-        if !is_process_log {
-            continue;
-        }
-        let is_expired = entry
-            .metadata()
-            .and_then(|metadata| metadata.modified())
-            .is_ok_and(|modified| modified < cutoff);
-        if is_expired {
-            let _ = fs::remove_file(path);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -1741,6 +1884,9 @@ mod tests {
             SystemSettings {
                 start_on_login_silently: true,
                 close_to_tray: false,
+                theme: ThemePreference::Dark,
+                notification_position: NotificationPosition::TopCenter,
+                notification_duration_seconds: default_notification_duration(),
             },
         )
         .expect("update global settings");
@@ -1857,6 +2003,7 @@ mod tests {
                 open_directory_on_completion: true,
                 task_removal_deletes_file: true,
                 taskbar_progress_overlay: DownloadTaskbarProgressOverlaySettings::default(),
+                background_speed_limit: Default::default(),
             },
         )
         .expect("update only download settings");
@@ -2246,6 +2393,65 @@ mod tests {
     }
 
     #[test]
+    fn image_modes_default_legacy_and_all_choices_roundtrip() {
+        let mut legacy = serde_json::to_value(ClipboardSettings::default()).expect("settings JSON");
+        legacy
+            .as_object_mut()
+            .expect("object")
+            .remove("image_view_mode");
+        assert_eq!(
+            serde_json::from_value::<ClipboardSettings>(legacy)
+                .expect("legacy")
+                .image_view_mode,
+            ClipboardImageViewMode::Auto
+        );
+        for mode in ClipboardImageViewMode::ALL {
+            let settings = ClipboardSettings {
+                image_view_mode: mode,
+                ..Default::default()
+            };
+            assert_eq!(
+                serde_json::from_str::<ClipboardSettings>(
+                    &serde_json::to_string(&settings).expect("encode")
+                )
+                .expect("decode")
+                .image_view_mode,
+                mode
+            );
+        }
+    }
+    #[test]
+    fn image_modes_field_merge_preserves_other_sections_and_latest_storage() {
+        let directory = unique_config_dir("image-mode");
+        let path = directory.join("config.json");
+        AppConfig::default().save_to(&path).expect("seed");
+        AppConfig::update_section(&path, |config| {
+            config.clipboard.storage_directory = "synthetic-latest-root".into();
+            config.download.default_connection_limit = 24;
+        })
+        .expect("other owners");
+        AppConfig::update_section(&path, |config| {
+            config.clipboard.image_view_mode = ClipboardImageViewMode::Mini
+        })
+        .expect("view mode only");
+        let config = AppConfig::load_from(&path).expect("reload");
+        assert_eq!(
+            config.clipboard.image_view_mode,
+            ClipboardImageViewMode::Mini
+        );
+        assert_eq!(config.clipboard.storage_directory, "synthetic-latest-root");
+        assert_eq!(config.download.default_connection_limit, 24);
+        fs::write(&path, b"{broken").expect("corrupt fixture");
+        assert!(
+            AppConfig::update_section(&path, |config| config.clipboard.image_view_mode =
+                ClipboardImageViewMode::Fit)
+            .is_err()
+        );
+        assert_eq!(fs::read(&path).expect("unchanged"), b"{broken");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
     fn saving_a_stale_cached_copy_through_update_section_keeps_other_modules_changes() {
         let directory = unique_config_dir("merge");
         let path = directory.join("config.json");
@@ -2490,5 +2696,235 @@ mod tests {
         assert!(!desktop_log.exists());
         assert!(other_log.exists());
         fs::remove_dir_all(directory).expect("remove test directory");
+    }
+}
+
+#[cfg(test)]
+mod installed_feedback_config_tests {
+    use super::*;
+
+    #[test]
+    fn legacy_theme_and_background_limit_default_and_normalize() {
+        let mut value = serde_json::to_value(AppConfig::default()).expect("config JSON");
+        value["system"]
+            .as_object_mut()
+            .expect("system object")
+            .remove("theme");
+        value["download"]
+            .as_object_mut()
+            .expect("download object")
+            .remove("background_speed_limit");
+        let mut config: AppConfig = serde_json::from_value(value).expect("legacy configuration");
+        assert_eq!(config.system.theme, ThemePreference::Dark);
+        assert!(!config.download.background_speed_limit.enabled);
+        assert_eq!(
+            config.download.background_speed_limit.bytes_per_second,
+            1024 * 1024
+        );
+        config.download.background_speed_limit.bytes_per_second = 0;
+        config.download.normalize();
+        assert_eq!(config.download.background_speed_limit.bytes_per_second, 1);
+    }
+
+    #[test]
+    fn theme_and_background_policy_section_updates_preserve_each_other() {
+        let nonce = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("test clock")
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-feedback-config-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).expect("isolated directory");
+        let path = directory.join("config.json");
+        AppConfig::default()
+            .save_to(&path)
+            .expect("initial configuration");
+        let stale = AppConfig::load_from(&path).expect("stale cache");
+        let mut system = stale.system.clone();
+        system.theme = ThemePreference::Light;
+        AppConfig::update_system_settings(&path, system).expect("persist theme");
+        let mut download = stale.download;
+        download.background_speed_limit = BackgroundDownloadLimitSettings {
+            enabled: true,
+            bytes_per_second: 2048,
+        };
+        let merged =
+            AppConfig::update_download_settings(&path, download).expect("persist download policy");
+        assert_eq!(merged.system.theme, ThemePreference::Light);
+        assert!(merged.download.background_speed_limit.enabled);
+        let mut system = merged.system;
+        system.theme = ThemePreference::System;
+        let merged = AppConfig::update_system_settings(&path, system).expect("persist System mode");
+        assert_eq!(
+            merged.download.background_speed_limit.bytes_per_second,
+            2048
+        );
+        assert_eq!(
+            AppConfig::load_from(&path).expect("reopen").system.theme,
+            ThemePreference::System
+        );
+        std::fs::remove_dir_all(directory).expect("clean isolated directory");
+    }
+}
+
+#[cfg(test)]
+mod notification_position_tests {
+    use super::*;
+    #[test]
+    fn six_notification_positions_round_trip_and_legacy_defaults_to_bottom_right() {
+        let legacy: SystemSettings = serde_json::from_str("{}").expect("legacy system settings");
+        assert_eq!(
+            legacy.notification_position,
+            NotificationPosition::BottomRight
+        );
+        for position in NotificationPosition::ALL {
+            let settings = SystemSettings {
+                notification_position: position,
+                ..Default::default()
+            };
+            let encoded = serde_json::to_vec(&settings).expect("encode position");
+            assert_eq!(
+                serde_json::from_slice::<SystemSettings>(&encoded)
+                    .expect("decode position")
+                    .notification_position,
+                position
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod notification_duration_tests {
+    use super::*;
+    #[test]
+    fn dwell_duration_legacy_default_and_bounded_roundtrip() {
+        assert_eq!(
+            serde_json::from_str::<SystemSettings>("{}")
+                .expect("legacy")
+                .notification_duration_seconds,
+            6
+        );
+        for (raw, expected) in [(0, 1), (1, 1), (15, 15), (60, 60), (999, 60)] {
+            let settings: SystemSettings =
+                serde_json::from_str(&format!("{{\"notification_duration_seconds\":{raw}}}"))
+                    .expect("duration");
+            assert_eq!(settings.notification_duration_seconds, expected);
+            assert_eq!(
+                serde_json::from_slice::<SystemSettings>(
+                    &serde_json::to_vec(&settings).expect("encode")
+                )
+                .expect("decode"),
+                settings
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod currency_settings_tests {
+    use super::*;
+    #[test]
+    fn currency_tool_settings_legacy_default_and_section_merge_keep_other_fields() {
+        let mut value = serde_json::to_value(AppConfig::default()).expect("fixture");
+        value["clipboard"]
+            .as_object_mut()
+            .expect("section")
+            .remove("currency_conversion");
+        let legacy: AppConfig = serde_json::from_value(value).expect("legacy");
+        assert_eq!(
+            legacy.clipboard.currency_conversion,
+            CurrencyConversionSettings::default()
+        );
+        let dir = std::env::temp_dir().join(format!(
+            "nxtools-currency-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("fixture directory");
+        let path = dir.join("config.json");
+        legacy.save_to(&path).expect("seed");
+        AppConfig::update_section(&path, |config| {
+            config.system.close_to_tray = false;
+            config.clipboard.storage_directory = "owned-root".into();
+        })
+        .expect("other owner");
+        AppConfig::update_section(&path, |config| {
+            config.clipboard.currency_conversion = CurrencyConversionSettings {
+                enabled: true,
+                target: " cad ".into(),
+            };
+        })
+        .expect("currency save");
+        let saved = AppConfig::load_from(&path).expect("reopen");
+        assert_eq!(saved.clipboard.currency_conversion.target, "CAD");
+        assert!(saved.clipboard.currency_conversion.enabled);
+        assert!(!saved.system.close_to_tray);
+        assert_eq!(saved.clipboard.storage_directory, "owned-root");
+        fs::remove_dir_all(dir).expect("cleanup currency fixture");
+    }
+}
+
+#[cfg(test)]
+mod currency_catalog_settings_tests {
+    use super::*;
+    #[test]
+    fn currency_catalog_dynamic_codes_survive_normalization_and_roundtrip() {
+        for code in [" usdt ", "1inch", "XAU", "newcoin", "KRW"] {
+            let mut config = AppConfig::default();
+            config.clipboard.currency_conversion.target = code.into();
+            config.normalize();
+            assert_eq!(
+                config.clipboard.currency_conversion.target,
+                code.trim().to_ascii_uppercase()
+            );
+            let encoded = serde_json::to_vec(&config).expect("encode");
+            let mut saved: AppConfig = serde_json::from_slice(&encoded).expect("roundtrip");
+            saved.normalize();
+            assert_eq!(
+                saved.clipboard.currency_conversion.target,
+                config.clipboard.currency_conversion.target
+            );
+        }
+        for code in ["x", "123", "bad code", "../USD", "💵"] {
+            let mut config = AppConfig::default();
+            config.clipboard.currency_conversion.target = code.into();
+            config.normalize();
+            assert_eq!(config.clipboard.currency_conversion.target, "CNY");
+        }
+    }
+}
+
+#[cfg(test)]
+mod presentation_settings_tests {
+    use super::*;
+    #[test]
+    fn row_spacing_default_legacy_and_both_styles_roundtrip() {
+        let mut legacy = serde_json::to_value(QuickLaunchSettings::default()).expect("settings");
+        legacy.as_object_mut().expect("object").remove("row_style");
+        assert_eq!(
+            serde_json::from_value::<QuickLaunchSettings>(legacy)
+                .expect("legacy")
+                .row_style,
+            QuickLaunchRowStyle::Separated
+        );
+        for style in QuickLaunchRowStyle::ALL {
+            let settings = QuickLaunchSettings {
+                row_style: style,
+                ..Default::default()
+            };
+            assert_eq!(
+                serde_json::from_str::<QuickLaunchSettings>(
+                    &serde_json::to_string(&settings).expect("encode")
+                )
+                .expect("decode")
+                .row_style,
+                style
+            );
+        }
     }
 }

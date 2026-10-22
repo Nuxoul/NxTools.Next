@@ -1,0 +1,14 @@
+# Incremental persistence boundary
+
+## Smallest gap and ownership
+Actual chain is USN poll -> apply batch -> IndexerService::poll_journals -> persist_system_delta -> persist_delta -> rewrite all cumulative overlay rows into temp/sync/atomic replace. Both CursorAdvanced and Updated use it. Native poll marks content_changed from records nonempty, even if effective index is unchanged. Indexing own cache/temp replacements generates further journal traffic. Measured installed delta replacement confirms write amplification; no claim of physical-disk rate from process counters alone.
+
+## Bounded fix
+Keep immediate save-before-memory-publication and existing persistence error/retry ownership. Replace production full-overlay writes per poll with checksummed append transactions of only changed replacements/tombstones/resets and matching cursor/count. Store a shared per-base durable checkpoint to diff against last successful commit; clones share this durable owner, not another index. Read old version3delta; first new write atomically migrates once. New journal loader replays complete validated transactions only; incomplete tail is truncated to last committed boundary before retry. Periodic atomic checkpoint bounds journal amplification. Base format3 and service/search wire unchanged. No wholesale USN/search/controller rewrite.
+One bounded review added verified recovery guards: new128byteheader checksum binds immutable base-version filename/mount/originalbasecursor/rowcount; startup compares complete base+delta effectivecursors only within selected journal before cleanup; missing/short backing files rebuild an atomic current checkpoint. Regression first reproduced all3issues. Complete-write/no-sync residue is truncated using unchanged successful owner before latestretry. No extra review or broader architecture change.
+
+## Expected files
+mft/cache.rs and cohesive cache/journal.rs own format/durability; mft.rs owns associated durable-checkpoint identity with snapshot clones and equality for effective no-op comparison; usn.rs only corrects effective-change classification if measured/tested; tests at real temp cache and maintenance seam; performance gate extends current CPU-only idle evidence with I/O without removing tuple/restart checks. Reference note/spec/task record verified sources and acceptance limits.
+
+## Non-goals
+No disabled indexing, blanket file exclusion, query/rank change, native APIs outside existing Indexer owner, extra service/worker/runtime, dependencies, packaging/install/service mutation or user-data access effects. Preserve current last-good/persistence-fault handling and no high-frequency logs. Listary native engine unavailable; inspect managed boundary and supplied SwiftList source before implementation and update reference note with new verified entries.

@@ -1,0 +1,10 @@
+# Notification natural sizing and configurable dwell
+
+User asks to fix notification clipping and investigate official fixed5s. Explicit card answer approves a minimal local dependency patch supporting1–60s/default6s. Current session only; no delegation,implicit commit/archive/package/install/product/service/live user-data effects.
+
+## Requirements
+Preserve official Kit0.7.1 Notification/NotificationList/ToastStack/card/countdown/whole-group remaining-time hover/focus pause/close/animation and existing bounded business center/native passive screen popup. Short ordinary/title+multiline currency text grows naturally; never clip a third line because of the former54DIP combined content cap. Keep336card/360nativewidth,400nativeheight security budget and six-position/source-monitor/current-generation native readback. Extremelylong content scrolls only at actual bounded capacity; actions/close stay reachable; three expanded cards fit. No fullscreentransparentcatcher or hide/reveal resize.
+Restore editable global notification_duration_seconds through existing atomic Apply/Cancel,range1–60/default6. Save/startup publish only new notification duration; existing mounted notification remaining-time must not reset from config/position changes. Persistent progress remains persistent. Small local released gpui-component0.7.1 patch adds only optional duration builder and forwards to original ToastOptions,unchanged upstream default5 for unconfigured users. No registry source edits,dependencyupgrade,parallel clock or custom replacement card.
+
+## Acceptance
+Red-capable actual production multiline/currency bounds and native sizing tests; long/3stack/action containment and scrolling;1/6/60s official expiry/hover remaining-time/replacement/persistent tests. Production global setting actualInput/pointer+keyboard/range/invalid/ApplyCancel/reopen/savefailure/default and startup. Strict affected lint/workspacecheck/scopedfmt/source/document/license/snapshotdiff and fullDesktop. Nativephysical/DPI/reader/installed/visual approval separate.

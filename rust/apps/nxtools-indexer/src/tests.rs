@@ -278,6 +278,8 @@ fn rediscovering_volumes_keeps_the_last_good_snapshot_searchable() {
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     };
     assert_eq!(service.search_snapshot(&search_request).len(), 1);
@@ -314,6 +316,8 @@ fn a_completed_mft_snapshot_is_searchable_through_the_process_protocol() {
                 preferred_directory: None,
                 include_files: true,
                 include_directories: true,
+                retain_kinds_apart: false,
+                ..Default::default()
             },
         },
     )));
@@ -448,6 +452,8 @@ fn process_search_uses_the_shared_query_language() {
                 preferred_directory: None,
                 include_files: true,
                 include_directories: true,
+                retain_kinds_apart: false,
+                ..Default::default()
             },
         },
     )));
@@ -572,6 +578,8 @@ fn index_settings_limit_volumes_and_filter_excluded_paths_at_the_service_boundar
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
 
@@ -587,6 +595,8 @@ fn index_settings_limit_volumes_and_filter_excluded_paths_at_the_service_boundar
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
     assert_eq!(bypassed.len(), 2);
@@ -631,6 +641,8 @@ fn name_search_falls_back_when_filtered_headroom_would_underfill_the_page() {
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
 
@@ -755,22 +767,25 @@ fn a_published_usn_overlay_is_visible_to_subsequent_searches() {
         ))
     });
 
-    let maintenance = service.poll_journals(&|snapshot| {
-        let updated = usn::apply_journal_batch(
-            snapshot,
-            usn::JournalBatch {
-                journal_id: 17,
-                lowest_valid_usn: 90,
-                next_usn: 110,
-                records: vec![
-                    usn::UsnRecord::delete(11),
-                    usn::UsnRecord::upsert(12, 10, "new.txt", false),
-                ],
-            },
-        )
-        .map_err(anyhow::Error::from)?;
-        Ok(usn::JournalPoll::Updated(updated))
-    });
+    let maintenance = service.poll_journals_with_persistence(
+        &|snapshot| {
+            let updated = usn::apply_journal_batch(
+                snapshot,
+                usn::JournalBatch {
+                    journal_id: 17,
+                    lowest_valid_usn: 90,
+                    next_usn: 110,
+                    records: vec![
+                        usn::UsnRecord::delete(11),
+                        usn::UsnRecord::upsert(12, 10, "new.txt", false),
+                    ],
+                },
+            )
+            .map_err(anyhow::Error::from)?;
+            Ok(usn::JournalPoll::Updated(updated))
+        },
+        &|_| Ok(()),
+    );
 
     assert!(matches!(maintenance, JournalMaintenance::Updated));
     assert_eq!(service.status.drives[0].next_usn, Some(110));
@@ -785,6 +800,8 @@ fn a_published_usn_overlay_is_visible_to_subsequent_searches() {
                     preferred_directory: None,
                     include_files: true,
                     include_directories: true,
+                    retain_kinds_apart: false,
+                    ..Default::default()
                 },
             })
             .is_empty()
@@ -798,6 +815,8 @@ fn a_published_usn_overlay_is_visible_to_subsequent_searches() {
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
     assert_eq!(results.len(), 1);
@@ -827,8 +846,10 @@ fn an_oversized_overlay_is_published_before_background_compaction() {
     service.status.phase = IndexPhase::Ready;
     service.snapshots = Arc::new(vec![snapshot.clone()]);
 
-    let maintenance =
-        service.poll_journals(&move |_| Ok(usn::JournalPoll::Updated(snapshot.clone())));
+    let maintenance = service.poll_journals_with_persistence(
+        &move |_| Ok(usn::JournalPoll::Updated(snapshot.clone())),
+        &|_| Ok(()),
+    );
 
     assert!(matches!(
         maintenance,
@@ -843,6 +864,8 @@ fn an_oversized_overlay_is_published_before_background_compaction() {
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
     assert_eq!(results.len(), 1);
@@ -858,14 +881,17 @@ fn one_volume_poll_failure_does_not_starve_a_healthy_volume() {
         Ok(test_snapshot(mount_point, Some(17), Some(100), Vec::new()))
     });
 
-    let maintenance = service.poll_journals(&|snapshot| {
-        if snapshot.mount_point.eq_ignore_ascii_case(r"C:\") {
-            anyhow::bail!("simulated volume fault");
-        }
-        let mut updated = snapshot.clone();
-        updated.next_usn = Some(110);
-        Ok(usn::JournalPoll::CursorAdvanced(updated))
-    });
+    let maintenance = service.poll_journals_with_persistence(
+        &|snapshot| {
+            if snapshot.mount_point.eq_ignore_ascii_case(r"C:\") {
+                anyhow::bail!("simulated volume fault");
+            }
+            let mut updated = snapshot.clone();
+            updated.next_usn = Some(110);
+            Ok(usn::JournalPoll::CursorAdvanced(updated))
+        },
+        &|_| Ok(()),
+    );
 
     assert!(matches!(maintenance, JournalMaintenance::StatusChanged));
     assert_eq!(service.status.drives[1].next_usn, Some(110));
@@ -901,15 +927,18 @@ fn journal_recovery_scopes_rebuild_to_the_affected_volume() {
         Ok(test_snapshot(mount_point, Some(17), Some(100), Vec::new()))
     });
 
-    let maintenance = service.poll_journals(&|snapshot| {
-        if snapshot.mount_point.eq_ignore_ascii_case(r"C:\") {
-            Ok(usn::JournalPoll::RebuildRequired("expired cursor".into()))
-        } else {
-            let mut updated = snapshot.clone();
-            updated.next_usn = Some(110);
-            Ok(usn::JournalPoll::CursorAdvanced(updated))
-        }
-    });
+    let maintenance = service.poll_journals_with_persistence(
+        &|snapshot| {
+            if snapshot.mount_point.eq_ignore_ascii_case(r"C:\") {
+                Ok(usn::JournalPoll::RebuildRequired("expired cursor".into()))
+            } else {
+                let mut updated = snapshot.clone();
+                updated.next_usn = Some(110);
+                Ok(usn::JournalPoll::CursorAdvanced(updated))
+            }
+        },
+        &|_| Ok(()),
+    );
 
     assert!(matches!(
         maintenance,
@@ -944,11 +973,14 @@ fn scheduled_journal_rebuild_is_maintenance_not_a_user_facing_error() {
         ))
     });
 
-    let maintenance = service.poll_journals(&|_| {
-        Ok(usn::JournalPoll::RebuildRequired(
-            "bounded directory expansion requested a rebuild".into(),
-        ))
-    });
+    let maintenance = service.poll_journals_with_persistence(
+        &|_| {
+            Ok(usn::JournalPoll::RebuildRequired(
+                "bounded directory expansion requested a rebuild".into(),
+            ))
+        },
+        &|_| Ok(()),
+    );
 
     assert!(matches!(
         maintenance,
@@ -987,8 +1019,10 @@ fn one_poll_schedules_compaction_for_every_oversized_volume() {
         .collect::<Vec<_>>();
     service.snapshots = Arc::new(snapshots);
 
-    let maintenance =
-        service.poll_journals(&|snapshot| Ok(usn::JournalPoll::CursorAdvanced(snapshot.clone())));
+    let maintenance = service.poll_journals_with_persistence(
+        &|snapshot| Ok(usn::JournalPoll::CursorAdvanced(snapshot.clone())),
+        &|_| Ok(()),
+    );
 
     assert!(matches!(
         maintenance,
@@ -1015,7 +1049,8 @@ fn a_restored_oversized_overlay_retries_compaction_without_new_journal_records()
     }
     service.snapshots = Arc::new(vec![snapshot]);
 
-    let maintenance = service.poll_journals(&|_| Ok(usn::JournalPoll::NoChange));
+    let maintenance =
+        service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| Ok(()));
 
     assert!(matches!(
         maintenance,
@@ -1088,6 +1123,8 @@ fn background_snapshot_maintenance_keeps_the_last_good_index_searchable() {
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
     assert_eq!(results.len(), 1);
@@ -1114,11 +1151,14 @@ fn healthy_journal_polling_does_not_hide_an_initial_volume_build_failure() {
             .is_some_and(|message| message.contains("initial MFT failure"))
     );
 
-    let maintenance = service.poll_journals(&|snapshot| {
-        let mut updated = snapshot.clone();
-        updated.next_usn = Some(110);
-        Ok(usn::JournalPoll::CursorAdvanced(updated))
-    });
+    let maintenance = service.poll_journals_with_persistence(
+        &|snapshot| {
+            let mut updated = snapshot.clone();
+            updated.next_usn = Some(110);
+            Ok(usn::JournalPoll::CursorAdvanced(updated))
+        },
+        &|_| Ok(()),
+    );
 
     assert!(matches!(maintenance, JournalMaintenance::CursorAdvanced));
     assert_eq!(service.status.drives[1].next_usn, Some(110));
@@ -1222,6 +1262,8 @@ fn the_service_loop_publishes_usn_changes_before_the_next_search() {
                 preferred_directory: None,
                 include_files: true,
                 include_directories: true,
+                retain_kinds_apart: false,
+                ..Default::default()
             },
         },
     )));
@@ -1344,6 +1386,8 @@ fn file_search_context_can_return_only_directories() {
             preferred_directory: None,
             include_files: false,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     });
 
@@ -1595,6 +1639,8 @@ fn the_real_coordinator_publishes_only_the_latest_equal_generation_retry() {
                     preferred_directory: None,
                     include_files: true,
                     include_directories: true,
+                    retain_kinds_apart: false,
+                    ..Default::default()
                 },
             },
         )))
@@ -1878,6 +1924,8 @@ fn synthetic_index_scale_baseline() {
             preferred_directory: None,
             include_files: true,
             include_directories: true,
+            retain_kinds_apart: false,
+            ..Default::default()
         },
     };
     let settings = IndexSettings::default();
@@ -1918,5 +1966,1015 @@ fn synthetic_index_scale_baseline() {
     println!(
         "NXTOOLS_SCALE_BASELINE {{\"entries\":{entry_count},\"build_ms\":{build_ms},\"query_p50_us\":{},\"query_p95_us\":{},\"incremental_us\":{incremental_us},\"working_set_bytes\":{working_set_bytes}}}",
         query_us[3], query_us[6]
+    );
+}
+
+#[test]
+fn r8_search_matches_frozen_row_scan_with_delta_filters_and_cancellation() {
+    let mut entries = (0..600)
+        .map(|index| {
+            let name = [
+                "report.txt",
+                "my-report.txt",
+                "re-port.txt",
+                "计算器.txt",
+                "Kelvin.txt",
+                "notes.txt",
+            ][index % 6];
+            let mut entry =
+                test_entry(format!(r"C:\Work\d{index:04}\{name}"), name, index % 7 == 0);
+            entry.identity = Some(mft::MftIdentity {
+                file_reference: 10 + index as u64,
+                parent_reference: 5,
+            });
+            entry
+        })
+        .collect::<Vec<_>>();
+    entries.push(test_entry(r"D:\Outside\report.txt", "report.txt", false));
+    let mut snapshot = test_snapshot(r"C:\", Some(17), Some(100), entries);
+    snapshot.overlay.deleted.insert(10);
+    snapshot.overlay.replacements.insert(
+        11,
+        test_entry(r"C:\Work\renamed-report.txt", "renamed-report.txt", false),
+    );
+    snapshot.overlay.replacements.insert(
+        900,
+        test_entry(r"C:\Work\xyz-new.txt", "xyz-new.txt", false),
+    );
+    let snapshots = [snapshot];
+    let settings = IndexSettings {
+        indexed_volumes: vec![r"C:\".into()],
+        excluded_paths: vec![r"C:\Work\d0002".into()],
+    };
+    for text in [
+        "r",
+        "re",
+        "report",
+        "rpt",
+        "'report",
+        "^report",
+        "txt$",
+        "'kelvin",
+        "计",
+        "report | notes",
+        "report !my",
+        "report txt",
+        r"C:\Work\report",
+        "::Work report",
+        "xyz",
+        "'xyz",
+        "*'report",
+    ] {
+        for limit in [1, 20, 200] {
+            for files_only in [false, true] {
+                let request = IndexSearchRequest {
+                    generation: 1,
+                    query: text.into(),
+                    limit,
+                    context: IndexSearchContext {
+                        include_files: true,
+                        include_directories: !files_only,
+                        ..IndexSearchContext::default()
+                    },
+                };
+                let query = FileQuery::parse(text);
+                // The pre-R8 hot scan is preserved separately as the comparison oracle.
+                let expected = if query.is_name_only() {
+                    legacy_search_name_only_snapshots_while(
+                        &snapshots,
+                        &settings,
+                        &request,
+                        &query,
+                        limit,
+                        &|| true,
+                    )
+                } else {
+                    search_full_path_snapshots_while(
+                        &snapshots,
+                        &settings,
+                        &request,
+                        &query,
+                        None,
+                        limit,
+                        &|| true,
+                    )
+                };
+                assert_eq!(
+                    search_snapshots_while(&snapshots, &settings, &request, || true),
+                    expected,
+                    "{text}, limit={limit}, files_only={files_only}"
+                );
+                assert!(
+                    search_snapshots_while(&snapshots, &settings, &request, || false).is_none()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r8_group_fanout_preserves_row_headroom_ties_and_cold_filter_underfill() {
+    // Interleaved names: a later group can beat the earlier group's tail on
+    // row ties, and the final group has a strictly better name score.
+    let entries = (0..2400)
+        .map(|row| {
+            let name = ["a-needle.txt", "b-needle.txt", "needle.txt"][row % 3];
+            test_entry(format!(r"C:\Work\d{row:04}\{name}"), name, row < 2000)
+        })
+        .collect();
+    let snapshots = [test_snapshot(r"C:\", Some(17), Some(100), entries)];
+    for raw in ["needle", "'needle", "txt$", "needle | missing"] {
+        for limit in [1, 20, 200] {
+            for files_only in [false, true] {
+                let request = IndexSearchRequest {
+                    generation: 1,
+                    query: raw.into(),
+                    limit,
+                    context: IndexSearchContext {
+                        include_files: true,
+                        include_directories: !files_only,
+                        ..IndexSearchContext::default()
+                    },
+                };
+                let query = FileQuery::parse(raw);
+                let settings = IndexSettings::default();
+                let expected = legacy_search_name_only_snapshots_while(
+                    &snapshots,
+                    &settings,
+                    &request,
+                    &query,
+                    limit,
+                    &|| true,
+                );
+                assert_eq!(
+                    search_snapshots_while(&snapshots, &settings, &request, || true),
+                    expected,
+                    "{raw}, limit={limit}, files_only={files_only}"
+                );
+                let checks = AtomicUsize::new(0);
+                assert!(
+                    search_snapshots_while(&snapshots, &settings, &request, || {
+                        checks.fetch_add(1, AtomicOrdering::Relaxed) < 10
+                    })
+                    .is_none(),
+                    "fanout cancellation for {raw}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r8_selective_scan_reuses_groups_and_finds_delta_only_trigrams() {
+    let mut entries = (0..2000)
+        .map(|id| {
+            test_entry(
+                format!(r"C:\Work\file-{id:05}.txt"),
+                format!("file-{id:05}.txt"),
+                false,
+            )
+        })
+        .collect::<Vec<_>>();
+    for id in 0..100 {
+        entries.push(test_entry(
+            format!(r"C:\Work\d{id}\rare-needle.txt"),
+            "rare-needle.txt",
+            false,
+        ));
+    }
+    entries.push(test_entry(r"C:\Work\Kelvin.txt", "Kelvin.txt", false));
+    let mut snapshot = test_snapshot(r"C:\", Some(17), Some(100), entries);
+    snapshot.overlay.replacements.insert(
+        9000,
+        test_entry(r"C:\Work\xyz-only-delta.txt", "xyz-only-delta.txt", false),
+    );
+    let data = snapshot.search_data.as_ref().expect("auxiliary built");
+    assert_eq!(data.groups.len(), 2002);
+    let query = FileQuery::parse("'needle");
+    assert_eq!(
+        data.candidates(&query)
+            .expect("selective candidate path")
+            .len(),
+        2
+    );
+    let cloned = snapshot.clone();
+    assert!(Arc::ptr_eq(
+        snapshot.search_data.as_ref().expect("data"),
+        cloned.search_data.as_ref().expect("shared data")
+    ));
+    for raw in [
+        "'needle",
+        "'xyz",
+        "'kelvin",
+        "'file",
+        "f",
+        "fie",
+        "'needle | file",
+        "'needle' | file",
+        "^rare | file",
+        "'needle !old",
+        "'needle txt",
+    ] {
+        if raw.contains(' ') {
+            assert!(data.candidates(&FileQuery::parse(raw)).is_none(), "{raw}");
+        }
+        let request = IndexSearchRequest {
+            generation: 1,
+            query: raw.into(),
+            limit: 200,
+            context: IndexSearchContext::default(),
+        };
+        let query = FileQuery::parse(raw);
+        let snapshots = std::slice::from_ref(&snapshot);
+        assert_eq!(
+            search_snapshots_while(snapshots, &IndexSettings::default(), &request, || true),
+            legacy_search_name_only_snapshots_while(
+                snapshots,
+                &IndexSettings::default(),
+                &request,
+                &query,
+                200,
+                &|| true
+            ),
+            "{raw}"
+        );
+        let checks = AtomicUsize::new(0);
+        assert!(
+            search_snapshots_while(snapshots, &IndexSettings::default(), &request, || {
+                checks.fetch_add(1, AtomicOrdering::Relaxed) < 1
+            })
+            .is_none(),
+            "mid-scan cancellation for {raw}"
+        );
+    }
+}
+
+// Safe, small synthetic production benchmark; not ignored and no real volume/service IO.
+#[test]
+fn r8_synthetic_search_benchmark() {
+    let entries = (0..20_000)
+        .map(|id| {
+            let name = format!("file-{:05}.txt", id % 2000);
+            test_entry(format!(r"C:\bench\d{id:05}\{name}"), name, false)
+        })
+        .collect();
+    let started = Instant::now();
+    let snapshot = test_snapshot(r"C:\", Some(17), Some(100), entries);
+    let build_us = started.elapsed().as_micros();
+    let auxiliary_payload_bytes = snapshot
+        .search_data
+        .as_ref()
+        .expect("benchmark auxiliary")
+        .payload_capacity_bytes();
+    for raw in ["f", "file", "'00123", "'file", "fle", "计", "file | notes"] {
+        let request = IndexSearchRequest {
+            generation: 1,
+            query: raw.into(),
+            limit: 20,
+            context: IndexSearchContext::default(),
+        };
+        let query = FileQuery::parse(raw);
+        let snapshots = std::slice::from_ref(&snapshot);
+        let settings = IndexSettings::default();
+        let expected = legacy_search_name_only_snapshots_while(
+            snapshots,
+            &settings,
+            &request,
+            &query,
+            20,
+            &|| true,
+        );
+        let mut old_us = Vec::new();
+        let mut new_us = Vec::new();
+        for _ in 0..9 {
+            let started = Instant::now();
+            let old = legacy_search_name_only_snapshots_while(
+                snapshots,
+                &settings,
+                &request,
+                &query,
+                20,
+                &|| true,
+            );
+            old_us.push(started.elapsed().as_micros());
+            let started = Instant::now();
+            let new = search_snapshots_while(snapshots, &settings, &request, || true);
+            new_us.push(started.elapsed().as_micros());
+            assert_eq!(old, expected);
+            assert_eq!(new, expected);
+        }
+        old_us.sort_unstable();
+        new_us.sort_unstable();
+        println!(
+            "R8_SYNTHETIC rows=20000 groups=2000 query={raw:?} build_us={build_us} auxiliary_payload_bytes={auxiliary_payload_bytes} old_p50_us={} old_p95_us={} new_p50_us={} new_p95_us={}",
+            old_us[4], old_us[8], new_us[4], new_us[8]
+        );
+    }
+}
+
+fn persistence_fixture_service() -> IndexerService {
+    let mut service = IndexerService::from_volume_descriptors([
+        VolumeDescriptor::new(r"C:\", "NTFS"),
+        VolumeDescriptor::new(r"D:\", "NTFS"),
+    ]);
+    service.rebuild_with(|mount_point| {
+        Ok(test_snapshot(
+            mount_point,
+            Some(17),
+            Some(100),
+            vec![test_entry(
+                format!("{mount_point}kept.txt"),
+                "kept.txt",
+                false,
+            )],
+        ))
+    });
+    service
+}
+
+fn persistence_fixture_search(service: &IndexerService) {
+    assert_eq!(
+        service
+            .search_snapshot(&IndexSearchRequest {
+                generation: 1,
+                query: "kept".into(),
+                limit: 20,
+                context: IndexSearchContext {
+                    directory: None,
+                    preferred_directory: None,
+                    include_files: true,
+                    include_directories: true,
+                    retain_kinds_apart: false,
+                    ..Default::default()
+                },
+            })
+            .len(),
+        2,
+        "last-good snapshots remain searchable"
+    );
+}
+
+#[test]
+fn persistence_fault_cursor_is_visible_until_current_snapshot_is_saved() {
+    let mut service = persistence_fixture_service();
+    service.poll_journals_with_persistence(
+        &|snapshot| {
+            let mut updated = snapshot.clone();
+            updated.next_usn = Some(110);
+            Ok(usn::JournalPoll::CursorAdvanced(updated))
+        },
+        &|_| Err(std::io::Error::from_raw_os_error(5).into()),
+    );
+    assert_eq!(service.status.phase, IndexPhase::Ready);
+    assert_eq!(
+        service.status.drives[0].next_usn,
+        Some(110),
+        "original memory-publication policy retained"
+    );
+    persistence_fixture_search(&service);
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("persistence")),
+        "cursor persistence failure must be visible"
+    );
+    service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| {
+        Err(std::io::Error::from_raw_os_error(5).into())
+    });
+    assert!(
+        service.status.last_error.is_some(),
+        "healthy idle poll cannot erase unsaved cursor"
+    );
+    let saves = std::cell::Cell::new(0);
+    let result =
+        service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|snapshot| {
+            assert_eq!(snapshot.next_usn, Some(110));
+            saves.set(saves.get() + 1);
+            Ok(())
+        });
+    assert_eq!(
+        saves.get(),
+        2,
+        "retry saves both current per-volume snapshots"
+    );
+    assert!(matches!(result, JournalMaintenance::StatusChanged));
+    assert!(service.status.last_error.is_none());
+}
+
+#[test]
+fn persistence_fault_delta_survives_rebuild_reason_and_other_volume_success() {
+    let mut service = persistence_fixture_service();
+    service.poll_journals_with_persistence(
+        &|snapshot| Ok(usn::JournalPoll::Updated(snapshot.clone())),
+        &|snapshot| {
+            if snapshot.mount_point == r"C:\" {
+                Err(std::io::Error::from_raw_os_error(112).into())
+            } else {
+                Ok(())
+            }
+        },
+    );
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("persistence"))
+    );
+    let rebuild = service.poll_journals_with_persistence(
+        &|snapshot| {
+            if snapshot.mount_point == r"C:\" {
+                Ok(usn::JournalPoll::RebuildRequired(
+                    "bounded maintenance reason".into(),
+                ))
+            } else {
+                Ok(usn::JournalPoll::CursorAdvanced(snapshot.clone()))
+            }
+        },
+        &|_| Ok(()),
+    );
+    assert!(matches!(
+        rebuild,
+        JournalMaintenance::RebuildRequired { .. }
+    ));
+    let error = service
+        .status
+        .last_error
+        .as_deref()
+        .expect("unsaved delta retained");
+    assert!(error.contains("persistence"));
+    assert!(
+        !error.contains("bounded maintenance reason"),
+        "maintenance reason is not user failure"
+    );
+    service.rediscover_from_volume_descriptors([
+        VolumeDescriptor::new(r"C:\", "NTFS"),
+        VolumeDescriptor::new(r"D:\", "NTFS"),
+    ]);
+    assert!(
+        service.status.last_error.is_some(),
+        "rediscovery retains persistence fault"
+    );
+    persistence_fixture_search(&service);
+    service.rebuild_with(|mount_point| {
+        Ok(test_snapshot(
+            mount_point,
+            Some(17),
+            Some(120),
+            vec![test_entry(
+                format!("{mount_point}kept.txt"),
+                "kept.txt",
+                false,
+            )],
+        ))
+    });
+    assert!(
+        service.status.last_error.is_some(),
+        "successful scan alone is not delta persistence acknowledgement"
+    );
+    service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| Ok(()));
+    assert!(service.status.last_error.is_none());
+}
+
+#[test]
+fn persistence_fault_settings_retry_same_value_preserves_scope_and_clears_only_after_save() {
+    let mut service = persistence_fixture_service();
+    service.persist_settings = true;
+    let desired = IndexSettings {
+        indexed_volumes: vec![r"C:\".into(), r"D:\".into()],
+        excluded_paths: vec![r"C:\Private".into()],
+    };
+    service.apply_settings_with_persistence(desired.clone(), &|_| {
+        Err(std::io::Error::from_raw_os_error(5).into())
+    });
+    assert_eq!(
+        service.settings, desired,
+        "original live settings application order retained"
+    );
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("settings persistence"))
+    );
+    persistence_fixture_search(&service);
+    service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| Ok(()));
+    assert!(
+        service.status.last_error.is_some(),
+        "journal success is not settings-save success"
+    );
+    let saves = std::cell::Cell::new(0);
+    service.apply_settings_with_persistence(desired.clone(), &|settings| {
+        assert_eq!(settings, &desired);
+        saves.set(saves.get() + 1);
+        Ok(())
+    });
+    assert_eq!(
+        saves.get(),
+        1,
+        "same desired settings retries prior failed save"
+    );
+    assert!(service.status.last_error.is_none());
+}
+
+#[test]
+fn persistence_fault_settings_survives_rediscovery_and_successful_snapshot_build() {
+    let mut service = persistence_fixture_service();
+    service.persist_settings = true;
+    let desired = IndexSettings {
+        indexed_volumes: vec![r"C:\".into(), r"D:\".into()],
+        excluded_paths: Vec::new(),
+    };
+    service.apply_settings_with_persistence(desired, &|_| {
+        Err(std::io::Error::from_raw_os_error(5).into())
+    });
+    assert!(service.status.last_error.is_some());
+    service.rediscover_from_volume_descriptors([
+        VolumeDescriptor::new(r"C:\", "NTFS"),
+        VolumeDescriptor::new(r"D:\", "NTFS"),
+    ]);
+    service.rebuild_with(|mount_point| {
+        Ok(test_snapshot(
+            mount_point,
+            Some(17),
+            Some(120),
+            vec![test_entry(
+                format!("{mount_point}kept.txt"),
+                "kept.txt",
+                false,
+            )],
+        ))
+    });
+    assert!(
+        service.status.last_error.is_some(),
+        "unrelated build does not confirm settings persistence"
+    );
+    persistence_fixture_search(&service);
+}
+
+#[test]
+fn persistence_fault_repeated_failure_is_quiet_and_per_volume_recovery_is_independent() {
+    let mut service = persistence_fixture_service();
+    service.poll_journals_with_persistence(
+        &|snapshot| Ok(usn::JournalPoll::CursorAdvanced(snapshot.clone())),
+        &|_| Err(std::io::Error::from_raw_os_error(5).into()),
+    );
+    let first_error = service.status.last_error.clone();
+    let unchanged = service
+        .poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| {
+            Err(std::io::Error::from_raw_os_error(5).into())
+        });
+    assert!(matches!(unchanged, JournalMaintenance::NoChange));
+    assert_eq!(service.status.last_error, first_error);
+    let recovered =
+        service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|snapshot| {
+            if snapshot.mount_point == r"C:\" {
+                Ok(())
+            } else {
+                Err(std::io::Error::from_raw_os_error(5).into())
+            }
+        });
+    assert!(matches!(recovered, JournalMaintenance::StatusChanged));
+    let error = service
+        .status
+        .last_error
+        .as_deref()
+        .expect("D persistence fault retained");
+    assert!(!error.contains(&normalized_mount_key(r"C:\")));
+    assert!(error.contains(&normalized_mount_key(r"D:\")));
+    persistence_fixture_search(&service);
+}
+
+#[test]
+fn persistence_fault_settings_success_does_not_clear_delta_failure() {
+    let mut service = persistence_fixture_service();
+    service.poll_journals_with_persistence(
+        &|snapshot| Ok(usn::JournalPoll::Updated(snapshot.clone())),
+        &|_| Err(std::io::Error::from_raw_os_error(5).into()),
+    );
+    service.persist_settings = true;
+    service.apply_settings_with_persistence(
+        IndexSettings {
+            indexed_volumes: vec![r"C:\".into(), r"D:\".into()],
+            excluded_paths: Vec::new(),
+        },
+        &|_| Ok(()),
+    );
+    assert!(
+        service
+            .status
+            .last_error
+            .as_deref()
+            .is_some_and(|error| error.contains("index persistence"))
+    );
+    service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| Ok(()));
+    assert!(service.status.last_error.is_none());
+}
+
+#[test]
+fn persistence_fault_real_settings_write_keeps_old_bytes_then_recovers_same_draft() {
+    let directory = tempfile::tempdir().expect("isolated settings directory");
+    let path = directory.path().join("settings.json");
+    let original = IndexSettings::default();
+    settings::persist_index_settings(&path, &original).expect("last-good settings fixture");
+    let original_bytes = std::fs::read(&path).expect("last-good bytes");
+    let blocked_temporary = path.with_extension("json.tmp");
+    std::fs::create_dir(&blocked_temporary).expect("obstruct temporary file");
+    let mut service = persistence_fixture_service();
+    service.persist_settings = true;
+    let desired = IndexSettings {
+        indexed_volumes: vec![r"C:\".into(), r"D:\".into()],
+        excluded_paths: vec![r"D:\Private".into()],
+    };
+    service.apply_settings_with_persistence(desired.clone(), &|value| {
+        settings::persist_index_settings(&path, value)
+    });
+    assert_eq!(
+        std::fs::read(&path).expect("preserved old file"),
+        original_bytes
+    );
+    let error = service
+        .status
+        .last_error
+        .as_deref()
+        .expect("real write failure visible");
+    assert!(error.contains("settings persistence"));
+    assert!(
+        !error.contains(directory.path().to_string_lossy().as_ref()),
+        "status does not leak backing storage path"
+    );
+    persistence_fixture_search(&service);
+    std::fs::remove_dir(&blocked_temporary).expect("recover fixture storage");
+    service.apply_settings_with_persistence(desired.clone(), &|value| {
+        settings::persist_index_settings(&path, value)
+    });
+    assert!(service.status.last_error.is_none());
+    assert_eq!(
+        serde_json::from_slice::<IndexSettings>(&std::fs::read(&path).expect("committed settings"))
+            .expect("settings JSON"),
+        desired
+    );
+}
+
+#[test]
+fn persistence_fault_status_reply_exposes_failure_and_recovery_with_request_identity() {
+    let mut service = persistence_fixture_service();
+    service.poll_journals_with_persistence(
+        &|snapshot| Ok(usn::JournalPoll::CursorAdvanced(snapshot.clone())),
+        &|_| Err(std::io::Error::from_raw_os_error(5).into()),
+    );
+    let request = Envelope::new(Message::IndexerCommand(IndexerCommand::UpdateSettings(
+        service.settings.clone(),
+    )));
+    let responses = service.handle(request.clone());
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, Some(request.id));
+    assert!(
+        matches!(&responses[0].message, Message::IndexerEvent(IndexerEvent::Status(status)) if status.phase == IndexPhase::Ready && status.last_error.is_some())
+    );
+    service.poll_journals_with_persistence(&|_| Ok(usn::JournalPoll::NoChange), &|_| Ok(()));
+    let responses = service.handle(request);
+    assert!(
+        matches!(&responses[0].message, Message::IndexerEvent(IndexerEvent::Status(status)) if status.last_error.is_none())
+    );
+}
+
+#[test]
+fn w1_pinyin_search_survives_masks_groups_delta_scopes_and_cancellation() {
+    let mut base = (0..160)
+        .map(|index| {
+            let name = ["报告.txt", "年度报告.docx", "baogao.txt", "其他.txt"][index % 4];
+            let mut entry = test_entry(format!(r"C:\Work\d{index:04}\{name}"), name, false);
+            entry.identity = Some(mft::MftIdentity {
+                file_reference: 10 + index as u64,
+                parent_reference: 5,
+            });
+            entry
+        })
+        .collect::<Vec<_>>();
+    base.push(test_entry(r"C:\Work\银行卡.txt", "银行卡.txt", false));
+    let mut snapshot = test_snapshot(r"C:\", Some(17), Some(100), base);
+    snapshot.overlay.deleted.insert(10);
+    snapshot
+        .overlay
+        .replacements
+        .insert(14, test_entry(r"C:\Work\other.txt", "other.txt", false));
+    snapshot.overlay.replacements.insert(
+        900,
+        test_entry(r"C:\Work\重庆报告.txt", "重庆报告.txt", false),
+    );
+    let snapshots = [snapshot];
+    let settings = IndexSettings {
+        indexed_volumes: vec![r"C:\".into()],
+        excluded_paths: vec![r"C:\Work\d0008".into()],
+    };
+    for text in [
+        "baogao",
+        "bgao",
+        "bg",
+        "yinhang",
+        "chongqing",
+        "baogao txt",
+        "c: baogao ::Work",
+        "baogao | notes",
+        "baogao !年度",
+    ] {
+        let query = FileQuery::parse(text);
+        let request = IndexSearchRequest {
+            generation: 1,
+            query: text.into(),
+            limit: 200,
+            context: IndexSearchContext {
+                include_files: true,
+                include_directories: true,
+                ..IndexSearchContext::default()
+            },
+        };
+        let actual = search_snapshots_while(&snapshots, &settings, &request, || true)
+            .expect("current search");
+        assert!(!actual.is_empty(), "lost all pinyin results: {text}");
+        let expected = if query.is_name_only() {
+            legacy_search_name_only_snapshots_while(
+                &snapshots,
+                &settings,
+                &request,
+                &query,
+                200,
+                &|| true,
+            )
+        } else {
+            search_full_path_snapshots_while(
+                &snapshots,
+                &settings,
+                &request,
+                &query,
+                None,
+                200,
+                &|| true,
+            )
+        }
+        .expect("full scan");
+        assert_eq!(actual, expected, "{text}");
+        assert!(
+            actual
+                .iter()
+                .all(|item| item.path != r"C:\Work\d0000\报告.txt"
+                    && item.path != r"C:\Work\d0004\报告.txt"
+                    && item.path != r"C:\Work\d0008\报告.txt")
+        );
+        if text == "baogao" {
+            assert!(
+                actual
+                    .iter()
+                    .any(|item| item.path == r"C:\Work\重庆报告.txt")
+            );
+        }
+        assert!(search_snapshots_while(&snapshots, &settings, &request, || false).is_none());
+    }
+}
+
+#[test]
+fn w2_homophone_snapshot_fallback_preserves_normal_priority_scope_and_cancel() {
+    let snapshots = [test_snapshot(
+        r"C:\",
+        Some(1),
+        Some(20),
+        vec![
+            test_entry(r"C:\Work\年度报告.docx", "年度报告.docx", false),
+            test_entry(r"C:\Private\年度报告.docx", "年度报告.docx", false),
+        ],
+    )];
+    let settings = IndexSettings {
+        indexed_volumes: vec![r"C:\".into()],
+        excluded_paths: vec![r"C:\Private".into()],
+    };
+    let request = IndexSearchRequest {
+        generation: 1,
+        query: "年度报高".into(),
+        limit: 20,
+        context: IndexSearchContext {
+            include_files: true,
+            include_directories: true,
+            allow_homophone_fallback: true,
+            ..Default::default()
+        },
+    };
+    let results =
+        search_snapshots_while(&snapshots, &settings, &request, || true).expect("current");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].path, r"C:\Work\年度报告.docx");
+    let ordinary_only = IndexSearchRequest {
+        context: IndexSearchContext {
+            allow_homophone_fallback: false,
+            ..request.context.clone()
+        },
+        ..request.clone()
+    };
+    assert!(
+        search_snapshots_while(&snapshots, &settings, &ordinary_only, || true)
+            .expect("ordinary-only request")
+            .is_empty(),
+        "caller with local ordinary hits must suppress indexed approximate work"
+    );
+    assert!(search_snapshots_while(&snapshots, &settings, &request, || false).is_none());
+    let normal = [test_snapshot(
+        r"C:\",
+        Some(1),
+        Some(20),
+        vec![
+            test_entry(r"C:\Work\年度报高.txt", "年度报高.txt", false),
+            test_entry(r"C:\Work\年度报告.docx", "年度报告.docx", false),
+        ],
+    )];
+    let results = search_snapshots_while(&normal, &settings, &request, || true).expect("normal");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "年度报高.txt");
+    for text in ["年度报高 !报告", "'年度报高", "d: 年度报高 ::Work"] {
+        let request = IndexSearchRequest {
+            query: text.into(),
+            ..request.clone()
+        };
+        assert!(
+            search_snapshots_while(&snapshots, &settings, &request, || true)
+                .expect("scope")
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn w3_mixed_candidate_limit_retains_useful_directory_behind_many_files() {
+    let mut entries = (0..900)
+        .map(|index| test_entry(format!(r"C:\Work\obj\{index:04}\report"), "report", false))
+        .collect::<Vec<_>>();
+    entries.push(test_entry(r"C:\Work\report", "report", true));
+    let snapshots = [test_snapshot(r"C:\", Some(1), Some(20), entries)];
+    let request = IndexSearchRequest {
+        generation: 1,
+        query: "report".into(),
+        limit: 20,
+        context: IndexSearchContext {
+            include_files: true,
+            include_directories: true,
+            retain_kinds_apart: true,
+            ..Default::default()
+        },
+    };
+    let settings = IndexSettings::default();
+    let results =
+        search_snapshots_while(&snapshots, &settings, &request, || true).expect("current");
+    assert!(
+        results.iter().any(|item| item.is_directory),
+        "mixed headroom must retain a directory candidate for final rank"
+    );
+    assert!(
+        results.len() <= 40,
+        "at most the bounded per-kind candidate budgets"
+    );
+    let files = IndexSearchRequest {
+        context: IndexSearchContext {
+            include_directories: false,
+            ..request.context.clone()
+        },
+        ..request.clone()
+    };
+    assert!(
+        search_snapshots_while(&snapshots, &settings, &files, || true)
+            .expect("files")
+            .iter()
+            .all(|item| !item.is_directory)
+    );
+    assert!(search_snapshots_while(&snapshots, &settings, &request, || false).is_none());
+}
+
+#[test]
+fn w3_normal_match_in_one_kind_never_adds_homophones_in_other_kind() {
+    let snapshots = [test_snapshot(
+        r"C:\",
+        Some(1),
+        Some(20),
+        vec![
+            test_entry(r"C:\Work\年度报高.txt", "年度报高.txt", false),
+            test_entry(r"C:\Work\年度报告", "年度报告", true),
+        ],
+    )];
+    let request = IndexSearchRequest {
+        generation: 1,
+        query: "年度报高".into(),
+        limit: 20,
+        context: IndexSearchContext {
+            include_files: true,
+            include_directories: true,
+            retain_kinds_apart: true,
+            allow_homophone_fallback: true,
+            ..Default::default()
+        },
+    };
+    let results = search_snapshots_while(&snapshots, &IndexSettings::default(), &request, || true)
+        .expect("current");
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].name, "年度报高.txt");
+}
+
+#[test]
+fn w4_classifier_budget_failure_is_correlated_through_search_worker() {
+    let mut entries = (0..4097)
+        .map(|index| {
+            test_entry(
+                format!(r"C:\Cache{index}\CACHEDIR.TAG"),
+                "CACHEDIR.TAG",
+                false,
+            )
+        })
+        .collect::<Vec<_>>();
+    for index in 0..300 {
+        let mut entry = test_entry(format!(r"C:\Human{index}\notes.txt"), "notes.txt", false);
+        entry.modified_at_unix_ms = Some(1);
+        entries.push(entry);
+    }
+    let request = Envelope::new(Message::IndexerCommand(IndexerCommand::Search(
+        IndexSearchRequest {
+            generation: 44,
+            query: "recent:".into(),
+            limit: 20,
+            context: IndexSearchContext {
+                include_files: true,
+                recent_modified: true,
+                ..Default::default()
+            },
+        },
+    )));
+    let request_id = request.id;
+    let job = SearchJob {
+        task_id: 7,
+        request,
+        snapshots: Arc::new(vec![test_snapshot(r"C:\", Some(1), Some(20), entries)]),
+        settings: IndexSettings::default(),
+    };
+    let snapshots = job.snapshots.clone();
+    let (sender, receiver) = mpsc::sync_channel(10);
+    run_snapshot_search(job, &AtomicU64::new(7), &sender);
+    let RuntimeEvent::SearchCompleted { task_id, response } =
+        receiver.recv().expect("terminal failure")
+    else {
+        panic!("wrong result");
+    };
+    assert_eq!(task_id, 7);
+    assert_eq!(response.correlation_id, Some(request_id));
+    assert!(
+        matches!(response.message, Message::IndexerEvent(IndexerEvent::SearchFailed(failure))
+        if failure.generation == 44 && failure.reason == "recent_classifier_budget")
+    );
+    let ordinary = Envelope::new(Message::IndexerCommand(IndexerCommand::Search(
+        IndexSearchRequest {
+            generation: (1 << 63) | 45,
+            query: "recent:".into(),
+            limit: 20,
+            context: IndexSearchContext {
+                include_files: true,
+                ..Default::default()
+            },
+        },
+    )));
+    let ordinary_id = ordinary.id;
+    let ordinary_query =
+        if let Message::IndexerCommand(IndexerCommand::Search(search)) = &ordinary.message {
+            search.clone()
+        } else {
+            unreachable!("search")
+        };
+    assert!(
+        search_snapshots_while(
+            &snapshots,
+            &IndexSettings::default(),
+            &ordinary_query,
+            || true
+        )
+        .expect("ordinary prefix is not recent mode")
+        .is_empty()
+    );
+    run_snapshot_search(
+        SearchJob {
+            task_id: 7,
+            request: ordinary,
+            snapshots,
+            settings: IndexSettings::default(),
+        },
+        &AtomicU64::new(7),
+        &sender,
+    );
+    let RuntimeEvent::SearchCompleted { response, .. } =
+        receiver.recv().expect("ordinary terminal batch")
+    else {
+        panic!("search terminal");
+    };
+    assert_eq!(response.correlation_id, Some(ordinary_id));
+    assert!(
+        matches!(response.message, Message::IndexerEvent(IndexerEvent::SearchBatch(batch))
+        if batch.generation == (1 << 63) | 45 && batch.complete && batch.items.is_empty()),
+        "default/file-dialog request must finish as ordinary search, not recent budget failure"
     );
 }

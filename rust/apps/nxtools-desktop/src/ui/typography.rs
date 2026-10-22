@@ -13,7 +13,15 @@ pub(crate) const LINE_HEIGHT_PAGE_TITLE: f32 = 22.0;
 pub(crate) const LINE_HEIGHT_TITLE: f32 = 20.0;
 pub(crate) const LINE_HEIGHT_BODY: f32 = 18.0;
 pub(crate) const LINE_HEIGHT_LABEL: f32 = 16.0;
+#[cfg(test)]
 pub(crate) const LINE_HEIGHT_META: f32 = 14.0;
+
+// Workbench roles are opt-in. Compact/task/summon windows retain their measured
+// typography above rather than inheriting a global size increase.
+pub(crate) const TEXT_WORKBENCH_BODY: f32 = 13.0;
+pub(crate) const LINE_HEIGHT_WORKBENCH_BODY: f32 = 20.0;
+pub(crate) const TEXT_WORKBENCH_SUPPORT: f32 = 12.0;
+pub(crate) const LINE_HEIGHT_WORKBENCH_SUPPORT: f32 = 18.0;
 
 #[cfg(test)]
 mod tests {
@@ -42,5 +50,13 @@ mod tests {
             [22.0, 20.0, 18.0, 16.0, 14.0]
         );
         assert_eq!(TEXT_STATUS_GLYPH, 28.0);
+        assert_eq!(
+            [TEXT_WORKBENCH_BODY, LINE_HEIGHT_WORKBENCH_BODY],
+            [13.0, 20.0]
+        );
+        assert_eq!(
+            [TEXT_WORKBENCH_SUPPORT, LINE_HEIGHT_WORKBENCH_SUPPORT],
+            [12.0, 18.0]
+        );
     }
 }

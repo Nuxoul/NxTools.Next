@@ -15,6 +15,16 @@ internal static class StaDialogRunner
         Exception? Failure,
         bool Cancelled);
 
+    // The caller already owns a bounded STA slot; keep it until the real modal call exits.
+    internal static WindowsCommandResult RunInline(Func<WindowsCommandResult> showDialog, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested) return CancelledResult();
+        var threadId = GetCurrentThreadId();
+        using var registration = cancellationToken.Register(() => RequestDialogClose(threadId));
+        try { var result = showDialog(); return cancellationToken.IsCancellationRequested ? CancelledResult() : result; }
+        catch (Exception failure) { return FailureResult(failure); }
+    }
+
     public static WindowsCommandResult Run(
         string threadName,
         Func<WindowsCommandResult> showDialog)
@@ -38,9 +48,9 @@ internal static class StaDialogRunner
         var cancellationRequested = 0;
         var thread = new Thread(() =>
         {
-            nativeThreadId = GetCurrentThreadId();
             try
             {
+                nativeThreadId = GetCurrentThreadId();
                 if (cancellationToken.IsCancellationRequested)
                 {
                     Interlocked.Exchange(ref cancellationRequested, 1);
@@ -122,7 +132,7 @@ internal static class StaDialogRunner
 
         if (!completion.Task.IsCompleted)
         {
-            return new WindowsCommandResult(false, "Windows dialog did not return a result.");
+            return new WindowsCommandResult(false, "Windows dialog did not return a result.", NativeErrorCode: 31);
         }
 
         var threadResult = completion.Task.GetAwaiter().GetResult();
@@ -131,7 +141,7 @@ internal static class StaDialogRunner
             return CancelledResult();
         }
         return threadResult.Failure is null
-            ? threadResult.Result ?? new WindowsCommandResult(false, "Windows dialog did not return a result.")
+            ? threadResult.Result ?? new WindowsCommandResult(false, "Windows dialog did not return a result.", NativeErrorCode: 31)
             : FailureResult(threadResult.Failure);
     }
 
@@ -204,10 +214,15 @@ internal static class StaDialogRunner
     }
 
     private static WindowsCommandResult CancelledResult() =>
-        new(false, "Windows dialog operation was cancelled.");
+        new(false, "Windows dialog operation was cancelled.", NativeErrorCode: 995);
 
     private static WindowsCommandResult FailureResult(Exception error) =>
-        new(false, error.Message, NativeErrorCode: error.HResult);
+        new(false, error is EntryPointNotFoundException or DllNotFoundException
+                ? "Windows dialog native entry point unavailable."
+                : error is System.Runtime.InteropServices.ExternalException
+                    ? "Windows dialog native presentation failed."
+                    : "Windows dialog STA operation failed.",
+            NativeErrorCode: error is System.ComponentModel.Win32Exception native ? native.NativeErrorCode : error.HResult);
 
     private delegate bool EnumThreadWindowsCallback(IntPtr window, IntPtr parameter);
 

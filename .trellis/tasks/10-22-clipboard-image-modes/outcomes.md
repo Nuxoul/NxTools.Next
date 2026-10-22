@@ -1,0 +1,7 @@
+# Clipboard image modes result — 2026-10-22
+
+Implementedserde-defaultAuto plusFit/Panorama/Light/Mini/Compact,official32DIPSettingsdropdown/fullcopy andoriginalfield-onlyatomicmerge. Failurekeepsoldlivemode/lateststorage/othersections; no capture/indexer/serviceconfiguration. Originalpreviewdismissretiresgeneration andsamepassiveHWNDreusedonnextshow.
+
+Sourcepixels/DIP/actualDPI andvisible_bounds(rcWork)drivegeometry:Fitcomplete/no-scroll,Panorama1sourcepx=1devicepx,Autoaspect-awareoverflow,no unnecessarysmallimageupscale,shortwholewindowedge800/500/300devicepxcapsincludingchrome. Onlyoverflowaxisscrolls; item/modeswitchreset,Fitoffsetclears. Sourceimage/decodebudget/listimage190/file62/iconhueunchanged.
+
+Actualgeometryred3→green;Desktopimage_modes5/5 incllongimagescrolltoend/Fitreset andactualSettingsdurable/failure/noIPC;Coreimage2/2,fullCore73/Desktop1002passed. OriginalpassivepreviewnativeQuick/Clipboard2eachat96DPIpassedbutdoesnotcertify sixmodesphysicalscroll/mixedDPI matrix. Noformalruntime/userdata/package. [Parent](../10-22-ui-experience-refresh/outcomes.md).

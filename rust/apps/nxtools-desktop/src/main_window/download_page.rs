@@ -1,6 +1,18 @@
 use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
-use crate::ui::metrics::{DETAIL_TAB_HEIGHT, ICON_GLYPH_SMALL, PROGRESS_TRACK_HEIGHT};
+use crate::ui::metrics::PROGRESS_TRACK_HEIGHT;
+use crate::ui::typography::{
+    LINE_HEIGHT_WORKBENCH_BODY, LINE_HEIGHT_WORKBENCH_SUPPORT, TEXT_WORKBENCH_BODY,
+    TEXT_WORKBENCH_SUPPORT,
+};
+use gpui_kit::component::description_list::{DescriptionItem, DescriptionList};
+use gpui_kit::component::input::{
+    InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputGroupButton,
+};
+use gpui_kit::component::marker::{Marker, MarkerAlignment, MarkerContent, MarkerVariant};
+use gpui_kit::component::progress::Progress;
+use gpui_kit::component::tab::{Tab, TabBar};
+use gpui_kit::component::toolbar::{Toolbar, ToolbarGroup};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum DownloadTaskFilter {
@@ -134,6 +146,8 @@ pub(crate) struct DownloadContextCapabilities {
     pub(crate) queue_bottom: bool,
     pub(crate) can_remove: bool,
     pub(crate) single_artifact: Option<DownloadTaskId>,
+    pub(crate) selected_known_bytes: u128,
+    pub(crate) selected_unknown_sizes: usize,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -264,6 +278,9 @@ pub(crate) fn download_failure_summary(error: &DownloadFault) -> &'static str {
         DownloadFaultCode::FileInUse => "目标文件正在被其他程序使用",
         DownloadFaultCode::Cancelled => "下载已取消",
         DownloadFaultCode::Unavailable => "下载服务暂时不可用，请稍后重试",
+        DownloadFaultCode::ResolutionRequired => {
+            "下载地址解析已失效，请明确重试解析或跳过扩展后重试"
+        }
         DownloadFaultCode::Internal => "下载发生内部错误，请重试",
     }
 }
@@ -630,6 +647,15 @@ pub(crate) fn download_context_capabilities(
         .filter_map(|task_id| tasks.iter().find(|task| task.task.id() == *task_id))
         .collect::<Vec<_>>();
     DownloadContextCapabilities {
+        selected_known_bytes: selected_tasks
+            .iter()
+            .filter_map(|task| task.total_bytes)
+            .map(u128::from)
+            .sum(),
+        selected_unknown_sizes: selected_tasks
+            .iter()
+            .filter(|task| task.total_bytes.is_none())
+            .count(),
         resume_targets: selected_tasks
             .iter()
             .filter(|task| {
@@ -942,7 +968,24 @@ impl MainWindow {
             }),
         )
         .size_full()
-        .track_scroll(self.download_list_scroll.clone());
+        .track_scroll(&self.download_list_scroll);
+        let filter_width = DownloadTaskFilter::ALL
+            .into_iter()
+            .map(|filter| {
+                let label = format!(
+                    "{} {}",
+                    filter.label(),
+                    download_filter_count_label(counts.get(filter))
+                );
+                label
+                    .chars()
+                    .map(|ch| if ch.is_ascii() { 8.0_f32 } else { 14.0_f32 })
+                    .sum::<f32>()
+                    + 24.0
+            })
+            .fold(DOWNLOAD_FILTER_SEGMENTED_WIDTH / 6.0, f32::max)
+            .ceil()
+            * 6.0;
         let filter_segments = segmented_control(
             theme,
             "download-filter-segments",
@@ -997,102 +1040,72 @@ impl MainWindow {
         let settings_download_application = self.downloads.clone();
         let schedule_download_application = self.downloads.clone();
         let new_download_application = download_application.clone();
+        let search_group = InputGroup::new("download-search-group")
+            .input(Input::new(&search_input).aria_label("搜索下载任务"))
+            .addon(
+                InputGroupAddon::new("download-search-icon").child(Icon::new(MaterialIcon::Search)),
+            )
+            .when(!search_query.is_empty(), |group| {
+                group.addon(
+                    InputGroupAddon::new("download-search-clear-addon")
+                        .align(InputGroupAddonAlignment::InlineEnd)
+                        .child(
+                            InputGroupButton::new("download-search-clear")
+                                .icon(Icon::new(MaterialIcon::Close))
+                                .accessibility_label("清除搜索")
+                                .tooltip("清除搜索")
+                                .on_click(move |_, window, cx| {
+                                    clear_search_input
+                                        .update(cx, |input, cx| input.replace_all("", window, cx));
+                                }),
+                        ),
+                )
+            });
         let download_header_trailing = div()
             .debug_selector(|| "download-module-header-actions".into())
             .flex()
             .items_center()
-            .gap(px(SPACING_4))
+            .gap_1()
             .child(
                 div()
-                    .id("download-search")
                     .debug_selector(|| "download-search".into())
                     .w(px(188.0))
-                    .h(px(CONTROL_HEIGHT_ACTION))
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .bg(theme.surface)
-                    .px(px(SPACING_8))
-                    .flex()
-                    .items_center()
-                    .gap(px(SPACING_4))
-                    .child(
-                        Icon::new(MaterialIcon::Search)
-                            .size(px(ICON_GLYPH_SMALL))
-                            .text_color(theme.text_muted),
-                    )
-                    .child(
-                        div().min_w_0().flex_1().child(
-                            Input::new(&search_input)
-                                .appearance(false)
-                                .bordered(false)
-                                .focus_bordered(false)
-                                .xsmall(),
-                        ),
-                    )
-                    .when(!search_query.is_empty(), |search| {
-                        search.child(
-                            div()
-                                .debug_selector(|| "download-search-clear".into())
-                                .size(px(18.0))
-                                .flex_none()
-                                .child(
-                                    Button::new("download-search-clear")
-                                        .icon(Icon::new(MaterialIcon::Close))
-                                        .tooltip("清除搜索")
-                                        .xsmall()
-                                        .compact()
-                                        .ghost()
-                                        .size_full()
-                                        .on_click(move |_, window, cx| {
-                                            clear_search_input.update(cx, |input, cx| {
-                                                input.set_value("", window, cx);
-                                            });
-                                        }),
-                                ),
+                    .child(search_group),
+            )
+            .child(
+                Toolbar::new("download-header-toolbar").content(
+                    ToolbarGroup::new("download-header-command-group")
+                        .label("下载操作")
+                        .child(
+                            icon_action("download-settings", MaterialIcon::Settings, "下载设置")
+                                .ghost()
+                                .on_click(move |_, _, cx| {
+                                    let application = settings_download_application.clone();
+                                    cx.defer(move |cx| {
+                                        let _ = application.update(cx, |application, cx| {
+                                            application.open_settings_window(cx)
+                                        });
+                                    });
+                                }),
                         )
-                    }),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "download-settings-action".into())
-                    .h(px(CONTROL_HEIGHT_ACTION))
-                    .child(
-                        icon_action("download-settings", MaterialIcon::Settings, "下载设置")
-                            .ghost()
-                            .on_click(move |_, _, cx| {
-                                let application = settings_download_application.clone();
-                                cx.defer(move |cx| {
-                                    let _ = application.update(cx, |application, cx| {
-                                        application.open_settings_window(cx);
+                        .child(
+                            icon_action("download-schedule", MaterialIcon::History, "下载计划")
+                                .ghost()
+                                .on_click(move |_, _, cx| {
+                                    let application = schedule_download_application.clone();
+                                    cx.defer(move |cx| {
+                                        let _ = application.update(cx, |application, cx| {
+                                            application.open_schedule_window(cx)
+                                        });
                                     });
-                                });
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "download-schedule-action".into())
-                    .h(px(CONTROL_HEIGHT_ACTION))
-                    .child(
-                        icon_action("download-schedule", MaterialIcon::History, "下载计划")
-                            .ghost()
-                            .on_click(move |_, _, cx| {
-                                let application = schedule_download_application.clone();
-                                cx.defer(move |cx| {
-                                    let _ = application.update(cx, |application, cx| {
-                                        application.open_schedule_window(cx);
-                                    });
-                                });
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "download-new-task-action".into())
-                    .h(px(CONTROL_HEIGHT_ACTION))
-                    .child(
-                        labelled_icon_action("download-new-task", MaterialIcon::Add, "新建下载")
+                                }),
+                        )
+                        .child(
+                            labelled_icon_action(
+                                "download-new-task",
+                                MaterialIcon::Add,
+                                "新建下载",
+                            )
                             .custom(crate::ui::components::action::primary_button_variant(
                                 theme, cx,
                             ))
@@ -1100,11 +1113,12 @@ impl MainWindow {
                                 let application = new_download_application.clone();
                                 cx.defer(move |cx| {
                                     let _ = application.update(cx, |application, cx| {
-                                        application.open_new_download_window(cx);
+                                        application.open_new_download_window(cx)
                                     });
                                 });
                             }),
-                    ),
+                        ),
+                ),
             )
             .into_any_element();
         div()
@@ -1121,6 +1135,7 @@ impl MainWindow {
                     filter_summary.clone(),
                 )
                 .trailing(download_header_trailing)
+                .metadata_monospace()
                 .render(theme),
             )
             .child(
@@ -1136,10 +1151,10 @@ impl MainWindow {
                     .items_center()
                     .gap(px(8.0))
                     .child(
-                        div()
-                            .w(px(DOWNLOAD_FILTER_SEGMENTED_WIDTH))
-                            .flex_none()
-                            .child(filter_segments),
+                        div().id("download-filter-scroll")
+                            .max_w(px(filter_width))
+                            .flex_1().min_w_0().overflow_x_scroll()
+                            .child(div().w(px(filter_width)).flex_none().child(filter_segments)),
                     )
                     .child(
                         div()
@@ -1149,10 +1164,10 @@ impl MainWindow {
                             .child(
                                 action_button("download-sort", sort_label)
                                     .dropdown_menu_with_anchor(
-                                        Corner::TopRight,
+                                        Anchor::TopRight,
                                         move |menu, _window, _cx| {
                                             DownloadSortKey::ALL.into_iter().fold(
-                                                menu.min_w(px(118.0)),
+                                                menu.min_w(px(160.0)).max_w(px(180.0)),
                                                 |menu, key| {
                                                     let sort_main_window = sort_main_window.clone();
                                                     menu.item(
@@ -1281,13 +1296,13 @@ impl MainWindow {
 fn download_bounded_tooltip(
     selector: &'static str,
     message: String,
-) -> impl Fn(&mut Window, &mut App) -> gpui::AnyView {
+) -> impl Fn(&mut Window, &mut App) -> gpui_kit::AnyView {
     bounded_text_tooltip(selector, message, false)
 }
 
 pub(crate) fn download_task_row(
     theme: Theme,
-    application: gpui::WeakEntity<DownloadApplication>,
+    application: gpui_kit::WeakEntity<DownloadApplication>,
     main_window: Entity<MainWindow>,
     selection: DownloadRowSelection,
     task: DownloadEngineTask,
@@ -1300,27 +1315,41 @@ pub(crate) fn download_task_row(
     } = selection;
     let task_id = task.task.id();
     let element_id = task_id.as_uuid().to_string();
-    let row_id = gpui::SharedString::from(format!("download-task-row-{element_id}"));
-    let secondary_id = gpui::SharedString::from(format!("download-task-secondary-{element_id}"));
-    let created_id = gpui::SharedString::from(format!("download-task-created-{element_id}"));
-    let name_id = gpui::SharedString::from(format!("download-task-name-text-{element_id}"));
+    let row_id = gpui_kit::SharedString::from(format!("download-task-row-{element_id}"));
+    let secondary_id =
+        gpui_kit::SharedString::from(format!("download-task-secondary-{element_id}"));
+    let created_id = gpui_kit::SharedString::from(format!("download-task-created-{element_id}"));
+    let name_id = gpui_kit::SharedString::from(format!("download-task-name-text-{element_id}"));
     let status = task.task.status();
     let created_at_unix_ms = task.task.created_at_unix_ms();
-    let name = task.task.request().category_name.as_ref().map_or_else(
-        || download_task_name(&task).to_owned(),
-        |category| format!("{}  ·  {category}", download_task_name(&task)),
-    );
+    let name = download_task_name(&task).to_owned();
+    let category = task
+        .task
+        .request()
+        .category_name
+        .clone()
+        .unwrap_or_else(|| "—".into());
     let path = task.final_path.as_ref().map_or_else(
         || task.task.request().source_url.clone(),
         |path| path.display().to_string(),
     );
     let (status_label, status_color) = download_status_presentation(theme, status);
-    let transfer = download_row_transfer_presentation(
+    let mut transfer = download_row_transfer_presentation(
         status,
         task.downloaded_bytes,
         task.total_bytes,
         live_progress.as_ref(),
     );
+    if status == DownloadStatus::Completed {
+        transfer.speed = task
+            .task
+            .transfer_statistics()
+            .and_then(|statistics| statistics.bytes_per_second())
+            .filter(|rate| *rate > 0)
+            .map_or_else(|| "—".into(), format_download_rate);
+    }
+    #[cfg(test)]
+    download_average_tests::observe_row_rate(task_id, &transfer.speed);
     let failed = task.error.is_some();
     let (secondary_text, secondary_color) = task.error.as_ref().map_or_else(
         || (path, theme.text_secondary),
@@ -1407,7 +1436,7 @@ pub(crate) fn download_task_row(
                 cx.notify();
             });
         })
-        .context_menu(move |menu, _window, cx| {
+        .context_menu(move |menu, window, cx| {
             let task_ids = context_main_window.read(cx).selected_download_tasks.clone();
             let ordered_task_ids = context_visible_task_ids
                 .iter()
@@ -1439,6 +1468,8 @@ pub(crate) fn download_task_row(
                 context_application.clone(),
                 ordered_task_ids,
                 capabilities,
+                window,
+                cx,
             )
         })
         .child(
@@ -1450,7 +1481,7 @@ pub(crate) fn download_task_row(
                 .border_color(if selected {
                     theme.accent
                 } else {
-                    gpui::rgba(0x00000000)
+                    gpui_kit::rgba(0x00000000)
                 })
                 .flex()
                 .items_center()
@@ -1515,8 +1546,8 @@ pub(crate) fn download_task_row(
                                 ))
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(TEXT_BODY))
-                                .line_height(px(LINE_HEIGHT_BODY))
+                                .text_size(px(TEXT_WORKBENCH_BODY))
+                                .line_height(px(LINE_HEIGHT_WORKBENCH_BODY))
                                 .text_color(theme.text)
                                 .child(name),
                         )
@@ -1533,8 +1564,8 @@ pub(crate) fn download_task_row(
                                 })
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(TEXT_LABEL))
-                                .line_height(px(LINE_HEIGHT_LABEL))
+                                .text_size(px(TEXT_WORKBENCH_SUPPORT))
+                                .line_height(px(LINE_HEIGHT_WORKBENCH_SUPPORT))
                                 .text_color(secondary_color)
                                 .child(secondary_text)
                                 .when_some(error_tooltip, |line, message| {
@@ -1576,6 +1607,29 @@ pub(crate) fn download_task_row(
                 .child(
                     div()
                         .when(selected, |column| {
+                            column.debug_selector(|| "download-task-category-selected".into())
+                        })
+                        .w(px(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
+                        .flex_none()
+                        .text_size(px(TEXT_LABEL))
+                        .text_color(theme.text_secondary)
+                        .truncate()
+                        .id(gpui_kit::SharedString::from(format!(
+                            "download-category-{}",
+                            task_id.as_uuid()
+                        )))
+                        .tooltip(move |window, cx| Tooltip::new(category.clone()).build(window, cx))
+                        .child(
+                            task.task
+                                .request()
+                                .category_name
+                                .clone()
+                                .unwrap_or_else(|| "—".into()),
+                        ),
+                )
+                .child(
+                    div()
+                        .when(selected, |column| {
                             column.debug_selector(|| "download-task-progress-selected".into())
                         })
                         .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
@@ -1585,11 +1639,11 @@ pub(crate) fn download_task_row(
                         .gap(px(4.0))
                         .child(
                             div()
-                                .h(px(15.0))
+                                .h(px(LINE_HEIGHT_WORKBENCH_SUPPORT))
                                 .flex()
                                 .items_center()
                                 .font_family(UI_MONO_FONT_FAMILY)
-                                .text_size(px(TEXT_META))
+                                .text_size(px(TEXT_LABEL))
                                 .text_color(theme.text_secondary)
                                 .child(
                                     div()
@@ -1639,16 +1693,11 @@ pub(crate) fn download_task_row(
                                     })
                                 })
                                 .w_full()
-                                .h(px(PROGRESS_TRACK_HEIGHT))
-                                .rounded(px(RADIUS_CONTROL / 2.0))
-                                .bg(theme.image_well)
-                                .child(
-                                    div()
-                                        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH * transfer.fraction))
-                                        .h_full()
-                                        .rounded(px(RADIUS_CONTROL / 2.0))
-                                        .bg(status_color),
-                                ),
+                                .child(download_aggregate_progress(
+                                    element_id,
+                                    transfer.fraction,
+                                    status_color,
+                                )),
                         ),
                 )
                 .child(
@@ -1686,6 +1735,19 @@ pub(crate) fn download_task_row(
         )
         .into_any_element()
 }
+fn download_aggregate_progress(
+    id: impl std::fmt::Display,
+    fraction: f32,
+    color: gpui_kit::Rgba,
+) -> Progress {
+    Progress::new(gpui_kit::SharedString::from(format!(
+        "download-task-progress-{id}"
+    )))
+    .xsmall()
+    .value(fraction * 100.0)
+    .color(color)
+    .accessibility_label("任务总体进度")
+}
 
 pub(crate) fn download_popup_item(
     theme: Theme,
@@ -1700,9 +1762,11 @@ pub(crate) fn download_popup_item(
 pub(crate) fn download_task_context_menu(
     theme: Theme,
     menu: PopupMenu,
-    application: gpui::WeakEntity<DownloadApplication>,
+    application: gpui_kit::WeakEntity<DownloadApplication>,
     task_ids: Vec<DownloadTaskId>,
     capabilities: DownloadContextCapabilities,
+    window: &mut Window,
+    cx: &mut App,
 ) -> PopupMenu {
     let plan = download_context_menu_plan(&capabilities, task_ids.len());
     let artifact_task = capabilities.single_artifact;
@@ -1773,6 +1837,13 @@ pub(crate) fn download_task_context_menu(
                 "download-menu-open-file",
                 "打开文件",
                 ShellOpenAction::Open,
+                MaterialIcon::OpenInNew,
+            ))
+            .item(artifact_item(
+                task_id,
+                "download-menu-open-with",
+                "打开方式…",
+                ShellOpenAction::OpenWith,
                 MaterialIcon::OpenInNew,
             ))
             .item(artifact_item(
@@ -1917,6 +1988,37 @@ pub(crate) fn download_task_context_menu(
         }
         has_visible_items = true;
     }
+    let extension_actions = crate::extensions::manual_actions::available("downloads", cx);
+    if !extension_actions.is_empty() {
+        if has_visible_items {
+            menu = menu.separator();
+        }
+        let extension_task_ids = task_ids.clone();
+        let children = PopupMenu::build(window, cx, move |menu, _, _| {
+            extension_actions
+                .into_iter()
+                .fold(context_menu_shell(menu), |menu, action| {
+                    let ids = extension_task_ids.clone();
+                    menu.item(PopupMenuItem::new(action.title.clone()).on_click(
+                        move |_, window, cx| {
+                            crate::extensions::manual_actions::invoke_selected(
+                                "downloads",
+                                action.clone(),
+                                serde_json::json!({"task_ids": ids}),
+                                None,
+                                window,
+                                cx,
+                            );
+                        },
+                    ))
+                })
+        });
+        menu = menu.item(
+            PopupMenuItem::submenu("扩展动作", children)
+                .icon(Icon::new(MaterialIcon::ManageSearch)),
+        );
+        has_visible_items = true;
+    }
     if (plan.artifact || plan.remove) && has_visible_items {
         menu = menu.separator();
     }
@@ -1970,9 +2072,20 @@ pub(crate) fn download_task_context_menu(
     menu
 }
 
+pub(crate) fn selected_download_summary(count: usize, known_bytes: u128, unknown: usize) -> String {
+    let size = u64::try_from(known_bytes)
+        .map(format_download_bytes)
+        .unwrap_or_else(|_| format!("{known_bytes} 字节"));
+    if unknown == 0 {
+        format!("已选择 {count} 项 · 总大小 {size}")
+    } else {
+        format!("已选择 {count} 项 · 已知 {size} · {unknown} 项大小未知")
+    }
+}
+
 pub(crate) fn download_batch_toolbar(
     theme: Theme,
-    application: gpui::WeakEntity<DownloadApplication>,
+    application: gpui_kit::WeakEntity<DownloadApplication>,
     main_window: Entity<MainWindow>,
     task_ids: Vec<DownloadTaskId>,
     capabilities: DownloadContextCapabilities,
@@ -1999,7 +2112,7 @@ pub(crate) fn download_batch_toolbar(
             });
         div()
             .debug_selector(move || id.into())
-            .size(px(CONTROL_HEIGHT_ACTION))
+            .size(px(24.0))
             .child(button)
             .into_any_element()
     };
@@ -2022,35 +2135,33 @@ pub(crate) fn download_batch_toolbar(
             });
         div()
             .debug_selector(move || id.into())
-            .size(px(CONTROL_HEIGHT_ACTION))
+            .size(px(24.0))
             .child(button)
             .into_any_element()
     };
     let clear_selection = main_window;
     let has_queue_actions = plan.queue_top || plan.queue_up || plan.queue_down || plan.queue_bottom;
 
-    div()
-        .debug_selector(|| "download-batch-toolbar".into())
-        .h(px(DOWNLOAD_BATCH_TOOLBAR_HEIGHT))
-        .px(px(12.0))
+    let controls = ToolbarGroup::new("download-batch-command-group")
+        .label("所选下载任务操作")
         .flex_none()
-        .border_b_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface)
-        .flex()
-        .items_center()
-        .gap(px(4.0))
-        .child(
+        .gap(px(0.0))
+        .content(
             div()
+                .debug_selector(|| "download-batch-summary".into())
                 .mr(px(SPACING_4))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
-                .font_weight(gpui::FontWeight::MEDIUM)
+                .font_weight(gpui_kit::FontWeight::MEDIUM)
                 .text_color(theme.text_secondary)
-                .child(format!("已选择 {} 项", task_ids.len())),
+                .child(selected_download_summary(
+                    task_ids.len(),
+                    capabilities.selected_known_bytes,
+                    capabilities.selected_unknown_sizes,
+                )),
         )
         .when(plan.resume, |toolbar| {
-            toolbar.child(batch_action(
+            toolbar.content(batch_action(
                 "download-batch-resume",
                 MaterialIcon::Download,
                 "开始 / 继续可运行任务",
@@ -2060,7 +2171,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.retry, |toolbar| {
-            toolbar.child(batch_action(
+            toolbar.content(batch_action(
                 "download-batch-retry",
                 MaterialIcon::Download,
                 "重试失败任务",
@@ -2070,7 +2181,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.redownload, |toolbar| {
-            toolbar.child(batch_action(
+            toolbar.content(batch_action(
                 "download-batch-redownload",
                 MaterialIcon::Download,
                 "重新下载终态任务",
@@ -2080,7 +2191,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.pause, |toolbar| {
-            toolbar.child(batch_action(
+            toolbar.content(batch_action(
                 "download-batch-pause",
                 MaterialIcon::History,
                 "暂停可暂停任务",
@@ -2090,7 +2201,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.cancel, |toolbar| {
-            toolbar.child(batch_action(
+            toolbar.content(batch_action(
                 "download-batch-cancel",
                 MaterialIcon::Cancel,
                 "取消可取消任务",
@@ -2100,7 +2211,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(has_queue_actions, |toolbar| {
-            toolbar.child(
+            toolbar.content(
                 div()
                     .mx(px(4.0))
                     .h(px(18.0))
@@ -2109,7 +2220,7 @@ pub(crate) fn download_batch_toolbar(
             )
         })
         .when(plan.queue_top, |toolbar| {
-            toolbar.child(queue_action(
+            toolbar.content(queue_action(
                 "download-batch-queue-top",
                 MaterialIcon::ArrowUpward,
                 "移到队列顶部",
@@ -2117,7 +2228,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.queue_up, |toolbar| {
-            toolbar.child(queue_action(
+            toolbar.content(queue_action(
                 "download-batch-queue-up",
                 MaterialIcon::ArrowUpward,
                 "队列上移",
@@ -2125,7 +2236,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.queue_down, |toolbar| {
-            toolbar.child(queue_action(
+            toolbar.content(queue_action(
                 "download-batch-queue-down",
                 MaterialIcon::History,
                 "队列下移",
@@ -2133,7 +2244,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.queue_bottom, |toolbar| {
-            toolbar.child(queue_action(
+            toolbar.content(queue_action(
                 "download-batch-queue-bottom",
                 MaterialIcon::History,
                 "移到队列底部",
@@ -2141,7 +2252,7 @@ pub(crate) fn download_batch_toolbar(
             ))
         })
         .when(plan.remove, |toolbar| {
-            toolbar.child(batch_action(
+            toolbar.content(batch_action(
                 "download-batch-remove",
                 MaterialIcon::Delete,
                 "从列表移除",
@@ -2149,28 +2260,63 @@ pub(crate) fn download_batch_toolbar(
                 task_ids.clone(),
                 true,
             ))
-        })
-        .child(div().flex_1())
-        .child({
-            let button = icon_action("download-batch-clear", MaterialIcon::Close, "清除多选")
-                .ghost()
-                .on_click(move |_, _, cx| {
-                    clear_selection.update(cx, |window, cx| {
-                        window.selected_download_tasks.clear();
-                        window.selected_download_task = None;
-                        window.download_selection_anchor = None;
-                        window.requested_download_detail = None;
-                        window
-                            .download_detail_scroll
-                            .set_offset(point(px(0.0), px(0.0)));
-                        cx.notify();
-                    });
+        });
+    let clear = {
+        let button = icon_action("download-batch-clear", MaterialIcon::Close, "清除多选")
+            .ghost()
+            .on_click(move |_, _, cx| {
+                clear_selection.update(cx, |window, cx| {
+                    window.selected_download_tasks.clear();
+                    window.selected_download_task = None;
+                    window.download_selection_anchor = None;
+                    window.requested_download_detail = None;
+                    window
+                        .download_detail_scroll
+                        .set_offset(point(px(0.0), px(0.0)));
+                    cx.notify();
                 });
-            div()
-                .debug_selector(|| "download-batch-clear".into())
-                .size(px(CONTROL_HEIGHT_ACTION))
-                .child(button)
-        })
+            });
+        div()
+            .debug_selector(|| "download-batch-clear".into())
+            .size(px(24.0))
+            .child(button)
+    };
+    div()
+        .debug_selector(|| "download-batch-toolbar".into())
+        .h(px(DOWNLOAD_BATCH_TOOLBAR_HEIGHT))
+        .relative()
+        .flex()
+        .items_center()
+        .px(px(12.0))
+        .flex_none()
+        .border_b_1()
+        .border_color(theme.border_subtle)
+        .bg(theme.surface)
+        .child(
+            Toolbar::new("download-batch-kit-toolbar")
+                .w_full()
+                .p_0()
+                .gap_0()
+                .content(
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .px(px(28.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .child(
+                            div()
+                                .debug_selector(|| "download-batch-centered-group".into())
+                                .min_w_0()
+                                .max_w_full()
+                                .flex()
+                                .items_center()
+                                .child(controls),
+                        ),
+                ),
+        )
+        .child(div().absolute().right(px(12.0)).top(px(6.0)).child(clear))
         .into_any_element()
 }
 
@@ -2185,63 +2331,24 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
         main_window,
     } = view;
     let task_id = task.task.id();
-    let mut tabs = div()
-        .debug_selector(|| "download-detail-tabs".into())
-        .h(px(DOWNLOAD_DETAIL_TAB_HEIGHT))
-        .px(px(8.0))
-        .border_b_1()
-        .border_color(theme.border_subtle)
-        .flex()
-        .items_end()
-        .gap(px(4.0));
-    for tab in DownloadDetailTab::ALL {
-        let active = tab == active_tab;
-        let tab_main_window = main_window.clone();
-        let tab_scroll = scroll.clone();
-        tabs = tabs.child(
-            Button::new(("download-detail-tab", tab as usize))
-                .ghost()
-                .small()
-                .compact()
-                .debug_selector(move || format!("download-detail-tab-{}", tab.diagnostic_name()))
-                .h(px(DETAIL_TAB_HEIGHT))
-                .px(px(8.0))
-                .border_b_2()
-                .border_color(if active {
-                    theme.accent
-                } else {
-                    gpui::rgba(0x00000000)
-                })
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .font_weight(if active {
-                    gpui::FontWeight::SEMIBOLD
-                } else {
-                    gpui::FontWeight::NORMAL
-                })
-                .text_color(if active {
-                    theme.text
-                } else {
-                    theme.text_secondary
-                })
-                .label(tab.label())
-                .on_click(move |_, _, cx| {
-                    tab_main_window.update(cx, |window, cx| {
-                        if window.download_detail_tab != tab {
-                            window.download_detail_tab = tab;
-                            tab_scroll.set_offset(point(px(0.0), px(0.0)));
-                            info!(
-                                event = "download.detail.tab_changed",
-                                task_id = %task_id.as_uuid(),
-                                tab = tab.diagnostic_name(),
-                                "download detail tab changed"
-                            );
-                            cx.notify();
-                        }
-                    });
-                }),
-        );
-    }
+    let tab_main_window = main_window.clone();
+    let tab_scroll = scroll.clone();
+    let tabs = div().debug_selector(|| "download-detail-tabs".into()).h(px(DOWNLOAD_DETAIL_TAB_HEIGHT)).flex_none()
+        .child(TabBar::new("download-detail-tab-bar").underline().small()
+            .selected_index(active_tab as usize)
+            .children(DownloadDetailTab::ALL.into_iter().map(|tab| Tab::new().label(tab.label())
+                .debug_selector(move || format!("download-detail-tab-{}", tab.diagnostic_name()))))
+            .on_click(move |index, _, cx| {
+                let tab = DownloadDetailTab::ALL[*index];
+                tab_main_window.update(cx, |window, cx| {
+                    if window.download_detail_tab != tab {
+                        window.download_detail_tab = tab;
+                        tab_scroll.set_offset(point(px(0.0), px(0.0)));
+                        info!(event = "download.detail.tab_changed", task_id = %task_id.as_uuid(), tab = tab.diagnostic_name(), "download detail tab changed");
+                        cx.notify();
+                    }
+                });
+            }));
     let content = match active_tab {
         DownloadDetailTab::Overview => download_overview_detail(theme, task, detail, progress),
         DownloadDetailTab::Segments => download_segment_detail(theme, detail, detail_error),
@@ -2498,7 +2605,7 @@ pub(crate) fn download_segment_detail(
             dot = dot.child(
                 div()
                     .h_full()
-                    .w(gpui::relative(ratio))
+                    .w(gpui_kit::relative(ratio))
                     .bg(download_segment_color(theme, segment.state)),
             );
         }
@@ -2739,31 +2846,44 @@ pub(crate) fn download_timeline_detail(
         .into_any_element();
     }
     let mut rows = div().flex().flex_col();
-    for entry in &detail.timeline {
+    for (index, entry) in detail.timeline.iter().enumerate() {
         rows = rows.child(
             div()
-                .min_h(px(24.0))
-                .py(px(4.0))
-                .border_b_1()
-                .border_color(theme.border_subtle)
-                .flex()
-                .items_start()
-                .gap(px(SPACING_8))
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
+                .debug_selector(move || format!("download-detail-marker-{index}"))
+                .w_full()
+                .flex_none()
                 .child(
-                    div()
-                        .w(px(64.0))
-                        .flex_none()
-                        .text_color(theme.text_muted)
-                        .child(format_download_log_time(entry.occurred_at_unix_ms)),
-                )
-                .child(
-                    div()
-                        .min_w_0()
-                        .flex_1()
-                        .text_color(theme.text_secondary)
-                        .child(download_timeline_label(entry)),
+                    Marker::new()
+                        .alignment(MarkerAlignment::Start)
+                        .with_variant(MarkerVariant::Border)
+                        .items_start()
+                        .py_1()
+                        .content(
+                            MarkerContent::new()
+                                .w(px(64.0))
+                                .flex_none()
+                                .text_color(theme.text_muted)
+                                .child(
+                                    div()
+                                        .debug_selector(move || {
+                                            format!("download-detail-marker-time-{index}")
+                                        })
+                                        .child(format_download_log_time(entry.occurred_at_unix_ms)),
+                                ),
+                        )
+                        .content(
+                            MarkerContent::new()
+                                .flex_1()
+                                .text_color(theme.text_secondary)
+                                .child(
+                                    div()
+                                        .debug_selector(move || {
+                                            format!("download-detail-marker-message-{index}")
+                                        })
+                                        .whitespace_normal()
+                                        .child(download_timeline_label(entry)),
+                                ),
+                        ),
                 ),
         );
     }
@@ -2775,7 +2895,7 @@ pub(crate) fn download_detail_section(
     title: &'static str,
     rows: Vec<(String, String)>,
 ) -> AnyElement {
-    let mut section = div()
+    let section = div()
         .min_w_0()
         .flex_1()
         .flex()
@@ -2786,53 +2906,59 @@ pub(crate) fn download_detail_section(
                 .pb(px(SPACING_4))
                 .text_size(px(TEXT_LABEL))
                 .line_height(px(LINE_HEIGHT_LABEL))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                 .text_color(theme.text_secondary)
                 .child(title),
         );
-    for (label, value) in rows {
-        section = section.child(download_detail_line_owned(theme, label, value));
-    }
-    section.into_any_element()
+    section
+        .child(
+            DescriptionList::horizontal()
+                .columns(1)
+                .small()
+                .bordered(false)
+                .label_width(px(100.0))
+                .children(
+                    rows.into_iter()
+                        .map(|(label, value)| download_detail_line_owned(theme, label, value)),
+                ),
+        )
+        .into_any_element()
 }
 
 pub(crate) fn download_detail_field(
-    theme: Theme,
+    _theme: Theme,
     selector: &'static str,
     label: &'static str,
     value: String,
-    value_color: gpui::Rgba,
+    value_color: gpui_kit::Rgba,
 ) -> AnyElement {
     let label_selector = format!("{selector}-label");
     let value_selector = format!("{selector}-value");
     div()
         .debug_selector(move || selector.into())
-        .min_h(px(20.0))
         .min_w_0()
-        .flex()
-        .items_center()
-        .gap(px(8.0))
         .child(
-            div()
-                .debug_selector(move || label_selector.clone())
-                .w(px(DOWNLOAD_DETAIL_LABEL_WIDTH))
-                .flex_none()
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
-                .text_color(theme.text_muted)
-                .child(label),
-        )
-        .child(
-            div()
-                .debug_selector(move || value_selector.clone())
-                .min_w_0()
-                .flex_1()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_size(px(TEXT_BODY))
-                .line_height(px(LINE_HEIGHT_BODY))
-                .text_color(value_color)
-                .child(value),
+            DescriptionList::horizontal()
+                .columns(1)
+                .small()
+                .bordered(false)
+                .label_width(px(DOWNLOAD_DETAIL_LABEL_WIDTH + 8.0))
+                .item(
+                    div()
+                        .debug_selector(move || label_selector.clone())
+                        .child(label)
+                        .into_any_element(),
+                    div()
+                        .debug_selector(move || value_selector.clone())
+                        .min_w_0()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_sm()
+                        .text_color(value_color)
+                        .child(value)
+                        .into_any_element(),
+                    1,
+                ),
         )
         .into_any_element()
 }
@@ -2841,56 +2967,66 @@ pub(crate) fn download_detail_line(theme: Theme, label: &'static str, value: Str
     download_detail_line_with_color(theme, label, value, theme.text)
 }
 
-pub(crate) fn download_detail_line_owned(theme: Theme, label: String, value: String) -> AnyElement {
-    div()
-        .min_h(px(19.0))
-        .flex()
-        .items_start()
-        .gap(px(8.0))
-        .text_size(px(TEXT_BODY))
-        .line_height(px(LINE_HEIGHT_BODY))
-        .child(
-            div()
-                .w(px(92.0))
-                .flex_none()
-                .overflow_hidden()
-                .whitespace_nowrap()
-                .text_color(theme.text_muted)
-                .child(label),
-        )
-        .child(div().min_w_0().flex_1().text_color(theme.text).child(value))
-        .into_any_element()
+pub(crate) fn download_detail_line_owned(
+    theme: Theme,
+    label: String,
+    value: String,
+) -> DescriptionItem {
+    DescriptionItem::new(
+        div()
+            .debug_selector(|| "download-detail-owned-label".into())
+            .w_full()
+            .whitespace_normal()
+            .text_sm()
+            .text_color(theme.text_muted)
+            .child(label)
+            .into_any_element(),
+    )
+    .value(
+        div()
+            .debug_selector(|| "download-detail-owned-value".into())
+            .w_full()
+            .min_w_0()
+            .whitespace_normal()
+            .text_sm()
+            .text_color(theme.text)
+            .child(value)
+            .into_any_element(),
+    )
 }
 
 pub(crate) fn download_detail_line_with_color(
     theme: Theme,
     label: &'static str,
     value: String,
-    value_color: gpui::Rgba,
+    value_color: gpui_kit::Rgba,
 ) -> AnyElement {
     div()
         .when(label == "错误", |line| {
             line.debug_selector(|| "download-task-detail-error".into())
         })
-        .min_h(px(19.0))
-        .flex()
-        .items_start()
-        .gap(px(8.0))
-        .text_size(px(TEXT_BODY))
-        .line_height(px(LINE_HEIGHT_BODY))
+        .min_w_0()
         .child(
-            div()
-                .w(px(DOWNLOAD_DETAIL_LABEL_WIDTH))
-                .flex_none()
-                .text_color(theme.text_muted)
-                .child(label),
-        )
-        .child(
-            div()
-                .min_w_0()
-                .flex_1()
-                .text_color(value_color)
-                .child(value),
+            DescriptionList::horizontal()
+                .columns(1)
+                .small()
+                .bordered(false)
+                .label_width(px(DOWNLOAD_DETAIL_LABEL_WIDTH + 8.0))
+                .item(
+                    div()
+                        .text_color(theme.text_muted)
+                        .child(label)
+                        .into_any_element(),
+                    div()
+                        .w_full()
+                        .min_w_0()
+                        .whitespace_normal()
+                        .text_sm()
+                        .text_color(value_color)
+                        .child(value)
+                        .into_any_element(),
+                    1,
+                ),
         )
         .into_any_element()
 }
@@ -2933,7 +3069,7 @@ pub(crate) fn download_segment_state_label(state: DownloadSegmentState) -> &'sta
     }
 }
 
-pub(crate) fn download_segment_color(theme: Theme, state: DownloadSegmentState) -> gpui::Rgba {
+pub(crate) fn download_segment_color(theme: Theme, state: DownloadSegmentState) -> gpui_kit::Rgba {
     match state {
         DownloadSegmentState::Waiting => theme.text_muted,
         DownloadSegmentState::Active => theme.accent,
@@ -3020,7 +3156,7 @@ pub(crate) fn format_duration(seconds: u64) -> String {
 pub(crate) fn download_status_presentation(
     theme: Theme,
     status: DownloadStatus,
-) -> (&'static str, gpui::Rgba) {
+) -> (&'static str, gpui_kit::Rgba) {
     match status {
         DownloadStatus::Created => ("已创建", theme.text_muted),
         DownloadStatus::Probing => ("解析中", theme.accent),
@@ -3185,6 +3321,13 @@ pub(crate) fn download_table_header(
         .text_size(px(TEXT_META))
         .text_color(theme.text_muted)
         .child(name_header)
+        .child(
+            div()
+                .debug_selector(|| "download-category-header".into())
+                .w(px(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
+                .flex_none()
+                .child("分类"),
+        )
         .child(progress_header)
         .child(status_header)
         .child(
@@ -3207,7 +3350,7 @@ pub(crate) fn download_sort_header_cell(
     key: DownloadSortKey,
     sort: DownloadSortState,
     main_window: Entity<MainWindow>,
-) -> gpui::Stateful<gpui::Div> {
+) -> gpui_kit::Stateful<gpui_kit::Div> {
     let active = sort.key == key;
     let label = if active {
         format!("{label} {}", if sort.descending { "↓" } else { "↑" })
@@ -3254,3 +3397,11 @@ pub(crate) fn persist_download_sort(window: &mut MainWindow, cx: &mut Context<Ma
         });
     });
 }
+
+#[cfg(test)]
+#[path = "download_page/kit_migration_tests.rs"]
+mod kit_migration_tests;
+
+#[cfg(test)]
+#[path = "download_average_tests.rs"]
+mod download_average_tests;

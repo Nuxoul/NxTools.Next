@@ -1,42 +1,38 @@
-//! 链接识别 floating panel: one popup window with one click-to-copy row per
-//! detected link. Auto-hidden by the owning clipboard application after the
-//! dwell time; clicking a row copies the value and closes the panel.
+//! 链接识别 floating panel: capture identifies targets; rows open them and
+//! a separate Copy link/path action writes the clipboard. The owning window
+//! closes before either action is deferred to the clipboard application.
 
 use crate::clipboard::ClipboardApplication;
 use crate::theme::Theme;
 use crate::tools::link_detector::DetectedLinkKind;
-use crate::ui::metrics::{RADIUS_CONTROL, RADIUS_FLOATING, SPACING_4, SPACING_8};
-use crate::ui::typography::{TEXT_BODY, TEXT_LABEL, TEXT_META, UI_FONT_FAMILY};
-use gpui::{
+use crate::ui::metrics::{RADIUS_FLOATING, SPACING_4};
+use crate::ui::typography::UI_FONT_FAMILY;
+use gpui_kit::component::Icon;
+use gpui_kit::component::Sizable;
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::label::Label;
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::status_bar::StatusBar;
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::{
     AnyWindowHandle, Context, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div, px,
 };
-use gpui_component::Icon;
-use gpui_component::button::{Button, ButtonVariants};
 use tracing::info;
 
 pub(crate) type DetectedLinkRow = crate::tools::link_detector::DetectedLink;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinkPanelRoute {
-    CopyOnly,
     Browser,
     OpenShell {
         action: nxtools_protocol::ShellOpenAction,
     },
 }
 
-pub(crate) fn link_panel_route(
-    kind: DetectedLinkKind,
-    auto_open_browser: bool,
-    copy_only: bool,
-) -> LinkPanelRoute {
-    if copy_only {
-        return LinkPanelRoute::CopyOnly;
-    }
+pub(crate) fn link_panel_route(kind: DetectedLinkKind) -> LinkPanelRoute {
     match kind {
-        DetectedLinkKind::Web if auto_open_browser => LinkPanelRoute::Browser,
-        DetectedLinkKind::Web => LinkPanelRoute::CopyOnly,
+        DetectedLinkKind::Web => LinkPanelRoute::Browser,
         DetectedLinkKind::LocalFile => LinkPanelRoute::OpenShell {
             action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
         },
@@ -50,20 +46,23 @@ pub(crate) fn link_panel_shell_command(
     target: &str,
     target_kind: DetectedLinkKind,
 ) -> Option<nxtools_protocol::PlatformCommand> {
-    let LinkPanelRoute::OpenShell { action } = route else {
-        return None;
+    let (target, action) = match (route, target_kind) {
+        (LinkPanelRoute::Browser, DetectedLinkKind::Web) => (
+            if target.contains("://") {
+                target.to_owned()
+            } else {
+                format!("https://{target}")
+            },
+            nxtools_protocol::ShellOpenAction::Open,
+        ),
+        (
+            LinkPanelRoute::OpenShell { action },
+            DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory,
+        ) => (target.to_owned(), action),
+        _ => return None,
     };
-    if !matches!(
-        target_kind,
-        DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory
-    ) {
-        return None;
-    }
     Some(nxtools_protocol::PlatformCommand::OpenShellTarget(
-        nxtools_protocol::OpenShellTargetCommand {
-            target: target.to_owned(),
-            action,
-        },
+        nxtools_protocol::OpenShellTargetCommand { target, action },
     ))
 }
 
@@ -72,8 +71,8 @@ pub(crate) const LINK_PANEL_WIDTH: f32 = 420.0;
 const LINK_PANEL_ROW_HEIGHT: f32 = 28.0;
 /// Rendered expander height (`.h(px(24.0))` on the expander row below).
 const LINK_PANEL_EXPANDER_HEIGHT: f32 = 24.0;
-/// Rendered footer height (`.h(px(22.0))` on the footer below).
-const LINK_PANEL_FOOTER_HEIGHT: f32 = 22.0;
+/// Released StatusBar text and vertical padding require a 29px rail.
+const LINK_PANEL_FOOTER_HEIGHT: f32 = 29.0;
 /// Footer's `.mt(px(2.0))`.
 const LINK_PANEL_FOOTER_MARGIN_TOP: f32 = 2.0;
 /// Container's `.py(px(4.0))` top and bottom.
@@ -106,7 +105,6 @@ pub(crate) fn link_panel_height(total_rows: usize, expanded: bool) -> f32 {
 #[derive(Default)]
 pub(crate) struct LinkPanelSession {
     pub(crate) window: Option<AnyWindowHandle>,
-    pub(crate) window_handle: Option<AnyWindowHandle>,
     pub(crate) native_window_handle: i64,
     pub(crate) generation: u64,
     pub(crate) last_fingerprint: Option<(bool, String)>,
@@ -122,8 +120,7 @@ pub(crate) struct LinkPanelView {
     pub(crate) expanded: bool,
     pub(crate) auto_hide_ms: u64,
     pub(crate) window_handle: Option<AnyWindowHandle>,
-    pub(crate) auto_open_browser: bool,
-    pub(crate) copy_only: bool,
+    pub(crate) auto_hide_task: Option<gpui_kit::Task<()>>,
 }
 
 impl LinkPanelView {
@@ -133,14 +130,10 @@ impl LinkPanelView {
         &mut self,
         links: Vec<DetectedLinkRow>,
         window_handle: AnyWindowHandle,
-        auto_open_browser: bool,
-        copy_only: bool,
         cx: &mut Context<Self>,
     ) {
         self.links = links;
         self.expanded = false;
-        self.auto_open_browser = auto_open_browser;
-        self.copy_only = copy_only;
         self.arm_auto_hide(window_handle, cx);
     }
 
@@ -153,20 +146,19 @@ impl LinkPanelView {
     /// it in.
     pub(crate) fn arm_auto_hide(&mut self, window_handle: AnyWindowHandle, cx: &mut Context<Self>) {
         let dwell = std::time::Duration::from_millis(self.auto_hide_ms);
-        cx.spawn(async move |this, cx| {
+        // Dropping the previous task retires its capture before arming the next
+        // dwell; an earlier timer must never close a restaged generation.
+        self.auto_hide_task = Some(cx.spawn(async move |_, cx| {
             cx.background_executor().timer(dwell).await;
-            // Closing through the captured handle is immune to stale
-            // app-entity state, which is what leaked windows before.
             let _ = window_handle.update(cx, |_, window, _| window.remove_window());
-            let _ = this;
-        })
-        .detach();
+        }));
     }
 }
 
 impl Render for LinkPanelView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::zed_dark();
+        crate::theme::observe_theme(window, cx);
+        let theme = Theme::active(cx);
         let application = self.application.clone();
         let visible_count = if self.expanded || self.links.len() <= 1 {
             self.links.len()
@@ -188,9 +180,12 @@ impl Render for LinkPanelView {
             .py(px(SPACING_4));
         for (index, link) in self.links.iter().enumerate().take(visible_count) {
             let application = application.clone();
+            let copy_application = application.clone();
+            let explicit_copy_value = link.copy_value.clone();
             let copy_value = link.copy_value.clone();
             let kind = link.kind;
-            let route = link_panel_route(kind, self.auto_open_browser, self.copy_only);
+            let tooltip_value = link.copy_value.clone();
+            let route = link_panel_route(kind);
             let focus = window
                 .use_keyed_state(("link-panel-focus", index), cx, |_, cx| {
                     cx.focus_handle().tab_stop(true)
@@ -198,15 +193,10 @@ impl Render for LinkPanelView {
                 .read(cx)
                 .clone();
             container = container.child(
-                div()
-                    .id(("link-panel-row", index))
+                ListItem::new(("link-panel-row", index))
+                    .accessibility_label(format!("链接 {}", index + 1))
                     .track_focus(&focus)
-                    .border_2()
-                    .border_color(if focus.is_focused(window) {
-                        theme.focus_ring
-                    } else {
-                        gpui::transparent_black().into()
-                    })
+                    .focus_visible(move |style| style.bg(theme.element_selected))
                     .on_key_down(move |event, window, cx| {
                         if focus.is_focused(window)
                             && event.keystroke.key == "tab"
@@ -215,9 +205,9 @@ impl Render for LinkPanelView {
                             && !event.keystroke.modifiers.platform
                         {
                             if event.keystroke.modifiers.shift {
-                                window.focus_prev();
+                                window.focus_prev(cx);
                             } else {
-                                window.focus_next();
+                                window.focus_next(cx);
                             }
                             window.prevent_default();
                             cx.stop_propagation();
@@ -225,16 +215,84 @@ impl Render for LinkPanelView {
                     })
                     .debug_selector(move || format!("link-panel-row-{index}"))
                     .h(px(LINK_PANEL_ROW_HEIGHT))
+                    .flex_none()
                     .min_w_0()
                     .mx(px(SPACING_4))
-                    .px(px(SPACING_8))
-                    .rounded(px(RADIUS_CONTROL))
-                    .flex()
-                    .items_center()
-                    .gap(px(SPACING_4))
-                    .cursor_pointer()
-                    .hover(move |style| style.bg(theme.surface_hover))
-                    .active(move |style| style.bg(theme.surface_pressed))
+                    .tooltip(move |window, cx| Tooltip::new(tooltip_value.clone()).build(window, cx))
+                    .child(
+                        div()
+                            .w_full()
+                            .child(
+                                div()
+                                    .w_full()
+                                    .min_w_0()
+                                    .flex()
+                                    .items_center()
+                                    .gap_1()
+                                    .child(
+                                        div()
+                                            .debug_selector(move || {
+                                                format!("link-panel-icon-{index}")
+                                            })
+                                            .size(px(16.0))
+                                            .flex_none()
+                                            .child(
+                                                Icon::new(match kind {
+                                                    DetectedLinkKind::Web => {
+                                                        crate::icons::MaterialIcon::Language
+                                                    }
+                                                    DetectedLinkKind::LocalFile
+                                                    | DetectedLinkKind::LocalDirectory => {
+                                                        crate::icons::MaterialIcon::Folder
+                                                    }
+                                                })
+                                                .size(px(16.0))
+                                                .text_color(theme.text_secondary),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .debug_selector(move || {
+                                                format!("link-panel-name-{index}")
+                                            })
+                                            .min_w_0()
+                                            .flex_1()
+                                            .child(Label::new(link.display.clone()).truncate()),
+                                    )
+                                    .child(
+                                        Button::new(("link-panel-copy", index))
+                                            .debug_selector(move || format!("link-panel-copy-{index}"))
+                                            .xsmall()
+                                            .ghost()
+                                            .flex_none()
+                                            .label(if kind == DetectedLinkKind::Web { "复制链接" } else { "复制路径" })
+                                            .accessibility_label(if kind == DetectedLinkKind::Web { "复制链接" } else { "复制路径" })
+                                            .on_click(move |_, window, cx| {
+                                                cx.stop_propagation();
+                                                let value = explicit_copy_value.clone();
+                                                let application = copy_application.clone();
+                                                let correlation_id = uuid::Uuid::new_v4();
+                                                let started_at = std::time::Instant::now();
+                                                info!(event = "tools.link_panel.copy_started", %correlation_id,
+                                                    target_kind = kind.label(), value_length = value.len(),
+                                                    "explicit link panel copy accepted");
+                                                window.remove_window();
+                                                cx.defer(move |cx| {
+                                                    if let Some(application) = application.upgrade() {
+                                                        application.update(cx, |application, _| {
+                                                            application.note_panel_copied(value.clone());
+                                                            application.forget_link_panel();
+                                                        });
+                                                    }
+                                                    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(value));
+                                                    info!(event = "tools.link_panel.copy_completed", %correlation_id,
+                                                        elapsed_ms = started_at.elapsed().as_millis() as u64,
+                                                        "explicit link panel copy completed");
+                                                });
+                                            }),
+                                    ),
+                            ),
+                    )
                     .on_click(move |_event, window, cx| {
                         let route = route;
                         let copy_value = copy_value.clone();
@@ -246,14 +304,12 @@ impl Render for LinkPanelView {
                             route = ?route,
                             "link panel row clicked"
                         );
-                        // Close FIRST. The panel's own clipboard echo must not
-                        // be able to restage this window.
+                        // Close FIRST, then cross the application lease boundary.
                         window.remove_window();
                         let application = application.clone();
                         cx.defer(move |cx| {
                             if let Some(application) = application.upgrade() {
                                 application.update(cx, |application, _cx| {
-                                    application.note_panel_copied(copy_value.clone());
                                     application.forget_link_panel();
                                     application.dispatch_link_panel_route(
                                         route,
@@ -263,28 +319,8 @@ impl Render for LinkPanelView {
                                     );
                                 });
                             }
-                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(copy_value));
                         });
-                    })
-                    .child(
-                        Icon::new(match kind {
-                            DetectedLinkKind::Web => crate::icons::MaterialIcon::Language,
-                            DetectedLinkKind::LocalFile | DetectedLinkKind::LocalDirectory => {
-                                crate::icons::MaterialIcon::Folder
-                            }
-                        })
-                        .size(px(16.0))
-                        .text_color(theme.text_secondary),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .flex_1()
-                            .text_size(px(TEXT_BODY))
-                            .text_color(theme.text)
-                            .truncate()
-                            .child(link.display.clone()),
-                    ),
+                    }),
             );
         }
         if needs_expander {
@@ -292,15 +328,8 @@ impl Render for LinkPanelView {
                 Button::new("link-panel-expander")
                     .ghost()
                     .debug_selector(|| "link-panel-expander".into())
-                    .h(px(LINK_PANEL_EXPANDER_HEIGHT))
+                    .small()
                     .mx(px(SPACING_4))
-                    .px(px(SPACING_8))
-                    .rounded(px(RADIUS_CONTROL))
-                    .flex()
-                    .items_center()
-                    .gap(px(SPACING_4))
-                    .text_size(px(TEXT_LABEL))
-                    .text_color(theme.text_secondary)
                     .on_click(cx.listener(move |this, _event, _window, cx| {
                         this.expanded = true;
                         // Grow the window to the expanded layout: every row
@@ -325,46 +354,25 @@ impl Render for LinkPanelView {
             div()
                 .debug_selector(|| "link-panel-footer".into())
                 .h(px(LINK_PANEL_FOOTER_HEIGHT))
+                .flex_none()
                 .mt(px(LINK_PANEL_FOOTER_MARGIN_TOP))
                 .mx(px(SPACING_4))
-                .px(px(SPACING_8))
-                .flex()
-                .items_center()
-                .justify_between()
-                .border_t_1()
-                .border_color(theme.border_subtle)
                 .child(
-                    div()
-                        .text_size(px(TEXT_META))
-                        .text_color(theme.text_secondary)
-                        .child(if self.links.len() > 1 {
+                    StatusBar::new()
+                        .h_full()
+                        .flex_none()
+                        .left(Label::new(if self.links.len() > 1 {
                             format!("{} 个链接", self.links.len())
                         } else {
                             "1 个链接".to_owned()
-                        }),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .gap(px(SPACING_4))
-                        .child(
+                        }))
+                        .right(
                             div()
-                                .text_size(px(TEXT_META))
-                                .text_color(theme.text_secondary)
-                                .child(if self.copy_only {
-                                    "点击复制"
-                                } else if self.auto_open_browser {
-                                    "网页可打开 · 本地可打开"
-                                } else {
-                                    "网页仅复制 · 本地可打开"
-                                }),
-                        )
-                        .child(
-                            div()
-                                .text_size(px(TEXT_META))
-                                .text_color(theme.text_muted)
-                                .child("自动消失"),
+                                .flex()
+                                .items_center()
+                                .gap(px(SPACING_4))
+                                .child(Label::new("点击打开 · 可单独复制"))
+                                .child(Label::new("自动消失")),
                         ),
                 ),
         );
@@ -379,14 +387,14 @@ mod tests {
 
     #[test]
     fn window_height_matches_the_rendered_chrome_exactly() {
-        // py(4)+py(4) + one 28px row + footer(2px margin + 22px).
-        assert_eq!(link_panel_height(1, false), 60.0);
+        // py(4)+py(4) + one 28px row + footer(2px margin + 29px).
+        assert_eq!(link_panel_height(1, false), 67.0);
         // Collapsed multi-link: one row + the 24px expander, never the
         // hidden rows. The old `rows * 30 + 24` budget reserved space for
         // rows it did not render and left dead empty space below the footer.
-        assert_eq!(link_panel_height(3, false), 84.0);
+        assert_eq!(link_panel_height(3, false), 91.0);
         // Expanded: every row, no expander slot.
-        assert_eq!(link_panel_height(3, true), 116.0);
+        assert_eq!(link_panel_height(3, true), 123.0);
     }
 
     #[test]
@@ -408,13 +416,13 @@ mod tests {
     #[test]
     fn local_files_and_directories_use_shell_routes() {
         assert_eq!(
-            link_panel_route(DetectedLinkKind::LocalFile, true, false),
+            link_panel_route(DetectedLinkKind::LocalFile),
             LinkPanelRoute::OpenShell {
                 action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
             }
         );
         assert_eq!(
-            link_panel_route(DetectedLinkKind::LocalDirectory, true, false),
+            link_panel_route(DetectedLinkKind::LocalDirectory),
             LinkPanelRoute::OpenShell {
                 action: nxtools_protocol::ShellOpenAction::Open,
             }
@@ -423,7 +431,7 @@ mod tests {
         let file_target = r"C:\Users\Administrator\Throne.exe";
         assert_eq!(
             link_panel_shell_command(
-                link_panel_route(DetectedLinkKind::LocalFile, true, false),
+                link_panel_route(DetectedLinkKind::LocalFile),
                 file_target,
                 DetectedLinkKind::LocalFile,
             ),
@@ -438,7 +446,7 @@ mod tests {
         let directory_target = r"C:\Users\Administrator\Downloads";
         assert_eq!(
             link_panel_shell_command(
-                link_panel_route(DetectedLinkKind::LocalDirectory, true, false),
+                link_panel_route(DetectedLinkKind::LocalDirectory),
                 directory_target,
                 DetectedLinkKind::LocalDirectory,
             ),
@@ -451,7 +459,7 @@ mod tests {
         );
         assert!(
             link_panel_shell_command(
-                link_panel_route(DetectedLinkKind::LocalFile, true, false),
+                link_panel_route(DetectedLinkKind::LocalFile),
                 "https://example.test/app.exe",
                 DetectedLinkKind::Web,
             )
@@ -461,25 +469,31 @@ mod tests {
     }
 
     #[test]
-    fn web_targets_keep_browser_behavior_but_copy_only_never_launches() {
+    fn web_targets_use_browser_route_without_a_runtime_gate() {
         assert_eq!(
-            link_panel_route(DetectedLinkKind::Web, true, false),
+            link_panel_route(DetectedLinkKind::Web),
             LinkPanelRoute::Browser
         );
         assert_eq!(
-            link_panel_route(DetectedLinkKind::Web, false, false),
-            LinkPanelRoute::CopyOnly
+            link_panel_shell_command(
+                LinkPanelRoute::Browser,
+                "example.invalid",
+                DetectedLinkKind::Web
+            ),
+            Some(nxtools_protocol::PlatformCommand::OpenShellTarget(
+                nxtools_protocol::OpenShellTargetCommand {
+                    target: "https://example.invalid".into(),
+                    action: nxtools_protocol::ShellOpenAction::Open,
+                }
+            ))
         );
-        for kind in [
-            DetectedLinkKind::Web,
-            DetectedLinkKind::LocalFile,
-            DetectedLinkKind::LocalDirectory,
-        ] {
-            assert_eq!(
-                link_panel_route(kind, true, true),
-                LinkPanelRoute::CopyOnly,
-                "copy-only mode must not launch any target kind"
-            );
-        }
+        assert!(
+            link_panel_shell_command(
+                LinkPanelRoute::Browser,
+                r"C:\synthetic",
+                DetectedLinkKind::LocalFile
+            )
+            .is_none()
+        );
     }
 }

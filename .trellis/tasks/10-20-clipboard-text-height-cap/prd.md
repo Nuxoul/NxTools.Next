@@ -1,0 +1,5 @@
+# Clipboard text card maximum height
+
+User explicitly requests a maximum for the card itself: text210DIP, or a configurable equivalent. Choose the direct210DIP implementation, without adding settings/configuration scope. Existing image card<=190DIP (144image+46chrome) and ordinary file card62DIP remain unchanged; external8DIPgap is excluded.
+
+Acceptance: short/under-budget text grows naturally from official Markdown at actual width, no fixed filler; actual whole text ListItem<=210DIP including source/header/padding/border and any existing inline feedback. Reduce summary body budget when feedback is present so its actions remain reachable. Beyond budget, clip only list summary; no nested scroll owner, resource load or original payload truncation. Original full preview/native ACK/passive lifecycle/paste/keyboard/menu/8DIPgap/source-icon hue stay unchanged. No settings/schema/native/dependency/vendor change, delegation, product/release/live-user-data operation or commit/archive. Add actual production bounds red before fix and run focused/fullDesktop/lint/workspace/static gates; screenshots/physical/DPI/installed acceptance remain separate.

@@ -60,88 +60,218 @@ internal static class IndexerServiceInstaller
     }
 
     public static async Task<WindowsCommandResult> EnsureAsync(
-        IPlatformLog log,
-        CancellationToken cancellationToken)
+        IPlatformLog log, Guid correlationId, CancellationToken cancellationToken)
     {
+        var started = Stopwatch.GetTimestamp();
+        WriteDeploymentLog(log, correlationId, "gate_wait_started", started);
         try
         {
             using var installGate = await AcquireServiceInstallGateAsync(cancellationToken);
-            // A changed user-package hash is an ordinary update, not a reason to
-            // ask for administrator consent again. Once the service exists, all
-            // later launches stay non-elevated: healthy services start normally;
-            // damaged services fail closed without another UAC prompt.
-            if (!ShouldRequestInitialAuthorization(ServiceExists()))
+            return await EnsureCoreAsync(new NativeDeploymentPlatform(log, correlationId), log, correlationId, cancellationToken);
+        }
+        catch (Exception error) when (error is OperationCanceledException or TimeoutException)
+        {
+            var result = new WindowsCommandResult(false, "等待索引服务操作已取消或超时；请重试。",
+                Data: cancellationToken.IsCancellationRequested ? "cancelled" : "authorization_timeout");
+            WriteDeploymentLog(log, correlationId, result.Data!, started, result);
+            return result;
+        }
+        catch (Exception error)
+        {
+            var result = new WindowsCommandResult(false, "无法准备索引服务升级，请重试或使用正式安装程序修复。",
+                Data: "deployment_failed", NativeErrorCode: error is Win32Exception native ? native.NativeErrorCode : error.HResult);
+            WriteDeploymentLog(log, correlationId, result.Data!, started, result);
+            return result;
+        }
+    }
+
+    internal enum ServiceDeploymentDecision { Install, Reuse, Upgrade, RepairRequired }
+    internal sealed record ReleaseTuple(string Desktop, string PlatformHost, string Indexer);
+    internal sealed record DeploymentState(bool Exists, bool Healthy, ReleaseTuple? Approved, ReleaseTuple Current);
+    internal interface IDeploymentPlatform
+    {
+        DeploymentState ReadState();
+        bool StartService();
+        Task<WindowsCommandResult> InstallAsync(Guid correlationId, CancellationToken cancellationToken);
+        bool HasTrustedUpdater() => false;
+        bool NeedsTrustEnrollment() => false;
+        Task<WindowsCommandResult> UpdateTrustedAsync(Guid correlationId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Trusted updater is unavailable.");
+    }
+
+    internal static ServiceDeploymentDecision DecideDeployment(
+        bool exists, bool healthy, ReleaseTuple? approved, ReleaseTuple current)
+    {
+        static bool Valid(ReleaseTuple? tuple) => tuple is not null &&
+            new[] { tuple.Desktop, tuple.PlatformHost, tuple.Indexer }.All(hash =>
+                hash is { Length: 64 } && hash.All(Uri.IsHexDigit));
+        if (!Valid(current)) return ServiceDeploymentDecision.RepairRequired;
+        if (!exists) return ServiceDeploymentDecision.Install;
+        if (!healthy || !Valid(approved)) return ServiceDeploymentDecision.RepairRequired;
+        return string.Equals(approved!.Desktop, current.Desktop, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(approved.PlatformHost, current.PlatformHost, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(approved.Indexer, current.Indexer, StringComparison.OrdinalIgnoreCase)
+                ? ServiceDeploymentDecision.Reuse : ServiceDeploymentDecision.Upgrade;
+    }
+
+    internal static async Task<WindowsCommandResult> EnsureCoreAsync(
+        IDeploymentPlatform platform, IPlatformLog log, Guid correlationId, CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.GetTimestamp();
+        void Trace(string stage, WindowsCommandResult? outcome = null) =>
+            WriteDeploymentLog(log, correlationId, stage, started, outcome);
+        WindowsCommandResult result;
+        Trace("accepted");
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var state = platform.ReadState();
+            var decision = DecideDeployment(state.Exists, state.Healthy, state.Approved, state.Current);
+            if (decision == ServiceDeploymentDecision.Reuse && platform.NeedsTrustEnrollment())
+                decision = ServiceDeploymentDecision.Install;
+            Trace(decision.ToString());
+            switch (decision)
             {
-                if (!IsProtectedServiceHealthy())
-                {
-                    return new WindowsCommandResult(
-                        false,
-                        "受保护索引服务已存在，但完整性检查未通过；未再次请求管理员权限。");
-                }
-                if (TryStartService(log))
-                {
-                    log.Write("info", "indexer_service.protected_package_reused", fields: new Dictionary<string, object?>
+                case ServiceDeploymentDecision.RepairRequired:
+                    result = new WindowsCommandResult(false,
+                        "受保护索引服务或当前安装包完整性检查未通过。请使用正式安装程序修复；未启动服务或请求升级授权。",
+                        Data: "repair_required");
+                    break;
+                case ServiceDeploymentDecision.Reuse:
+                    result = platform.StartService()
+                        ? new WindowsCommandResult(true, Data: "running")
+                        : new WindowsCommandResult(false, "当前版本索引服务启动失败，请重试或使用正式安装程序修复。", Data: "start_failed");
+                    break;
+                default:
+                    if (decision == ServiceDeploymentDecision.Upgrade && platform.HasTrustedUpdater())
                     {
-                        ["service_name"] = ServiceName
-                    });
-                    return new WindowsCommandResult(true, Data: "running");
-                }
-                return new WindowsCommandResult(false, "受保护索引服务已安装，但启动失败；未再次请求管理员权限。");
+                        Trace("trusted_update_requested");
+                        result = await platform.UpdateTrustedAsync(correlationId, cancellationToken);
+                        if (result.Success) result = result with { Data = "upgraded" };
+                        break;
+                    }
+                    Trace(decision == ServiceDeploymentDecision.Upgrade ? "upgrade_authorization_requested" : "initial_authorization_requested");
+                    result = await platform.InstallAsync(correlationId, cancellationToken);
+                    if (result.Success && decision == ServiceDeploymentDecision.Upgrade)
+                        result = result with { Data = "upgraded" };
+                    break;
             }
+        }
+        catch (Win32Exception error) when (error.NativeErrorCode == 1223)
+        {
+            result = new WindowsCommandResult(false, "已取消索引服务安装或升级授权；原服务未获准更新。",
+                Data: "authorization_cancelled", NativeErrorCode: 1223);
+        }
+        catch (OperationCanceledException)
+        {
+            result = new WindowsCommandResult(false, "索引服务授权等待已取消或超时，请检查授权结果后重试。",
+                Data: cancellationToken.IsCancellationRequested ? "cancelled" : "authorization_timeout");
+        }
+        catch (Exception error)
+        {
+            result = new WindowsCommandResult(false, "索引服务操作失败，请重试或使用正式安装程序修复。",
+                Data: "deployment_failed", NativeErrorCode: error is Win32Exception native ? native.NativeErrorCode : error.HResult);
+        }
+        Trace(result.Data ?? "deployment_failed", result);
+        return result;
+    }
 
-            var hostPath = Environment.ProcessPath
-                ?? throw new InvalidOperationException("Cannot locate NxTools.PlatformHost.exe.");
-            var indexerPath = ValidatePackagedIndexerPath(
-                hostPath,
-                Path.Combine(AppContext.BaseDirectory, "NxTools.Indexer.exe"));
+    private static void WriteDeploymentLog(IPlatformLog log, Guid? correlationId, string stage,
+        long started, WindowsCommandResult? outcome = null)
+    {
+        try
+        {
+            log.Write("info", "indexer_service.deployment", correlationId, new Dictionary<string, object?>
+            {
+                ["stage"] = stage, ["success"] = outcome?.Success,
+                ["native_error_code"] = outcome?.NativeErrorCode,
+                ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+            });
+        }
+        catch { /* Logging cannot change deployment decisions. */ }
+    }
 
+    // Parent Program routes this before starting ordinary PlatformHost IPC.
+    internal static bool TryParseInstallArguments(IReadOnlyList<string> args,
+        out string? indexerPath, out Guid? correlationId)
+    {
+        indexerPath = null;
+        correlationId = null;
+        if (args.Count is not (2 or 3) || args[0] != "--install-indexer-service") return false;
+        if (args.Count == 3)
+        {
+            if (!Guid.TryParse(args[2], out var parsed)) return false;
+            correlationId = parsed;
+        }
+        indexerPath = args[1];
+        return true;
+    }
+
+    private sealed class NativeDeploymentPlatform(IPlatformLog log, Guid correlationId) : IDeploymentPlatform
+    {
+        public DeploymentState ReadState()
+        {
+            PinCurrentProcessImage();
+            var hostPath = Environment.ProcessPath ?? throw new InvalidOperationException("PlatformHost image unavailable.");
+            using var desktop = TrustedBinary.Open(ValidatePackagedSibling(hostPath, "NxTools.exe"), ReleaseBinaryManifest.DesktopSha256);
+            using var indexer = TrustedBinary.Open(ValidatePackagedIndexerPath(hostPath,
+                Path.Combine(AppContext.BaseDirectory, "NxTools.Indexer.exe")), ReleaseBinaryManifest.IndexerSha256);
+            string hostHash;
+            lock (ProcessImageGate) hostHash = _processImage!.Sha256;
+            var exists = ServiceExists();
+            var healthy = exists && IsProtectedServiceHealthy();
+            ReleaseTuple? approved = null;
+            if (healthy)
+            {
+                using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+                approved = new ReleaseTuple(key?.GetValue(DesktopHashValueName) as string ?? "",
+                    key?.GetValue(PlatformHostHashValueName) as string ?? "", key?.GetValue(BinaryHashValueName) as string ?? "");
+                // Revalidate after capturing approval; unknown/changing state fails closed.
+                healthy = IsProtectedServiceHealthy();
+            }
+            return new DeploymentState(exists, healthy, approved, new ReleaseTuple(desktop.Sha256, hostHash, indexer.Sha256));
+        }
+        public bool StartService() => TryStartService(log, correlationId);
+        public bool HasTrustedUpdater() => TrustedUpdateBroker.IsEnrolled();
+        public bool NeedsTrustEnrollment() => !string.IsNullOrEmpty(NxTools.PlatformHost.Generated.UpdateTrust.PublicKeySpkiBase64)
+            && !TrustedUpdateBroker.IsEnrolled();
+        public async Task<WindowsCommandResult> UpdateTrustedAsync(Guid correlationId, CancellationToken cancellationToken)
+        {
+            var result = await TrustedUpdateBroker.RequestAsync(AppContext.BaseDirectory, correlationId, cancellationToken, log);
+            if (result.Success && !IsInstalledAt(Path.Combine(AppContext.BaseDirectory, "NxTools.Indexer.exe")))
+                return new WindowsCommandResult(false, "更新服务结束，但当前受保护程序组未通过验证。", Data: "tuple_verification_failed");
+            return result;
+        }
+        public async Task<WindowsCommandResult> InstallAsync(Guid correlationId, CancellationToken cancellationToken)
+        {
+            var hostPath = Environment.ProcessPath ?? throw new InvalidOperationException("PlatformHost image unavailable.");
+            var indexerPath = ValidatePackagedIndexerPath(hostPath, Path.Combine(AppContext.BaseDirectory, "NxTools.Indexer.exe"));
             var startInfo = new ProcessStartInfo
             {
-                FileName = hostPath,
-                Verb = "runas",
-                UseShellExecute = true,
-                WindowStyle = ProcessWindowStyle.Hidden
+                FileName = hostPath, Verb = "runas", UseShellExecute = true, WindowStyle = ProcessWindowStyle.Hidden
             };
             startInfo.ArgumentList.Add("--install-indexer-service");
             startInfo.ArgumentList.Add(indexerPath);
-            using var installer = Process.Start(startInfo)
-                ?? throw new InvalidOperationException("Windows did not start the elevated service installer.");
+            startInfo.ArgumentList.Add(correlationId.ToString("D"));
+            using var installer = Process.Start(startInfo) ?? throw new InvalidOperationException("Elevated installer unavailable.");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(OperationTimeoutMs);
             await installer.WaitForExitAsync(timeout.Token);
             if (installer.ExitCode != 0)
-            {
-                return new WindowsCommandResult(
-                    false,
-                    $"索引服务安装失败（退出码 {installer.ExitCode}）。");
-            }
+                return new WindowsCommandResult(false, "索引服务安装或升级失败，请使用正式安装程序修复。",
+                    Data: "install_failed", NativeErrorCode: installer.ExitCode);
             return IsInstalledAt(indexerPath)
                 ? new WindowsCommandResult(true, Data: "installed")
-                : new WindowsCommandResult(false, "安装程序结束，但服务注册路径未通过验证。");
-        }
-        catch (Win32Exception error) when (error.NativeErrorCode == 1223)
-        {
-            return new WindowsCommandResult(false, "已取消索引服务安装授权。");
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            return new WindowsCommandResult(false, "索引服务安装等待超时。");
-        }
-        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException or Win32Exception)
-        {
-            log.Write("error", "indexer_service.ensure_failed", fields: new Dictionary<string, object?>
-            {
-                ["exception_type"] = error.GetType().FullName,
-                ["message"] = error.Message
-            });
-            return new WindowsCommandResult(false, error.Message);
+                : new WindowsCommandResult(false, "安装程序结束，但当前版本受保护程序组未通过验证。", Data: "tuple_verification_failed");
         }
     }
 
 
 
-    public static int InstallElevated(string indexerPath, IPlatformLog log)
+    public static int InstallElevated(string indexerPath, IPlatformLog log, Guid? correlationId = null, bool enrollUpdater = true)
     {
+        var started = Stopwatch.GetTimestamp();
+        WriteDeploymentLog(log, correlationId, "elevated_started", started);
         try
         {
             var hostPath = Environment.ProcessPath
@@ -149,6 +279,14 @@ internal static class IndexerServiceInstaller
             indexerPath = ValidatePackagedIndexerPath(hostPath, indexerPath);
             var desktopPath = ValidatePackagedSibling(hostPath, "NxTools.exe");
             var browserHostPath = ValidatePackagedSibling(hostPath, "NxTools.BrowserHost.exe");
+            using var deploymentGate = TrustedDeploymentGate.Acquire();
+            if (enrollUpdater && TrustedUpdateBroker.IsEnrolled())
+                throw new InvalidOperationException("Use the enrolled trusted updater; explicit maintenance is required for repair.");
+            using var signedRelease = string.IsNullOrEmpty(NxTools.PlatformHost.Generated.UpdateTrust.PublicKeySpkiBase64)
+                ? null
+                : TrustedReleaseManifest.VerifyPackage(Path.GetDirectoryName(indexerPath)!,
+                    Convert.FromBase64String(NxTools.PlatformHost.Generated.UpdateTrust.PublicKeySpkiBase64), 0);
+            if (enrollUpdater && signedRelease is not null) TrustedUpdateBroker.ValidateEnrollmentCandidate(signedRelease);
             PinCurrentProcessImage();
             string trustedPlatformHostHash;
             lock (ProcessImageGate)
@@ -171,6 +309,7 @@ internal static class IndexerServiceInstaller
                 ReleaseBinaryManifest.BrowserHostSha256);
 
             var serviceExists = ServiceExists();
+            WriteDeploymentLog(log, correlationId, "source_tuple_verified", started);
             if (serviceExists)
             {
                 RunSc(["stop", ServiceName], [0, 1062]);
@@ -186,7 +325,7 @@ internal static class IndexerServiceInstaller
             StopProtectedProcesses(
                 [protectedDesktopPath, protectedPlatformHostPath, protectedBrowserHostPath],
                 Environment.ProcessId,
-                log);
+                log, correlationId);
             using var protectedDirectories =
                 HardenServiceDirectory(protectedDirectory);
             var protectedIndexerPath = DeployProtectedBinary(
@@ -201,7 +340,8 @@ internal static class IndexerServiceInstaller
                 desktopSource,
                 protectedDirectory,
                 "NxTools.exe");
-            CopyBrowserExtensionInto(protectedDirectory);
+            if (signedRelease is null) CopyBrowserExtensionInto(protectedDirectory);
+            else CopySignedAssets(signedRelease, Path.GetDirectoryName(indexerPath)!, protectedDirectory);
             protectedBrowserHostPath = DeployProtectedBinary(
                 browserHostSource,
                 protectedDirectory,
@@ -253,19 +393,16 @@ internal static class IndexerServiceInstaller
             protectedDirectories.Validate();
             RunSc(["start", ServiceName], [0, 1056]);
             WaitForServiceRunning();
-            log.Write("info", "indexer_service.installed", fields: new Dictionary<string, object?>
-            {
-                ["service_name"] = ServiceName
-            });
+            if (enrollUpdater) TrustedUpdateBroker.EnrollIfConfigured(Path.GetDirectoryName(indexerPath)!, log, correlationId);
+            WriteDeploymentLog(log, correlationId, "elevated_installed", started,
+                new WindowsCommandResult(true, Data: "installed"));
             return 0;
         }
         catch (Exception error)
         {
-            log.Write("error", "indexer_service.install_failed", fields: new Dictionary<string, object?>
-            {
-                ["exception_type"] = error.GetType().FullName,
-                ["message"] = error.Message
-            });
+            WriteDeploymentLog(log, correlationId, "elevated_failed", started,
+                new WindowsCommandResult(false, NativeErrorCode:
+                    error is Win32Exception native ? native.NativeErrorCode : error.HResult));
             return 1;
         }
     }
@@ -458,6 +595,12 @@ internal static class IndexerServiceInstaller
         return Convert.ToHexString(SHA256.HashData(stream));
     }
 
+    internal static bool VerifiedPackagedBinaryHashMatches(string path, string expectedHash)
+    {
+        using var binary = TrustedBinary.Open(path, expectedHash);
+        return true;
+    }
+
     internal static bool BinaryHashMatches(string registeredHash, string indexerPath) =>
         string.Equals(
             registeredHash,
@@ -551,6 +694,26 @@ internal static class IndexerServiceInstaller
     }
 
 
+    private static void CopySignedAssets(VerifiedRelease release, string sourceRoot, string protectedDirectory)
+    {
+        var extensionRoot = Path.Combine(protectedDirectory, "browser_extension");
+        if (Directory.Exists(extensionRoot))
+        {
+            TrustedUpdateTransaction.RejectReparseTree(extensionRoot);
+            Directory.Delete(extensionRoot, true);
+        }
+        foreach (var file in release.Files)
+        {
+            if (file.Path is "NxTools.exe" or "NxTools.PlatformHost.exe" or "NxTools.Indexer.exe" or "NxTools.BrowserHost.exe") continue;
+            var relative = file.Path.Replace('/', Path.DirectorySeparatorChar);
+            var destination = Path.Combine(protectedDirectory, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Copy(Path.Combine(sourceRoot, relative), destination, true);
+            if (!string.Equals(ComputeBinaryHash(destination), file.Sha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Signed deployment asset mismatch.");
+        }
+    }
+
     private static void CopyBrowserExtensionInto(string protectedDirectory)
     {
         var sourceRoot = AppContext.BaseDirectory;
@@ -643,7 +806,8 @@ internal static class IndexerServiceInstaller
     internal static void StopProtectedProcesses(
         IReadOnlyCollection<string> protectedExecutablePaths,
         int installerProcessId,
-        IPlatformLog log)
+        IPlatformLog log,
+        Guid? correlationId = null)
     {
         var protectedPaths = protectedExecutablePaths
             .Select(NormalizeFinalPath)
@@ -674,15 +838,16 @@ internal static class IndexerServiceInstaller
                         InvalidOperationException or
                         NotSupportedException)
                     {
-                        log.Write(
-                            "warning",
-                            "indexer_service.protected_process_inspection_failed",
-                            fields: new Dictionary<string, object?>
-                            {
-                                ["process_id"] = process.Id,
-                                ["process_name"] = processName,
-                                ["message"] = error.Message
-                            });
+                        try
+                        {
+                            log.Write("warning", "indexer_service.protected_process_inspection_failed", correlationId,
+                                new Dictionary<string, object?>
+                                {
+                                    ["process_id"] = process.Id,
+                                    ["native_error_code"] = error is Win32Exception native ? native.NativeErrorCode : error.HResult
+                                });
+                        }
+                        catch { /* Inspection diagnostics are best effort. */ }
                         continue;
                     }
 
@@ -700,14 +865,12 @@ internal static class IndexerServiceInstaller
                             throw new TimeoutException(
                                 $"等待旧程序退出超时：{processPath}");
                         }
-                        log.Write(
-                            "info",
-                            "indexer_service.protected_process_stopped",
-                            fields: new Dictionary<string, object?>
-                            {
-                                ["process_id"] = process.Id,
-                                ["path"] = processPath
-                            });
+                        try
+                        {
+                            log.Write("info", "indexer_service.protected_process_stopped", correlationId,
+                                new Dictionary<string, object?> { ["process_id"] = process.Id });
+                        }
+                        catch { /* Stop diagnostics cannot change the deployment outcome. */ }
                     }
                     catch (Exception error) when (
                         error is Win32Exception or
@@ -721,6 +884,42 @@ internal static class IndexerServiceInstaller
                 }
             }
         }
+    }
+
+    internal static ProtectedDirectoryLease HardenProductChildDirectory(params string[] segments)
+    {
+        if (segments.Length is < 1 or > 3 || segments[0] != "Updater" ||
+            segments.Any(segment => segment is not ("Updater" or "Bootstrap" or "Releases")))
+            throw new InvalidDataException("Unknown protected updater directory.");
+        var lease = new ProtectedDirectoryLease();
+        try
+        {
+            PrepareProtectedDirectory(ProtectedVendorDirectory(), lease);
+            PrepareProtectedDirectory(ProtectedProductDirectory(), lease);
+            var path = ProtectedProductDirectory();
+            foreach (var segment in segments)
+            {
+                path = Path.Combine(path, segment);
+                PrepareProtectedDirectory(path, lease);
+            }
+            lease.Validate();
+            return lease;
+        }
+        catch { lease.Dispose(); throw; }
+    }
+
+    internal static void ValidateProductChildDirectory(params string[] segments)
+    {
+        using var lease = new ProtectedDirectoryLease();
+        var path = ProtectedProductDirectory();
+        lease.Add(ProtectedVendorDirectory());
+        lease.Add(path);
+        foreach (var segment in segments)
+        {
+            path = Path.Combine(path, segment);
+            lease.Add(path);
+        }
+        lease.Validate();
     }
 
     private static ProtectedDirectoryLease HardenServiceDirectory(
@@ -948,7 +1147,7 @@ internal static class IndexerServiceInstaller
         }
     }
 
-    private sealed class ProtectedDirectoryLease : IDisposable
+    internal sealed class ProtectedDirectoryLease : IDisposable
     {
         private readonly List<(string Path, SafeFileHandle Handle)> _directories = [];
 
@@ -1104,8 +1303,6 @@ internal static class IndexerServiceInstaller
                 $"icacls.exe failed with exit code {process.ExitCode}: {detail}");
         }
     }
-
-    internal static bool ShouldRequestInitialAuthorization(bool serviceExists) => !serviceExists;
 
     private static bool ServiceExists()
     {
@@ -1358,8 +1555,9 @@ internal static class IndexerServiceInstaller
             string.Equals(arguments, "--service", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool TryStartService(IPlatformLog log)
+    private static bool TryStartService(IPlatformLog log, Guid correlationId)
     {
+        var started = Stopwatch.GetTimestamp();
         try
         {
             RunSc(["start", ServiceName], [0, 1056]);
@@ -1368,10 +1566,13 @@ internal static class IndexerServiceInstaller
         }
         catch (Exception error)
         {
-            log.Write("warning", "indexer_service.start_failed", fields: new Dictionary<string, object?>
+            try
             {
-                ["message"] = error.Message
-            });
+                WriteDeploymentLog(log, correlationId, "start_failed", started,
+                    new WindowsCommandResult(false, NativeErrorCode:
+                        error is Win32Exception native ? native.NativeErrorCode : error.HResult));
+            }
+            catch { /* Diagnostics cannot change the service start result. */ }
             return false;
         }
     }

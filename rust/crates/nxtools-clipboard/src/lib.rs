@@ -1,4 +1,6 @@
 mod archive;
+mod categories;
+mod query;
 mod storage;
 
 use std::collections::HashSet;
@@ -104,6 +106,23 @@ pub struct ClipboardUsage {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClipboardHistoryPage {
     pub items: Vec<ClipboardItem>,
+    pub total: usize,
+    pub has_more: bool,
+}
+
+/// List-only text prefix budget, measured in Unicode scalar values.
+pub const CLIPBOARD_SUMMARY_CHARACTERS: usize = 400;
+
+/// Presentation snapshot only: hydrate by immutable ID before actions or editing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardItemSummary {
+    pub item: ClipboardItem,
+    pub text_character_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClipboardSummaryPage {
+    pub items: Vec<ClipboardItemSummary>,
     pub total: usize,
     pub has_more: bool,
 }
@@ -472,6 +491,7 @@ impl ClipboardHistory {
         let database_path = path.as_ref().to_owned();
         let connection = Connection::open(&database_path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
+        query::register_summary_functions(&connection)?;
         connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS clipboard_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -569,7 +589,7 @@ impl ClipboardHistory {
              WHERE deleted_at_unix_ms = 0",
             [],
         )?;
-        seed_builtin_categories(&connection)?;
+        categories::seed_builtin_categories(&connection)?;
         promote_legacy_single_image_rows(&connection)?;
         Ok(Self {
             connection,
@@ -756,32 +776,6 @@ impl ClipboardHistory {
         Ok(CaptureOutcome::Inserted(item))
     }
 
-    pub fn recent(&self, limit: usize) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query("", None, false, None, ClipboardSearchScope::Content, limit)
-    }
-
-    pub fn counts(&self) -> Result<ClipboardHistoryCounts, ClipboardHistoryError> {
-        self.connection
-            .query_row(
-                "SELECT COUNT(*),
-                        COALESCE(SUM(content_type = 'text'), 0),
-                        COALESCE(SUM(content_type = 'image'), 0),
-                        COALESCE(SUM(content_type = 'files'), 0)
-                 FROM clipboard_items
-                 WHERE deleted_at_unix_ms = 0",
-                [],
-                |row| {
-                    Ok(ClipboardHistoryCounts {
-                        total: row.get::<_, i64>(0)? as usize,
-                        text: row.get::<_, i64>(1)? as usize,
-                        images: row.get::<_, i64>(2)? as usize,
-                        files: row.get::<_, i64>(3)? as usize,
-                    })
-                },
-            )
-            .map_err(Into::into)
-    }
-
     pub fn export_archive(
         &self,
         destination: &Path,
@@ -797,708 +791,6 @@ impl ClipboardHistory {
         archive::import_archive(self, archive_path, asset_root)
     }
 
-    pub fn recent_by_kind(
-        &self,
-        kind: ClipboardKind,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query(
-            "",
-            Some(kind),
-            false,
-            None,
-            ClipboardSearchScope::Content,
-            limit,
-        )
-    }
-
-    pub fn search(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query(
-            query,
-            None,
-            false,
-            None,
-            ClipboardSearchScope::Content,
-            limit,
-        )
-    }
-
-    pub fn search_extended(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query(
-            query,
-            None,
-            false,
-            None,
-            ClipboardSearchScope::Extended,
-            limit,
-        )
-    }
-
-    pub fn search_by_kind(
-        &self,
-        query: &str,
-        kind: ClipboardKind,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query(
-            query,
-            Some(kind),
-            false,
-            None,
-            ClipboardSearchScope::Content,
-            limit,
-        )
-    }
-
-    pub fn categories(&self) -> Result<Vec<ClipboardCategory>, ClipboardHistoryError> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, name, kind, sort_order
-             FROM clipboard_categories
-             ORDER BY sort_order, id",
-        )?;
-        statement
-            .query_map([], map_category)?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
-    }
-
-    pub fn create_category(
-        &mut self,
-        name: &str,
-    ) -> Result<ClipboardCategory, ClipboardHistoryError> {
-        let name = validate_category_name(name)?;
-        self.ensure_category_name_available(name, None)?;
-        let sort_order = self.connection.query_row(
-            "SELECT COALESCE(MAX(sort_order), -1) + 1 FROM clipboard_categories",
-            [],
-            |row| row.get::<_, i64>(0),
-        )?;
-        let id = format!("custom-{}", uuid::Uuid::new_v4());
-        self.connection.execute(
-            "INSERT INTO clipboard_categories (id, name, kind, sort_order)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![id, name, ClipboardCategoryKind::Custom.as_str(), sort_order],
-        )?;
-        self.category_by_id(&id)
-    }
-
-    pub fn rename_category(
-        &mut self,
-        category_id: &str,
-        name: &str,
-    ) -> Result<ClipboardCategory, ClipboardHistoryError> {
-        let category = self.category_by_id(category_id)?;
-        if category.kind.is_builtin() {
-            return Err(ClipboardHistoryError::BuiltInCategoryImmutable(
-                category_id.to_owned(),
-            ));
-        }
-        let name = validate_category_name(name)?;
-        self.ensure_category_name_available(name, Some(category_id))?;
-        self.connection.execute(
-            "UPDATE clipboard_categories SET name = ?1 WHERE id = ?2",
-            params![name, category_id],
-        )?;
-        self.category_by_id(category_id)
-    }
-
-    pub fn delete_category(&mut self, category_id: &str) -> Result<(), ClipboardHistoryError> {
-        let category = self.category_by_id(category_id)?;
-        if category.kind.is_builtin() {
-            return Err(ClipboardHistoryError::BuiltInCategoryImmutable(
-                category_id.to_owned(),
-            ));
-        }
-        let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "DELETE FROM clipboard_category_sources WHERE category_id = ?1",
-            [category_id],
-        )?;
-        transaction.execute(
-            "DELETE FROM clipboard_categories WHERE id = ?1",
-            [category_id],
-        )?;
-        transaction.commit()?;
-        Ok(())
-    }
-
-    pub fn reorder_categories(
-        &mut self,
-        ordered_ids: &[String],
-    ) -> Result<Vec<ClipboardCategory>, ClipboardHistoryError> {
-        let existing = self.categories()?;
-        let expected = existing
-            .iter()
-            .map(|category| category.id.as_str())
-            .collect::<HashSet<_>>();
-        let supplied = ordered_ids
-            .iter()
-            .map(String::as_str)
-            .collect::<HashSet<_>>();
-        if ordered_ids.len() != existing.len() || supplied != expected {
-            return Err(ClipboardHistoryError::InvalidCategoryOrder);
-        }
-        let transaction = self.connection.transaction()?;
-        for (sort_order, id) in ordered_ids.iter().enumerate() {
-            transaction.execute(
-                "UPDATE clipboard_categories SET sort_order = ?1 WHERE id = ?2",
-                params![sort_order as i64, id],
-            )?;
-        }
-        transaction.commit()?;
-        self.categories()
-    }
-
-    pub fn category_sources(
-        &self,
-        category_id: &str,
-    ) -> Result<Vec<String>, ClipboardHistoryError> {
-        let category = self.category_by_id(category_id)?;
-        if category.kind.is_builtin() {
-            return Ok(Vec::new());
-        }
-        let mut statement = self.connection.prepare(
-            "SELECT process_name FROM clipboard_category_sources
-             WHERE category_id = ?1
-             ORDER BY process_name COLLATE NOCASE",
-        )?;
-        statement
-            .query_map([category_id], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
-    }
-
-    pub fn source_process_names(&self) -> Result<Vec<String>, ClipboardHistoryError> {
-        let mut statement = self.connection.prepare(
-            "SELECT DISTINCT source_process_name
-             FROM clipboard_items
-             WHERE deleted_at_unix_ms = 0 AND trim(source_process_name) != ''
-             ORDER BY source_process_name COLLATE NOCASE",
-        )?;
-        statement
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(Into::into)
-    }
-
-    pub fn add_category_source(
-        &mut self,
-        category_id: &str,
-        process_name: &str,
-    ) -> Result<Vec<String>, ClipboardHistoryError> {
-        self.ensure_custom_category(category_id)?;
-        let process_name = validate_category_source(process_name)?;
-        self.connection.execute(
-            "INSERT OR IGNORE INTO clipboard_category_sources (category_id, process_name)
-             VALUES (?1, ?2)",
-            params![category_id, process_name],
-        )?;
-        self.category_sources(category_id)
-    }
-
-    pub fn remove_category_source(
-        &mut self,
-        category_id: &str,
-        process_name: &str,
-    ) -> Result<Vec<String>, ClipboardHistoryError> {
-        self.ensure_custom_category(category_id)?;
-        let process_name = validate_category_source(process_name)?;
-        self.connection.execute(
-            "DELETE FROM clipboard_category_sources
-             WHERE category_id = ?1 AND process_name = ?2 COLLATE NOCASE",
-            params![category_id, process_name],
-        )?;
-        self.category_sources(category_id)
-    }
-
-    pub fn replace_category_sources(
-        &mut self,
-        category_id: &str,
-        process_names: &[String],
-    ) -> Result<Vec<String>, ClipboardHistoryError> {
-        self.ensure_custom_category(category_id)?;
-        let mut normalized = HashSet::new();
-        let mut validated = Vec::new();
-        for process_name in process_names {
-            let process_name = validate_category_source(process_name)?.to_owned();
-            if normalized.insert(process_name.to_lowercase()) {
-                validated.push(process_name);
-            }
-        }
-        validated.sort_by_key(|value| value.to_lowercase());
-
-        let transaction = self.connection.transaction()?;
-        transaction.execute(
-            "DELETE FROM clipboard_category_sources WHERE category_id = ?1",
-            [category_id],
-        )?;
-        for process_name in &validated {
-            transaction.execute(
-                "INSERT OR IGNORE INTO clipboard_category_sources (category_id, process_name)
-                 VALUES (?1, ?2)",
-                params![category_id, process_name],
-            )?;
-        }
-        transaction.commit()?;
-        self.category_sources(category_id)
-    }
-
-    fn ensure_custom_category(
-        &self,
-        category_id: &str,
-    ) -> Result<ClipboardCategory, ClipboardHistoryError> {
-        let category = self.category_by_id(category_id)?;
-        if category.kind.is_builtin() {
-            return Err(ClipboardHistoryError::BuiltInCategoryImmutable(
-                category_id.to_owned(),
-            ));
-        }
-        Ok(category)
-    }
-
-    fn ensure_category_name_available(
-        &self,
-        name: &str,
-        excluded_id: Option<&str>,
-    ) -> Result<(), ClipboardHistoryError> {
-        let existing = self
-            .connection
-            .query_row(
-                "SELECT id FROM clipboard_categories
-                 WHERE name = ?1 COLLATE NOCASE AND (?2 IS NULL OR id != ?2)
-                 LIMIT 1",
-                params![name, excluded_id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?;
-        if existing.is_some() {
-            return Err(ClipboardHistoryError::CategoryNameInUse(name.to_owned()));
-        }
-        Ok(())
-    }
-
-    pub fn query_category(
-        &self,
-        query: &str,
-        category_id: &str,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query_category_with_scope(query, category_id, ClipboardSearchScope::Content, limit)
-    }
-
-    pub fn query_category_with_scope(
-        &self,
-        query: &str,
-        category_id: &str,
-        search_scope: ClipboardSearchScope,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        let category = self.category_by_id(category_id)?;
-        match category.kind {
-            ClipboardCategoryKind::All => self.query(query, None, false, None, search_scope, limit),
-            ClipboardCategoryKind::Favorite => {
-                self.query(query, None, true, None, search_scope, limit)
-            }
-            ClipboardCategoryKind::Text => self.query(
-                query,
-                Some(ClipboardKind::Text),
-                false,
-                None,
-                search_scope,
-                limit,
-            ),
-            ClipboardCategoryKind::Image => self.query(
-                query,
-                Some(ClipboardKind::Image),
-                false,
-                None,
-                search_scope,
-                limit,
-            ),
-            ClipboardCategoryKind::Files => self.query(
-                query,
-                Some(ClipboardKind::Files),
-                false,
-                None,
-                search_scope,
-                limit,
-            ),
-            ClipboardCategoryKind::Custom => {
-                self.query(query, None, false, Some(category_id), search_scope, limit)
-            }
-        }
-    }
-
-    pub fn query_category_page(
-        &self,
-        query: &str,
-        category_id: &str,
-        search_scope: ClipboardSearchScope,
-        offset: usize,
-        limit: usize,
-    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
-        self.query_category_page_with_total(query, category_id, search_scope, offset, limit, None)
-    }
-
-    pub fn query_category_page_with_total(
-        &self,
-        query: &str,
-        category_id: &str,
-        search_scope: ClipboardSearchScope,
-        offset: usize,
-        limit: usize,
-        known_total: Option<usize>,
-    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
-        self.query_category_page_with_cursor(
-            query,
-            category_id,
-            search_scope,
-            offset,
-            limit,
-            None,
-            known_total,
-        )
-    }
-
-    pub fn query_category_page_after(
-        &self,
-        query: &str,
-        category_id: &str,
-        search_scope: ClipboardSearchScope,
-        cursor: ClipboardPageCursor,
-        limit: usize,
-        known_total: Option<usize>,
-    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
-        self.query_category_page_with_cursor(
-            query,
-            category_id,
-            search_scope,
-            0,
-            limit,
-            Some(cursor),
-            known_total,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn query_category_page_with_cursor(
-        &self,
-        query: &str,
-        category_id: &str,
-        search_scope: ClipboardSearchScope,
-        offset: usize,
-        limit: usize,
-        cursor: Option<ClipboardPageCursor>,
-        known_total: Option<usize>,
-    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
-        let category = self.category_by_id(category_id)?;
-        match category.kind {
-            ClipboardCategoryKind::All => self.query_page(
-                query,
-                None,
-                false,
-                None,
-                search_scope,
-                offset,
-                limit,
-                known_total,
-                cursor,
-            ),
-            ClipboardCategoryKind::Favorite => self.query_page(
-                query,
-                None,
-                true,
-                None,
-                search_scope,
-                offset,
-                limit,
-                known_total,
-                cursor,
-            ),
-            ClipboardCategoryKind::Text => self.query_page(
-                query,
-                Some(ClipboardKind::Text),
-                false,
-                None,
-                search_scope,
-                offset,
-                limit,
-                known_total,
-                cursor,
-            ),
-            ClipboardCategoryKind::Image => self.query_page(
-                query,
-                Some(ClipboardKind::Image),
-                false,
-                None,
-                search_scope,
-                offset,
-                limit,
-                known_total,
-                cursor,
-            ),
-            ClipboardCategoryKind::Files => self.query_page(
-                query,
-                Some(ClipboardKind::Files),
-                false,
-                None,
-                search_scope,
-                offset,
-                limit,
-                known_total,
-                cursor,
-            ),
-            ClipboardCategoryKind::Custom => self.query_page(
-                query,
-                None,
-                false,
-                Some(category_id),
-                search_scope,
-                offset,
-                limit,
-                known_total,
-                cursor,
-            ),
-        }
-    }
-
-    fn category_by_id(
-        &self,
-        category_id: &str,
-    ) -> Result<ClipboardCategory, ClipboardHistoryError> {
-        self.connection
-            .query_row(
-                "SELECT id, name, kind, sort_order FROM clipboard_categories WHERE id = ?1",
-                [category_id],
-                map_category,
-            )
-            .optional()?
-            .ok_or_else(|| ClipboardHistoryError::CategoryNotFound(category_id.to_owned()))
-    }
-
-    fn query(
-        &self,
-        query: &str,
-        kind: Option<ClipboardKind>,
-        favorite_only: bool,
-        source_category_id: Option<&str>,
-        search_scope: ClipboardSearchScope,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        self.query_items(
-            query,
-            kind,
-            favorite_only,
-            source_category_id,
-            search_scope,
-            0,
-            limit,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
-    fn query_page(
-        &self,
-        query: &str,
-        kind: Option<ClipboardKind>,
-        favorite_only: bool,
-        source_category_id: Option<&str>,
-        search_scope: ClipboardSearchScope,
-        offset: usize,
-        limit: usize,
-        known_total: Option<usize>,
-        cursor: Option<ClipboardPageCursor>,
-    ) -> Result<ClipboardHistoryPage, ClipboardHistoryError> {
-        let total = match known_total {
-            Some(total) => total,
-            None => self.connection.query_row(
-                "SELECT COUNT(*)
-                 FROM clipboard_items
-                 WHERE deleted_at_unix_ms = 0
-                   AND (?1 IS NULL OR content_type = ?1)
-                   AND (?2 = 0 OR is_favorite = 1)
-                   AND (?3 IS NULL OR EXISTS (
-                        SELECT 1 FROM clipboard_category_sources AS category_source
-                        WHERE category_source.category_id = ?3
-                          AND category_source.process_name = clipboard_items.source_process_name
-                   ))
-                   AND (?4 = ''
-                        OR instr(lower(text), lower(?4)) > 0
-                        OR (?5 = 1 AND (
-                            instr(lower(image_path), lower(?4)) > 0
-                            OR instr(lower(file_paths_json), lower(?4)) > 0
-                            OR instr(lower(source_process_name), lower(?4)) > 0
-                            OR instr(lower(source_window_title), lower(?4)) > 0
-                        )))",
-                params![
-                    kind.map(ClipboardKind::as_str),
-                    favorite_only,
-                    source_category_id,
-                    query,
-                    search_scope == ClipboardSearchScope::Extended,
-                ],
-                |row| row.get::<_, i64>(0),
-            )? as usize,
-        };
-        let page_limit = limit.clamp(1, 500);
-        let (mut items, has_more) = if let Some(cursor) = cursor {
-            let mut items = self.query_items_after(
-                query,
-                kind,
-                favorite_only,
-                source_category_id,
-                search_scope,
-                cursor,
-                page_limit.saturating_add(1),
-            )?;
-            let has_more = items.len() > page_limit;
-            items.truncate(page_limit);
-            (items, has_more)
-        } else {
-            let items = self.query_items(
-                query,
-                kind,
-                favorite_only,
-                source_category_id,
-                search_scope,
-                offset,
-                page_limit,
-            )?;
-            let has_more = offset.saturating_add(items.len()) < total;
-            (items, has_more)
-        };
-        Ok(ClipboardHistoryPage {
-            has_more,
-            items: std::mem::take(&mut items),
-            total,
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn query_items(
-        &self,
-        query: &str,
-        kind: Option<ClipboardKind>,
-        favorite_only: bool,
-        source_category_id: Option<&str>,
-        search_scope: ClipboardSearchScope,
-        offset: usize,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, content_type, text, image_path, image_width, image_height,
-                    file_paths_json, source_window_handle, source_process_id,
-                    source_process_name, source_process_icon_path, source_window_title,
-                    captured_at_unix_ms, last_used_at_unix_ms, copy_count, is_favorite, is_pinned,
-                    deleted_at_unix_ms
-             FROM clipboard_items
-             WHERE deleted_at_unix_ms = 0
-               AND (?1 IS NULL OR content_type = ?1)
-               AND (?2 = 0 OR is_favorite = 1)
-               AND (?3 IS NULL OR EXISTS (
-                    SELECT 1 FROM clipboard_category_sources AS category_source
-                    WHERE category_source.category_id = ?3
-                      AND category_source.process_name = clipboard_items.source_process_name
-               ))
-               AND (?4 = ''
-                    OR instr(lower(text), lower(?4)) > 0
-                    OR (?5 = 1 AND (
-                        instr(lower(image_path), lower(?4)) > 0
-                        OR instr(lower(file_paths_json), lower(?4)) > 0
-                        OR instr(lower(source_process_name), lower(?4)) > 0
-                        OR instr(lower(source_window_title), lower(?4)) > 0
-                    )))
-             ORDER BY is_pinned DESC, last_used_at_unix_ms DESC,
-                      captured_at_unix_ms DESC, id DESC
-             LIMIT ?6 OFFSET ?7",
-        )?;
-        let rows = statement.query_map(
-            params![
-                kind.map(ClipboardKind::as_str),
-                favorite_only,
-                source_category_id,
-                query,
-                search_scope == ClipboardSearchScope::Extended,
-                limit as i64,
-                offset as i64,
-            ],
-            map_item,
-        )?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn query_items_after(
-        &self,
-        query: &str,
-        kind: Option<ClipboardKind>,
-        favorite_only: bool,
-        source_category_id: Option<&str>,
-        search_scope: ClipboardSearchScope,
-        cursor: ClipboardPageCursor,
-        limit: usize,
-    ) -> Result<Vec<ClipboardItem>, ClipboardHistoryError> {
-        let mut statement = self.connection.prepare(
-            "SELECT id, content_type, text, image_path, image_width, image_height,
-                    file_paths_json, source_window_handle, source_process_id,
-                    source_process_name, source_process_icon_path, source_window_title,
-                    captured_at_unix_ms, last_used_at_unix_ms, copy_count, is_favorite, is_pinned,
-                    deleted_at_unix_ms
-             FROM clipboard_items
-             WHERE deleted_at_unix_ms = 0
-               AND (?1 IS NULL OR content_type = ?1)
-               AND (?2 = 0 OR is_favorite = 1)
-               AND (?3 IS NULL OR EXISTS (
-                    SELECT 1 FROM clipboard_category_sources AS category_source
-                    WHERE category_source.category_id = ?3
-                      AND category_source.process_name = clipboard_items.source_process_name
-               ))
-               AND (?4 = ''
-                    OR instr(lower(text), lower(?4)) > 0
-                    OR (?5 = 1 AND (
-                        instr(lower(image_path), lower(?4)) > 0
-                        OR instr(lower(file_paths_json), lower(?4)) > 0
-                        OR instr(lower(source_process_name), lower(?4)) > 0
-                        OR instr(lower(source_window_title), lower(?4)) > 0
-                    )))
-               AND (
-                    is_pinned < ?6
-                    OR (is_pinned = ?6 AND last_used_at_unix_ms < ?7)
-                    OR (is_pinned = ?6 AND last_used_at_unix_ms = ?7
-                        AND captured_at_unix_ms < ?8)
-                    OR (is_pinned = ?6 AND last_used_at_unix_ms = ?7
-                        AND captured_at_unix_ms = ?8 AND id < ?9)
-               )
-             ORDER BY is_pinned DESC, last_used_at_unix_ms DESC,
-                      captured_at_unix_ms DESC, id DESC
-             LIMIT ?10",
-        )?;
-        let rows = statement.query_map(
-            params![
-                kind.map(ClipboardKind::as_str),
-                favorite_only,
-                source_category_id,
-                query,
-                search_scope == ClipboardSearchScope::Extended,
-                i64::from(cursor.is_pinned),
-                cursor.last_used_at_unix_ms,
-                cursor.captured_at_unix_ms,
-                cursor.id,
-                limit as i64,
-            ],
-            map_item,
-        )?;
-        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
-    }
-
     fn item_by_id(&self, id: i64) -> Result<ClipboardItem, ClipboardHistoryError> {
         self.connection
             .query_row(
@@ -1512,6 +804,35 @@ impl ClipboardHistory {
                 map_item,
             )
             .map_err(Into::into)
+    }
+
+    /// Retrieve a full active row by immutable ID; unlike item_by_id, deleted rows are rejected.
+    pub fn active_item(&self, item_id: i64) -> Result<ClipboardItem, ClipboardHistoryError> {
+        self.connection
+            .query_row(
+                "SELECT id, content_type, text, image_path, image_width, image_height,
+                    file_paths_json, source_window_handle, source_process_id,
+                    source_process_name, source_process_icon_path, source_window_title,
+                    captured_at_unix_ms, last_used_at_unix_ms, copy_count, is_favorite, is_pinned,
+                    deleted_at_unix_ms
+             FROM clipboard_items WHERE id = ?1 AND deleted_at_unix_ms = 0",
+                [item_id],
+                map_item,
+            )
+            .optional()?
+            .ok_or(ClipboardHistoryError::ItemNotFound(item_id))
+    }
+
+    /// Read the full active row and its native formats from one SQLite snapshot.
+    pub fn active_item_with_native_formats(
+        &mut self,
+        item_id: i64,
+    ) -> Result<(ClipboardItem, Vec<ClipboardNativeFormat>), ClipboardHistoryError> {
+        let transaction = self.connection.unchecked_transaction()?;
+        let item = self.active_item(item_id)?;
+        let formats = read_native_formats(&self.connection, item_id)?;
+        transaction.commit()?;
+        Ok((item, formats))
     }
 
     pub fn set_favorite(
@@ -1877,62 +1198,6 @@ fn map_item(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardItem> {
     })
 }
 
-fn map_category(row: &rusqlite::Row<'_>) -> rusqlite::Result<ClipboardCategory> {
-    let kind = row.get::<_, String>(2)?;
-    let kind = ClipboardCategoryKind::from_str(&kind).map_err(|message| {
-        rusqlite::Error::FromSqlConversionFailure(
-            2,
-            rusqlite::types::Type::Text,
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                message,
-            )),
-        )
-    })?;
-    Ok(ClipboardCategory {
-        id: row.get(0)?,
-        name: row.get(1)?,
-        kind,
-        sort_order: row.get(3)?,
-    })
-}
-
-fn seed_builtin_categories(connection: &Connection) -> Result<(), rusqlite::Error> {
-    let builtins = [
-        (BUILTIN_ALL_CATEGORY_ID, "全部", ClipboardCategoryKind::All),
-        (
-            BUILTIN_FAVORITE_CATEGORY_ID,
-            "星标",
-            ClipboardCategoryKind::Favorite,
-        ),
-        (
-            BUILTIN_TEXT_CATEGORY_ID,
-            "文字",
-            ClipboardCategoryKind::Text,
-        ),
-        (
-            BUILTIN_IMAGE_CATEGORY_ID,
-            "图片",
-            ClipboardCategoryKind::Image,
-        ),
-        (
-            BUILTIN_FILES_CATEGORY_ID,
-            "文件",
-            ClipboardCategoryKind::Files,
-        ),
-    ];
-    let transaction = connection.unchecked_transaction()?;
-    for (sort_order, (id, name, kind)) in builtins.into_iter().enumerate() {
-        transaction.execute(
-            "INSERT INTO clipboard_categories (id, name, kind, sort_order)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name, kind = excluded.kind",
-            params![id, name, kind.as_str(), sort_order as i64],
-        )?;
-    }
-    transaction.commit()
-}
-
 fn promote_legacy_single_image_rows(connection: &Connection) -> Result<(), ClipboardHistoryError> {
     let migration_complete = connection
         .query_row(
@@ -2037,24 +1302,6 @@ pub enum ClipboardHistoryError {
     InvalidCategoryOrder,
     #[error("clipboard category source process cannot be empty")]
     EmptyCategorySource,
-}
-
-fn validate_category_name(name: &str) -> Result<&str, ClipboardHistoryError> {
-    let name = name.trim();
-    if name.is_empty() {
-        Err(ClipboardHistoryError::EmptyCategoryName)
-    } else {
-        Ok(name)
-    }
-}
-
-fn validate_category_source(process_name: &str) -> Result<&str, ClipboardHistoryError> {
-    let process_name = process_name.trim();
-    if process_name.is_empty() {
-        Err(ClipboardHistoryError::EmptyCategorySource)
-    } else {
-        Ok(process_name)
-    }
 }
 
 fn ensure_column(

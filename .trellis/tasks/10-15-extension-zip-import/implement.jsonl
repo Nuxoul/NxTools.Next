@@ -1,0 +1,4 @@
+{"file":".trellis/spec/nxtools-extensions/backend/index.md","reason":"Extension owner predevelopment and quality contracts"}
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust domain, C# native and GPUI rendering ownership"}
+{"file":"docs/reference-code/winshun.md","reason":"Verified package reference and managed installation boundary"}
+{"file":".trellis/tasks/10-15-extension-zip-import/design.md","reason":"Approved ZIP and Kit confirmation design"}

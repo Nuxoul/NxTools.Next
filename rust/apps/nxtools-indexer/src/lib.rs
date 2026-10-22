@@ -21,6 +21,8 @@ use sysinfo::Disks;
 use tracing::{info, warn};
 
 mod mft;
+mod recent;
+mod search_data;
 mod settings;
 mod usn;
 
@@ -248,12 +250,21 @@ pub struct IndexerService {
     status: IndexStatus,
     build_errors: BTreeMap<String, String>,
     journal_errors: BTreeMap<String, String>,
+    persistence_errors: BTreeMap<String, String>,
+    settings_persistence_error: Option<String>,
     compaction_errors: BTreeMap<String, String>,
     compaction_retries: HashMap<String, CompactionRetry>,
     active_generation: Option<u64>,
     snapshots: Arc<Vec<MftSnapshot>>,
     settings: IndexSettings,
     persist_settings: bool,
+}
+
+fn persistence_native_error(error: &anyhow::Error) -> Option<i32> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<std::io::Error>())
+        .and_then(std::io::Error::raw_os_error)
 }
 
 struct VolumeDescriptor {
@@ -321,6 +332,8 @@ impl IndexerService {
             },
             build_errors: BTreeMap::new(),
             journal_errors: BTreeMap::new(),
+            persistence_errors: BTreeMap::new(),
+            settings_persistence_error: None,
             compaction_errors: BTreeMap::new(),
             compaction_retries: HashMap::new(),
             active_generation: None,
@@ -474,6 +487,19 @@ impl IndexerService {
         discovered.active_generation = active_generation;
         discovered.settings = self.settings.clone();
         discovered.persist_settings = self.persist_settings;
+        discovered.settings_persistence_error = self.settings_persistence_error.clone();
+        discovered.persistence_errors = self
+            .persistence_errors
+            .iter()
+            .filter(|(mount, _)| {
+                discovered
+                    .status
+                    .drives
+                    .iter()
+                    .any(|drive| normalized_mount_key(&drive.mount_point) == **mount)
+            })
+            .map(|(mount, error)| (mount.clone(), error.clone()))
+            .collect();
         discovered.build_errors = self
             .build_errors
             .iter()
@@ -554,6 +580,8 @@ impl IndexerService {
         let mut errors = self.build_errors.values().cloned().collect::<Vec<_>>();
         errors.extend(self.journal_errors.values().cloned());
         errors.extend(self.compaction_errors.values().cloned());
+        errors.extend(self.persistence_errors.values().cloned());
+        errors.extend(self.settings_persistence_error.iter().cloned());
         self.status.last_error = (!errors.is_empty()).then(|| errors.join("; "));
     }
 
@@ -662,8 +690,16 @@ impl IndexerService {
     }
 
     fn apply_settings(&mut self, settings: IndexSettings) {
+        self.apply_settings_with_persistence(settings, &settings::persist_system_index_settings);
+    }
+
+    fn apply_settings_with_persistence(
+        &mut self,
+        settings: IndexSettings,
+        persist: &impl Fn(&IndexSettings) -> Result<()>,
+    ) {
         let settings = normalize_index_settings(settings);
-        if self.settings == settings {
+        if self.settings == settings && self.settings_persistence_error.is_none() {
             return;
         }
         self.settings = settings;
@@ -675,19 +711,74 @@ impl IndexerService {
             .retain(|mount_point, _| index_settings_volume_enabled(&self.settings, mount_point));
         self.compaction_retries
             .retain(|mount_point, _| index_settings_volume_enabled(&self.settings, mount_point));
-        self.refresh_last_error();
-        if self.persist_settings
-            && let Err(error) = settings::persist_system_index_settings(&self.settings)
-        {
-            warn!(%error, "could not persist index settings");
+        if self.persist_settings {
+            let correlation_id = Envelope::new(Message::Pong(Pong { sent_at_unix_ms: 0 })).id;
+            let started = Instant::now();
+            match persist(&self.settings) {
+                Ok(()) => {
+                    if self.settings_persistence_error.take().is_some() {
+                        info!(event = "indexer.settings.persistence_recovered", %correlation_id,
+                            elapsed_ms = started.elapsed().as_millis() as u64, "index settings persistence recovered");
+                    }
+                }
+                Err(error) => {
+                    let native_error_code = persistence_native_error(&error);
+                    let message = format!(
+                        "Index settings persistence failed (native code {native_error_code:?}); retry saving settings."
+                    );
+                    if self.settings_persistence_error.as_ref() != Some(&message) {
+                        warn!(event = "indexer.settings.persistence_failed", %correlation_id, native_error_code,
+                            elapsed_ms = started.elapsed().as_millis() as u64, "index settings persistence failed");
+                    }
+                    self.settings_persistence_error = Some(message);
+                }
+            }
         }
+        self.refresh_last_error();
     }
 
     fn volume_is_enabled(&self, mount_point: &str) -> bool {
         index_settings_volume_enabled(&self.settings, mount_point)
     }
 
+    fn persist_journal_snapshot(
+        &mut self,
+        snapshot: &MftSnapshot,
+        persist: &impl Fn(&MftSnapshot) -> Result<()>,
+    ) {
+        let mount_key = normalized_mount_key(&snapshot.mount_point);
+        let correlation_id = Envelope::new(Message::Pong(Pong { sent_at_unix_ms: 0 })).id;
+        let started = Instant::now();
+        match persist(snapshot) {
+            Ok(()) => {
+                if self.persistence_errors.remove(&mount_key).is_some() {
+                    info!(event = "indexer.journal.persistence_recovered", %correlation_id,
+                        elapsed_ms = started.elapsed().as_millis() as u64, "incremental index persistence recovered");
+                }
+            }
+            Err(error) => {
+                let native_error_code = persistence_native_error(&error);
+                let message = format!(
+                    "{mount_key} index persistence failed (native code {native_error_code:?}); current snapshot remains searchable."
+                );
+                if self.persistence_errors.get(&mount_key) != Some(&message) {
+                    warn!(event = "indexer.journal.persistence_failed", %correlation_id, native_error_code,
+                        elapsed_ms = started.elapsed().as_millis() as u64, "incremental index persistence failed");
+                }
+                self.persistence_errors.insert(mount_key, message);
+            }
+        }
+    }
+
     fn poll_journals(&mut self, poll: &JournalPoller) -> JournalMaintenance {
+        self.poll_journals_with_persistence(poll, &mft::persist_system_delta)
+    }
+
+    fn poll_journals_with_persistence(
+        &mut self,
+        poll: &JournalPoller,
+        persist: &impl Fn(&MftSnapshot) -> Result<()>,
+    ) -> JournalMaintenance {
         if self.status.phase != IndexPhase::Ready || self.snapshots.is_empty() {
             return JournalMaintenance::NoChange;
         }
@@ -697,6 +788,7 @@ impl IndexerService {
         let mut rebuild_mounts = Vec::new();
         let mut rebuild_reasons = Vec::new();
         let previous_journal_errors = self.journal_errors.clone();
+        let previous_persistence_errors = self.persistence_errors.clone();
         for snapshot in &mut snapshots {
             if !self.volume_is_enabled(&snapshot.mount_point) {
                 continue;
@@ -705,15 +797,12 @@ impl IndexerService {
             match poll(snapshot) {
                 Ok(usn::JournalPoll::NoChange) => {
                     self.journal_errors.remove(&mount_key);
+                    if self.persistence_errors.contains_key(&mount_key) {
+                        self.persist_journal_snapshot(snapshot, persist);
+                    }
                 }
                 Ok(usn::JournalPoll::CursorAdvanced(updated)) => {
-                    if let Err(error) = mft::persist_system_delta(&updated) {
-                        warn!(
-                            mount_point = updated.mount_point,
-                            %error,
-                            "failed to persist incremental index cursor"
-                        );
-                    }
+                    self.persist_journal_snapshot(&updated, persist);
                     *snapshot = updated;
                     self.journal_errors.remove(&mount_key);
                     self.compaction_errors.remove(&mount_key);
@@ -721,13 +810,7 @@ impl IndexerService {
                     published = true;
                 }
                 Ok(usn::JournalPoll::Updated(updated)) => {
-                    if let Err(error) = mft::persist_system_delta(&updated) {
-                        warn!(
-                            mount_point = updated.mount_point,
-                            %error,
-                            "failed to persist incremental index delta"
-                        );
-                    }
+                    self.persist_journal_snapshot(&updated, persist);
                     *snapshot = updated;
                     self.journal_errors.remove(&mount_key);
                     self.compaction_errors.remove(&mount_key);
@@ -785,7 +868,8 @@ impl IndexerService {
             })
             .map(|snapshot| snapshot.mount_point.clone())
             .collect();
-        let error_changed = self.journal_errors != previous_journal_errors;
+        let error_changed = self.journal_errors != previous_journal_errors
+            || self.persistence_errors != previous_persistence_errors;
         self.refresh_last_error();
         if !rebuild_mounts.is_empty() {
             return JournalMaintenance::RebuildRequired {
@@ -891,6 +975,8 @@ impl IndexerService {
             | Message::PlatformCommand(_)
             | Message::PlatformCommandResult(_)
             | Message::IndexerEvent(_)
+            | Message::DesktopArchiveIntent(_)
+            | Message::DesktopArchiveReceipt(_)
             | Message::Error(_) => vec![Envelope::reply_to(
                 &request,
                 Message::Error(ProtocolFault {
@@ -926,10 +1012,112 @@ impl IndexerService {
     }
 }
 
+fn recent_modified_query(request: &IndexSearchRequest) -> Option<&str> {
+    let query = request.query.trim();
+    (request.context.recent_modified
+        && query
+            .get(..7)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("recent:")))
+    .then(|| query[7..].trim())
+}
+
 fn search_snapshots_while(
     snapshots: &[MftSnapshot],
     settings: &IndexSettings,
     request: &IndexSearchRequest,
+    is_current: impl Fn() -> bool + Sync,
+) -> Option<Vec<IndexSearchItem>> {
+    if let Some(filter) = recent_modified_query(request) {
+        let mut recent_request = request.clone();
+        recent_request.query = filter.to_owned();
+        return recent::search_recent_modified(
+            snapshots,
+            settings,
+            &recent_request,
+            nxtools_ipc::unix_time_ms(),
+            &is_current,
+        )
+        .ok()
+        .flatten();
+    }
+    let normal = search_snapshots_retained_while(
+        snapshots,
+        settings,
+        request,
+        &FileQuery::parse(&request.query),
+        &is_current,
+    )?;
+    if !normal.is_empty() || request.limit == 0 || !request.context.allow_homophone_fallback {
+        return Some(normal);
+    }
+    let mut matches = Vec::new();
+    for variant in FileQuery::parse(&request.query).homophone_variants() {
+        if !is_current() {
+            return None;
+        }
+        matches.extend(search_snapshots_retained_while(
+            snapshots,
+            settings,
+            request,
+            &variant,
+            &is_current,
+        )?);
+    }
+    matches.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.name.cmp(&right.name))
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    let mut seen = std::collections::HashSet::new();
+    matches.retain(|item| seen.insert(item.path.to_lowercase()));
+    matches.truncate(request.limit.min(MAX_SEARCH_RESULTS));
+    is_current().then_some(matches)
+}
+
+fn search_snapshots_retained_while(
+    snapshots: &[MftSnapshot],
+    settings: &IndexSettings,
+    request: &IndexSearchRequest,
+    query: &FileQuery,
+    is_current: &(impl Fn() -> bool + Sync),
+) -> Option<Vec<IndexSearchItem>> {
+    if !request.context.retain_kinds_apart
+        || !request.context.include_files
+        || !request.context.include_directories
+    {
+        return search_snapshots_query_while(snapshots, settings, request, query, is_current);
+    }
+    let mut files = request.clone();
+    files.context.retain_kinds_apart = false;
+    files.context.include_directories = false;
+    let mut directories = files.clone();
+    directories.context.include_files = false;
+    directories.context.include_directories = true;
+    let mut candidates =
+        search_snapshots_query_while(snapshots, settings, &files, query, is_current)?;
+    candidates.extend(search_snapshots_query_while(
+        snapshots,
+        settings,
+        &directories,
+        query,
+        is_current,
+    )?);
+    candidates.sort_by(|left, right| {
+        right
+            .score
+            .cmp(&left.score)
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    is_current().then_some(candidates)
+}
+
+fn search_snapshots_query_while(
+    snapshots: &[MftSnapshot],
+    settings: &IndexSettings,
+    request: &IndexSearchRequest,
+    query: &FileQuery,
     is_current: impl Fn() -> bool + Sync,
 ) -> Option<Vec<IndexSearchItem>> {
     if request.limit == 0 {
@@ -938,7 +1126,6 @@ fn search_snapshots_while(
     if request.query.trim().is_empty() {
         return Some(Vec::new());
     }
-    let query = FileQuery::parse(&request.query);
     let directory = request
         .context
         .directory
@@ -950,7 +1137,7 @@ fn search_snapshots_while(
             snapshots,
             settings,
             request,
-            &query,
+            query,
             result_limit,
             &is_current,
         );
@@ -959,7 +1146,7 @@ fn search_snapshots_while(
         snapshots,
         settings,
         request,
-        &query,
+        query,
         directory.as_deref(),
         result_limit,
         &is_current,
@@ -1107,6 +1294,46 @@ fn search_name_only_snapshots_while(
     result_limit: usize,
     is_current: &(impl Fn() -> bool + Sync),
 ) -> Option<Vec<IndexSearchItem>> {
+    search_name_only_with_data(
+        snapshots,
+        settings,
+        request,
+        query,
+        result_limit,
+        is_current,
+        true,
+    )
+}
+
+#[cfg(test)]
+fn legacy_search_name_only_snapshots_while(
+    snapshots: &[MftSnapshot],
+    settings: &IndexSettings,
+    request: &IndexSearchRequest,
+    query: &FileQuery,
+    result_limit: usize,
+    is_current: &(impl Fn() -> bool + Sync),
+) -> Option<Vec<IndexSearchItem>> {
+    search_name_only_with_data(
+        snapshots,
+        settings,
+        request,
+        query,
+        result_limit,
+        is_current,
+        false,
+    )
+}
+
+fn search_name_only_with_data(
+    snapshots: &[MftSnapshot],
+    settings: &IndexSettings,
+    request: &IndexSearchRequest,
+    query: &FileQuery,
+    result_limit: usize,
+    is_current: &(impl Fn() -> bool + Sync),
+    use_auxiliary: bool,
+) -> Option<Vec<IndexSearchItem>> {
     let cancelled = AtomicBool::new(false);
     let candidate_limit = result_limit
         .saturating_mul(NAME_SEARCH_MATERIALIZATION_HEADROOM)
@@ -1118,40 +1345,93 @@ fn search_name_only_snapshots_while(
         .filter(|(_, snapshot)| index_settings_volume_enabled(settings, &snapshot.mount_point))
         .flat_map(|(snapshot_index, snapshot)| {
             let cancelled = &cancelled;
-            (0..snapshot.base_len())
+            let data = snapshot.search_data.as_deref().filter(|_| use_auxiliary);
+            let narrowed = data.and_then(|data| data.candidates(query));
+            let count = narrowed.as_ref().map_or_else(
+                || data.map_or(snapshot.base_len(), |data| data.groups.len()),
+                Vec::len,
+            );
+            // Group positions represent multiple rows. Keep approximately the old
+            // row workload per Rayon leaf rather than serializing duplicate-heavy scans.
+            let minimum_chunk = data.map_or(8_192, |data| {
+                8_192_usize
+                    .saturating_mul(data.groups.len())
+                    .checked_div(snapshot.base_len())
+                    .unwrap_or(8_192)
+                    .max(1)
+            });
+            (0..count)
                 .into_par_iter()
-                .with_min_len(8_192)
+                .with_min_len(minimum_chunk)
                 .fold(
-                    || rent_name_search_buffer(initial_capacity),
-                    move |mut local, row_index| {
+                    || (rent_name_search_buffer(initial_capacity), None),
+                    move |(mut local, mut cutoff), position| {
                         if cancelled.load(Ordering::Acquire) {
-                            return local;
+                            return (local, cutoff);
                         }
                         if !is_current() {
                             cancelled.store(true, Ordering::Release);
-                            return local;
+                            return (local, cutoff);
                         }
+                        let group = data.map(|data| {
+                            &data.groups[narrowed
+                                .as_ref()
+                                .map_or(position, |candidates| candidates[position])]
+                        });
+                        let row_index = group.map_or(position, |group| group.representative);
                         let Some(name_mask) = snapshot.base_name_mask(row_index) else {
-                            return local;
+                            return (local, cutoff);
                         };
                         if !query.name_mask_may_match(name_mask) {
-                            return local;
+                            return (local, cutoff);
                         }
                         let Some(name) = snapshot.base_name(row_index) else {
-                            return local;
+                            return (local, cutoff);
                         };
                         let Some(score) = query.score_name(name) else {
-                            return local;
+                            return (local, cutoff);
                         };
-                        local.push(NameSearchCandidate {
-                            snapshot_index,
-                            row_index,
-                            score,
-                        });
-                        prune_name_search_candidates(&mut local, candidate_limit);
-                        local
+                        if let Some(group) = group {
+                            // Same-score rows are ascending. Beyond this group's first
+                            // headroom rows none can enter the unchanged row top-N.
+                            for row in group.rows.iter().take(candidate_limit) {
+                                if !is_current() {
+                                    cancelled.store(true, Ordering::Release);
+                                    return (local, cutoff);
+                                }
+                                let candidate = NameSearchCandidate {
+                                    snapshot_index,
+                                    row_index: *row as usize,
+                                    score,
+                                };
+                                if cutoff.is_some_and(|worst: NameSearchCandidate| {
+                                    candidate.score < worst.score
+                                        || (candidate.score == worst.score
+                                            && (candidate.snapshot_index, candidate.row_index)
+                                                >= (worst.snapshot_index, worst.row_index))
+                                }) {
+                                    // The retained headroom already proves this and every
+                                    // later row in this group cannot survive. No cold filters.
+                                    break;
+                                }
+                                local.push(candidate);
+                                if local.len() >= candidate_limit.saturating_mul(2) {
+                                    prune_name_search_candidates(&mut local, candidate_limit);
+                                    cutoff = local.last().copied();
+                                }
+                            }
+                        } else {
+                            local.push(NameSearchCandidate {
+                                snapshot_index,
+                                row_index,
+                                score,
+                            });
+                            prune_name_search_candidates(&mut local, candidate_limit);
+                        }
+                        (local, cutoff)
                     },
                 )
+                .map(|(local, _)| local)
         })
         .reduce(
             || rent_name_search_buffer(initial_capacity),
@@ -2120,6 +2400,67 @@ fn run_snapshot_search(
     let task_id = job.task_id;
     let generation = search.generation;
     let started = Instant::now();
+    let correlation_id = job.request.id;
+    let mode = if recent_modified_query(search).is_some() {
+        "recent_modified"
+    } else {
+        "name"
+    };
+    info!(event = "indexer.search.started", %correlation_id, generation, mode,
+        kinds_apart = search.context.retain_kinds_apart, "search accepted");
+    if mode == "recent_modified" {
+        let mut request = search.clone();
+        request.query = recent_modified_query(search)
+            .expect("explicit recent mode")
+            .to_owned();
+        let current = || active_task.load(Ordering::Acquire) == task_id;
+        let result = recent::search_recent_modified(
+            &job.snapshots,
+            &job.settings,
+            &request,
+            nxtools_ipc::unix_time_ms(),
+            &current,
+        );
+        match result {
+            Ok(Some(items)) => {
+                info!(event = "indexer.search.completed", %correlation_id, generation, mode,
+                    result_count = items.len(), elapsed_us = started.elapsed().as_micros() as u64, "recent search complete");
+                for batch in partition_search_batches(
+                    generation,
+                    items,
+                    started.elapsed().as_micros() as u64,
+                ) {
+                    let response = Envelope::reply_to(
+                        &job.request,
+                        Message::IndexerEvent(IndexerEvent::SearchBatch(batch)),
+                    );
+                    if !send_search_completion(task_id, response, active_task, events) {
+                        return;
+                    }
+                }
+            }
+            Ok(None) => {
+                info!(event = "indexer.search.cancelled", %correlation_id, generation, mode, "superseded search")
+            }
+            Err(_) if current() => {
+                warn!(event = "indexer.search.failed", %correlation_id, generation, mode,
+                    reason = "recent_classifier_budget", elapsed_us = started.elapsed().as_micros() as u64,
+                    "recent search budget exceeded");
+                let response = Envelope::reply_to(
+                    &job.request,
+                    Message::IndexerEvent(IndexerEvent::SearchFailed(
+                        nxtools_protocol::IndexSearchFailure {
+                            generation,
+                            reason: "recent_classifier_budget".into(),
+                        },
+                    )),
+                );
+                let _ = send_search_completion(task_id, response, active_task, events);
+            }
+            Err(_) => {}
+        }
+        return;
+    }
     let Some(items) = search_snapshots_while(&job.snapshots, &job.settings, search, || {
         active_task.load(Ordering::Acquire) == task_id
     }) else {
@@ -2128,6 +2469,8 @@ fn run_snapshot_search(
     if active_task.load(Ordering::Acquire) != task_id {
         return;
     }
+    info!(event = "indexer.search.completed", %correlation_id, generation, mode,
+        result_count = items.len(), elapsed_us = started.elapsed().as_micros() as u64, "search complete");
     let batches = partition_search_batches(generation, items, started.elapsed().as_micros() as u64);
     for batch in batches {
         if active_task.load(Ordering::Acquire) != task_id {

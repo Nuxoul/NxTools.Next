@@ -1,17 +1,13 @@
-use gpui::{SharedString, div, prelude::*, px};
-use gpui_component::Icon;
-use gpui_component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
+use gpui_kit::component::{Icon, label::Label};
+use gpui_kit::{SharedString, div, prelude::*, px};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
-use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, SPACING_8};
-use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY, UI_FONT_FAMILY};
 
 const MENU_MIN_WIDTH: f32 = 192.0;
 const MENU_MAX_WIDTH: f32 = 240.0;
 const MENU_CONTENT_MIN_WIDTH: f32 = 160.0;
-const MENU_ICON_SIZE: f32 = 14.0;
-const MENU_ICON_SLOT_WIDTH: f32 = 14.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum MenuTone {
@@ -46,29 +42,10 @@ pub(crate) fn context_menu_item(
             .debug_selector(move || selector.into())
             .w_full()
             .min_w(px(MENU_CONTENT_MIN_WIDTH))
-            .h(px(CONTROL_HEIGHT_ACTION))
-            .flex()
-            .items_center()
-            .gap(px(SPACING_8))
-            .font_family(UI_FONT_FAMILY)
-            .text_size(px(TEXT_BODY))
-            .line_height(px(LINE_HEIGHT_BODY))
             .text_color(foreground)
-            .child(
-                div()
-                    .w(px(MENU_ICON_SLOT_WIDTH))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        Icon::new(icon)
-                            .size(px(MENU_ICON_SIZE))
-                            .text_color(icon_color),
-                    ),
-            )
-            .child(div().min_w_0().flex_1().child(label.clone()))
+            .child(Label::new(label.clone()).text_sm())
     })
+    .icon(Icon::new(icon).text_color(icon_color))
 }
 
 #[cfg(test)]
@@ -76,8 +53,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn task_menu_metrics_follow_the_shared_action_tier() {
-        assert_eq!(CONTROL_HEIGHT_ACTION, 28.0);
+    fn task_menu_preserves_only_bounded_shell_metrics() {
         assert_eq!([MENU_MIN_WIDTH, MENU_MAX_WIDTH], [192.0, 240.0]);
     }
 }

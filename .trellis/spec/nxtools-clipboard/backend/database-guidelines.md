@@ -47,3 +47,23 @@ let cursor = ClipboardPageCursor { id: last.id };
 let cursor = ClipboardPageCursor::from(&last);
 history.query_category_page_after(query, category, scope, cursor, limit, Some(total))?;
 ```
+
+Explicit result navigation uses `ClipboardHistory::page_containing_item` in query.rs on the same serialized worker/connection. Resolve the active ID's rank with the complete descending pin/last-use/capture/ID tuple, then load one bounded original page under the same SQLite snapshot. Missing/deleted ID is ItemNotFound, never first-row fallback; locating does not mark used, copy/paste, alter content or create another store. Test exact page equality beyond the first page, pinned ordering, deleted/missing IDs and bounded payload. Evidence: `repo:rust/crates/nxtools-clipboard/src/query.rs#page_containing_item`.
+
+## Scenario: Lightweight history projection and exact full-item effects
+### 1. Scope / Trigger
+List payload projection or any consumer of a projected ClipboardItem.
+### 2. Signatures
+`ClipboardItemSummary { item, text_character_count }`; `summary_category_page_with_total`, `summary_category_page_after`, `summary_page_containing_item`; `active_item(id)` and `active_item_with_native_formats(id)`.
+Evidence: `repo:rust/crates/nxtools-clipboard/src/query.rs#register_summary_functions`, `repo:rust/apps/nxtools-desktop/src/ui/efficiency.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard_worker/thumbnails.rs`.
+### 3. Contracts
+Summary text is at most400Unicode scalar values; full character count includes embeddedNUL. Connection-local deterministic nxt_clip_summary/nxt_clip_chars use raw SQLite text because built-in length/substr stop atNUL. Filtering searches full stored text; full-item/archive APIs remain unchanged. Action/native formats hydrate the same active row in one transaction before effect. UI preserves cursor/order/four-page owner and prunes summary/target/thumbnail metadata to retained rows. Edit/extension/preview/open-target consume full-by-ID data, not truncated text; query/session/operation guards remain current after worker completion.
+### 4. Validation & Error Matrix
+Missing/deleted row -> ItemNotFound/no native dispatch. Stale query/closed/disconnected/cancelled preparation -> retire without effect. Superseded page -> quiet cancellation. Derivative failure -> placeholder, never original image decoded as list fallback. Cache corruption -> bounded decode validation then regeneration.
+### 5. Good/Base/Bad Cases
+Good: tail search returns a400-scalar summary and exact full-body paste/edit. Base: full APIs retain all native formats/order. Bad: execute a URL cut at summary boundary, use SQLite length onNUL text, or replace domain image_path with derivative.
+### 6. Tests Required
+summary_seam_tests assert Unicode/NUL/full-tail search, cursor equality, page location, active/native snapshot. Production efficiency_tests assert hydrated paste/edit/deleted/stale target and query cancellation. Thumbnail fixtures assert alpha/no-upscale/original bytes/corruption/prune/purge; production resource cache contains derivative, not original. Real native/DPI/visual acceptance remains separate.
+### 7. Wrong vs Correct
+Wrong: summary.item.text -> native command or editor. Correct: immutableID -> active full snapshot -> current operation/query check -> existing effect owner.
+Disposable list-thumbnails-v1 stays bounded512files/128MiB,640x288PNG/no enlargement; source<=64MiB/32Mpixels, decoder allocation<=192MiB. Serialized worker alone generates/removes files; migration invalidates old paths and derivatives regenerate lazily.

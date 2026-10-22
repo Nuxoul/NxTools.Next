@@ -89,6 +89,11 @@ internal sealed class PlatformPipeClient(
             },
             request.Id);
 
+    internal static ProtocolEnvelope CreateSystemThemeSnapshotEnvelope(
+        ThemePreferenceSnapshot snapshot, Guid correlationId) =>
+        PlatformEventEnvelopeFactory.Create(new SystemThemePreferenceChangedEvent(
+            correlationId, snapshot.Dark, snapshot.NativeErrorCode));
+
     private async Task RunSessionAsync(CancellationToken cancellationToken)
     {
         await using var pipe = new NamedPipeClientStream(
@@ -97,6 +102,9 @@ internal sealed class PlatformPipeClient(
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         await pipe.ConnectAsync(3000, cancellationToken);
+        // Bind menu sources to this connected ordinary Desktop peer, not a caller-supplied PID.
+        if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle, out var desktopProcessId) || desktopProcessId == 0)
+            throw new InvalidDataException("Desktop pipe peer identity is unavailable.");
 
         var reader = new BoundedFrameReader(pipe);
         await using var writer = new StreamWriter(
@@ -145,6 +153,22 @@ internal sealed class PlatformPipeClient(
                 });
         }
         catch { /* Diagnostic delivery cannot affect the handshake. */ }
+        var themeSnapshot = platformAdapter.SystemThemeSnapshot;
+        var themeCorrelationId = Guid.NewGuid();
+        var themeStarted = Stopwatch.GetTimestamp();
+        await WriteAsync(writer, CreateSystemThemeSnapshotEnvelope(themeSnapshot, themeCorrelationId), cancellationToken);
+        try
+        {
+            log.Write(themeSnapshot.NativeErrorCode == 0 ? "info" : "warning",
+                "system.theme.session_snapshot_sent", themeCorrelationId,
+                new Dictionary<string, object?>
+                {
+                    ["dark"] = themeSnapshot.Dark,
+                    ["native_error_code"] = themeSnapshot.NativeErrorCode,
+                    ["elapsed_ms"] = Stopwatch.GetElapsedTime(themeStarted).TotalMilliseconds
+                });
+        }
+        catch { /* Diagnostic delivery cannot affect the handshake. */ }
         Console.WriteLine("PlatformHost connected to NxTools desktop protocol v1.");
         log.Write("info", "ipc.connected", fields: new Dictionary<string, object?>
         {
@@ -167,6 +191,22 @@ internal sealed class PlatformPipeClient(
             SingleReader = true,
             SingleWriter = false
         });
+        await using var archiveRead = new ArchiveReadSession(log);
+        await using var archiveEntry = new ArchiveEntrySession(log);
+        await using var archiveJob = new ArchiveJobSession(log);
+        var archiveJobProgress = Task.Run(async () => {
+            await foreach (var item in archiveJob.Progress.ReadAllAsync(session.Token))
+                outgoing.Writer.TryWrite(item); // Latest-only progress never backpressures prompt/terminal.
+        });
+        var archiveJobEvents = Task.Run(async () => {
+            await foreach (var item in archiveJob.Events.ReadAllAsync(session.Token))
+                await outgoing.Writer.WriteAsync(item,session.Token);
+        });
+        archiveEntry.PasswordPrompt = envelope => { if (!outgoing.Writer.TryWrite(envelope)) archiveEntry.Stop(); };
+        var archiveEvents = Task.Run(async () => {
+            await foreach (var item in archiveRead.Events.ReadAllAsync(session.Token))
+                await outgoing.Writer.WriteAsync(item, session.Token);
+        });
         var pendingClipboardEvents = new ConcurrentDictionary<Guid, ClipboardCapturedEvent>();
         var writeTask = WriteLoopAsync(
             writer,
@@ -182,11 +222,16 @@ internal sealed class PlatformPipeClient(
             reader,
             outgoing.Writer,
             session.Token,
-            commandDispatcher);
-        var tasks = new[] { writeTask, eventTask, readTask };
+            commandDispatcher,
+            desktopProcessId,
+            archiveRead, archiveEntry, archiveJob);
+        var tasks = new[] { writeTask, eventTask, readTask, archiveEvents, archiveJobEvents, archiveJobProgress };
 
         var completed = await Task.WhenAny(tasks);
         await session.CancelAsync();
+        archiveRead.Stop();
+        archiveEntry.Stop();
+        archiveJob.Stop();
         platformAdapter.CancelCurrentShellContextWork();
         commandDispatcher.BeginDrain();
         try
@@ -210,7 +255,9 @@ internal sealed class PlatformPipeClient(
         BoundedFrameReader reader,
         ChannelWriter<ProtocolEnvelope> outgoing,
         CancellationToken cancellationToken,
-        PlatformCommandSequenceDispatcher commandDispatcher)
+        PlatformCommandSequenceDispatcher commandDispatcher,
+        uint desktopProcessId,
+        ArchiveReadSession archiveRead, ArchiveEntrySession archiveEntry, ArchiveJobSession archiveJob)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -234,7 +281,7 @@ internal sealed class PlatformPipeClient(
                 }
                 catch (Exception error)
                 {
-                    await WriteCommandFailureAsync(
+                    await ExecuteCommandAsync(
                         envelope,
                         "<invalid>",
                         outgoing,
@@ -243,6 +290,77 @@ internal sealed class PlatformPipeClient(
                     continue;
                 }
 
+                if (commandName == "archive_job") {
+                    var jobReceipt=CreateCommandResultEnvelope(envelope,archiveJob.Dispatch(envelope));
+                    // Never let a full ordinary receipt queue park the serial reader ahead of
+                    // reserved job cancellation. EOF retires/cancels originals if transport stalls.
+                    if(!outgoing.TryWrite(jobReceipt))throw new InvalidDataException("Archive job receipt transport full.");
+                    continue;
+                }
+                if (commandName == "archive_picker") {
+                    ArchivePickerCommand picker;
+                    try { picker=ArchivePickerCommand.Parse(envelope); }
+                    catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(false,"invalid_request")),cancellationToken);continue; }
+                    await commandDispatcher.DispatchAsync("pick_archive_path",async commandToken => {
+                        var picked=ArchiveJobPicker.Pick(picker,desktopProcessId,commandToken);
+                        await outgoing.WriteAsync(picked.Envelope(),commandToken);
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(picked.Code is null,picked.Code,NativeErrorCode:picked.NativeErrorCode)),commandToken);
+                    },cancellationToken);
+                    continue;
+                }
+                if (commandName == "archive_password_reply") {
+                    var accepted = ArchiveBrowserPassword.Respond(envelope, archiveRead, archiveEntry);
+                    await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(accepted, accepted ? null : "stale_password_prompt")), cancellationToken);
+                    continue;
+                }
+                if (commandName == "archive_browser_read") {
+                    await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, archiveRead.Dispatch(ArchiveBrowserPassword.NormalizeRead(envelope), browserInteraction: true)), cancellationToken);
+                    continue;
+                }
+                if (commandName == "archive_entry")
+                {
+                    // Synchronous bounded admission installs identity before exact cancel can follow.
+                    var result = archiveEntry.Dispatch(envelope);
+                    await commandDispatcher.DispatchAsync("archive_entry", async commandToken =>
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, await result), commandToken), cancellationToken);
+                    continue;
+                }
+                if (commandName == "archive_read")
+                {
+                    await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, archiveRead.Dispatch(envelope)), cancellationToken);
+                    continue;
+                }
+                if (commandName == "prepare_notification_window")
+                {
+                    try { ValidateNotificationWindowPeer(envelope, desktopProcessId); }
+                    catch (InvalidDataException)
+                    {
+                        WriteCommandDiagnostic("warning", "ui.notification.surface.terminal", ResolveDiagnosticCorrelationId(envelope),
+                            new Dictionary<string, object?> { ["success"] = false, ["elapsed_ms"] = 0,
+                                ["native_error_code"] = null });
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,
+                            new WindowsCommandResult(false, "Invalid notification payload or source identity.")), cancellationToken);
+                        continue;
+                    }
+                }
+                if (commandName == "show_context_menu")
+                {
+                    try
+                    {
+                        var menu = PlatformCommandParser.ParseShowContextMenu(envelope);
+                        if (menu.SourceProcessId != desktopProcessId)
+                            throw new InvalidDataException("Invalid native context menu source identity.");
+                    }
+                    catch (Exception menuError)
+                    {
+                        WriteCommandDiagnostic("warning", "context_menu.terminal", envelope.Id,
+                            new Dictionary<string, object?> { ["success"] = false,
+                                ["exception_type"] = menuError.GetType().FullName, ["elapsed_ms"] = 0 });
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,
+                            new WindowsCommandResult(false, "Invalid native context menu payload or source identity.")), cancellationToken);
+                        continue;
+                    }
+                }
                 try
                 {
                     await commandDispatcher.DispatchAsync(
@@ -256,7 +374,7 @@ internal sealed class PlatformPipeClient(
                 }
                 catch (Exception error)
                 {
-                    await WriteCommandFailureAsync(
+                    await ExecuteCommandAsync(
                         envelope,
                         commandName,
                         outgoing,
@@ -265,6 +383,13 @@ internal sealed class PlatformPipeClient(
                 }
             }
         }
+    }
+
+    internal static void ValidateNotificationWindowPeer(ProtocolEnvelope envelope, uint desktopProcessId)
+    {
+        var command = PlatformCommandParser.ParsePrepareNotificationWindow(envelope);
+        if (desktopProcessId == 0 || command.SourceProcessId != desktopProcessId)
+            throw new InvalidDataException("Invalid notification source identity.");
     }
 
     private async Task ExecuteCommandAsync(
@@ -322,13 +447,18 @@ internal sealed class PlatformPipeClient(
         }
         catch (Exception error)
         {
-            result = CreateCommandFailureResult(error);
+            var safeNativeCommand = commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+            result = safeNativeCommand
+                ? new WindowsCommandResult(false, commandName == "prepare_notification_window"
+                    ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
+                    error is Win32Exception nativeError ? nativeError.NativeErrorCode : null)
+                : CreateCommandFailureResult(error);
             WriteCommandDiagnostic("error", "command.failed", diagnosticCorrelationId,
                 new Dictionary<string, object?>
                 {
                     ["command"] = commandName,
                     ["exception_type"] = error.GetType().FullName,
-                    ["message"] = error.Message,
+                    ["message"] = safeNativeCommand ? null : error.Message,
                     ["native_error_code"] = result.NativeErrorCode
                 });
         }
@@ -374,19 +504,6 @@ internal sealed class PlatformPipeClient(
         }
     }
 
-    private Task WriteCommandFailureAsync(
-        ProtocolEnvelope envelope,
-        string commandName,
-        ChannelWriter<ProtocolEnvelope> outgoing,
-        CancellationToken cancellationToken,
-        Exception error) =>
-        ExecuteCommandAsync(
-            envelope,
-            commandName,
-            outgoing,
-            cancellationToken,
-            error);
-
     private async Task ExecuteCommandAsync(
         ProtocolEnvelope envelope,
         string commandName,
@@ -414,13 +531,18 @@ internal sealed class PlatformPipeClient(
                     ["command"] = commandName
                 });
         }
-        var result = CreateCommandFailureResult(error);
+        var safeNativeCommand = commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+        var result = safeNativeCommand
+            ? new WindowsCommandResult(false, commandName == "prepare_notification_window"
+                ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
+                error is Win32Exception nativeError ? nativeError.NativeErrorCode : null)
+            : CreateCommandFailureResult(error);
         WriteCommandDiagnostic("error", "command.failed", diagnosticCorrelationId,
             new Dictionary<string, object?>
             {
                 ["command"] = commandName,
                 ["exception_type"] = error.GetType().FullName,
-                ["message"] = error.Message,
+                ["message"] = safeNativeCommand ? null : error.Message,
                 ["native_error_code"] = result.NativeErrorCode
             });
         if (!await TryWriteCommandResultAsync(
@@ -592,6 +714,12 @@ internal sealed class PlatformPipeClient(
         CancellationToken cancellationToken) =>
         commandName switch
         {
+            "prepare_notification_window" => await platformAdapter.PrepareNotificationWindowAsync(
+                PlatformCommandParser.ParsePrepareNotificationWindow(envelope), diagnosticCorrelationId, cancellationToken),
+            "show_context_menu" => await platformAdapter.ShowContextMenuAsync(
+                PlatformCommandParser.ParseShowContextMenu(envelope), envelope.Id, cancellationToken),
+            "cancel_context_menu" => platformAdapter.CancelContextMenu(
+                PlatformCommandParser.ParseCancelContextMenu(envelope)),
             "paste_text" => await platformAdapter.PasteTextAsync(
                 PlatformCommandParser.ParsePasteText(envelope),
                 diagnosticCorrelationId,
@@ -611,6 +739,9 @@ internal sealed class PlatformPipeClient(
             "configure_clipboard" => await platformAdapter.ConfigureClipboardAsync(
                 PlatformCommandParser.ParseConfigureClipboard(envelope),
                 cancellationToken),
+            "set_clipboard_capture_paused" => await platformAdapter.SetClipboardCapturePausedAsync(
+                PlatformCommandParser.ParseSetClipboardCapturePaused(envelope),
+                diagnosticCorrelationId, cancellationToken),
             "set_clipboard_hot_key_recording" => await platformAdapter.SetClipboardHotKeyRecordingAsync(
                 PlatformCommandParser.ParseSetClipboardHotKeyRecording(envelope),
                 cancellationToken),
@@ -710,6 +841,7 @@ internal sealed class PlatformPipeClient(
                 PlatformCommandParser.ParseExtractShellIcon(envelope),
                 diagnosticCorrelationId,
                 cancellationToken),
+            "pick_archive_path" => ArchivePathPicker.Pick(PlatformCommandParser.ParsePickArchivePath(envelope), cancellationToken),
             "pick_clipboard_archive_path" => platformAdapter.PickClipboardArchivePath(
                 PlatformCommandParser.ParsePickClipboardArchivePath(envelope),
                 cancellationToken),
@@ -722,8 +854,21 @@ internal sealed class PlatformPipeClient(
             "pick_program" => platformAdapter.PickProgram(
                 PlatformCommandParser.ParsePickProgram(envelope),
                 cancellationToken),
+            "pick_extension_manifest" => platformAdapter.PickExtensionManifest(
+                PlatformCommandParser.ParsePickExtensionManifest(envelope),
+                cancellationToken,
+                diagnosticCorrelationId),
+            "pick_extension_runtime" => platformAdapter.PickExtensionRuntime(
+                PlatformCommandParser.ParsePickExtensionRuntime(envelope),
+                diagnosticCorrelationId,
+                cancellationToken),
+            "inspect_extension_runtime" => await platformAdapter.InspectExtensionRuntimeAsync(
+                PlatformCommandParser.ParseInspectExtensionRuntime(envelope),
+                diagnosticCorrelationId,
+                cancellationToken),
             "ensure_indexer_service" => await platformAdapter.EnsureIndexerServiceAsync(
                 PlatformCommandParser.ParseEnsureIndexerService(envelope),
+                diagnosticCorrelationId,
                 cancellationToken),
             "ensure_browser_native_messaging" => platformAdapter.EnsureBrowserNativeMessaging(
                 PlatformCommandParser.ParseEnsureBrowserNativeMessaging(envelope),
@@ -780,7 +925,9 @@ internal sealed class PlatformPipeClient(
     }
 
     internal static Guid ResolveDiagnosticCorrelationId(ProtocolEnvelope envelope) =>
-        envelope.CorrelationId ?? envelope.Id;
+        envelope.Payload.ValueKind == JsonValueKind.Object &&
+        envelope.Payload.TryGetProperty("command", out var command) && command.ValueKind == JsonValueKind.String &&
+        command.GetString() == "show_context_menu" ? envelope.Id : envelope.CorrelationId ?? envelope.Id;
 
 
     private async Task ForwardEventsAsync(
@@ -941,6 +1088,9 @@ internal sealed class PlatformPipeClient(
         envelope.Validate();
         return envelope;
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetNamedPipeServerProcessId(Microsoft.Win32.SafeHandles.SafePipeHandle pipe, out uint processId);
 
     private static async Task WriteAsync(
         StreamWriter writer,

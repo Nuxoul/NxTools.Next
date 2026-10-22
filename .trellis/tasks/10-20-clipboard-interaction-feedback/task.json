@@ -1,0 +1,9 @@
+{
+  "id": "clipboard-interaction-feedback",
+  "name": "clipboard-interaction-feedback",
+  "title": "Repair Clipboard shortcuts, pause toggle and default Markdown",
+  "status": "completed",
+  "package": "nxtools-desktop",
+  "dev_type": "frontend",
+  "priority": "P1"
+}

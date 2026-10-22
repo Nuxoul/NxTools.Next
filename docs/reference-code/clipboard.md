@@ -2,6 +2,8 @@
 
 Last verified: 2026-07-18.
 
+Additional references inspected2026-10-19: [ClipKeep and TieZ source index](clipboard-clipkeep-tiez.md), with [current comparison and proposed candidates](../audits/2026-10-19-clipboard-reference-comparison.md). These supplement legacy behavior; no UI/feature/lifecycle change or phase reorder is approved by the research.
+
 ## Behavioral contract
 
 - The clipboard is a shortcut-opened popup, not a page in the main window.
@@ -527,10 +529,7 @@ Migration gap: old NxTools hides the popup before target-focus restoration and p
 `rust/apps/nxtools-desktop/src/ui/mod.rs` currently sends the paste action first and hides the popup
 after a successful Windows result. A true hide-before-paste migration needs an ordered native hide
 confirmation and a failure path that reveals the popup again; this lifecycle was not changed here.
-- Migration gap: the first clipboard preview path uses `WindowOptions.show = true` and sends
-  topmost immediately (`rust/apps/nxtools-desktop/src/clipboard.rs:1706-1737`). It still needs a
-  real native sequence test for final bounds, passive/no-activate behavior, frame submission and
-  reveal; reused preview generation guards are covered separately.
+- Historical first-preview gap (resolved by the explicitly approved2026-10-10 repair): visible creation/topmost-before-policy has been replaced with hidden creation and acknowledged noactivate→final bounds→topmost→show in the existing ClipboardApplication. Pending caller ID precedes dispatch; initial and reuse-policy steps have3s deadlines. Saved HWND and generation/cancel guards reject stale success/failure/timeout without hiding a replacement HWND. Controller8/8 and native96DPI All2/2 pass; actual physical pointer/frame/installed acceptance remains separate.
 - Migration gap: no full cross-boundary fake-platform test currently drives popup visibility/topmost
   failure, stale visibility results, target/focus restore parameters and success/failure action
   ordering. The current gates protect source invariants and worker MarkUsed ordering, but do not
@@ -582,3 +581,236 @@ network/system/rules save; only durable success defers weak live consumer update
 Consumers must not save the same rules again. Diagnostics use UUID, counts, booleans, fixed failure
 stage and elapsed time, never application names/paths or clipboard payload. No clipboard history,
 paste, hotkey, preview, retention or native protocol policy changes are part of this amendment.
+
+## Feature-first workbench layout migration
+Rechecked legacy MainWindow.axaml calling/storage/archive/retention controls, MainWindow.axaml.cs original/copy/plain/hide-before-target flow, ClipboardHistoryPopupWindow constructor/open/show/search/hide/one preview and ClipboardPreviewWindow passive style/clamp. Zed list_item stable start/end slots is visual precedent only. New main settings projection keeps every action/limit/modifier/hotkey/storage/archive callback in a non-shrinking scrollable group stack; no new controller/transaction. History source/name/time/management share stable slots, original actions unchanged; compact300x440/default/user resize and passive preview owner retained. Management Button intentionally prevents pointer focus; real Tab/KeyUp path tested rather than a second activation handler. Actual native owned scroll-to-storage reveals export/import/backup/compact/migrate; no real data operation performed. Full installed/DPI/native-preview acceptance separate.
+
+### Compact editor layout ledger synchronization (2026-10-09)
+Pre-edit advanced ledger rechecked legacy ClipboardHistoryPopupWindow.axaml.cs:61–167 (constructor/Open/Activated search focus/deactivation/close guards) and206–259 (reusable preparation → HidePopup → HidePreviewWindow → native/base Hide). Avalonia native base is unavailable; no lifecycle rewrite authorized. Current category editor remains244px at top104 inside actual300×440 default client. Readable12/18 help borrows source-list space rather than enlarging the panel;32px input,28px source/action/footer slots remain mounted. Full source names use tooltips. Long-list regression exposed unconstrained scrollbar-wrapper bounds; the identified source viewport now uses explicit GPUI overflow_y_scroll with flexible remaining height and nonshrinking input/footer. Original source KeyUp/focus/Save/Cancel/Escape and text IME/generation/paging/passive-preview owners remain. [Remaining evidence](../audits/2026-10-09-remaining-ui-layout-migration.md).
+
+## Kit0.7.1 project menu boundary (2026-10-10)
+User approves the project-owned Kit menu seam after executed300px submenu overflow. Reverified old NxTools Views/ClipboardHistoryPopupWindow.axaml.cs ShowItemContextMenu/CloseItemContextMenu: one menu, close predecessor before opening, clear identity on Closed, HidePopup closes menu before preview/native hide. Controls/ClipboardHistoryListView.cs right release selects the item before ItemRightClicked; no legacy source-category submenu exists there. NxTools.Next history.rs preserves its additional edit/category actions and checked/source snapshots. Former vendor popup_menu.rs resolve_submenu_x/update_submenu_menu_anchor/absolute submenu_position are behavior evidence only:4px client edges/gap, prefer available left space, clamp fallback, align hovered row y; flat border/no shadow preserved. No upstream source is modified.
+
+Project menu invariants: one active window-local menu; entity/trigger lifetime cannot resurrect stale item callbacks; owned row snapshots, bounded scroll/layout within actual viewport, submenu follows actual row bounds; arrows/Home/End skip disabled/separators, right opens child/left or Escape returns to parent, outer Escape/outside/Tab dismiss, then previous focus restored. Pointer and one key-release dispatcher share eligibility; held/modifier gestures never double-dispatch. Dismiss before original callback, defer callback across menu/panel leases; hide closes menu without stealing focus. Open/terminal diagnostics use correlation/count/reason/elapsed only, never item/source/category/payload strings. Native popup HWND policy remains unchanged.
+
+Implemented Kit menu reference follow-up: history.rs replaces only history context/submenu with project_menu.rs; shared open-target/category-tab dropdowns remain unchanged. One Base Root plugin owns active session; trigger prepaint liveness handles keyed-state caching, end-frame cleanup is deferred/session-checked and no synchronous Root notification during render/prepare. Fixed marker/label/arrow rails andneutral states independently follow ShellRS comparison, noGPL code. Actual300px submenu regression passes;220×140 long-category scroll retains24px parent edge. Mouse-entered child owns subsequent arrows,leaf Right preserves selection,child Escape returns to parent;one armed release/no modifiers/held duplicates. Original focus excludes predecessor menu handle andretired trigger restores external focus;hide stays non-restoring until failure handler explicitly recovers search focus. Real history callbacks retain four clipboard transforms,four management actions andtwo category checked add/remove actions. Full desktop510/510/strict lint/workspace/fmt pass;actual HWND/DPI/reader acceptance still separate.
+
+## Authorized passive-preview repair (2026-10-10)
+Previously verified old ClipboardPreviewWindow.cs constructor/Open/topmost/noactivate lifecycle remains authority: one passive auxiliary,reuse/update in place,hide when inactive,no primary activation-policy change. Source entries: ClipboardApplication::show_preview→clipboard_preview_presentation.rs acknowledged initial chain→C# SetWindowNoActivate/SetWindowBounds/SetWindowTopmost/SetWindowVisibility→GPUI backend HWND message owner. User-approved local Windows0.3.8 WM_MOUSEACTIVATE patch honors live WS_EX_NOACTIVATE; no registry modification/injection/focus stealing. Released branch response1 was real red; current owned Quick/Clipboard HWND response3,primary/disabled-policy1,re-enabled3 are green. Reuse reconfirms passive policy before existing offscreen/render staging,so an earlier noactivate failure cannot be bypassed. Controller8/8 covers ordered acknowledgements,each-step failure,cancel/stale show,initial/reuse timeout,old-HWND success/failure and timeout isolation. Full desktop519/519,0 ignored. Native synthetic client/reuse/UIA checks pass at96DPI; physical/mixed-DPI/reader/full product/installed lifecycle remains unverified.
+
+## Queue06 Settings prerequisite — 4. Clipboard + Tools
+Reviewed old MainWindow.axaml clipboard calling/storage/retention controls ->
+MainWindowClipboardViewModel BeginClipboardHotKeyCapture/RestoreClipboardState/
+CreateClipboardSettingsState/ConfigureClipboardStorage/On...Changed -> dirty section
+save. ClipboardHistoryService Configure creates repository+asset directories without
+moving old history; ExportJson/ImportJson carries formats and merges via repository
+Save. ClipboardRepository Cleanup keeps pinned/favorite and max(7,days) purge;
+Vacuum is outside transaction. This reference snapshot's online backup method was
+not located in ClipboardRepository; prior CreateBackup note is not fresh evidence.
+Next existing portable .nxtclip/online backup/backup-first compact/worker migration
+remain product behavior, not invented legacy equivalents.
+ClipboardHotKeyService Configure -> RegisterHotKey/no permanent hook fallback and
+BeginCapture/CancelCapture inspected; Next acknowledged suspension/restoration is
+stronger and unchanged. Popup constructor -> Opened/Activated focus -> PrepareForPopupShow
+-> HidePopup/HidePreviewWindow -> base Hide; one PreviewWindow constructor ShowActivated
+false -> Open/EnsureTopmost -> ApplyPassiveWindowStyle native WS_EX_NOACTIVATE and
+SetWindowPos(SWP_NOACTIVATE). Avalonia native base unavailable.
+Keep Next MainWindow original recorder/hotkey_focus/KeyDown/Escape/focus-out handlers;
+per-control cx.defer -> original section setters, raw saturating steps/Core normalization,
+worker retention/cleanup and source-root-preserving locked save. Global app exclusions
+stay global-owned. Storage/archive actions retain original picker/worker/NotificationCenter
+busy/progress/error/cancel/results and directory details; no duplicate status manager.
+Official Settings search/filter/sidebar/scroll allowed, resettable(false), individual
+SettingItem/SettingField public slots/Form for complex fields, not whole old page slot.
+Preserve main1060x650/min920x480, existing fields/actions and single passive preview.
+No actual user config/clipboard/history/archive/migration operations authorized.
+
+Queue06 adoption result: releasedSettings/3Page/3Group/13individualItem/publicField
+render,recorder+path actualFormField;officialsearch/selection/filter/sidebarresize/
+scroll,resetfalse. Defaultstyledrecorder/modifierButton+officialmenu/Smallstepand
+managementButtons retain original immediate section/deferredcallback semantics.
+NumberField reviewed but its editablef64Change is not same as existing noneditable
+saturatingstep/save policy;publicstyledButtoncomposition keeps original owner.
+All fields/actions/inlinevalidations/risk/status/workerpath/optionalTooltip and original
+NotificationCenter progress/error/cancel/results retained.11keyfunctionbodies equal
+dirty06baseline;application/worker/MainWindow filesbytes equal.9new tempSQLite/config/
+fakepicker/scroll/longerror/path/KeyDownUp/Tooltip regressions;580/580/strictchecks/
+7sourcegates0. No newcomponenttest archive/backup/compact/migration execution;no
+realuserdata/Clipboard/history/standalonebuild/start/Release/service/nativeacceptance.
+Exact evidence/limits: owning ui-queue-outcomes.md06;whole4/finalgallery pending.
+
+## Queue07 search/editor/navigation prerequisite
+Rechecked legacy ClipboardHistoryPopupWindow constructor/Open/Activated -> search
+focus, PrepareForPopupShow -> reused state, HidePopup -> close menu/hide one preview
+-> public base Hide; PreviewWindow ShowActivatedfalse/EnsureTopmost -> real native
+WS_EX_NOACTIVATE/SetWindowPos(SWP_NOACTIVATE). Avalonia native base unavailable.
+PopupViewModel OnSearchTextChanged -> cancelled debounce/Refresh; SelectedCategory
+-> reset selection/Refresh. Popup UpdateCategoryButtonStates selects five builtin
+categories. Old MainWindowClipboardViewModel SaveClipboardItemMetadata -> HistoryService
+UpdateText/normal repository persistence. Next custom categories/source assignment,
+drag order and extended search are existing Next behavior, not verified old equivalents.
+Keep Next search InputState/Change query intent/100ms generation/scope/page cache;
+text TextareaState and category InputState silent hydration/actual edits/worker-save/
+Cancel/Escape/focus restoration;300x440/defaultuser resize,244px categoryeditor at104,
+source list bounded/full help,backdrop+editor occlusion/click consumption/previewoff.
+Official0.7.1 InputGroup/Addons/Button/Form/Field/Textarea reviewed;Tabs Tab public
+InteractiveElement/drag/drop/context and TabBar original ScrollHandle candidate;
+ToggleGroup multi-bool/child callback override is not automatically exclusive nav.
+Actual compatibility/budget/keyboard tests required before navigation adoption;
+no worker/native/controller/library transplant or genuine user data operation.
+
+Queue07 actual result: ui/mod.rs adopts released0.7.1 InputGroup/Search addon/InlineEnd
+scopeInputGroupButton on originalInputState;SmallFormField/defaultstyledTextarea and
+categoryInput,sourceSmallCheckbox/styledSaveCancel/undoButtons. No duplicate ordinary
+control frame/callerappearance suppression. Original query/IME/scope/generation/worker
+paging/cache/edit/category-save/Cancel/focus/occlusion/passivepreview retained;27key
+bodies+constructor equal07dirtybaseline,Application/worker/oldtests bytes equal.
+300x440/userresize/244categoryeditor and long80line default/minimum/footer bounds pass.
+Worker fixtures seed AFTER initialization's existing legacy reset; bounded real worker
+terminal wait, not production reset/save changes.10new syntheticproduction/APItests;
+focused10/10/full590/590/strictchecks/8sourcegates0,notnative orvisual acceptance.
+Navigation narrowly retained: releasedC:tab/{tab,tab_bar}.rs directXSmallunderlineTab
+pointeronce/<=28px works; directkeyboard and simplepublictrack_focus+tab_stop recipe
+does not expose original target/action. C:button/toggle.rs checkedSmallToggleGroup
+actualfocusedSpace down/up invokesgroupcallback0. Otherpublicfocus/action/child and
+fullscroll/drag/drop/context adapters remainunverified,not universally unsupported.
+Originalcategory_tab/order/drag/drop/wheel/rightmenu/selection/onefocusable_content/
+ScrollHandle unchanged;8longcategory actualwheel/rightmenu regression passes.
+Exact recommendations/options/remainingdecision: owning ui-queue-outcomes.md07.
+No07actualHWND/physical/DPI/reader/installed/PNG/buildstart/Release/service/realdata/
+delegation/commit;wholeClipboardTools/history/sharedstates/finalgallery remains open.
+
+## Queue08 history/content prerequisite
+Rechecked old Controls/ClipboardHistoryListView.cs::DrawRow/DrawPreviewText/OnPointerReleased/
+OnPointerWheelChanged: stable item identity, literal text/image rendering, left action/right
+context selection and wheel-before-preview cancellation. Popup constructor/Open/Activated/
+PrepareForPopupShow/HidePopup -> close predecessor menu/hide preview/base Hide;
+ShowItemContextMenu/CloseItemContextMenu retains one session and original paste/copy/plain/
+linebreak/pin/favorite/delete. PreviewWindow constructor/Open/EnsureTopmost -> native
+WS_EX_NOACTIVATE/SetWindowPos(SWP_NOACTIVATE) unchanged; native Avalonia base unavailable.
+Next richer category/edit/worker cursor/cache and failure-retry policies remain existing
+Next behavior. Queue08 evaluates releasedList/ListDelegate (same-height section rows and
+owned query/selection/scroll), statelessListItem children/suffix, Toolbar publiccontent,
+Label literaltext/Tag/DescriptionList metadata and Empty/Alert content. Prefer actual
+stateless presentation without replacing variable-height GPUI ListState/paging/cache.
+No automatic Markdown/HTML interpretation, second menu/native/preview/controller owner.
+
+Queue08 result: history realstatelessListItem/public children/selected+aria projection,
+XSmallToolbar/publiccontent/20pxstyledactionButtons/literalLabel source/content/metadata;
+original variable60+4text/files/cappedimage144+44+4 heights, payloadID/cache/controller
+and one focusable row preserved. Ordinarychrome/oldmicrometadata overrides removed;
+zero-callcompact_result_row removed,livecompact_list_row unchanged. PopupactualEmpty/
+HeaderMediaTitleDescription and XSmallerrorAlert/boundedscroll retain originalstate
+conditions/input/focus/query/paging. AlertString is plainText::String;noMarkdownHTML.
+OriginalsingleRootprojectmenu/sourcechecked/actions and passivepreview unchanged.
+46originalbodies and originalmenuprojection equal08baseline;Applicationworker/menu/
+preview bytes equal.8new syntheticproductiontests/full598/598/strictchecks/8gates0,
+notnative/visualacceptance. Exact owningoutcomes08;no realClipboard/history/PNG/buildstart/
+Release/service/delegationcommit. Sharedstates10/finalgallery12 remain open.
+
+## Post-gallery user amendment — 2026-10-12
+User asks continued actualTabs adaptation and a shorter searchInputGroup, plus targeted
+layoutbalance corrections after rejecting overlyloose/unbalanced visuals. Original
+popupconstructor/Open/searchfocus/category/HidePopup/onepassivepreview chain above
+rechecked;nativebaseunavailable. Preserve300x440/defaultresize/244editor/source/queryIME/
+generation/worker/controller/order/dragdrop/wheel/context/singlefocusaction/deferred
+crossowner boundaries. Test officialcompactsearchtier and realTab within28pxnav lane;
+no dependencypatch/secondselectiondispatcher. Prior failed directfocus recipes are
+narrow evidence,not blanketTabsrejection. New realproduction redgreen required.
+
+Released0.7.1 `B:tabs.rs::Tab::render` stops Left MouseDown propagation, so an outer
+Button cannot own a child Tab's pointer activation or drag initiation. Public styled
+`C:tab/tab.rs::Tab` forwards InteractiveElement/track_focus/on_drag and its single
+on_click to that same Base node. `G:elements/div.rs` synthesizes a focused Enter/Space
+click on release at the tracked node, guarded by focus generation and modifiers.
+Adapt the real Tab with the original keyed focus and sole selection callback;
+move drag initiation to that node, retain original strip scroll/drop/context owners.
+Production pointer/focused-release/order/drag regressions remain required.
+Productionredgreen confirms childTab pointer selection and focus:BaseTab's stopdown
+also prevents an earlier caller MouseDown focus listener. Solepublicon_click therefore
+focuses originalkeyedhandle then calls originalselect_category. Actualfocus remains
+acrossrepaint;Spacedown noaction/up generation+1 passes. No duplicatekeylistener.
+Longwheel/rightmenu passes/full623green. CompleteTabtraversal/held/modifiers/actualdrag
+matrix remainsunverified;new30PNG uninspected due Browser sessionviewblocked.
+
+## Installed resize / first-preview diagnosis (2026-10-13)
+Reverified old popup OnPropertyChanged:298-318 emits size only while visible; MainWindow.axaml.cs:878,889-913 subscribes persistence/restores clamped size before Place/Prepare/Show/Activate. Native Avalonia base source remains unavailable. Old QueueVisibleImagePreviewWarmup:552-605 warms at most8images after120ms, while hover:749-905 preserves configurable default800ms/item/cancel/onepassivewindow.
+Next now observes actual confirmed-visible logical viewport in ClipboardPanel::observe_panel_bounds, defers original-owner size intent, and coalesces panel-only locked config merge in ClipboardApplication::observe_panel_size. Hidden startup/default,stale session and scale-multiplied persistence are rejected; ordinary settings saves preserve independently owned size. Real owned fixture goes red300x440 vs512x688 without observer; restored final658Desktop suite passes.
+First preview remains800ms plus hidden creation and4acknowledged native steps; no safe prewarm optimization established. Bounded correlated stage timing and cancellation fixtures added; injected25ms milestones are not installed measurements. Full evidence/limits: [installed lifecycle outcomes](../../.trellis/tasks/10-13-installed-lifecycle-feedback/outcomes.md). No new package/native/visual acceptance.
+
+## R2 history action/status visibility prerequisite (2026-10-13)
+Reverified `D:\Code\NxTools\Controls\ClipboardHistoryListView.cs:79-99,249-299`:
+constructor binds pointer/wheel once; `DrawRow` treats selection/hover as row styling,
+but favorite edge/icon (`271-280`) and pin icon (`289-293`) depend only on their
+independent item flags. Selected/hovered rows do not remove those identifiers.
+Legacy has no inline management toolbar in this DrawRow; Next's existing toolbar
+is retained under the explicitly approved R2 hover/keyboard-only visibility rule.
+Popup constructors/event bindings `ClipboardHistoryPopupWindow.axaml.cs:61-167`
+and preparation/hide `206-259` keep search focus, one reusable popup, menu-close ->
+preview-hide -> base Hide. `ClipboardPreviewWindow.cs:29-95,200-237` remains one
+passive topmost window with WS_EX_NOACTIVATE/SWP_NOACTIVATE; Avalonia native base
+source remains unavailable. This presentation slice changes no native lifecycle.
+Released Kit0.7.1 ListItem children/selection/public interaction, Toolbar content,
+Button keyed focus/one release-click and Icon path -> Svg -> paint_svg were read
+before adding real production paint/focus regressions. Exact APIs and pending-red
+handoff are recorded in the owning round2 `history-outcomes.md`; no fix or compiled,
+native, installed, physical/DPI/reader acceptance is claimed at this checkpoint.
+
+## Round2 integrated preview/history correction (2026-10-13)
+The prerequisite checkpoint above is superseded by `.trellis/tasks/10-13-installed-feedback-round2/outcomes.md`: selected-only action rail hidden, pin/favorite independent paint outside hidden time slot, actual SVG/hover/keyboard/minimum no-overlap tests pass. Contradictory ForegroundChanged while GPUI remains active is same-session next-turn rechecked; genuine blur/press/Escape retained. Reused preview now offscreen -> acknowledged C# client bounds -> existing entity update -> fresh frame -> generation-scoped reposition, no competing GPUI native resize. NativeMethods.SetWindowBounds final client readback verified; timeout/failure/cancel/oldHWND regression retained. Font-wrap fixture passed before change (no whitespace-collapse fix claim); actual installed large blank area and sporadic hover-close still need current-package interaction evidence. Full674Desktop and download/native-safe owner checks are source evidence, no live clipboard/native/visual/package acceptance.
+
+## Installed summon-hotkey alignment correction (2026-10-14)
+
+Rechecked legacy MainWindow.axaml1460–1495: label/editor share one horizontal row,
+Windows registration status remains separate visible state. Current Next Settings slot0
+keeps the existing recorded-hotkey Button and acknowledged suspend/cancel/registration
+owner; replaces its vertical Form presentation with shared aligned_setting_row in the
+official SettingItem render slot. Title-adjacent help and right-aligned editor share center,
+registration state remains below. Production red measured24.5px lower stacked editor;
+actual920/1060width center/right-edge/firstrow/statusbounds regression is green. No
+native hotkey policy, user data, InputState or popup lifecycle change is part of this fix.
+Evidence: .trellis/tasks/10-14-installed-feedback-actions/ui-outcomes.md.
+
+## Trusted-extension clipboard seam (source reverified 2026-10-14)
+
+- `D:\Code\NxTools\Services\ClipboardCaptureService.cs:15-28,31-125` injects save
+  delegates into the single capture owner; ignore markers/time suppression precede saving.
+- `Services\ClipboardHistoryService.cs:124-145,158-177,190-229,237-269` returns the
+  repository-saved item before raising history-change notification. Image assets are written
+  before repository save; this is not evidence for an old script runtime.
+- `Services\ClipboardRepository.cs:271-345` commits native formats and duplicate revival
+  in the same transaction, then returns the stable existing/new row ID.
+- `Services\ClipboardPasteService.cs:13-33,35-52` resolves full content through the existing
+  history delegates; copy does not activate a target or invoke the paste hide callback.
+
+Invariants for the narrow Next seam: one serialized worker/history and one native capture
+listener; notify only after required asset promotion and history commit; failed persistence
+and empty capture publish nothing. Duplicate revival retains its row ID and is distinguishable
+from insertion. Derived text/files go through the existing capture owner, never edit/delete
+their source. Native replacement copy reuses the existing correlated action/suppression seam;
+admission is not Windows success. Immutable bounded snapshots expose no GPUI entity/HWND/native
+formats. Cross-owner effect dispatch and completion callbacks run on a later application turn,
+never inside capture callbacks or database transactions. This adds no popup/preview placement,
+focus, show/hide or script-runtime ownership; parent composition still owns trust, cancellation,
+event opt-in and causality routing.
+
+## Manual extension feedback recheck (2026-10-15)
+User-approved `.trellis/tasks/10-15-extension-action-feedback/` adds usage and local one-shot feedback, not a new native popup owner. Re-read old `Views/ClipboardHistoryPopupWindow.axaml.cs` constructor/Open/Activated/Deactivated, PrepareForPopupShow and HidePopup through Avalonia Window.Show/Hide; old `Services/ClipboardRepository.cs` Save/GetPopup ordering/duplicate revival. Preserve explicit show/search focus, original hide/deactivate/outside-pointer and separate passive preview boundaries. There is no equivalent cross-feature plugin feedback in that old chain; new behavior is explicitly requested. Next `ui/history.rs` -> original `ClipboardItemAction` callback -> deferred manual chooser -> per-run application/runtime -> original adapter/worker commit observation -> explicit `ui/extension_feedback.rs` exact-ID location. `nxtools-clipboard/src/query.rs::page_containing_item` uses the same store/order and bounded SQLite snapshot. Dialog close does not cancel/replay; one Escape belongs to the owning transient layer. No reference binary, live clipboard or user script executed.
+
+## User-authorized outside-HWND context menu correction (2026-10-15)
+Reread old `D:/Code/NxTools/Views/ClipboardHistoryPopupWindow.axaml.cs:61–167` constructor/Open/Activated/Deactivated guards, `:248–259` HidePopup -> CloseItemContextMenu -> HidePreviewWindow -> inherited Window.Hide, and `:967–1002` ShowItemContextMenu -> close predecessor -> new Avalonia ContextMenu -> Closed clears identity -> menu.Open(ItemsList). Avalonia native Popup implementation source is not present locally, so no invented lower native call is claimed. Locked Kit0.7.1 `src/native_menu/mod.rs` explicitly documents OS NativeMenu can exceed HWND while GPUI PopupMenu is clipped; `menu/context_menu.rs` and `popup_menu.rs` use anchored/deferred within the window. User now explicitly supersedes earlier narrow-window clamp exception: menus must extend beyond Clipboard HWND. Windows API ownership stays C# via bounded context-menu coordinator, Rust retains IDs/tree/action eligibility/session callbacks; official PopupMenu remains for larger Downloads surface. No upstream/registry/dependency edits. Invariants: one session, pending before dispatch, menu guards panel deactivate/outside until terminal, hide cancels exact menu, Escape keeps source, outside dismissal closes source, stale/disabled/unknown leaf cannot dispatch, callback after menu terminal and cross-owner defer. Actual owned native overflow/placement/cleanup and source-session regressions are required; not implied by this source review.
+
+## Item-local extension feedback authorization
+User rejects the panel-top compact feedback and requests progress/outcome WITHIN the clicked history item. Reverified legacy Controls/ClipboardHistoryListView.cs472–491 (right release selects actual cached item then ItemRightClicked) and ClipboardHistoryPopupWindow.axaml.cs127–153/248–259/967–1002 (focus/deactivate guard, hide closes menu first, callback captures exact item). There is no legacy plugin-progress row; this is an explicit new presentation behavior, not a claimed native migration. Preserve current native menu/preview/window lifecycle. Next ClipboardOrigin carries source itemID, original ListItem gains a lower feedback slot, original ListState remeasures changed rows while preserving scroll. Runtime/effects/worker exact result owner unchanged; repeating official Spinner pending/visible only, static under reduced/unknown motion. [Current amendment](../../.trellis/tasks/10-15-extension-action-feedback/item-feedback.md).
+
+## Official styled outside-HWND menu amendment (2026-10-16)
+The user rejects white unstyled Windows HMENU in dark Clipboard. This supersedes only the renderer choice in the2026-10-15 correction, not its outside-source-HWND requirement. Reverified old ClipboardHistoryPopupWindow.axaml.cs127–167,206–259,967–1002 and ClipboardHistoryListView.cs472–491: cached exact item before right-menu event, one predecessor-close owner, deactivation guard, hide closes menu before preview/inherited Window.Hide; Avalonia native popup source remains unavailable. Locked Kit0.7.1 PopupMenu::build/item plus PopupMenuItem::submenu/element/separator/checked/disabled/icon/on_click, Focusable and DismissEvent now render on a separate GPUI transparent popup Root. Default26px official rows/text_sm13px, popover grammar, check rails and vendor cascades remain styled; destructive label/icon uses public content slot and existing semantic danger. No palette/dependency fork.
+
+Verified Next call chain: project_menu::MenuTrigger → deferred native_context_menu::open → pending source HWND/session/weak trigger + immutable eligible callback map → styled_menu_surface::open(hidden independent HWND/one Root) → typed ShowContextMenu.popup_window_handle → NativeContextMenuCoordinator.PrepareStyledSurface (same-process/source-session validation, ClientToScreen/MonitorFromPoint/GetMonitorInfoW, WS_POPUP/tool owner, final work-area client bounds/readback; no TrackPopupMenuEx on this branch) → deferred official menu placement → acknowledged visibility/activation phases → first-wins terminal → remove popup → deferred original source callback. The auxiliary viewport, not the unchanged300×440 source HWND, contains cascades; no production clipped fallback. Unique phase IDs reject stale/duplicate native replies; one session diagnostic ID owns acceptance/ready/terminal/elapsed/native errors. Existing source outside/deactivate guards and hide cancellation retain their helper entry points. Menu failure/outside helpers now match source session as well as source window, preventing an old dismissal from closing a replacement session. All cross-entity callback effects are deferred.
+
+Regression/source evidence and pending compiled/native/Light-Dark/DPI/user acceptance are tracked in [menu slice ledger](../../.trellis/tasks/10-16-menu-notification-refinement/menu.md). Static gates and .NET semantic fixtures are not paint or interaction acceptance; no package/install/service/plugin execution is implied.
+
+Current correction closeout: official menu model placement now waits for a freshly submitted GPUI frame before native reveal/activation, and first inactive preparation state is ignored until actual activation. Source/session/trigger remains checked at final callback. Original-item pending feedback remains; the user's later notification request moves terminal/start-failure results to the shared exact-window notification host with explicit host-confirmed ViewResult/Details, no automatic report/copy/paste/reopen. [Current source/compiled/native/render evidence and limits](../../.trellis/tasks/10-16-menu-notification-refinement/outcomes.md) supersede the previous pending-compilation checkpoint, not physical/mixed-DPI/installed/user acceptance.
+
+## Approved unified Markdown and image modes (2026-10-22 prerequisite)
+User supersedes TextView-only/edit-only scope: list summary, full passive textpreview and explicit editor adopt fixed external editor with narrowly approved passive element mode. Read [editor chain and invariants](markdown-editor.md) before implementation. Original full-by-ID/nativeformats/paste targets,400charsummary/210DIPtextcard/190image/62files/8gap, original category/search/IME/action ownership unchanged. Image modes defaultAuto/Fit/Panorama/Light800/Mini500/Compact300 use same passive HWND and true visible workarea; rawpixels/DPI/axis scroll separate from list geometry. Legacy ClipboardPreviewWindow constructor/update/PlaceNear/ApplyPassiveWindowStyle rechecked; fixed440x340 is intentionally superseded only for imagepreview. New settings use originalsectionmerge, failure retains live priorvalue/storage root. No productlaunch/package/install implied.

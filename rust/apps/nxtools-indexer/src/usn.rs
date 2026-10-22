@@ -13,6 +13,18 @@ const STRUCTURAL_REASON_MASK: u32 = USN_REASON_FILE_CREATE
     | USN_REASON_FILE_DELETE
     | USN_REASON_RENAME_OLD_NAME
     | USN_REASON_RENAME_NEW_NAME;
+const USN_REASON_DATA_OVERWRITE: u32 = 0x0000_0001;
+const USN_REASON_DATA_EXTEND: u32 = 0x0000_0002;
+const USN_REASON_DATA_TRUNCATION: u32 = 0x0000_0004;
+const USN_REASON_BASIC_INFO_CHANGE: u32 = 0x0000_8000;
+const USN_REASON_CLOSE: u32 = 0x8000_0000;
+const METADATA_REASON_MASK: u32 = USN_REASON_DATA_OVERWRITE
+    | USN_REASON_DATA_EXTEND
+    | USN_REASON_DATA_TRUNCATION
+    | USN_REASON_BASIC_INFO_CHANGE
+    | USN_REASON_CLOSE;
+const MAINTENANCE_REASON_MASK: u32 = STRUCTURAL_REASON_MASK | METADATA_REASON_MASK;
+const MAX_METADATA_READS_PER_POLL: usize = 256;
 const MIN_OVERLAY_REBUILD_ENTRIES: usize = 4_096;
 const OVERLAY_REBUILD_BASE_DIVISOR: usize = 10;
 const MAX_RECURSIVE_WORK_UNITS_PER_BATCH: usize = 4_096;
@@ -25,11 +37,14 @@ pub(crate) struct UsnRecord {
     name: String,
     is_directory: bool,
     kind: UsnRecordKind,
+    // Outer None means not read (synthetic structural fixture); Some(None) means unknown.
+    modified_at_unix_ms: Option<Option<i64>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum UsnRecordKind {
     Upsert,
+    Metadata,
     RenameOld,
     Delete,
 }
@@ -48,6 +63,7 @@ impl UsnRecord {
             name: name.into(),
             is_directory,
             kind: UsnRecordKind::Upsert,
+            modified_at_unix_ms: None,
         }
     }
 
@@ -59,8 +75,62 @@ impl UsnRecord {
             name: String::new(),
             is_directory: false,
             kind: UsnRecordKind::Delete,
+            modified_at_unix_ms: None,
         }
     }
+}
+
+#[cfg(any(windows, test))]
+fn hydrate_journal_times_while(
+    records: &mut [UsnRecord],
+    mut read: impl FnMut(u64) -> Option<i64>,
+    is_current: &impl Fn() -> bool,
+) -> bool {
+    let mut times = HashMap::new();
+    for record in records {
+        if !is_current() {
+            return false;
+        }
+        if matches!(record.kind, UsnRecordKind::Upsert | UsnRecordKind::Metadata) {
+            let time = *times
+                .entry(record.file_reference)
+                .or_insert_with(|| read(record.file_reference));
+            record.modified_at_unix_ms = Some(time);
+        }
+    }
+    is_current()
+}
+
+// The buffer has already passed parse_journal_records; still use checked bounds here.
+#[cfg(any(windows, test))]
+fn journal_record_usn_at(buffer: &[u8], index: usize) -> Result<i64> {
+    let mut offset = 8_usize;
+    for _ in 0..index {
+        offset = offset
+            .checked_add(read_u32(buffer, offset)? as usize)
+            .context("USN record offset overflowed")?;
+    }
+    read_i64(buffer, offset + 24)
+}
+
+#[cfg(any(windows, test))]
+fn metadata_batch_prefix(previous: &[UsnRecord], batch: &[UsnRecord], limit: usize) -> usize {
+    let needs_time =
+        |record: &UsnRecord| matches!(record.kind, UsnRecordKind::Upsert | UsnRecordKind::Metadata);
+    let mut unique = previous
+        .iter()
+        .filter(|record| needs_time(record))
+        .map(|record| record.file_reference)
+        .collect::<HashSet<_>>();
+    for (index, record) in batch.iter().enumerate() {
+        if needs_time(record) {
+            if !unique.contains(&record.file_reference) && unique.len() >= limit {
+                return index;
+            }
+            unique.insert(record.file_reference);
+        }
+    }
+    batch.len()
 }
 
 #[derive(Clone, Debug)]
@@ -92,6 +162,16 @@ pub(crate) enum JournalPoll {
     CursorAdvanced(MftSnapshot),
     Updated(MftSnapshot),
     RebuildRequired(String),
+}
+
+fn classify_applied_update(previous: &MftSnapshot, updated: MftSnapshot) -> JournalPoll {
+    if previous.overlay != updated.overlay || previous.visible_len() != updated.visible_len() {
+        JournalPoll::Updated(updated)
+    } else if previous.next_usn != updated.next_usn {
+        JournalPoll::CursorAdvanced(updated)
+    } else {
+        JournalPoll::NoChange
+    }
 }
 
 pub(crate) fn apply_journal_batch(
@@ -132,6 +212,22 @@ pub(crate) fn apply_journal_batch(
     let mut overlay_children = overlay_children_index(&updated);
     for record in batch.records {
         match record.kind {
+            UsnRecordKind::Metadata => {
+                // A close/data/basic-info event must not turn a split rename's old name into
+                // a structural upsert, resurrect a deleted row or expand directory descendants.
+                if let Some(mut previous) = updated.visible_entry(record.file_reference) {
+                    let time = record
+                        .modified_at_unix_ms
+                        .unwrap_or(previous.modified_at_unix_ms);
+                    if previous.modified_at_unix_ms != time {
+                        previous.modified_at_unix_ms = time;
+                        updated
+                            .overlay
+                            .replacements
+                            .insert(record.file_reference, previous);
+                    }
+                }
+            }
             // A rename's old and new records may straddle read buffers. Keeping the old row until
             // RENAME_NEW arrives avoids publishing a half-applied directory tree.
             UsnRecordKind::RenameOld => {}
@@ -161,9 +257,11 @@ pub(crate) fn apply_journal_batch(
                     name: record.name,
                     is_directory: record.is_directory,
                     size_bytes: previous.as_ref().and_then(|entry| entry.size_bytes),
-                    modified_at_unix_ms: previous
-                        .as_ref()
-                        .and_then(|entry| entry.modified_at_unix_ms),
+                    modified_at_unix_ms: record.modified_at_unix_ms.unwrap_or_else(|| {
+                        previous
+                            .as_ref()
+                            .and_then(|entry| entry.modified_at_unix_ms)
+                    }),
                 };
                 updated.overlay.deleted.remove(&record.file_reference);
                 updated
@@ -497,10 +595,14 @@ pub(crate) fn parse_journal_records(buffer: &[u8]) -> Result<(i64, Vec<UsnRecord
         let reason = read_u32(buffer, offset + 40)?;
         let kind = if reason & USN_REASON_FILE_DELETE != 0 {
             UsnRecordKind::Delete
-        } else if reason & USN_REASON_RENAME_OLD_NAME != 0 {
+        } else if reason & USN_REASON_RENAME_OLD_NAME != 0
+            && reason & USN_REASON_RENAME_NEW_NAME == 0
+        {
             UsnRecordKind::RenameOld
-        } else {
+        } else if reason & (USN_REASON_FILE_CREATE | USN_REASON_RENAME_NEW_NAME) != 0 {
             UsnRecordKind::Upsert
+        } else {
+            UsnRecordKind::Metadata
         };
         records.push(UsnRecord {
             file_reference: read_u64(buffer, offset + 8)?,
@@ -508,6 +610,7 @@ pub(crate) fn parse_journal_records(buffer: &[u8]) -> Result<(i64, Vec<UsnRecord
             name,
             is_directory: read_u32(buffer, offset + 52)? & 0x10 != 0,
             kind,
+            modified_at_unix_ms: None,
         });
         offset = record_end;
     }
@@ -576,8 +679,10 @@ mod windows {
     };
 
     use super::{
-        JournalApplyError, JournalBatch, JournalPoll, MftSnapshot, STRUCTURAL_REASON_MASK,
-        apply_journal_batch, classify_usn_read_failure, parse_journal_records,
+        JournalApplyError, JournalBatch, JournalPoll, MAINTENANCE_REASON_MASK,
+        MAX_METADATA_READS_PER_POLL, MftSnapshot, apply_journal_batch, classify_usn_read_failure,
+        hydrate_journal_times_while, journal_record_usn_at, metadata_batch_prefix,
+        parse_journal_records,
     };
 
     const JOURNAL_BUFFER_BYTES: usize = 256 * 1024;
@@ -622,7 +727,7 @@ mod windows {
         while cursor < journal.NextUsn && reads < MAX_READS_PER_POLL {
             let request = READ_USN_JOURNAL_DATA_V0 {
                 StartUsn: cursor,
-                ReasonMask: STRUCTURAL_REASON_MASK,
+                ReasonMask: MAINTENANCE_REASON_MASK,
                 ReturnOnlyOnClose: 0,
                 Timeout: 0,
                 BytesToWaitFor: 0,
@@ -650,6 +755,19 @@ mod windows {
             );
             let (next, mut batch) = parse_journal_records(&buffer[..returned as usize])?;
             ensure!(next >= cursor, "USN journal cursor moved backwards");
+            // Bound native metadata reads without advancing past deferred records.
+            let keep = metadata_batch_prefix(&records, &batch, MAX_METADATA_READS_PER_POLL);
+            if keep < batch.len() {
+                let deferred_usn = journal_record_usn_at(&buffer[..returned as usize], keep)?;
+                ensure!(
+                    deferred_usn >= cursor && deferred_usn <= next,
+                    "deferred USN cursor was invalid"
+                );
+                cursor = deferred_usn;
+                batch.truncate(keep);
+                records.append(&mut batch);
+                break;
+            }
             records.append(&mut batch);
             if next == cursor {
                 break;
@@ -660,7 +778,11 @@ mod windows {
         if cursor == start_usn && records.is_empty() {
             return Ok(JournalPoll::NoChange);
         }
-        let content_changed = !records.is_empty();
+        let _ = hydrate_journal_times_while(
+            &mut records,
+            |reference| crate::mft::read_last_write_by_id(handle.0, reference),
+            &|| true,
+        );
         match apply_journal_batch(
             snapshot,
             JournalBatch {
@@ -670,8 +792,7 @@ mod windows {
                 records,
             },
         ) {
-            Ok(updated) if content_changed => Ok(JournalPoll::Updated(updated)),
-            Ok(updated) => Ok(JournalPoll::CursorAdvanced(updated)),
+            Ok(updated) => Ok(super::classify_applied_update(snapshot, updated)),
             Err(JournalApplyError::RebuildRequired(reason)) => {
                 Ok(JournalPoll::RebuildRequired(reason))
             }
@@ -740,6 +861,173 @@ mod windows {
 
 #[cfg(test)]
 mod tests {
+    fn w4_wire_record(reason: u32, reference: u64, usn: i64) -> Vec<u8> {
+        let name = "notes.txt".encode_utf16().collect::<Vec<_>>();
+        let mut record = vec![0_u8; 60 + name.len() * 2];
+        let length = record.len() as u32;
+        record[..4].copy_from_slice(&length.to_le_bytes());
+        record[4..6].copy_from_slice(&2_u16.to_le_bytes());
+        record[8..16].copy_from_slice(&reference.to_le_bytes());
+        record[16..24].copy_from_slice(&10_u64.to_le_bytes());
+        record[24..32].copy_from_slice(&usn.to_le_bytes());
+        // A plausible but intentionally different event time must never become last-write.
+        record[32..40].copy_from_slice(&133_000_000_000_000_000_i64.to_le_bytes());
+        record[40..44].copy_from_slice(&reason.to_le_bytes());
+        record[56..58].copy_from_slice(&((name.len() * 2) as u16).to_le_bytes());
+        record[58..60].copy_from_slice(&60_u16.to_le_bytes());
+        for (index, unit) in name.iter().enumerate() {
+            record[60 + index * 2..62 + index * 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        record
+    }
+
+    #[test]
+    fn w4_usn_data_basic_close_metadata_seam_uses_true_time_and_preserves_tree() {
+        for reason in [
+            USN_REASON_DATA_OVERWRITE,
+            USN_REASON_DATA_EXTEND,
+            USN_REASON_DATA_TRUNCATION,
+            USN_REASON_BASIC_INFO_CHANGE,
+            USN_REASON_CLOSE,
+        ] {
+            assert_ne!(MAINTENANCE_REASON_MASK & reason, 0);
+            let mut buffer = 110_i64.to_le_bytes().to_vec();
+            buffer.extend(w4_wire_record(reason, 11, 100));
+            let (next_usn, mut records) = parse_journal_records(&buffer).expect("metadata record");
+            assert_eq!(records[0].kind, UsnRecordKind::Metadata);
+            assert_eq!(records[0].modified_at_unix_ms, None);
+            assert!(hydrate_journal_times_while(
+                &mut records,
+                |reference| {
+                    assert_eq!(reference, 11);
+                    Some(1234)
+                },
+                &|| true
+            ));
+            let updated = apply_journal_batch(
+                &snapshot(),
+                JournalBatch {
+                    journal_id: 17,
+                    lowest_valid_usn: 90,
+                    next_usn,
+                    records,
+                },
+            )
+            .expect("metadata batch");
+            let file = updated.visible_entry(11).expect("updated file");
+            assert_eq!(file.modified_at_unix_ms, Some(1234));
+            assert_eq!(file.path, "C:\\Work\\notes.txt");
+            assert_eq!(updated.visible_len(), 2);
+            assert_eq!(updated.next_usn, Some(110));
+            assert_eq!(
+                snapshot()
+                    .visible_entry(11)
+                    .expect("last-good")
+                    .modified_at_unix_ms,
+                None
+            );
+            let mut older = vec![UsnRecord {
+                modified_at_unix_ms: Some(Some(1)),
+                kind: UsnRecordKind::Metadata,
+                ..UsnRecord::upsert(11, 10, "wrong-old-name", false)
+            }];
+            assert!(hydrate_journal_times_while(&mut older, |_| None, &|| true));
+            let unknown = apply_journal_batch(
+                &updated,
+                JournalBatch {
+                    journal_id: 17,
+                    lowest_valid_usn: 90,
+                    next_usn: 120,
+                    records: older,
+                },
+            )
+            .expect("metadata read failure remains unknown");
+            assert_eq!(
+                unknown
+                    .visible_entry(11)
+                    .expect("unknown file")
+                    .modified_at_unix_ms,
+                None
+            );
+            assert_eq!(
+                unknown.visible_entry(11).expect("unchanged path").path,
+                file.path
+            );
+        }
+    }
+
+    #[test]
+    fn w4_usn_budget_retains_deferred_cursor_and_deduplicates_native_reads() {
+        let mut buffer = 120_i64.to_le_bytes().to_vec();
+        for (reference, usn) in [(11, 100), (11, 101), (12, 102), (13, 103)] {
+            buffer.extend(w4_wire_record(USN_REASON_DATA_EXTEND, reference, usn));
+        }
+        let (_, mut records) = parse_journal_records(&buffer).expect("fixture batch");
+        assert_eq!(metadata_batch_prefix(&[], &records, 2), 3);
+        assert_eq!(
+            journal_record_usn_at(&buffer, 3).expect("deferred cursor"),
+            103
+        );
+        records.truncate(3);
+        let mut calls = Vec::new();
+        assert!(hydrate_journal_times_while(
+            &mut records,
+            |id| {
+                calls.push(id);
+                Some(7)
+            },
+            &|| true
+        ));
+        assert_eq!(calls, [11, 12]);
+        assert!(!hydrate_journal_times_while(
+            &mut records,
+            |_| panic!("cancelled"),
+            &|| false
+        ));
+        let updated = apply_journal_batch(
+            &snapshot(),
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 103,
+                records,
+            },
+        )
+        .expect("bounded prefix");
+        assert_eq!(updated.next_usn, Some(103));
+        assert!(
+            updated.visible_entry(12).is_none(),
+            "metadata-only records cannot resurrect unknown files"
+        );
+    }
+
+    #[test]
+    fn w4_usn_backwards_true_last_write_is_not_clamped_to_event_or_previous_time() {
+        let mut old = snapshot();
+        let mut file = old.visible_entry(11).expect("file");
+        file.modified_at_unix_ms = Some(9000);
+        old.overlay.replacements.insert(11, file);
+        let records = vec![UsnRecord {
+            kind: UsnRecordKind::Metadata,
+            modified_at_unix_ms: Some(Some(10)),
+            ..UsnRecord::upsert(11, 10, "notes.txt", false)
+        }];
+        let updated = apply_journal_batch(
+            &old,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records,
+            },
+        )
+        .expect("restored timestamp");
+        assert_eq!(
+            updated.visible_entry(11).expect("file").modified_at_unix_ms,
+            Some(10)
+        );
+    }
+
     use super::*;
     use crate::mft::{MftEntry, MftIdentity, MftSnapshot};
     use nxtools_protocol::{IndexSearchContext, IndexSearchRequest};
@@ -831,6 +1119,8 @@ mod tests {
                 preferred_directory: None,
                 include_files: true,
                 include_directories: true,
+                retain_kinds_apart: false,
+                ..Default::default()
             },
         };
         let results = crate::search_snapshots_while(
@@ -1124,5 +1414,64 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod idle_classification_tests {
+    use super::*;
+
+    #[test]
+    fn idle_io_no_effect_metadata_events_keep_idle_backoff_but_real_time_changes_do_not() {
+        let snapshot = MftSnapshot::from_entries(
+            r"C:\",
+            Some(17),
+            Some(100),
+            vec![MftEntry {
+                identity: Some(MftIdentity {
+                    file_reference: 11,
+                    parent_reference: 5,
+                }),
+                path: r"C:\kept.txt".into(),
+                name: "kept.txt".into(),
+                is_directory: false,
+                size_bytes: None,
+                modified_at_unix_ms: Some(9),
+            }],
+        );
+        let applied = apply_journal_batch(
+            &snapshot,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 0,
+                next_usn: 110,
+                records: vec![UsnRecord {
+                    file_reference: 11,
+                    parent_reference: 5,
+                    name: "kept.txt".into(),
+                    is_directory: false,
+                    kind: UsnRecordKind::Metadata,
+                    modified_at_unix_ms: Some(Some(9)),
+                }],
+            },
+        )
+        .expect("apply unchanged close metadata");
+        assert!(matches!(
+            classify_applied_update(&snapshot, applied),
+            JournalPoll::CursorAdvanced(_)
+        ));
+        let mut changed = snapshot.clone();
+        changed.next_usn = Some(110);
+        let mut entry = changed.visible_entry(11).expect("existing row");
+        entry.modified_at_unix_ms = Some(10);
+        changed.overlay.replacements.insert(11, entry);
+        assert!(matches!(
+            classify_applied_update(&snapshot, changed),
+            JournalPoll::Updated(_)
+        ));
+        assert!(matches!(
+            classify_applied_update(&snapshot, snapshot.clone()),
+            JournalPoll::NoChange
+        ));
     }
 }

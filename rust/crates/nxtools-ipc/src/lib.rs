@@ -1,3 +1,6 @@
+pub mod archive_job;
+pub mod archive_read;
+pub mod desktop_archive_intent;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::{
@@ -15,7 +18,7 @@ use nxtools_protocol::{
 use thiserror::Error;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
 #[cfg(windows)]
-use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
+use tokio::net::windows::named_pipe::NamedPipeServer;
 use tokio::sync::Mutex as AsyncMutex;
 use tracing::{info, warn};
 
@@ -45,6 +48,90 @@ struct PendingTerminal {
 struct ActiveConnection {
     generation: u64,
     commands: Sender<Envelope>,
+    command_wake: Sender<()>,
+    archive_reads: Vec<archive_read::ReadReservation>,
+    archive_jobs: Vec<archive_job::JobReservation>,
+    cancel_turn: bool,
+    commands_paused: bool,
+}
+
+/// Original-connection command consumer with bounded, fair cancellation delivery.
+#[derive(Clone)]
+pub struct PlatformCommandReceiver {
+    commands: Receiver<Envelope>,
+    wake: Receiver<()>,
+    router: Arc<Mutex<CommandRouter>>,
+    generation: u64,
+}
+impl PlatformCommandReceiver {
+    pub fn try_recv(&self) -> Result<Envelope, async_channel::TryRecvError> {
+        let mut router = self
+            .router
+            .lock()
+            .map_err(|_| async_channel::TryRecvError::Closed)?;
+        let Some(active) = router
+            .active
+            .as_mut()
+            .filter(|active| active.generation == self.generation)
+        else {
+            return self.commands.try_recv();
+        };
+        if active.commands_paused {
+            return Err(async_channel::TryRecvError::Empty);
+        }
+        if active.cancel_turn
+            && let Some(cancel) = active
+                .take_archive_cancel()
+                .or_else(|| active.take_job_cancel())
+        {
+            return Ok(cancel);
+        }
+        match self.commands.try_recv() {
+            Ok(envelope) => {
+                active.note_archive_start(envelope.id);
+                active.note_job_start(envelope.id);
+                active.cancel_turn = true;
+                Ok(envelope)
+            }
+            Err(error) => active
+                .take_archive_cancel()
+                .or_else(|| active.take_job_cancel())
+                .ok_or(error),
+        }
+    }
+    pub async fn recv(&self) -> Result<Envelope, async_channel::RecvError> {
+        loop {
+            match self.try_recv() {
+                Ok(envelope) => return Ok(envelope),
+                Err(async_channel::TryRecvError::Closed) => return Err(async_channel::RecvError),
+                Err(async_channel::TryRecvError::Empty) => {}
+            }
+            // Both admissions and cancels signal this coalesced wake. No lock spans await.
+            if self.wake.recv().await.is_err() {
+                return self.try_recv().map_err(|_| async_channel::RecvError);
+            }
+        }
+    }
+}
+
+/// RAII ordering seam for a self-owned pipe fixture; never changes command admission.
+#[doc(hidden)]
+pub struct PlatformCommandPause {
+    router: Arc<Mutex<CommandRouter>>,
+    generation: u64,
+}
+impl Drop for PlatformCommandPause {
+    fn drop(&mut self) {
+        if let Ok(mut router) = self.router.lock()
+            && let Some(active) = router
+                .active
+                .as_mut()
+                .filter(|active| active.generation == self.generation)
+        {
+            active.commands_paused = false;
+            let _ = active.command_wake.try_send(());
+        }
+    }
 }
 
 struct CommandRouter {
@@ -53,8 +140,55 @@ struct CommandRouter {
     pending: HashMap<uuid::Uuid, PendingCommand>,
 }
 
+#[derive(Debug)]
+enum QueueAdmissionError {
+    Disconnected,
+    Full,
+    Closed,
+}
+
+impl CommandRouter {
+    /// Both entry paths register before enqueue under this router's existing lock.
+    /// Caller-specific duplicate-ID and error policies remain at the entry path.
+    fn enqueue(
+        &mut self,
+        envelope: Envelope,
+        summon_reply: Option<Sender<PlatformCommandResult>>,
+    ) -> std::result::Result<uuid::Uuid, QueueAdmissionError> {
+        let command_id = envelope.id;
+        let active = self
+            .active
+            .as_ref()
+            .map(|active| (active.generation, active.commands.clone()))
+            .ok_or(QueueAdmissionError::Disconnected)?;
+        self.pending.insert(
+            command_id,
+            PendingCommand {
+                generation: active.0,
+                accepted_at: Instant::now(),
+                summon_reply,
+            },
+        );
+        match active.1.try_send(envelope) {
+            Ok(()) => {
+                if let Some(connection) = &self.active {
+                    let _ = connection.command_wake.try_send(());
+                }
+                Ok(command_id)
+            }
+            Err(error) => {
+                self.pending.remove(&command_id);
+                Err(match error {
+                    async_channel::TrySendError::Full(_) => QueueAdmissionError::Full,
+                    async_channel::TrySendError::Closed(_) => QueueAdmissionError::Closed,
+                })
+            }
+        }
+    }
+}
+
 type ReplacedConnection = Option<(u64, Vec<PendingTerminal>)>;
-type OpenConnection = (u64, Receiver<Envelope>, ReplacedConnection);
+type OpenConnection = (u64, PlatformCommandReceiver, ReplacedConnection);
 
 fn failed_platform_result(error: impl Into<String>) -> PlatformCommandResult {
     PlatformCommandResult {
@@ -64,10 +198,26 @@ fn failed_platform_result(error: impl Into<String>) -> PlatformCommandResult {
         data: None,
     }
 }
+// The ordinary notification receiver remains owned by the Desktop dispatcher.
 pub struct PlatformBridge {
     notifications: Receiver<PlatformNotification>,
     router: Arc<Mutex<CommandRouter>>,
     connected: Arc<AtomicBool>,
+    archive: Arc<archive_read::ArchiveTransport>,
+}
+
+impl PlatformBridge {
+    /// Shared archive router only: never clones/competes for ordinary UI notifications.
+    pub fn archive_client_bridge(&self) -> Arc<Self> {
+        let (sender, notifications) = async_channel::bounded(1);
+        drop(sender);
+        Arc::new(Self {
+            notifications,
+            router: Arc::clone(&self.router),
+            connected: Arc::clone(&self.connected),
+            archive: Arc::clone(&self.archive),
+        })
+    }
 }
 
 #[derive(Clone)]
@@ -76,8 +226,10 @@ pub struct PlatformServerEndpoint {
     router: Arc<Mutex<CommandRouter>>,
     connected: Arc<AtomicBool>,
     connection_generation: Arc<AtomicU64>,
-    contract_receiver: Arc<Mutex<Option<Receiver<Envelope>>>>,
+    contract_receiver: Arc<Mutex<Option<PlatformCommandReceiver>>>,
     primary_connection_lock: Arc<AsyncMutex<()>>,
+    archive: Arc<archive_read::ArchiveTransport>,
+    archive_intents: Option<desktop_archive_intent::ArchiveIntentEndpoint>,
 }
 
 pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoint) {
@@ -91,11 +243,13 @@ pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoi
     }));
     let primary_connection_lock = Arc::new(AsyncMutex::new(()));
     let contract_receiver = Arc::new(Mutex::new(None));
+    let archive = Arc::new(archive_read::ArchiveTransport::new());
     (
         PlatformBridge {
             notifications: notification_receiver,
             router: Arc::clone(&router),
             connected: Arc::clone(&connected),
+            archive: Arc::clone(&archive),
         },
         PlatformServerEndpoint {
             notifications: notification_sender,
@@ -104,11 +258,39 @@ pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoi
             connection_generation,
             contract_receiver,
             primary_connection_lock,
+            archive,
+            archive_intents: None,
         },
     )
 }
 
 impl PlatformServerEndpoint {
+    pub fn with_archive_intents(
+        mut self,
+        endpoint: desktop_archive_intent::ArchiveIntentEndpoint,
+    ) -> Self {
+        self.archive_intents = Some(endpoint);
+        self
+    }
+    /// Pause only the original command consumer while a fixture fills its queue.
+    #[doc(hidden)]
+    pub fn pause_commands_for_contract_test(
+        &self,
+    ) -> Result<PlatformCommandPause, PlatformBridgeError> {
+        let mut router = self
+            .router
+            .lock()
+            .map_err(|_| PlatformBridgeError::Disconnected)?;
+        let active = router
+            .active
+            .as_mut()
+            .ok_or(PlatformBridgeError::Disconnected)?;
+        active.commands_paused = true;
+        Ok(PlatformCommandPause {
+            router: self.router.clone(),
+            generation: active.generation,
+        })
+    }
     /// In-memory lifecycle seam used by GPUI/native-boundary contract tests.
     #[doc(hidden)]
     pub fn set_connected_for_contract_test(&self, connected: bool) {
@@ -133,10 +315,20 @@ impl PlatformServerEndpoint {
 
     /// Opens an isolated command queue for a contract test or a live pipe connection.
     #[doc(hidden)]
-    pub fn open_connection_for_contract_test(&self) -> Receiver<Envelope> {
+    pub fn open_connection_for_contract_test(&self) -> PlatformCommandReceiver {
         let (_, receiver, replaced) = self.open_connection();
         self.try_send_disconnected(replaced);
         receiver
+    }
+
+    /// Observe routing progress without retrying or changing command dispatch.
+    #[doc(hidden)]
+    pub fn command_pending_for_contract_test(&self, id: uuid::Uuid) -> bool {
+        self.router
+            .lock()
+            .expect("contract router")
+            .pending
+            .contains_key(&id)
     }
 
     /// Receives one command from the active contract-test connection queue.
@@ -157,6 +349,11 @@ impl PlatformServerEndpoint {
         &self,
         notification: PlatformNotification,
     ) -> Result<(), String> {
+        self.observe_archive_cleanup(&notification);
+        self.observe_job_cleanup(&notification);
+        if self.archive.intercept(&notification) {
+            return Ok(());
+        }
         self.notifications
             .try_send(notification)
             .map_err(|error| error.to_string())
@@ -169,14 +366,25 @@ impl PlatformServerEndpoint {
                 .connection_generation
                 .fetch_add(1, Ordering::AcqRel)
                 .wrapping_add(1);
-            let (_, receiver) = async_channel::bounded(0);
-            return (generation, receiver, None);
+            let (_, commands) = async_channel::bounded(1);
+            let (_, wake) = async_channel::bounded(1);
+            return (
+                generation,
+                PlatformCommandReceiver {
+                    commands,
+                    wake,
+                    router: self.router.clone(),
+                    generation,
+                },
+                None,
+            );
         };
         let generation = self
             .connection_generation
             .fetch_add(1, Ordering::AcqRel)
             .wrapping_add(1);
         let (sender, receiver) = async_channel::bounded(router.capacity);
+        let (command_wake, wake) = async_channel::bounded(1);
         let replaced = router.active.take().map(|active| {
             let pending_command_ids = router
                 .pending
@@ -190,9 +398,21 @@ impl PlatformServerEndpoint {
         });
         router.active = Some(ActiveConnection {
             generation,
+            commands_paused: false,
             commands: sender,
+            command_wake,
+            archive_reads: Vec::new(),
+            archive_jobs: Vec::new(),
+            cancel_turn: true,
         });
+        let receiver = PlatformCommandReceiver {
+            commands: receiver,
+            wake,
+            router: self.router.clone(),
+            generation,
+        };
         drop(router);
+        self.archive.generation.store(generation, Ordering::Release);
         self.connected.store(true, Ordering::Release);
         if let Ok(mut contract_receiver) = self.contract_receiver.lock() {
             *contract_receiver = Some(receiver.clone());
@@ -202,6 +422,10 @@ impl PlatformServerEndpoint {
 
     fn try_send_disconnected(&self, disconnected: ReplacedConnection) {
         if let Some((generation, pending)) = disconnected {
+            self.archive.intercept(&PlatformNotification::Disconnected {
+                generation,
+                pending_command_ids: Vec::new(),
+            });
             let pending_command_ids = pending.iter().map(|pending| pending.id).collect::<Vec<_>>();
             for pending_command in pending {
                 if let Some(reply) = pending_command.summon_reply {
@@ -218,46 +442,50 @@ impl PlatformServerEndpoint {
     }
 
     async fn send_notification(&self, notification: PlatformNotification) -> Result<()> {
+        self.observe_archive_cleanup(&notification);
+        self.observe_job_cleanup(&notification);
+        if self.archive.intercept(&notification) {
+            return Ok(());
+        }
+        // Waiting for an unrelated consumer here also stops archive cancellation writes.
+        // Fail the ORIGINAL pipe owner instead: handle_connection retires this generation
+        // and drops both halves, so the C# session sees real EOF and drains its original Jobs.
         self.notifications
-            .send(notification)
-            .await
-            .context("desktop platform notification receiver closed")
+            .try_send(notification)
+            .map_err(|failure| {
+                warn!(
+                    event = "platform.notification.retired",
+                    connection_generation = self.archive.generation.load(Ordering::Acquire),
+                    reason = if failure.is_full() {
+                        "notification_queue_full"
+                    } else {
+                        "notification_receiver_closed"
+                    },
+                    "platform pipe notification delivery failed"
+                );
+                anyhow::anyhow!("desktop platform notification delivery unavailable")
+            })
     }
 
-    async fn send_summon_command(
+    fn send_summon_command(
         &self,
         envelope: Envelope,
         reply: Sender<PlatformCommandResult>,
     ) -> Result<()> {
-        let command_id = envelope.id;
         let mut router = self
             .router
             .lock()
             .map_err(|_| anyhow::anyhow!("platform command router is poisoned"))?;
-        let active = router
-            .active
-            .as_ref()
-            .map(|active| (active.generation, active.commands.clone()))
-            .context("platform host is disconnected")?;
-        router.pending.insert(
-            command_id,
-            PendingCommand {
-                generation: active.0,
-                accepted_at: Instant::now(),
-                summon_reply: Some(reply),
-            },
-        );
-        match active.1.try_send(envelope) {
-            Ok(()) => Ok(()),
-            Err(async_channel::TrySendError::Full(_)) => {
-                router.pending.remove(&command_id);
-                Err(anyhow::anyhow!("platform host command queue is full"))
-            }
-            Err(async_channel::TrySendError::Closed(_)) => {
-                router.pending.remove(&command_id);
-                Err(anyhow::anyhow!("platform host command queue is closed"))
-            }
-        }
+        router
+            .enqueue(envelope, Some(reply))
+            .map(|_| ())
+            .map_err(|error| {
+                anyhow::anyhow!(match error {
+                    QueueAdmissionError::Disconnected => "platform host is disconnected",
+                    QueueAdmissionError::Full => "platform host command queue is full",
+                    QueueAdmissionError::Closed => "platform host command queue is closed",
+                })
+            })
     }
 
     fn complete_command(&self, generation: u64, command_id: uuid::Uuid) -> Option<PendingCommand> {
@@ -298,6 +526,9 @@ impl PlatformServerEndpoint {
         });
         if pending.is_some() {
             self.connected.store(false, Ordering::Release);
+            if let Some(intents) = &self.archive_intents {
+                intents.native_disconnected();
+            }
         }
         pending
     }
@@ -394,6 +625,19 @@ impl PlatformBridge {
         self.send_command_envelope(envelope)
     }
 
+    /// Uses caller-installed receipt identity while preserving one cross-process operation ID.
+    pub fn send_command_with_id_correlated(
+        &self,
+        command: PlatformCommand,
+        command_id: uuid::Uuid,
+        correlation_id: uuid::Uuid,
+    ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        let mut envelope = Envelope::new(Message::PlatformCommand(command));
+        envelope.id = command_id;
+        envelope.correlation_id = Some(correlation_id);
+        self.send_command_envelope(envelope)
+    }
+
     pub fn send_command_correlated(
         &self,
         command: PlatformCommand,
@@ -413,30 +657,12 @@ impl PlatformBridge {
         if router.pending.contains_key(&command_id) {
             return Err(PlatformBridgeError::DuplicateCommandId);
         }
-        let active = router
-            .active
-            .as_ref()
-            .map(|active| (active.generation, active.commands.clone()))
-            .ok_or(PlatformBridgeError::Disconnected)?;
-        router.pending.insert(
-            command_id,
-            PendingCommand {
-                generation: active.0,
-                accepted_at: Instant::now(),
-                summon_reply: None,
-            },
-        );
-        match active.1.try_send(envelope) {
-            Ok(()) => Ok(command_id),
-            Err(async_channel::TrySendError::Full(_)) => {
-                router.pending.remove(&command_id);
-                Err(PlatformBridgeError::Busy)
+        router.enqueue(envelope, None).map_err(|error| match error {
+            QueueAdmissionError::Full => PlatformBridgeError::Busy,
+            QueueAdmissionError::Disconnected | QueueAdmissionError::Closed => {
+                PlatformBridgeError::Disconnected
             }
-            Err(async_channel::TrySendError::Closed(_)) => {
-                router.pending.remove(&command_id);
-                Err(PlatformBridgeError::Disconnected)
-            }
-        }
+        })
     }
 }
 
@@ -467,7 +693,8 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 30] = [
+            const SUPPORTED_CAPABILITIES: [&str; 31] = [
+                "archive_read_v1",
                 "foreground_context",
                 "clipboard_text_capture",
                 "clipboard_image_capture",
@@ -519,15 +746,14 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
         Message::Ping(ping) => Message::Pong(Pong {
             sent_at_unix_ms: ping.sent_at_unix_ms,
         }),
-        Message::PlatformEvent(event) => {
-            info!(?event, "platform event received");
-            return None;
-        }
+        Message::PlatformEvent(_) => return None,
         Message::HelloAck(_)
         | Message::Pong(_)
         | Message::PlatformCommand(_)
         | Message::PlatformCommandResult(_)
         | Message::IndexerCommand(_)
+        | Message::DesktopArchiveIntent(_)
+        | Message::DesktopArchiveReceipt(_)
         | Message::IndexerEvent(_)
         | Message::Error(_) => return None,
     };
@@ -538,20 +764,28 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
 pub async fn run_platform_server(pipe_name: &str, endpoint: PlatformServerEndpoint) -> Result<()> {
     let pipe_path = format!(r"\\.\pipe\{pipe_name}");
     info!(%pipe_path, "platform IPC server started");
-
+    // One primary plus a finite number of short-lived secondary/handshake connections.
+    let slots = Arc::new(tokio::sync::Semaphore::new(40));
+    let mut server = local_pipe::create_current_user_async_pipe(&pipe_path, true)?;
     loop {
-        let server = ServerOptions::new()
-            .create(&pipe_path)
-            .with_context(|| format!("failed to create named pipe {pipe_path}"))?;
         server
             .connect()
             .await
-            .with_context(|| format!("failed to accept named pipe {pipe_path}"))?;
-
+            .context("platform pipe accept failed")?;
+        let next = local_pipe::create_current_user_async_pipe(&pipe_path, false)?;
+        let connection = std::mem::replace(&mut server, next);
+        let Ok(slot) = slots.clone().try_acquire_owned() else {
+            drop(connection);
+            continue;
+        };
         let connection_endpoint = endpoint.clone();
         tokio::spawn(async move {
-            if let Err(error) = handle_connection(server, &connection_endpoint).await {
-                warn!(%error, "platform connection ended with an error");
+            let _slot = slot;
+            if handle_connection(connection, &connection_endpoint)
+                .await
+                .is_err()
+            {
+                warn!("platform connection ended with an error");
             }
         });
     }
@@ -570,25 +804,51 @@ async fn handle_connection(
     server: NamedPipeServer,
     endpoint: &PlatformServerEndpoint,
 ) -> Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    let archive_authorized =
+        local_pipe::authorize_desktop_peer(server.as_raw_handle(), true).is_ok();
     info!("platform host connected");
     let (reader, mut writer) = tokio::io::split(server);
     let mut reader = BufReader::new(reader);
 
-    let Some(handshake_frame) = read_bounded_frame(&mut reader).await? else {
+    let Some(handshake_frame) =
+        tokio::time::timeout(Duration::from_secs(3), read_bounded_frame(&mut reader))
+            .await
+            .context("platform handshake expired")??
+    else {
         anyhow::bail!("platform host disconnected before handshake");
     };
     let handshake = Envelope::decode_line(&handshake_frame).context("invalid handshake frame")?;
+    if matches!(handshake.message, Message::DesktopArchiveIntent(_)) {
+        return desktop_archive_intent::serve(
+            handshake,
+            endpoint.archive_intents.as_ref(),
+            archive_authorized,
+            &mut writer,
+        )
+        .await;
+    }
     let Message::Hello(hello) = &handshake.message else {
         anyhow::bail!("platform host did not begin with a hello message");
     };
     let acknowledgement =
         dispatch(&handshake).context("hello did not produce an acknowledgement")?;
-    write_envelope(&mut writer, &acknowledgement).await?;
+    tokio::time::timeout(
+        Duration::from_secs(2),
+        write_envelope(&mut writer, &acknowledgement),
+    )
+    .await
+    .context("platform handshake acknowledgement expired")??;
 
     if hello.client_name == "nxtools-desktop-summon" {
         return handle_summon_connection(reader, &mut writer, endpoint).await;
     }
-    let _primary_connection_guard = endpoint.primary_connection_lock.lock().await;
+    let _primary_connection_guard = tokio::time::timeout(
+        Duration::from_secs(3),
+        endpoint.primary_connection_lock.lock(),
+    )
+    .await
+    .context("platform primary connection admission expired")?;
 
     let (generation, command_receiver, replaced) = endpoint.open_connection();
     if let Some((old_generation, pending)) = replaced
@@ -608,6 +868,9 @@ async fn handle_connection(
     }
 
     let mut sweep = tokio::time::interval(PENDING_COMMAND_SWEEP);
+    // select may cancel a pending read for sweep/commands. Consumed bytes belong to the
+    // ORIGINAL connection, not to the disposable read future.
+    let mut pending_frame = Vec::with_capacity(4096);
     let connection_result: Result<()> = async {
         loop {
             tokio::select! {
@@ -615,7 +878,7 @@ async fn handle_connection(
                     let expired = endpoint.expire_pending_commands(generation, Instant::now());
                     endpoint.send_timeout_results(expired).await?;
                 }
-                frame = read_bounded_frame(&mut reader) => {
+                frame = read_bounded_frame_into(&mut reader, &mut pending_frame) => {
                     let Some(frame) = frame? else {
                         info!(generation, "platform host disconnected");
                         break Ok(());
@@ -693,7 +956,7 @@ async fn handle_summon_connection(
         if matches!(envelope.message, Message::PlatformCommand(_)) {
             let request = envelope.clone();
             let (reply_sender, reply_receiver) = async_channel::bounded(1);
-            let result = match endpoint.send_summon_command(envelope, reply_sender).await {
+            let result = match endpoint.send_summon_command(envelope, reply_sender) {
                 Ok(()) => reply_receiver
                     .recv()
                     .await
@@ -711,10 +974,11 @@ async fn write_envelope<W>(writer: &mut W, envelope: &Envelope) -> Result<()>
 where
     W: tokio::io::AsyncWrite + Unpin,
 {
-    writer
-        .write_all(envelope.encode_line()?.as_bytes())
-        .await
-        .context("failed to write platform frame")?;
+    let mut encoded = envelope.encode_line()?.into_bytes();
+    let result = writer.write_all(&encoded).await;
+    encoded.fill(0);
+    std::hint::black_box(&encoded);
+    result.context("failed to write platform frame")?;
     writer
         .flush()
         .await
@@ -725,7 +989,13 @@ async fn read_bounded_frame<R>(reader: &mut R) -> Result<Option<String>>
 where
     R: AsyncBufRead + Unpin,
 {
-    let mut frame = Vec::with_capacity(4096);
+    read_bounded_frame_into(reader, &mut Vec::with_capacity(4096)).await
+}
+
+async fn read_bounded_frame_into<R>(reader: &mut R, frame: &mut Vec<u8>) -> Result<Option<String>>
+where
+    R: AsyncBufRead + Unpin,
+{
     loop {
         let available = reader.fill_buf().await.context("failed to read frame")?;
         if available.is_empty() {
@@ -744,7 +1014,7 @@ where
         reader.consume(payload_bytes + usize::from(newline.is_some()));
 
         if newline.is_some() {
-            return String::from_utf8(frame)
+            return String::from_utf8(std::mem::take(frame))
                 .map(Some)
                 .context("platform host frame was not valid UTF-8");
         }
@@ -784,9 +1054,11 @@ pub fn read_bounded_sync_frame(reader: &mut impl BufRead) -> Result<Option<Strin
 }
 
 pub fn write_envelope_sync(writer: &mut impl Write, envelope: &Envelope) -> Result<()> {
-    writer
-        .write_all(envelope.encode_line()?.as_bytes())
-        .context("failed to write IPC frame")?;
+    let mut encoded = envelope.encode_line()?.into_bytes();
+    let result = writer.write_all(&encoded);
+    encoded.fill(0);
+    std::hint::black_box(&encoded);
+    result.context("failed to write IPC frame")?;
     writer.flush().context("failed to flush IPC frame")
 }
 
@@ -818,7 +1090,6 @@ mod tests {
 
         server
             .send_summon_command(request.clone(), reply_sender)
-            .await
             .expect("queue summon command");
         assert_eq!(
             server
@@ -867,7 +1138,6 @@ mod tests {
         let (reply_sender, _reply_receiver) = async_channel::bounded(1);
         let error = server
             .send_summon_command(request, reply_sender)
-            .await
             .expect_err("full summon queue must reject");
         assert!(error.to_string().contains("queue is full"));
     }
@@ -880,7 +1150,6 @@ mod tests {
         let (reply_sender, reply_receiver) = async_channel::bounded(1);
         server
             .send_summon_command(request.clone(), reply_sender)
-            .await
             .expect("queue disconnect summon");
         let generation = server.connection_generation.load(Ordering::Acquire);
         let pending = server
@@ -907,7 +1176,6 @@ mod tests {
         let (timeout_sender, timeout_receiver) = async_channel::bounded(1);
         server
             .send_summon_command(timeout_request, timeout_sender)
-            .await
             .expect("queue timeout summon");
         let generation = server.connection_generation.load(Ordering::Acquire);
         let pending = server.expire_pending_commands(
@@ -934,7 +1202,6 @@ mod tests {
         let (reply_sender, _reply_receiver) = async_channel::bounded(1);
         server
             .send_summon_command(old_request.clone(), reply_sender)
-            .await
             .expect("queue old summon command");
         let old_generation = server.connection_generation.load(Ordering::Acquire);
         server.open_connection_for_contract_test();
@@ -1321,5 +1588,161 @@ mod tests {
             read_bounded_frame(&mut reader).await.expect("second"),
             Some("second".into())
         );
+    }
+
+    #[tokio::test]
+    async fn interrupted_large_frame_read_retains_consumed_prefix() {
+        let (mut producer, consumer) = tokio::io::duplex(16384);
+        let mut reader = BufReader::with_capacity(4096, consumer);
+        let prefix = "x".repeat(8192);
+        let mut pending = Vec::with_capacity(4096);
+        producer
+            .write_all(prefix.as_bytes())
+            .await
+            .expect("partial frame");
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(20),
+                read_bounded_frame_into(&mut reader, &mut pending)
+            )
+            .await
+            .is_err(),
+            "other select branch interrupts pending suffix"
+        );
+        producer.write_all(b"tail\nnext\n").await.expect("suffix");
+        assert_eq!(
+            read_bounded_frame_into(&mut reader, &mut pending)
+                .await
+                .expect("resumed frame"),
+            Some(prefix + "tail")
+        );
+        assert_eq!(
+            read_bounded_frame_into(&mut reader, &mut pending)
+                .await
+                .expect("next frame"),
+            Some("next".into())
+        );
+    }
+}
+
+#[cfg(test)]
+mod admission_refactor_tests {
+    use super::*;
+
+    #[test]
+    fn both_entry_paths_clean_pending_on_full_and_closed_queue() {
+        for summon in [false, true] {
+            for closed in [false, true] {
+                let (bridge, server) = platform_bridge(1);
+                server.set_connected_for_contract_test(true);
+                if closed {
+                    server
+                        .router
+                        .lock()
+                        .expect("router lock")
+                        .active
+                        .as_ref()
+                        .expect("active connection")
+                        .commands
+                        .close();
+                } else {
+                    bridge
+                        .send_command(PlatformCommand::ActivateWindow(
+                            nxtools_protocol::ActivateWindowCommand { window_handle: 1 },
+                        ))
+                        .expect("fill queue");
+                }
+                let envelope =
+                    Envelope::new(Message::PlatformCommand(PlatformCommand::ActivateWindow(
+                        nxtools_protocol::ActivateWindowCommand { window_handle: 2 },
+                    )));
+                let rejected_id = envelope.id;
+                if summon {
+                    let (reply, _) = async_channel::bounded(1);
+                    let error = server
+                        .send_summon_command(envelope, reply)
+                        .expect_err("summon rejection");
+                    assert_eq!(
+                        error.to_string(),
+                        if closed {
+                            "platform host command queue is closed"
+                        } else {
+                            "platform host command queue is full"
+                        }
+                    );
+                } else {
+                    assert_eq!(
+                        bridge.send_command_envelope(envelope),
+                        Err(if closed {
+                            PlatformBridgeError::Disconnected
+                        } else {
+                            PlatformBridgeError::Busy
+                        })
+                    );
+                }
+                let router = server.router.lock().expect("pending lock");
+                assert!(!router.pending.contains_key(&rejected_id));
+                assert_eq!(
+                    router.pending.len(),
+                    usize::from(!closed),
+                    "existing accepted command remains registered"
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod notification_pressure_tests {
+    use super::*;
+    use std::future::Future;
+    #[tokio::test]
+    async fn full_ordinary_notifications_cannot_suspend_original_pipe_owner() {
+        let (bridge, endpoint) = platform_bridge(1);
+        endpoint.set_connected_for_contract_test(true);
+        let notification = || PlatformNotification::CommandResult {
+            correlation_id: uuid::Uuid::new_v4(),
+            result: failed_platform_result("fixture"),
+        };
+        endpoint
+            .send_notification_for_contract_test(notification())
+            .expect("full unrelated consumer queue");
+        let delivery = endpoint.send_notification(notification());
+        tokio::pin!(delivery);
+        assert!(
+            matches!(
+                std::future::poll_fn(|cx| std::task::Poll::Ready(delivery.as_mut().poll(cx))).await,
+                std::task::Poll::Ready(Err(_))
+            ),
+            "ordinary backpressure must fail the real pipe owner rather than suspend cancellation delivery forever"
+        );
+        assert!(bridge.is_connected(), "caller owns actual pipe retirement");
+    }
+}
+
+#[cfg(test)]
+mod archive_bridge_ownership_tests {
+    use super::*;
+
+    #[test]
+    fn archive_bridge_shares_router_without_competing_for_desktop_notifications() {
+        let (bridge, endpoint) = platform_bridge(4);
+        endpoint.set_connected_for_contract_test(true);
+        let archive = bridge.archive_client_bridge();
+        assert!(Arc::ptr_eq(&archive.router, &bridge.router));
+        assert!(Arc::ptr_eq(&archive.archive, &bridge.archive));
+        let receiver = archive
+            .take_archive_read_receiver()
+            .expect("one archive owner");
+        assert!(bridge.take_archive_read_receiver().is_err());
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::Connected)
+            .expect("ordinary notification");
+        assert_eq!(
+            bridge.notification_receiver().try_recv(),
+            Ok(PlatformNotification::Connected)
+        );
+        assert!(archive.notification_receiver().try_recv().is_err());
+        drop(receiver);
     }
 }

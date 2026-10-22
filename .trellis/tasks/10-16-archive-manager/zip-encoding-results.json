@@ -1,0 +1,34 @@
+{
+  "slice": "Phase A B1 ZIP Auto filename candidates and safe reprojection; C4 assertions",
+  "status": "implemented_targeted_checks_passed_pending_independent_acceptance",
+  "phase_a_passed": false,
+  "scratch": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\949da288-1ef9-46b3-a698-90f543613cf5",
+  "red": {
+    "domain": {"exit": 101, "pass": 0, "fail": 1, "log": "b1-red-domain.log"},
+    "actual_product": {"exit": 101, "pass": 0, "fail": 1, "log": "b1-red-product.log"},
+    "native_extract": {"list": 1, "run": 1, "pass": 0, "fail": 1, "skip": 0, "exit": 1, "log": "b1-red-csharp-run.log"},
+    "old_plan_boundary": {"exit": 101, "pass": 3, "fail": 1, "observed": "output_capability_reached_IoFailure", "log": "b1-red-old-plan.log"},
+    "preparation_failures_not_behavior_evidence": ["new_CSharp_test_uint_int_build_error", "new_Rust_test_line_placement_corrected_before_run", "reproject_missing_API_E0599"]
+  },
+  "final": {
+    "archive_small": {"exit": 0, "pass": 40, "fail": 0, "ignored": 0, "targets": 7, "filtered": 1, "log": "b1-small-final.log"},
+    "encoding_latest": {"exit": 0, "pass": 4, "fail": 0, "log": "b1-encoding-final.log"},
+    "actual_product_latest": {"exit": 0, "pass": 1, "filtered": 23, "log": "b1-product-final.log"},
+    "protocol": {"exit": 0, "pass": 54, "fail": 0, "log": "b1-final-protocol.log"},
+    "ipc": {"exit": 0, "pass": 30, "fail": 0, "log": "b1-final-ipc.log"},
+    "csharp": {"exit": 0, "list": 5, "run": 5, "pass": 5, "skip": 0, "fail": 0, "not_run": 0, "exact_names_equal": true, "log": "b1-close-csharp-run.log"},
+    "dotnet_build": {"exit": 0, "warnings": 0, "errors": 0, "log": "b1-final-dotnet.log"},
+    "strict_clippy_isolated": {"exit": 0, "log": "b1-clippy-close.log"},
+    "strict_clippy_default": {"exit": 0, "log": "b1-clippy-default-final.log"},
+    "fmt": {"exit": 0, "log": "b1-fmt-close.log"},
+    "worker_build": {"exit": 0, "features": "isolated-codecs", "log": "b1-worker-close.log"}
+  },
+  "selection_mistakes": [
+    {"log": "b1-final-archive.log", "test": "default_budget_lists_one_hundred_thousand_independent_entries", "reason": "incorrect_skip_name", "runs": 1, "passed": true, "authorized_scope": false, "resource_acceptance_claim": false},
+    {"log": "b1-final-product.log", "test": "windows_long_source_path_uses_original_product_open_test_and_cleanup", "reason": "incorrect_skip_name", "runs": 1, "passed": true, "necessary_B1_check": false}
+  ],
+  "optional_review": "stopped_without_completed_report_not_PASS",
+  "static_gates": {"spec_contracts_exit": 0, "context_exit": 0, "selector_exit": 0, "diff_check_exit": 0, "existing_native_contracts_size_warning": true},
+  "remaining": ["independent_B1_C4_acceptance", "B2", "B3", "C1", "C2", "C3", "C5", "D1", "D2", "D3"],
+  "restrictions": {"product_UI_launched": false, "packaged": false, "installed": false, "signed": false, "committed": false, "pushed": false, "one_GiB_or_large_ZIP64_run": false, "performance_sampling": false, "native_recycle": "native_protection_unproven/NotAttempted"}
+}

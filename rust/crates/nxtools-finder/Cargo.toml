@@ -8,6 +8,8 @@ license.workspace = true
 anyhow.workspace = true
 encoding_rs.workspace = true
 nxtools-core = { path = "../nxtools-core" }
+nxtools-extensions = { path = "../nxtools-extensions" }
+url.workspace = true
 rusqlite.workspace = true
 
 [dev-dependencies]

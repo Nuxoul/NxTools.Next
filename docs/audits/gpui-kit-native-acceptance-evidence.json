@@ -1,0 +1,14 @@
+{
+  "scope": "isolated Debug production-render HWND fixtures and production C# adapter; separate production ClipboardApplication tests with temporary worker/config and isolated IPC; not installed full-product acceptance",
+  "environment": {"dpi": 96, "scale": 1.0, "display_count": 1, "display_pixels": [2560, 1440]},
+  "authorization": {"kit": "=0.7.1", "backend": "0.3.8", "local_patch": "vendor/gpui-pre-windows/src/events.rs WM_MOUSEACTIVATE live WS_EX_NOACTIVATE only", "registry_modified": false, "release_files_compared": 27, "differing_release_files": ["src/events.rs"]},
+  "historical_red": {"passive_response": 1, "expected": 3, "quick_client": [384, 402], "clipboard_client": [444, 398], "reuse_policy_timeout_pending": "failed before bounded dispatch repair"},
+  "quick": {"client": [400, 410], "native_all_run": 2, "native_all_passed": 2, "exit": 0, "same_hwnd_reuse": "pass", "mouse_activation_response": 3, "primary_response": 1, "disabled_policy_response": 1, "reenabled_policy_response": 3},
+  "clipboard_synthetic_text": {"client": [460, 406], "native_all_run": 2, "native_all_passed": 2, "exit": 0, "same_hwnd_reuse": "pass", "mouse_activation_response": 3, "primary_response": 1, "disabled_policy_response": 1, "reenabled_policy_response": 3},
+  "clipboard_controller": {"passed": 8, "failed": 0, "initial_chain": ["hidden creation", "noactivate confirmed", "bounds confirmed", "topmost confirmed", "show confirmed"], "initial_and_reuse_policy_timeout_seconds": 3, "old_hwnd_success_failure_timeout_isolation": "pass", "cancel_stale_late_result": "pass"},
+  "uia": {"synthetic_input_control_type": 50004, "synthetic_action_control_type": 50000, "input_keyboard_focusable": true, "screen_reader_acceptance": "not_run", "full_product_tree": "not_run"},
+  "checks": {"desktop_tests": {"passed": 519, "failed": 0, "ignored": 0}, "strict_production_and_test_clippy": "pass", "workspace_tests_check": "pass", "fmt": "pass", "debug_build": "pass", "csharp_build_warnings": 0, "csharp_build_errors": 0, "architecture_gates": {"passed": 10, "failed": 0}},
+  "remaining": ["physical pointer lifecycle", "125/150 percent and mixed-monitor DPI", "screen reader and full product tree", "installed runtime acceptance"],
+  "deployment": {"package": false, "install": false, "service_mutation": false, "commit": false, "push": false},
+  "reproduce": "tests/native/gpui-kit-acceptance.ps1 -Mode quick|clipboard -Check All; current actual HWND message-policy gates pass, not physical clicks"
+}

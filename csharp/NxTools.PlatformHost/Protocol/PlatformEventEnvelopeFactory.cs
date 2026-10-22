@@ -12,6 +12,11 @@ internal static class PlatformEventEnvelopeFactory
                 Event = "system_motion_preference_changed",
                 Data = new { motion.CorrelationId, motion.ReducedMotion, motion.NativeErrorCode }
             }, motion.CorrelationId),
+            SystemThemePreferenceChangedEvent theme => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "system_theme_preference_changed",
+                Data = new { theme.CorrelationId, theme.Dark, theme.NativeErrorCode }
+            }, theme.CorrelationId),
             TrayActionRequestedEvent tray => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "tray_action_requested",

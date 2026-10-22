@@ -63,8 +63,7 @@ foreach ($requiredPopupRenderContract in @(
     '.font_family(UI_FONT_FAMILY)',
     '.bg(theme.canvas)',
     '.text_color(theme.text)',
-    '.border_color(theme.window_border)',
-    'theme.border_subtle',
+    '.border_color(theme.canvas)',
     '.text_color(theme.icon_muted)',
     '.line_height(px(LINE_HEIGHT_BODY))',
     '.when(self.results_visible'
@@ -73,33 +72,30 @@ foreach ($requiredPopupRenderContract in @(
         throw 'Quick Launch must preserve the tokenized collapsed/expanded popup contract.'
     }
 }
-if (-not $panelRender.Contains('theme.focus_ring') -or -not $panelRender.Contains('if search_focused') -or
-    -not $panelRender.Contains('theme.border_subtle')) {
-    throw 'Quick Launch search header must retain distinct focused and neutral token borders.'
+$searchChrome = ($panelRender -split '\.id\("quick-launch-window"\)',2)[1] -split '\.when\(recent_button_visible',2 | Select-Object -First 1
+if ([regex]::Matches($searchChrome,'\.border_color\(theme\.canvas\)').Count -ne 2 -or
+    $searchChrome.Contains('theme.window_border') -or $searchChrome.Contains('theme.focus_ring') -or
+    -not $searchChrome.Contains('Input::new(&self.search_input)') -or -not $searchChrome.Contains('.focus_bordered(false)')) {
+    throw 'All search presentations must use one Kit input outline/focus owner without enclosing shell or divider outlines.'
 }
 if (-not $quickLaunchSource.Contains(
         'fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface('
     )) {
     throw 'Quick Launch popup geometry requires a real production-window regression test.'
 }
-$settingsPageStart = $quickLaunchPageSource.IndexOf('fn select_quick_launch_settings_page(')
-$settingsPageEnd = $quickLaunchPageSource.IndexOf('fn render_quick_find(', $settingsPageStart)
-if ($settingsPageStart -lt 0 -or $settingsPageEnd -le $settingsPageStart) {
-    throw 'Could not isolate the Quick Launch settings page lifecycle.'
-}
-$settingsPageLifecycle = $quickLaunchPageSource.Substring(
-    $settingsPageStart,
-    $settingsPageEnd - $settingsPageStart
-)
-foreach ($requiredSettingsPageContract in @(
-    'self.quick_launch_settings_page = page',
-    'self.quick_find_scroll_animation = self.quick_find_scroll_animation.wrapping_add(1).max(1)',
-    'self.quick_find_scroll_target = 0.0',
-    '.set_offset(point(px(0.0), px(0.0)))'
+foreach ($requiredOfficialSettingsContract in @(
+    'Settings::new("quick-launch-official-settings")',
+    'SettingPage::new(', 'SettingGroup::new(', 'SettingItem::render(', 'aligned_setting_row(', '.justify_end()',
+    '.resettable(false)', '.track_focus(&main.read(cx).exclusion_focus)',
+    'main.handle_index_exclusion_keyboard(event, cx)'
 )) {
-    if (-not $settingsPageLifecycle.Contains($requiredSettingsPageContract)) {
-        throw 'Quick Launch settings navigation must cancel stale scroll work and reset the selected page viewport.'
+    if (-not $quickLaunchPageSource.Contains($requiredOfficialSettingsContract)) {
+        throw "Quick Find must use the released Settings hierarchy and focused exclusion-key boundary: $requiredOfficialSettingsContract"
     }
+}
+if ($quickLaunchPageSource.Contains('fn smooth_scroll_quick_find(') -or
+    $quickLaunchPageSource.Contains('quick-launch-settings-scrollbar')) {
+    throw 'Official Settings owns selected-page scrolling; no parallel project scrolling controller.'
 }
 foreach ($requiredSettingsPageRegression in @(
     'fn quick_launch_settings_navigation_mounts_only_the_selected_page(',
@@ -122,16 +118,16 @@ $quickLaunchSettings = $quickLaunchPageSource.Substring(
     $quickLaunchSettingsEnd - $quickLaunchSettingsStart
 )
 foreach ($requiredHotkeyFieldToken in @(
-    'CONTROL_HEIGHT_INPUT',
-    'RADIUS_CONTROL',
-    'TEXT_BODY',
-    'LINE_HEIGHT_BODY',
-    'TEXT_LABEL',
-    'LINE_HEIGHT_LABEL',
+    'Button::new(',
+    '.outline()',
+    '.disabled(!state.accepts_input())',
+    '.accessibility_label(value.clone())',
+    'Label::new(',
+    '.text_sm()',
     'UI_MONO_FONT_FAMILY'
 )) {
     if (-not $hotkeyFieldSource.Contains($requiredHotkeyFieldToken)) {
-        throw 'Quick Launch HotkeyField must use the shared input, radius and typography tokens.'
+        throw 'Quick Launch recorder must retain actual styled Button/Label with original disabled/value boundary.'
     }
 }
 foreach ($requiredHotkeyFieldState in @(
@@ -150,7 +146,7 @@ if (-not $quickLaunchSettings.Contains(
         'hotkey_field('
     ) -or
     -not $quickLaunchSettings.Contains(
-        'hotkey_setting_row('
+        'SettingItem::render('
     ) -or
     -not $mainWindowAllSource.Contains(
         'fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle('
@@ -162,6 +158,11 @@ if (-not $quickLaunchSettings.Contains(
         'PlatformCommand::ConfigureQuickLaunch'
     )) {
     throw 'QL-08 requires the shared HotkeyField and a real typed registration lifecycle regression.'
+if (-not $quickLaunchSettings.Contains('"全局呼出热键"') -or
+    -not $quickLaunchSettings.Contains('SettingItem::render(') -or
+    -not $quickLaunchSettings.Contains('hotkey_field(')) {
+    throw 'Workbench hotkey presentation must retain the labeled native field and stable control rail.'
+}
 }
 $hotkeyLifecycleStart = $clipboardPageSource.IndexOf('fn defer_hotkey_recording(')
 $hotkeyLifecycleEnd = $clipboardPageSource.IndexOf('fn render_clipboard(', $hotkeyLifecycleStart)
@@ -176,6 +177,20 @@ if (($hotkeyLifecycle.Split('cx.defer(move |cx|').Count - 1) -lt 3 -or
     -not $hotkeyLifecycle.Contains('fn defer_recorded_hotkey(') -or
     -not $hotkeyLifecycle.Contains('fn defer_all_hotkey_recording(')) {
     throw 'Hotkey recording and apply mutations must defer every cross-entity update.'
+}
+# Queue01 compound adoption supplements, never replaces the behavioral gates below.
+foreach ($rowSource in @($volumeScopeSource, $pathListSource, $customCommandEditorSource)) {
+    if (-not $rowSource.Contains('ListItem::new(')) {
+        throw 'Quick Find remaining ordinary rows must render real stateless Kit ListItem.'
+    }
+}
+if (-not $diagnosticsSource.Contains('DescriptionList::vertical()') -or
+    -not $pathListSource.Contains('.with_size(px(PATH_LIST_DELETE_HIT_TARGET))')) {
+    throw 'Diagnostics must adopt DescriptionList and deletion must preserve its named hit budget.'
+}
+if ($customCommandEditorSource.Contains('quick-launch-command-selection-') -or
+    $pathListSource.Contains('.rounded(px(RADIUS_NONE))')) {
+    throw 'Kit selected rows/delete actions must not reconstruct old selection stripes or square control chrome.'
 }
 foreach ($requiredVolumeScopeContract in @(
     'Checkbox::new(',
@@ -433,7 +448,8 @@ foreach ($requiredCustomCommandEditorContract in @(
     'quick-launch-custom-command-detail',
     'const COMMAND_MASTER_ROW_HEIGHT: f32 = 40.0',
     'CONTROL_HEIGHT_INPUT',
-    'CONTROL_HEIGHT_ACTION',
+    'LINE_HEIGHT_WORKBENCH_BODY',
+    'LINE_HEIGHT_WORKBENCH_SUPPORT',
     'Checkbox::new(',
     'danger_ghost_button_variant',
     'primary_button_variant'
@@ -462,7 +478,7 @@ if (-not $mainWindowAllSource.Contains(
 }
 $customCommandCallbacksStart = $quickLaunchSettings.IndexOf('        let selected_command = self')
 $customCommandCallbacksEnd = $quickLaunchSettings.IndexOf(
-    '        let selected_page = self.quick_launch_settings_page;',
+    '        let history_diagnostics_control =',
     $customCommandCallbacksStart
 )
 if ($customCommandCallbacksStart -lt 0 -or
@@ -557,7 +573,7 @@ foreach ($requiredDiagnosticsContract in @(
     'quick-launch-diagnostics-history-metrics',
     'quick-launch-diagnostics-performance-metrics',
     'quick-launch-diagnostics-log-row',
-    'CONTROL_HEIGHT_ACTION',
+    'CONTROL_HEIGHT_INPUT',
     'TEXT_BODY',
     'LINE_HEIGHT_BODY',
     'TEXT_LABEL',
@@ -600,7 +616,7 @@ if ($diagnosticsSource.Contains('.text_size(px(10.0))') -or
     throw 'QL-12 must replace private status badges with its real production-window diagnostics regression.'
 }
 $diagnosticsCallbacksStart = $quickLaunchSettings.IndexOf(
-    '        let selected_page = self.quick_launch_settings_page;'
+    '        let history_diagnostics_control ='
 )
 $diagnosticsCallbacksEnd = $quickLaunchSettings.IndexOf(
     '        let scan_state =',
@@ -712,7 +728,7 @@ if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
 }
 foreach ($requiredSelectionContract in @(
     '.on_mouse_move(',
-    '.on_mouse_down(gpui::MouseButton::Left',
+    '.on_mouse_down(gpui_kit::MouseButton::Left',
     'panel.select_result(index, cx)'
 )) {
     if (-not $resultRender.Contains($requiredSelectionContract)) {
@@ -805,7 +821,7 @@ $firstFrameTestStart = $quickLaunchSource.IndexOf(
     'fn action_mode_returns_to_the_parent_viewport_on_its_first_frame('
 )
 $firstFrameTestEnd = $quickLaunchSource.IndexOf(
-    '#[gpui::test]',
+    '#[gpui_kit::test]',
     $firstFrameTestStart + 20
 )
 if ($firstFrameTestStart -lt 0 -or $firstFrameTestEnd -le $firstFrameTestStart) {
@@ -908,8 +924,11 @@ foreach ($requiredPreviewRenderContract in @(
     '.line_height(px(LINE_HEIGHT_BODY))',
     '.text_size(px(TEXT_LABEL))',
     '.line_height(px(LINE_HEIGHT_LABEL))',
-    '.items_start()',
-    '.justify_start()',
+    'crate::ui::markdown_document::cached_view(',
+    'DocumentMode::Markdown',
+    'DocumentMode::Literal(None)',
+    '.track_scroll(&self.text_scroll)',
+    '.overflow_y_scroll()',
     'PREVIEW_APPEAR_DURATION'
 )) {
     if (-not $previewRender.Contains($requiredPreviewRenderContract)) {
@@ -1818,7 +1837,7 @@ if ($protocolSource -notmatch 'QuickLaunchFileDialogSearchHostChanged' -or
     $fileDialogSearchSource -notmatch 'IndexSearchContext' -or
     $fileDialogSearchSource -notmatch 'preferred_directory' -or
     $fileDialogSearchSource -notmatch 'file_dialog_default_source' -or
-    $fileDialogSearchSource -notmatch 'Ctrl\+G' -or
+    $fileDialogSearchSource -notmatch 'shortcut::key\("ctrl-g"\)' -or
     $fileDialogSearchSource -notmatch 'OpenFileInDialog' -or
     $fileDialogSearchHostSource -notmatch 'GetWindowRect' -or
     $fileDialogSearchHostSource -notmatch 'DwmGetWindowAttribute' -or

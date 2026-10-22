@@ -695,6 +695,15 @@ pub(crate) fn quick_launch_action_available(
     result: &SearchResult,
     action: &QuickLaunchAction,
 ) -> bool {
+    if (result.entry.id.starts_with("extension:")
+        || result.entry.id.starts_with("extension-script:"))
+        && matches!(
+            action,
+            QuickLaunchAction::RunElevated | QuickLaunchAction::Shell { .. }
+        )
+    {
+        return false;
+    }
     match action {
         QuickLaunchAction::Open => result.opens_target(),
         QuickLaunchAction::SwitchDirectory {
@@ -772,7 +781,9 @@ pub(crate) fn quick_launch_result_capabilities(
     let uses_native_file_integration = result.opens_target();
     QuickLaunchResultCapabilities {
         preview: uses_native_file_integration,
-        shell_actions: uses_native_file_integration,
+        shell_actions: uses_native_file_integration
+            && !result.entry.id.starts_with("extension:")
+            && !result.entry.id.starts_with("extension-script:"),
         shell_icon: uses_native_file_integration
             || result.entry.source == ApplicationSource::CustomCommand,
     }
@@ -809,6 +820,21 @@ pub(crate) fn platform_command_for_action(
     action: &QuickLaunchAction,
     owner_window_handle: i64,
 ) -> Option<PlatformCommand> {
+    if result.entry.id.starts_with("extension:") || result.entry.id.starts_with("extension-script:")
+    {
+        if matches!(
+            action,
+            QuickLaunchAction::RunElevated | QuickLaunchAction::Shell { .. }
+        ) {
+            return None;
+        }
+        if matches!(action, QuickLaunchAction::Open) && result.opens_target() {
+            return Some(PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                target: result.entry.target.clone(),
+                action: ShellOpenAction::Open,
+            }));
+        }
+    }
     match action {
         QuickLaunchAction::Open => result
             .prepared_command()

@@ -1,4 +1,4 @@
-use gpui::{Context, Entity, Global, Task, WeakEntity};
+use gpui_kit::{Context, Entity, Global, Task, WeakEntity};
 use nxtools_ipc::{PlatformBridge, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, PlatformCommand, PlatformEvent, SetWindowMinimizedCommand,
@@ -66,12 +66,7 @@ impl PlatformEventDispatcher {
                 let Some(this) = this.upgrade() else {
                     return;
                 };
-                if this
-                    .update(cx, |dispatcher, cx| dispatcher.forward(notification, cx))
-                    .is_err()
-                {
-                    return;
-                }
+                this.update(cx, |dispatcher, cx| dispatcher.forward(notification, cx));
             }
         });
         let silent_startup_wait = hidden_startup.then(|| {
@@ -110,6 +105,8 @@ impl PlatformEventDispatcher {
     }
 
     fn forward(&mut self, notification: PlatformNotification, cx: &mut Context<Self>) {
+        crate::archive::handle(notification.clone(), cx);
+        crate::notifications::screen::handle(notification.clone(), cx);
         match &notification {
             PlatformNotification::Connected => {
                 if let Some(wait) = self.silent_startup_wait.take() {
@@ -134,6 +131,8 @@ impl PlatformEventDispatcher {
                 );
                 // A disconnected native adapter cannot authorize animation on a later turn.
                 cx.set_global(UiMotionPreference::default());
+                cx.set_reduce_motion(true);
+                crate::theme::apply_system_theme(true, cx);
                 cx.refresh_windows();
                 self.pending_tray_restore = None;
                 if let Some(startup) = self.browser_startup_window.as_mut()
@@ -187,6 +186,18 @@ impl PlatformEventDispatcher {
                     );
                 }
             }
+            PlatformNotification::Event(PlatformEvent::SystemThemePreferenceChanged(
+                preference,
+            )) => {
+                crate::theme::apply_system_theme(
+                    preference.dark || preference.native_error_code != 0,
+                    cx,
+                );
+                info!(event = "system.theme.preference_applied", correlation_id = %preference.correlation_id,
+                    dark = preference.dark, native_error_code = preference.native_error_code,
+                    "system theme snapshot applied to UI policy");
+                return;
+            }
             PlatformNotification::Event(PlatformEvent::SystemMotionPreferenceChanged(
                 preference,
             )) => {
@@ -194,6 +205,9 @@ impl PlatformEventDispatcher {
                     .try_global::<UiMotionPreference>()
                     .copied()
                     .unwrap_or_default();
+                cx.set_reduce_motion(
+                    preference.reduced_motion || preference.native_error_code != 0,
+                );
                 if policy.apply(preference) {
                     cx.set_global(policy);
                     cx.refresh_windows();
@@ -429,6 +443,15 @@ impl PlatformEventDispatcher {
     }
 
     fn forward_to_applications(&self, notification: PlatformNotification, cx: &mut Context<Self>) {
+        crate::ui::components::native_context_menu::handle_notification(&notification, cx);
+        let extension = cx
+            .try_global::<crate::extensions::ExtensionApplicationGlobal>()
+            .map(|global| global.0.clone());
+        if let Some(extension) = extension {
+            let _ = extension.update(cx, |app, cx| {
+                app.handle_platform_notification(notification.clone(), cx)
+            });
+        }
         let _ = self.clipboard.update(cx, |application, cx| {
             application.handle_platform_notification(notification.clone(), cx);
         });

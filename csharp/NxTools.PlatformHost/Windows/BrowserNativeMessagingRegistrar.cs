@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -27,81 +25,55 @@ internal static partial class BrowserNativeMessagingRegistrar
     /// key (its stable extension id) merged with the command-provided id, so
     /// unpacked loads whose manifest predates the key still connect.
     /// </summary>
-    private static string[] ChromiumAllowedOrigins(string commandExtensionId)
+    private static string[] ChromiumAllowedOrigins(string commandExtensionId) =>
+        ChromiumAllowedOrigins(commandExtensionId, ResolveExtensionSourceDirectory(),
+            BrowserExtensionSigningIdentity.ProductionKeyPath);
+
+    internal static string[] ChromiumAllowedOrigins(
+        string commandExtensionId, string sourceDirectory, string signingKeyPath)
     {
         var origins = new List<string> { $"chrome-extension://{commandExtensionId}/" };
         try
         {
-            var manifestPath = Path.Combine(
-                ResolveExtensionSourceDirectory(),
-                "manifest.json");
+            var manifestPath = Path.Combine(sourceDirectory, "manifest.json");
             if (File.Exists(manifestPath))
             {
                 var manifest = JsonNode.Parse(File.ReadAllText(manifestPath))?.AsObject();
                 if (manifest?["key"] is JsonValue key &&
                     key.GetValue<string>() is { Length: > 0 } keyText)
                 {
-                    var digest = SHA256.HashData(Convert.FromBase64String(keyText));
-                    var mapped = new StringBuilder();
-                    foreach (var digit in Convert.ToHexString(digest))
-                    {
-                        mapped.Append((char)('a' + byte.Parse(digit.ToString(), NumberStyles.HexNumber)));
-                    }
-
-                    var derived = mapped.ToString()[..32];
-                    if (!origins.Contains($"chrome-extension://{derived}/"))
-                    {
-                        origins.Add($"chrome-extension://{derived}/");
-                    }
+                    var derived = BrowserExtensionSigningIdentity.ChromiumId(Convert.FromBase64String(keyText));
+                    var origin = $"chrome-extension://{derived}/";
+                    if (!origins.Contains(origin)) origins.Add(origin);
                 }
             }
         }
         catch (Exception error) when (error is IOException or FormatException or InvalidOperationException)
         {
-            // No pinned key in the manifest — fall through to the exporter-key origin below.
+            // Preserve the original fallback to the command/exporter identities.
         }
 
-        // Exported CRX packages are signed with the per-machine key persisted at
-        // LocalApplicationData/NxTools/browser_extension_key.pem. Chrome derives the
-        // installed extension's ID from that signature, so a user who re-imports the
-        // exported package on this machine gets an ID that differs from the pinned one.
-        // Trust it as well, or the imported extension is locked out with
-        // "Access to the specified native messaging host" errors.
         try
         {
-            var keyPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "NxTools",
-                "browser_extension_key.pem");
-            if (File.Exists(keyPath))
+            var exportedId = BrowserExtensionSigningIdentity.ReadExistingChromiumId(signingKeyPath);
+            if (exportedId is not null)
             {
-                using var rsa = System.Security.Cryptography.RSA.Create();
-                rsa.ImportFromPem(File.ReadAllText(keyPath));
-                var spki = rsa.ExportSubjectPublicKeyInfo();
-                var digest = SHA256.HashData(spki);
-                var mapped = new StringBuilder();
-                foreach (var digit in Convert.ToHexString(digest))
-                {
-                    mapped.Append((char)('a' + byte.Parse(digit.ToString(), NumberStyles.HexNumber)));
-                }
-
-                var exportedOrigin = $"chrome-extension://{mapped.ToString()[..32]}/";
-                if (!origins.Contains(exportedOrigin))
-                {
-                    origins.Add(exportedOrigin);
-                }
+                var origin = $"chrome-extension://{exportedId}/";
+                if (!origins.Contains(origin)) origins.Add(origin);
             }
         }
         catch (Exception error) when (error is IOException or InvalidOperationException or FormatException)
         {
-            // A missing or malformed manifest keeps the command-provided id.
+            // Preserve the original read-only fallback and exception categories.
         }
         return origins.ToArray();
     }
 
-    private static string ResolveExtensionSourceDirectory()
+    private static string ResolveExtensionSourceDirectory() =>
+        ResolveExtensionSourceDirectory(AppContext.BaseDirectory);
+
+    internal static string ResolveExtensionSourceDirectory(string root)
     {
-        var root = AppContext.BaseDirectory;
         var candidates = new[]
         {
             Path.Combine(root, "browser_extension", "nxtools-interceptor"),

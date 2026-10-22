@@ -1,0 +1,32 @@
+"use strict";
+// Isolated test/preview only. No native host, user storage or network APIs.
+(() => {
+  const resource = (id, kind, filename, size) => ({ id, filename, size, url: `https://synthetic.invalid/${id}`, domain: "synthetic.invalid", mime: kind === "audio" ? "audio/mpeg" : "application/octet-stream", source: "webRequest", description: { kind, resolution: kind === "video" ? "1920×1080" : "", badge: "合成资源" } });
+  const initial = {
+    settings: { interceptDownloads: true, openDialog: true, captureResources: true, mediaOverlayEnabled: true, dropTargetEnabled: true, dropTargetPosition: "right-bottom", dropTargetWidth: 188, dropTargetHeight: 86, includeRequestHeaders: true, includeCookies: false, eraseBrowserHistory: false },
+    status: { ok: true, message: "桌面在线" }, activeTab: { id: 7, title: "设计资料与课程媒体", url: "https://synthetic.invalid/course", domain: "synthetic.invalid" }, siteControl: { supported: true, enabled: true, host: "synthetic.invalid" },
+    captureSummary: { currentCount: 3, totalCount: 4, recentCount: 0, latestCapturedAt: Date.now() },
+    tasks: [{ id: "task-1", displayFileName: "设计资料与参考图集.zip", status: "Downloading", downloadedBytes: 29360128, totalBytes: 67108864 }, { id: "task-2", displayFileName: "课程讲义.pdf", status: "Paused", downloadedBytes: 1048576, totalBytes: 8388608 }],
+    currentResources: [resource("video-1", "video", "课程演示 · 第一章.mp4", 67108864), resource("audio-1", "audio", "课程讲解.mp3", 12582912), resource("file-1", "download", "练习素材.zip", 33554432)], otherResources: [resource("other-1", "download", "其他页面参考.pdf", 2097152)],
+    featureStates: { mediaOverlay: true, deepSearch: false, mobileUserAgent: false }, mediaItems: [{ index: 0, label: "课程演示 · 第一章" }],
+    mediaPlaybackState: { available: true, paused: true, muted: false, loop: false, mediaIndex: 0, localMediaIndex: 0, frameId: 0, duration: 240, currentTime: 80, progress: 1 / 3, volume: .8, speed: 1 }
+  };
+  const fixture = window.__fixture = { state: structuredClone(initial), messages: [], failure: "", delay: 0, unhandled: [] };
+  window.addEventListener("unhandledrejection", event => { fixture.unhandled.push(String(event.reason)); event.preventDefault(); });
+  window.chrome = { runtime: { async sendMessage(message) {
+    fixture.messages.push(structuredClone(message));
+    if (fixture.delay) await new Promise(resolve => setTimeout(resolve, fixture.delay));
+    if (fixture.failure === message.type) throw new Error("合成操作失败，请重试");
+    const state = fixture.state;
+    if (message.type === "popup_save_settings") state.settings = { ...state.settings, ...message.settings };
+    if (message.type === "popup_toggle_feature") state.featureStates[message.feature] = !state.featureStates[message.feature];
+    if (message.type === "popup_clear_resources") { state.currentResources = []; state.captureSummary.currentCount = 0; }
+    if (message.type === "popup_set_site_enabled") state.siteControl.enabled = message.enabled;
+    if (message.type === "popup_test_connection") return { ok: true, message: "合成本地通道正常" };
+    if (message.type === "popup_send_resources") return { ok: false, message: "1 项已接收，剩余项目可重试", acceptedResourceIds: message.resourceIds.slice(0, 1), data: { queued: true } };
+    if (["popup_send_resource", "popup_send_active_tab", "popup_task_action", "popup_media_action", "popup_merge_resources"].includes(message.type)) return { ok: true, message: "合成操作已接收", data: { queued: true } };
+    return structuredClone(state);
+  } } };
+  // Keep production initialization/actions, but don't leave a refresh interval in fixture pages.
+  window.setInterval = () => 1;
+})();

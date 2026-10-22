@@ -1,0 +1,31 @@
+# Design
+
+## Current visual authority amendment
+The original presentation below is historical where it conflicts with the later approved [redesign.md](redesign.md): responsive Other Tools-style catalog cells, actual outlined header buttons via Toolbar.content, state-driven next step and fixed feedback actions. Runtime/result/Clipboard ownership contracts are unchanged. Current implementation/verification and blocked direct visual inspection are in [redesign-outcomes.md](redesign-outcomes.md).
+
+## Smallest behavior gap and owners
+Existing package descriptions are omitted from normal overview/detail; manual actions close their chooser then write one management-only status. Derivation returns a persisted item ID only to the script. Preserve runtime/broker/trust and original ClipboardCaptureWorkerHandle/ClipboardPanel ownership. Add Desktop per-run session projections, origin-local released Dialog feedback, a host-confirmed derivation observation lane and explicit item navigation through the original clipboard query/store.
+
+## UI and composition decision
+Retain exact GPUI Kit 0.7.1, GPUI 0.3.8, Kit Default Light/Dark, CJK/mono families, main1060x650/min920x480/176rail, default Medium32 text actions. Complete official component index reread. Released Dialog::child/content slots, title/on_close/overlay_closable and existing WindowExt own local overlay/focus; no second native window/toast controller. Settings/SettingPage/SettingGroup/SettingItem::render retain detail navigation; first page becomes usage with existing access controls still reachable. DescriptionList is read-only summary, Toolbar action rail, Alert actual status, ListItem business rows. Existing paging/query state is not replaced by List/Command controller. Public source dialog/dialog.rs, description_list.rs and existing task-traced Settings/Toolbar checked; exact integration regressions required. No product palette rewrite, decorative motion or custom leaf controls.
+
+## Lifecycle invariants
+Pending per-run state precedes service dispatch; correlation ID binds runtime and host effect observations. One run cannot replace another's state or cancellation. Terminal is written once after the invocation resolves; cancelling requests cancellation but does not claim cleanup or rollback. Close feedback does not cancel; a closed/replaced origin cannot be reopened/selected by a late callback. Cross-entity callbacks defer before writing another owner. History navigation is explicit and current query/session/generation checked; no clipboard/native paste/copy API is dispatched. Persisted results remain valid even if a later script completion fails, with partial/unknown wording.
+
+## Verified reference
+Read docs/reference-code/clipboard.md then old D:/Code/NxTools/Views/ClipboardHistoryPopupWindow.axaml.cs constructor/events/PrepareForPopupShow/HidePopup -> Avalonia Window.Show/Hide, plus Services/ClipboardRepository.cs Save/GetPopup ordering. Preserve focus-search on explicit show, deactivate/outside-pointer hide and separate passive preview; do not add a new show path. Source reference has no equivalent cross-feature plugin feedback UI; this interaction is explicitly user-requested new behavior. WinShun reference note preserves ordinary one-shot host boundaries, not a UI transplant.
+
+## State/data/privacy
+Keep at most32 completed recent manual runs plus at most4 pending. Store IDs/names/status/timing/host-confirmed bounded result IDs, never selected text/context/password/headers. A host-owned bounded observation sink records successful clipboard.create_derived replies keyed by correlation ID before replying to the script; absence of observation is not proof of no external effect. No script-returned item ID is trusted as host commit evidence. Runtime typed failures map to fixed actionable text. Bounded plugin-supplied completion text is labelled and not logged. No automatic retry. Clear history only evicts completed projections, not active operations.
+
+## Expected source boundary
+Desktop extensions.rs and extensions/{manual_actions,feature_adapters,service,...}: projection/admission/result observation. main_window/extensions_page/workspace.rs and extensions_settings.rs: purpose/use hierarchy. ui/history.rs, ui/mod.rs plus focused child module: source-bound chooser and explicit result navigation. Clipboard worker/query owner only where required for actual item identity paging. Tests, task artifacts, reference note and example README. No native API/IPC protocol or release changes expected.
+
+## Diagnostics
+Reuse runtime root correlation/native diagnostics. Add low-frequency extension.manual.accepted/cancel_requested/terminal and clipboard.extension_result.located/failed events with correlation/session IDs, fixed state, count and elapsed only. Never log labels, plugin completion text, input payload, paths or raw errors. Diagnostics are observational only.
+
+## Later contextual UX authority
+Installed sequence9 feedback explicitly supersedes modal chooser/automatic report and fixed252/360px sizes: [ux-refinement.md](ux-refinement.md). Current source uses native outside-HWND Clipboard menu, direct extension submenu leaves, same-panel compact feedback, explicit content-sized details and three standalone examples. Runtime/effect/trust/history owners remain. [Current outcomes](ux-outcomes.md) distinguish native fixture/provider/compiled evidence and failed direct screenshot viewing from installed user acceptance; sequence9 installer remains unchanged.
+
+## Latest item-local placement authority
+The user explicitly rejects the preceding same-panel-top progress region. [item-feedback.md](item-feedback.md) now requires processing/outcome INSIDE the exact source history ListItem, keyed by immutable ClipboardOrigin.item_id, with restrained visible/pending official Spinner and static reduced/unknown/terminal states. Status and actions have separate rows so300px partial-result cases remain readable; original text/metadata and original remeasured virtual-list owner remain. No automatic report/window, row-paste bubbling or runtime/native-menu rewrite. [Current implementation and limits](item-feedback-outcomes.md) supersede prior placement claims, not their rejection history.

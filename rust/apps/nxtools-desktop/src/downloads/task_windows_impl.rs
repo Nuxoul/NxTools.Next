@@ -186,6 +186,7 @@ impl DownloadApplication {
         });
         let progress = self.progress(task_id).cloned();
         let shutdown_armed = self.is_shutdown_armed(task_id);
+        let effective_global_speed_limit = self.engine.effective_global_speed_limit();
         let window_size = download_task_window_size(phase);
         let window_bounds = WindowBounds::centered(window_size, cx);
         let window_generation = uuid::Uuid::new_v4();
@@ -214,6 +215,7 @@ impl DownloadApplication {
                 window_min_size: Some(task_window_minimum_size()),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 #[cfg(test)]
@@ -242,7 +244,7 @@ impl DownloadApplication {
                     true
                 });
                 let view = cx.new(|_| {
-                    DownloadTaskWindowView::new(
+                    let mut view = DownloadTaskWindowView::new(
                         application,
                         platform_for_view,
                         task_id,
@@ -253,7 +255,9 @@ impl DownloadApplication {
                         snapshot,
                         progress,
                         shutdown_armed,
-                    )
+                    );
+                    view.effective_global_speed_limit = effective_global_speed_limit;
+                    view
                 });
                 *opened_view_slot.borrow_mut() = Some(view.clone());
                 cx.new(|cx| Root::new(view, window, cx))
@@ -335,6 +339,7 @@ impl DownloadApplication {
         let snapshot = self.task(task_id).cloned();
         let progress = self.progress(task_id).cloned();
         let shutdown_armed = self.is_shutdown_armed(task_id);
+        let effective_global_speed_limit = self.engine.effective_global_speed_limit();
         let native_window_handle = entry.native_window_handle;
         let window_identity = TaskWindowIdentity {
             native_window_handle,
@@ -356,6 +361,7 @@ impl DownloadApplication {
                 )
             });
             view.replace_snapshot(snapshot, progress, shutdown_armed, cx);
+            view.effective_global_speed_limit = effective_global_speed_limit;
             if reset_details_expanded {
                 view.reset_details_expanded();
             }

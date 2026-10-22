@@ -184,3 +184,81 @@ outside render; pending apply blocks close and duplicate dispatch. Saved shell i
 from confirmed applied shell state; a rules-only save must not mutate startup/tray registration when
 desired and live shell settings agree. Weak Clipboard/Quick Launch bindings publish rules next-turn
 after one durable transaction, without consumer disk writes. No screenshot visual acceptance is claimed.
+
+## Installed update occupancy recheck (2026-10-10)
+BrowserHost is launched by browser Native Messaging, not DesktopRuntime child ownership. Current source explicit Exit quits GPUI and drops owned PlatformHost/client supervisor; LocalSystem Indexer remains independent. Live BrowserHost was observed in the ordinary installation directory, not Validation; no process killed or registrar changed. Extension now demand-connects/releases idle transport and no longer auto-reconnects/diagnostic-starts; passive health does not restart desktop. Installer explicitly lists five installed EXEs for CloseApplications/Restart Manager and disables RestartApplications, preserving SameOwnedPath/OwnedIndexerService uninstall guard. This is file-resource registration, not a process-name kill; source guard alone does not prove effective lock release or protected service update. Stopped Indexer restore/real scans remain separately authorized.
+
+## Ordinary shell apply after installed upgrade (2026-10-10)
+Rechecked legacy StartupLaunchService.cs:51–87: ordinary HKCU startup uses the actual running desktop, not index-service version approval; SettingsWindow constructor/base/open/apply/cancel boundary unchanged. Current C# shell resolver used IsApprovedProtectedDesktop for both configured current desktop and protected fallback, rejecting a valid new installed package whenever old protected tuple/registry hashes remained. New temporary-file regression runs red with current desktop bytes/hash plus old protected bytes, before product fix. Shell resolution may accept configured NxTools.exe only when it is the exact sibling of the running PlatformHost and its stable opened bytes match embedded current DesktopSha256; outside-package, tampered/missing/invalid-hash paths fail closed. Existing protected fallback remains fully approved and service admission/deployment authorization is unchanged. No service repair, registry mutation, startup/tray side effects in the regression.
+
+## Kit styled-component Foundation authorization (2026-10-10)
+User approves option A and Foundation implementation: released Kit0.7.1 control typography/radius/padding/state grammar replaces legacy custom control chrome;neutral palette retained. Re-read legacy MainWindow.axaml.cs OnOpened/OnClosing/HideToTray/EnsureTrayIcon/TitleBar_PointerPressed and SettingsWindow.axaml.cs constructor/OnOpened/ConfigureForCurrentScope/CloseButton_Click/SaveButton_Click/TitleBar_PointerPressed. Main hide remains presentation-only,same tray restore owner,explicit exit bypasses hide. Settings retains its original save/cancel scope; native drag uses left-pressed boundary and double-click maximize. Avalonia native base is unavailable;no claim of source through that implementation or permission to rewrite native lifecycle. Next Foundation changes only theme/control/sidebar/render composition; Rust state/layout,C# native commands and GPUI HWND boundaries stay unchanged. Link tool has no legacy counterpart;its Next ClipboardApplication deferred settings writer and keyed460×320 window remain authority.
+
+## Queue09 Global Settings component prerequisite
+Rechecked old SettingsWindow constructor -> WindowAnimationService Attach/Open animation/
+Closing cancellation -> delayed public Close; OnOpened ConfigureForCurrentScope, navigation
+scroll, ApplySettings/CloseSettings commands and OnClosed cancel. Native Avalonia base
+unavailable. Old global startup/tray intent and proxyOff/Auto/Custom host/port reviewed;
+ABDM Desktop ProxyConfigurableRenderer/ProxyEditState first for proxy behavior, no PAC/
+auth capability imported. Next supports Direct/System/ManualHTTP and visible unsupported
+PAC/credentials note; raw host/port drafts/Apply validation remain. Canonical per-app
+independent Clipboard/Quick scopes are Next amendment, not old global table equivalent.
+Candidates releasedSettings/Page/Group/Item/Field public per-control/item slots, Form/
+Field,Checkbox/ToggleGroup/Sidebar. Preserve720x480/native title/footer, original stable
+inputs/localrules/editremove/busy/cancel/retry/atomicglobal save/desired-not-applied and
+cx.defer consumer publication. field_shell re-enables appearance/border/focus; caller
+falseflags are redundant, not runtime-suppressed inputs. No schema/trust/reset/native
+or genuine userconfig/system/registry operation; synthetic tempconfig/bridge only.
+
+Queue09 actual result: releasedSettings3Page3Group7individualItems/publicFieldrender,
+twoSmallFormField proxy/ruleeditor,controlledSwitch/independentCheckbox/SmallButtons;
+officialSidebar/searchfilterresize/scroll/resetfalse. Original720x480/draft/entities/
+proxyhostportvalidation/allscopes/matching/savecancel/busyretry/nativeApply owners remain.
+scope_action marks/Baseordinarycontrols removed;sharedfield_shell alreadyreenabled
+callerfalseflags,not runtimesuppression. Zero-callworkbenchrowsection removed only.
+OriginalstyledButtonGroup retains exclusiveproxy mode;actualToggleGroupdirectrecipe
+allowsallfalse/keyboardgroupcallback0,otheradapters unverified,not global rejection.
+Originalsave/apply/nativepending/result/timeout/deferredconsumer/add_rule/constructors
+and sharedlivehelpers22bodies equal09baseline;Core/consumer/fieldpreview filesbytes equal.
+8new productionregressions/full606/606/strictchecks/9sourcegates0;actualTooltip hover
+candidateframe requires outside/refreshed then hover/frame/delay,notproductioncompensation.
+Exact scoped evidence/options: owningui-queue-outcomes.md09. No realWindowsstartup/tray/
+registry/config/network/Clipboard/userhistory/Release/service/fork/delegation/commit.
+No09PNG/nativeactualHWND/physical/DPI/reader/installedacceptance;support10/gallery12pending.
+
+## Post-gallery label correction — 2026-10-12
+Rechecked old SettingsWindow.axaml and .axaml.cs constructor -> animation Attach ->
+OnOpened/base -> ConfigureForCurrentScope; ApplySettingsCommand then Close, ordinary
+close uses CloseSettingsCommand. StartupLaunchService retains quoted --silent-start.
+Current Global Settings keeps720x480/original atomicApply/Cancel/native owner. Actual
+gallery showed duplicate SettingItem and Switch visible labels. Released Switch public
+accessibility_label preserves the semantic name without repeating visible text;
+red-capable production geometry/name test precedes this presentation-only correction.
+
+## Actual screenshot balance follow-up — 2026-10-12
+Browser restored; new Global screenshots show far-edge switches and equal-width
+host/port fields. Released SettingItem public field-render slots and Form4-column/
+Field.col_span3 allow local composition without replacing Settings selection/search.
+Constrain ordinary control lane360px; proxy address3 columns/port1. Preserve720x480,
+complete help/accessible names/original entities/ApplyCancel/atomic/deferred/native
+owners. Old constructor/animation/baseOpen/ApplyClose chain rechecked before edits.
+
+## Update authorization reference review
+
+See the [Listary / SwiftList / WinShun update comparison](../../.trellis/tasks/10-01-one-time-uac-trusted-updates/research/listary-update-uac-comparison.md)
+for the verified managed updater call chain, installation/startup separation and adoption limits.
+Listary sets `RunUpdateAsAdmin = false`, but this does not establish that the downloaded
+installer never elevates. SwiftList's `SilentInstall` still uses `runas`; its existing-service
+start path and original-user post-install launch are distinct. WinShun requests whole-app
+`requireAdministrator`, which must not be adopted for NxTools. No reference here certifies
+an authenticated silent protected updater or replaces NxTools' atomic release validation.
+The NxTools signed-update source mechanism now exists; see the owning
+implementation-approved.md and outcomes.md. Production key enrollment and LocalSystem
+update acceptance are still pending. Moving deployment into installation alone would
+remove a first-launch prompt, not eliminate authorization per update.
+
+## Six-position screen notifications (2026-10-16 user correction)
+Read legacy SettingsWindow.axaml.cs constructor/OnOpened and Apply/Cancel/Close boundary through inherited Avalonia Window; source has no equivalent six-anchor feature. Earlier Next documentation incorrectly said in-window and was rejected in installed acceptance. The user's requirement is screen-work-area-relative independent passive notifications. Original SettingItem/draft/atomic save and NotificationCenter remain; prepare_notification_window validates source/popup/pipe-peer identity and applies monitor/DPI/passive/final-client-readback in C#, Rust owns one bounded reusable GPUI popup and original-source actions. Hidden Windows popup ordinary frame delivery does not run: build its correct-size first scene after the host lease with public GPUI draw, then deferred nonactivating reveal; no show-first/timeout-ready/framework patch. Directory feedback uses this same center without page status. Existing signed/installed tray lifecycle remains independent. [Correction and evidence](../../.trellis/tasks/10-16-menu-notification-refinement/screen-notification-outcomes.md). No legacy six-anchor implementation or installed/mixed-DPI acceptance claimed.
+
+## Official notifications and preserved native settings boundary (2026-10-17)
+After isolated locked0.7.1 capability proof the user accepts official fixed5seconds, whole-list remaining hover/focus pause and hover-only close. This supersedes prior custom-card/default6/configurable1..60 timing, not legacy settings Apply/Cancel or native screen lifecycle. NotificationCenter now owns bounded business admission/generations/actions only; one official NotificationList/ToastStack owns card/display/clock/exit. Different invocations have distinct IDs; same progress/result invocation reuses its own key. Position-only changes update official global placement without repush/countdown reset. Settings shows read-only5seconds, preserving ignored legacy duration on unrelated save. Public content measurement/focus and pointer bounds allocate enough passive HWND space for expansion then release it on collapse/retirement/empty, with visible keep_visible adjustment. Hidden draw/readback/deferred reveal, style-free whole/client equality, original-source once-only deferred actions and screen monitor/DPI remain unchanged. Native motion/error/disconnect reaches GPUI policy. No legacy equivalent is invented, no dependency/native protocol change or automatic package/install. [Current exact evidence](../../.trellis/tasks/10-16-menu-notification-refinement/official-notification-integration-outcomes.md); sequence15 remains prior custom implementation.

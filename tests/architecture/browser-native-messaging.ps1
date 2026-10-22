@@ -149,8 +149,10 @@ $downloadModel = Get-Content -LiteralPath `
 Assert-Contains $downloadModel 'pub expected_total_bytes: Option<u64>' `
     'Browser-reported total size must reach the Rust download request.'
 
-$downloadEngine = Get-Content -LiteralPath `
-    (Join-Path $root 'rust\crates\nxtools-download\src\engine.rs') -Raw
+$downloadEngine = (Get-Content -LiteralPath `
+    (Join-Path $root 'rust\crates\nxtools-download\src\engine.rs') -Raw) + `
+    (Get-Content -LiteralPath `
+    (Join-Path $root 'rust\crates\nxtools-download\src\engine\browser.rs') -Raw)
 Assert-Contains $downloadEngine 'take_browser_dialog_receiver' `
     'Sensitive browser dialog requests must use the in-process GPUI channel.'
 Assert-Contains $downloadEngine 'browser_dialog_available' `

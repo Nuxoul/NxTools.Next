@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Runtime and native ownership, entity leases"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Atomic configuration, correlated actions and low-noise diagnostics"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Approved component and native size contracts"}
+{"file":"docs/reference-code/download.md","reason":"ABDM and legacy download interaction chains"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Search semantics and protected service identity"}
+{"file":"docs/reference-code/steward.md","reason":"Source-backed search precomputation and selective candidate reference"}

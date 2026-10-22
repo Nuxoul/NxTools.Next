@@ -11,15 +11,23 @@ internal sealed class PlatformCommandSequenceDispatcher
     private static readonly HashSet<string> DetachedCommands = new(StringComparer.Ordinal)
     {
         NativeFileDragCommand,
+        "archive_entry",
+        "show_context_menu",
+        "set_clipboard_capture_paused",
         "present_fixed_window_over_anchor",
+        "prepare_notification_window",
         "query_shell_actions",
         "query_shell_submenu",
         "invoke_shell_action",
         "extract_shell_icon",
         "pick_clipboard_archive_path",
+        "pick_archive_path",
         "pick_clipboard_storage_directory",
         "pick_directory",
         "pick_program",
+        "pick_extension_manifest",
+        "pick_extension_runtime",
+        "inspect_extension_runtime",
         "export_browser_extension",
         // Launching a Shell target waits on process start and can take
         // seconds. Measured incident: the quick-launch panel hide that follows
@@ -64,10 +72,12 @@ internal sealed class PlatformCommandSequenceDispatcher
             return executeAsync(cancellationToken);
         }
 
-        // Queue detached work before invoking the delegate. Some detached
-        // operations enter synchronous Windows APIs before returning a Task.
-        // Task.Run captures those synchronous failures in the observed Task.
-        var command = Task.Run(() => executeAsync(cancellationToken), cancellationToken);
+        // Menu admission is synchronous and bounded; its own STA performs all modal work.
+        // Admit before reading exact cancel so a following cancel cannot overtake session creation.
+        // Other detached delegates may enter blocking native APIs before returning a Task.
+        var command = commandName is "show_context_menu" or "set_clipboard_capture_paused"
+            ? executeAsync(cancellationToken)
+            : Task.Run(() => executeAsync(cancellationToken), cancellationToken);
         lock (_gate)
         {
             _detachedCommands.Add(command);

@@ -1,0 +1,2 @@
+# Visual system
+Approved dark roles canvas181A1F/surface202329/raised292D35/border3B404B/textE7E9EE/accentA5B4FC; light F4F5F7/FFFFFF/FFFFFF/D4D8E0/20242D/5654C5. Use public Kit ThemeRegistry/Theme::update so styled controls/Base/project share one palette. Complete secondary/disabled/hover/pressed/selected/focus and semantic status groups; primaryforeground contrast measured. Actual icon hue preserved. Reference Fluent tokens and MIT VSCode Modern semantic hierarchy; no code/theme wholesale copying. Provide dark/light and0/4spacing comparison before actualGPUI screenshots.

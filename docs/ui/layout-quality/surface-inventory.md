@@ -1,7 +1,7 @@
 # NxTools.Next surface inventory
 
 ## Status and authority
-Design-only replan approved by the user after rejection of the 19:30 installed global settings layout. This inventory maps existing surfaces, not new features. Prototype appearance is a proposal awaiting visual approval. Existing product behavior/native budgets remain authoritative; historical source-complete reports are not current visual acceptance.
+The original design-only inventory is the historical pre-migration baseline, not new feature authority. After remote checkpoint42f60a8, the user authorized local feature-first production migration and continuation of remaining surfaces. Entries below retain original observed budgets; superseding implementation status is recorded at the end. Existing functionality/native budgets remain authoritative; source/check completion is not installed or user visual acceptance.
 
 [Design system](design-system.md) · [Page blueprints](page-blueprints.md) · [Acceptance](acceptance-matrix.md) · [Migration map](migration-map.md)
 
@@ -62,3 +62,6 @@ Paths below are relative to `rust/apps/nxtools-desktop/src/` unless explicitly q
 Source inventory verified by repository entries and constants; not every state was run natively. Current native screenshot subset and rejected installed screenshots establish local evidence, not blanket acceptance. Reference roots: [GPUI/Zed](../../reference-code/gpui.md), [Downloads](../../reference-code/download.md), [Quick Find](../../reference-code/quick-launch-research.md), [Clipboard](../../reference-code/clipboard.md), [System Shell](../../reference-code/system-shell.md).
 
 No service scans/repair, new providers/tools, dashboards, theme chooser, unified mega-settings transaction, new persistence semantics or provider injection is implied. Omitted native measurements are explicit migration gates, never guessed values.
+
+## Current local source status (supersedes historical layout measurements above)
+The first slice migrated SH-01 to176px/40px named rail, SH-02 to48px task rows, and SH-04 to continuous grouped configuration. The remaining slice now implements DL-01–07 auxiliary presentation, QF-05 advanced command/scope/path/diagnostic layout, CB-02 compact editors, SH-06 bounded notification copy/actions, and EX-01–02 product HTML/CSS/shadow hierarchy. Existing date/media/popover/overlay/shared/native owners are preserved, not deleted or newly redesigned. All original controls remain authoritative. Desktop494/494 and strict checks pass; browser21 tests/38 DOM checks pass. Five owned100% auxiliary/notification captures have actual budget readback but are not newly eye-inspected. Full installed/DPI/state/U/provider acceptance remains open. [Remaining evidence](../../audits/2026-10-09-remaining-ui-layout-migration.md).

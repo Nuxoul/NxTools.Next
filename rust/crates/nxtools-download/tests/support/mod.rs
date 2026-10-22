@@ -599,6 +599,26 @@ fn serve_connection(
         .map(|(name, value)| (name.trim().to_ascii_lowercase(), value.trim().to_owned()))
         .collect();
     match path {
+        "/hls/slow-body.m3u8" | "/dash/slow-body.mpd" => {
+            let (content_type, body) = if path.ends_with(".mpd") {
+                ("application/dash+xml", DASH_STATIC_VOD)
+            } else {
+                ("application/vnd.apple.mpegurl", HLS_MASTER)
+            };
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            if method != "HEAD" {
+                thread::sleep(Duration::from_millis(500));
+                let _ = stream.write_all(body);
+            }
+        }
+        "/probe-stalled" => {
+            thread::sleep(Duration::from_millis(800));
+            serve_range(&mut stream, method, headers.get("range"));
+        }
         "/stage6/request-context-redirect" => write_response(
             &mut stream,
             302,
@@ -1127,11 +1147,38 @@ fn serve_connection(
             404,
             "Not Found",
         ),
+        "/head-no-metadata" if method == "HEAD" => {
+            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n");
+        }
+        "/head-no-metadata" => {
+            thread::sleep(Duration::from_millis(600));
+            serve_range(&mut stream, method, headers.get("range"));
+        }
         "/head-slow" if method == "HEAD" => {
             thread::sleep(Duration::from_secs(1));
             write_response(&mut stream, 200, "OK", &[], b"", Some(BODY.len()));
         }
         "/head-slow" => serve_range(&mut stream, method, headers.get("range")),
+        "/range-slow" if method != "HEAD" => {
+            thread::sleep(Duration::from_secs(1));
+            serve_range(&mut stream, method, headers.get("range"));
+        }
+        "/range-slow" => serve_range(&mut stream, method, headers.get("range")),
+        "/head-delayed-name" if method == "HEAD" => {
+            thread::sleep(Duration::from_millis(200));
+            write_response(
+                &mut stream,
+                200,
+                "OK",
+                &[(
+                    "Content-Disposition",
+                    "attachment; filename=\"delayed-head.bin\"",
+                )],
+                b"",
+                Some(BODY.len()),
+            );
+        }
+        "/head-delayed-name" => serve_range(&mut stream, method, headers.get("range")),
         "/head-names-the-file" if method == "HEAD" => write_response(
             &mut stream,
             200,

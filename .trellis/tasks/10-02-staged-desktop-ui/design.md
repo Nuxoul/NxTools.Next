@@ -4,6 +4,8 @@
 
 The user's supplied base tokens remain canonical: base `#18181b`; surfaces `#1f1f23`, `#121215`, `#27272a`; subtle border `#27272a`; primary/secondary/muted text `#f4f4f5` / `#a1a1aa` / `#71717a`; semantic status colors. User feedback2026-10-09 after native Validation acceptance explicitly rejects the dark action blue: focus/action accent is now brighter `#38bdf8`, hover `#7dd3fc`, with distinct pressed feedback. This supersedes the earlier `#0ea5e9` action/focus requirement; define roles once in theme.rs and map product/component consumers together.
 
+**2026-10-10 installed feedback supersedes the cyan amendment:** user rejects bright blue fill/outline/buttons and pointer-retained focus rectangles in Global/Download settings. Retain base/text/status colors; ordinary actions use neutral#bfc0c4/hover#d5d6da, selection#353539, pressed#414145, subtle selection#303034 and independently defined keyboard focus#9d9ea3. Mouse focus remains functional but has no persistent ring; keyboard navigation retains visible focus and original single KeyUp activation. Shared product/component roles change together; no domain/window-size/provider rewrite.
+
 Spacing is a strict 4px grid; controls 24/28/32px; radii 3/6/8px/pill according to role. Keep existing UI font family unless visual review demonstrates a concrete readability issue; centralize type roles. Focus states use a 2px or equivalent visible semantic accent ring. Enter/Space trigger the same actions as pointer. Motion is short and triggered by user action only.
 
 ## Hierarchy and composition

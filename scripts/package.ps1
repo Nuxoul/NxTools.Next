@@ -5,7 +5,10 @@
     [switch]$SkipVerification,
     [switch]$SkipInstaller,
     [ValidateRange(0.0, 1024.0)]
-    [double]$MinimumCommitHeadroomGiB = 6.0
+    [double]$MinimumCommitHeadroomGiB = 6.0,
+    [string]$SigningKeyPath = $env:NXTOOLS_RELEASE_SIGNING_KEY,
+    [long]$ReleaseSequence = 0,
+    [switch]$LegacyUnsigned
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,6 +28,18 @@ $destination = Join-Path $root $OutputPath
 $restartIndexerServiceOnFailure = $false
 $packageCompleted = $false
 
+if ($Configuration -eq 'Release' -and -not $LegacyUnsigned) {
+    if (-not $SigningKeyPath -or $ReleaseSequence -le 0) {
+        throw 'Trusted Release packaging requires an explicit signing PEM and increasing -ReleaseSequence. Use -LegacyUnsigned only for an explicitly non-trusted legacy package.'
+    }
+    & (Join-Path $PSScriptRoot 'reserve-release-sequence.ps1') `
+        -SigningKeyPath $SigningKeyPath -ReleaseSequence $ReleaseSequence -PackageDirectory $destination
+    & (Join-Path $PSScriptRoot 'write-update-trust.ps1') -SigningKeyPath $SigningKeyPath
+}
+elseif ($LegacyUnsigned) {
+    $trustFile = Join-Path $root 'csharp\NxTools.PlatformHost\Generated\UpdateTrust.g.cs'
+    [IO.File]::WriteAllText($trustFile, "namespace NxTools.PlatformHost.Generated;`ninternal static class UpdateTrust { public const string PublicKeySpkiBase64 = `"`"; }`n")
+}
 function Copy-PackageFile([string]$Source, [string]$Destination) {
     for ($attempt = 0; $attempt -lt 75; $attempt++) {
         try {
@@ -167,6 +182,8 @@ try {
             -DesktopExecutable (Join-Path $destination 'NxTools.exe')
         & '.\tests\architecture\desktop-product-icon.ps1' `
             -DesktopExecutable (Join-Path $destination 'NxTools.exe')
+        & '.\tests\architecture\bundled-extensions.ps1' `
+            -DesktopExecutable (Join-Path $destination 'NxTools.exe')
     }
     Copy-PackageFile ".\csharp\NxTools.PlatformHost\bin\$Configuration\net8.0-windows\win-x64\publish\NxTools.PlatformHost.exe" (Join-Path $destination 'NxTools.PlatformHost.exe')
     $packagedBrowserExtensionRoot = Join-Path $destination 'browser_extension'
@@ -176,6 +193,14 @@ try {
         -Recurse `
         -Force
     Copy-Item '.\LICENSE-MIT', '.\LICENSE-APACHE', '.\THIRD_PARTY_NOTICES.md' $destination
+    Remove-Item (Join-Path $destination 'NxTools.release.json'), (Join-Path $destination 'NxTools.release.sig') -Force -ErrorAction SilentlyContinue
+    if ($Configuration -eq 'Release' -and -not $LegacyUnsigned) {
+        & (Join-Path $PSScriptRoot 'write-trusted-release-manifest.ps1') `
+            -PackageDirectory $destination -SigningKeyPath $SigningKeyPath -ReleaseSequence $ReleaseSequence
+    }
+    else {
+        Remove-Item (Join-Path $destination 'NxTools.release.json'), (Join-Path $destination 'NxTools.release.sig') -Force -ErrorAction SilentlyContinue
+    }
     $packageCompleted = $true
 }
 finally {
@@ -203,13 +228,31 @@ $isccCandidates = @(
 $iscc = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     $installerScript = Join-Path $root 'installer\nxtools-next.iss'
+    & (Join-Path $root 'tests\architecture\trusted-release-sequence.ps1')
+    & (Join-Path $root 'tests\architecture\installer-exact-file-rollback.ps1')
+    foreach ($scenario in @('success', 'failure', 'owned-process', 'trusted-success', 'trusted-failure')) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'tests\architecture\installer-runtime.ps1') `
+            -Scenario $scenario
+        if ($LASTEXITCODE -ne 0) {
+            throw "Installer runtime regression failed: $scenario"
+        }
+    }
+    foreach ($scenario in @('success', 'rollback', 'rollback-after-file', 'commit-failure', 'trusted-failure')) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'tests\architecture\installer-browserhost-replacement.ps1') `
+            -Scenario $scenario
+        if ($LASTEXITCODE -ne 0) {
+            throw "BrowserHost file replacement regression failed: $scenario"
+        }
+    }
     if (Test-Path $installerScript) {
         & $iscc $installerScript | Write-Host
         if ($LASTEXITCODE -eq 0) {
             Write-Host "Installer created at $(Join-Path $root 'artifacts\installer')"
         }
         else {
-            Write-Warning "Inno Setup compilation failed with exit code $LASTEXITCODE"
+            throw "Inno Setup compilation failed with exit code $LASTEXITCODE"
         }
     }
 }

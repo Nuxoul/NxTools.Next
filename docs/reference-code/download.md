@@ -2542,3 +2542,257 @@ Pinned GPUI0.2.2 `src/platform/windows/window.rs:471–477` stores hidden `initi
 User accepted the15:38 new-download fixed handoff but reports slight downward movement on task completion. Rechecked ABDM ShowDownloadDialogs (progress/completed owner-specific state/windows), then legacy DownloadProgressWindow constructor→WindowAnimationService.Attach→OnOpened and ShowCompletionState→ResizePreservingCenter: final432x196 preserves native center, clamps work area, locks size and retains same task window. Next progress184/completion180 share one keyed HWND; current creation min size equals initial phase, potentially constraining a smaller terminal phase. A center-only native control fixture with min176 passes repeated184/280/180 transitions; that does not cover the real task min184. Add Debug real task-view/window-options fixture and exact native HWND center/minimum regression before correcting constraints. Preserve keyed task/window generation, presentation-only close, final-file/OLE and passive terminal fallback; no new size recovery loop or independent GPUI resize owner.
 
 2026-10-09 correction evidence: the owned real task HWND/min184 fixture rejected target440x180 with actual440x184; the earlier new-download/min176 center control was not equivalent. Two production regressions were behavior-red: collapsed progress184 differed from completed180, and the task lifecycle emitted a native centered resize on ordinary completion. Progress/completed now both use440x184; update_task_window compares previous phase/details logical budget with next budget and emits resize only when different. Minimum size is the collapsed184 budget for all initial phases, so failed196 can return to progress184. Same task/window generation, content/footer containment and no resize command pass. The exact owned native test covers184/280/184/196/184 repeated three times with15 zero-center-drift observations; it is not an installed physical-pointer/mixed-DPI acceptance claim.
+
+## Feature-first Downloads workbench migration
+Before styling rechecked ABDM `pages/home/sections/DownloadList.kt::DownloadList`:table keyed by task, Ctrl/Shift selection, double-click open, right-click options and selected transfer; legacy MainWindow.axaml TaskListBox multiple selection, row PointerPressed/ContextRequested, name/source/size/status/progress/speed/remaining/created and complete selected-task metadata. Existing Next six state filters/counts, full sort-key menu/search-clear, Windows selection/context capability, batch/queue actions, virtual rows and five detail tabs remain source-of-truth, despite reduced browser fixture. Preserve actual MainWindow→deferred DownloadApplication request/result and existing new/task HWND owners traced above. Scope is workbench row/header readability/alignment only; no change to accepted probe fixed handoff, completion geometry, durable download, native/OLE, fields or controls. Before code adjust actual production text/row geometry tests without removing functional/containment assertions.
+
+## Remaining browser companion presentation migration
+Rechecked legacy browser_extension/nxtools-interceptor/popup.html/css four task/capture/tool/settings tabs, current Next popup IDs and event bindings, deterministic456px root and fixed420/445 scrolling workspace; media-entry shadow root and drag target retain original handlers,positioning,source/privacy policies. Typography/control/rhythm edits stay in HTML copy/CSS/shadow-styles only, no background/content-script/popup routing changes. Keep every task/resource/media/settings control, counts, disabled merge limitation and native-handoff/cookie/header policy. Browser fixture mounts synthetic controls only without real Chrome API/native messaging/network; DOM geometry is not real installed-extension acceptance.
+
+### Remaining auxiliary presentation reference ledger (2026-10-09)
+Pre-edit verification was recorded in session scratch `downloads-auxiliary-reference.txt`; this entry synchronizes that evidence, not a new inferred lifecycle. ABDM inspected first: AddDownloadPage.kt:91–181; CompletedDownloadPage.kt:38–145; ShowDownloadDialogs.kt:51–79,108–195; shared BaseSingleDownloadComponent.kt:107–138,233–285; DialogUi.kt:12–21,42–62; ConfirmDialog.kt:43–103; PowerActionAlertWindow.kt:50–70,74–191. Newly resolved scheduler entry is `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/queue/QueueInfoComponent.kt`:148–155,247–301. `desktop/app-utils/src/main/kotlin/com/abdownloadmanager/desktop/window/custom/CustomWindow.kt`:325–373 delegates close/state/resizable/topmost to Compose Window; AWT/Compose internals are not inspected Windows-native implementation.
+
+Legacy inspected after ABDM: AddDownloadWindow.axaml:54–105 and .axaml.cs:20–39,73–109; DownloadProgressWindow.axaml.cs:26–59,84–135; DeleteConfirmationWindow.axaml.cs:13–37,47–60; SettingsWindow.axaml:900–927; WindowAnimationService.cs:13–49. Constructor → animation attach → base Opened/Closed and explicit cancellation/guarded deferred Close were followed; Avalonia native base source remains unavailable. Invariants: original URL/context/default/media/category/schedule/idempotency controls, fixed560×176/new278, media353/418/456, task184/280/196, schedule430×326/shutdown450×200, deferred callbacks and sole native/OLE owners survive typography/alignment changes. Current tests and capture limits: [remaining audit](../audits/2026-10-09-remaining-ui-layout-migration.md).
+
+### Browser-owned host idle lifetime and passive health correction (2026-10-10)
+User reports BrowserHost surviving desktop Exit and blocking updates. Before changes, actual extracted background connection functions with fake Chrome ports reproduce engine rejection retaining transport and automatic disconnect→reconnect; new4-test loop is red on idle release/no unsolicited reconnect/startup/Blob lease. ABDM AppComponent:995–1010 stops its download work then exits; legacy MainWindow.axaml.cs:196–212,2795–2803 explicit Exit bypasses tray hide; desktop dispose:188–190→MainWindowViewModel:2551→LocalApiService:54–76 closes its own WebSocket/listener. Legacy background:1046–1120 reconnects WebSocket. Native Messaging changes ownership: browser starts host, stdio EOF exits host lib.run→main; desktop owns PlatformHost child and service client, not browser-owned host or LocalSystem service. Current source run:251–288 waits stdin; hello393–400 only confirms transport; snapshot959–962 currently starts a background desktop, and extension worker startup4213–4222 eagerly connects. Installer overwrites exact app BrowserHost; default Restart Manager behavior is not proof of reliable closure. Current live host path differs from Validation; installed binary/registry identity not read.
+
+Correction scope: demand-only native transport, bounded idle release when no pending/connecting/request owner; no autonomous reconnect or diagnostic-only spawn; Blob capability→upload→commit retains one lease through finally. Current-port identity guards prevent old callbacks mutating replacements. get_snapshot becomes passive existing-pipe-only and must not launch desktop; explicit download requests retain original startup. Preserve protocol2/256KiB, request/handoff IDs, per-item batch/fallback, Blob2GiB/Receiving exclusive lease, bounded timeout/reject once and low-noise lifecycle diagnostics. No service stop/kill/registry/install operation authorized; real EOF/file-lock release and installer native acceptance separate.
+
+## Queue02 download Settings component prerequisite — 2026-10-11
+ABDM inspected first: desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/
+pages/settings/{DesktopSettingsComponent,SettingsPage}.kt -> ConfigurableGroup/
+RenderConfigurableGroup; shared/app/src/commonMain/kotlin/com/abdownloadmanager/
+shared/settings/CommonSettings.kt numeric ranges/zero-speed, folder validation and
+explicit ignoreSSLCertificates. Current-page change only selects configurables;
+ABDM repository-backed writes are not transplanted into Next's explicit Apply draft.
+Legacy next: Views/MainWindow.axaml.cs::ShowSettingsWindow -> SettingsWindow
+constructor -> WindowAnimationService.Attach -> ShowIndependentSecondaryWindow::Show;
+PresentExistingSettingsWindow reuses/activates; Closed releases registry. SettingsWindow
+OnOpened configures scope; SaveButton_Click -> ApplySettings -> ConfigureDownloadManager/
+MarkStateDirty/SaveStateIfDirty -> AppStateStore::Save temporary-file move; close uses
+CloseSettingsCommand and OnClosed without Apply. Avalonia native base source is not
+available; observed public Show/Close is the reference boundary, not a native-source claim.
+HeadersSection/RequestHeaderParser confirms named Header/Cookie and dedicated Cookie
+precedence; CategoryDialogViewModel::BuildState keeps all category fields; FFmpeg
+InstallFfmpegAsync/CancelFfmpegInstall retains cancellation and configured-path policy.
+Next keeps984x650 client, five General/Request/Transfer/Window/Diagnostics topics,
+all original entities/draft ranges/picker targets/FFmpeg generation/install/overlay
+edit/native close/deferred Apply/Cancel. Official Settings owns search/selection/scroll
+only, resettable(false); no reset or automatic persistence. Request Textarea owns
+its single120px frame/internal scroll; secrets never enter diagnostics. Shared
+field_shell already re-enables Input appearance and is not broadly rewritten.
+
+## Queue03 main download component prerequisite — 2026-10-11
+ABDM first: desktop pages/home/sections/DownloadList.kt::DownloadList stable task key,
+Ctrl toggle/Shift range/secondary gesture/native dragAndDropSource ->
+HomeComponent::onRequestOpenDownloadItemOption stable selection and tableState sort
+-> BaseHomeComponent selectionList/downloadList filter reconciliation. Legacy next:
+MainWindow.axaml TaskListBox Multiple/selected inspector/full columns ->
+MainWindow.axaml.cs TaskRow_PointerPressed Ctrl/Shift anchor, ContextRequested ->
+SelectTaskForContextMenu/BuildTaskContextMenu -> MainWindowViewModel SortBy/
+RebuildVisibleTasks/GetSelectedTasksOrCurrent and typed action compatibility.
+Keep Next six filters/counts, stable IDs/anchor/sort persistence/view-only queue order,
+context capability subsets, double-click, detail five tabs/reset-scroll and fixed
+main1060x650/min920x480. Ordinary progress is aggregate per task; segment geometry
+remains domain content. Shell/native OLE pressed-pointer/source HWND/unique C# STA
+and all auxiliary lifecycle boundaries are unchanged. Table/DataTable public row/
+cell/sort/context slots reviewed, actual capability tests required before grid
+decision; a business owner alone does not prove incompatibility.
+
+### Queue03 main presentation result and public grid boundary
+Production uses real0.7.1 InputGroup/Search/InlineEnd clear on original entity,
+Toolbar/ToolbarGroup header+batch public slots,Small underline TabBar/fiveTabs,
+XSmall ordinary aggregate Progress and overview horizontal DescriptionList values.
+Original six counts/all columns/stable-ID CtrlShift anchor/view sort/context/queue/
+batch/deferred/keyed-native/OLE source-HWND/sole C# STA owners preserved; domain
+segmented visualization unchanged.20key production bodies equal dirty03baseline.
+Reference order remains ABDM DownloadList/HomeComponent/BaseHomeComponent before
+legacy MainWindow TaskListBox/row pointer/context/SortBy; no unavailable Avalonia
+native-base or proprietary engine-source claim.
+
+Exact DataTable public experiment: Ctrl-click built-in one semantic row index;
+row_selectable(false)+delegate.render_tr callback retains external IDs but release
+state.rs::render_table_row overwrites row aria_selected with internal single-index
+selection. Actual sort-icon pointer invokes perform_sort; secondary gesture invokes
+context_menu. These callbacks are supported, not automatically incompatible. Static
+Table has no virtualization. Retain only original virtual main grid pending user
+exception/upstream-public-hook decision; untested child/Shift/OLE adapters not claimed
+impossible or certified. No library fork/dependency/native change.
+
+564/564,strict tests/prodClippy/workspace/fmt/6source gates0;production default/minimum/
+long-input/entity/clear/focus/five-tabs/scroll/DescriptionList/fill/batch-rail checks.
+Toolbar/Progress no automatic TestSupport;real descendants/arrow focus/painted quads
+used. TestWindow native a11y tree unavailable; provider/reader remains unverified.
+No03PNG acquired/inspected or native drag/runtime/Release/service/user-data operation.
+Full adoption/defer/check detail: owning ui-queue-outcomes.md03;final visuals queue12.
+
+## Queue04 new-download Form/Radio/Popover review and result
+ABDM reviewed first: desktop/app/pages/addDownload/single/AddDownloadPage.kt URL ->
+category/location/name ->metadata/config ->MainActionButtons; public extra config
+retains credentials. Constructor/window boundary: desktop/app-utils/window/custom/
+OptionsDialog.kt::BaseOptionDialog ->Compose DialogWindow visible/modeless/undecorated,
+focus-loss dismissal/topmost and listener disposal. Old NxTools after ABDM:
+Views/AddDownloadWindow.axaml.cs constructor ->WindowAnimationService.Attach ->
+DataContextChanged/RequestClose ->OnOpened dark titlebar/size ->OnClosed detach/dispose;
+BrowseFolderButton uses native storage picker; AddDownloadDialogViewModel parse
+generation/category-directory/AddOnly/DownloadNow/Submit carries requestHeader/Cookie.
+Avalonia native base unavailable; no claim that native source was inspected.
+
+Actual Next presentation: released0.7.1 Form/Field per original control, horizontal
+URL/directory and two-column filename/category on stable styled InputState32px;
+default styled paste/picker buttons. Popover sole styled frame schedule304x240/public
+compact inset/category320x240/default inset,manual surface/appearance(false) removed.
+Category stateless ListItem two-line data/default12px inset on original search/
+highlight/scroll/keyboard/selection/close/focus owner. HLS/DASH actual RadioGroup/
+SmallRadio40px,one direct public StatefulInteractiveElement::on_click for nullable
+DASH audio preserves repeat-to-clear. Checked on_change itself inert; direct click
+and true focus/explicit KeyDown+KeyUp once tested. No duplicate row dispatcher.
+No new visible HeaderCookie editor: original carried request/default data retained.
+Synthetic typedHeader/Cookie hydration/edit regression verifies carry-through.
+
+Official date candidate: calendar.rs::Calendar Small actual fixture exceeds156px
+existing date region; date_picker.rs public CalendarEvent/select_date/Change/open
+and nested Calendar reviewed. DirectCalendar can't retain full date+time+actions
+inside304x240. Scrollable/nested public alternatives unverified,not globally rejected.
+Only delayed_start_calendar remains narrow pending exception/navigation decision,
+insideNEWofficialstyledPopover; original date/month/outerClearConfirm draft unchanged.
+
+Fifteen key bodies whitespace-normalizedequal04dirtybaseline:request/probe/submit/
+fixeddraft/hydrate/dategrid/media/size/inspector. Hidden target/pending-before-native
+fixed apply/presentation-only retry/source-HWND/C#ownership unchanged.560x176->fresh
+560x278/media353/418/error456 retained; localhostproductionprobe/newtarget/source
+retirement/fieldfooter/media/audio-cancel/category32scroll tests pass.
+568/568,stricttests/prodClippy/workspace/fmt/6sourcegates0. No04PNG/standaloneDebugbuild/
+start/actualHWND/nativehandoff/physical/DPI/reader/installed/Release/service/userdata.
+Exact adoption/deferreddecision/check logs: owning ui-queue-outcomes.md04.
+
+## Queue05 supporting-content prerequisite and native invariants
+Reviewed ABDM Desktop first (not the Android same-name files):
+desktop/app/pages/queue/QueueInfoComponent.kt::createConfigurableList independent
+start/end flags and nonempty weekdays; pages/singleDownloadPage/ProgressDownloadPage.kt
+::RenderProgressBar/RenderActions/RenderPartInfo and ShowDownloadDialogs.kt keyed
+downloadId -> CustomWindow; pages/poweractionalert/PowerActionAlertWindow.kt ->
+PowerActionComponent::performCancel/performPowerAction, ui/template/DialogUi.kt and
+ui/widget/ConfirmDialog.kt. desktop/app-utils/window/custom/CustomWindow.kt delegates
+to Compose Window; AWT/Compose Windows-native internals were not inspected.
+Then old NxTools Views/DownloadProgressWindow.axaml.cs constructor -> animation
+attach -> OnOpened/OnClosed, same-window ShowCompletionState, pause/resume/cancel,
+Shell actions and pressed-pointer native drag; Views/DeleteConfirmationWindow.axaml
+and .cs constructor -> OnOpened -> explicit Delete/Cancel result -> OnClosed(null);
+SettingsWindow.axaml::SchedulerSection raw HH:mm text; Services/WindowAnimationService.cs
+Opened/Closing -> guarded deferred Close. Avalonia native base unavailable.
+Next production deletion is live: main_window/download_page.rs context action ->
+DownloadApplication::request_delete_confirmation -> keyed independent380x178 Root/
+DeleteDownloadView. Disabled task_removal_deletes_file means list-only removal;
+Cancel/native close discard presentation; successful explicit confirm removes file
+and record. Stale retained/dead_code annotations are not reachability evidence.
+Preserve schedule430x326/task440x184,expanded280,failed196/shutdown450x200, one native
+resize owner, task HWND/generation and same-size completion, C# sole STA/OLE source
+HWND/still-pressed pointer/cancel boundaries. Kit DialogContent/Footer are inner
+content only; no Root modal, DialogAction/Close dispatcher or native-host replacement.
+Exact release TimeField/TimeFieldState stores NaiveTime; invalid digit pairs restart
+with a valid digit. Original schedule InputState keeps raw invalid/intermediate text
+and validates only at Apply. This policy conflict is narrow, not a blanket API rejection;
+actual focused digit compatibility test and user alternatives belong to outcomes05.
+
+Queue05 result: actual schedule Switch/independentSmallToggle/per-fieldFormField/
+StatusBar/originalstyledInput;taskXSmallProgress/SmallDescriptionList/ToolbarCheckbox/
+DialogFooter;shutdown/delete inner DialogContent/XSmallAlert/Footer/styledButtons.
+Original rawHH:MM draft/Apply-error retained pending TimeField policy decision.
+22production function bodies whitespace-normalized equal05dirtybaseline;task window
+and completion-shutdown controllers bytes equal. Original native sizes/keyed lifecycle/
+same-HWND content/single resize/OLE/cancel unchanged.571/571,strict tests/prodClippy/
+workspace/fmt/sixsourcegates0;default/long/error/footer/action/release lifecycle tests.
+No05PNG/actualHWND/physical/DPI/reader/installed/Release/service/user-data operations.
+Exact evidence/alternatives/limits: owning ui-queue-outcomes.md05,consolidatedgallery12.
+
+## Post-gallery user decisions — 2026-10-12
+User temporarily retains original Download virtual grid for later separately authorized
+package review; no packaging now. User explicitly authorizes official TimeField with
+application validation, superseding raw-invalid-text retention for daily schedule only.
+Rechecked ABDM Desktop QueueInfoComponent TimeConfigurable/nonemptyday/startstop first,
+then old SettingsWindow constructor/animation/baseOpen/ApplyClose/Scheduler HHmm input;
+native Avalonia base unavailable. Preserve independent430x326/nativehost/saveCancel,
+enable/day/crossmidnight/busy/failure rules. Category master now authorized ListItem
+on original selection/draft/order/enable/delete owner, not a new ListState/controller.
+Exact0.7.1 TimeFieldState time/set_time, H23/minute and publicTimeField are reviewed.
+Calendar supports outerStyled/officialsize but itemcells Small28/default32/Large40;
+customSize is fallback32, not arbitraryitemshrink. Outercompactpadding/scroll adaptation
+not yet certified; previous directSmall conflict is not universal inability to resize.
+
+Public naturalgeometry measurement in post-gallery feedback:Small padding12 220x224;
+Small padding0 220x200;Medium/customSize20 padding0 both248x228. Removing outerpadding
+works but does not shrink28pxdatecells below original156px inlinebudget. Scroll/DatePicker
+alternatives remainunverified. ActualTimeField/Applyvalidation and categoryListItem now
+implemented;623tests/strict/build/gates pass. See ../audits/gpui-kit-ui-feedback.md for
+new30PNG inspectionblock and exact remaining acceptance,not historical05deferredstatus.
+
+Actual post-gallery PNG inspection after Browser restore found schedule TimeFields
+32px inside44px Field slots, producing20px between controls. Adopt32px slots with
+original8px bodygap and intact32px TimeField/430x326/footer/error/native budgets.
+ABDM Desktop OptionsDialog native modeless focus/dispose and old SettingsWindow
+constructor/WindowAnimationService/baseOpen/ApplyClose chain rechecked; no native
+policy transplant. Production gap regression red before local slot correction.
+NewPNGinspection also confirms Downloads ordinarySwitch atx924 in984pxclient. Only
+nonwideSettingFieldrender receives440pxlane;its projectedcontrol uses flex natural
+width. Widecategory/request/FFmpeg/pathdiagnostic slots remain unchanged. Actual
+Switch position red precedes change;fullcategory/footer/action/nativegates required.
+
+## Authorized entire browser UI redesign — 2026-10-12
+User authorizes new popup/injected UX. Rechecked legacy browser popup.html/js and
+Next popup render/setView/refresh/collectSettings, content ensureOverlay -> adopted
+Shadow stylesheet/showResourceChoices/closeOverlayPanel and configured drop bounds.
+Original four views, task8/resource24/batch32 limits, auto-save plus explicit retry,
+media index/frame/action messages, queue-only batch, pointer choice/Escape/focus and
+original28px media entry placement remain. Background/page-hook/handoff/capture/Blob/
+manifest permissions/CSP/extensionID unchanged. Popup state is passive/noDesktopstart.
+ProductionDOM mockedChrome/networkblocked red test shows missing filter/feature ARIA,
+keyboard preview and uncaught async UI failures/busy duplication. Fix local callback
+feedback only. User authorizes independent neutral webworkbench presentation; no new
+dependencies/controller/native lifetime. Synthetic DOM is not installedacceptance.
+
+### Resource cache alias removal correction (2026-10-13)
+
+ABDM Desktop NativeMessaging `BrowserMessageRequest.kt:7-25,49-50` was inspected first for request identity; no equivalent inspected extension cache is claimed. Legacy `D:\Code\NxTools\browser_extension\nxtools-interceptor\background.js::{cacheResource:1665-1741,pruneResources:1743-1756,loadPersistentResources:1783-1820,clearTabResources:3887-3896}` stores canonical IDs and normalized URL aliases in the same per-tab/global maps. Its capacity loop sorts duplicate values and removes only resource.id, leaving URL aliases. Current Next has the same capacity/removal shape; its same-URL merge additionally overwrites the cached stable ID through incoming metadata.
+
+Verified Next chain: request/response/page observations -> cacheResource -> canonical+URL alias indexes -> bounded capacity; pruneResources handles TTL/unusable URLs; loadPersistentResources rebuilds indexes and rewrites sanitized storage; clearTabResources retires tab entries. sendResource/sendResourcesBatch resolve IDs, persist pending identity before dispatch, and resolve the current resource again on matching acceptance. No UI/window/focus/native-show lifecycle changes are part of this cache slice.
+
+Required invariants: capacity counts distinct resource objects, not index keys; removal clears canonical/alias references to that object in both indexes without removing an alias now owned by another object. Same-URL metadata shares original source-priority policy but never transfers stable ID/tab/URL/timestamp/pending/sent identity. Recapture retains the authoritative object and pending ID; late acceptance cannot clear a newer handoff. Restore enforces the same bounded index rules and storage projection still excludes privileged context. Isolated Node production-entry regressions reproduced premature eviction, orphan alias and overwritten ID before the fix; real browser acceptance remains separate.
+
+### Isolated CRX signing identity (2026-10-13)
+ABDM Desktop BrowserMessageRequest.kt was inspected first for NativeMessaging request identity; no equivalent CRX signer claimed. Legacy D:\Code\NxTools\Services\BrowserExtensionPackageService.cs::CreateCrx3Bytes303-326,LoadOrCreateSigningKey365-395,ResolveSigningKeyPath398-404 retains CRX3 SHA256/SPKI first16bytes, RSA2048 PKCS1/SHA256, per-user LocalAppData/NxTools/browser_extension_key.pem and existing-key reuse. Verified Next Export -> source resolution -> ZIP -> CRX signer -> PEM, and registrar EnsureTransaction -> command/pinned-manifest/exported-key origin union. Export's working-directory fallback is intentionally absent from registrar source resolution. Firefox manifest ID and registration transaction remain original.
+
+Correction: old temp-source/output test still called production-key Export; a pure reflection red guard failed before introducing explicit ExportWithSigningKey. Tests now pass their own temporary PEM; internal BrowserExtensionSigningIdentity owns only legacy path, SPKI-to-ID and read-existing identity. Export remains sole key creator, registration read-only, missing key contributes no origin, malformed Base64/IO fallback and cryptographic/JSON failure categories unchanged. Fixed public-key vector yields haohhnpjfggpdadhcbjakjpkmkljkpif. Actual temp CRX signature verifies and maps to registration origin; no production PEM/registry/browser/install operations. Source guards protect explicit-key test use and independent source fallbacks. No UI/layout/focus/native-window lifecycle change.
+
+## Installed completion readback / monitor-footer correction (2026-10-13)
+ABDM Desktop CompletedDownloadPage/ProgressDownloadPage/ShowDownloadDialogs/CustomWindow and legacy DownloadProgressWindow/DownloadCompletedWindow/MainWindow/WindowAnimationService were rechecked before repair; exact paths/native-boundary availability and stronger success-only Next policy are in [download outcomes](../../.trellis/tasks/10-13-installed-lifecycle-feedback/download-outcomes.md).
+Rust artifact_actions already closes matching-success/current HWND/generation only. C# ExplorerShellActivation had a wrong duplicated IDispatch GUID/property-ID/type contract, now removed in favor of existing ExplorerWindowAdapter IExplorerBrowserDispatch (IWebBrowser2,HWND-515/int,LocationURL211/string). Actual reflection metadata red and4safe fake-native fixtures pass; real Explorer open/foreground remains untested, never changed to unconditional click-close.
+Released Small Toolbar stays32px, now centered in original44px rail; copy separates engine active_connections from total segment vector, nontransfer0/unknownexplicit. Actual render red catches top-biased controls; final Desktop658 passes. No native window budget inflation or packaged/visual/installed acceptance claim.
+
+## Round-2 Explorer target observation (R5, 2026-10-13)
+ABDM was inspected first: desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/singleDownloadPage/CompletedDownloadPage.kt:87-104 delegates open/reveal; shared/utils/src/desktopMain/kotlin/ir/amirab/util/osfileutil/WindowsFileUtils.kt:24-39,57-96 uses native selection/open then one executable fallback. It checks API acceptance, not foreground or selection readback. Legacy D:\Code\NxTools\Views\DownloadCompletedWindow.axaml.cs:17-35,56-75 derives from Avalonia Window, initializes animation, dispatches owner action then closes; ViewModels/MainWindowViewModel.cs:1583-1616,1636-1658 selects existing files, opens directories and catches launch failures. Approved R5 deliberately strengthens completion to observed target, not acceptance, while making activation best effort.
+Verified Next native chain: PlatformPipeClient.cs:688-691 -> WindowsPlatformAdapter.OpenShellTargetAsync:931-1025 (detached STA, correlated stages/terminal/elapsed) -> ClipboardShellTarget.cs:123-133 -> ExplorerShellActivation -> ExplorerNativeFolder.Open/Select -> ShellExecuteW or SHOpenFolderAndSelectItems; relative child PIDL stays borrowed until call return. Existing folder-only FindExplorerWindow and root foreground equality cannot prove requested selection and cannot distinguish Windows11 tabs sharing one root.
+Required invariants: observe the active visible Shell view's actual folder and selected exact filesystem item; a matching folder alone never confirms a file. Active-view background dispatch comes from IShellBrowser.QueryActiveShellView -> IShellView.GetItemObject(SVGIO_BACKGROUND,IID_IDispatch), not an arbitrary same-root browser Document/LocationURL. Preserve STA/COM ownership and bounded existing eight-attempt loop/one fallback; no second worker. Target confirmed succeeds independently of foreground denial; missing/wrong/unobserved target remains failure. Correlation/stages remain payload-free; Rust owns originating window identity/close and cancellation. No placement/layout/focus-policy change or live Shell acceptance is implied.
+
+## Explorer reader recurrence (2026-10-13)
+Rechecked the same ABDM/legacy action/constructor sources indexed above. Windows SDK ShlDisp.h establishes that active.Folder returns base Folder, while Self belongs to Folder2. Current native chain now uses ExplorerShellActivation.ReadFolderSelf -> explicit IID_Folder2 -> get_Self native slot17 -> actual directory plus selected item paths -> ObserveTarget -> correlated result -> Rust current originating-window close. Owned COM red reproduced missing Self; exact Explorer13 fixtures and real GPUI completion action/result lifecycle pass. Launch acceptance remains insufficient; no unconditional click-close, live Explorer enumeration or installed/UNC/Windows11-tab acceptance was performed. Exact evidence: .trellis/tasks/10-13-explorer-theme-recurrence/native-outcomes.md.
+
+## Installed Reveal observation follow-up (2026-10-14)
+ABDM WindowsFileUtils.kt:24-39,57-96 was inspected first, then legacy DownloadCompletedWindow.axaml.cs:10-35,56-75, MainWindow.axaml.cs:2193-2226 and WindowAnimationService.cs:13-44, followed by MainWindowViewModel.cs:1583-1616,1636-1658. The constructor attaches Avalonia Opened/Closing animation; keyed completion presentation calls ShowIndependentSecondaryWindow; owner action launches selection/directory before animated Close. Avalonia's actual native Window implementation is not checked into the legacy tree. Next retains stronger exact-observed-target/current-HWND/generation success-only close, detached STA and independent best-effort foreground.
+Newly reviewed omission seam: ExplorerShellActivation.NativeTargetObservationPlatform.ReadActiveViews consumes IWebBrowser2.HWND, tests its class as a top-level Explorer root, then queries IServiceProvider -> IShellBrowser -> active IShellView -> GetWindow/visible-root check -> background automation. A browser child HWND must not be confused with its CabinetWClass root; hidden/inactive views still cannot count. Passive existing-window enumeration in the available session returned ShellWindows count0 and Explorer/tab class counts0; this is not evidence about the user's installed Explorer window. Owned COM/native-chain regression and limits are recorded in .trellis/tasks/10-14-installed-feedback-actions/explorer-outcomes.md; no launch acceptance or unconditional close is permitted.
+Native gate regression reproduced the omission with owned IWebBrowser2 IDispatch HWND readback, IServiceProvider/IShellBrowser/IShellView COM vtables and actual self-owned CabinetWClass -> ShellTabWindowClass -> visible view HWNDs. Top-level input reached GetItemObject; child input stopped before QueryService with no HRESULT. Reader now normalizes IWebBrowser2.HWND via GetAncestor(GA_ROOT) before the class gate and preserves active-view visibility/root and exact directory/selected-item checks. Both inputs now reach the deliberately failing GetItemObject boundary with preserved E_ACCESSDENIED and balanced references; hidden/wrong-root views still fail closed. Fixed observation-stage vocabulary is emitted once per command per stage, without payloads. This proves the native child-handle gate defect, not that the unavailable installed user window returned that handle. Further verified legacy show boundary: MainWindow.axaml.cs:2844-2884 -> window.Show():2867, topmost-only passive retention:2663-2666; Avalonia native implementation remains unavailable. Exact safe Explorer13 subset passed, no packaging/live Reveal.
+
+## Contextual extension submenu correction (2026-10-15)
+Reread ABDM `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/pages/home/sections/DownloadList.kt` selection/context owners and old NxTools `Views/MainWindow.axaml.cs:1335–1345` SelectTaskForContextMenu -> BuildTaskContextMenu.Open, `:1452–1488` normal file/queue/transfer/copy groups and real submenus. User explicitly requests extension actions after normal commands and cascading rather than a modal chooser; no such legacy plugin menu is claimed. Next keeps selected task IDs/capability plan/original engine/native callbacks, adds official KitPopupMenu child entity after normal operations/before destructive group, actual leaf -> current ExtensionApplication::start_manual, no chooser/input guessing. Actual GPUI regression checks order, right-expand/click, no chooser and fixed service-unavailable failure without running a fixture executable. No download engine/resolution/receipt/network policy changed; [UX outcomes](../../.trellis/tasks/10-15-extension-action-feedback/ux-outcomes.md).
+
+## Selected-download toolbar alignment / shared outcomes (2026-10-16)
+Reread ABDM DownloadList.kt selection/context ownership first, then legacy MainWindow.axaml.cs1335–1345 SelectTaskForContextMenu/BuildTaskContextMenu and existing normal command topology. User explicitly requests centered multi-selection content; no legacy centered-toolbar equivalent is claimed. Next retains selected stable IDs/capability subset/original engine and queue callbacks; official Toolbar.content/ToolbarGroup centers intrinsic summary+eligible actions across the full rail with clear independently right. Actual Small24 buttons require24px wrappers: historical28px wrappers left4px trailing slack even when the group container was centered. Real production geometry red/green and original batch/clear dispatch protect the correction. Extension launch/terminal reporting now uses the shared notification system, not automatic failure/report Dialogs; service-unavailable fixture verifies error notification plus0runs. [Outcomes](../../.trellis/tasks/10-16-menu-notification-refinement/outcomes.md).
+
+## 2026-10-22 user-authorized probe latency diagnosis (before repair)
+This slice explicitly excludes re-reading old NxTools downloads; ABDM HttpDownloaderClient::test -> head(credentials,0,255) -> OkHttpHttpDownloaderClient::actualHead actually uses GET (head() commented) then bounded nonrange fallback. All requests use applyProxy; ProxyManager strategy/SystemProxySelector provider owns direct/system/manual. FluxDown meta_prober bounded8s HEAD preserves requestcontext; auto_proxy is separate direct-first sampling/hotroute behavior, NOT adopted and noAGPLcodecopied.
+Next chain DownloadApplication/NewDownloadView -> DownloadEngine probe/resolveroperation -> sharedNetworkPolicy immutable snapshot/clientcachegeneration+30sTTL -> HttpDownloadClient::probe_timed HEAD+Range -> metadata/manifest -> correlatedUI/nativeconfirmation. Local headslow fixture returns usableRange immediately/HEAD1s; added timing assertion red measured1.003s because tokio::join awaits both. Existing stage timings distinguish head/range/fallback/manifest, no payload logs. Approved optimization: race both, then bounded companion metadata grace after first usableheaders, preserve timely HEAD-onlyfilename and validRange evidence; failed first response must still await second/fullfallback. Late cancelled companion cannot mutate accepted request/name or prove resume. Actualexternalresource/systemWindowsproxy symptom not yet reproduced; no TLSbypass/directfallback/PAC/autoswitch. Child10-22-download-probe-latency records exactmeasurements/limits.
+
+##2026-10-22 probe latency boundary closeout
+Verified local1sslowHEAD red1.0030359s; usableRange/HEAD path now350mscompaniongrace, with delayed200msHEAD-onlyfilename retained and skippedRange never claimingresume. Empty200HEAD regression initiallylost16bytelength; `usable_probe_response` now requireslength/validRange/recognizedmedia before boundedcompanionwait, otherwiseawaitother. No blindfirstsuccesswinner/latebackgroundmetadata oruserfilenameoverwrite. SlowHLS/DASHbodydeadline andactualHTTPstagecancellation use deterministiclocalhostfixtures. HTTP26,resolution15,Downloadlib117,serialengine103 allpass; generation/route/certificate/30sclientcachepolicy unchanged/tested.
+Network3 actualrequesttests verifyDirectoriginform, injectedSystemabsoluteform andManualproxyreceipt, plusimmutablesnapshot. Systemtestinjectsclientresolver/proxyonly, notWindowsregistry/PAC; no systemsettingsread/write. ABDMwasinspectedfirst; FluxDownbehavioronly/noAGPLimplementationcopy; oldNxToolsdownloadsourcewasnotrevisitedinthisslice. NoexternalURLprovided, soexternalresource-discovery/proxycause remainsunreproduced. Existingcorrelatedstageelapsed/route/skipflagsnarrowdiagnostics remainpayloadfree; nobrowser/resolver/globaltimeoutrewrite.

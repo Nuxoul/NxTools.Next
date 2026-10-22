@@ -1,0 +1,4 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Serial safe verification versus installed/native boundaries"}
+{"file":".trellis/spec/nxtools-download/backend/database-guidelines.md","reason":"Durable statistics transaction and legacy/crash reliability"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Exact Explorer target success and correlated completion"}
+{"file":".trellis/tasks/10-13-installed-feedback-round2/outcomes.md","reason":"Actual red-green and deferred acceptance"}

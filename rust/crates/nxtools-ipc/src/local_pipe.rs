@@ -25,12 +25,15 @@ use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
 };
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, PIPE_READMODE_BYTE,
-    PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT, PeekNamedPipe,
-    WaitNamedPipeW,
+    ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, GetNamedPipeServerProcessId,
+    PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
+    PIPE_WAIT, PeekNamedPipe, WaitNamedPipeW,
 };
 use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::Threading::{
+    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
+    QueryFullProcessImageNameW,
+};
 
 pub const INDEXER_PIPE_NAME: &str = r"\\.\pipe\nxtools-next-indexer-v1";
 const PIPE_BUFFER_BYTES: u32 = 64 * 1024;
@@ -218,8 +221,12 @@ pub fn connect_local_pipe(pipe_name: &str, timeout: Duration) -> Result<LocalPip
 }
 
 fn current_user_sid_string() -> Result<String> {
+    process_user_sid_string(unsafe { GetCurrentProcess() })
+}
+
+fn process_user_sid_string(process: *mut c_void) -> Result<String> {
     let mut token = ptr::null_mut();
-    let opened = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) };
+    let opened = unsafe { OpenProcessToken(process, TOKEN_QUERY, &raw mut token) };
     if opened == 0 {
         return Err(std::io::Error::last_os_error())
             .context("failed to open the current process token");
@@ -331,6 +338,140 @@ fn server_client_identity(handle: *mut c_void) -> Option<(u32, u32)> {
     let mut session_id = 0;
     let resolved = unsafe { ProcessIdToSessionId(process_id, &raw mut session_id) };
     (resolved != 0).then_some((process_id, session_id))
+}
+
+/// Short secondary-client writes must not wait forever on a peer that stops reading.
+pub(crate) fn write_desktop_frame(file: &mut File, bytes: &[u8], timeout: Duration) -> Result<()> {
+    use std::io::Write;
+    use windows_sys::Win32::System::Pipes::{PIPE_NOWAIT, SetNamedPipeHandleState};
+    let mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
+    if unsafe { SetNamedPipeHandleState(file.as_raw_handle(), &mode, ptr::null(), ptr::null()) }
+        == 0
+    {
+        return Err(std::io::Error::last_os_error()).context("desktop pipe write mode failed");
+    }
+    let deadline = Instant::now() + timeout;
+    let result = (|| -> Result<()> {
+        let mut written = 0;
+        while written < bytes.len() {
+            if Instant::now() >= deadline {
+                bail!("desktop pipe write expired");
+            }
+            match file.write(&bytes[written..]) {
+                Ok(0) => std::thread::sleep(Duration::from_millis(2)),
+                Ok(count) => written += count,
+                Err(error)
+                    if error.kind() == ErrorKind::WouldBlock
+                        || error.raw_os_error() == Some(232) =>
+                {
+                    std::thread::sleep(Duration::from_millis(2))
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
+    })();
+    let mode = PIPE_READMODE_BYTE | PIPE_WAIT;
+    if unsafe { SetNamedPipeHandleState(file.as_raw_handle(), &mode, ptr::null(), ptr::null()) }
+        == 0
+    {
+        return Err(std::io::Error::last_os_error()).context("desktop pipe restore mode failed");
+    }
+    result
+}
+
+/// Security descriptor lives until CreateNamedPipe returns; Windows copies it.
+pub(crate) fn create_current_user_async_pipe(
+    pipe_name: &str,
+    first: bool,
+) -> Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    let sid = current_user_sid_string()?;
+    let sddl = wide(&format!("D:(A;;GA;;;SY)(A;;GA;;;{sid})"));
+    let mut descriptor: PSECURITY_DESCRIPTOR = ptr::null_mut();
+    if unsafe {
+        ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            sddl.as_ptr(),
+            SDDL_REVISION_1,
+            &raw mut descriptor,
+            ptr::null_mut(),
+        )
+    } == 0
+    {
+        return Err(std::io::Error::last_os_error()).context("desktop pipe security failed");
+    }
+    let allocation = LocalAllocation(descriptor);
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: allocation.0,
+        bInheritHandle: 0,
+    };
+    let result = unsafe {
+        tokio::net::windows::named_pipe::ServerOptions::new()
+            .first_pipe_instance(first)
+            .reject_remote_clients(true)
+            .create_with_security_attributes_raw(pipe_name, (&raw mut attributes).cast())
+    };
+    result.context("desktop pipe creation failed")
+}
+
+/// Actual kernel pipe PID, token SID, session and executable identity, in both directions.
+/// The wire's client_name/capabilities are never authority. Only this exact running image
+/// is admitted (protected redirect already forwards original argv to that image).
+pub(crate) fn authorize_desktop_peer(
+    handle: *mut c_void,
+    server: bool,
+) -> Result<(), nxtools_protocol::desktop_archive_intent::LaunchFailure> {
+    use nxtools_protocol::desktop_archive_intent::LaunchFailure;
+    let authorize = || -> Result<()> {
+        let mut peer_pid = 0u32;
+        let identified = unsafe {
+            if server {
+                GetNamedPipeClientProcessId(handle, &raw mut peer_pid)
+            } else {
+                GetNamedPipeServerProcessId(handle, &raw mut peer_pid)
+            }
+        };
+        if identified == 0 || peer_pid == 0 {
+            bail!("desktop peer PID unavailable");
+        }
+        let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, peer_pid) };
+        if process.is_null() {
+            bail!("desktop peer process unavailable");
+        }
+        let process = OwnedHandle(process);
+        let mut peer_session = 0;
+        let mut own_session = 0;
+        if unsafe { ProcessIdToSessionId(peer_pid, &raw mut peer_session) } == 0
+            || unsafe { ProcessIdToSessionId(std::process::id(), &raw mut own_session) } == 0
+            || peer_session != own_session
+            || process_user_sid_string(process.0)? != current_user_sid_string()?
+        {
+            bail!("desktop peer identity rejected");
+        }
+        let mut path = vec![0u16; 32768];
+        let mut length = path.len() as u32;
+        if unsafe { QueryFullProcessImageNameW(process.0, 0, path.as_mut_ptr(), &raw mut length) }
+            == 0
+        {
+            bail!("desktop peer image unavailable");
+        }
+        let peer_path = String::from_utf16(&path[..length as usize])?;
+        let own_path = std::env::current_exe()?;
+        if !peer_path
+            .trim_start_matches(r"\\?\")
+            .replace('/', "\\")
+            .eq_ignore_ascii_case(
+                &own_path
+                    .to_string_lossy()
+                    .trim_start_matches(r"\\?\")
+                    .replace('/', "\\"),
+            )
+        {
+            bail!("desktop peer image rejected");
+        }
+        Ok(())
+    };
+    authorize().map_err(|_| LaunchFailure::Unauthorized)
 }
 
 fn wide(value: &str) -> Vec<u16> {

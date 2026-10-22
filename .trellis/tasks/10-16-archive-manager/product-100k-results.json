@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "phase": "Phase A — Engine contracts and safety foundation",
+  "scope": "Explicit finite readonly product100k v2; not full ENG08/Phase A/A–F acceptance",
+  "cargo_environment": {"CARGO_BUILD_JOBS": "1", "CARGO_INCREMENTAL": "0", "RUSTFLAGS": "-C codegen-units=256"},
+  "fixture": {
+    "generator": "tests/performance/archive-resources/fixtures.py --catalog-only",
+    "entries": 100000, "directories": 100, "unicode_files": 100, "empty_files": 9081,
+    "payload_bytes": 1362285, "zip_bytes": 12161983,
+    "zip_sha256": "34a9f9fe2e1d669b825d3557e523cadf00aeabf1ebfe187c99fcd4475cda956d",
+    "manifest_sha256": "4fd4bdca3f5ceb0f388206c1c2a12cf827be97856313f3be85c5efb31e2768dc",
+    "no_1gib_generated": true
+  },
+  "budgets": {"entries": 100000, "engine_metadata_bytes": 134217728, "work_bytes": 67108864, "job_process_bytes": 268435456, "max_transport_bytes": 67108864, "max_retained_bytes": 67108864, "batch_entries": 256, "batch_bytes": 262144, "inflight_batches": 1, "product_timeout_ms": 30000},
+  "attempts": [
+    {"name": "product100k-v2-correctness", "driver_exit": 1, "probe_exit": 101, "verdict": "Stopped", "measurement": "Complete", "cleanup": "Incomplete", "forced": false, "reason": "probe_deadline; original pipe ended before remote terminal capture", "elapsed_ms": 128573.56889999994, "attempt_sha256": "56140d80889d98a9c9986a75da2fa4ef9402045f51e7a6a1edb6cec4cf7808d3", "samples_sha256": "492fdda89b97caf009b80c93980c24db7a09cda9596f3ff71bcd138f07db7c3d", "retained_unchanged": true},
+    {"name": "product100k-v2-repeat", "declared_before_execution": true, "reason": "One repeat after deterministic original-pipe partial-frame cancellation repair; not best-score hunting", "driver_exit": 0, "probe_exit": 0, "verdict": "PASS", "measurement": "Complete", "cleanup": "Confirmed", "stop_requested": false, "forced": false, "failure": null, "operation_id": "8cef7cd6-50d5-4f9a-b223-73b4dc7443cf", "snapshot_id": "32cc12eb-a18d-4ec9-b845-93ee192d4fbc", "manifest_all_fields_exact": true, "entries": 100000, "batches": 391, "first_batch_ms": 2275.9759000000004, "full_product_terminal_ms": 7006.915300000001, "runner_terminal_ms": 7001, "whole_probe_ms": 8093.353400000069, "private_bytes": 16745255, "csharp_serialized_received_bytes": 16708854, "rust_serialized_received_bytes": 16707854, "max_batch_entries": 256, "max_batch_bytes": 42817, "max_inflight_batches": 1, "same_connection_reused": true, "default_resource_limit": true, "source_released": true, "helper_released": true, "package_removed": true, "attempt_sha256": "5bd49c2d7f5883950a1c0e0170abddd3bb054157ea7e426bb1e17ba20f4b6958", "samples_sha256": "4881326355ef1a67f0bddaee050e7d0fc2db7aa558087b56fa8046b8063a6840", "retained_unchanged": true}
+  ],
+  "successful_sampled_processes": [
+    {"pid": 25592, "parent_pid": 16216, "role": "Rust caller", "valid_samples": 245, "counter_failures": 0, "peak_working_set_bytes": 9232384, "peak_private_bytes": 2789376, "max_sample_gap_ms": 32.785, "identity_verified": true, "alive_at_end": false},
+    {"pid": 2556, "parent_pid": 25592, "role": "isolated C# host", "valid_samples": 243, "counter_failures": 0, "peak_working_set_bytes": 67211264, "peak_private_bytes": 36499456, "max_sample_gap_ms": 32.785, "identity_verified": true, "alive_at_end": false},
+    {"pid": 18788, "parent_pid": 2556, "role": "actual100k Rust worker", "valid_samples": 223, "counter_failures": 0, "peak_working_set_bytes": 67010560, "peak_private_bytes": 70864896, "max_sample_gap_ms": 32.534, "identity_verified": true, "alive_at_end": false}
+  ],
+  "verification": {
+    "archive_full_isolated_offline_serial_no_fail_fast": {"passed": 150, "failed": 0, "ignored": 0, "groups": 26, "exit": 0},
+    "protocol_lib": {"passed": 53, "failed": 0, "ignored": 0, "exit": 0},
+    "ipc_lib": {"passed": 30, "failed": 0, "ignored": 0, "exit": 0},
+    "clippy_tests_examples_isolated": {"exit": 0}, "clippy_tests_examples_default": {"exit": 0},
+    "global_fmt_check": {"exit": 0}, "workspace_check_tests_offline": {"exit": 0, "not_workspace_tests": true},
+    "extensions_archive_import": {"passed": 7, "failed": 0, "ignored": 0, "exit": 0},
+    "clipboard_lib_archive": {"passed": 5, "failed": 0, "ignored": 0, "exit": 0},
+    "resource_example_tests": {"passed": 11, "failed": 0, "ignored": 0, "exit": 0},
+    "python_tools": {"passed": 28, "failed": 0, "skipped": 0, "exit": 0},
+    "csharp_build": {"warnings": 0, "errors": 0, "exit": 0},
+    "csharp_exact_list": {"selected": 134, "run": 0, "passed": 0, "skip": 0, "fail": 0, "not_run": 134, "exit": 0},
+    "csharp_same_execution": {"selected": 134, "run": 134, "passed": 134, "skip": 0, "fail": 0, "not_run": 0, "exit": 0, "prior_132_preserved": true, "new_fixture_names": ["archive product fixture v2 finite negotiation", "archive product fixture v2 actual open test privacy"], "list_run_pass_names_equal": true},
+    "large_zip64_runs": 0, "one_gib_runs": 0, "review_passes": 1
+  },
+  "history_sha256": {
+    "resource-acceptance-review.md": "ba8aefbd75ab516631f49cddbebac7d289050266194149ced738895691cc54ca",
+    "resource-tool-repair-acceptance.md": "f553329a7cba08ece6b8166b9a66464cea67337ca237de25585d9680a40434c6",
+    "resource-summary-p2-acceptance.md": "100998818ffd8c982d62d2cab4b6d4bf1603b53df729f0506bc14a4b277839eb",
+    "product-read-p2-acceptance.md": "44055e7192c790724b28fe378333a8b9b20b69a3b4801c86222aacff381f9cc8"
+  },
+  "raw_evidence": {"session_scratch": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\30608b1f-4d13-4908-94fc-6b4d37c1bb7d", "fixture_root": "archive-resources-4df6f316-259a-49fc-829e-0d8f95ac8816", "full_results": "product-100k-results-full.json", "full_results_sha256": "32ebaf1ebb87d3a6b194e498df57470de3dd841cc42b2f01c2081cf5f4171f2d", "command_ledger": "product-100k-verify-ledger.jsonl", "csharp_results": "product-100k-csharp-final-results.json", "cleanup": "product-100k-cleanup.json"},
+  "cleanup": {"self_owned_live_processes": 0, "attempt_samples_unchanged": true, "successful_package_removed_by_original_guard": true, "first_failed_helper_removed_later_after_exact_exit_unlock_hash": true, "first_failed_cleanup_not_rewritten": true, "known_synthetic_zip_inputs_hash_verified_then_removed": true, "manifest_logs_control_and_failed_default_terminal_retained": true},
+  "final_gates": {"spec_contracts": {"documents": 106, "owners": 14, "exit": 0}, "task_context": {"implement_entries": 68, "check_entries": 65, "exit": 0, "existing_warning": "platformhost/native-contracts.md 35497 bytes exceeds 32768; unchanged"}, "catalog": {"pages": 79, "rows": 79, "locked": 78, "exit": 0}, "platformhost_selector": "PASS source gate", "git_diff_check_exit": 0, "scoped_whitespace_conflict_temporary_marker": "PASS", "historical_task_files_unchanged": 74, "attempt_sample_hashes_unchanged": true, "owned_processes": 0, "archive_test_pipes": 0, "fixed_test_helpers": 0, "reference_note_bytes": 32746},
+  "caveats": ["Debug; ordinary access, no controlled cold/warm cache", "First business batch is not first paint", "20ms requested/50ms discovery; actual gaps retained; sampled peaks are not absolute peaks", "C# JSON escaping changes serialized byte counts relative to Rust; both finite bounds enforced", "Whole caller/host lifetime includes default refusal and small reuse; actual100k worker separated by exact PID", "Default legacy runner8MiB behavior remains; no global stdout increase", "Historical unexplained C# process exit is not diagnosed or erased", "Native recycle remains native_protection_unproven/NotAttempted", "No UI/write/FIFO/Release/deployment/full Phase A acceptance"]
+}

@@ -1,0 +1,2 @@
+# Measurement boundary
+HttpDownloadClient::probe_timed joins HEAD/Range and merges metadata; current headslow test lacks timing assertion. Add local controllable timing+real proxy fixtures first, then choose bounded Range-first/HEAD supplement only if regressions preserve HEAD-only filename/range/validator semantics. No blind first-response wins/global timeout cut. Shared NetworkPolicy snapshot/client cache owns route; fixed-stage/correlation timings no URLs/endpoints/headers/cookies/secrets. Change browser/resolver only if reproduction points there.

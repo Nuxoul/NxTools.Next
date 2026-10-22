@@ -1,15 +1,22 @@
-use std::rc::Rc;
-use std::time::Duration;
+//! Bounded business ingress and action ownership; the official NotificationList owns UI lifetime.
+use gpui_kit::{AnyWindowHandle, App, Context, Entity, Global, SharedString, WeakEntity, Window};
+pub(crate) use nxtools_core::NotificationPosition;
+use std::{rc::Rc, time::Duration};
+pub(crate) mod presentation;
+pub(crate) mod screen;
 
-use gpui::{App, Context, SharedString, Window};
-
+#[derive(Clone)]
+pub(crate) struct NotificationCenterGlobal(pub WeakEntity<NotificationCenter>);
+impl Global for NotificationCenterGlobal {}
+pub(crate) fn register(center: &Entity<NotificationCenter>, cx: &mut App) {
+    cx.set_global(NotificationCenterGlobal(center.downgrade()));
+}
+pub(crate) fn current(cx: &App) -> Option<Entity<NotificationCenter>> {
+    cx.try_global::<NotificationCenterGlobal>()
+        .and_then(|global| global.0.upgrade())
+}
 const MAX_VISIBLE_NOTIFICATIONS: usize = 3;
-const COMPLETION_DURATION: Duration = Duration::from_secs(6);
-const ERROR_DURATION: Duration = Duration::from_secs(10);
-pub(crate) const NOTIFICATION_EXIT_DURATION: Duration = Duration::from_millis(120);
-
 type NotificationActionHandler = dyn Fn(&mut Window, &mut App);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NotificationLevel {
     Progress,
@@ -17,13 +24,11 @@ pub(crate) enum NotificationLevel {
     Success,
     Error,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NotificationDetail {
     pub label: SharedString,
     pub value: SharedString,
 }
-
 impl NotificationDetail {
     pub(crate) fn new(label: impl Into<SharedString>, value: impl Into<SharedString>) -> Self {
         Self {
@@ -32,13 +37,11 @@ impl NotificationDetail {
         }
     }
 }
-
 #[derive(Clone)]
 pub(crate) struct NotificationAction {
     pub label: SharedString,
     handler: Rc<NotificationActionHandler>,
 }
-
 impl NotificationAction {
     pub(crate) fn new(
         label: impl Into<SharedString>,
@@ -49,12 +52,10 @@ impl NotificationAction {
             handler: Rc::new(handler),
         }
     }
-
     pub(crate) fn invoke(&self, window: &mut Window, cx: &mut App) {
         (self.handler)(window, cx);
     }
 }
-
 #[derive(Clone)]
 pub(crate) struct AppNotification {
     pub id: SharedString,
@@ -63,12 +64,16 @@ pub(crate) struct AppNotification {
     pub message: SharedString,
     pub details: Vec<NotificationDetail>,
     pub action: Option<NotificationAction>,
+    pub additional_actions: Vec<NotificationAction>,
+    pub target: Option<AnyWindowHandle>,
+    action_claimed: bool,
     pub exiting: bool,
     generation: u64,
+    persistent: bool,
+    dwell: Option<Duration>,
 }
-
 impl AppNotification {
-    fn new(
+    pub(crate) fn new(
         id: impl Into<SharedString>,
         level: NotificationLevel,
         title: impl Into<SharedString>,
@@ -81,37 +86,128 @@ impl AppNotification {
             message: message.into(),
             details: Vec::new(),
             action: None,
+            additional_actions: Vec::new(),
+            target: None,
+            action_claimed: false,
             exiting: false,
             generation: 0,
+            persistent: level == NotificationLevel::Progress,
+            dwell: None,
         }
     }
-
-    fn with_details(mut self, details: Vec<NotificationDetail>) -> Self {
+    pub(crate) fn with_details(mut self, details: Vec<NotificationDetail>) -> Self {
         self.details = details;
         self
     }
-
     fn with_action(mut self, action: Option<NotificationAction>) -> Self {
         self.action = action;
         self
     }
-
+    pub(crate) fn actions(mut self, actions: Vec<NotificationAction>) -> Self {
+        let mut actions = actions.into_iter().take(2);
+        self.action = actions.next();
+        self.additional_actions = actions.collect();
+        self
+    }
+    pub(crate) fn in_window(mut self, window: AnyWindowHandle) -> Self {
+        self.target = Some(window);
+        self
+    }
+    /// Debug fixtures can request persistence or an explicit official timeout.
+    #[cfg(any(test, debug_assertions))]
+    pub(crate) fn duration(mut self, duration: Option<Duration>) -> Self {
+        self.persistent = duration.is_none();
+        self.dwell = duration;
+        self
+    }
     pub(crate) fn generation(&self) -> u64 {
         self.generation
     }
 }
-
-#[derive(Default)]
 pub(crate) struct NotificationCenter {
     items: Vec<AppNotification>,
     next_generation: u64,
+    position: NotificationPosition,
+    duration_seconds: u32,
 }
-
+impl Default for NotificationCenter {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            next_generation: 0,
+            position: NotificationPosition::default(),
+            duration_seconds: nxtools_core::default_notification_duration(),
+        }
+    }
+}
 impl NotificationCenter {
+    pub(crate) fn set_duration_seconds(&mut self, seconds: u32, cx: &mut Context<Self>) {
+        let seconds = seconds.clamp(1, 60);
+        if self.duration_seconds() != seconds {
+            self.duration_seconds = seconds;
+            cx.notify();
+        }
+    }
+    pub(crate) fn duration_seconds(&self) -> u32 {
+        self.duration_seconds
+    }
+    pub(crate) fn position(&self) -> NotificationPosition {
+        self.position
+    }
+    pub(crate) fn set_position(&mut self, position: NotificationPosition, cx: &mut Context<Self>) {
+        if self.position != position {
+            self.position = position;
+            cx.notify();
+        }
+    }
+    pub(crate) fn push(&mut self, notification: AppNotification, cx: &mut Context<Self>) {
+        let generation = self.upsert(notification);
+        tracing::info!(
+            event = "ui.notification.accepted",
+            generation,
+            visible_count = self.items.len(),
+            "notification admitted to official presentation"
+        );
+        cx.notify();
+    }
     pub(crate) fn items(&self) -> &[AppNotification] {
         &self.items
     }
-
+    pub(crate) fn invoke_action(
+        &mut self,
+        id: &str,
+        generation: u64,
+        index: usize,
+        cx: &mut Context<Self>,
+    ) -> Option<NotificationAction> {
+        let item = self.items.iter_mut().find(|item| {
+            item.id.as_ref() == id
+                && item.generation == generation
+                && !item.exiting
+                && !item.action_claimed
+        })?;
+        let action = if index == 0 {
+            item.action.clone()
+        } else {
+            item.additional_actions.get(index - 1).cloned()
+        }?;
+        item.action_claimed = true;
+        tracing::info!(
+            event = "ui.notification.action",
+            generation,
+            action_index = index,
+            "notification action claimed"
+        );
+        self.start_dismiss(id.into(), generation, cx);
+        Some(action)
+    }
+    pub(crate) fn dismiss_window(&mut self, window: AnyWindowHandle, cx: &mut Context<Self>) {
+        let before = self.items.len();
+        self.items.retain(|item| item.target != Some(window));
+        if before != self.items.len() {
+            cx.notify();
+        }
+    }
     pub(crate) fn show_progress(
         &mut self,
         id: impl Into<SharedString>,
@@ -119,13 +215,11 @@ impl NotificationCenter {
         message: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) {
-        self.show(
+        self.push(
             AppNotification::new(id, NotificationLevel::Progress, title, message),
-            None,
             cx,
         );
     }
-
     pub(crate) fn show_info(
         &mut self,
         id: impl Into<SharedString>,
@@ -133,13 +227,11 @@ impl NotificationCenter {
         message: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) {
-        self.show(
+        self.push(
             AppNotification::new(id, NotificationLevel::Info, title, message),
-            Some(COMPLETION_DURATION),
             cx,
         );
     }
-
     pub(crate) fn show_success(
         &mut self,
         id: impl Into<SharedString>,
@@ -147,13 +239,23 @@ impl NotificationCenter {
         message: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) {
-        self.show(
+        self.push(
             AppNotification::new(id, NotificationLevel::Success, title, message),
-            Some(COMPLETION_DURATION),
             cx,
         );
     }
-
+    pub(crate) fn show_error(
+        &mut self,
+        id: impl Into<SharedString>,
+        title: impl Into<SharedString>,
+        message: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.push(
+            AppNotification::new(id, NotificationLevel::Error, title, message),
+            cx,
+        );
+    }
     pub(crate) fn show_success_with_details(
         &mut self,
         id: impl Into<SharedString>,
@@ -163,29 +265,13 @@ impl NotificationCenter {
         action: Option<NotificationAction>,
         cx: &mut Context<Self>,
     ) {
-        self.show(
+        self.push(
             AppNotification::new(id, NotificationLevel::Success, title, message)
                 .with_details(details)
                 .with_action(action),
-            Some(COMPLETION_DURATION),
             cx,
         );
     }
-
-    pub(crate) fn show_error(
-        &mut self,
-        id: impl Into<SharedString>,
-        title: impl Into<SharedString>,
-        message: impl Into<SharedString>,
-        cx: &mut Context<Self>,
-    ) {
-        self.show(
-            AppNotification::new(id, NotificationLevel::Error, title, message),
-            Some(ERROR_DURATION),
-            cx,
-        );
-    }
-
     pub(crate) fn dismiss_generation(
         &mut self,
         id: impl Into<SharedString>,
@@ -194,223 +280,118 @@ impl NotificationCenter {
     ) {
         self.start_dismiss(id.into(), generation, cx);
     }
-
-    fn show(
-        &mut self,
-        notification: AppNotification,
-        auto_dismiss: Option<Duration>,
-        cx: &mut Context<Self>,
-    ) {
-        let id = notification.id.clone();
-        let generation = self.upsert(notification);
-        cx.notify();
-        let Some(duration) = auto_dismiss else {
-            return;
-        };
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(duration).await;
-            let _ = this.update(cx, |this, cx| {
-                this.start_dismiss(id, generation, cx);
-            });
-        })
-        .detach();
-    }
-
     fn upsert(&mut self, mut notification: AppNotification) -> u64 {
+        if !notification.persistent {
+            notification
+                .dwell
+                .get_or_insert(Duration::from_secs(self.duration_seconds() as u64));
+        }
         self.next_generation = self.next_generation.wrapping_add(1).max(1);
         notification.generation = self.next_generation;
-        let generation = notification.generation;
-        self.items.retain(|existing| existing.id != notification.id);
+        self.items.retain(|item| item.id != notification.id);
         self.items.insert(0, notification);
         self.items.truncate(MAX_VISIBLE_NOTIFICATIONS);
-        generation
+        self.next_generation
     }
-
     fn remove_generation(&mut self, id: &str, generation: u64) -> bool {
-        let previous_len = self.items.len();
+        let before = self.items.len();
         self.items
             .retain(|item| item.id.as_ref() != id || item.generation != generation);
-        self.items.len() != previous_len
+        before != self.items.len()
     }
-
     fn begin_dismiss_generation(&mut self, id: &str, generation: u64) -> bool {
-        let Some(notification) = self
+        let Some(item) = self
             .items
             .iter_mut()
-            .find(|item| item.id.as_ref() == id && item.generation == generation)
+            .find(|item| item.id.as_ref() == id && item.generation == generation && !item.exiting)
         else {
             return false;
         };
-        if notification.exiting {
-            return false;
-        }
-        notification.exiting = true;
+        item.exiting = true;
         true
     }
-
     fn start_dismiss(&mut self, id: SharedString, generation: u64, cx: &mut Context<Self>) {
-        if !self.begin_dismiss_generation(id.as_ref(), generation) {
-            return;
+        if self.begin_dismiss_generation(&id, generation) {
+            cx.notify();
         }
-        if crate::ui::motion::reduced_motion(cx) {
-            if self.remove_generation(id.as_ref(), generation) {
-                cx.notify();
-            }
-            return;
+    }
+    fn completed_close(&mut self, id: &str, generation: u64, cx: &mut Context<Self>) {
+        if self.remove_generation(id, generation) {
+            tracing::info!(
+                event = "ui.notification.closed",
+                generation,
+                "official notification lifecycle finished"
+            );
+            cx.notify();
         }
-        cx.notify();
-        cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(NOTIFICATION_EXIT_DURATION)
-                .await;
-            let _ = this.update(cx, |this, cx| {
-                if this.remove_generation(id.as_ref(), generation) {
-                    cx.notify();
-                }
-            });
-        })
-        .detach();
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use gpui::{AppContext, TestAppContext};
-
-    use super::{AppNotification, NotificationCenter, NotificationLevel};
-
+    use super::*;
     #[test]
     fn notification_queue_replaces_by_id_bounds_visible_items_and_rejects_stale_dismissal() {
         let mut center = NotificationCenter::default();
-        let first_generation = center.upsert(AppNotification::new(
-            "clipboard.database",
+        let old = center.upsert(AppNotification::new(
+            "one",
             NotificationLevel::Progress,
-            "数据库维护",
-            "正在备份…",
+            "one",
+            "progress",
         ));
-        let replacement_generation = center.upsert(AppNotification::new(
-            "clipboard.database",
+        let current = center.upsert(AppNotification::new(
+            "one",
             NotificationLevel::Success,
-            "数据库维护",
-            "备份完成",
+            "one",
+            "done",
         ));
-        assert_ne!(first_generation, replacement_generation);
-        assert!(!center.remove_generation("clipboard.database", first_generation));
-        assert_eq!(center.items().len(), 1);
-        assert_eq!(center.items()[0].level, NotificationLevel::Success);
-        assert_eq!(center.items()[0].message, "备份完成");
-
-        center.upsert(AppNotification::new(
-            "second",
-            NotificationLevel::Info,
-            "第二条",
-            "message",
-        ));
-        center.upsert(AppNotification::new(
-            "third",
-            NotificationLevel::Info,
-            "第三条",
-            "message",
-        ));
-        center.upsert(AppNotification::new(
-            "fourth",
-            NotificationLevel::Error,
-            "第四条",
-            "message",
-        ));
-
-        assert_eq!(center.items().len(), 3);
-        assert_eq!(center.items()[0].id, "fourth");
-        assert!(
-            center
-                .items()
-                .iter()
-                .all(|item| item.id != "clipboard.database")
-        );
+        assert_ne!(old, current);
+        assert!(!center.remove_generation("one", old));
+        for id in ["two", "three", "four"] {
+            center.upsert(AppNotification::new(
+                id,
+                NotificationLevel::Info,
+                id,
+                "message",
+            ));
+        }
+        assert_eq!(center.items.len(), 3);
+        assert_eq!(center.items[0].id, "four");
     }
-
-    #[gpui::test]
-    fn reduced_motion_notification_dismissal_is_immediate_and_generation_scoped(
-        cx: &mut TestAppContext,
-    ) {
-        cx.update(|cx| {
-            cx.set_global(crate::ui::motion::UiMotionPreference::Known {
-                reduced_motion: true,
-            })
-        });
-        let center = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
-        center.update(cx, |center, cx| {
-            center.show_progress("motion", "进度", "合成通知", cx)
-        });
-        let old = center.read_with(cx, |center, _| center.items()[0].generation());
-        center.update(cx, |center, cx| {
-            center.show_progress("motion", "替换进度", "新代次", cx);
-            center.dismiss_generation("motion", old, cx);
-            assert_eq!(
-                center.items().len(),
-                1,
-                "old generation cannot dismiss replacement"
-            );
-            let current = center.items()[0].generation();
-            center.dismiss_generation("motion", current, cx);
-            assert!(
-                center.items().is_empty(),
-                "no animation timer retains reduced-motion notification"
-            );
-        });
-    }
-
     #[test]
     fn completed_notification_preserves_structured_key_details() {
-        let notification = AppNotification::new(
-            "clipboard.database",
-            NotificationLevel::Success,
-            "数据库备份",
-            "已创建可恢复备份 · 200 KB",
-        )
-        .with_details(vec![super::NotificationDetail::new(
-            "保存位置",
-            r"C:\Users\Administrator\AppData\Roaming\NxTools\NxTools.Next\data\backups",
-        )]);
-
-        assert_eq!(notification.details.len(), 1);
-        assert_eq!(notification.details[0].label, "保存位置");
-        assert!(notification.details[0].value.ends_with(r"data\backups"));
+        let note = AppNotification::new("backup", NotificationLevel::Success, "backup", "done")
+            .with_details(vec![NotificationDetail::new("位置", "owned")]);
+        assert_eq!(note.details[0].value, "owned");
     }
-
-    #[test]
-    fn dismiss_marks_the_matching_generation_as_exiting_before_removal() {
-        let mut center = NotificationCenter::default();
-        let generation = center.upsert(AppNotification::new(
-            "clipboard.database",
-            NotificationLevel::Success,
-            "数据库备份",
-            "备份完成",
-        ));
-
-        assert!(center.begin_dismiss_generation("clipboard.database", generation));
-        assert!(center.items()[0].exiting);
-        assert!(!center.begin_dismiss_generation("clipboard.database", generation));
-        assert!(center.remove_generation("clipboard.database", generation));
-        assert!(center.items().is_empty());
-    }
-
-    #[gpui::test]
-    fn deferred_dismiss_does_not_mark_a_replacement_generation_as_exiting(cx: &mut TestAppContext) {
-        let center = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+    #[gpui_kit::test]
+    fn stale_and_duplicate_action_claims_never_execute_replacement(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use gpui_kit::AppContext;
+        let center = cx.new(|_| NotificationCenter::default());
         center.update(cx, |center, cx| {
-            center.show_progress("transfer", "正在下载", "旧 generation", cx);
+            center.push(
+                AppNotification::new("run", NotificationLevel::Info, "run", "old")
+                    .actions(vec![NotificationAction::new("open", |_, _| {})]),
+                cx,
+            )
         });
-        let old_generation = center.read_with(cx, |center, _| center.items()[0].generation());
+        let old = center.read_with(cx, |center, _| center.items[0].generation());
         center.update(cx, |center, cx| {
-            center.show_success("transfer", "下载完成", "新 generation", cx);
-            center.dismiss_generation("transfer", old_generation, cx);
-        });
-
-        center.read_with(cx, |center, _| {
-            assert_eq!(center.items().len(), 1);
-            assert_eq!(center.items()[0].title, "下载完成");
-            assert!(!center.items()[0].exiting);
+            center.push(
+                AppNotification::new("run", NotificationLevel::Info, "run", "new")
+                    .actions(vec![NotificationAction::new("open", |_, _| {})]),
+                cx,
+            );
+            assert!(center.invoke_action("run", old, 0, cx).is_none());
+            let generation = center.items[0].generation();
+            assert!(center.invoke_action("run", generation, 0, cx).is_some());
+            assert!(center.invoke_action("run", generation, 0, cx).is_none());
         });
     }
 }
+#[cfg(test)]
+mod expiry_tests;
+#[cfg(test)]
+pub(crate) mod presentation_tests;

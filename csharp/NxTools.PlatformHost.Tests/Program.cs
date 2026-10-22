@@ -15,17 +15,265 @@ namespace NxTools.PlatformHost.Tests;
 
 internal static class Program
 {
-    public static async Task<int> Main(string[] args)
+    internal static TestCase[] Catalog()
     {
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("archive create overwrite fixture actual confirmation cancel changed target", ArchiveCreateOverwriteTests.ActualConfirmationCancelOverwriteChangedTarget),
+            ("archive create overwrite fixture detached preflight cancellation slot", ArchiveCreateOverwriteTests.ActualDetachedPreflightCancellationRetainsSlot),
+            ("archive job fixture strict wire picker cancellation", ArchiveJobTests.StrictWireAndPickerCancellation),
+            ("archive job fixture actual create extract test journal", ArchiveJobTests.ActualCreateExtractTestJournal),
+            ("archive job fixture actual conflict global admission cancel", ArchiveJobTests.ActualConflictGlobalAdmissionCancel),
+            ("archive job fixture actual selected ZIP 7z RAR source binding", ArchiveJobTests.ActualSelectedZipSevenzRarAndChangedSource),
+            ("archive job fixture actual readmission shortfall no output", ArchiveJobTests.ActualReadmissionShortfallNoOutput),
+            ("archive job fixture actual password diagnostics native failure", ArchiveJobTests.ActualPasswordDiagnosticsAndNativeFailure),
+            ("archive job fixture actual cancel after publication native facts", ArchiveJobTests.ActualCancelAfterPublicationRetainsNativeFacts),
+            ("archive job fixture actual create formats link warning empty", ArchiveJobTests.ActualAllCreateFormatsAndLinkWarnings),
+            ("archive job fixture actual risk pause prompt timeout", ArchiveJobTests.ActualRiskAndPausePromptTimeout),
+            ("archive job fixture actual unique destination folders", ArchiveJobTests.ActualUniqueDestinationFolder),
+            ("archive destination fixture missing low space confirmation", ArchiveDestinationPreflightTests.MissingAndLowSpaceRequireOriginalConfirmation),
+            ("archive cache fixture obstructed retirement restart", ArchiveCacheRetirementTests.ObstructedRetirementAndRestart),
+            ("archive cache fixture expiry startup retained owners", ArchiveCacheRetirementTests.ExpiryStartupAndRetainedOwners),
+            ("archive cache fixture ancestry malformed recovery", ArchiveCacheRetirementTests.AncestryAndMalformedRecovery),
+            ("archive cache fixture fair local retirement rotation", ArchiveCacheRetirementTests.LocallyRetiredLeasesRotateWithoutStarvation),
+            ("archive browser encrypted selected ZIP private lifecycle", ArchiveEncryptedBrowserTests.EncryptedSelectedZipUsesOriginalPrivatePasswordWait),
+            ("archive browser encrypted RAR header cancel selected lifecycle", ArchiveEncryptedBrowserTests.HeaderEncryptedRarReadCancelAndSelected),
+            ("archive browser fixture session stale missing helper", ArchiveBrowserTests.SessionRejectsStaleAndMissingHelper),
+            ("archive browser fixture empty context actual budget", ArchiveBrowserTests.ReadBrowserBudgetAndEmpty),
+            ("archive browser worker selected revision lifecycle", ArchiveBrowserTests.ActualSelectedEntryAndRevision),
+            ("archive browser fixture strict wire backward defaults", ArchiveBrowserTests.WireAndBackwardDefaults),
+            ("archive browser fixture owned lease edited retention", ArchiveBrowserTests.OwnedLeaseRetention),
+            ("archive readmission fixture preflight no output", ArchiveReadmissionTests.PreflightHasNoOutputEffects),
+            ("archive risk fixture actual ZIP confirmation", ArchiveRiskTests.ActualZipRiskConfirmation),
+            ("archive conflict fixture actual ZIP decisions", ArchiveConflictTests.ActualZipConflictDecisions),
+            ("archive conflict fixture actual 7z RAR TAR decisions", ArchiveFormatConflictTests.ActualFormatConflicts),
+            ("archive conflict fixture actual standalone stream decisions", ArchiveStreamConflictTests.ActualStandaloneConflicts),
+            ("archive password fixture actual wait retry cancel", ArchivePasswordTests.ActualPasswordWaitRetryAndCancel),
+            ("archive password fixture actual encrypted extraction", ArchiveExtractPasswordTests.ActualEncryptedExtraction),
+            ("archive encoding fixture Auto manual native output", ArchiveEncodingTests.AutoAndManualNativeOutput),
+            ("archive cancel boundary fixture actual streaming receive observe cleanup", ArchiveCancellationBoundaryTests.StreamingReceiveObserveCleanup),
+            ("archive long path fixture extraction layout", ArchiveLongPathTests.ExtractionLayout),
+            ("archive long path fixture extraction publication", ArchiveLongPathTests.ExtractionPublication),
+            ("archive long path fixture creation publication", ArchiveLongPathTests.CreationPublication),
+            ("archive long path fixture unsafe members", ArchiveLongPathTests.UnsafeMembers),
+            ("archive product fixture rejection transport bound", ArchiveProductSessionTests.RejectionsAndTransportBound),
+            ("archive product fixture actual open test privacy", ArchiveProductSessionTests.ActualOpenTestAndPrivacy),
+            ("archive product fixture slow credit budget cancellation", ArchiveProductSessionTests.SlowCreditBudgetsAndCancellation),
+            ("archive product fixture negotiation crash admission unique terminal", ArchiveProductSessionTests.NegotiationCrashAdmissionAndUniqueTerminal),
+            ("archive product fixture strict wire validation", ArchiveProductReadTests.WireValidation),
+            ("archive product fixture helper protection", ArchiveProductReadTests.HelperProtection),
+            ("archive product fixture metadata sequence and budgets", ArchiveProductReadTests.MetadataValidation),
+            ("archive product fixture captured cancellation actual cleanup", ArchiveProductSessionTests.CapturedCancellationFollowsActualCleanup),
+            ("archive product fixture timeout is not user cancellation", ArchiveProductSessionTests.TimeoutIsNotUserCancellation),
+            ("archive product fixture v2 finite negotiation", ArchiveProductSessionTests.LargeReadNegotiationAndFiniteBudgets),
+            ("archive product fixture v2 actual open test privacy", ArchiveProductSessionTests.ActualLargeReadOpenTestAndPrivacy),
+            ("archive source delete fixture original session evidence binding", ArchiveSourceDeletionTests.OriginalSessionRejectsChangedEvidence),
+            ("archive source delete fixture retired replacement replay", ArchiveSourceDeletionTests.RetiredEvidenceCannotBindReplacement),
+            ("archive source delete fixture partial cancellation privacy", ArchiveSourceDeletionTests.PartialResultsCancellationAndPrivacy),
+            ("archive source delete fixture codec full extraction", ArchiveSourceDeletionTests.CodecFullExtraction),
+            ("archive source delete fixture lease close resolve race", ArchiveSourceDeletionTests.LeaseCloseResolveRace),
+            ("archive source delete fixture failure cancellation matrix", ArchiveSourceDeletionTests.FailureAndCancellationMatrix),
+            ("archive source delete fixture creation coverage native refusal", ArchiveSourceDeletionTests.CreationCoverageAndNativeRefusal),
+            ("archive source delete fixture once only unknown binding", ArchiveSourceDeletionTests.OnceOnlyUnknownAndBinding),
+            ("archive source delete fixture consent failure projection", ArchiveSourceDeletionTests.ConsentAndFailureProjection),
+            ("archive TAR time fixture local scope", ArchiveTarTimeTests.PaxLocalScope),
+            ("archive TAR time fixture edges retention", ArchiveTarTimeTests.TimeEdgesAndRetention),
+            ("archive TAR time fixture PAX global clear", ArchiveTarTimeTests.PaxGlobalClear),
+            ("archive TAR time fixture GNU negative", ArchiveTarTimeTests.GnuNegative),
+            ("archive metadata fixture RAR metadata", ArchiveMetadataTests.RarMetadata),
+            ("archive metadata fixture ZIP time edges", ArchiveMetadataTests.ZipTimeEdges),
+            ("archive metadata fixture PAX time edges", ArchiveMetadataTests.PaxTimeEdges),
+            ("archive metadata fixture stream metadata absence", ArchiveMetadataTests.StreamsWithoutMetadata),
+            ("archive metadata fixture ADS capability source binding", ArchiveMetadataTests.AdsCapabilityAndSourceBinding),
+            ("archive metadata fixture guarded metadata cleanup", ArchiveMetadataTests.GuardedMetadataCleanup),
+            ("archive metadata fixture native lifecycle", ArchiveMetadataTests.NativeLifecycle),
+            ("archive metadata fixture 7z metadata", ArchiveMetadataTests.SevenzMetadata),
+            ("archive metadata fixture TAR PAX modified", ArchiveMetadataTests.TarModified),
+            ("archive metadata fixture Gzip modified", ArchiveMetadataTests.GzipModified),
+            ("archive metadata fixture directory finalization", ArchiveMetadataTests.DirectoryFinalization),
+            ("archive metadata fixture MOTW options and budget", ArchiveMetadataTests.MotwOptionsAndBudget),
+            ("archive metadata fixture capabilities", ArchiveMetadataTests.Capabilities),
+            ("archive metadata fixture MOTW default", ArchiveMetadataTests.MotwDefault),
+            ("archive metadata fixture ZIP attributes", ArchiveMetadataTests.ZipAttributes),
+            ("archive metadata fixture ZIP UTC modified", ArchiveMetadataTests.ZipUtcModified),
+            ("archive metadata fixture ZIP DOS modified", ArchiveMetadataTests.ZipDosModified),
+            ("archive output fixture native failure diagnostics privacy", ArchiveOutputTests.DiagnosticAndNativeFailure),
+            ("archive output fixture nested unicode and unsafe names", ArchiveOutputTests.NestedAndUnsafe),
+            ("archive output fixture existing target and owned cleanup", ArchiveOutputTests.PreserveExistingAndCancel),
+            ("archive output fixture concurrent target and owned junction", ArchiveOutputTests.ConcurrentTargetAndReparse),
+            ("archive output fixture rechecked atomic path overwrite", ArchiveOutputTests.RecheckedAtomicPathOverwrite),
+            ("archive overwrite fixture target changes before recheck", ArchiveOverwriteTests.ChangesBeforeRecheck),
+            ("archive overwrite fixture failures native occupation capability", ArchiveOverwriteTests.FailuresAndNativeOccupation),
+            ("archive overwrite fixture postcommit and cancellation", ArchiveOverwriteTests.PostCommitAndCancellation),
+            ("archive overwrite fixture exclusive partial ownership", ArchiveOverwriteTests.ExclusivePartialOwnership),
+            ("archive overwrite fixture actual worker integrity and commit lifecycle", ArchiveOverwriteTests.ActualWorkerOverwriteLifecycle),
+            ("archive overwrite fixture Win32 counted name ABI", ArchiveRenameAbiTests.CountedNameMustStillBeTerminated),
+            ("archive outcome fixture actual worker target failures", ArchiveWorkerOutcomeTests.ActualTargetFailures),
+            ("archive outcome fixture actual worker terminal diagnostics", ArchiveWorkerOutcomeTests.ActualTerminalDiagnostics),
+            ("archive outcome fixture actual worker operation isolation", ArchiveWorkerOutcomeTests.ActualOperationIsolation),
+            ("archive tree creation fixture options diagnostics", ArchiveTreeCreationTests.OptionsAndDiagnostics),
+            ("archive tree creation fixture TAR safety", ArchiveTreeCreationTests.TarSafety),
+            ("archive tree creation fixture layout immutable admission", ArchiveTreeCreationTests.LayoutAndAdmission),
+            ("archive tree creation fixture TXZ levels", ArchiveTreeCreationTests.TarXz),
+            ("archive tree creation fixture TGZ levels", ArchiveTreeCreationTests.TarGzip),
+            ("archive tree creation fixture TAR plain", ArchiveTreeCreationTests.TarPlain),
+            ("archive tree creation fixture 7z options", ArchiveTreeCreationTests.SevenzOptions),
+            ("archive tree creation fixture 7z safety", ArchiveTreeCreationTests.SevenzSafety),
+            ("archive tree creation fixture 7z plain", ArchiveTreeCreationTests.SevenzPlain),
+            ("archive ZIP creation fixture plain single file", ArchiveZipCreationTests.PlainSingleFile),
+            ("archive ZIP creation fixture directory levels roots", ArchiveZipCreationTests.DirectoryLevelsAndRoots),
+            ("archive ZIP creation fixture multiple sources collisions", ArchiveZipCreationTests.MultipleSourcesAndCollisions),
+            ("archive ZIP creation fixture source changes budgets publication", ArchiveZipCreationTests.SourceChangesBudgetsAndPublication),
+            ("archive ZIP creation fixture AES independent interoperability", ArchiveZipCreationTests.AesCreationInterop),
+            ("archive ZIP creation fixture native source limits reparse", ArchiveZipCreationTests.NativeSourceLimitsAndReparse),
+            ("archive ZIP creation fixture diagnostics options ownership", ArchiveZipCreationTests.DiagnosticsAndOptions),
+            ("archive ZIP creation fixture large ZIP64 streaming", ArchiveZipCreationTests.LargeZip64Streaming),
+            ("archive admission fixture source elements", ArchiveAdmissionTests.SourceElements),
+            ("archive admission fixture source count", ArchiveAdmissionTests.SourceCount),
+            ("archive admission fixture source clear", ArchiveAdmissionTests.SourceClear),
+            ("archive admission fixture exclusion snapshot", ArchiveAdmissionTests.Exclusions),
+            ("archive admission fixture budget snapshot", ArchiveAdmissionTests.Budgets),
+            ("archive admission fixture overwrite authorization", ArchiveAdmissionTests.OverwriteAuthorization),
+            ("archive admission fixture legacy authorization", ArchiveAdmissionTests.LegacySharedAuthorization),
+            ("archive admission fixture bounds and unstable capture", ArchiveAdmissionTests.AdmissionBounds),
+            ("archive source binding fixture safe parent output", ArchiveSourceBindingTests.ParentOutput),
+            ("archive source binding fixture self inclusion guards", ArchiveSourceBindingTests.SelfInclusion),
+            ("archive source binding fixture namespace replacement", ArchiveSourceBindingTests.NamespaceReplacement),
+            ("archive source binding fixture held output namespace", ArchiveSourceBindingTests.HeldOutputNamespace),
+            ("archive source binding fixture missing internal output", ArchiveSourceBindingTests.MissingInternalOutput),
+            ("archive source binding fixture missing internal multi identity", ArchiveSourceBindingTests.MissingInternalMultiAndIdentity),
+            ("archive source binding fixture existing internal unchanged", ArchiveSourceBindingTests.ExistingInternalUnchanged),
+            ("archive source binding fixture missing external output", ArchiveSourceBindingTests.MissingExternalOutput),
+            ("archive source binding fixture preparation failures", ArchiveSourceBindingTests.PreparationFailures),
+            ("archive admission fixture error compatibility", ArchiveAdmissionTests.ErrorCompatibility),
+            ("archive stream fixture actual worker gzip extraction", ArchiveStreamWorkerTests.ActualGzipExtraction),
+            ("archive stream fixture actual worker gzip creation", ArchiveStreamWorkerTests.ActualGzipCreation),
+            ("archive stream fixture empty Gzip XZ creation interop", ArchiveStreamWorkerTests.EmptyGzipXzCreationInterop),
+            ("archive stream fixture creation safety and partial read", ArchiveStreamWorkerTests.CreationSafetyAndPartialRead),
+            ("archive stream fixture actual worker bzip2 ZIP extraction", ArchiveStreamWorkerTests.ActualBzip2ZipExtraction),
+            ("archive stream fixture actual worker TAR extraction safety", ArchiveStreamWorkerTests.ActualTarExtraction),
+            ("archive stream fixture actual worker TAR Gzip integrity", ArchiveStreamWorkerTests.ActualTarGzipExtraction),
+            ("archive stream fixture actual worker BZip2 streams integrity", ArchiveStreamWorkerTests.ActualBzip2Streams),
+            ("archive stream fixture actual worker XZ creation", ArchiveStreamWorkerTests.ActualXzCreation),
+            ("archive XZ fixture actual worker open test extract", ArchiveXzWorkerTests.OpenTestExtract),
+            ("archive XZ fixture actual worker damage and budgets", ArchiveXzWorkerTests.DamageAndBudgets),
+            ("archive XZ fixture actual worker cancellation source protection", ArchiveXzWorkerTests.CancellationAndSourceProtection),
+            ("archive stream fixture actual worker Zstd reads safety", ArchiveStreamWorkerTests.ActualZstdReads),
+            ("archive ZIP method fixture Zstd actual worker native reads", ArchiveZipMethodWorkerTests.ZstdRead),
+            ("archive ZIP method fixture XZ actual worker native reads", ArchiveZipMethodWorkerTests.XzRead),
+            ("archive ZIP method fixture LZMA actual worker native reads", ArchiveZipMethodWorkerTests.LzmaRead),
+            ("archive ZIP method fixture Deflate64 actual worker native reads", ArchiveZipMethodWorkerTests.Deflate64Read),
+            ("archive ZIP crypto fixture ZipCrypto actual worker native reads", ArchiveZipMethodWorkerTests.ZipCryptoRead),
+            ("archive ZIP crypto fixture ZipCrypto descriptor actual worker native reads", ArchiveZipMethodWorkerTests.ZipCryptoDescriptorRead),
+            ("archive ZIP remediation fixture directory and comment boundaries", ArchiveZipReadRemediationTests.DirectoryAndCommentBoundaries),
+            ("archive ZIP remediation fixture AES authentication and safety", ArchiveZipReadRemediationTests.AesReadsAndAuthentication),
+            ("archive ZIP remediation fixture encrypted combinations and ZIP64", ArchiveZipReadRemediationTests.EncryptedCombinations),
+            ("archive ZIP remediation fixture noEOS and working budget", ArchiveZipReadRemediationTests.NoEosAndWorkingBudget),
+            ("archive worker fixture suspended admission and job limits", ArchiveWorkerTests.SuspendedAdmissionAndJobLimits),
+            ("archive worker fixture framed output and privacy", ArchiveWorkerTests.FramesAndPrivacy),
+            ("archive worker fixture cancellation and bounded admission", ArchiveWorkerTests.CancellationAndAdmission),
+            ("archive worker fixture stuck admission retains slots", ArchiveWorkerTests.StuckAdmissionRetainsSlots),
+            ("archive worker actual Rust private protocol fixture", ArchiveWorkerTests.ActualRustWorkerPrivateProtocol),
+            ("archive codec actual Rust RAR4 RAR5 and 7z fixture", ArchiveCodecWorkerTests.IndependentRarAndSevenzReadTest),
+            ("archive codec fixture x86 BCJ LZMA2 interop", ArchiveCodecWorkerTests.X86BcjLzma2Interop),
+            ("archive codec fixture solid packed optional metadata", ArchiveCodecWorkerTests.SolidPackedMetadata),
+            ("archive codec actual Rust password budget corruption cancel fixture", ArchiveCodecWorkerTests.PasswordBudgetCorruptionAndCancel),
+            ("archive extraction actual Rust handle-session fixture", ArchiveExtractionWorkerTests.ActualZipToHandleSession),
+            ("archive extraction actual Rust 7z handle-session fixture", ArchiveExtractionWorkerTests.ActualSevenzToHandleSession),
+            ("archive extraction actual Rust RAR handle-session fixture", ArchiveExtractionWorkerTests.ActualRarToHandleSession),
+            ("archive remediation actual source lease race barriers fixture", ArchiveRemediationTests.SourceRaceBarriers),
+            ("archive remediation budget admission fixture", ArchiveRemediationTests.BudgetAdmission),
+            ("archive remediation actual 7z working budget fixture", ArchiveRemediationTests.SevenzWorkingBudget),
+            ("archive remediation actual 7z header classification fixture", ArchiveRemediationTests.SevenzHeaderClassification),
+            ("archive remediation actual mapped source race fixture", ArchiveRemediationTests.MappedSourceRace),
+            ("archive remediation native Job limit and cleanup fixture", ArchiveRemediationTests.NativeJobLimitAndCleanup),
+            ("notification window fixture typed wire and peer validation", NotificationWindowTests.WireAndPeerValidation),
+            ("notification window fixture six anchors DPI and readback", NotificationWindowTests.SixAnchorsDpiAndReadback),
+            ("notification window fixture bounded detached and diagnostics", NotificationWindowTests.BoundedDetachedAndDiagnostics),
+            ("notification window fixture owned HWND hidden policy and client readback", NotificationWindowTests.OwnedHwndHiddenPolicyAndClientReadback),
+            ("native context menu fixture semantic validation and wire", NativeContextMenuTests.SemanticValidationAndWire),
+            ("native context menu fixture admission cancellation and nonblocking", NativeContextMenuTests.AdmissionCancellationAndNonblocking),
+            ("native context menu owned HWND overflow and exact cancel", NativeContextMenuTests.OwnedHwndOverflowAndExactCancel),
+            ("extension runtime fixture typed wire picker and STA failures", ExtensionRuntimeTests.TypedWirePickerAndStaFailures),
+            ("extension runtime fixture owned versions hash and budgets", ExtensionRuntimeTests.OwnedVersionsHashAndBudgets),
+            ("extension runtime fixture owned PATH discovery and precedence", ExtensionRuntimeTests.OwnedPathDiscoveryAndPrecedence),
+            ("extension runtime fixture missing timeout cancel and output privacy", ExtensionRuntimeTests.MissingTimeoutCancelAndOutputPrivacy),
+            ("extension runtime fixture detached reader responsiveness", ExtensionRuntimeTests.DetachedCommandsKeepReaderResponsive),
+            ("extension process fixture owned echo and suspended admission", ExtensionProcessTests.OwnedEchoAndSuspendedAdmission),
+            ("extension process fixture strict UTF8 and output limits", ExtensionProcessTests.OutputBoundsAndStrictUtf8),
+            ("extension process fixture timeout cancel and pipe holding tree", ExtensionProcessTests.TimeoutCancellationAndPipeHoldingTree),
+            ("extension process fixture concurrency memory and duplex", ExtensionProcessTests.AdmissionConcurrencyMemoryAndDuplex),
+            ("extension process fixture admission failure and ordinary token", ExtensionProcessTests.FailureBeforeResumeAndOrdinaryToken),
+            ("extension process fixture input and native process limits", ExtensionProcessTests.InputBoundsAndNativeProcessLimit),
+            ("extension process fixture stuck admission slots and diagnostics privacy", ExtensionProcessTests.StuckAdmissionRetainsBoundedSlotAndPrivacy),
+            ("extension process fixture broker controls and parent EOF", ExtensionProcessBrokerTests.ControlResponsivenessAndParentEof),
+            ("extension process fixture broker crash and actual parent death", ExtensionProcessBrokerTests.BrokerCrashAndActualParentDeath),
+            ("extension process fixture parent identity and malformed controls", ExtensionProcessBrokerTests.ParentIdentityAndMalformedControl),
+            ("credential fixture typed routing and value privacy", CredentialAdapterTests.TypedRoutingAndValuePrivacy),
+            ("credential fixture bounds malformed and native metadata", CredentialAdapterTests.BoundsMalformedAndNativeMetadata),
+            ("credential fixture cancel and attempted write compensation seam", CredentialAdapterTests.CancelAndAttemptedWriteCompensationSeam),
+            ("credential fixture bounded worker control responsiveness", CredentialAdapterTests.BoundedWorkerKeepsControlResponsive),
+            ("credential fixture synthetic invoke and host call protocol", CredentialAdapterTests.SyntheticInvokeAndHostCallProtocol),
+            ("credential fixture authenticated broker pipe fake store round trip", CredentialAdapterTests.BrokerPipeFakeStoreRoundTrip),
+            ("test selection default excludes native acceptance", TestSelectionTests.DefaultDoesNotSelectNativeAcceptance),
+            ("test selection zero match is an error", TestSelectionTests.ZeroMatchIsAnError),
+            ("test selection native authorization and explicit filter", TestSelectionTests.NativeNeedsAuthorizationAndExplicitFilter),
+            ("test selection legacy union and catalog order", TestSelectionTests.LegacyFiltersKeepUnionAndCatalogOrder),
+            ("test selection catalog retains acceptance and scopes", TestSelectionTests.CatalogRetainsAcceptanceAndExplicitScopes),
+            ("test selection runner reconciles skip and failure counts", TestSelectionTests.RunnerCountsSkipWithoutPassAndFailsFast),
+            ("browser signing fixture explicit isolated entry", BrowserExtensionSigningTests.ExplicitSigningPathIsRequiredForIsolatedEntry),
+            ("browser signing fixture fixed SPKI identity vector", BrowserExtensionSigningTests.FixedSpkiVectorPreservesChromiumIdentity),
+            ("browser signing fixture read-only existing PEM", BrowserExtensionSigningTests.RegistrationReadsExistingPemWithoutCreatingOrRewriting),
+            ("browser signing fixture allowed origin union", BrowserExtensionSigningTests.OriginsMergeCommandPinnedAndExportedWithoutRegistration),
+            ("browser signing fixture CRX signature and reuse", BrowserExtensionSigningTests.IsolatedCrxSignatureAndKeyReuseMatchRegistrationIdentity),
+            ("browser signing fixture missing corrupt Firefox cancellation", BrowserExtensionSigningTests.MissingCorruptAndFirefoxKeyBehaviorRemainCompatible),
+            ("browser signing fixture distinct directory fallbacks", BrowserExtensionSigningTests.SourceDirectoryFallbacksStayDistinct),
             ("envelope uses protocol v1 wire names", EnvelopeUsesWireNames),
+            ("extension manifest picker fixture typed parser and invalid payloads", ExtensionManifestPickerTests.ParserPreservesTypedWireAndRejectsInvalidPayloads),
+            ("extension manifest picker fixture ZIP settings and initial path", ExtensionManifestPickerTests.SettingsRequireOneExistingZipAndPreserveInitialPath),
+            ("extension manifest picker fixture cancellation drops late selection", ExtensionManifestPickerTests.CancellationRejectsLateSelectionWithoutNativeWork),
+            ("extension manifest picker fixture invalid selection and safe native failure", ExtensionManifestPickerTests.InvalidSelectionAndNativeFailuresArePayloadSafe),
+            ("extension manifest picker fixture detached reader responsiveness", ExtensionManifestPickerTests.DetachedPickerDoesNotBlockLaterCommands),
             ("system motion synthetic reader and wire round trip", SystemMotionPreferenceTests.SyntheticReaderChangeDedupAndWireRoundTrip),
+            ("Explorer reveal feedback fixture confirmed target survives denied foreground", ExplorerRevealFeedbackTests.ConfirmedTargetSurvivesDeniedForeground),
+            ("Explorer reveal feedback fixture folder and acceptance never confirm file", ExplorerRevealFeedbackTests.FolderAndAcceptanceNeverConfirmFile),
+            ("Explorer reveal feedback fixture delayed selection and failure retry", ExplorerRevealFeedbackTests.DelayedSelectionAndNativeFailureRemainRetryable),
+            ("Explorer reveal feedback fixture destroyed or removed target", ExplorerRevealFeedbackTests.DestroyedOrRemovedTargetCannotSucceed),
+            ("Explorer reveal feedback fixture active selection rejects tab root ambiguity", ExplorerRevealFeedbackTests.ActiveViewSelectionRejectsTabRootAmbiguity),
+            ("Explorer reveal feedback fixture native COM exact vtable contracts", ExplorerRevealFeedbackTests.NativeComContractsHaveExactVtableSlots),
+            ("installed native fixture Explorer native first and fallback", InstalledNativeActionTests.ExplorerNativeFirstAndFallback),
+            ("installed native fixture Explorer readback retry and pending", InstalledNativeActionTests.ExplorerReadbackRetryAndPending),
+            ("installed native fixture Open With cancellation and failure", InstalledNativeActionTests.OpenWithCancellationAndFailure),
+            ("installed native fixture Explorer relative PIDL lifetime", InstalledNativeActionTests.ExplorerRelativePidlLifetime),
+            ("installed native fixture protected tuple upgrade decisions", IndexerUpgradeDecisionTests.ProtectedTupleUpgradeDecisions),
+            ("installed native fixture protected tuple hash change detection", IndexerUpgradeDecisionTests.ProtectedTupleHashChangeDetection),
+            ("installed native fixture protected tuple authorization lifecycle", IndexerUpgradeDecisionTests.ProtectedTupleAuthorizationLifecycle),
+            ("trusted update peer fixture ordinary caller service identity", TrustedUpdatePeerTests.OwnedPipeBindsRunningOwnServiceWithoutProcessAccess),
+            ("trusted update routing enrolled upgrade avoids UAC", TrustedUpdateRoutingTests.EnrolledUpgradeNeverCallsElevatedInstaller),
+            ("trusted update routing rejection never falls back to UAC", TrustedUpdateRoutingTests.RejectedTrustedUpdateCannotFallBackToUac),
+            ("trusted update transaction signed commit idempotence downgrade", TrustedUpdateTransactionTests.SignedUpdateCommitsOnceAndRejectsDowngrade),
+            ("trusted update transaction partial failure restores and retries", TrustedUpdateTransactionTests.PartialDeploymentRestoresLastGoodAndCanRetry),
+            ("trusted update transaction restart and committed cleanup", TrustedUpdateTransactionTests.RestartRecoversInterruptedPublishAndCommittedCleanup),
+            ("trusted update transaction bounded frames", TrustedUpdateTransactionTests.FramesRejectOversizeTruncationAndCancellation),
+            ("trusted update routing same release enrollment once", TrustedUpdateRoutingTests.SameReleaseMigratesTrustExactlyOnce),
+            ("trusted release fixture signature locked copy", TrustedReleaseManifestTests.ValidSignatureAndLockedCopy),
+            ("trusted release fixture tamper wrong key before parse", TrustedReleaseManifestTests.TamperAndWrongKeyRejectedBeforeParse),
+            ("trusted release fixture duplicate traversal schema", TrustedReleaseManifestTests.SignedDuplicateTraversalAndSchemaRejected),
+            ("trusted release fixture missing tampered downgrade", TrustedReleaseManifestTests.MissingTamperedAndDowngradeRejected),
+            ("trusted release fixture reparse components", TrustedReleaseManifestTests.ReparseComponentsRejected),
+            ("trusted release fixture bounds secret signing", TrustedReleaseManifestTests.BoundedInputsAndSecretSigningRejected),
+            ("trusted update enrollment partial retry retains key", TrustedUpdateEnrollmentTests.PartialEnrollmentRetainsTrustAndRetries),
+            ("installed integration fixture theme reader fallback and dedup", SystemThemePreferenceTests.ReaderFallbackAndDedup),
+            ("installed integration fixture theme full queue latest and stop", SystemThemePreferenceTests.FullQueueRetainsLatestAndStops),
+            ("installed integration fixture theme event and handshake serialization", SystemThemePreferenceTests.EventAndHandshakeWireRoundTrip),
+            ("installed integration fixture Open With target validation and cancelled wire", SystemThemePreferenceTests.OpenWithTargetValidationAndCancelledWire),
             ("owned GPUI fixed compact to confirmation transition", GpuiFixedTransitionTests.OwnedGpuiFixedTransition),
             ("owned GPUI new fixed confirmation placement", GpuiFixedTransitionTests.OwnedGpuiFixedPresentation),
             ("fixed presentation synthetic cancel and final client", FixedPresentationTests.FixedOneShotPreservesAnchorAndCancel),
             ("owned GPUI production probe fixed presentation", GpuiFixedTransitionTests.OwnedProductionProbePresentation),
             ("owned GPUI task completion preserves native center", GpuiFixedTransitionTests.OwnedTaskCompletionPreservesCenter),
+            ("owned GPUI passive preview rejects mouse activation", PassivePreviewAcceptanceTests.OwnedPassivePreviewRejectsMouseActivation),
+            ("owned GPUI native client and UIA acceptance", PassivePreviewAcceptanceTests.OwnedClientAndUiaAcceptance),
             ("command result preserves native error code", CommandResultPreservesNativeErrorCode),
             ("parser exceptions produce correlated failure results", ParserExceptionsProduceCorrelatedFailureResults),
             ("detached sync commands schedule before invocation", DetachedSyncCommandsScheduleBeforeInvocation),
@@ -38,12 +286,24 @@ internal static class Program
             ("image and files preserve capture and paste payloads", MultiFormatPayloadsRoundTrip),
             ("native clipboard format command preserves staged payload", NativeFormatPayloadRoundTrips),
             ("clipboard configuration preserves hotkey, exclusions and capture limits", ClipboardConfigurationRoundTrips),
+            ("clipboard pause fixture independent native read gate", ClipboardPauseTests.PauseCommandAndReadGate),
+            ("clipboard pause fixture clears retries and resume never backfills", ClipboardPauseTests.RetryResumeNeverBackfills),
+            ("clipboard pause fixture bounded admission and failed post cleanup", ClipboardPauseTests.BoundedAdmissionAndPostFailure),
+            ("clipboard pause fixture cancellation and disposal retire work", ClipboardPauseTests.CancellationAndStop),
+            ("clipboard pause fixture application failures and safe diagnostics", ClipboardPauseTests.ApplicationFailureAndDiagnostics),
+            ("clipboard pause fixture application owns late cancellation", ClipboardPauseTests.CancellationAtApplicationBoundary),
             ("clipboard capture limits clamp sizes without payload data", ClipboardCaptureLimitsClampAndReject),
             ("quick-launch configuration and panel request preserve Windows context", QuickLaunchContractsRoundTrip),
             ("Quick Launch diagnostics keep published correlations and rate-limit failures", QuickLaunchSummonDiagnosticsKeepPublishedCorrelationAndRateLimitFailures),
             ("Quick Launch suppresses both triggers only during exclusive D3D fullscreen", QuickLaunchFullscreenSuppressionIsPrecise),
             ("Quick Launch WndProc routes both native summon sources through the fullscreen gate", QuickLaunchWndProcRoutesBothTriggersThroughFullscreenGate),
             ("auto quick switch only consumes an Explorer source after a dialog is known", AutoQuickSwitchRequiresKnownDialog),
+            ("Explorer source caller fixture in-flight known return completes once", ExplorerSourceReturnTests.InFlightKnownReturnCompletesOnce),
+            ("Explorer source caller fixture ready snapshot refreshes at return", ExplorerSourceReturnTests.ReadySourceStillRefreshesAtReturn),
+            ("Explorer source caller fixture first observation never navigates history", ExplorerSourceReturnTests.FirstObservationNeverNavigatesHistory),
+            ("Explorer source caller fixture retired returns drop late completion", ExplorerSourceReturnTests.RetiredReturnsDropLateCompletion),
+            ("Explorer source caller fixture supersession rejects same HWND ABA", ExplorerSourceReturnTests.SourceSupersessionSerializesAndRejectsSameHwndAba),
+            ("Explorer source caller fixture failures and full queue retire without payload", ExplorerSourceReturnTests.FailuresAndFullQueueRetireWithoutPayload),
             ("auto quick switch refreshes a changed Directory Opus source path for the same dialog", AutoQuickSwitchRefreshesChangedDirectoryOpusSource),
             ("Directory Opus dialog return refreshes the current path of an existing tab", DirectoryOpusDialogReturnRefreshesExistingTabPath),
             ("Directory Opus existing-tab selection refreshes the tracked source after navigation", DirectoryOpusExistingTabSelectionRefreshesTrackedSource),
@@ -145,6 +405,7 @@ internal static class Program
             ("desktop shell and tray contracts preserve bounded intent", DesktopShellAndTrayContractsRoundTrip),
             ("startup registration and tray actions use real Windows boundaries", DesktopShellUsesRealWindowsBoundaries),
             ("startup registration resolves the current desktop release path", StartupRegistrationResolvesCurrentDesktopPath),
+            ("desktop shell accepts verified current package after an older protected upgrade", DesktopShellAcceptsVerifiedCurrentPackageAfterUpgrade),
             ("desktop shell failures return bounded stage codes", DesktopShellFailuresReturnBoundedStageCodes),
             ("desktop tray rejects a missing product executable icon", DesktopTrayRequiresProductIcon),
             ("tray factory failure disposes partially created resources", TrayFactoryFailureDisposesPartialResources),
@@ -210,7 +471,6 @@ internal static class Program
             ("browser extension packages produce crx and xpi artifacts", BrowserExtensionPackagesProduceArtifacts),
             ("normal desktop pipe closure is not logged as an error", NormalPipeClosureIsNotAnError),
             ("indexer service command carries no caller-controlled path", IndexerServiceCommandHasNoPath),
-            ("existing indexer service never requests second authorization", ExistingIndexerServiceNeverRequestsSecondAuthorization),
             ("browser native messaging command preserves fixed extension identities", BrowserNativeMessagingCommandPreservesIdentities),
             ("indexer service installer only accepts packaged sibling", IndexerServiceInstallerAcceptsOnlyPackagedSibling),
             ("protected indexer service root stays under ProgramData", ProtectedIndexerServiceRootStaysUnderProgramData),
@@ -220,32 +480,79 @@ internal static class Program
             ("error dialog reads a bounded startup failure report", ErrorDialogReadsBoundedReport)
         };
 
-        var selectedTests = args.Length == 0
-            ? tests
-            : tests.Where(test => args.Any(filter =>
-                test.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))).ToArray();
-        foreach (var test in selectedTests)
-        {
-            try
-            {
-                // WinForms-installing tests (tray icon, context menus) leave a
-                // WindowsFormsSynchronizationContext on this thread; a console
-                // runner has no message pump, so the first later async test
-                // that suspends posts its continuation into that dead context
-                // and the suite freezes. Every test starts ambient-free.
-                SynchronizationContext.SetSynchronizationContext(null);
-                Console.WriteLine($"RUN {test.Name}");
-                await test.Run();
-                Console.WriteLine($"PASS {test.Name}");
-            }
-            catch (Exception error)
-            {
-                Console.Error.WriteLine($"FAIL {test.Name}: {error.Message}");
-                return 1;
-            }
-        }
+        return tests.Select(test => TestEffects.Create(test.Name, test.Run)).Concat(new[] {
+            new TestCase("archive Phase E delivery real RAR four five families", ArchivePhaseEDeliveryTests.ActualRarFourFiveRealFamilies,
+                TestEffect.Fixture,"Reviewed: fixed-provenance tiny genuine RAR4/5 volumes copied to GUID-owned scratch, original Job/worker/native leases; independent payload hash oracle; no GUI/Shell/system mutation"),
+            new TestCase("archive Phase E source all-volume protection missing", ArchiveVolumeSourceTests.ProtectedFamilyAndMissingMembers,
+                TestEffect.Fixture,"Reviewed: GUID-owned scratch encoded segments and original native source leases; protection/discovery only,not codec interoperability; no GUI/Shell/system mutation"),
+            new TestCase("archive Phase E source single ZIP exact disk count", ArchiveVolumeSourceTests.OrdinarySingleSourceAndExactZipDiskCount,
+                TestEffect.Fixture,"Reviewed: GUID-owned scratch single/ZIP disk discovery,all-member lease protection; no GUI/Shell/system mutation"),
+            new TestCase("archive Phase E delivery ZIP edit all actions stale source", ArchivePhaseEDeliveryTests.ActualZipAllEditsAndStaleBinding,
+                TestEffect.Fixture,"Reviewed: GUID-owned scratch ZIPs, original product Job/worker/source handoff/native publication; independent .NET read; no GUI/Shell/system mutation"),
+            new TestCase("archive Phase E delivery ZIP seven volumes old family", ArchivePhaseEDeliveryTests.ActualZipSevenVolumesAndOldFamilyRefusal,
+                TestEffect.Fixture,"Reviewed: GUID-owned small ZIP/7z real volumes, original Job/worker/native leases and no-replace publication, explicit independent oracle; no GUI/Shell/system mutation"),
+            new TestCase("archive Phase E delivery partial volume race facts", ArchivePhaseEDeliveryTests.ActualPartialVolumePublicationNoOverwrite,
+                TestEffect.Fixture,"Reviewed: GUID-owned small volume output race; retains original native partial publication journal and foreign target; no GUI/Shell/system mutation"),
+            new TestCase("archive ZIP edit native held source same path commit", ArchiveZipEditCommitTests.HeldSourceSamePathReplacementPublishesValidZip,
+                TestEffect.Fixture, "Reviewed: GUID-owned ZIPs in the approved session scratch tree; existing source lease and atomic native output commit only; no GUI/Shell/config/registry/service"),
+            new TestCase("archive ZIP edit native same path cancellation truth", ArchiveZipEditCommitTests.CancellationBeforeAndAfterPublicationPreservesTruth,
+                TestEffect.Fixture, "Reviewed: GUID-owned ZIPs in the approved session scratch tree; existing source lease and atomic native output commit only; no GUI/Shell/config/registry/service"),
+            new TestCase("archive ZIP edit native changed revision refusal", ArchiveZipEditCommitTests.ChangedRevisionIsRefusedAfterLeaseRetires,
+                TestEffect.Fixture, "Reviewed: GUID-owned ZIPs in the approved session scratch tree; existing source lease and atomic native output commit only; no GUI/Shell/config/registry/service"),
+            new TestCase("archive ZIP edit native handoff gates and ownership", ArchiveZipEditCommitTests.HandoffGatesSourceTargetCancellationAndOwnership,
+                TestEffect.Fixture, "Reviewed: GUID-owned ZIPs in approved session scratch; typed edit-only source close evidence and existing atomic output boundary; no GUI/Shell/config/registry/service"),
+            new TestCase("archive ZIP edit native handoff failure unknown no retry", ArchiveZipEditCommitTests.HandoffNativeFailureUnknownAndNoRetry,
+                TestEffect.Fixture, "Reviewed: GUID-owned ZIPs in approved session scratch; injected existing native commit checkpoints and exact retained facts; no GUI/Shell/config/registry/service"),
+            new TestCase("archive resource tool control initialization owns status", ArchiveResourceToolTests.InitializationOwnsStatus,
+                TestEffect.Fixture, "Reviewed: session scratch files/process-local environment only; no worker launched"),
+            new TestCase("archive resource tool control bounded idempotent", ArchiveResourceToolTests.ControlBoundedAndIdempotent,
+                TestEffect.Fixture, "Reviewed: bounded synthetic control files only"),
+            new TestCase("archive resource tool counter atomic validity", ArchiveResourceToolTests.CounterReadsCommitTogether,
+                TestEffect.Fixture, "Reviewed: fake counters only; no process started"),
+            new TestCase("archive resource tool time dispatch excludes setup", ArchiveResourceToolTests.DispatchExcludesSetup,
+                TestEffect.Fixture, "Reviewed: virtual clock only"),
+            new TestCase("archive resource tool actual small stop convergence", ArchiveResourceToolTests.ActualSmallStopConverges,
+                TestEffect.Fixture, "Reviewed: independent 256KiB ZIP in session scratch, exact test child/helper/runner Job; original native cleanup, no user data")
+        }).ToArray();
+    }
 
-        return 0;
+    public static async Task<int> Main(string[] args)
+    {
+        if (args.Length == 2 && args[0] == "--archive-output-readmission-host")
+            return await ArchiveOutputReadmissionHost.RunAsync(args[1]);
+        if (args.Length == 3 && args[0] == "--archive-resource-probe")
+            return await ArchiveResourceProbe.RunAsync(args[1], args[2]);
+        if (args.SequenceEqual(new[] { "--archive-product-worker-fixture" }))
+            return await ArchiveProductWorkerFixture.RunAsync();
+        if (args.Length == 3 && args[0] == "--archive-product-host")
+            return await ArchiveProductHost.RunAsync(args[1], args[2]);
+        if (args.SequenceEqual(new[] { "--archive-worker-fixture" }))
+            return await ArchiveWorkerFixture.RunAsync();
+        if (args.SequenceEqual(new[] { "--version" }) ||
+            args.SequenceEqual(new[] { "-I", "-S", "-c", "import sys;print('Python '+'.'.join(map(str,sys.version_info[:3])))" }) ||
+            args.SequenceEqual(new[] { "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$PSVersionTable.PSVersion.ToString()" }))
+            return await ExtensionRuntimeTests.VersionFixtureAsync(args);
+        if (args.Length > 0 && args[0] is "--extension-fixture-child" or "--extension-fixture-broker" or "--extension-fixture-parent")
+            return await ExtensionProcessFixture.RunAsync(args);
+        try
+        {
+            var options = TestRunOptions.Parse(args);
+            var selectedTests = TestSelection.Select(Catalog(), options);
+            if (options.List)
+            {
+                foreach (var test in selectedTests)
+                    Console.WriteLine($"LIST {test.Effect} | {test.Name} | {test.Scope}");
+                Console.WriteLine($"SUMMARY selected={selectedTests.Length} run=0 pass=0 skip=0 fail=0 not_run={selectedTests.Length}");
+                return 0;
+            }
+            return await TestRunner.Run(selectedTests, Console.Out, Console.Error);
+        }
+        catch (ArgumentException error)
+        {
+            Console.Error.WriteLine($"SELECTION ERROR: {error.Message}");
+            Console.WriteLine("SUMMARY selected=0 run=0 pass=0 skip=0 fail=0 not_run=0");
+            return 2;
+        }
     }
 
     private sealed class FakeCompletionSystemActions : ICompletionSystemActions
@@ -904,12 +1211,6 @@ internal static class Program
         return Task.CompletedTask;
     }
 
-    private static Task ExistingIndexerServiceNeverRequestsSecondAuthorization()
-    {
-        Assert(!IndexerServiceInstaller.ShouldRequestInitialAuthorization(serviceExists: true));
-        Assert(IndexerServiceInstaller.ShouldRequestInitialAuthorization(serviceExists: false));
-        return Task.CompletedTask;
-    }
 
 
     private static Task BrowserNativeMessagingCommandPreservesIdentities()
@@ -2818,14 +3119,11 @@ internal static class Program
             .FirstOrDefault(candidate => candidate.MainWindowHandle != IntPtr.Zero);
         if (process is null)
         {
-            Console.WriteLine("SKIP no interactive Directory Opus lister is available");
-            return Task.CompletedTask;
+            throw new TestSkippedException("no interactive Directory Opus lister is available");
         }
         if (!NativeFocus.IsForegroundWindow(process.MainWindowHandle))
         {
-            Console.WriteLine(
-                "SKIP Directory Opus is running but is not the summon-time foreground window");
-            return Task.CompletedTask;
+            throw new TestSkippedException("Directory Opus is running but is not the summon-time foreground window");
         }
         var foreground = new ForegroundContext(
             process.MainWindowHandle.ToInt64(),
@@ -2848,8 +3146,7 @@ internal static class Program
             .FirstOrDefault(candidate => candidate.MainWindowHandle != IntPtr.Zero);
         if (process is null)
         {
-            Console.WriteLine("SKIP no interactive Directory Opus lister is available");
-            return Task.CompletedTask;
+            throw new TestSkippedException("no interactive Directory Opus lister is available");
         }
         var focusWindowHandle = NativeFocus.IsForegroundWindow(
             process.MainWindowHandle)
@@ -2979,15 +3276,11 @@ internal static class Program
                 candidate.MainWindowHandle != IntPtr.Zero);
         if (process is null)
         {
-            Console.WriteLine(
-                "SKIP no interactive Files window is available");
-            return Task.CompletedTask;
+            throw new TestSkippedException("no interactive Files window is available");
         }
         if (!NativeFocus.IsForegroundWindow(process.MainWindowHandle))
         {
-            Console.WriteLine(
-                "SKIP Files is running but is not the summon-time foreground window");
-            return Task.CompletedTask;
+            throw new TestSkippedException("Files is running but is not the summon-time foreground window");
         }
         var foreground = new ForegroundContext(
             process.MainWindowHandle.ToInt64(),
@@ -3876,8 +4169,7 @@ internal static class Program
         var explorerWindow = FindExplorerWindowHandle();
         if (explorerWindow == 0)
         {
-            Console.WriteLine("SKIP no interactive Explorer window is available");
-            return Task.CompletedTask;
+            throw new TestSkippedException("no interactive Explorer window is available");
         }
 
         string? error = null;
@@ -4062,6 +4354,9 @@ internal static class Program
         public List<IntPtr> ActivationTargets { get; } = [];
         public List<IntPtr> RestoreTargets { get; } = [];
         public Dictionary<IntPtr, IntPtr> RootByWindow { get; } = [];
+
+        public int OpenNative(string target, bool isDirectory) =>
+            isDirectory ? 0 : unchecked((int)0x80004001);
 
         public IntPtr FindExplorerWindow(string directory)
         {
@@ -4411,6 +4706,55 @@ internal static class Program
         {
             Registry.CurrentUser.DeleteSubKeyTree(keyName, throwOnMissingSubKey: false);
         }
+        return Task.CompletedTask;
+    }
+
+    private static Task DesktopShellAcceptsVerifiedCurrentPackageAfterUpgrade()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-shell-upgrade-{Guid.NewGuid():N}");
+        var package = Path.Combine(root, "current-package");
+        var protectedRoot = Path.Combine(root, "old-protected");
+        Directory.CreateDirectory(package);
+        Directory.CreateDirectory(protectedRoot);
+        var desktop = Path.Combine(package, "NxTools.exe");
+        var host = Path.Combine(package, "NxTools.PlatformHost.exe");
+        var oldDesktop = Path.Combine(protectedRoot, "NxTools.exe");
+        File.WriteAllText(desktop, "verified new desktop bytes");
+        File.WriteAllText(host, "current host fixture");
+        File.WriteAllText(oldDesktop, "old protected desktop bytes");
+        var expectedHash = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(desktop)));
+        try
+        {
+            var resolved = WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                desktop, oldDesktop, host, expectedHash, _ => false);
+            Assert(resolved == desktop, "A hash-matched current package must apply shell settings even when protected service belongs to an older build.");
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                desktop, oldDesktop, host, "invalid-hash", _ => false) is null,
+                "Invalid expected hash must fail closed.");
+            var wrongName = Path.Combine(package, "Another.exe");
+            File.Copy(desktop, wrongName);
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                wrongName, oldDesktop, host, expectedHash, _ => false) is null,
+                "A same-directory file with another name is not the desktop sibling.");
+            var outside = Path.Combine(root, "outside", "NxTools.exe");
+            Directory.CreateDirectory(Path.GetDirectoryName(outside)!);
+            File.Copy(desktop, outside);
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                outside, oldDesktop, host, expectedHash, _ => false) is null,
+                "An environment path outside the running PlatformHost package must not be trusted.");
+            File.WriteAllText(desktop, "tampered desktop");
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                desktop, oldDesktop, host, expectedHash, _ => false) is null,
+                "Current-package fallback must still reject a mismatched desktop hash.");
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                desktop, oldDesktop, host, expectedHash, candidate => candidate == oldDesktop) == oldDesktop,
+                "Existing protected approval fallback must be preserved.");
+            File.Delete(oldDesktop);
+            Assert(WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath(
+                desktop, oldDesktop, host, expectedHash, _ => true) is null,
+                "Missing protected fallback and invalid current package must fail closed.");
+        }
+        finally { Directory.Delete(root, recursive: true); }
         return Task.CompletedTask;
     }
 
@@ -7170,26 +7514,24 @@ internal static class Program
         System.IO.File.WriteAllText(
             System.IO.Path.Combine(source, "icons", "icon-16.png"),
             "png");
+        var work = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"nxtools-extension-out-{Guid.NewGuid():N}");
         try
         {
-            var work = System.IO.Path.Combine(
-                System.IO.Path.GetTempPath(),
-                $"nxtools-extension-out-{Guid.NewGuid():N}");
             System.IO.Directory.CreateDirectory(work);
-            var crx = BrowserExtensionPackageService.Export(
+            var crx = BrowserExtensionPackageService.ExportWithSigningKey(
                 BrowserExtensionPackageService.ChromeFormat,
                 System.IO.Path.Combine(work, "ext.crx"),
-                source);
+                source, System.IO.Path.Combine(work, "fixture-signing.pem"));
             var crxBytes = System.IO.File.ReadAllBytes(crx);
             Assert(crxBytes.Length > 4);
             Assert(crxBytes[0] == (byte)'C' && crxBytes[1] == (byte)'r');
             Assert(crxBytes[2] == (byte)'2' && crxBytes[3] == (byte)'4');
             Assert(BitConverter.ToUInt32(crxBytes, 4) == 3);
 
-            var xpi = BrowserExtensionPackageService.Export(
+            var xpi = BrowserExtensionPackageService.ExportWithSigningKey(
                 BrowserExtensionPackageService.FirefoxFormat,
                 System.IO.Path.Combine(work, "ext.xpi"),
-                source);
+                source, System.IO.Path.Combine(work, "fixture-signing.pem"));
             string manifest;
             using (var archive = new System.IO.Compression.ZipArchive(
                 System.IO.File.OpenRead(xpi),
@@ -7208,6 +7550,7 @@ internal static class Program
         }
         finally
         {
+            if (System.IO.Directory.Exists(work)) System.IO.Directory.Delete(work, true);
             System.IO.Directory.Delete(source, true);
         }
         return Task.CompletedTask;

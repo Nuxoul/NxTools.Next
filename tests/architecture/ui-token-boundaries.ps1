@@ -56,12 +56,15 @@ foreach ($spacing in @(4, 8, 12, 16, 24)) {
 }
 
 $theme = Get-Content -LiteralPath (Join-Path $srcRoot 'theme.rs') -Raw
-foreach ($color in @('0x18181b','0x1f1f23','0x121215','0x27272a','0x38bdf8','0x7dd3fc','0xf4f4f5','0xa1a1aa','0x71717a')) {
-    if (-not $theme.Contains($color)) { throw "Approved Foundation palette missing: $color" }
+if (-not $theme.Contains('Self::from_colors(&gpui_kit::component::Theme::global(cx).colors)') -or
+    -not $theme.Contains('ComponentTheme::change(') -or
+    -not $theme.Contains('GRAPHITE_LIGHT') -or -not $theme.Contains('GRAPHITE_DARK') -or
+    -not $theme.Contains('.load_themes_from_str(source)') -or -not $theme.Contains('ComponentTheme::update(cx,')) {
+    throw 'Custom painting and project/optional configs must share the public active Kit theme.'
 }
-if (-not $theme.Contains('pub(crate) fn apply_component_theme') -or
-    -not $theme.Contains('component.colors.ring = visual.focus_ring.into()')) {
-    throw 'Production/component focus palette must share the Foundation mapping.'
+$runtimeTheme = ($theme -split 'mod tests \{', 2)[0]
+if ($runtimeTheme -match 'component\.colors\.[a-z_]+\s*=' -or $runtimeTheme -match 'rgb\(0x') {
+    throw 'Independent application palette / Kit color overrides are forbidden.'
 }
 
 $tokenModules = @(

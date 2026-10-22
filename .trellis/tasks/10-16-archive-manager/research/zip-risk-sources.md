@@ -1,0 +1,13 @@
+# B3 ZIP risk confirmation — verified boundary
+
+2026-10-20, Phase A — Engine contracts and safety foundation. ZIP extract only.
+
+Reference-first: legacy tracked ZipArchive/SevenZip/SharpCompress search still identifies package ZIP only. SupaZip `supazip/supazip-core/src/traits.rs`294–308 defines compression-ratio rejection (100x default/zero disables); its ZIP source does not provide the approved Next1000x+64MiB typed confirmation. No reference UI/native lifecycle or universal archive-bomb detection is inferred. Follow approved Next design4.2, not reference thresholds/disable switches. Existing reference source observations and independent password/ZIP-conflict acceptances remain historical.
+
+Current ZIP chain: bounded original central/local/extents preflight -> ExtractionPlan unsafe/collision rejection -> ArchiveEngine hard declared entry/total/work budget admission -> ZIP file loop -> original PrivateOutput/runner/Job/native partial -> stream_entry checked actual per-entry/total counters and CRC/size/exact compressed consumption -> source check -> original native publication. InteractionPort already owns Risk tickets, typed replies and original cancellation.
+
+Smallest connection: fixed ZIP ratio predicate (>64MiB AND declared expanded>1000*known positive packed bytes), then per-member original InteractionPort Risk wait BEFORE decoding/beginning current file partial. Unknown/zero packed size never fabricated as a ratio. Rust owns predicate/wait/member scope; C# forwards typed answer and preserves original process/handles/timeout. No ArchiveRead mutation, generic approval/budget framework, dependency, UI/window/focus change or password/conflict state-machine merge.
+
+This slice confirms only WITHIN the immutable original admitted ResourceLimits: accepted answer must equal original member limit and cover the declared member. It cannot raise output/work/dictionary/metadata limits or Job memory. Larger-budget request is rejected, not an accepted-snapshot mutation or automatic retry; an explicitly newly admitted operation remains separate future work. Existing declared/actual budget checks and corruption/path/collision checks remain authoritative. Each risky member has its own ticket/ordinal, no remembered/cross-task trust.
+
+Tiny actual-worker test seam: DEBUG-only private fixture thresholds can ONLY LOWER (>0 and <=production) size and ratio, guarded by the exact isolated C#test apphost; Release strict parser rejects this field. No public disabled/higher threshold. First real red uses a small ZIP with declared size64MiB+1 but only small actual payload, not a compressed bomb. Green uses genuine small bounded payloads at the lowered fixture threshold, plus production-predicate boundary/unknown-size assertions.

@@ -9,6 +9,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 mod calculator;
 mod custom_command;
 mod environment_variable;
+mod extensions;
 mod pinyin;
 mod query;
 
@@ -19,6 +20,7 @@ pub use custom_command::{
     PreparedCustomCommand, command_display_line, matching_custom_commands, prepare_custom_command,
     query_matches_custom_command, validate_custom_command_template,
 };
+pub use extensions::{prepare_package_action, validate_package_commands};
 pub use query::{FileQuery, search_char_mask};
 
 const APPLICATION_EXTENSIONS: [&str; 3] = ["lnk", "url", "exe"];
@@ -234,8 +236,25 @@ pub struct QuickLaunchHistorySummary {
     pub total_directory_visits: u64,
 }
 
+struct ApplicationMatchMaterial {
+    folded_name: String,
+    initialism: String,
+    pinyin_initials: String,
+}
+
+impl ApplicationMatchMaterial {
+    fn build(entry: &ApplicationEntry) -> Self {
+        Self {
+            folded_name: entry.name.to_lowercase(),
+            initialism: application_initialism(&entry.name),
+            pinyin_initials: pinyin::pinyin_initials(&entry.name),
+        }
+    }
+}
+
 pub struct FinderCatalog {
     entries: Vec<ApplicationEntry>,
+    match_materials: Vec<ApplicationMatchMaterial>,
     history: Connection,
     history_path: PathBuf,
     usage: UsageHistory,
@@ -279,6 +298,11 @@ impl FinderCatalog {
         let recent_directories = load_recent_directories(&history)?;
         let snapshot = scan_application_roots(roots);
         Ok(Self {
+            match_materials: snapshot
+                .entries
+                .iter()
+                .map(ApplicationMatchMaterial::build)
+                .collect(),
             entries: snapshot.entries,
             history,
             history_path: history_path.to_path_buf(),
@@ -344,6 +368,11 @@ impl FinderCatalog {
     }
 
     pub fn replace_snapshot(&mut self, snapshot: ApplicationCatalogSnapshot) {
+        self.match_materials = snapshot
+            .entries
+            .iter()
+            .map(ApplicationMatchMaterial::build)
+            .collect();
         self.entries = snapshot.entries;
         self.status = snapshot.status;
     }
@@ -377,6 +406,80 @@ impl FinderCatalog {
     }
 
     pub fn search_with_sources(
+        &self,
+        query: &str,
+        external_entries: &[ExternalSearchEntry],
+        custom_commands: &[nxtools_core::CustomCommandSettings],
+        limit: usize,
+    ) -> Result<Vec<SearchResult>> {
+        let normal =
+            self.search_with_sources_normal(query, external_entries, custom_commands, limit)?;
+        if !normal.is_empty() || limit == 0 {
+            return Ok(normal);
+        }
+        let variants = FileQuery::parse(query).homophone_variants();
+        if variants.is_empty() {
+            return Ok(normal);
+        }
+        let normalized_query = normalize(query);
+        let mut seen = HashSet::new();
+        let mut matches = self
+            .entries
+            .iter()
+            .map(|entry| {
+                (
+                    entry.id.as_str(),
+                    entry.name.as_str(),
+                    entry.target.as_str(),
+                    entry.source,
+                )
+            })
+            .chain(external_entries.iter().map(|entry| {
+                (
+                    entry.id.as_str(),
+                    entry.name.as_str(),
+                    entry.target.as_str(),
+                    entry.source,
+                )
+            }))
+            .filter_map(|(id, name, target, source)| {
+                let score = variants
+                    .iter()
+                    .filter_map(|variant| variant.score(name, target))
+                    .max()?;
+                if !seen.insert(normalize_target(target)) {
+                    return None;
+                }
+                let usage = self.usage_for(id, &normalized_query);
+                Some(SearchResult {
+                    entry: ApplicationEntry {
+                        id: id.into(),
+                        name: name.into(),
+                        target: target.into(),
+                        source,
+                    },
+                    action: SearchResultAction::OpenTarget,
+                    subtitle: Some(format!("同音近似匹配 · {target}")),
+                    score,
+                    activation_count: usage.activation_count,
+                    last_activated_at_unix_ms: usage.last_activated_at_unix_ms,
+                    query_activation_count: usage.query_activation_count,
+                    last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
+                })
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by(|left, right| {
+            unified_search_rank(right)
+                .cmp(&unified_search_rank(left))
+                .then_with(|| left.entry.name.cmp(&right.entry.name))
+                .then_with(|| left.entry.target.cmp(&right.entry.target))
+        });
+        matches.truncate(limit);
+        Ok(matches)
+    }
+
+    /// Ordinary provider phase, before all providers have completed.
+    pub fn search_with_sources_normal(
         &self,
         query: &str,
         external_entries: &[ExternalSearchEntry],
@@ -428,32 +531,39 @@ impl FinderCatalog {
             })
             .collect::<Vec<_>>();
         let mut matches = command_results;
-        matches.extend(self.entries.iter().filter_map(|entry| {
-            let initialism = application_initialism(&entry.name);
-            let pinyin_initials = pinyin::pinyin_initials(&entry.name);
-            let direct_score = file_query
-                .score(&entry.name, &entry.target)
-                .into_iter()
-                .chain(file_query.score(&initialism, &entry.target))
-                .max();
-            // The pinyin channel only contributes below the direct tiers so a
-            // one-letter query cannot fuzzy-match the initials of an ASCII
-            // name that already matched directly.
-            let textual_score = direct_score
-                .filter(|score| *score >= 2_000)
-                .or_else(|| file_query.score(&pinyin_initials, &entry.target))?;
-            let usage = self.usage_for(&entry.id, &query);
-            Some(SearchResult {
-                entry: entry.clone(),
-                action: SearchResultAction::OpenTarget,
-                subtitle: None,
-                score: textual_score,
-                activation_count: usage.activation_count,
-                last_activated_at_unix_ms: usage.last_activated_at_unix_ms,
-                query_activation_count: usage.query_activation_count,
-                last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
-            })
-        }));
+        matches.extend(self.entries.iter().zip(&self.match_materials).filter_map(
+            |(entry, material)| {
+                let direct_score = file_query
+                    .score_prepared(&entry.name, &material.folded_name, &entry.target)
+                    .into_iter()
+                    .chain(file_query.score_literal(&material.initialism, &entry.target))
+                    .max();
+                // The pinyin channel only contributes below the direct tiers so a
+                // one-letter query cannot fuzzy-match the initials of an ASCII
+                // name that already matched directly.
+                let textual_score = direct_score
+                    .filter(|score| *score >= 2_000)
+                    .or_else(|| file_query.score_literal(&material.pinyin_initials, &entry.target))
+                    .or_else(|| {
+                        file_query
+                            .score_literal(&entry.name, &entry.target)
+                            .is_none()
+                            .then(|| file_query.score(&entry.name, &entry.target))
+                            .flatten()
+                    })?;
+                let usage = self.usage_for(&entry.id, &query);
+                Some(SearchResult {
+                    entry: entry.clone(),
+                    action: SearchResultAction::OpenTarget,
+                    subtitle: None,
+                    score: textual_score,
+                    activation_count: usage.activation_count,
+                    last_activated_at_unix_ms: usage.last_activated_at_unix_ms,
+                    query_activation_count: usage.query_activation_count,
+                    last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
+                })
+            },
+        ));
         if let Some(answer) = calculator_answer {
             let expression_id = normalize(&answer.expression);
             matches.extend(
@@ -1464,6 +1574,158 @@ mod tests {
         assert!(names.contains(&"Visual Studio Code"));
         assert!(names.contains(&"Notepad"));
         assert!(!names.contains(&"Visual Studio Preview"));
+    }
+
+    #[test]
+    fn r8_catalog_search_preserves_legacy_scores_rank_and_history_after_mutation() {
+        let (directory, mut catalog) = catalog_with_files(&[
+            "Visual Studio Code.lnk",
+            "VSCode.lnk",
+            "计算器.lnk",
+            "QQ音乐.lnk",
+            "Helium.lnk",
+            "hume.lnk",
+            "Kelvin.lnk",
+            "İstanbul.lnk",
+        ]);
+        let learned = catalog
+            .entries()
+            .iter()
+            .find(|entry| entry.name == "VSCode")
+            .expect("fixture app")
+            .id
+            .clone();
+        catalog
+            .record_activation(&learned, "vsc", 123)
+            .expect("record query history");
+        for refresh in [false, true] {
+            if refresh {
+                fs::write(directory.path().join("New Calculator.lnk"), b"fixture")
+                    .expect("new app");
+                catalog.replace_snapshot(scan_application_roots(catalog.roots()));
+            }
+            for raw in [
+                "vsc",
+                "VSC",
+                "jsq",
+                "yy",
+                "计",
+                "hum",
+                "k",
+                "istan",
+                "'code",
+                "^visual",
+                "lnk$",
+                "code | jsq",
+                "code !preview",
+                "::Studio code",
+            ] {
+                let query = FileQuery::parse(raw);
+                let mut expected = catalog
+                    .entries()
+                    .iter()
+                    .filter_map(|entry| {
+                        // Frozen pre-R8 application matching at the real catalog caller.
+                        let direct =
+                            query
+                                .score_literal(&entry.name, &entry.target)
+                                .into_iter()
+                                .chain(query.score_literal(
+                                    &application_initialism(&entry.name),
+                                    &entry.target,
+                                ))
+                                .max();
+                        let score = direct.filter(|score| *score >= 2_000).or_else(|| {
+                            query
+                                .score_literal(&pinyin::pinyin_initials(&entry.name), &entry.target)
+                        })?;
+                        let usage = catalog.usage_for(&entry.id, &normalize(raw));
+                        Some(SearchResult {
+                            entry: entry.clone(),
+                            action: SearchResultAction::OpenTarget,
+                            subtitle: None,
+                            score,
+                            activation_count: usage.activation_count,
+                            last_activated_at_unix_ms: usage.last_activated_at_unix_ms,
+                            query_activation_count: usage.query_activation_count,
+                            last_query_activation_at_unix_ms: usage
+                                .last_query_activation_at_unix_ms,
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                expected.sort_by(|left, right| {
+                    unified_search_rank(right)
+                        .cmp(&unified_search_rank(left))
+                        .then_with(|| left.entry.name.cmp(&right.entry.name))
+                        .then_with(|| left.entry.target.cmp(&right.entry.target))
+                });
+                let actual = catalog.search(raw, 200).expect("actual catalog search");
+                let retained = actual
+                    .iter()
+                    .filter(|item| expected.iter().any(|old| old.entry.id == item.entry.id))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    retained, expected,
+                    "legacy scores/order changed: {raw}, refresh={refresh}"
+                );
+                for added in actual
+                    .iter()
+                    .filter(|item| !expected.iter().any(|old| old.entry.id == item.entry.id))
+                {
+                    assert!(
+                        added.score < 2_000
+                            && query
+                                .score(&added.entry.name, &added.entry.target)
+                                .is_some(),
+                        "not a new low-tier pinyin match"
+                    );
+                }
+                for limit in [1, 3, 200] {
+                    assert_eq!(
+                        catalog.search(raw, limit).expect("limited search"),
+                        actual.iter().take(limit).cloned().collect::<Vec<_>>(),
+                        "{raw}, refresh={refresh}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn w1_application_full_spelling_preserves_legacy_initial_scores_and_refresh() {
+        let (directory, mut catalog) =
+            catalog_with_files(&["计算器.lnk", "资源管理器.lnk", "重庆.lnk"]);
+        let legacy = catalog.search("jsq", 20).expect("legacy initials");
+        assert_eq!(legacy.len(), 1);
+        assert_eq!(
+            legacy[0].score,
+            FileQuery::parse("jsq")
+                .score_literal("jsq", &legacy[0].entry.target)
+                .expect("frozen score")
+        );
+        for (query, name) in [
+            ("jisuanqi", "计算器"),
+            ("jisuq", "计算器"),
+            ("chongqing", "重庆"),
+        ] {
+            assert!(
+                catalog
+                    .search(query, 20)
+                    .expect("full spelling")
+                    .iter()
+                    .any(|item| item.entry.name == name)
+            );
+        }
+        fs::write(directory.path().join("银行卡.lnk"), b"fixture").expect("new shortcut");
+        catalog.replace_snapshot(scan_application_roots(catalog.roots()));
+        assert!(
+            catalog
+                .search("yinhang", 20)
+                .expect("refreshed pinyin")
+                .iter()
+                .any(|item| item.entry.name == "银行卡")
+        );
     }
 
     #[test]

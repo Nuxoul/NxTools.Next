@@ -142,7 +142,59 @@ test("interception holds the browser save dialog until the handoff resolves", ()
   const handoffResolves = [...handoffBody.matchAll(/yieldToBrowser\(\);/g)].length;
   assert.equal(
     handoffResolves,
-    5,
-    "disabled, site-disabled, preempted, accepted and rejected paths all yield once",
+    4,
+    "disabled, site-disabled, accepted and rejected paths all yield once",
   );
+});
+
+test("the worker has no obsolete response-header takeover or duplicate Blob reader", () => {
+  const source = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "background.js"),
+    "utf8",
+  );
+  const obsoleteOwners = [
+    "preemptedBrowserDownloads",
+    "PREEMPTED_DOWNLOAD_TTL_MS",
+    "rememberPreemptedBrowserDownload",
+    "wasPreemptedBrowserDownload",
+    "isLikelyBrowserDownloadResponse",
+    "sendPreemptedBrowserDownload",
+    "handlePreemptiveBrowserDownload",
+    "dispositionRequestsDownload",
+    "BINARY_DOWNLOAD_EXTENSIONS",
+    "FORCED_DOWNLOAD_MIME_TYPES",
+    "readBlobResourceViaContentScript",
+    "browser_download_already_preempted",
+  ];
+  for (const owner of obsoleteOwners) {
+    assert.doesNotMatch(source, new RegExp(`\\b${owner}\\b`), `${owner} must not remain as a duplicate owner`);
+  }
+
+  const captureBody = source.slice(
+    source.indexOf("function registerHeaderCapture"),
+    source.indexOf("function clearTabResources"),
+  );
+  assert.match(captureBody, /rememberRequestHeaders\(details\);/);
+  assert.match(captureBody, /captureRequestResource\(details\);/);
+  assert.match(captureBody, /onResponseStarted\.addListener\([\s\S]*captureNetworkResource\(details\);/);
+  assert.match(captureBody, /rememberRedirectHint\(details\);/);
+  assert.doesNotMatch(captureBody, /onHeadersReceived|"blocking"|cancel|sendDownloadPayload/);
+  assert.match(source, /chrome\.downloads\.onCreated\.addListener\(\(downloadItem\) => \{\s*void interceptBrowserDownload\(downloadItem, \{ eraseBrowserHistory: true \}\);/);
+});
+
+test("active Blob upload and content-script base64 fallback remain available", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const source = fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8");
+  const contentSource = fs.readFileSync(path.join(__dirname, "..", "content-script.js"), "utf8");
+  assert.match(source, /return await sendBlobResourceViaContentScript\(resource\);/);
+  const blobBody = source.slice(
+    source.indexOf("async function sendBlobResourceViaContentScript"),
+    source.indexOf("async function sendDownloadPayload"),
+  );
+  for (const message of ["content_blob_info", "prepare_blob_upload", "content_upload_blob", "commit_blob_upload"]) {
+    assert.ok(blobBody.includes(`"${message}"`), `${message} remains on the active bounded upload path`);
+  }
+  assert.match(blobBody, /finally\s*\{\s*releaseBlobPort\(\);/);
+  assert.match(contentSource, /message\?\.type === "content_read_blob"[\s\S]*?readBlobInPage\(message\.url, message\.filename\)\.then\(sendResponse/);
 });

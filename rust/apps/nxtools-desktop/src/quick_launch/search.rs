@@ -1,5 +1,36 @@
 use super::*;
 
+pub(crate) fn recent_modified_filter(query: &str) -> Option<&str> {
+    let query = query.trim();
+    query
+        .get(..7)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("recent:"))
+        .map(|_| query[7..].trim())
+}
+
+pub(crate) fn recent_modified_results(items: &[IndexSearchItem]) -> Vec<SearchResult> {
+    items
+        .iter()
+        .filter(|item| !item.is_directory && item.modified_at_unix_ms.is_some())
+        .take(RESULT_LIMIT)
+        .map(|item| SearchResult {
+            entry: nxtools_finder::ApplicationEntry {
+                id: format!("indexed:{}", item.path.replace('/', "\\").to_lowercase()),
+                name: item.name.clone(),
+                target: item.path.clone(),
+                source: ApplicationSource::IndexedFile,
+            },
+            action: SearchResultAction::OpenTarget,
+            subtitle: Some(format!("最近修改 · {}", item.path)),
+            score: item.score,
+            activation_count: 0,
+            last_activated_at_unix_ms: None,
+            query_activation_count: 0,
+            last_query_activation_at_unix_ms: None,
+        })
+        .collect()
+}
+
 pub(crate) fn index_settings_from_quick_launch(settings: &QuickLaunchSettings) -> IndexSettings {
     IndexSettings {
         indexed_volumes: settings.indexed_volumes.clone(),
@@ -212,7 +243,7 @@ pub(crate) fn quick_launch_shortcut_hint(visible_position: usize) -> Option<&'st
 
 pub(crate) fn quick_launch_shortcut_target(
     key: &str,
-    modifiers: gpui::Modifiers,
+    modifiers: gpui_kit::Modifiers,
     visible_range: Range<usize>,
     result_count: usize,
 ) -> Option<usize> {
@@ -231,38 +262,10 @@ pub(crate) fn quick_launch_shortcut_target(
 }
 
 pub(crate) fn quick_launch_match_ranges(text: &str, query: &str) -> Vec<std::ops::Range<usize>> {
-    let mut ranges = query
-        .trim_start()
-        .strip_prefix('*')
-        .unwrap_or(query.trim_start())
-        .split_whitespace()
-        .filter_map(|raw| {
-            if raw == "|" || raw.starts_with('!') || raw.starts_with("::") {
-                return None;
-            }
-            let pattern = raw
-                .trim_matches('"')
-                .trim_matches('\'')
-                .trim_start_matches('^')
-                .trim_end_matches('$');
-            (!pattern.is_empty()).then_some(pattern)
-        })
-        .flat_map(|pattern| match_ranges_for_pattern(text, pattern))
-        .collect::<Vec<_>>();
-    ranges.sort_by_key(|range| (range.start, range.end));
-    let mut merged: Vec<std::ops::Range<usize>> = Vec::with_capacity(ranges.len());
-    for range in ranges {
-        if let Some(previous) = merged.last_mut()
-            && range.start <= previous.end
-        {
-            previous.end = previous.end.max(range.end);
-        } else {
-            merged.push(range);
-        }
-    }
-    merged
+    nxtools_finder::FileQuery::parse(query).match_ranges(text)
 }
 
+#[cfg(test)]
 pub(crate) fn match_ranges_for_pattern(text: &str, pattern: &str) -> Vec<std::ops::Range<usize>> {
     let text_chars = text.char_indices().collect::<Vec<_>>();
     let pattern_chars = pattern.chars().collect::<Vec<_>>();
@@ -544,6 +547,9 @@ impl IndexSearchSession {
                 preferred_directory: None,
                 include_files: true,
                 include_directories: true,
+                retain_kinds_apart: true,
+                allow_homophone_fallback: true,
+                recent_modified: recent_modified_filter(&self.query).is_some(),
             },
         }
     }

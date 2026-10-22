@@ -1,0 +1,38 @@
+{
+  "date": "2026-10-20",
+  "phase": "Phase A — Engine contracts and safety foundation",
+  "scope": "ZIP declared member/total output preflight -> explicit larger finite approval -> one new native admission",
+  "status": "implemented_scoped_checks_pass_independent_acceptance_pending",
+  "not_complete": ["full B3", "SAFE04", "Phase A", "A–F"],
+  "red": {"name": "archive readmission fixture preflight no output", "selected": 1, "run": 1, "pass": 0, "skip": 0, "fail": 1, "exit": 1, "assertion": "declared output shortage must expose current and required finite quotas"},
+  "dotnet": {"exit": 0, "warnings": 0, "errors": 0},
+  "rust": {
+    "exit": 0, "passed": 36, "failed": 0, "ignored": 0,
+    "targets": {"output_readmission_chain": 1, "output_readmission_contract": 3, "interaction_contract": 4, "worker_wire": 15, "transaction_contract": 5, "extraction_plan_contract": 5, "zip_boundary_contract": 2, "metadata_wire_contract": 1},
+    "real_chain_scenarios": ["member", "total", "cancel", "source_changed", "actual"],
+    "risk_domain": {"exit": 0, "passed": 2, "filtered": 14},
+    "clippy_isolated_exit": 0, "clippy_default_exit": 0, "fmt_exit": 0, "matching_worker_exit": 0,
+    "environment": {"CARGO_BUILD_JOBS": "1", "CARGO_INCREMENTAL": "0", "RUSTFLAGS": "-C codegen-units=256"}
+  },
+  "csharp": {
+    "list_exit": 0, "run_exit": 0, "selected": 7, "run": 7, "pass": 7, "skip": 0, "fail": 0, "not_run": 0,
+    "exact_list_run_names": [
+      "archive readmission fixture preflight no output",
+      "archive risk fixture actual ZIP confirmation",
+      "archive conflict fixture actual ZIP decisions",
+      "archive product fixture actual open test privacy",
+      "archive worker fixture suspended admission and job limits",
+      "archive worker fixture stuck admission retains slots",
+      "archive extraction actual Rust handle-session fixture"
+    ]
+  },
+  "native_bounds": {"max_entry_bytes": 34359738368, "max_output_bytes": 1125899906842624},
+  "assertions": ["actual exited cleanup before prompt/new admission", "zero initial target directory/partial/publication effects", "fresh operation/control ID with shared cancellation", "original supported options and Job memory unchanged", "source identity/revision plus digest checked before output_ready", "stale/duplicate/invalid/cancel answers do not create extra attempts", "actual overflow has zero current publication/partial and no third attempt", "original Risk approval cannot enlarge admitted limits"],
+  "history": {"preexisting_task_files_unchanged": 116, "prior_checkpoint_snapshot_sha256": "C0AA4D0BB0B03C0479CDB7FBB3BF70351C586099AF1614E2445F24ECA25166AC"},
+  "verification": {"spec_contracts_exit": 0, "task_context_exit": 0, "fixture_selector_exit": 0, "diff_check_exit": 0},
+  "known_warning": "Existing platformhost/native-contracts.md 35497 bytes exceeds 32768 context injection limit; unchanged",
+  "scratch": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\949da288-1ef9-46b3-a698-90f543613cf5",
+  "remaining": ["independent scoped acceptance", "other-format interactions and remaining canonical Phase A/B3/SAFE04 dependencies"],
+  "prohibited_actions_performed": [],
+  "stop": "No next feature, packaging, install, signing, commit or push"
+}

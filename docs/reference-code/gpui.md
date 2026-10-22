@@ -14,6 +14,10 @@ measurements here remain historical reference evidence; the later approved stage
 governs target tokens. This does not retire lifecycle, native geometry, lease or accessibility
 limitations recorded in this note.
 
+## User-authorized0.8.0 upgrade (2026-10-21)
+The user explicitly approved a coherent Kit/Base/Component/Assets0.8.0 and default gpui-pre0.3.9 upgrade after https://gpui-kit.com/zh-CN/releases/ review. Published crates were downloaded and SHA256checked against crates.io, not Git main.0.8.0 publishes text::editor_host and includes0.7.3typography/selection/focus changes, new scroll gesture ownership and input fixes. Existing grammar features remain. This supersedes prior version pins, not business/native behavior, visual acceptance or authority for GPUI Fast/Markdown editor/package/install.
+Verified boundary: Component0.8.0 notification.rs is identical to published0.7.1 (SHA25609010c94024ee6e2580ecf557d97dcf276512a52be8cf298e0936088df0afeca), stillhardcoded5s; Windows0.3.9 events.rs still unconditionally MA_ACTIVATE. Carry only original Notification::duration forwarding and live WS_EX_NOACTIVATE interpretation to fresh licensed releasecopies, never transplant the whole old vendor. Existing native paths C#SetWindowNoActivate -> live HWNDstyle -> inprocess WM_MOUSEACTIVATE, and officialToastManagerclock remain authoritative. Preserve firsthidden/finalbounds/readback/frame/reveal, samewindowfocus, callbacksnextturn/fullpayload/privacy and all original failure/cancel/lateACK regressions. Sourcegate `tests/architecture/gpui-release-contracts.py` plus scoped strict/workspace/fullDesktop/lifecycle/native separately authorized acceptance. Owning `.trellis/tasks/10-21-gpui-kit-080-upgrade/`.
+
 ## Zed source entries
 
 Root: `D:\Code\zed-main`
@@ -90,9 +94,9 @@ Verified current NxTools.Next call chain before extracting the tool-settings she
 
 Template invariants:
 
-- One shared feature-settings shell owns the title/description header, enabled status, one binary
-  toggle and an icon-only close action with a visible tooltip. Feature-specific settings are passed
-  as content and remain owned by their existing Rust application.
+- One shared feature-settings template owns a title/close-only native drag header,
+  its divider, then one scroll body containing a labeled enable row (status + Switch
+  and optional-description Tooltip) and feature-specific application-owned content.
 - The enabled toggle updates local view state synchronously, then defers the write to
   `ClipboardApplication` until the next GPUI application turn. It must not synchronously re-enter a
   parent/application entity from a window callback.
@@ -102,6 +106,13 @@ Template invariants:
   continuous content area. Do not add nested cards or move native window APIs into the GPUI shell.
 - Regression gates exercise the real tool card → settings window path, observe the initial enabled
   state, toggle it through the shared switch, verify content remains mounted, and close the window.
+- User-approved 2026-10-11 amendment supersedes the earlier title/status/Switch
+  alignment candidate: feature activation belongs in the body, never beside close.
+  `FeatureSettingsWindowSpec` supplies enabled_label and optional description;
+  the later explicit Tooltip amendment places description beside the body label,
+  not in a permanent text row. Preserve callback/normal activation/460x320 budget.
+  Rechecked tools_page::open_tool_settings_window normal focus/show and Root chain;
+  no legacy counterpart exists. Passive clipboard preview is not this window policy.
 - The link-detector settings window exposes one position dropdown owned by
   `ToolSettingsWindowBody`; selecting an option updates the local draft and defers the persisted
   write to `ClipboardApplication`, just like the existing toggles.
@@ -206,3 +217,49 @@ User approved all module/common capability implementation before consolidated ac
 Rechecked ABDM AddDownloadPage.kt `OnDuplicateStrategySolutionItem` (single row clickable plus same checkbox callback) and legacy AddDownloadWindow.axaml ListBox/HLS/duplicate selectors and category ComboBox. Shared `compact_list_row` and `radio_list_row` currently own a single selection callback, not lifecycle or native policy. Preserve that callback and measured40px row/content/radio-dot geometry; add keyed focus through the existing GPUI KeyUp click boundary and an overlay focus ring, never a second Enter handler. A disabled category is visually disabled for automatic classification but remains selectable in settings for editing; it is not a disabled action. Compact result horizontal padding migrates7→8 without changing row heights. Existing category search menus retain one Up/Down/Enter controller. Native show/hide, cancellation, center/placement and auxiliary focus boundaries are unchanged.
 
 Shared-settings continuation rechecked Zed list_item.rs `on_click`/accessible actionable node and old SettingsWindow.axaml command/control composition. Pinned vendor Checkbox has its own focused KeyUp click even with no callback; a nested display-only checkbox therefore must not expose an inert tab stop. Volume-scope rows will own one focus/click action, with noninteractive checkbox glyphs. Custom-command master selection remains editor-only (no execution), measured18+4+16 fits40px; enabled/delete remain detail actions. Exclusion paths retain the existing parent Up/Down/Delete controller. `hotkey_field` entry is pointer-only before this continuation; the MainWindow recording controller only captures KeyDown while `recording_hotkey` is set, so a single focused KeyUp entry safely transfers focus into that controller without recording its activation key. Applying/waiting/recording eligibility must be preserved. No native placement/show/failure/cancellation boundary changes.
+
+## Feature-first production layout migration after checkpoint42f60a8
+User explicitly authorizes local UI implementation with original functionality as the source of truth: browser prototype omissions never authorize removal of controls, settings, actions, shortcuts or failure states. Rechecked Zed ListItem start/end/selected/focus boundary; legacy MainWindow constructor/OnOpened/OnClosed/OnClosing: startup/services deferred after show, close-to-tray cancels close, explicit exit follows base final close. Legacy SettingsWindow constructor attaches WindowAnimationService, Open configures scope, Apply/Cancel owner commands then Close, unhandled final close cancels; Avalonia native base remains unavailable. Next MainWindow module switches retain owners/state; native titlebar/window controls still route to C# NativeMethods visibility/minimize/maximize. Initial migration changes rail/type/representative form projection only, preserves titlebar/global-settings entry and all module/settings operations. Module descriptions become tooltips, not deleted information. Native popup/download budgets and shared compact typography remain separate from workbench type roles.
+
+## Remaining supporting surfaces: notification message/action budget
+Rechecked Zed notifications/status_toast.rs new/action/render boundaries and existing Next NotificationCenter generations,MainWindow render overlay/action/dismiss. Legacy owner show/close/tray semantics remain unchanged. Notification layout uses bounded scrollable text/details separate from stable action/footer so long messages cannot clip the operation. Same max3/bottom-right336x112 budget,caller generation/deferred dismiss,one KeyUp and reduced-motion semantics preserved; no changes to lifecycle controller/native show boundary.
+
+### Remaining bounded scroll/action layout recheck (2026-10-09)
+Zed `crates/notifications/src/status_toast.rs` was inspected for message/action separation only, not notification lifetime/native ownership. NxTools.Next retains max3/336px/112px cards and generation-scoped deferred dismissal. Long title/message/details use an identified bounded GPUI scroll viewport with a separate nonshrinking28px action; no new timer/frame logs or omitted details. Clipboard long-source editor uses the same principle within its existing budget. Actual production bounds regressions caught scrollbar-wrapper overflow/action displacement; explicit overflow_y_scroll at the constrained container fixes them. GPUI test window.resize alone can leave1920×1080 viewport; fixed/minimum fixtures also simulate_resize before asserting containment. This is real compiled geometry/action evidence, not native screen-reader or aesthetic acceptance. [Audit](../audits/2026-10-09-remaining-ui-layout-migration.md).
+
+### Installed feedback: neutral navigation and focus-visible correction (2026-10-10)
+User rejects bright cyan actions/selection/focus and the mouse-retained rectangle in both Global and Download settings. Rechecked Zed ButtonLike:797–860: selected/hover/active roles remain separate and focus_visible applies keyboard presentation, not a permanent pointer outline. ListItem:312–327 separates focused border from neutral ghost selected/hover surfaces. Pinned GPUI0.2.2 has no focus_visible API; its window.on_key_event/on_mouse_event are paint-phase, frame-owned listeners, and canvas supplies a safe registration seam. Rechecked ABDM AddDownloadPage:91–114 first, then legacy SettingsWindow constructor→WindowAnimationService.Attach→base OnOpened/ConfigureForCurrentScope and SettingsNav_Click→SetActiveNav→scroll; Avalonia native base remains unavailable. Only Next presentation/input-modality changes are authorized: retain mouse focus, Tab/Shift+Tab, original KeyUp single activation/disabled guard, field input/cancellation/entity/native owners and all measured budgets. Neutral graphite roles supersede the earlier user-approved cyan color; no dependency/vendor change or second activation framework.
+
+### Continuous settings navigation correction (2026-10-10)
+User-installed screenshot shows General/Network/Blacklist labels on unequal intrinsic-width hover/selected tiles. Rechecked Zed ListItem:303–327 full-width continuous row and independent hover/selected state, legacy SettingsNav_Click→SetActiveNav→scroll with unchanged constructor/base lifecycle; ABDM add/config presentation inspected first for download scope. Production regression ran red at40px and now asserts all three actual Global rows fill the128px rail's111px inner width (16px insets+1px separator) at720×480 through hover/selection states. Shared focusable-content wrapper owns explicit stretched column geometry so child100% width cannot resolve to label intrinsic width. Download navigation uses its existing48px tier and147px inner visual within8px margins; an explicit100% width plus margins overflowed and was removed, preserving automatic stretch. Selected hover retains selected plane. No controller/Save/Cancel/native focus/placement/dependency change.
+
+### Apply-button foreground state regression (2026-10-10)
+User reports white label blending into light neutral Apply. Zed ButtonLike disabled/hover states inspected for independent readable text/background, not native ownership. Real GPUI paint-time text-style fixture with current action_button/variant is red: inherited foreground overridden by component hover/state styling. Project-owned primary action must explicitly set label foreground and disabled background/foreground, preserving32px footer/input tier, disabled eligibility and original click/KeyUp boundary. Vendor source only inspected, no dependency/vendor patch. Test normal/hover/disabled actual painted text, not only theme constants; existing screenshot isn't proof of which transient state produced it.
+
+## User-supplied ShellRS visual reference
+2026-10-10 user requests renewed UI reference against D:\Code\shell-rs-main. [ShellRS UI note](shellrs-ui.md) indexes verified theme/settings/form/nav/table/status/Action/Radio/dialog composition and source tests, with current-stack/API and GPL-3.0-only boundaries. Learn coherent component/state/alignment principles, not only palette. No executable build/launch, copied code/dependency migration, numeric target override, native acceptance or Next product edit performed by this reference study.
+
+## Queue10 shared state/notification prerequisite
+Rechecked ABDM Desktop AppComponent::sendNotification/showNotification tag effect and
+originalNxTools WindowAnimationService Attach/Open/Closing/publicClose plus settings
+ApplyCancel and popup HidePopup/one passivepreview chain. Legacy nativeAvalonia base
+unavailable; no equivalent legacy boundedNextNotificationCenter claimed. Next manager
+max3/upsertID/generation/6-10s terminal timers/120ms exit and deferred actiondismiss remain.
+Released0.7.1 Empty/Alert/Spinner/Notification publiccontent/action/autohide/on_close and
+Notification::dismiss/privateDismissRequest/NotificationList lifecycle reviewed before
+changes. Test actual directpresentation/manager seam,not reject by manager existence.
+Sharedprogress_state is loading copy,not taskpercentage; keep loading/error/empty distinct.
+NativeDialog/titlebar/OLE/passivehosts remain; only compatible innerpresentation changes.
+
+Queue10 verified selection: Empty/EmptyContent/literalLabel, XSmallAlert and loading
+SmallSpinner only under original motion policy; no determinate loading percentage.
+Notification public standalone render succeeds, but dismiss emits privateDismissRequest
+and direct on_close0 without NotificationList completion. Only this adapter limited;
+other public adapters unverified. Original bounded manager retained with actual semantic
+Alert ORIGINAL copy/Labeldetails/Smallaction/XSmallclose and tested nonoverlap/scroll.
+PopupMenu ElementItem publicicon/naturalLabel preserves danger copy without customrow;
+default26px menu owns chrome. Recorder entry actual32outlinedButton/Label keeps capture
+owner; nativeclienttitle36/draghost retained, closeSmall24 removes duplicatehoverpaint.
+Original nativeDialog/OLE/passive/Settings/Form/Footer owners unchanged. Exact tests,
+consumer classification/limits and pending decision: owning ui-queue-outcomes.md10.
+615Desktop/strictchecks/11sourcegates are not visual/native/physical/DPI/reader acceptance.

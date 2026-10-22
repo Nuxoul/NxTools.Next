@@ -1,0 +1,12 @@
+# Official theme catalog and package amendment
+
+User explicitly requests several additional GPUI Kit themes, then direct packaging without optional validation; user will validate installed behavior. Preserve mandatory wrapper memory/installer safety gates; no standalone tests/lint/screenshots/native acceptance for this amendment.
+
+Official docs https://gpui-kit.com/zh-CN/component/theme/ links upstream themes library. Released0.7.1 contains Default Light/Dark only; extra official repository presets bundled unchanged at commit d2e6bba2fcab8c605e983327207682a397c98060: catppuccin.json (Latte/Frappe/Macchiato/Mocha), gruvbox.json (Light/Dark), solarized.json (Light/Dark). Original metadata preserved, Apache notice appended. Resources compile into desktop via include_str; offline use, no watched filesystem/online runtime.
+
+Core ThemePreference gains8 stable serde variants, label/catalog/mode projection; legacy System/Light/Dark/default remain. Global Settings6 uses released DropdownMenu/PopupMenuItem.checked, weak entity plus defer, local draft and original atomic Save/Cancel. Official Settings hierarchy remains. Kit ThemeRegistry.load_themes_from_str + public light_theme/dark_theme + Theme::change applies full selected official config; defaults restored when leaving preset. Fonts adapted only, no color edits/private APIs/dependency upgrades.
+
+Package command: scripts/package.ps1 -Configuration Release -SkipVerification, locked toolchain PATH and required low-memory flags. Installed UI/native validation delegated to user; do not report new theme tests passed. No install or service mutation beyond exact-owned package-wrapper policy.
+
+## Delivered package
+2026-10-13T23:41:42.4403548+08:00: artifacts/installer/NxTools.Next-setup-0.7.0.exe,16945220bytes,SHA256023981E5C677F268ACF6B9A135810983E145361B39EA612C56881057AB867FA2. Formal -SkipVerification wrapper exit0; committed-memory preflight21.40GiB>=6,Release compile3m21s,C# publish,PE/icon gates and mandatory7isolated installer scenarios pass. Optional functionality tests/lint/UI/native/user acceptance deliberately not run per user request. No installation. First background launch exited without log/status or Cargo; confirmed no surviving Rust build then direct long-timeout wrapper completed. Full log in session scratch package-official-themes-direct.log. UI now has11options (System/default2/additional8); original theme files embedded offline, selected value saved through existing system-section transaction.

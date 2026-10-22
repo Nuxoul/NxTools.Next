@@ -36,15 +36,19 @@ if ($eventWindow -notmatch 'ResolveApprovedDesktopExecutablePath' -or
     throw 'Desktop shell startup registration must use the approved Desktop resolver, not a PlatformHost-directory guess.'
 }
 if ($windowsAdapter -notmatch 'ResolveApprovedDesktopExecutablePath' -or
-    $indexerInstaller -notmatch 'IsApprovedProtectedDesktop' -or
-    $indexerInstaller -notmatch 'ReleaseBinaryManifest\.DesktopSha256') {
-    throw 'Desktop startup registration must require the protected Desktop path and release hash.'
+    $windowsAdapter -notmatch 'IsVerifiedCurrentDesktop' -or
+    $windowsAdapter -notmatch 'ReleaseBinaryManifest\.DesktopSha256' -or
+    $indexerInstaller -notmatch 'VerifiedPackagedBinaryHashMatches' -or
+    $indexerInstaller -notmatch 'IsApprovedProtectedDesktop') {
+    throw 'Desktop shell requires a hash-verified current-package sibling or the approved protected fallback.'
 }
 if ($windowsAdapter -notmatch 'DeleteValue\("NxTools", throwOnMissingValue: false\)' -or
     $installerScript -notmatch 'ValueType: none; ValueName: "NxTools"; Flags: deletevalue') {
     throw 'Startup migration must remove the legacy duplicate NxTools Run value in both settings reconciliation and setup.'
 }
-if ($desktopSources -match '(?:font_family\(|UI_(?:MONO_)?FONT_FAMILY[^=]*=\s*)"[^"]*,') {
+# A variable use is not a declaration; never scan through later assignments or strings.
+# Keep the value on one source line even when the call/declaration is multiline.
+if ($desktopSources -match '(?:\bfont_family\s*\(\s*|\b(?:const|static)\s+UI_(?:MONO_)?FONT_FAMILY\s*:\s*[^=;()"{}\r\n]+=\s*)"[^"\r\n]*,') {
     throw 'GPUI font_family must name one actual family, not a CSS fallback list.'
 }
 if ($mainWindow -notmatch 'send_command\(PlatformCommand::BeginWindowMove') {
@@ -80,5 +84,35 @@ if ($buildMarker -lt 0 -or $hostMarker -lt 0 -or $buildMarker -gt $hostMarker) {
     throw 'The development launcher must finish the desktop build before starting PlatformHost.'
 }
 
+
+# Queue09 adopts Settings presentation without replacing global persistence/native owners.
+$globalSettingsSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\network_settings.rs')
+$globalRulesSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\network_settings\blacklist.rs')
+foreach ($contract in @('Settings::new("global-official-settings")', 'SettingPage::new(',
+    'SettingGroup::new()', 'SettingItem::render(', 'aligned_setting_row(', 'input_segmented_control(',
+    '.resettable(false)', 'Form::vertical()', 'Field::new()', 'Switch::new(',
+    'AppConfig::update_global_settings_with_blacklist(', 'self.publish_live_blacklist(correlation_id, cx)',
+    'fn save(', 'cx.defer(move |cx|', 'self.pending_apply.is_some() || self.draft_busy.get()',
+    'GLOBAL_SETTINGS_WINDOW_WIDTH: f32 = 720.0', 'GLOBAL_SETTINGS_WINDOW_HEIGHT: f32 = 480.0')) {
+    if (-not $globalSettingsSource.Contains($contract)) { throw "Global Settings component/original owner missing: $contract" }
+}
+foreach ($contract in @('Checkbox::new(', '.on_change(on_change)', '.disable_clipboard = *requested',
+    '.disable_quick_launch = *requested', 'Button::new(', 'fn add_rule(',
+    'ProcessBlacklistRule::new(', 'self.rules.remove(index)', 'self.process_input')) {
+    if (-not $globalRulesSource.Contains($contract)) { throw "Global rule component/draft owner missing: $contract" }
+}
+if ($globalRulesSource.Contains('fn scope_action(') -or $globalRulesSource.Contains('focusable_content(') -or
+    $globalSettingsSource.Contains('fn render_navigation(')) {
+    throw 'Global ordinary rules/navigation must not retain hand-painted Base action controls.'
+}
+$globalKitTests = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\network_settings\kit_migration_tests.rs')
+foreach ($contract in @('queue09_scope_pointer_tab_release_is_independent_local_and_cancel_discards',
+    'queue09_proxy_form_preserves_inputs_invalid_draft_and_single_atomic_apply',
+    'queue09_failed_commit_keeps_draft_busy_guard_and_retry_uses_original_save',
+    'queue09_long_error_and_busy_controls_keep_footer_and_draft_at_fixed_budget',
+    'queue09_optional_help_tooltip_and_proxy_keyboard_keep_one_draft_dispatch', 'KeyDownEvent', 'KeyUpEvent')) {
+    if (-not $globalKitTests.Contains($contract)) { throw "Global production regression missing: $contract" }
+}
+Write-Host 'PASS Global Settings/independent Checkbox presentation retains atomic-save/deferred/native ownership (source only)'
 
 Write-Host 'Desktop shell lifecycle architecture gate passed.'

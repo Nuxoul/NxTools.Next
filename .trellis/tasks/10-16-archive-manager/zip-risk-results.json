@@ -1,0 +1,25 @@
+{
+  "slice": "Phase A B3 ZIP current-admitted-budget risk confirmation",
+  "status": "implemented_scoped_checks_passed_pending_independent_acceptance",
+  "full_B3_SAFE04_PhaseA_A_to_F_complete": false,
+  "production_rule": {"expanded_bytes_strictly_above": 67108864, "expanded_strictly_above_packed_multiple": 1000, "known_positive_packed_required": true},
+  "approval_scope": {"current_member_ticket_only": true, "admitted_limits_immutable": true, "budget_escalation_implemented": false, "new_attempt": false, "permanent_or_cross_task_trust": false},
+  "scratch": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\949da288-1ef9-46b3-a698-90f543613cf5",
+  "red": {"list": 1, "run": 1, "pass": 0, "fail": 1, "skip": 0, "exit": 1, "log": "risk-red-run.log"},
+  "production_pending_green": {"list": 1, "run": 1, "pass": 1, "fail": 0, "skip": 0, "exit": 0, "log": "risk-green-run.log"},
+  "final": {
+    "rust_small": {"pass": 31, "fail": 0, "ignored": 0, "targets": 6, "exit": 0, "log": "risk-small.log"},
+    "risk_domain": {"pass": 2, "fail": 0, "filtered": 14, "exit": 0, "log": "risk-domain.log"},
+    "clippy_isolated": {"exit": 0, "log": "risk-clippy-isolated.log"},
+    "clippy_default": {"exit": 0, "log": "risk-clippy-default.log"},
+    "fmt_scoped": {"exit": 0, "log": "risk-fmt.log"},
+    "dotnet": {"exit": 0, "warnings": 0, "errors": 0, "log": "risk-final-dotnet.log"},
+    "matching_worker": {"exit": 0, "features": "isolated-codecs", "log": "risk-final-worker.log"},
+    "csharp": {"list": 4, "run": 4, "pass": 4, "skip": 0, "fail": 0, "not_run": 0, "exit": 0, "exact_LIST_RUN_PASS_names_equal": true, "risk_scenarios": 13, "log": "risk-final-run.log"}
+  },
+  "small_fixture": {"independent_producer": "DotNet_ZipArchive", "maximum_actual_expansion_bytes_per_zip": 8448, "production_declaration_only_size": 67108865, "debug_stricter_threshold_bytes": 1024, "debug_stricter_ratio": 2, "release_fixture_runtime_tested": false},
+  "verified_boundaries": ["ordinary_no_prompt", "production_declared_risk_pending", "confirmation_exact_native_bytes", "typed_rejection", "cancel_prior_commit_retained_later_member_stopped", "stale_ticket_new_member", "larger_answer_not_approval", "actual_entry_overflow_after_approval", "actual_total_overflow_after_prior_commit", "declared_limit_no_prompt", "corruption_after_approval_refused", "unsafe_and_internal_collision_before_prompt", "unknown_zero_packed_no_fake_ratio"],
+  "historical_task_files_unchanged_before_checkpoint": 111,
+  "remaining": ["independent_ZIP_risk_acceptance", "larger_budget_escalation", "other_format_risk_integration", "full_B3_SAFE04_PhaseA_A_to_F"],
+  "not_executed": ["all_format_risks", "B1_B2_full_matrix", "UI", "FIFO", "PhaseB", "100k", "long_path_matrix", "1GiB", "large_ZIP64", "resource_sampling", "UNC", "source_recycle_delete", "system_changes", "formal_program", "package", "install", "sign", "commit", "push", "global_workspace_suite"]
+}

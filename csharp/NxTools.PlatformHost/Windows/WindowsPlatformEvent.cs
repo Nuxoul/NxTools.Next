@@ -5,6 +5,8 @@ using NxTools.PlatformHost.Protocol;
 internal abstract record WindowsPlatformEvent;
 internal sealed record SystemMotionPreferenceChangedEvent(
     Guid CorrelationId, bool ReducedMotion, int NativeErrorCode) : WindowsPlatformEvent;
+internal sealed record SystemThemePreferenceChangedEvent(
+    Guid CorrelationId, bool Dark, int NativeErrorCode) : WindowsPlatformEvent;
 
 internal sealed record TrayActionRequestedEvent(Guid CorrelationId, string Action) : WindowsPlatformEvent;
 

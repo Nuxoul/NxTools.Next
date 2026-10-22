@@ -1,17 +1,20 @@
 use std::rc::Rc;
 
-use gpui::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{Icon, Sizable};
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{Icon, Sizable};
+use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::action::{danger_ghost_button_variant, labelled_icon_action};
-use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, RADIUS_NONE, SPACING_4, SPACING_8, SPACING_12,
+use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};
+use crate::ui::typography::{
+    LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+    LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+    TEXT_WORKBENCH_SUPPORT as TEXT_LABEL,
 };
-use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 const PATH_LIST_ROW_HEIGHT: f32 = 40.0;
 const PATH_LIST_ICON_RAIL_WIDTH: f32 = 16.0;
@@ -36,7 +39,7 @@ pub(crate) fn path_exclusion_setting(
     selected_index: Option<usize>,
     on_select: impl Fn(usize, &mut Window, &mut App) + 'static,
     on_remove: impl Fn(usize, String, &mut Window, &mut App) + 'static,
-    on_add: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_add: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> AnyElement {
     let callbacks = PathRowCallbacks {
@@ -48,10 +51,7 @@ pub(crate) fn path_exclusion_setting(
         MaterialIcon::Add,
         "添加目录",
     )
-    .ghost()
-    .border_1()
-    .border_color(theme.border_subtle)
-    .bg(theme.surface_raised)
+    .outline()
     .on_click(on_add);
     let mut rows = Vec::with_capacity(paths.len().max(1));
     if paths.is_empty() {
@@ -88,9 +88,8 @@ pub(crate) fn path_exclusion_setting(
                 .child(
                     div()
                         .min_w_0()
-                        .flex_1()
                         .flex()
-                        .flex_col()
+                        .items_center()
                         .gap(px(SPACING_4))
                         .child(
                             div()
@@ -100,20 +99,15 @@ pub(crate) fn path_exclusion_setting(
                                 .text_color(theme.text)
                                 .child("排除目录"),
                         )
-                        .child(
-                            div()
-                                .h(px(LINE_HEIGHT_LABEL))
-                                .truncate()
-                                .text_size(px(TEXT_LABEL))
-                                .line_height(px(LINE_HEIGHT_LABEL))
-                                .text_color(theme.text_muted)
-                                .child("目录及其所有子项不会进入速启结果"),
-                        ),
+                        .child(crate::ui::components::tooltip::description_help(
+                            "quick-launch-exclusion-help",
+                            "目录及其所有子项不会进入速启结果",
+                        )),
                 )
                 .child(
                     div()
                         .debug_selector(|| "quick-launch-add-index-exclusion".into())
-                        .h(px(CONTROL_HEIGHT_ACTION))
+                        .h(px(CONTROL_HEIGHT_INPUT))
                         .flex_none()
                         .child(add),
                 ),
@@ -154,92 +148,88 @@ fn path_row(
     let remove = Rc::clone(&callbacks.remove);
     let delete_variant = danger_ghost_button_variant(theme, cx);
 
-    div()
-        .id(row_selector.clone())
+    ListItem::new(row_selector.clone())
         .debug_selector(move || row_selector.to_string())
-        .relative()
+        .accessibility_label(path.clone())
+        .selected(selected)
+        .aria_selected(selected)
         .w_full()
         .h(px(PATH_LIST_ROW_HEIGHT))
+        .py_0()
         .flex_none()
         .cursor_pointer()
-        .flex()
-        .items_center()
-        .pl(px(SPACING_12))
-        .bg(if selected {
-            theme.element_selected
-        } else {
-            theme.canvas
-        })
-        .hover(move |style| style.bg(theme.surface_hover))
         .when(show_divider, |row| {
-            row.border_b_1().border_color(theme.border_subtle)
-        })
-        .when(selected, |row| {
             row.child(
                 div()
                     .absolute()
                     .left_0()
-                    .top(px(SPACING_8))
-                    .bottom(px(SPACING_8))
-                    .w(px(2.0))
-                    .bg(theme.accent),
+                    .right_0()
+                    .bottom_0()
+                    .h(px(1.0))
+                    .bg(theme.border_subtle),
             )
         })
         .on_click(move |_event, window, cx| row_select(index, window, cx))
         .child(
             div()
-                .w(px(PATH_LIST_ICON_RAIL_WIDTH))
-                .flex_none()
+                .w_full()
+                .min_w_0()
                 .flex()
                 .items_center()
                 .child(
-                    Icon::new(MaterialIcon::Folder)
-                        .size(px(14.0))
-                        .text_color(theme.icon_muted),
-                ),
-        )
-        .child(
-            div()
-                .id(path_selector.clone())
-                .debug_selector(move || path_selector.to_string())
-                .min_w_0()
-                .h(px(LINE_HEIGHT_BODY))
-                .flex_1()
-                .ml(px(SPACING_8))
-                .truncate()
-                .text_size(px(TEXT_BODY))
-                .line_height(px(LINE_HEIGHT_BODY))
-                .text_color(theme.text_secondary)
-                .tooltip(move |window, cx| {
-                    let tooltip_path = tooltip_path.clone();
-                    let tooltip_selector = tooltip_selector.clone();
-                    Tooltip::element(move |_, _| {
-                        let tooltip_selector = tooltip_selector.clone();
-                        div()
-                            .debug_selector(move || tooltip_selector.to_string())
-                            .child(tooltip_path.clone())
-                    })
-                    .build(window, cx)
-                })
-                .child(path),
-        )
-        .child(
-            div()
-                .debug_selector(move || delete_selector.clone())
-                .size(px(PATH_LIST_DELETE_HIT_TARGET))
-                .flex_none()
+                    div()
+                        .w(px(PATH_LIST_ICON_RAIL_WIDTH))
+                        .flex_none()
+                        .flex()
+                        .items_center()
+                        .child(
+                            Icon::new(MaterialIcon::Folder)
+                                .size(px(14.0))
+                                .text_color(theme.icon_muted),
+                        ),
+                )
                 .child(
-                    Button::new(delete_id)
-                        .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
-                        .small()
+                    div()
+                        .id(path_selector.clone())
+                        .debug_selector(move || path_selector.to_string())
+                        .min_w_0()
+                        .h(px(LINE_HEIGHT_BODY))
+                        .flex_1()
+                        .ml(px(SPACING_8))
+                        .truncate()
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .text_color(theme.text_secondary)
+                        .tooltip(move |window, cx| {
+                            let tooltip_path = tooltip_path.clone();
+                            let tooltip_selector = tooltip_selector.clone();
+                            Tooltip::element(move |_, _| {
+                                let tooltip_selector = tooltip_selector.clone();
+                                div()
+                                    .debug_selector(move || tooltip_selector.to_string())
+                                    .child(tooltip_path.clone())
+                            })
+                            .build(window, cx)
+                        })
+                        .child(path),
+                )
+                .child(
+                    div()
+                        .debug_selector(move || delete_selector.clone())
                         .size(px(PATH_LIST_DELETE_HIT_TARGET))
-                        .rounded(px(RADIUS_NONE))
-                        .custom(delete_variant)
-                        .tooltip("移除排除目录")
-                        .on_click(move |_event, window, cx| {
-                            cx.stop_propagation();
-                            remove(index, remove_path.clone(), window, cx);
-                        }),
+                        .flex_none()
+                        .child(
+                            Button::new(delete_id)
+                                .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
+                                // Named 40px delete hit contract; Kit keeps radius/content/state grammar.
+                                .with_size(px(PATH_LIST_DELETE_HIT_TARGET))
+                                .custom(delete_variant)
+                                .tooltip("移除排除目录")
+                                .on_click(move |_event, window, cx| {
+                                    cx.stop_propagation();
+                                    remove(index, remove_path.clone(), window, cx);
+                                }),
+                        ),
                 ),
         )
         .into_any_element()
@@ -258,4 +248,82 @@ fn empty_path_row(theme: Theme) -> AnyElement {
         .text_color(theme.text_muted)
         .child("尚未添加排除目录")
         .into_any_element()
+}
+
+#[cfg(test)]
+mod queue01_tests {
+    use super::*;
+    use std::cell::Cell;
+    struct PathFixture {
+        selects: Rc<Cell<usize>>,
+        removes: Rc<Cell<usize>>,
+    }
+    impl gpui_kit::Render for PathFixture {
+        fn render(&mut self, _: &mut Window, cx: &mut gpui_kit::Context<Self>) -> impl IntoElement {
+            let selects = self.selects.clone();
+            let removes = self.removes.clone();
+            div().w(px(320.0)).child(path_exclusion_setting(
+                Theme::zed_dark(),
+                &[
+                    r"C:\synthetic\合成长路径".into(),
+                    r"C:\synthetic\第二路径".into(),
+                ],
+                Some(0),
+                move |_, _, _| selects.set(selects.get() + 1),
+                move |_, path, _, _| {
+                    assert_eq!(path, r"C:\synthetic\合成长路径");
+                    removes.set(removes.get() + 1);
+                },
+                |_, _, _| {},
+                cx,
+            ))
+        }
+    }
+    #[gpui_kit::test]
+    fn queue01_path_list_uses_kit_row_and_one_delete_dispatch(cx: &mut gpui_kit::TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        let selects = Rc::new(Cell::new(0));
+        let removes = Rc::new(Cell::new(0));
+        let selected = selects.clone();
+        let removed = removes.clone();
+        let (_, window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|_| PathFixture {
+                selects: selected,
+                removes: removed,
+            });
+            gpui_kit::base::Root::new(view, window, cx)
+        });
+        window.refresh().expect("actual path row");
+        let snapshots = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        assert!(
+            snapshots.iter().any(|snapshot| snapshot.path().last()
+                == Some(&gpui_kit::ElementId::from("quick-launch-exclusion-row-0"))),
+            "actual stateless ListItem"
+        );
+        let row = window
+            .debug_bounds("quick-launch-exclusion-row-0")
+            .expect("fixed row");
+        assert_eq!(row.size.height, px(40.0));
+        let delete = window
+            .debug_bounds("quick-launch-exclusion-delete-0")
+            .expect("trailing action");
+        let button = snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.path().last()
+                    == Some(&gpui_kit::ElementId::from(
+                        "quick-launch-exclusion-delete-button-0",
+                    ))
+            })
+            .expect("styled delete action with preserved hit budget")
+            .bounds();
+        assert_eq!(button.size, gpui_kit::size(px(40.0), px(40.0)));
+        assert!(button.top() >= row.top() && button.bottom() <= row.bottom());
+        assert!(delete.left() >= row.left() && delete.right() <= row.right());
+        window.simulate_click(delete.center(), gpui_kit::Modifiers::default());
+        window.run_until_parked();
+        assert_eq!(removes.get(), 1);
+        assert_eq!(selects.get(), 0, "delete must not also select the row");
+    }
 }

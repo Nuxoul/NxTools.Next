@@ -17,7 +17,9 @@ mod message;
 mod organization;
 mod rate_limit;
 mod request_policy;
+mod resolution;
 mod storage;
+mod transfer_statistics;
 
 pub use artifact::{ArtifactAllocation, SegmentWriter, SegmentedArtifact, SegmentedArtifactError};
 pub use capacity::{DownloadStorageCapacityError, DownloadStorageRequirement};
@@ -27,7 +29,7 @@ pub use dash::{
 };
 pub use engine::{
     BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadEngine, DownloadEngineError,
-    DownloadEngineTask, DownloadScheduleMoment, daily_schedule_window_contains,
+    DownloadEngineTask, DownloadScheduleMoment, WeakDownloadEngine, daily_schedule_window_contains,
 };
 pub use ffmpeg_install::{
     FfmpegInstallControl, FfmpegInstallFailure, FfmpegInstallOperation, FfmpegInstallPhase,
@@ -64,6 +66,15 @@ pub use rate_limit::{DownloadRateLimitError, DownloadRateLimiter};
 pub use request_policy::{
     DownloadHttpPolicy, DownloadHttpPolicyError, MAX_DEFAULT_COOKIE_BYTES,
     MAX_DEFAULT_HEADER_COUNT, MAX_DEFAULT_HEADER_TEXT_BYTES, is_download_transport_owned_header,
+};
+pub use resolution::{
+    DownloadExtensionCausality, DownloadProbeResolution, DownloadRequestResolver,
+    DownloadResolutionControl, DownloadResolutionError, DownloadResolutionFuture,
+    DownloadResolutionMode, DownloadResolutionOperation, DownloadResolutionOptions,
+    DownloadResolutionProvenance, DownloadResolutionResult, DownloadResolvedContext,
+    DownloadResolvedRequest, DownloadResolverIdentity, DownloadResolverStage,
+    MAX_CONCURRENT_RESOLUTIONS, MAX_RESOLUTION_RECEIPTS, MAX_RESOLUTION_URL_BYTES,
+    NoopDownloadRequestResolver, RESOLUTION_OPERATION_DEADLINE, RESOLUTION_RECEIPT_TTL,
 };
 pub use storage::{DOWNLOAD_SCHEMA_VERSION, DownloadStorageError, SqliteDownloadStore};
 
@@ -1045,6 +1056,25 @@ pub(crate) const INTERRUPTED_DOWNLOAD_STATUSES: [DownloadStatus; 4] = [
     DownloadStatus::Verifying,
 ];
 
+/// Durable payload bytes and union of active transfer intervals, never wall-clock age.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadTransferStatistics {
+    pub transferred_bytes: u64,
+    pub active_download_ms: u64,
+}
+
+impl DownloadTransferStatistics {
+    pub fn bytes_per_second(self) -> Option<u64> {
+        if self.active_download_ms == 0 {
+            return None;
+        }
+        u64::try_from(
+            u128::from(self.transferred_bytes) * 1_000 / u128::from(self.active_download_ms),
+        )
+        .ok()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DownloadTask {
     id: DownloadTaskId,
@@ -1054,6 +1084,10 @@ pub struct DownloadTask {
     created_at_unix_ms: i64,
     updated_at_unix_ms: i64,
     completed_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transfer_statistics: Option<DownloadTransferStatistics>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolution: Option<DownloadResolutionProvenance>,
 }
 
 impl DownloadTask {
@@ -1066,6 +1100,8 @@ impl DownloadTask {
             created_at_unix_ms: now_unix_ms,
             updated_at_unix_ms: now_unix_ms,
             completed_at_unix_ms: None,
+            transfer_statistics: Some(DownloadTransferStatistics::default()),
+            resolution: None,
         }
     }
 
@@ -1089,12 +1125,31 @@ impl DownloadTask {
         Ok(())
     }
 
+    pub const fn transfer_statistics(&self) -> Option<DownloadTransferStatistics> {
+        self.transfer_statistics
+    }
+
+    pub(crate) fn set_transfer_statistics(
+        &mut self,
+        statistics: Option<DownloadTransferStatistics>,
+    ) {
+        self.transfer_statistics = statistics;
+    }
+
     pub const fn id(&self) -> DownloadTaskId {
         self.id
     }
 
     pub fn request(&self) -> &DownloadRequest {
         &self.request
+    }
+
+    pub fn resolution(&self) -> Option<&DownloadResolutionProvenance> {
+        self.resolution.as_ref()
+    }
+
+    pub(crate) fn set_resolution(&mut self, resolution: Option<DownloadResolutionProvenance>) {
+        self.resolution = resolution;
     }
 
     pub(crate) fn set_speed_limit(&mut self, bytes_per_second: Option<u64>, now_unix_ms: i64) {
@@ -1144,6 +1199,7 @@ impl DownloadTask {
 
         self.status = DownloadStatus::Paused;
         self.updated_at_unix_ms = now_unix_ms;
+        self.transfer_statistics = None;
         true
     }
 
@@ -1164,6 +1220,8 @@ impl DownloadTask {
             created_at_unix_ms,
             updated_at_unix_ms,
             completed_at_unix_ms,
+            transfer_statistics: None,
+            resolution: None,
         };
         task.validate_invariants()?;
         Ok(task)
@@ -1197,7 +1255,7 @@ impl<'de> Deserialize<'de> for DownloadTask {
         D: Deserializer<'de>,
     {
         let wire = DownloadTaskWire::deserialize(deserializer)?;
-        Self::restore(
+        let mut task = Self::restore(
             wire.id,
             wire.request,
             wire.origin,
@@ -1206,7 +1264,10 @@ impl<'de> Deserialize<'de> for DownloadTask {
             wire.updated_at_unix_ms,
             wire.completed_at_unix_ms,
         )
-        .map_err(D::Error::custom)
+        .map_err(D::Error::custom)?;
+        task.transfer_statistics = wire.transfer_statistics;
+        task.resolution = wire.resolution;
+        Ok(task)
     }
 }
 
@@ -1219,6 +1280,10 @@ struct DownloadTaskWire {
     created_at_unix_ms: i64,
     updated_at_unix_ms: i64,
     completed_at_unix_ms: Option<i64>,
+    #[serde(default)]
+    transfer_statistics: Option<DownloadTransferStatistics>,
+    #[serde(default)]
+    resolution: Option<DownloadResolutionProvenance>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

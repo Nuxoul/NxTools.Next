@@ -1,9 +1,7 @@
 use super::*;
+use gpui_kit::component::alert::Alert;
+use gpui_kit::component::dialog::{DialogContent, DialogFooter};
 
-#[allow(
-    dead_code,
-    reason = "retained for the Phase 3 task context-menu delete action"
-)]
 pub(crate) struct DeleteDownloadView {
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
@@ -12,7 +10,9 @@ pub(crate) struct DeleteDownloadView {
 }
 
 impl Render for DeleteDownloadView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
         let theme = self.theme;
         let task_id = self.task_id;
         let close_application = self.application.clone();
@@ -33,34 +33,41 @@ impl Render for DeleteDownloadView {
                 });
             },
         );
-        let body = div()
+        let body = DialogContent::new()
             .size_full()
+            .min_w_0()
             .px(px(SPACING_16))
-            .py(px(SPACING_12))
-            .flex()
-            .flex_col()
-            .gap(px(SPACING_8))
+            .py(px(SPACING_8))
+            .gap_1()
             .child(
                 div()
-                    .text_size(px(TEXT_BODY))
-                    .line_height(px(LINE_HEIGHT_BODY))
-                    .font_weight(FontWeight::MEDIUM)
-                    .child("将同时移除任务记录，且无法撤销。"),
+                    .debug_selector(|| "download-delete-consequence".into())
+                    .child(
+                        Alert::error("download-delete-risk", "将同时移除任务记录，且无法撤销。")
+                            .icon(Icon::new(MaterialIcon::Delete))
+                            .xsmall(),
+                    ),
             )
             .child(
                 div()
-                    .text_size(px(TEXT_LABEL))
-                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .id("download-delete-path")
+                    .debug_selector(|| "download-delete-path".into())
+                    .min_w_0()
+                    .w_full()
+                    .text_size(px(TEXT_BODY))
+                    .line_height(px(LINE_HEIGHT_BODY))
                     .text_color(theme.text_secondary)
                     .truncate()
+                    .tooltip({
+                        let path = path.clone();
+                        move |window, cx| Tooltip::new(path.clone()).build(window, cx)
+                    })
                     .child(path),
             )
             .into_any_element();
         let footer = dialog_footer(
-            div()
-                .flex()
+            DialogFooter::new()
                 .items_center()
-                .gap(px(SPACING_8))
                 .child(
                     action_button("download-delete-cancel", "取消")
                         .debug_selector(|| "download-delete-secondary-cancel-action".into())

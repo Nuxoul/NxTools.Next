@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "example.download-resolver",
+  "name": "Download resolver protocol example",
+  "version": "1.0.0",
+  "description": "Demonstrates protocol and explicit not_handled; does not parse real sites.",
+  "permissions": [{"id": "network", "reason": "A real resolver may request the selected page; this example does not use the network."}],
+  "runtime": {"program": "python", "timeout_ms": 10000},
+  "files": ["resolve.py"],
+  "handlers": [{
+    "id": "resolve", "title": "Resolve selected page", "feature": "downloads", "entry": "resolve",
+    "url_matches": [{"host": "example.test", "path": "/*", "priority": 0}],
+    "action": {"type": "script", "entry_file": "resolve.py"}
+  }]
+}

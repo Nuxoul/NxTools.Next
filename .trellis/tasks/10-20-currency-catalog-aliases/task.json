@@ -1,0 +1,16 @@
+{
+  "id": "currency-catalog-aliases",
+  "name": "currency-catalog-aliases",
+  "title": "Complete currency catalog, aliases and searchable target",
+  "description": "Replace fixed currency support/source with paired fawazahmed0 catalog/CNY rates, add won and colloquial dollar markers, and use official searchable Select.",
+  "status": "completed",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-20",
+  "completedAt": "2026-10-20",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "notes": "Current session only. Desktop855/Core60/Network2 and focused7+4 pass; strict/workspace/source checks pass. No commit/archive/package/install/service/live user data. See outcomes.md for limits."
+}

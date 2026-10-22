@@ -1,0 +1,3 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Serial low-memory Rust and synthetic/native acceptance boundary"}
+{"file":".trellis/tasks/10-13-winshun-w1-pinyin/prd.md","reason":"W1 scope and acceptance"}
+{"file":".trellis/tasks/10-13-winshun-w1-pinyin/outcomes.md","reason":"Actual red-green counts, logs and deferred installed acceptance"}

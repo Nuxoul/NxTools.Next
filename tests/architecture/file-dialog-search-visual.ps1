@@ -5,7 +5,7 @@ $sourcePath = Join-Path $repositoryRoot "rust\apps\nxtools-desktop\src\quick_lau
 $source = Get-Content -Raw $sourcePath
 $rowMatch = [regex]::Match(
     $source,
-    '(?s)fn row\(&self, index: usize, window: &mut Window, cx: &mut Context<Self>\).*?(?=\n    \})')
+    '(?s)fn row\(\s*&self,\s*index: usize,\s*window: &mut Window,\s*cx: &mut Context<Self>,?\s*\).*?(?=\n    \})')
 if (-not $rowMatch.Success) {
     throw "Could not locate the file-dialog search result-row renderer."
 }
@@ -30,22 +30,32 @@ foreach ($requiredToken in @(
     'SPACING_12',
     'TEXT_BODY',
     'LINE_HEIGHT_BODY',
-    'TEXT_LABEL',
     'LINE_HEIGHT_LABEL'
 )) {
     if ($rowMatch.Value -notmatch "\b$requiredToken\b") {
         throw "File-dialog result rows do not use the shared $requiredToken design token."
     }
 }
-foreach ($requiredToken in @('SPACING_8', 'SPACING_12', 'TEXT_BODY', 'LINE_HEIGHT_BODY')) {
-    if ($renderMatch.Value -notmatch "\b$requiredToken\b") {
-        throw "File-dialog search input does not use the shared $requiredToken design token."
+foreach ($required in @('InputGroup::new("file-dialog-search-group")',
+    'InputGroupAddon::new("file-dialog-search-icon")',
+    'InputGroupAddonAlignment::InlineEnd', 'Input::new(&self.search_input)', 'SPACING_12')) {
+    if (-not $renderMatch.Value.Contains($required)) {
+        throw "File-dialog search must retain real Kit compound frame/addons/original input: $required"
     }
 }
-foreach ($requiredToken in @('SPACING_8', 'SPACING_12', 'TEXT_BODY', 'LINE_HEIGHT_BODY', 'TEXT_LABEL', 'LINE_HEIGHT_LABEL')) {
+if ($renderMatch.Value.Contains('.appearance(false)') -or
+    $renderMatch.Value.Contains('.bordered(false)') -or
+    $renderMatch.Value.Contains('.focus_bordered(false)')) {
+    throw 'Attached search must not suppress standalone appearance and reconstruct the frame.'
+}
+foreach ($requiredToken in @('SPACING_8', 'SPACING_12', 'TEXT_BODY', 'LINE_HEIGHT_BODY', 'LINE_HEIGHT_LABEL')) {
     if ($defaultRowMatch.Value -notmatch "\b$requiredToken\b") {
         throw "File-dialog default-source row does not use the shared $requiredToken design token."
     }
+}
+$rowRegression = Get-Content -Raw (Join-Path $repositoryRoot 'rust\apps\nxtools-desktop\src\quick_launch\polish_tests.rs')
+if (-not $rowRegression.Contains('polished_file_dialog_row_keyboard_keeps_fixed_rails_and_search_navigation')) {
+    throw 'Compact file-dialog readability must retain production row geometry regression.'
 }
 foreach ($staleToken in @(
     'META_TEXT_SIZE',

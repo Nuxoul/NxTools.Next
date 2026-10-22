@@ -1,0 +1,8 @@
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop owner, pre-development checklist and actual UI/native verification requirements"}
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust/GPUI/C# ownership, leased-entity and narrow backend-patch boundary"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Pending-before-dispatch, deferred state publication, persistence and payload-safe diagnostics"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Current target/native budgets and user option A authority update during Foundation"}
+{"file":".trellis/spec/shared/verification.md","reason":"Single Cargo process, mandatory memory environment and actual evidence levels"}
+{"file":"docs/reference-code/gpui-kit-071.md","reason":"Locked released Kit APIs, native behavior and known menu capability gap"}
+{"file":"docs/ui/layout-quality/feature-preservation.md","reason":"Complete preexisting fields/actions/save-policy preservation; prototype is not feature authority"}
+{"file":".trellis/tasks/10-10-gpui-kit-component-visual-migration/research/kit-release-contracts.md","reason":"Verified released controls, official compact tiers and controlled setting callbacks"}

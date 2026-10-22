@@ -1,0 +1,4 @@
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"MV3 privacy, handoff and demand-only native lifetime"}
+{"file":".trellis/spec/browser-extension/ui-guidelines.md","reason":"Popup and Shadow DOM interaction and acceptance"}
+{"file":".trellis/tasks/10-12-browser-extension-ui-redesign/references.md","reason":"Verified original browser ownership chain, bounded injection summary"}
+{"file":".trellis/tasks/10-12-browser-extension-ui-redesign/design.md","reason":"Authorized complete redesign boundaries"}

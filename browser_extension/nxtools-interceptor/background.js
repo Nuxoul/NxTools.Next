@@ -38,7 +38,6 @@ const STORAGE_RESOURCE_KEY = "nxtools_resource_cache";
 const STORAGE_LAST_TAB_KEY = "nxtools_last_active_tab";
 const STORAGE_MOBILE_UA_TABS_KEY = "nxtools_mobile_ua_tabs";
 const STORAGE_DISABLED_SITES_KEY = "nxtools_disabled_sites";
-const PREEMPTED_DOWNLOAD_TTL_MS = 90 * 1000;
 
 const USEFUL_HEADER_ALLOWLIST = new Set([
   "accept",
@@ -166,7 +165,6 @@ const redirectHintsByUrl = new Map();
 // codeload.github.com 200) can be applied back to the URL the user actually clicked.
 const contentDispositionByUrl = new Map();
 const redirectSourceByTarget = new Map();
-const preemptedBrowserDownloads = new Map();
 const resourcesByTab = new Map();
 const resourcesById = new Map();
 let lastActiveTabId = 0;
@@ -174,8 +172,9 @@ let persistTimer = 0;
 let desktopPort = null;
 let desktopConnectPromise = null;
 let desktopConnectStartedAt = 0;
-let reconnectTimer = 0;
-let reconnectDelayMs = 800;
+let desktopIdleTimer = 0;
+let desktopPortOwners = 0;
+const DESKTOP_IDLE_RELEASE_MS = 1000;
 let connectionState = "disconnected";
 let connectionMessage = "未连接 NxTools";
 const DESKTOP_CONNECT_TIMEOUT_MS = 1800;
@@ -191,40 +190,6 @@ let settingsLoaded = false;
 let settingsLoadPromise = null;
 
 const LIKELY_MEDIA_URL_PATTERN = /(?:bilivideo|hdslb|upos-|mcdn|googlevideo|videoplayback|douyinvod|bytecdn|weibocdn|akamaized|cloudfront|dash|hls|segment|fragment|frag|chunk|playurl|play_url|playback|stream|manifest|playlist|media-video|media-audio|mime=video|mime=audio|mime_type=video|mime_type=audio|video_mp4|audio_mp4)/i;
-const BINARY_DOWNLOAD_EXTENSIONS = new Set([
-  "7z", "apk", "app", "bin", "bz2", "deb", "dmg", "doc", "docx", "exe", "gz", "iso",
-  "jar", "msi", "pkg", "ppt", "pptx", "rar", "rpm", "tar", "tgz", "xls", "xlsx", "xz", "zip"
-]);
-const FORCED_DOWNLOAD_MIME_TYPES = new Set([
-  "application/gzip",
-  "application/java-archive",
-  "application/msword",
-  "application/octet-stream",
-  "application/vnd.android.package-archive",
-  "application/vnd.apple.installer+xml",
-  "application/vnd.ms-excel",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.microsoft.portable-executable",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/x-7z-compressed",
-  "application/x-apple-diskimage",
-  "application/x-bittorrent",
-  "application/x-bzip2",
-  "application/x-deb",
-  "application/x-gzip",
-  "application/x-iso9660-image",
-  "application/x-msdownload",
-  "application/x-msi",
-  "application/x-rar-compressed",
-  "application/x-rpm",
-  "application/x-tar",
-  "application/x-xz",
-  "application/x-zip-compressed",
-  "application/zip"
-]);
-
 function parseUrlOrNull(url) {
   try {
     return new URL(url);
@@ -956,27 +921,44 @@ function rejectPendingDesktopRequests(message) {
   }
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) {
-    return;
-  }
+function cancelDesktopIdleRelease() {
+  clearTimeout(desktopIdleTimer);
+  desktopIdleTimer = 0;
+}
 
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = 0;
-    void ensureDesktopConnection();
-  }, reconnectDelayMs);
-  reconnectDelayMs = Math.min(30000, reconnectDelayMs * 2);
+function scheduleDesktopIdleRelease() {
+  cancelDesktopIdleRelease();
+  if (!desktopPort || desktopConnectPromise || desktopPortOwners || pendingDesktopRequests.size) return;
+  const port = desktopPort;
+  desktopIdleTimer = setTimeout(() => {
+    desktopIdleTimer = 0;
+    if (desktopPort === port && !desktopConnectPromise && !desktopPortOwners && !pendingDesktopRequests.size) {
+      closeDesktopPort();
+    }
+  }, DESKTOP_IDLE_RELEASE_MS);
+}
+
+function retainDesktopPort() {
+  cancelDesktopIdleRelease();
+  desktopPortOwners += 1;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    desktopPortOwners -= 1;
+    scheduleDesktopIdleRelease();
+  };
 }
 
 function closeDesktopPort() {
-  if (desktopPort) {
-    try {
-      desktopPort.disconnect();
-    } catch {
-      // Ignore close failures.
-    }
-  }
+  cancelDesktopIdleRelease();
+  const port = desktopPort;
   desktopPort = null;
+  connectionState = "disconnected";
+  connectionMessage = "NxTools 连接已空闲释放";
+  if (port) {
+    try { port.disconnect(); } catch { /* Already disconnected. */ }
+  }
 }
 
 function trimLogText(value, maxLength = 1200) {
@@ -1017,23 +999,20 @@ function sendExtensionLog(
     }
   }
 
-  ensureDesktopConnection()
-    .then((port) => {
-      if (port) {
-        port.postMessage(NxToolsHandoffPolicy.buildExtensionLogRequest({
-          protocolVersion: BROWSER_PROTOCOL_VERSION,
-          level: payload.level,
-          event: payload.event,
-          message: trimLogText(payload.message, 240),
-          correlationId,
-          allocateRequestId: nextRequestId,
-          isRequestIdPending: (requestId) => pendingDesktopRequests.has(requestId)
-        }));
-      }
-    })
-    .catch(() => {
-      // Desktop logging is best-effort; failed connections are shown in the popup.
-    });
+  // Diagnostics never launch or retain an otherwise idle native host.
+  if (!desktopPort || connectionState !== "connected") return;
+  try {
+    desktopPort.postMessage(NxToolsHandoffPolicy.buildExtensionLogRequest({
+      protocolVersion: BROWSER_PROTOCOL_VERSION,
+      level: payload.level,
+      event: payload.event,
+      message: trimLogText(payload.message, 240),
+      correlationId,
+      allocateRequestId: nextRequestId,
+      isRequestIdPending: (requestId) => pendingDesktopRequests.has(requestId)
+    }));
+  } catch { /* Best-effort diagnostics do not change feature outcome. */ }
+  scheduleDesktopIdleRelease();
 }
 
 function resourceSamples(resources, limit = 5) {
@@ -1090,6 +1069,7 @@ function handleDesktopMessage(message) {
 }
 
 async function ensureDesktopConnection(force = false) {
+  cancelDesktopIdleRelease();
   if (!force && desktopPort && connectionState === "connected") {
     return desktopPort;
   }
@@ -1116,6 +1096,9 @@ async function ensureDesktopConnection(force = false) {
     let settled = false;
 
     const fail = (message) => {
+      if (desktopPort !== port) return;
+      clearTimeout(openTimeout);
+      try { port.disconnect(); } catch { /* Already disconnected. */ }
       if (desktopPort === port) {
         desktopPort = null;
       }
@@ -1138,20 +1121,23 @@ async function ensureDesktopConnection(force = false) {
     }, DESKTOP_CONNECT_TIMEOUT_MS);
 
     port.onMessage.addListener((message) => {
+      if (desktopPort !== port) return;
       handleDesktopMessage(message);
       if (!settled && message?.requestId === "native-hello" && message?.ok === true) {
         settled = true;
         clearTimeout(openTimeout);
         connectionState = "connected";
         connectionMessage = message.message || "Native Messaging 已连接 NxTools";
-        reconnectDelayMs = 800;
         desktopConnectPromise = null;
         resolve(port);
+        scheduleDesktopIdleRelease();
       }
     });
 
     port.onDisconnect.addListener(() => {
       clearTimeout(openTimeout);
+      if (desktopPort !== port) return;
+      cancelDesktopIdleRelease();
       const runtimeError = chrome.runtime.lastError?.message || "";
       if (desktopPort === port) {
         desktopPort = null;
@@ -1164,7 +1150,7 @@ async function ensureDesktopConnection(force = false) {
         settled = true;
         reject(new Error(connectionMessage));
       }
-      scheduleReconnect();
+      // A future user request may reconnect; idle disconnect never restarts a host.
     });
 
     try {
@@ -1185,6 +1171,8 @@ async function ensureDesktopConnection(force = false) {
 }
 
 async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000, requestId = nextRequestId()) {
+  const releasePort = retainDesktopPort();
+  try {
   const port = await ensureDesktopConnection();
   if (!port) {
     throw new Error("NxTools Native Messaging 未连接");
@@ -1200,15 +1188,22 @@ async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000, request
     throw new Error("发送到 NxTools 的消息超过 256 KiB 上限");
   }
 
-  return new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       pendingDesktopRequests.delete(requestId);
       reject(new Error("等待 NxTools Native Messaging 响应超时"));
     }, timeoutMs);
 
     pendingDesktopRequests.set(requestId, { resolve, reject, timeoutId });
-    port.postMessage(message);
+    try { port.postMessage(message); } catch {
+      clearTimeout(timeoutId);
+      pendingDesktopRequests.delete(requestId);
+      reject(new Error("NxTools Native Messaging 发送失败"));
+    }
   });
+  } finally {
+    releasePort();
+  }
 }
 
 function normalizeHeaders(headers) {
@@ -1337,12 +1332,6 @@ function cleanupRequestCache() {
 
   while (redirectSourceByTarget.size > REQUEST_CACHE_LIMIT) {
     redirectSourceByTarget.delete(redirectSourceByTarget.keys().next().value);
-  }
-
-  for (const [key, value] of preemptedBrowserDownloads) {
-    if (now - value.time > PREEMPTED_DOWNLOAD_TTL_MS) {
-      preemptedBrowserDownloads.delete(key);
-    }
   }
 }
 
@@ -1488,57 +1477,6 @@ function responseMeta(details) {
     supportsRange: details.statusCode === 206 || /bytes/i.test(acceptRanges) || Boolean(rangeText),
     assetHint
   };
-}
-
-function dispositionRequestsDownload(disposition) {
-  return /(?:^|;)\s*attachment(?:;|$)/i.test(String(disposition || ""));
-}
-
-function isLikelyBrowserDownloadResponse(details, meta) {
-  if (!isHttpUrl(details?.url) || !meta || details.statusCode < 200 || details.statusCode >= 400) {
-    return false;
-  }
-
-  const disposition = responseHeaderValue(details.responseHeaders, "content-disposition");
-  if (dispositionRequestsDownload(disposition)) {
-    return true;
-  }
-
-  const extension = getFileExtension(meta.filename || getFileNameFromUrl(details.url) || details.url) ||
-    extensionFromMime(meta.mime) ||
-    extensionFromMime(mimeFromUrl(details.url));
-  if (BINARY_DOWNLOAD_EXTENSIONS.has(extension)) {
-    return true;
-  }
-
-  const type = String(meta.mime || "").toLowerCase();
-  if (FORCED_DOWNLOAD_MIME_TYPES.has(type)) {
-    return true;
-  }
-
-  return false;
-}
-
-function rememberPreemptedBrowserDownload(details, meta) {
-  cleanupRequestCache();
-  const key = normalizeUrlKey(details.url);
-  if (!key) {
-    return;
-  }
-
-  preemptedBrowserDownloads.set(key, {
-    requestId: details.requestId,
-    time: Date.now(),
-    url: key,
-    filename: meta?.filename || getFileNameFromUrl(details.url),
-    size: Number(meta?.size || 0),
-    supportsRange: Boolean(meta?.supportsRange)
-  });
-}
-
-function wasPreemptedBrowserDownload(url) {
-  cleanupRequestCache();
-  return preemptedBrowserDownloads.has(normalizeUrlKey(url));
 }
 
 function shouldTrackBlobSource(details, meta) {
@@ -1762,6 +1700,52 @@ function bucketForTab(tabId) {
   return resourcesByTab.get(id);
 }
 
+// Both maps are lookup indexes; aliases do not own another resource.
+function removeCachedResource(tabId, resource) {
+  const bucket = resourcesByTab.get(tabId);
+  if (!bucket) {
+    return;
+  }
+  for (const [key, cached] of bucket) {
+    if (cached !== resource) {
+      continue;
+    }
+    bucket.delete(key);
+    if (resourcesById.get(key) === resource) {
+      resourcesById.delete(key);
+    }
+  }
+  if (bucket.size === 0) {
+    resourcesByTab.delete(tabId);
+  }
+}
+
+function indexCachedResource(resource) {
+  const previous = resourcesByTab.get(resource.tabId)?.get(resource.id);
+  if (previous && previous !== resource && previous.id === resource.id) {
+    removeCachedResource(resource.tabId, previous);
+  }
+  const bucket = bucketForTab(resource.tabId);
+  bucket.set(resource.id, resource);
+  resourcesById.set(resource.id, resource);
+  const normalizedId = `${resource.tabId}:${normalizeResourceUrlKey(resource.url)}`;
+  const sameUrl = bucket.get(normalizedId);
+  if (!sameUrl || (sameUrl.id !== normalizedId &&
+      Number(resource.capturedAt || 0) >= Number(sameUrl.capturedAt || 0))) {
+    bucket.set(normalizedId, resource);
+    resourcesById.set(normalizedId, resource);
+  }
+}
+
+function enforceResourceCapacity(tabId) {
+  const bucket = resourcesByTab.get(tabId);
+  const sorted = [...new Set(bucket?.values() || [])]
+    .sort((left, right) => right.capturedAt - left.capturedAt);
+  for (const stale of sorted.slice(RESOURCE_LIMIT_PER_TAB)) {
+    removeCachedResource(tabId, stale);
+  }
+}
+
 function cacheResource(resource) {
   const url = boundedCapturedUrl(resource?.url);
   if (!resource || !resource.id || !url) {
@@ -1799,25 +1783,22 @@ function cacheResource(resource) {
   }
 
   const bucket = bucketForTab(resource.tabId);
-  const existing = bucket.get(resource.id);
+  const indexed = bucket.get(resource.id);
+  const existing = indexed?.id === resource.id ? indexed : null;
   const wasNew = !existing;
+  const previousMime = existing?.mime;
+  const previousSize = Number(existing?.size || 0);
   const merged = NxToolsCapturePolicy.mergeCapturedResource(existing, resource);
-
-  bucket.set(merged.id, merged);
-  resourcesById.set(merged.id, merged);
-
-  const normalizedId = `${merged.tabId}:${normalizeResourceUrlKey(merged.url)}`;
-  if (normalizedId && normalizedId !== merged.id) {
-    const sameUrl = bucket.get(normalizedId);
-    if (!sameUrl || Number(merged.capturedAt || 0) >= Number(sameUrl.capturedAt || 0)) {
-      bucket.set(normalizedId, merged);
-      resourcesById.set(normalizedId, merged);
-    }
+  const cachedResource = existing || merged;
+  if (existing) {
+    removeCachedResource(existing.tabId, existing);
+    Object.assign(existing, merged);
   }
+  indexCachedResource(cachedResource);
 
   if (wasNew ||
-      (resource.mime && resource.mime !== existing?.mime) ||
-      (Number(resource.size || 0) > Number(existing?.size || 0))) {
+      (resource.mime && resource.mime !== previousMime) ||
+      (Number(resource.size || 0) > previousSize)) {
     logResourceCaptured("resource_cached", merged, {
       source: resource.source || "cache"
     });
@@ -1825,29 +1806,29 @@ function cacheResource(resource) {
 
   const mergedUrl = normalizeResourceUrlKey(merged.url);
   if (mergedUrl && (merged.size > 0 || merged.mime || merged.supportsRange)) {
-    for (const cached of resourcesById.values()) {
-      if (cached.id === merged.id || normalizeResourceUrlKey(cached.url) !== mergedUrl) {
+    for (const cached of new Set(resourcesById.values())) {
+      if (cached === cachedResource || normalizeResourceUrlKey(cached.url) !== mergedUrl) {
         continue;
       }
-      Object.assign(cached, NxToolsCapturePolicy.mergeCapturedResource(cached, merged));
+      const metadata = NxToolsCapturePolicy.mergeCapturedResource(cached, merged);
+      // Sharing metadata must not move another capture's identity or handoff.
+      for (const field of ["id", "tabId", "url", "capturedAt", "pendingBatchHandoffId", "sentToDesktopAt"]) {
+        delete metadata[field];
+      }
+      Object.assign(cached, metadata);
     }
   }
 
-  const sorted = [...bucket.values()].sort((left, right) => right.capturedAt - left.capturedAt);
-  for (const stale of sorted.slice(RESOURCE_LIMIT_PER_TAB)) {
-    bucket.delete(stale.id);
-    resourcesById.delete(stale.id);
-  }
+  enforceResourceCapacity(cachedResource.tabId);
   schedulePersistResources();
 }
 
 function pruneResources() {
   const now = Date.now();
   for (const [tabId, bucket] of resourcesByTab) {
-    for (const [id, resource] of bucket) {
+    for (const resource of new Set(bucket.values())) {
       if (now - resource.capturedAt > RESOURCE_TTL_MS || !isUsableGoogleVideoUrl(resource.url)) {
-        bucket.delete(id);
-        resourcesById.delete(id);
+        removeCachedResource(tabId, resource);
       }
     }
     if (bucket.size === 0) {
@@ -1918,14 +1899,13 @@ async function loadPersistentResources() {
     if (!Number.isInteger(tabId) || tabId <= 0 || !Array.isArray(resources)) {
       continue;
     }
-    const bucket = bucketForTab(tabId);
     for (const resource of resources) {
       if (!resource?.id || !resource?.url || !isUsableGoogleVideoUrl(resource.url)) {
         continue;
       }
-      bucket.set(resource.id, resource);
-      resourcesById.set(resource.id, resource);
+      indexCachedResource({ ...resource, tabId });
     }
+    enforceResourceCapacity(tabId);
   }
   pruneResources();
   await chrome.storage.local.set({
@@ -2620,34 +2600,6 @@ async function capturePageResource(sender, payload) {
   }
 }
 
-async function readBlobResourceViaContentScript(resource) {
-  const tabId = Number(resource?.tabId || lastActiveTabId || 0);
-  if (!tabId || !String(resource?.url || "").startsWith("blob:")) {
-    return { ok: false, message: "Blob 资源只能在原网页中读取" };
-  }
-
-  const frameId = Number.isInteger(resource.frameId) ? resource.frameId : undefined;
-  const message = {
-    type: "content_read_blob",
-    url: resource.url,
-    filename: buildResourceFileName(resource)
-  };
-  let result = await sendMessageToTab(tabId, message, Number.isInteger(frameId) ? { frameId } : {});
-  if (!(result.ok && result.response?.ok) && Number.isInteger(frameId)) {
-    const frameResults = await sendMessageToTabFrames(tabId, message);
-    result = frameResults.find((item) => item.ok && item.response?.ok) || result;
-  }
-
-  if (result.ok && result.response?.ok) {
-    return result.response;
-  }
-
-  return {
-    ok: false,
-    message: result.response?.message || result.message || "页面脚本无法读取这个 Blob"
-  };
-}
-
 async function sendBlobResourceViaContentScript(resource) {
   const tabId = Number(resource?.tabId || lastActiveTabId || 0);
   if (!tabId || !String(resource?.url || "").startsWith("blob:")) {
@@ -2684,6 +2636,8 @@ async function sendBlobResourceViaContentScript(resource) {
   }
   const correlationId = nextRequestId();
   const handoffId = nextRequestId();
+  const releaseBlobPort = retainDesktopPort();
+  try {
   let prepared;
   try {
     prepared = await sendDesktopRequest("prepare_blob_upload", {
@@ -2753,6 +2707,9 @@ async function sendBlobResourceViaContentScript(resource) {
     fallbackToBrowser: true,
     message: commitError instanceof Error ? commitError.message : "NxTools 未接受 Blob 下载"
   };
+  } finally {
+    releaseBlobPort();
+  }
 }
 
 async function addDownloadToNxTools(payload, correlationId) {
@@ -2869,58 +2826,6 @@ async function sendDownloadItem(downloadItem) {
     contextUrl: downloadItem.referrer || resource?.pageUrl || ""
   });
   return { response, handoffId };
-}
-
-async function sendPreemptedBrowserDownload(details, meta) {
-  const headerSnapshot = resolveHeaderSnapshot(details.url);
-  const tabId = await resolveTabIdForRequest(details);
-  const tab = await tabInfo(tabId);
-  const headers = { ...(headerSnapshot?.headers || {}) };
-  const referer = headers.referer ||
-    (details.initiator && details.initiator !== "null" ? details.initiator : tab?.url) ||
-    "";
-  if (referer) {
-    headers.referer = referer;
-  }
-
-  const fileName = ensureFileNameForUrl(meta.filename || getFileNameFromUrl(details.url), details.url, meta.mime);
-  cacheResource({
-    id: `${tabId || lastActiveTabId || 0}:${normalizeResourceUrlKey(details.url)}`,
-    tabId: tabId || lastActiveTabId || 0,
-    url: details.url,
-    pageTitle: tab?.title || "",
-    pageUrl: referer || tab?.url || "",
-    filename: fileName,
-    filenameSource: meta.filename
-      ? NxToolsCapturePolicy.Sources.filename.contentDisposition
-      : NxToolsCapturePolicy.Sources.filename.url,
-    metadataSource: NxToolsCapturePolicy.Sources.metadata.response,
-    headerSource: NxToolsCapturePolicy.Sources.header.browser,
-    referrerSource: NxToolsCapturePolicy.Sources.referrer.browser,
-    mime: meta.mime,
-    size: meta.size,
-    supportsRange: Boolean(meta.supportsRange || headerSnapshot?.supportsRange),
-    referer,
-    requestHeaders: headers,
-    source: "webRequest-download",
-    capturedAt: Date.now()
-  });
-
-  return sendDownloadPayload({
-    url: details.url,
-    fileName,
-    headers,
-    size: meta.size,
-    supportsRange: Boolean(meta.supportsRange || headerSnapshot?.supportsRange),
-    contextUrl: referer || tab?.url || ""
-  });
-}
-
-function handlePreemptiveBrowserDownload(details) {
-  // Native Messaging is asynchronous, so a blocking response hook cannot prove that the
-  // Rust engine durably accepted the task. Leave the response untouched and use the download
-  // item flow shared by Firefox, Chrome and Edge instead.
-  return {};
 }
 
 async function sendUrl(url, options = {}) {
@@ -3932,13 +3837,6 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
     yieldToBrowser();
     return;
   }
-  if (wasPreemptedBrowserDownload(url)) {
-    sendExtensionLog("info", "browser_download_already_preempted", "浏览器下载项已由响应头阶段接管，跳过二次处理", {
-      url
-    }, 15000);
-    yieldToBrowser();
-    return;
-  }
 
   try {
     const { response, handoffId } = await sendDownloadItem(downloadItem);
@@ -4189,10 +4087,9 @@ function registerHeaderCapture() {
 function clearTabResources(tabId) {
   const bucket = resourcesByTab.get(tabId);
   if (bucket) {
-    for (const resourceId of bucket.keys()) {
-      resourcesById.delete(resourceId);
+    for (const resource of new Set(bucket.values())) {
+      removeCachedResource(tabId, resource);
     }
-    resourcesByTab.delete(tabId);
     schedulePersistResources();
   }
 }
@@ -4213,13 +4110,11 @@ chrome.runtime.onInstalled.addListener(() => {
 chrome.runtime.onStartup.addListener(() => {
   createContextMenus();
   void loadPersistentResources();
-  void ensureDesktopConnection();
 });
 
 registerHeaderCapture();
 void getSettings();
 void loadPersistentResources();
-void ensureDesktopConnection();
 void activeTab().then((tab) => {
   if (tab?.id && /^https?:/i.test(tab.url || "")) {
     void injectContentBridge(tab.id, tab.url || "");

@@ -252,8 +252,7 @@ pub fn run() -> Result<()> {
     let mut output = std::io::stdout().lock();
     while let Some(bytes) = read_native_message(&mut input)? {
         let started = Instant::now();
-        let request_id = request_id_from_bytes(&bytes);
-        let request_kind = request_kind_from_bytes(&bytes);
+        let (request_id, request_kind) = request_metadata_from_bytes(&bytes);
         if matches!(
             request_kind.as_str(),
             "create_task"
@@ -404,7 +403,7 @@ fn handle_request(
         "commit_blob_upload" => {
             commit_blob_upload(request_id, request.payload, paths, executable, blob_uploads)
         }
-        "get_snapshot" => snapshot(request_id, executable),
+        "get_snapshot" => snapshot(request_id),
         "task_action" => task_action(request_id, request.task_id, request.action, executable),
         "extension_log" => {
             let payload: BrowserExtensionLogPayload = serde_json::from_value(request.payload)
@@ -956,10 +955,11 @@ fn submit_download_batch(
     }
 }
 
-fn snapshot(request_id: String, executable: &Path) -> Result<BrowserResponse> {
+fn snapshot(request_id: String) -> Result<BrowserResponse> {
     let command_request_id = correlation_id(&request_id)?;
-    let mut client =
-        connect_or_start(executable, DesktopStartMode::Background, command_request_id)?;
+    // Status is passive: only an explicit download request may start the desktop.
+    let mut client = DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(150))
+        .context("NxTools 尚未运行，请先启动桌面应用")?;
     let result = client.command(command_envelope(
         command_request_id,
         DownloadCommand::Snapshot {
@@ -1260,20 +1260,19 @@ fn default_download_directory(paths: &AppPaths) -> PathBuf {
         .unwrap_or_else(|| paths.data_dir.join("downloads"))
 }
 
-fn request_id_from_bytes(bytes: &[u8]) -> String {
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
+fn request_metadata_from_bytes(bytes: &[u8]) -> (String, String) {
+    let metadata = serde_json::from_slice::<Value>(bytes).ok();
+    let request_id = metadata
+        .as_ref()
         .and_then(|value| value.get("requestId")?.as_str().map(str::to_owned))
         .filter(|value| value.len() <= MAX_REQUEST_ID_BYTES)
-        .unwrap_or_else(|| Uuid::new_v4().to_string())
-}
-
-fn request_kind_from_bytes(bytes: &[u8]) -> String {
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let request_kind = metadata
+        .as_ref()
         .and_then(|value| value.get("type")?.as_str().map(str::to_owned))
         .filter(|value| value.len() <= MAX_REQUEST_KIND_BYTES)
-        .unwrap_or_else(|| "invalid".into())
+        .unwrap_or_else(|| "invalid".into());
+    (request_id, request_kind)
 }
 
 fn correlation_id(request_id: &str) -> Result<Uuid> {
@@ -1440,6 +1439,28 @@ impl BrowserResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn browser_status_query_does_not_start_a_desktop_after_exit() {
+        // Source boundary complement: never connect to a user's pipe or launch a desktop.
+        let source = include_str!("lib.rs");
+        let start = source
+            .find("fn snapshot(")
+            .expect("production snapshot boundary");
+        let end = source[start..]
+            .find("fn task_action(")
+            .map(|offset| start + offset)
+            .expect("next production boundary");
+        let snapshot = &source[start..end];
+        assert!(
+            !snapshot.contains("connect_or_start("),
+            "passive popup refresh must not resurrect the desktop"
+        );
+        assert!(
+            snapshot.contains("DownloadIpcClient::connect("),
+            "snapshot still queries an existing engine"
+        );
+    }
 
     #[test]
     fn blob_staging_cleanup_reports_real_remove_success_and_failure() {
@@ -1946,5 +1967,56 @@ mod tests {
                 },
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod metadata_refactor_tests {
+    use super::*;
+
+    #[test]
+    fn diagnostic_metadata_keeps_independent_bounded_fallbacks() {
+        for (input, expected_id, expected_kind) in [
+            (
+                serde_json::json!({"requestId":"fixed", "type":"create_task"}),
+                Some("fixed"),
+                "create_task",
+            ),
+            (serde_json::json!({"requestId":"", "type":""}), Some(""), ""),
+            (
+                serde_json::json!({"requestId":42, "type":"task_action"}),
+                None,
+                "task_action",
+            ),
+            (
+                serde_json::json!({"requestId":"fixed", "type":42}),
+                Some("fixed"),
+                "invalid",
+            ),
+            (
+                serde_json::json!({"requestId":"x".repeat(MAX_REQUEST_ID_BYTES+1), "type":"create_task"}),
+                None,
+                "create_task",
+            ),
+            (
+                serde_json::json!({"requestId":"fixed", "type":"x".repeat(MAX_REQUEST_KIND_BYTES+1)}),
+                Some("fixed"),
+                "invalid",
+            ),
+            (serde_json::json!({}), None, "invalid"),
+        ] {
+            let (id, kind) = request_metadata_from_bytes(
+                &serde_json::to_vec(&input).expect("synthetic metadata"),
+            );
+            if let Some(expected) = expected_id {
+                assert_eq!(id, expected);
+            } else {
+                assert!(Uuid::parse_str(&id).is_ok(), "fallback remains UUID");
+            }
+            assert_eq!(kind, expected_kind);
+        }
+        let (id, kind) = request_metadata_from_bytes(b"not JSON");
+        assert!(Uuid::parse_str(&id).is_ok());
+        assert_eq!(kind, "invalid");
     }
 }

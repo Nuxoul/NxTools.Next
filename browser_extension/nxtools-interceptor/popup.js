@@ -9,6 +9,7 @@ let selectedMediaIndex = 0;
 let refreshTimer = null;
 let refreshInFlight = null;
 let busyActionCount = 0;
+let mediaActionInFlight = false;
 
 const elements = {
   interceptDownloads: document.getElementById("interceptDownloads"),
@@ -116,6 +117,7 @@ function collectSettings() {
 
 function setMessage(text) {
   elements.messageText.textContent = text || "";
+  elements.messageText.dataset.tone = /失败|超时|错误/.test(text || "") ? "error" : "status";
 }
 
 function isQueuedDesktopResult(result) {
@@ -424,7 +426,7 @@ function taskActionLabel(task) {
 }
 
 function emptyList(target, text) {
-  target.innerHTML = `<div class="empty">${text}</div>`;
+  target.innerHTML = `<div class="empty"><strong>${escapeHtml(text)}</strong><small>${target === elements.taskList ? "桌面端运行后可查看和管理下载任务。" : "播放页面媒体或开始浏览，捕获结果会出现在这里。"}</small></div>`;
 }
 
 function renderTasks(tasks) {
@@ -451,7 +453,7 @@ function renderTasks(tasks) {
           ${primaryAction && taskId ? `<button class="mini-send" data-task-id="${escapeHtml(taskId)}" data-action="${primaryAction.action}">${primaryAction.label}</button>` : ""}
           ${taskId && !isCompletedStatus(task.status) ? `<button class="mini-send danger" data-task-id="${escapeHtml(taskId)}" data-action="cancel">取消</button>` : ""}
         </div>
-        <div class="bar"><i style="width:${progress.toFixed(2)}%"></i></div>
+        <progress class="bar" value="${progress.toFixed(2)}" max="100" aria-label="${escapeHtml(name)} 下载进度">${progressLabel(progress, task)}</progress>
       </article>
     `;
   }).join("");
@@ -539,26 +541,26 @@ function renderResources(target, resources, emptyText) {
       resource.domain || compactUrl(resource.url)
     ].filter(Boolean).join("  |  ");
     const detailLine = [
-      resource.size ? formatBytes(resource.size) : "",
       resource.mime || "",
       sourceLabel(resource.source)
     ].filter(Boolean).join("  ·  ");
     return `
       <article class="item resource ${previewResourceId === resource.id ? "selected" : ""}" data-resource-row="${escapeHtml(resource.id)}">
-        <input class="resource-check" type="checkbox" data-resource-check="${escapeHtml(resource.id)}" ${selectedResourceIds.has(resource.id) ? "checked" : ""}>
+        <input class="resource-check" type="checkbox" aria-label="选择 ${escapeHtml(name)}" data-resource-check="${escapeHtml(resource.id)}" ${selectedResourceIds.has(resource.id) ? "checked" : ""}>
         ${thumb}
         <div class="resource-main">
           <div class="resource-title">
-            <strong title="${escapeHtml(title || name)}">${escapeHtml(title || name)}</strong>
+            <strong title="${escapeHtml(name)}">${escapeHtml(name)}</strong>
           </div>
-          <div class="resource-name" title="${escapeHtml(subtitle)}">${escapeHtml(subtitle)}</div>
+          <div class="resource-name" title="${escapeHtml([title, subtitle].filter(Boolean).join("\n"))}">${escapeHtml(resource.domain || compactUrl(resource.url))}</div>
           <div class="resource-meta">
             ${chips.map((chip) => `<span class="meta-chip${chip.important ? " important" : ""}" title="${escapeHtml(chip.text)}">${escapeHtml(chip.text)}</span>`).join("")}
           </div>
           <div class="resource-url" title="${escapeHtml(resource.url || "")}">${escapeHtml(detailLine || compactUrl(resource.url))}</div>
       </div>
         <div class="resource-actions">
-          <button class="mini-send" data-resource-id="${escapeHtml(resource.id)}">解析</button>
+          ${isPreviewableResource(resource) ? `<button class="preview-action" data-resource-preview="${escapeHtml(resource.id)}" aria-expanded="${isSelected}" aria-label="预览 ${escapeHtml(name)}">${isSelected ? "收起预览" : "预览"}</button>` : ""}
+          <button class="mini-send" data-resource-id="${escapeHtml(resource.id)}" aria-label="发送 ${escapeHtml(name)} 到 NxTools">发送下载</button>
         </div>
         ${expandedPreview}
       </article>
@@ -570,11 +572,13 @@ function renderResources(target, resources, emptyText) {
       if (event.target?.closest?.("button,input")) {
         return;
       }
-      previewResourceId = row.dataset.resourceRow || "";
-      render(currentState);
+      toggleResourcePreview(row.dataset.resourceRow || "");
     });
   });
 
+  target.querySelectorAll("[data-resource-preview]").forEach((button) => {
+    button.addEventListener("click", () => toggleResourcePreview(button.dataset.resourcePreview));
+  });
   target.querySelectorAll(".mini-send").forEach((button) => {
     button.addEventListener("click", async () => {
       await sendResourceFromButton(button, button.dataset.resourceId);
@@ -615,17 +619,7 @@ function renderCaptureSummary(state) {
   elements.signalRail.classList.toggle("capturing", connected && enabled && recentCount > 0);
   elements.signalRail.classList.toggle("offline", !connected);
   elements.signalRail.classList.toggle("paused", connected && !enabled);
-  // EX-09: the rail plays one pulse only when its state actually changes;
-  // steady-state rendering never requests animation frames.
-  const signalState = [
-    connected ? (enabled ? (recentCount > 0 ? "capturing" : "online") : "paused") : "offline",
-  ].join("");
-  if (elements.signalRail.dataset.signalState !== signalState) {
-    elements.signalRail.dataset.signalState = signalState;
-    elements.signalRail.classList.remove("pulse");
-    void elements.signalRail.offsetWidth;
-    elements.signalRail.classList.add("pulse");
-  }
+  elements.signalRail.dataset.signalState = connected ? (enabled ? "ready" : "paused") : "offline";
 }
 
 function escapeHtml(value) {
@@ -638,6 +632,7 @@ function escapeHtml(value) {
 
 function renderFeatureButton(button, enabled) {
   button.classList.toggle("active", Boolean(enabled));
+  button.setAttribute("aria-pressed", String(Boolean(enabled)));
 }
 
 function renderAdvanced(state) {
@@ -679,6 +674,8 @@ function renderAdvanced(state) {
   elements.mediaPlayButton.textContent = playback.paused ? "播放" : "暂停";
   elements.mediaMuteButton.textContent = playback.muted ? "取消静音" : "静音";
   elements.mediaLoopButton.textContent = playback.loop ? "关闭循环" : "循环";
+  elements.mediaMuteButton.setAttribute("aria-pressed", String(Boolean(playback.muted)));
+  elements.mediaLoopButton.setAttribute("aria-pressed", String(Boolean(playback.loop)));
   elements.mediaSpeedInput.value = String(Number(playback.speed || 1).toFixed(2).replace(/\.?0+$/, ""));
   elements.mediaTimeRange.value = String(Math.round(Math.max(0, Math.min(1, playback.progress || 0)) * 1000));
   elements.mediaVolumeRange.value = String(Math.round(Math.max(0, Math.min(1, playback.volume ?? 1)) * 100));
@@ -705,6 +702,11 @@ function renderSiteToggle(site) {
 }
 
 function render(state) {
+  const focused = document.activeElement;
+  const focusAttribute = ["data-resource-preview", "data-resource-check", "data-resource-id", "data-task-id"].find(name => focused?.hasAttribute?.(name));
+  const focusValue = focusAttribute ? focused.getAttribute(focusAttribute) : "";
+  const focusAction = focused?.dataset?.action || "";
+  const mediaDraft = focused === elements.mediaSpeedInput ? focused.value : null;
   currentState = state;
   const liveResourceIds = new Set([
     ...(state.currentResources || []),
@@ -733,6 +735,7 @@ function render(state) {
 
   const activeTab = state.activeTab || {};
   elements.activeTabTitle.textContent = activeTab.title || activeTab.url || "-";
+  elements.activeTabTitle.title = activeTab.title || activeTab.url || "";
   elements.activeTabDomain.textContent = activeTab.domain || "未检测到网页";
   elements.sendTabButton.disabled = !/^https?:\/\//i.test(activeTab.url || "");
 
@@ -746,6 +749,11 @@ function render(state) {
   renderResources(elements.currentResourceList, state.currentResources || [], "当前页面还没有嗅探到资源");
   renderResources(elements.otherResourceList, state.otherResources || [], "暂无其他页面资源");
   renderAdvanced(state);
+  if (mediaDraft !== null) elements.mediaSpeedInput.value = mediaDraft;
+  if (focusAttribute) {
+    const actionSelector = focusAction ? `[data-action="${CSS.escape(focusAction)}"]` : "";
+    document.querySelector(`[${focusAttribute}="${CSS.escape(focusValue)}"]${actionSelector}`)?.focus({ preventScroll: true });
+  }
 }
 
 function setView(view) {
@@ -762,6 +770,21 @@ function setView(view) {
     section.setAttribute("aria-hidden", String(!active));
   });
 }
+
+function toggleResourcePreview(resourceId) {
+  previewResourceId = previewResourceId === resourceId ? "" : resourceId;
+  renderResources(elements.currentResourceList, currentState?.currentResources || [], "当前页面还没有捕获到资源");
+  renderResources(elements.otherResourceList, currentState?.otherResources || [], "暂无其他页面资源");
+  document.querySelector(`[data-resource-preview="${CSS.escape(resourceId)}"]`)?.focus({ preventScroll: true });
+  if (previewResourceId) document.querySelector(`[data-resource-row="${CSS.escape(resourceId)}"] .resource-preview-panel`)?.scrollIntoView({ block: "nearest", behavior: "instant" });
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && previewResourceId && currentView === "resources") {
+    event.preventDefault();
+    toggleResourcePreview(previewResourceId);
+  }
+});
 
 async function refresh(options = {}) {
   if (busyActionCount > 0 && !options.force) {
@@ -828,6 +851,7 @@ document.querySelectorAll("[data-resource-filter]").forEach((button) => {
     currentResourceFilter = button.dataset.resourceFilter || "all";
     document.querySelectorAll("[data-resource-filter]").forEach((item) => {
       item.classList.toggle("active", item === button);
+      item.setAttribute("aria-pressed", String(item === button));
     });
     if (currentState) {
       renderResources(elements.currentResourceList, currentState.currentResources || [], "当前页面还没有嗅探到资源");
@@ -969,42 +993,61 @@ elements.mergeResourcesButton.addEventListener("click", async () => {
   }
 });
 
-async function toggleFeature(feature) {
-  setMessage("正在切换功能");
-  const state = await sendMessage({ type: "popup_toggle_feature", feature, currentView }, 12000);
-  render(state);
-  setMessage(state.operationResult?.message || "功能状态已更新");
+async function toggleFeature(feature, button) {
+  if (button.disabled) return;
+  beginBusy(null, "");
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  try {
+    setMessage("正在切换功能");
+    const state = await sendMessage({ type: "popup_toggle_feature", feature, currentView }, 12000);
+    render(state);
+    setMessage(state.operationResult?.message || "功能状态已更新");
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : "切换功能失败");
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    endBusy(null);
+  }
 }
 
-elements.featureOverlayButton.addEventListener("click", () => toggleFeature("mediaOverlay"));
-elements.featureDeepScanButton.addEventListener("click", () => toggleFeature("deepSearch"));
-elements.featureMobileUaButton.addEventListener("click", () => toggleFeature("mobileUserAgent"));
+elements.featureOverlayButton.addEventListener("click", () => toggleFeature("mediaOverlay", elements.featureOverlayButton));
+elements.featureDeepScanButton.addEventListener("click", () => toggleFeature("deepSearch", elements.featureDeepScanButton));
+elements.featureMobileUaButton.addEventListener("click", () => toggleFeature("mobileUserAgent", elements.featureMobileUaButton));
 
 elements.mediaSelect.addEventListener("change", async () => {
   const playback = currentState?.mediaPlaybackState || {};
   selectedMediaIndex = Number(elements.mediaSelect.value || 0);
-  const state = await sendMessage({
-    type: "popup_set_media_index",
-    index: selectedMediaIndex,
-    frameId: Number(playback.frameId || 0),
-    currentView
-  }, 10000);
-  render(state);
+  beginBusy(null, "");
+  try {
+    const state = await sendMessage({ type: "popup_set_media_index", index: selectedMediaIndex,
+      frameId: Number(playback.frameId || 0), currentView }, 10000);
+    render(state);
+  } catch (error) { setMessage(error instanceof Error ? error.message : "选择媒体失败"); }
+  finally { endBusy(null); }
 });
 
 async function mediaAction(payload) {
+  if (mediaActionInFlight) return;
+  mediaActionInFlight = true;
+  beginBusy(null, "");
   const playback = currentState?.mediaPlaybackState || {};
-  const localIndex = Number.isInteger(playback.localMediaIndex)
-    ? playback.localMediaIndex
-    : Number(playback.mediaIndex || 0);
-  const result = await sendMessage({
-    type: "popup_media_action",
-    index: localIndex,
-    frameId: playback.frameId || 0,
-    payload
-  }, 12000);
-  setMessage(result.message || (result.ok ? "媒体操作已发送" : "媒体操作失败"));
-  await refresh({ force: true });
+  const localIndex = Number.isInteger(playback.localMediaIndex) ? playback.localMediaIndex : Number(playback.mediaIndex || 0);
+  const controls = [elements.mediaPlayButton, elements.mediaPipButton, elements.mediaScreenshotButton,
+    elements.mediaMuteButton, elements.mediaLoopButton, elements.mediaSpeedButton];
+  controls.forEach(control => { control.disabled = true; });
+  try {
+    const result = await sendMessage({ type: "popup_media_action", index: localIndex,
+      frameId: playback.frameId || 0, payload }, 12000);
+    setMessage(result.message || (result.ok ? "媒体操作已发送" : "媒体操作失败"));
+    await refresh({ force: true });
+  } catch (error) { setMessage(error instanceof Error ? error.message : "媒体操作失败"); }
+  finally {
+    mediaActionInFlight = false;
+    endBusy(null);
+    controls.forEach(control => { control.disabled = !currentState?.mediaPlaybackState?.available; });
+  }
 }
 
 elements.mediaPlayButton.addEventListener("click", () => {
@@ -1053,12 +1096,14 @@ for (const input of [
   elements.includeCookies
 ]) {
   input.addEventListener("change", async () => {
-    const state = await sendMessage({
-      type: "popup_save_settings",
-      settings: collectSettings(),
-      currentView
-    }, 12000);
-    render(state);
+    beginBusy(null, "");
+    setMessage("正在自动保存设置…");
+    try {
+      const state = await sendMessage({ type: "popup_save_settings", settings: collectSettings(), currentView }, 12000);
+      render(state);
+      setMessage("设置已自动保存");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "自动保存失败，请重试"); }
+    finally { endBusy(null); }
   });
 }
 

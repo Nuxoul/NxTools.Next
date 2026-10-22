@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/shared/architecture.md", "reason": "Preserve Rust state, GPUI rendering, C# Windows ownership and deferred lifecycle."}
+{"file": "docs/reference-code/winshun.md", "reason": "Canonical W6 then joint W7-W8-W9 scope and reference trust/runtime caveats."}
+{"file": ".trellis/tasks/10-14-winshun-w6-w9/research/reference-and-current-owners.md", "reason": "Verified current command owners, planning-only evidence and unresolved trigger decision."}
+{"file": ".trellis/tasks/10-14-winshun-w6-w9/design.md", "reason": "Canonical cross-feature interfaces, resolution chains, budgets and trust."}
+{"file": ".trellis/spec/shared/engineering.md", "reason": "Pending-before-dispatch, atomic owned config, typed failure and privacy."}
+{"file": ".trellis/spec/shared/verification.md", "reason": "Safe fixture effects, serial Cargo memory policy and evidence levels."}
+{"file": "docs/reference-code/gpui-kit-component-index.md", "reason": "Mandatory compound-first released public API discovery."}
+{"file": ".trellis/spec/platformhost/native-contracts.md", "reason": "Native ownership, nonblocking reader and correlated terminal contracts."}
+{"file": ".trellis/spec/platformhost/diagnostics.md", "reason": "No raw script output/URL/secret/native payload diagnostics."}
+{"file": ".trellis/spec/nxtools-download/backend/quality-guidelines.md", "reason": "Download common-engine request/persistence/lifecycle regression."}
+{"file": "docs/reference-code/download.md", "reason": "ABDM-first and legacy compatibility, browser/CLI/headless request flow."}
+{"file": ".trellis/spec/nxtools-desktop/backend/quality-guidelines.md", "reason": "Existing leased entity, clipboard and QuickLaunch action lifecycle."}

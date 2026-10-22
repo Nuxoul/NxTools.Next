@@ -14,8 +14,8 @@ foreach ($file in $files) {
     for ($index = 0; $index -lt $lines.Count; $index++) {
         $line = $lines[$index]
 
-        # 1. Hardcoded colors outside theme.rs (gpui::rgb with a literal).
-        if ($relative -ne 'theme.rs' -and $line -match 'gpui::rgb\(0x') {
+        # 1. Hardcoded colors outside the application theme owner.
+        if ($relative -ne 'theme.rs' -and $line -match 'gpui(?:_kit)?::rgb\(0x') {
             $violations += "hardcoded color: ${relative}:$($index + 1): $line.Trim()"
         }
 

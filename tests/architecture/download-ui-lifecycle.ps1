@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $downloadsFiles = @(
     'downloads.rs',
+    'downloads\artifact_actions.rs',
     'downloads\delete_confirmation.rs',
     'downloads\browser_handoff_impl.rs',
     'downloads\completion_shutdown_impl.rs',
@@ -27,6 +28,75 @@ $nativeFileDragCoordinatorPath = Join-Path $RepositoryRoot "csharp\NxTools.Platf
 $nativeFileDragCoordinator = Get-Content -LiteralPath $nativeFileDragCoordinatorPath -Raw
 $nativeFileDragPath = Join-Path $RepositoryRoot "csharp\NxTools.PlatformHost\Windows\NativeFileDragService.cs"
 $nativeFileDrag = Get-Content -LiteralPath $nativeFileDragPath -Raw
+
+$settingsSource = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\settings_view.rs')
+foreach ($contract in @('Settings::new("download-settings-kit")', 'SettingPage::new(',
+    '.resettable(false)', 'SettingGroup::new()', 'SettingItem::render(', 'aligned_setting_row(', '.justify_end()',
+    'Form::new()', 'Textarea::new(&self.default_request_headers)', 'fn render_setting_control(',
+    'fn save(', 'application.apply_settings(draft, correlation_id, cx)')) {
+    if (-not $settingsSource.Contains($contract)) { throw "Download settings component/draft boundary missing: $contract" }
+}
+if ($settingsSource.Contains('fn download_settings_navigation_item(') -or
+    $settingsSource.Contains('fn download_settings_matrix_section(') -or
+    $settingsSource.Contains('multiline_field_shell(') -or
+    $settingsSource.Contains('pub(crate) scroll: ScrollHandle')) {
+    throw 'Official Settings must own page navigation/scroll and styled Textarea its sole frame.'
+}
+$mainDownloadSource = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\main_window\download_page.rs')
+foreach ($contract in @('InputGroup::new("download-search-group")', 'InputGroupButton::new("download-search-clear")',
+    'Toolbar::new("download-header-toolbar")', 'ToolbarGroup::new("download-header-command-group")',
+    'Toolbar::new("download-batch-kit-toolbar")', 'TabBar::new("download-detail-tab-bar")',
+    'DownloadDetailTab::ALL', 'fn download_aggregate_progress(', 'Progress::new(', 'DescriptionList::horizontal()',
+    'download_selection_anchor', 'uniform_list(')) {
+    if (-not $mainDownloadSource.Contains($contract)) { throw "Download main component/ownership boundary missing: $contract" }
+}
+if ($mainDownloadSource.Contains('.appearance(false)') -or $mainDownloadSource.Contains('.focus_bordered(false)')) {
+    throw 'Download main search must retain its actual styled InputGroup frame.'
+}
+
+$newDownloadSource = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\new_download_view.rs')
+foreach ($contract in @('Form::horizontal()', 'Form::new()', 'Field::new()', 'RadioGroup::new(',
+    'Radio::new(', 'StatefulInteractiveElement::on_click(radio', 'ListItem::new(',
+    'Popover::new("download-new-schedule-popover")', 'Popover::new("download-new-category-popover")',
+    'new_download_url_control(&self.url, self.handoff_pending)', 'fn fixed_confirmation_draft(',
+    'fn request(', 'fn begin_probe(', 'fn submit(')) {
+    if (-not $newDownloadSource.Contains($contract)) { throw "New-download component/original owner missing: $contract" }
+}
+if ($newDownloadSource.Contains('popover_shell(') -or $newDownloadSource.Contains('labeled_control(') -or
+    $newDownloadSource.Contains('radio_list_row(') -or $newDownloadSource.Contains('.appearance(false)')) {
+    throw 'New-download must use actual Form/Radio/styled Popover, not old ordinary chrome.'
+}
+
+$scheduleContent = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\schedule_view.rs')
+$taskContent = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\task_window.rs')
+$supportContent = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\window_support.rs')
+foreach ($contract in @('Form::horizontal()', 'Field::new()', 'StatusBar::new()', 'Switch::new(id)',
+    'Toggle::new(', 'this.enabled_start = *requested', 'this.enabled_stop = *requested',
+    'TimeField::new(input)', 'HourCycle::H23', 'TimePrecision::Minute', 'build_download_schedule(', 'DialogContent::new()', 'DialogFooter::new()')) {
+    if (-not $scheduleContent.Contains($contract)) { throw "Schedule component/original draft missing: $contract" }
+}
+if ($scheduleContent.Contains('ToggleGroup::new(')) {
+    throw 'Weekdays remain independent toggles; TimeField uses user-approved valid-time editing and original Apply validation.'
+}
+foreach ($contract in @('Progress::new("download-task-window-progress")', '.xsmall()',
+    'Toolbar::new("download-task-window-toolbar")', 'ToolbarGroup::new("download-task-window-action-group")',
+    'checkbox::Checkbox::new(', 'application.toggle_shutdown_armed(task_id, cx)', 'DialogFooter::new()',
+    'fn replace_snapshot(', 'fn segment_progress_table(', 'segment_display_status(', 'Table::new()')) {
+    if (-not $taskContent.Contains($contract)) { throw "Task component/phase/domain owner missing: $contract" }
+}
+if (-not $taskContent.Contains('DescriptionList::horizontal()')) { throw 'Task metadata must use real DescriptionList.' }
+foreach ($entry in @('delete_confirmation.rs', 'shutdown_window.rs')) {
+    $content = Get-Content -Raw (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\downloads\$entry")
+    foreach ($contract in @('DialogContent::new()', 'DialogFooter::new()', 'Alert::', 'cx.defer(')) {
+        if (-not $content.Contains($contract)) { throw "Danger inner-content boundary missing in ${entry}: $contract" }
+    }
+    if ($content.Contains('AlertDialog::new(') -or $content.Contains('Dialog::new(')) {
+        throw 'Independent native supporting windows must not become Root modal hosts.'
+    }
+}
+if (-not $mainDownloadSource.Contains('application.request_delete_confirmation(task_id, cx)')) {
+    throw 'Deletion view live menu reachability must not be replaced by test-only adoption.'
+}
 
 function Assert-SourceContains {
     param(
@@ -227,7 +297,7 @@ if (-not $deleteDialogBody.Contains("danger_hover_button_variant(theme, cx)") -o
 if ($deleteDialogBody.Contains(".danger()") -or $shutdownDialogBody.Contains(".primary()")) {
     throw "Destructive dialog actions must not use permanent danger or accent-primary styling."
 }
-if (-not $scheduleDialogBody.Contains("primary_button_variant(theme, cx)")) {
+if (-not $scheduleDialogBody.Contains("primary_action_button(") -or -not $scheduleDialogBody.Contains('download-schedule-primary-apply-action')) {
     throw "Schedule Apply must remain the sole accent-primary auxiliary-dialog action."
 }
 $completedStart = $source.IndexOf("if status == DownloadStatus::Completed")
@@ -237,7 +307,7 @@ if ($completedStart -lt 0 -or $failedStart -le $completedStart) {
 }
 $completedBody = $source.Substring($completedStart, $failedStart - $completedStart)
 $completedActionStart = $source.IndexOf("enum CompletedTaskWindowAction")
-$completedActionEnd = $source.IndexOf("pub(crate) fn download_window_metric", $completedActionStart)
+$completedActionEnd = $source.IndexOf("pub(crate) fn download_window_titlebar", $completedActionStart)
 if ($completedActionStart -lt 0 -or $completedActionEnd -le $completedActionStart) {
     throw "Could not isolate the completed action model."
 }
@@ -252,8 +322,9 @@ foreach ($requiredActionContract in @(
     'icon_action_button(spec.button_id, spec.icon)',
     'tooltip: Some("拖拽文件")',
     'tooltip_selector: Some("download-complete-drag-tooltip")',
-    'button.custom(primary_button_variant(theme, cx))',
-    'CompletedTaskWindowEmphasis::Outline => button.outline()'
+    'primary_action_button(',
+    'CompletedTaskWindowEmphasis::Outline => match spec.label',
+    '.outline()'
 )) {
     if (-not $completedActionBody.Contains($requiredActionContract)) {
         throw "The completed action hierarchy must derive its shared primary and secondary controls from one model."

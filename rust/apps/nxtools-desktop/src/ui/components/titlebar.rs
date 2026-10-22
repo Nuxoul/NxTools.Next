@@ -1,14 +1,12 @@
-use gpui::{
+use gpui_kit::component::button::ButtonVariants;
+use gpui_kit::{
     AnyElement, IntoElement, MouseButton, SharedString, WindowControlArea, div, prelude::*, px,
 };
-use gpui_component::button::ButtonVariants;
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::action::icon_action;
-use crate::ui::metrics::{
-    CONTROL_HEIGHT_ACTION, MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT,
-};
+use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT};
 use crate::ui::typography::{
     LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_PAGE_TITLE,
     UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
@@ -85,7 +83,7 @@ impl ModuleHeader {
                     .h(px(LINE_HEIGHT_PAGE_TITLE))
                     .text_size(px(TEXT_PAGE_TITLE))
                     .line_height(px(LINE_HEIGHT_PAGE_TITLE))
-                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                     .child(title),
             )
             .child(
@@ -98,7 +96,7 @@ impl ModuleHeader {
                     .h(px(LINE_HEIGHT_LABEL))
                     .text_size(px(TEXT_LABEL))
                     .line_height(px(LINE_HEIGHT_LABEL))
-                    .text_color(theme.text_muted)
+                    .text_color(theme.text_secondary)
                     .when(metadata_monospace, |metadata| {
                         metadata.font_family(UI_MONO_FONT_FAMILY)
                     })
@@ -115,7 +113,7 @@ pub(crate) fn client_titlebar(
     selector: &'static str,
     close_id: &'static str,
     title: &'static str,
-    on_close: impl Fn(&gpui::ClickEvent, &mut gpui::Window, &mut gpui::App) + 'static,
+    on_close: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
 ) -> AnyElement {
     div()
         .debug_selector(move || selector.into())
@@ -134,7 +132,7 @@ pub(crate) fn client_titlebar(
             div()
                 .flex_1()
                 .text_size(px(TEXT_BODY))
-                .font_weight(gpui::FontWeight::SEMIBOLD)
+                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                 .child(title),
         )
         .child(
@@ -146,17 +144,11 @@ pub(crate) fn client_titlebar(
                 .justify_center()
                 .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                 .child(
-                    div()
-                        .debug_selector(move || close_id.into())
-                        .size(px(CONTROL_HEIGHT_ACTION))
-                        .rounded(px(crate::ui::metrics::RADIUS_CONTROL))
-                        .hover(move |style| style.bg(theme.danger).text_color(gpui::white()))
-                        .child(
-                            icon_action(close_id, MaterialIcon::Close, "关闭")
-                                .ghost()
-                                .size(px(CONTROL_HEIGHT_ACTION))
-                                .on_click(on_close),
-                        ),
+                    div().debug_selector(move || close_id.into()).child(
+                        icon_action(close_id, MaterialIcon::Close, "关闭")
+                            .ghost()
+                            .on_click(on_close),
+                    ),
                 ),
         )
         .into_any_element()

@@ -1,0 +1,3 @@
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Native PATH resolver and bounded Job ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Deferred state and diagnostic privacy"}
+{"file":".trellis/tasks/10-15-extension-trust-path/design.md","reason":"Current user requested PATH and trust correction"}

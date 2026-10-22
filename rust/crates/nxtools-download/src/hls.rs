@@ -508,6 +508,7 @@ high/index.m3u8
                 is_master: true,
                 variants: Vec::new(),
             })),
+            resolution: None,
         };
 
         assert_eq!(

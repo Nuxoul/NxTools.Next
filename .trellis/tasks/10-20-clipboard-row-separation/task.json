@@ -1,0 +1,16 @@
+{
+  "id": "clipboard-row-separation",
+  "name": "clipboard-row-separation",
+  "title": "Separate Clipboard cells and fade icon tint",
+  "status": "in_progress",
+  "package": "nxtools-desktop",
+  "dev_type": "frontend",
+  "priority": "P1",
+  "implementation_complete": true,
+  "verification_status": "relevant_checks_passed_global_checks_not_green",
+  "remaining_blockers": [
+    "Full Desktop latest921passed/1failed: unrelated Extensions preview close regression at main_window/extensions_page.rs:423.",
+    "Last strict testClippy run blocked by unrelated Archive test field_reassign_with_default at archive/browser_tests.rs:594; final retry not started due other Cargo occupancy.",
+    "Installed/physical/DPI/reader/user visual acceptance not performed."
+  ]
+}

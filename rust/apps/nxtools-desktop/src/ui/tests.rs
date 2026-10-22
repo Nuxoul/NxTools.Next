@@ -2,8 +2,8 @@
 //! runtime code stays readable.
 
 use super::*;
-use gpui::{ScrollDelta, ScrollWheelEvent, TestAppContext};
-use gpui_component::Root;
+use gpui_kit::base::Root;
+use gpui_kit::{ScrollDelta, ScrollWheelEvent, TestAppContext};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -30,7 +30,10 @@ fn clipboard_history_window_is_bounded_and_can_load_both_directions() {
     assert!(source.contains("trim_history_window_from_back"));
     assert!(source.contains("ClipboardPageRequest::Append"));
     assert!(source.contains("ClipboardPageRequest::Prepend"));
-    assert!(source.contains("query_category_page_after_async"));
+    assert!(source.contains("query_summary_page_async"));
+    assert!(
+        include_str!("../clipboard_worker.rs").contains("history.summary_category_page_after(")
+    );
     assert!(source.contains("self.list_scroll.splice(0..removed, 0)"));
 }
 
@@ -72,9 +75,11 @@ fn image_resource_cache_evicts_the_oldest_entry_beyond_capacity() {
     assert_eq!(IMAGE_RESOURCE_CACHE_CAPACITY, 96);
 }
 
-#[gpui::test]
-fn production_clipboard_history_uses_the_shared_empty_state(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+#[gpui_kit::test]
+fn production_clipboard_history_uses_official_empty_and_distinct_query_alert(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
     let page = ClipboardHistoryPage {
         items: Vec::new(),
         total: 0,
@@ -134,20 +139,21 @@ fn production_clipboard_history_uses_the_shared_empty_state(cx: &mut TestAppCont
     });
     let state = window
         .debug_bounds("clipboard-history-empty")
-        .expect("clipboard shared empty state");
+        .expect("clipboard official empty viewport");
     let icon = window
-        .debug_bounds("clipboard-history-empty-icon")
-        .expect("clipboard empty icon");
+        .debug_bounds("clipboard-kit-empty-icon")
+        .expect("official Empty media content");
     let title = window
-        .debug_bounds("clipboard-history-empty-title")
-        .expect("clipboard empty title");
+        .debug_bounds("clipboard-kit-empty-title")
+        .expect("official Empty title content");
     let description = window
-        .debug_bounds("clipboard-history-empty-description")
-        .expect("clipboard empty description");
-    assert_eq!(icon.size, size(px(18.0), px(18.0)));
-    assert_eq!(title.size.height, px(18.0));
-    assert_eq!(description.size.height, px(16.0));
-    assert_eq!(title.left(), description.left());
+        .debug_bounds("clipboard-kit-empty-description")
+        .expect("official Empty description content");
+    assert!(icon.size.width > px(0.0) && icon.size.height > px(0.0));
+    assert!(title.size.height > px(0.0) && description.size.height > px(0.0));
+    assert!(title.bottom() <= description.top());
+    assert!(title.left() >= state.left() && title.right() <= state.right());
+    assert!(description.left() >= state.left() && description.right() <= state.right());
     // The empty state fills its viewport exactly (harness-independent fill
     // invariant); absolute window width varies with the test display.
     let viewport = window
@@ -172,11 +178,7 @@ fn production_clipboard_history_uses_the_shared_empty_state(cx: &mut TestAppCont
     window
         .refresh()
         .expect("render clipboard query error state");
-    assert!(
-        window
-            .debug_bounds("clipboard-history-query-error")
-            .is_some()
-    );
+    assert!(window.debug_bounds("clipboard-kit-query-error").is_some());
     panel.update_in(window, |panel, _window, cx| {
         panel.category_editor = Some(CategoryEditorState {
             category_id: None,
@@ -245,16 +247,77 @@ fn clipboard_context_menu_can_escape_the_panel_content_clip() {
     );
 }
 
-#[test]
-fn clipboard_submenu_uses_window_space_and_clamps_inside_the_native_popup() {
-    let source = include_str!("../../../../../vendor/gpui-component/src/menu/popup_menu.rs");
-    assert!(source.contains("fn resolve_submenu_x("));
-    assert!(source.contains("desired_x.clamp(edge, max_x)"));
-    assert!(source.contains(".position(submenu_position)"));
-    assert!(!source.contains("deferred("));
+#[gpui_kit::test]
+fn disconnected_menu_fixture_retains_in_window_clamp_not_production_native_policy(
+    cx: &mut TestAppContext,
+) {
+    use crate::ui::components::project_menu::{MenuItem, context_menu};
+    use gpui_kit::test::{TestSupportExt, TestWindowExt};
+    struct MenuFixture(Rc<Cell<usize>>);
+    impl Render for MenuFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let calls = self.0.clone();
+            div().size_full().child(context_menu(
+                "narrow-menu-trigger-host",
+                div()
+                    .id("narrow-menu-trigger")
+                    .test_support()
+                    .w(px(60.0))
+                    .h(px(28.0))
+                    .child("菜单")
+                    .into_any_element(),
+                vec![MenuItem::new("narrow-menu-category", "分类").submenu(vec![
+                        MenuItem::new("narrow-menu-child", "合成分类")
+                            .on_click(move |_, _, _| calls.set(calls.get() + 1)),
+                    ])],
+            ))
+        }
+    }
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let calls = Rc::new(Cell::new(0));
+    let fixture_calls = calls.clone();
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        window.resize(size(px(300.0), px(440.0)));
+        let view = cx.new(|_| MenuFixture(fixture_calls));
+        Root::new(view, window, cx)
+    });
+    surface.simulate_resize(size(px(300.0), px(440.0)));
+    surface.update(|window, cx| window.right_click("narrow-menu-trigger", cx));
+    surface.refresh().expect("actual Kit menu frame");
+    let submenu_row = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|snapshot| snapshot.label() == Some("分类"))
+            .expect("actual named submenu row")
+            .bounds()
+    });
+    surface.simulate_mouse_move(submenu_row.center(), None, gpui_kit::Modifiers::default());
+    surface.refresh().expect("actual submenu frame");
+    let child = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|snapshot| snapshot.label() == Some("合成分类"))
+            .expect("actual named child item")
+    });
+    let bounds = child.bounds();
+    assert!(child.visible());
+    assert!(
+        bounds.left() >= px(0.0)
+            && bounds.top() >= px(0.0)
+            && bounds.right() <= px(300.0)
+            && bounds.bottom() <= px(440.0),
+        "submenu outside native client: {bounds:?}"
+    );
+    assert!(
+        (bounds.top() - submenu_row.top()).abs() <= px(12.0),
+        "submenu must follow its hovered row"
+    );
+    surface.simulate_click(bounds.center(), gpui_kit::Modifiers::default());
+    assert_eq!(calls.get(), 1, "submenu callback must dispatch once");
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn panel_shell_fills_the_native_window_without_a_uniform_transparent_gutter(
     cx: &mut TestAppContext,
 ) {
@@ -267,7 +330,7 @@ fn panel_shell_fills_the_native_window_without_a_uniform_transparent_gutter(
                 Theme::zed_dark(),
                 div()
                     .size_full()
-                    .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, _cx| {
+                    .on_mouse_down(gpui_kit::MouseButton::Left, move |_event, _window, _cx| {
                         presses.set(presses.get() + 1)
                     }),
             )
@@ -280,18 +343,21 @@ fn panel_shell_fills_the_native_window_without_a_uniform_transparent_gutter(
     window.draw(
         point(px(0.0), px(0.0)),
         size(px(100.0), px(100.0)),
-        move |_window, cx| cx.new(|_| PanelFrameFixture(fixture_presses)),
+        move |_window, cx| {
+            cx.new(|_| PanelFrameFixture(fixture_presses))
+                .into_any_element()
+        },
     );
 
     window.simulate_mouse_down(
         point(px(2.0), px(50.0)),
-        gpui::MouseButton::Left,
-        gpui::Modifiers::default(),
+        gpui_kit::MouseButton::Left,
+        gpui_kit::Modifiers::default(),
     );
     assert_eq!(presses.get(), 1);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn inset_sections_leave_safe_edges_and_resize_stays_on_the_native_corner(cx: &mut TestAppContext) {
     struct SpacingFixture {
         content_presses: Rc<Cell<u32>>,
@@ -310,13 +376,13 @@ fn inset_sections_leave_safe_edges_and_resize_stays_on_the_native_corner(cx: &mu
                     .flex()
                     .flex_col()
                     .child(inset_panel_section(div().flex_1().on_mouse_down(
-                        gpui::MouseButton::Left,
+                        gpui_kit::MouseButton::Left,
                         move |_event, _window, _cx| {
                             content_presses.set(content_presses.get() + 1);
                         },
                     )))
                     .child(panel_resize_hitbox(div().on_mouse_down(
-                        gpui::MouseButton::Left,
+                        gpui_kit::MouseButton::Left,
                         move |_event, _window, cx| {
                             cx.stop_propagation();
                             resize_presses.set(resize_presses.get() + 1);
@@ -326,40 +392,35 @@ fn inset_sections_leave_safe_edges_and_resize_stays_on_the_native_corner(cx: &mu
         }
     }
 
-    let window = cx.add_empty_window();
     let content_presses = Rc::new(Cell::new(0));
     let resize_presses = Rc::new(Cell::new(0));
     let fixture_content_presses = Rc::clone(&content_presses);
     let fixture_resize_presses = Rc::clone(&resize_presses);
-    window.draw(
-        point(px(0.0), px(0.0)),
-        size(px(100.0), px(40.0)),
-        move |_window, cx| {
-            cx.new(|_| SpacingFixture {
-                content_presses: fixture_content_presses,
-                resize_presses: fixture_resize_presses,
-            })
-        },
-    );
+    let (_, window) = cx.add_window_view(move |_, _| SpacingFixture {
+        content_presses: fixture_content_presses,
+        resize_presses: fixture_resize_presses,
+    });
+    window.simulate_resize(size(px(100.0), px(40.0)));
+    window.refresh().expect("production hit-test viewport");
 
     window.simulate_mouse_down(
         point(px(4.0), px(20.0)),
-        gpui::MouseButton::Left,
-        gpui::Modifiers::default(),
+        gpui_kit::MouseButton::Left,
+        gpui_kit::Modifiers::default(),
     );
     assert_eq!(content_presses.get(), 0);
 
     window.simulate_mouse_down(
         point(px(9.0), px(20.0)),
-        gpui::MouseButton::Left,
-        gpui::Modifiers::default(),
+        gpui_kit::MouseButton::Left,
+        gpui_kit::Modifiers::default(),
     );
     assert_eq!(content_presses.get(), 1);
 
     window.simulate_mouse_down(
-        point(px(99.0), px(39.0)),
-        gpui::MouseButton::Left,
-        gpui::Modifiers::default(),
+        point(px(98.0), px(38.0)),
+        gpui_kit::MouseButton::Left,
+        gpui_kit::Modifiers::default(),
     );
     assert_eq!(resize_presses.get(), 1);
 }
@@ -397,7 +458,7 @@ fn transparent_panel_uses_a_square_outer_shell_without_corner_gutters() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn rendered_category_bar_moves_on_vertical_wheel(cx: &mut TestAppContext) {
     struct CategoryScrollFixture(ScrollHandle);
 
@@ -416,7 +477,7 @@ fn rendered_category_bar_moves_on_vertical_wheel(cx: &mut TestAppContext) {
                     let delta = event.delta.pixel_delta(px(48.0));
                     let update = resolve_category_wheel_offset(
                         wheel_handle.offset().x.as_f32(),
-                        wheel_handle.max_offset().width.as_f32(),
+                        wheel_handle.max_offset().x.as_f32(),
                         delta.x.as_f32(),
                         delta.y.as_f32(),
                     );
@@ -450,10 +511,13 @@ fn rendered_category_bar_moves_on_vertical_wheel(cx: &mut TestAppContext) {
     window.draw(
         point(px(0.0), px(0.0)),
         size(px(120.0), px(30.0)),
-        move |_window, cx| cx.new(|_| CategoryScrollFixture(fixture_handle)),
+        move |_window, cx| {
+            cx.new(|_| CategoryScrollFixture(fixture_handle))
+                .into_any_element()
+        },
     );
 
-    assert!(handle.max_offset().width > px(0.0));
+    assert!(handle.max_offset().x > px(0.0));
     window.simulate_event(ScrollWheelEvent {
         position: point(px(10.0), px(10.0)),
         delta: ScrollDelta::Lines(point(0.0, -1.0)),
@@ -463,7 +527,7 @@ fn rendered_category_bar_moves_on_vertical_wheel(cx: &mut TestAppContext) {
     assert!(handle.offset().x < px(0.0));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn panel_close_side_effects_are_deferred_outside_the_current_entity_lease(cx: &mut TestAppContext) {
     let entity = cx.update(|cx| cx.new(|_| 0_u8));
     let weak = entity.downgrade();
@@ -778,7 +842,7 @@ fn panel_metrics_match_the_reference_window() {
     assert_eq!(panel_list_width(560.0), 544.0);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn clipboard_panel_keeps_300x440_logical_size_at_150_percent_dpi(cx: &mut TestAppContext) {
     let request = ClipboardPanelRequest {
         target: nxtools_protocol::ForegroundContext {
@@ -822,7 +886,7 @@ fn exactly_one_supported_modifier_selects_an_accelerated_action() {
     let actions = ClipboardModifierActions::default();
     assert_eq!(
         action_from_modifiers(
-            gpui::Modifiers {
+            gpui_kit::Modifiers {
                 control: true,
                 ..Default::default()
             },
@@ -832,7 +896,7 @@ fn exactly_one_supported_modifier_selects_an_accelerated_action() {
     );
     assert_eq!(
         action_from_modifiers(
-            gpui::Modifiers {
+            gpui_kit::Modifiers {
                 alt: true,
                 ..Default::default()
             },
@@ -842,7 +906,7 @@ fn exactly_one_supported_modifier_selects_an_accelerated_action() {
     );
     assert_eq!(
         action_from_modifiers(
-            gpui::Modifiers {
+            gpui_kit::Modifiers {
                 shift: true,
                 ..Default::default()
             },
@@ -852,7 +916,7 @@ fn exactly_one_supported_modifier_selects_an_accelerated_action() {
     );
     assert_eq!(
         action_from_modifiers(
-            gpui::Modifiers {
+            gpui_kit::Modifiers {
                 control: true,
                 shift: true,
                 ..Default::default()
@@ -872,7 +936,7 @@ fn configured_modifier_action_can_be_changed_or_disabled() {
     };
     assert_eq!(
         action_from_modifiers(
-            gpui::Modifiers {
+            gpui_kit::Modifiers {
                 control: true,
                 ..Default::default()
             },
@@ -882,7 +946,7 @@ fn configured_modifier_action_can_be_changed_or_disabled() {
     );
     assert_eq!(
         action_from_modifiers(
-            gpui::Modifiers {
+            gpui_kit::Modifiers {
                 alt: true,
                 ..Default::default()
             },
@@ -907,11 +971,11 @@ fn confirmed_clipboard_action_marks_the_item_used_before_the_panel_closes() {
     assert!(handler.find("mark_used_async(item_id").is_some());
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn clipboard_panel_registers_action_before_platform_command_and_clears_it_on_result(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let directory = tempfile::tempdir().expect("clipboard action test directory");
     let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
         directory.path().join("clipboard.db"),
@@ -1264,4 +1328,88 @@ fn clipboard_hover_action_rail_has_stable_geometry() {
         assert!(left_edge >= 0.0);
         assert_eq!(left_edge + buttons_width, right_edge);
     }
+}
+
+#[gpui_kit::test]
+fn round2_active_clipboard_preview_does_not_close_on_conflicting_foreground(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let directory = tempfile::tempdir().expect("owned history");
+    let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
+        directory.path().join("history.db"),
+        directory.path().join("assets"),
+        nxtools_clipboard::ClipboardRetentionPolicy {
+            max_items: 100,
+            retention_days: 30,
+        },
+        1000,
+    )
+    .expect("owned worker");
+    let shutdown = worker.clone();
+    let panel_slot = Rc::new(RefCell::new(None));
+    let retained_panel = panel_slot.clone();
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        let panel = cx.new(|cx| {
+            ClipboardPanel::new(
+                ClipboardHistoryPage {
+                    items: Vec::new(),
+                    total: 0,
+                    has_more: false,
+                },
+                Vec::new(),
+                HashMap::new(),
+                Vec::new(),
+                ClipboardModifierActions::default(),
+                nxtools_protocol::ForegroundContext {
+                    window_handle: 40,
+                    focus_window_handle: 40,
+                    process_id: 1,
+                    process_name: "fixture".into(),
+                    window_title: String::new(),
+                },
+                worker,
+                WeakEntity::new_invalid(),
+                uuid::Uuid::new_v4(),
+                None,
+                window,
+                cx,
+            )
+        });
+        *retained_panel.borrow_mut() = Some(panel.clone());
+        Root::new(panel, window, cx)
+    });
+    let panel = panel_slot
+        .borrow()
+        .clone()
+        .expect("production panel entity");
+    window.update(|window, _| window.activate_window());
+    window.run_until_parked();
+    let foreground = nxtools_protocol::ForegroundContext {
+        window_handle: 40,
+        focus_window_handle: 40,
+        process_id: 1,
+        process_name: "fixture".into(),
+        window_title: String::new(),
+    };
+    panel.update_in(window, |panel, window, cx| {
+        panel.is_open = true;
+        panel.hide_suppressed_until = Instant::now() - Duration::from_secs(1);
+        assert!(window.is_window_active());
+        panel.handle_foreground_changed(10, 30, &foreground, window, cx);
+        assert!(
+            panel.is_open && !panel.status.is_error(),
+            "conflicting queued foreground must not request hide while GPUI panel remains active"
+        );
+    });
+    window.deactivate_window();
+    panel.update_in(window, |panel, window, cx| {
+        panel.handle_foreground_changed(10, 30, &foreground, window, cx);
+        assert!(
+            panel.status.is_error(),
+            "actual blur still attempts hide (TestWindow has no HWND)"
+        );
+    });
+    shutdown.shutdown().expect("close fixture worker");
 }

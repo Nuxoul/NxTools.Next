@@ -3,11 +3,100 @@
 
 use super::*;
 
-use gpui::TestAppContext;
+use gpui_kit::TestAppContext;
 
-#[gpui::test]
+#[gpui_kit::test]
+fn quick_copy_feedback_uses_shared_center_without_a_second_panel_banner(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, _endpoint) = quick_launch_application_fixture(cx);
+    let (panel, window) = quick_launch_panel_fixture(
+        cx,
+        vec![search_result("keep", ApplicationSource::IndexedFile)],
+    );
+    panel.update_in(window, |panel, _, cx| {
+        panel.application = application.downgrade();
+        panel.set_status("已复制路径：合成结果".into(), cx);
+        assert!(
+            panel.status.is_none(),
+            "transient copy result must not paint the custom bottom banner"
+        );
+        assert_eq!(panel.results.len(), 1);
+        assert!(panel.is_open, "copy feedback does not change close policy");
+    });
+    window.run_until_parked();
+    application.read_with(window, |app, cx| {
+        let notices = app.notifications.read(cx).items();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(
+            notices[0].level,
+            crate::notifications::NotificationLevel::Success
+        );
+        assert_eq!(notices[0].message, "已复制路径：合成结果");
+    });
+    application.update(window, |_, cx| {
+        panel.update(cx, |panel, cx| {
+            panel.notify_operation(
+                crate::notifications::NotificationLevel::Error,
+                "合成 Windows 失败".into(),
+                cx,
+            )
+        });
+    });
+    window.run_until_parked();
+    application.read_with(window, |app, cx| {
+        let notices = app.notifications.read(cx).items();
+        assert_eq!(notices.len(), 2, "distinct invocations must not replace");
+        assert_ne!(notices[0].id, notices[1].id);
+        assert_eq!(
+            notices[0].level,
+            crate::notifications::NotificationLevel::Error
+        );
+    });
+    // Exercise the real typed native terminal routing, including once-only and stale IDs.
+    let handle = window.update(|window, _| window.window_handle());
+    application.update(window, |app, cx| {
+        app.popup = Some(QuickLaunchWindow {
+            window: handle,
+            panel: panel.downgrade(),
+            native_window_handle: 1,
+        });
+        app.execute(
+            search_result("keep", ApplicationSource::IndexedFile),
+            QuickLaunchAction::CopyPath,
+            "keep".into(),
+            QuickLaunchActionTrigger::Enter,
+            cx,
+        );
+    });
+    let command = application.read_with(window, |app, _| {
+        *app.pending_actions.keys().next().expect("accepted copy")
+    });
+    application.update(window, |app, cx| {
+        let result = PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: None,
+        };
+        app.handle_command_result(command, result.clone(), cx);
+        app.handle_command_result(command, result, cx);
+    });
+    window.run_until_parked();
+    application.read_with(window, |app, cx| {
+        assert!(app.pending_actions.is_empty());
+        let notices = app.notifications.read(cx).items();
+        assert_eq!(notices.len(), 3);
+        assert_eq!(
+            notices[0].level,
+            crate::notifications::NotificationLevel::Success
+        );
+    });
+    assert!(panel.read_with(window, |panel, _| panel.is_open && panel.status.is_none()));
+}
+
+#[gpui_kit::test]
 fn production_result_row_keeps_height_through_animated_surface(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (_root, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
         let panel = cx.new(|cx| {
@@ -44,9 +133,9 @@ fn production_result_row_keeps_height_through_animated_surface(cx: &mut TestAppC
     assert_eq!(row.size.height, px(40.0));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
     let panel_slot = Rc::new(RefCell::new(None));
     let panel_slot_for_window = Rc::clone(&panel_slot);
@@ -92,12 +181,12 @@ fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut T
     let third_row = window
         .debug_bounds("quick-launch-result-icon-2")
         .expect("third production result row");
-    window.simulate_mouse_move(third_row.center(), None, gpui::Modifiers::default());
+    window.simulate_mouse_move(third_row.center(), None, gpui_kit::Modifiers::default());
     panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 1));
     window.simulate_mouse_move(
-        gpui::point(third_row.origin.x + px(2.0), third_row.center().y),
+        gpui_kit::point(third_row.origin.x + px(2.0), third_row.center().y),
         None,
-        gpui::Modifiers::default(),
+        gpui_kit::Modifiers::default(),
     );
     panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 2));
 
@@ -105,15 +194,15 @@ fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut T
     panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 1));
     window.simulate_mouse_down(
         third_row.center(),
-        gpui::MouseButton::Left,
-        gpui::Modifiers::default(),
+        gpui_kit::MouseButton::Left,
+        gpui_kit::Modifiers::default(),
     );
 
     panel.update_in(window, |panel, _, _| assert_eq!(panel.selected, 2));
     window.simulate_mouse_up(
         third_row.center(),
-        gpui::MouseButton::Left,
-        gpui::Modifiers::default(),
+        gpui_kit::MouseButton::Left,
+        gpui_kit::Modifiers::default(),
     );
     cx.run_until_parked();
     let command = (0..8)
@@ -137,9 +226,9 @@ fn production_keyboard_pointer_movement_and_press_share_one_selection(cx: &mut T
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_heterogeneous_result_rows_keep_one_three_rail_geometry(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
     let results = [
         (
@@ -327,11 +416,11 @@ fn production_heterogeneous_result_rows_keep_one_three_rail_geometry(cx: &mut Te
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let panel_slot = Rc::new(RefCell::new(None));
     let panel_slot_for_window = Rc::clone(&panel_slot);
     let (_root, window) = cx.add_window_view(move |window, cx| {
@@ -445,9 +534,9 @@ fn main_popup_search_uses_the_shared_body_type_role() {
     assert_eq!(LINE_HEIGHT_BODY, 18.0);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let panel_slot = Rc::new(RefCell::new(None));
     let panel_slot_for_window = Rc::clone(&panel_slot);
     let (_root, window) = cx.add_window_view(move |window, cx| {
@@ -502,8 +591,8 @@ fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut Tes
         .debug_bounds("quick-launch-results-empty-description")
         .expect("quick-launch empty description");
     assert_eq!(empty_icon.size, size(px(18.0), px(18.0)));
-    assert_eq!(empty_title.size.height, px(18.0));
-    assert_eq!(empty_description.size.height, px(16.0));
+    assert_eq!(empty_title.size.height, px(20.0));
+    assert_eq!(empty_description.size.height, px(20.0));
     assert_eq!(empty_title.left(), empty_description.left());
     assert_eq!(empty.left(), panel_surface.left() + px(1.0));
     assert_eq!(empty.right(), panel_surface.right() - px(1.0));
@@ -528,7 +617,7 @@ fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut Tes
         .debug_bounds("quick-launch-results-progress-description")
         .expect("quick-launch progress description");
     assert_eq!(progress.size.width, empty.size.width);
-    assert_eq!(progress_icon.size, empty_icon.size);
+    assert!(progress_icon.size.width > px(0.0) && progress_icon.size.height <= px(24.0));
     assert_eq!(progress_title.size.height, empty_title.size.height);
     assert_eq!(
         progress_description.size.height,
@@ -536,7 +625,7 @@ fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut Tes
     );
 }
 
-fn quick_launch_application_fixture(
+pub(super) fn quick_launch_application_fixture(
     cx: &mut TestAppContext,
 ) -> (
     tempfile::TempDir,
@@ -572,7 +661,7 @@ fn quick_launch_application_fixture(
     (temp, application, endpoint)
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn exclusive_fullscreen_suppression_setting_persists_and_syncs(cx: &mut TestAppContext) {
     let (temp, application, endpoint) = quick_launch_application_fixture(cx);
     cx.update(|cx| {
@@ -603,7 +692,7 @@ fn exclusive_fullscreen_suppression_setting_persists_and_syncs(cx: &mut TestAppC
 fn quick_launch_panel_fixture(
     cx: &mut TestAppContext,
     results: Vec<SearchResult>,
-) -> (Entity<QuickLaunchPanel>, &mut gpui::VisualTestContext) {
+) -> (Entity<QuickLaunchPanel>, &mut gpui_kit::VisualTestContext) {
     let panel_slot = Rc::new(RefCell::new(None));
     let panel_slot_for_window = Rc::clone(&panel_slot);
     let (_root, window) = cx.add_window_view(move |window, cx| {
@@ -661,7 +750,7 @@ fn search_result(id: &str, source: ApplicationSource) -> SearchResult {
 
 #[test]
 fn result_shortcuts_address_only_the_visible_first_nine_rows() {
-    let control = gpui::Modifiers {
+    let control = gpui_kit::Modifiers {
         control: true,
         ..Default::default()
     };
@@ -679,7 +768,7 @@ fn result_shortcuts_address_only_the_visible_first_nine_rows() {
     );
     assert_eq!(quick_launch_shortcut_target("9", control, 5..13, 20), None);
     assert_eq!(
-        quick_launch_shortcut_target("1", gpui::Modifiers::default(), 5..13, 20),
+        quick_launch_shortcut_target("1", gpui_kit::Modifiers::default(), 5..13, 20),
         None
     );
 }
@@ -710,6 +799,31 @@ fn result_name_highlights_follow_contiguous_and_fuzzy_matches() {
     assert_eq!(
         quick_launch_match_ranges("AyuGram.exe", "agm"),
         vec![0..1, 3..4, 6..7]
+    );
+}
+
+#[test]
+fn w1_result_highlights_share_pinyin_query_ranges_without_action_changes() {
+    for (name, query) in [
+        ("年度报告.docx", "baogao"),
+        ("银行卡.txt", "yinhang"),
+        ("V2报告", "v2bg"),
+    ] {
+        let parsed = nxtools_finder::FileQuery::parse(query);
+        assert!(parsed.score_name(name).is_some());
+        assert_eq!(
+            quick_launch_match_ranges(name, query),
+            parsed.match_ranges(name)
+        );
+        assert!(!quick_launch_match_ranges(name, query).is_empty());
+    }
+    assert_eq!(
+        quick_launch_match_ranges("年度报告.docx", "baogao"),
+        vec![6..12]
+    );
+    assert!(
+        match_ranges_for_pattern("报告", "baogao").is_empty(),
+        "actions remain literal"
     );
 }
 
@@ -904,9 +1018,9 @@ fn recent_directory_mode_filters_and_navigates_the_frozen_host() {
     assert_eq!(recent_directory_navigation_action(&results[0], None), None);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn clearing_history_resets_ordinary_and_recent_panel_state(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let panel_slot = Rc::new(RefCell::new(None));
     let panel_slot_for_window = Rc::clone(&panel_slot);
     let (_root, window) = cx.add_window_view(move |window, cx| {
@@ -1059,9 +1173,9 @@ fn deferred_directory_context_updates_only_the_matching_summon() {
     ));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn captured_directory_reaches_sqlite_after_the_popup_session_changes(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let temp = tempfile::tempdir().expect("temporary recent-directory catalog");
     let current_directory = temp.path().join("Current");
     std::fs::create_dir_all(&current_directory).expect("captured current directory");
@@ -1115,9 +1229,9 @@ fn captured_directory_reaches_sqlite_after_the_popup_session_changes(cx: &mut Te
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn clearing_history_defers_feedback_and_persists_the_empty_state(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let temp = tempfile::tempdir().expect("temporary quick-launch history");
     let recent_directory = temp.path().join("Recent");
     std::fs::create_dir_all(&recent_directory).expect("recent directory");
@@ -1846,9 +1960,9 @@ fn calculator_action_mode_has_one_local_action_and_no_shell_loading() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn copy_actions_dispatch_without_hiding_the_active_popup(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
     let panel_slot = Rc::new(RefCell::new(None));
     let panel_for_window = Rc::clone(&panel_slot);
@@ -2338,9 +2452,9 @@ fn an_indexer_disconnect_clears_visible_status_and_invalidates_search() {
     assert_ne!(session.generation, request.generation);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let temp = tempfile::tempdir().expect("temporary quick-launch test directory");
     let root = temp.path().join("applications");
     std::fs::create_dir_all(&root).expect("application test root");
@@ -2428,8 +2542,8 @@ fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestA
 
     cx.simulate_mouse_down(
         point(px(20.0), px(60.0)),
-        gpui::MouseButton::Right,
-        gpui::Modifiers::none(),
+        gpui_kit::MouseButton::Right,
+        gpui_kit::Modifiers::none(),
     );
     panel.read_with(cx, |panel, _| assert!(panel.action_mode.is_some()));
     cx.simulate_keystrokes("backspace");
@@ -2456,9 +2570,9 @@ fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestA
     application.update(cx, |application, _| {
         application.preview.visible = true;
     });
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui_kit::ScrollWheelEvent {
         position: point(px(20.0), px(80.0)),
-        delta: gpui::ScrollDelta::Lines(point(0.0, -1.0)),
+        delta: gpui_kit::ScrollDelta::Lines(point(0.0, -1.0)),
         ..Default::default()
     });
     application.read_with(cx, |application, _| {
@@ -2495,9 +2609,9 @@ fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestA
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn action_mode_returns_to_the_parent_viewport_on_its_first_frame(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let results = (0..40)
         .map(|index| {
             search_result(
@@ -2511,6 +2625,7 @@ fn action_mode_returns_to_the_parent_viewport_on_its_first_frame(cx: &mut TestAp
     panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
     window.simulate_input("item");
     panel.update_in(window, |panel, _window, cx| {
+        panel.replace_results(panel.results.clone(), cx); // This fixture supplies current completed provider rows.
         panel.selected = 24;
         panel
             .result_scroll
@@ -2563,9 +2678,9 @@ fn action_mode_returns_to_the_parent_viewport_on_its_first_frame(cx: &mut TestAp
     }
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn action_mode_rails_stay_right_aligned_for_one_and_eight_actions(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (panel, window) = quick_launch_panel_fixture(
         cx,
         vec![search_result("target", ApplicationSource::Calculator)],
@@ -2635,11 +2750,11 @@ fn action_mode_rails_stay_right_aligned_for_one_and_eight_actions(cx: &mut TestA
     }
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn action_mode_reuses_the_result_row_rails_and_only_adds_a_lightweight_context(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let (panel, window) =
         quick_launch_panel_fixture(cx, vec![search_result("42", ApplicationSource::Calculator)]);
 
@@ -2695,11 +2810,11 @@ fn action_mode_reuses_the_result_row_rails_and_only_adds_a_lightweight_context(
     assert_eq!(action_trailing.size.width, result_trailing.size.width);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_quick_launch_preview_uses_shared_fixed_shell_and_media_surface(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let payload = QuickLaunchPreviewPayload {
         entry_id: "preview-image".into(),
         name: "NxTools.png".into(),
@@ -2748,9 +2863,9 @@ fn production_quick_launch_preview_uses_shared_fixed_shell_and_media_surface(
     assert_eq!(media.size, size(px(382.0), px(290.0)));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_quick_launch_text_preview_starts_at_the_media_inset(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let payload = QuickLaunchPreviewPayload {
         entry_id: "preview-text".into(),
         name: "notes.txt".into(),
@@ -2801,9 +2916,9 @@ fn production_quick_launch_text_preview_starts_at_the_media_inset(cx: &mut TestA
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn keyboard_navigation_retains_focus_after_first_preview_frame(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let temp = tempfile::tempdir().expect("temporary keyboard preview test directory");
     let root = temp.path().join("applications");
     std::fs::create_dir_all(&root).expect("application test root");
@@ -2917,11 +3032,11 @@ fn keyboard_navigation_retains_focus_after_first_preview_frame(cx: &mut TestAppC
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_preview_lifecycle_discards_stale_hover_and_honors_pointer_grace(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let temp = tempfile::tempdir().expect("temporary quick-launch preview test directory");
     let root = temp.path().join("applications");
     std::fs::create_dir_all(&root).expect("application root");
@@ -4047,7 +4162,7 @@ fn validation_install_directory_skips_protected_indexer_service_management() {
     ));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_bounds_use_the_cursor_display_upper_quarter(cx: &mut TestAppContext) {
     let request = QuickLaunchPanelRequest {
         target: nxtools_protocol::ForegroundContext {
@@ -4074,7 +4189,7 @@ fn quick_launch_bounds_use_the_cursor_display_upper_quarter(cx: &mut TestAppCont
     });
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_bounds_keep_logical_size_at_100_125_and_150_percent_dpi(cx: &mut TestAppContext) {
     for dpi in [96, 120, 144] {
         let request = QuickLaunchPanelRequest {
@@ -4160,4 +4275,842 @@ fn popup_reveal_waits_for_first_frame_and_first_native_bounds_are_staged() {
     assert!(frame < position && position < visible);
     assert!(visible < reveal.find("begin_window_activation").expect("activation"));
     assert!(source.contains("panel.prepare_for_hide(window, cx)"));
+}
+
+#[test]
+fn indexer_install_and_upgrade_results_share_protected_restart_policy() {
+    for data in [
+        "installed",
+        "upgraded",
+        "running",
+        "repair_required",
+        "authorization_cancelled",
+    ] {
+        let mut result = nxtools_protocol::PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: Some(data.into()),
+        };
+        assert_eq!(
+            indexer_deployment_requires_protected_restart(&result),
+            matches!(data, "installed" | "upgraded")
+        );
+        result.success = false;
+        assert!(!indexer_deployment_requires_protected_restart(&result));
+    }
+}
+
+#[test]
+fn w4_recent_modified_route_preserves_provider_order_and_separate_visit_history() {
+    assert_eq!(recent_modified_filter(" recent: "), Some(""));
+    assert_eq!(recent_modified_filter("RECENT: docx"), Some("docx"));
+    assert_eq!(recent_modified_filter(r"C:\recent:notes"), None);
+    assert_eq!(recent_modified_filter("\"recent:\""), None);
+    let items = [
+        IndexSearchItem {
+            path: r"C:\Work\new.txt".into(),
+            name: "new.txt".into(),
+            is_directory: false,
+            size_bytes: None,
+            modified_at_unix_ms: Some(200),
+            score: 200,
+        },
+        IndexSearchItem {
+            path: r"C:\Work\old.txt".into(),
+            name: "old.txt".into(),
+            is_directory: false,
+            size_bytes: None,
+            modified_at_unix_ms: Some(100),
+            score: 100,
+        },
+    ];
+    let results = recent_modified_results(&items);
+    assert_eq!(
+        results
+            .iter()
+            .map(|result| result.entry.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["new.txt", "old.txt"]
+    );
+    assert!(results.iter().all(|result| {
+        result
+            .subtitle
+            .as_deref()
+            .is_some_and(|subtitle| subtitle.contains("最近修改"))
+    }));
+    assert!(
+        results
+            .iter()
+            .all(|result| result.entry.source == ApplicationSource::IndexedFile)
+    );
+}
+
+#[gpui_kit::test]
+fn w5_new_query_pending_rejects_old_rows_at_enter_shortcut_pointer_and_actions(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temporary, application, endpoint) = quick_launch_application_fixture(cx);
+    let retained = Rc::new(RefCell::new(None));
+    let slot = retained.clone();
+    let owner = application.downgrade();
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        let panel = cx.new(|cx| {
+            QuickLaunchPanel::new(
+                vec![search_result("old-result", ApplicationSource::IndexedFile)],
+                nxtools_protocol::ForegroundContext {
+                    window_handle: 1,
+                    focus_window_handle: 1,
+                    process_id: 1,
+                    process_name: "fixture".into(),
+                    window_title: String::new(),
+                },
+                None,
+                Vec::new(),
+                owner,
+                window,
+                cx,
+            )
+        });
+        *slot.borrow_mut() = Some(panel.clone());
+        Root::new(panel, window, cx)
+    });
+    let panel = retained.borrow().clone().expect("panel");
+    panel.update_in(window, |panel, window, cx| {
+        panel.focus_search(window, cx);
+        panel
+            .search_input
+            .update(cx, |input, cx| input.set_value("new-query", window, cx));
+        panel.schedule_search("new-query".into(), cx);
+        panel.search_input.update(cx, |_, cx| {
+            cx.emit(InputEvent::PressEnter {
+                secondary: false,
+                shift: false,
+            })
+        });
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.visible_result_range = 0..1;
+        panel.handle_navigation_key("1", gpui_kit::Modifiers::default(), window, cx);
+        panel.activate_selected(
+            QuickLaunchAction::Open,
+            QuickLaunchActionTrigger::Pointer,
+            cx,
+        );
+        panel.enter_action_mode(0, window, cx);
+        assert!(
+            panel.action_mode.is_none(),
+            "pending old row cannot enter actions"
+        );
+    });
+    window.run_until_parked();
+    assert!(
+        window.read(|cx| application.read(cx).pending_actions.is_empty()),
+        "no old-row action dispatch"
+    );
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "pending query cannot emit native execution"
+    );
+    panel.update_in(window, |panel, _, cx| {
+        panel.search_pending = false;
+        panel.results = vec![search_result("current", ApplicationSource::IndexedFile)];
+        panel.activate_selected(
+            QuickLaunchAction::Open,
+            QuickLaunchActionTrigger::Pointer,
+            cx,
+        );
+        panel.query_dispatch_generation = panel.query_dispatch_generation.wrapping_add(1);
+        panel.schedule_search("newer-query".into(), cx);
+    });
+    window.run_until_parked();
+    assert!(
+        window.read(|cx| application.read(cx).pending_actions.is_empty()),
+        "input supersession cancels deferred old action"
+    );
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+
+    for invalidation in ["input", "close_reopen", "action", "mode", "level"] {
+        panel.update_in(window, |panel, window, cx| {
+            panel.is_open = true;
+            panel.search_pending = false;
+            let mut mode = QuickLaunchActionMode::enter(
+                search_result("current", ApplicationSource::IndexedFile),
+                "parent".into(),
+                0,
+            );
+            mode.current_level_mut().shell_pending = false;
+            mode.current_level_mut().items = shell_action_items(
+                "fixture-session",
+                vec![ShellActionItem {
+                    command_id: Some(42),
+                    title: "合成 Shell 操作".into(),
+                    enabled: true,
+                    separator: false,
+                    submenu_id: None,
+                    icon_path: None,
+                }],
+            );
+            panel.action_mode = Some(mode);
+            panel.activate_selected_action(window, cx);
+            match invalidation {
+                "input" => panel.search_input.update(cx, |input, cx| {
+                    input.set_value("changed-filter", window, cx);
+                }),
+                "close_reopen" => {
+                    panel.close(cx);
+                    panel.is_open = true;
+                }
+                "action" => {
+                    panel
+                        .action_mode
+                        .as_mut()
+                        .expect("mode")
+                        .current_level_mut()
+                        .items[0]
+                        .action = Some(QuickLaunchAction::CopyPath);
+                }
+                "mode" => panel.action_mode.as_mut().expect("mode").id = uuid::Uuid::new_v4(),
+                "level" => {
+                    panel
+                        .action_mode
+                        .as_mut()
+                        .expect("mode")
+                        .current_level_mut()
+                        .id = uuid::Uuid::new_v4()
+                }
+                _ => unreachable!("known invalidation"),
+            }
+        });
+        window.run_until_parked();
+        assert!(
+            window.read(|cx| application.read(cx).pending_actions.is_empty()),
+            "{invalidation} must cancel the deferred Shell action"
+        );
+        while let Ok(command) = endpoint.try_receive_command_for_contract_test() {
+            assert!(
+                !matches!(
+                    command.message,
+                    nxtools_protocol::Message::PlatformCommand(PlatformCommand::InvokeShellAction(
+                        _
+                    ))
+                ),
+                "{invalidation} cannot dispatch a stale Shell command"
+            );
+        }
+    }
+    panel.update_in(window, |panel, window, cx| {
+        panel
+            .action_mode
+            .as_mut()
+            .expect("mode")
+            .current_level_mut()
+            .shell_pending = false;
+        panel.activate_selected_action(window, cx);
+    });
+    window.run_until_parked();
+    assert!(!window.read(|cx| application.read(cx).pending_actions.is_empty()));
+    assert!(matches!(
+        endpoint
+            .try_receive_command_for_contract_test()
+            .expect("current action")
+            .message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::InvokeShellAction(_))
+    ));
+}
+
+#[gpui_kit::test]
+fn w4_failed_recent_query_clears_only_current_generation_and_retires_execution(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temporary, application, _endpoint) = quick_launch_application_fixture(cx);
+    let retained = Rc::new(RefCell::new(None));
+    let slot = retained.clone();
+    let owner = application.downgrade();
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        let panel = cx.new(|cx| {
+            QuickLaunchPanel::new(
+                vec![search_result("old", ApplicationSource::IndexedFile)],
+                nxtools_protocol::ForegroundContext {
+                    window_handle: 1,
+                    focus_window_handle: 1,
+                    process_id: 1,
+                    process_name: "fixture".into(),
+                    window_title: String::new(),
+                },
+                None,
+                Vec::new(),
+                owner,
+                window,
+                cx,
+            )
+        });
+        *slot.borrow_mut() = Some(panel.clone());
+        Root::new(panel, window, cx)
+    });
+    let panel = retained.borrow().clone().expect("panel");
+    window.update(|window, cx| {
+        application.update(cx, |app, _| {
+            app.index_search.generation = 10;
+            app.popup = Some(QuickLaunchWindow {
+                window: window.window_handle(),
+                panel: panel.downgrade(),
+                native_window_handle: 1,
+            });
+        })
+    });
+    panel.update_in(window, |panel, _, _| panel.search_pending = true);
+    for generation in [9, 10] {
+        window.update(|_, cx| {
+            application.update(cx, |app, cx| {
+                app.handle_indexer_notification(
+                    IndexerNotification::Event(IndexerEvent::SearchFailed(
+                        nxtools_protocol::IndexSearchFailure {
+                            generation,
+                            reason: "recent_classifier_budget".into(),
+                        },
+                    )),
+                    cx,
+                )
+            })
+        });
+        panel.update_in(window, |panel, _, _| {
+            assert_eq!(panel.results.is_empty(), generation == 10);
+            assert_eq!(panel.search_pending, generation != 10);
+            if generation == 10 {
+                assert!(
+                    panel
+                        .status
+                        .as_deref()
+                        .is_some_and(|status| status.contains("预算"))
+                );
+            }
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn w2_local_ordinary_hit_disables_indexed_homophone_fallback(cx: &mut TestAppContext) {
+    let (_temporary, application, _platform) = quick_launch_application_fixture(cx);
+    let (bridge, endpoint) = crate::runtime::indexer_bridge(8);
+    endpoint.connect_for_test();
+    application.update(cx, |app, _| {
+        app.indexer = Rc::new(bridge);
+        app.index_status = Some(IndexStatus {
+            phase: nxtools_protocol::IndexPhase::Ready,
+            indexed_items: 1,
+            drives: Vec::new(),
+            last_error: None,
+        });
+        app.config.quick_launch.custom_commands = vec![nxtools_core::CustomCommandSettings {
+            keyword: "年度报高".into(),
+            title: "本地普通命令".into(),
+            program: r"C:\Fixture\tool.exe".into(),
+            ..Default::default()
+        }];
+    });
+    for (query, allow, recent) in [
+        ("年度报高", false, false),
+        ("年度报低", true, false),
+        ("recent:", false, true),
+    ] {
+        application.update(cx, |app, cx| {
+            let update = app.search_and_request_icons(query, cx);
+            assert!(update.pending);
+            if query == "年度报高" {
+                assert!(
+                    update
+                        .results
+                        .iter()
+                        .any(|result| result.entry.source == ApplicationSource::CustomCommand)
+                );
+            }
+        });
+        let command = endpoint
+            .try_recv_command_for_test()
+            .expect("indexed ordinary search stays enabled");
+        let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+            command.message
+        else {
+            panic!("search request");
+        };
+        assert_eq!(request.context.allow_homophone_fallback, allow, "{query}");
+        assert_eq!(request.context.recent_modified, recent, "{query}");
+    }
+}
+
+#[gpui_kit::test]
+fn w6_saved_package_appears_in_real_query_and_disappears_when_disabled(cx: &mut TestAppContext) {
+    let (temporary, application, _endpoint) = quick_launch_application_fixture(cx);
+    let path = temporary.path().join("config.json");
+    let package = br#"{"schema_version":1,"id":"example.web","name":"Web","version":"1.0.0","handlers":[{"id":"web","title":"Package web","feature":"quick_launch","entry":"command","keywords":["web"],"action":{"type":"website","url_template":"https://example.test/?q={query}"}}]}"#;
+    AppConfig::import_extension_json(&path, package, "fixture".into(), false).expect("import");
+    for enabled in [true, false] {
+        let config =
+            AppConfig::set_extension_enabled(&path, "example.web", enabled).expect("save state");
+        application.update(cx, |app, cx| {
+            app.config = config;
+            let update = app.search_and_request_icons("web hello", cx);
+            assert_eq!(
+                update
+                    .results
+                    .iter()
+                    .any(|row| row.entry.id.starts_with("extension:example.web/")),
+                enabled
+            );
+        });
+    }
+}
+
+#[test]
+fn w6_package_url_and_folder_actions_reuse_shell_without_elevation() {
+    for target in ["https://example.test/?q=words", r"C:\Fixture\Docs"] {
+        let mut result = search_result(
+            "extension:example.web/web/action",
+            ApplicationSource::CustomCommand,
+        );
+        result.entry.target = target.into();
+        assert!(
+            matches!(platform_command_for_action(&result, &QuickLaunchAction::Open, 0),
+            Some(PlatformCommand::OpenShellTarget(command)) if command.target == target && command.action == ShellOpenAction::Open)
+        );
+        assert!(!quick_launch_action_available(
+            &result,
+            &QuickLaunchAction::RunElevated
+        ));
+    }
+}
+
+#[gpui_kit::test]
+fn w6_disabled_package_cannot_execute_retained_result(cx: &mut TestAppContext) {
+    let (temporary, application, endpoint) = quick_launch_application_fixture(cx);
+    let path = temporary.path().join("config.json");
+    let package = br#"{"schema_version":1,"id":"example.web","name":"Web","version":"1.0.0","handlers":[{"id":"web","title":"Package web","feature":"quick_launch","entry":"command","keywords":["web"],"action":{"type":"website","url_template":"https://example.test/?q={query}"}}]}"#;
+    AppConfig::import_extension_json(&path, package, "fixture".into(), false).expect("import");
+    let enabled = AppConfig::set_extension_enabled(&path, "example.web", true).expect("enable");
+    application.update(cx, |app, cx| {
+        app.config = enabled;
+        let result = app
+            .combined_results("web hello")
+            .into_iter()
+            .find(|row| row.entry.id.starts_with("extension:"))
+            .expect("current result");
+        app.config =
+            AppConfig::set_extension_enabled(&path, "example.web", false).expect("disable");
+        app.execute(
+            result,
+            QuickLaunchAction::Open,
+            "web hello".into(),
+            QuickLaunchActionTrigger::Pointer,
+            cx,
+        );
+        assert!(
+            app.pending_actions.is_empty(),
+            "retired package must not dispatch"
+        );
+    });
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+}
+
+#[gpui_kit::test]
+fn enter_repair_ime_commit_without_bubbled_enter_does_not_eat_next_gesture(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let (panel, window) = quick_launch_panel_fixture(cx, Vec::new());
+    let input = panel.read_with(window, |panel, _| panel.search_input.clone());
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        panel.focus_search(window, cx);
+    });
+    input.update_in(window, |input, window, cx| {
+        input.replace_and_mark_text_in_range(None, "zhong", Some(5..5), window, cx)
+    });
+    window.run_until_parked();
+    assert!(
+        panel.read_with(window, |panel, _| panel.ime_enter_gate.composition_seen),
+        "production observer saw preedit"
+    );
+    input.update_in(window, |input, window, cx| {
+        input.replace_text_in_range(None, "中", window, cx)
+    });
+    // Windows may consume the confirming key inside the IME: no InputEvent::PressEnter.
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("confirm release"),
+    });
+    window.run_until_parked();
+    panel.update_in(window, |panel, _, _| {
+        panel.results = vec![search_result(
+            "current-ime-result",
+            ApplicationSource::IndexedFile,
+        )];
+        panel.selected = 0;
+        panel.search_pending = false;
+    });
+    window.refresh().expect("current results");
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    window.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("ordinary enter"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("ordinary release"),
+    });
+    window.run_until_parked();
+    assert!(
+        !application.read_with(window, |app, _| app.pending_actions.is_empty()),
+        "first ordinary Enter after IME commit must dispatch current result"
+    );
+}
+
+#[gpui_kit::test]
+fn enter_repair_ime_cancel_does_not_eat_first_ordinary_enter(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let (panel, window) = quick_launch_panel_fixture(cx, Vec::new());
+    let input = panel.read_with(window, |panel, _| panel.search_input.clone());
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        panel.focus_search(window, cx);
+    });
+    input.update_in(window, |input, window, cx| {
+        input.replace_and_mark_text_in_range(None, "preedit", None, window, cx)
+    });
+    window.run_until_parked();
+    input.update_in(window, |input, window, cx| {
+        input.replace_and_mark_text_in_range(None, "", None, window, cx)
+    });
+    input.update_in(window, |input, window, cx| input.unmark_text(window, cx));
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("escape").expect("cancel release"),
+    });
+    window.run_until_parked();
+    input.update_in(window, |input, window, cx| {
+        input.replace_text_in_range(None, "current", window, cx)
+    });
+    window.run_until_parked();
+    panel.update_in(window, |panel, _, _| {
+        panel.results = vec![search_result(
+            "current-cancel-result",
+            ApplicationSource::IndexedFile,
+        )];
+        panel.selected = 0;
+        panel.search_pending = false;
+    });
+    window.refresh().expect("current results");
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    window.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("enter"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("release"),
+    });
+    window.run_until_parked();
+    assert!(
+        !application.read_with(window, |app, _| app.pending_actions.is_empty()),
+        "cancel cannot poison future Enter"
+    );
+}
+
+#[gpui_kit::test]
+fn enter_repair_active_preedit_never_executes_then_plain_enter_dispatches(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let (panel, window) = quick_launch_panel_fixture(cx, Vec::new());
+    let input = panel.read_with(window, |panel, _| panel.search_input.clone());
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        panel.focus_search(window, cx);
+    });
+    input.update_in(window, |input, window, cx| {
+        input.replace_and_mark_text_in_range(None, "preedit", None, window, cx)
+    });
+    window.run_until_parked();
+    panel.update_in(window, |panel, _, _| {
+        panel.results = vec![search_result(
+            "composing-result",
+            ApplicationSource::IndexedFile,
+        )];
+        panel.selected = 0;
+        panel.search_pending = false;
+    });
+    window.refresh().expect("preedit results");
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    window.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("composing enter"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("release"),
+    });
+    window.run_until_parked();
+    assert!(
+        application.read_with(window, |app, _| app.pending_actions.is_empty()),
+        "live IME Enter cannot launch"
+    );
+    input.update_in(window, |input, window, cx| {
+        input.replace_text_in_range(None, "committed", window, cx)
+    });
+    // Same confirming gesture may also bubble after commit; it must be consumed.
+    input.update(window, |_, cx| {
+        cx.emit(InputEvent::PressEnter {
+            secondary: false,
+            shift: false,
+        })
+    });
+    window.run_until_parked();
+    assert!(application.read_with(window, |app, _| app.pending_actions.is_empty()));
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("confirm released"),
+    });
+    window.run_until_parked();
+    panel.update_in(window, |panel, _, _| {
+        panel.results = vec![search_result(
+            "committed-result",
+            ApplicationSource::IndexedFile,
+        )];
+        panel.selected = 0;
+        panel.search_pending = false;
+    });
+    window.refresh().expect("committed results");
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    window.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("plain enter"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("plain release"),
+    });
+    window.run_until_parked();
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("native open");
+    assert!(
+        matches!(
+            command.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(_))
+        ),
+        "actual native open, not icon traffic"
+    );
+    assert!(!application.read_with(window, |app, _| app.pending_actions.is_empty()));
+}
+
+#[gpui_kit::test]
+fn phase_d_internal_archive_open_preserves_usage_and_shell_fallbacks(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    let (temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let path = temp.path().join("owned.zip");
+    std::fs::write(&path, b"synthetic bytes").expect("source");
+    let (archive_bridge, archive_endpoint) = nxtools_ipc::platform_bridge(32);
+    archive_endpoint.set_connected_for_contract_test(true);
+    cx.update(|cx| {
+        crate::archive::register(
+            Rc::new(archive_bridge),
+            nxtools_core::archive::ArchiveSettings::default(),
+            temp.path().join("archive-ui.json"),
+            cx,
+        )
+    });
+    let mut result = search_result("archive-owned", ApplicationSource::IndexedFile);
+    result.entry.target = path.to_string_lossy().into_owned();
+    application.update(cx, |app, cx| {
+        app.execute_native_result(
+            result.clone(),
+            QuickLaunchAction::Open,
+            "owned".into(),
+            QuickLaunchActionTrigger::Enter,
+            cx,
+        )
+    });
+    for _ in 0..100 {
+        cx.executor().advance_clock(Duration::from_millis(25));
+        cx.run_until_parked();
+        if application.read_with(cx, |app, _| app.pending_actions.is_empty()) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        application.read_with(cx, |app, _| app
+            .catalog
+            .borrow()
+            .history_summary()
+            .total_activations),
+        1
+    );
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        assert!(
+            !matches!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(_))
+            ),
+            "internal open must not Shell launch"
+        );
+    }
+    cx.update(|cx| {
+        crate::archive::settings_updated(
+            nxtools_core::archive::ArchiveSettings {
+                open_in_nxtools: false,
+                ..Default::default()
+            },
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    application.update(cx, |app, cx| {
+        app.execute_native_result(
+            result.clone(),
+            QuickLaunchAction::Open,
+            "owned".into(),
+            QuickLaunchActionTrigger::Enter,
+            cx,
+        )
+    });
+    assert!(matches!(
+        endpoint
+            .try_receive_command_for_contract_test()
+            .expect("normal Open")
+            .message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(_))
+    ));
+    application.update(cx, |app, cx| {
+        app.execute_native_result(
+            result,
+            QuickLaunchAction::Reveal,
+            "owned".into(),
+            QuickLaunchActionTrigger::Enter,
+            cx,
+        )
+    });
+    assert!(matches!(
+        endpoint
+            .try_receive_command_for_contract_test()
+            .expect("unchanged Reveal")
+            .message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+            nxtools_protocol::OpenShellTargetCommand {
+                action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
+                ..
+            }
+        ))
+    ));
+}
+
+#[gpui_kit::test]
+fn row_spacing_external_gap_is_four_or_zero_and_never_selects_or_executes(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let app = application.downgrade();
+    let slot = Rc::new(RefCell::new(None));
+    let held = slot.clone();
+    let (_, surface) = cx.add_window_view(|window, cx| {
+        let panel = cx.new(|cx| {
+            let mut panel = QuickLaunchPanel::new(
+                vec![
+                    search_result("first", ApplicationSource::IndexedFile),
+                    search_result("second", ApplicationSource::IndexedFile),
+                ],
+                nxtools_protocol::ForegroundContext {
+                    window_handle: 1,
+                    focus_window_handle: 1,
+                    process_id: 1,
+                    process_name: "fixture".into(),
+                    window_title: String::new(),
+                },
+                None,
+                Vec::new(),
+                app,
+                window,
+                cx,
+            );
+            panel.results_visible = true;
+            panel
+        });
+        *held.borrow_mut() = Some(panel.clone());
+        Root::new(panel, window, cx)
+    });
+    let panel = slot.borrow().clone().expect("panel");
+    surface.simulate_resize(size(px(PANEL_WIDTH), px(PANEL_HEIGHT)));
+    for style in nxtools_core::QuickLaunchRowStyle::ALL {
+        panel.update(surface, |panel, cx| {
+            panel.row_style = style;
+            panel.selected = 1;
+            cx.notify();
+        });
+        surface.refresh().expect("production row style");
+        let first = surface
+            .debug_bounds("quick-launch-result-row-0")
+            .expect("first");
+        let second = surface
+            .debug_bounds("quick-launch-result-row-1")
+            .expect("second");
+        assert_eq!(first.size.height, px(40.));
+        assert_eq!(second.top() - first.bottom(), px(style.gap()));
+        if style == nxtools_core::QuickLaunchRowStyle::Separated {
+            let gap = point(first.center().x, first.bottom() + px(2.));
+            surface.simulate_click(gap, Default::default());
+            surface.run_until_parked();
+            assert_eq!(panel.read_with(surface, |panel, _| panel.selected), 1);
+            application.read_with(surface, |app, _| {
+                assert!(app.pending_actions.is_empty());
+                assert!(app.preview.hovered_entry_id.is_none());
+            });
+            assert!(
+                (0..16)
+                    .filter_map(|_| endpoint.try_receive_command_for_contract_test().ok())
+                    .all(|envelope| !matches!(
+                        envelope.message,
+                        nxtools_protocol::Message::PlatformCommand(
+                            PlatformCommand::OpenShellTarget(_)
+                        )
+                    ))
+            );
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn row_spacing_setting_is_durable_and_failure_preserves_live_style_without_native_configuration(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (directory, application, endpoint) = quick_launch_application_fixture(cx);
+    let path = directory.path().join("config.json");
+    AppConfig::update_section(&path, |config| {
+        config.clipboard.image_view_mode = nxtools_core::ClipboardImageViewMode::Mini;
+        config.download.default_connection_limit = 24;
+    })
+    .expect("other owner fields");
+    for style in nxtools_core::QuickLaunchRowStyle::ALL {
+        application.update(cx, |owner, cx| owner.set_row_style(style, cx));
+        let config = AppConfig::load_from(&path).expect("durable style");
+        assert_eq!(config.quick_launch.row_style, style);
+        assert_eq!(
+            config.clipboard.image_view_mode,
+            nxtools_core::ClipboardImageViewMode::Mini
+        );
+        assert_eq!(config.download.default_connection_limit, 24);
+        assert!(
+            endpoint.try_receive_command_for_contract_test().is_err(),
+            "no hotkey/index/native command for presentation setting"
+        );
+    }
+    std::fs::write(&path, b"{broken").expect("commit failure");
+    application.update(cx, |owner, cx| {
+        owner.set_row_style(nxtools_core::QuickLaunchRowStyle::Continuous, cx)
+    });
+    assert_eq!(
+        application.read_with(cx, |owner, _| owner.settings().row_style),
+        nxtools_core::QuickLaunchRowStyle::Separated
+    );
+    assert_eq!(std::fs::read(&path).expect("no overwrite"), b"{broken");
 }

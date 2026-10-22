@@ -1,0 +1,7 @@
+# Download probe latency result — 2026-10-22
+
+References:ABDMHTTP/proxy/Systemproviderfirst,FluxDownbehaviorclean-roomonly; nooldNxToolsdownloadsource reread/noAGPLimplementationcopy. Reproducedlocal1sslowHEAD1.0030359swait;usableRange/HEAD now350mscompaniongrace,sameimmutableclient. Delayed200msHEADfilename retained,skippedRangecannotproveresume,failedfirststillawaitsother/bothfailplainGETfallback. No detachedlatefilename/UImutation/globaltimeout/proxyfallback.
+
+Additionalredempty200HEADlost16bytelength;usable_probe_response now requireslength/validRange/recognizedmedia beforegrace,otherwiseawaitnecessaryother. SlowHLS/DASHreaddeadline andactualHTTPstagecancel/no task/artifact tested. Existinggeneration/route/certificate/30sclientcache retained/tested.
+
+FinalHTTP26/26,resolution15/15,Downloadlib117/117,serialengine103/103,allotherDownloadcontracts pass. Network3/3 actualDirectoriginform,Systeminjectedabsoluteform,Manualproxyreceipt andimmutablesnapshot;boundedaccept/read/write. ProductionNetworkunchanged. StrictprojectClippy/workspace/sourcegatespass. No real systemproxysettingsread/write;injectedSystemdoesnotproveWindowsregistry/PAC. UsernoexternalURL:externalresource discovery/resolver/proxysymptomnotclaimedfixed;needsredactedsampleifstillobserved. [Parent](../10-22-ui-experience-refresh/outcomes.md).

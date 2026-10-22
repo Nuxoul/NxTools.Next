@@ -1,0 +1,16 @@
+{
+  "id": "notification-sizing-duration",
+  "name": "notification-sizing-duration",
+  "title": "Natural notification sizing and configured official duration",
+  "description": "Repair clipped multiline notifications and restore 1–60 second settings via the approved minimal Component0.7.1 duration patch.",
+  "status": "completed",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-20",
+  "completedAt": "2026-10-20",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "notes": "Current session only. No delegation, commit, archive, package, install, product/service or live user clipboard operations. See outcomes.md for exact verification and limits."
+}

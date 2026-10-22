@@ -4,6 +4,7 @@ param(
     [int]$SampleSeconds = 8,
     [int]$ReadyTimeoutSeconds = 180,
     [double]$AverageCpuThresholdPercent = 2.0,
+    [double]$AverageIoThresholdKiBPerSecond = 64.0,
     [switch]$RestartService,
     [switch]$AssertRegression
 )
@@ -137,6 +138,9 @@ if (-not $instance) {
 
 $counterSets = Get-Counter -Counter @(
     "\Process($instance)\% Processor Time",
+    "\Process($instance)\IO Read Bytes/sec",
+    "\Process($instance)\IO Write Bytes/sec",
+    "\Process($instance)\IO Other Bytes/sec",
     "\Process($instance)\Working Set - Private"
 ) -SampleInterval 1 -MaxSamples $SampleSeconds
 $samples = [System.Collections.Generic.List[object]]::new()
@@ -147,11 +151,23 @@ for ($index = 0; $index -lt $counterSets.Count; $index++) {
     $workingSetBytes = $counterSets[$index].CounterSamples |
         Where-Object Path -Like '*\working set - private' |
         Select-Object -ExpandProperty CookedValue -First 1
+    $readBytes = $counterSets[$index].CounterSamples |
+        Where-Object Path -Like '*\io read bytes/sec' |
+        Select-Object -ExpandProperty CookedValue -First 1
+    $writeBytes = $counterSets[$index].CounterSamples |
+        Where-Object Path -Like '*\io write bytes/sec' |
+        Select-Object -ExpandProperty CookedValue -First 1
+    $otherBytes = $counterSets[$index].CounterSamples |
+        Where-Object Path -Like '*\io other bytes/sec' |
+        Select-Object -ExpandProperty CookedValue -First 1
     $samples.Add([pscustomobject]@{
         Second = $index + 1
         CpuPercent = [Math]::Round($cpu / $processorCount, 2)
         CoreEquivalentCpuPercent = [Math]::Round($cpu, 2)
         WorkingSetMB = [Math]::Round($workingSetBytes / 1MB, 1)
+        ReadKiBPerSecond = $readBytes / 1KB
+        WriteKiBPerSecond = $writeBytes / 1KB
+        OtherKiBPerSecond = $otherBytes / 1KB
     })
 }
 
@@ -165,12 +181,23 @@ $samples | Format-Table -AutoSize
 "AVERAGE_CORE_EQUIVALENT_CPU_PERCENT={0:N2}" -f $coreAverage
 "PEAK_CPU_PERCENT={0:N2}" -f $peak
 "PEAK_WORKING_SET_MB={0:N1}" -f $workingSet
+$averageReadKiB = ($samples | Measure-Object ReadKiBPerSecond -Average).Average
+$averageWriteKiB = ($samples | Measure-Object WriteKiBPerSecond -Average).Average
+"AVERAGE_PROCESS_READ_KIB_PER_SECOND={0:N2}" -f $averageReadKiB
+"AVERAGE_PROCESS_WRITE_KIB_PER_SECOND={0:N2}" -f $averageWriteKiB
+"IO_SCOPE=Process logical file/IPC counters, not physical-disk attribution"
 
 if ($AssertRegression -and $average -ge $AverageCpuThresholdPercent) {
     $reader.Dispose()
     $writer.Dispose()
     $pipe.Dispose()
     throw "Indexer idle CPU regression: normalized average was $([Math]::Round($average, 2))%, threshold is $AverageCpuThresholdPercent%."
+}
+if ($AssertRegression -and ($averageReadKiB + $averageWriteKiB) -ge $AverageIoThresholdKiBPerSecond) {
+    $reader.Dispose()
+    $writer.Dispose()
+    $pipe.Dispose()
+    throw "Indexer idle I/O regression: process read+write average $([Math]::Round($averageReadKiB + $averageWriteKiB, 2)) KiB/s, threshold $AverageIoThresholdKiBPerSecond KiB/s."
 }
 
 $reader.Dispose()

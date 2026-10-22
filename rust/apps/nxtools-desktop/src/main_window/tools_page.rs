@@ -3,17 +3,20 @@
 
 use super::*;
 use crate::ui::components::settings::{
-    FeatureSettingsWindowIds, FeatureSettingsWindowSpec, feature_settings_window, settings_row,
-    settings_section, settings_toggle,
+    FeatureSettingsWindowIds, FeatureSettingsWindowSpec, feature_settings_window,
 };
-use crate::ui::metrics::{SPACING_8, SPACING_12, SPACING_16};
-use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
-use gpui::{
-    Corner, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions,
-    size,
+use crate::ui::metrics::{SPACING_12, SPACING_16};
+use gpui_kit::component::IndexPath;
+use gpui_kit::component::form::{Field, Form};
+use gpui_kit::component::input::{NumberInput, NumberInputEvent, StepAction};
+use gpui_kit::component::label::Label;
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
+use gpui_kit::{
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, size,
 };
-use gpui_component::menu::{DropdownMenu, PopupMenuItem};
 use nxtools_core::LinkPanelPosition;
+mod currency_settings;
 
 /// Stable tool identity and copy shared by the workspace and settings window.
 #[derive(Clone, Copy)]
@@ -31,13 +34,68 @@ fn link_panel_position_label(position: LinkPanelPosition) -> &'static str {
     }
 }
 
-fn link_panel_position_selector(position: LinkPanelPosition) -> &'static str {
-    match position {
-        LinkPanelPosition::TopLeft => "tool-settings-position-top-left",
-        LinkPanelPosition::Center => "tool-settings-position-center",
-        LinkPanelPosition::TopRight => "tool-settings-position-top-right",
+#[derive(Clone)]
+pub(super) struct PositionChoice(LinkPanelPosition);
+impl SelectItem for PositionChoice {
+    type Value = LinkPanelPosition;
+    fn title(&self) -> gpui_kit::SharedString {
+        link_panel_position_label(self.0).into()
+    }
+    fn value(&self) -> &Self::Value {
+        &self.0
     }
 }
+
+struct ToolSettingInputs {
+    dwell: Entity<InputState>,
+    position: Entity<SelectState<Vec<PositionChoice>>>,
+    _subscriptions: Vec<Subscription>,
+}
+/// One information/control grid; controls use the remaining width and their
+/// released geometry rather than a fixed 24px control box.
+const TOOL_SETTINGS_INFORMATION_WIDTH: f32 = 264.0;
+/// The original link panel dwell range and step.
+const DWELL_MIN_SECONDS: u64 = 2;
+const DWELL_MAX_SECONDS: u64 = 60;
+const DWELL_STEP_SECONDS: u64 = 2;
+fn compact_tool_field(
+    title_id: &'static str,
+    help_id: &'static str,
+    control_id: &'static str,
+    title: &'static str,
+    help: &'static str,
+    control: impl IntoElement,
+) -> Field {
+    use crate::ui::metrics::FEATURE_WINDOW_TITLE_LANE_HEIGHT;
+    Field::new()
+        .items_center()
+        .gap_0()
+        .label_fn(move |_, _| {
+            div()
+                .w(px(TOOL_SETTINGS_INFORMATION_WIDTH))
+                .min_w_0()
+                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
+                .flex()
+                .items_center()
+                .gap(px(SPACING_4))
+                .text_sm()
+                .child(div().debug_selector(move || title_id.into()).child(title))
+                .child(crate::ui::components::tooltip::description_help(
+                    help_id, help,
+                ))
+        })
+        .child(
+            div()
+                .debug_selector(move || control_id.into())
+                .w_full()
+                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
+                .flex()
+                .items_center()
+                .justify_end()
+                .child(control),
+        )
+}
+
 pub(crate) fn render_tools(
     this: &mut MainWindow,
     window: &Window,
@@ -52,91 +110,87 @@ pub(crate) fn render_tools(
     let card = ToolCard {
         id: "tool-link-detector",
         title: "链接识别",
-        description: "识别网页链接及现有文件路径；默认仅复制，不自动打开网页",
+        description: "复制内容后识别网页链接及现有文件路径；点击打开，也可单独复制链接或路径",
         icon: MaterialIcon::Language,
     };
     let focus = this.tool_focus.clone();
-    let entry = focused_action(
-        card.id,
-        &focus,
-        theme,
-        false,
-        window,
-        cx.listener(move |this, _, _, cx| {
-            open_tool_settings_window(this, card, cx);
-            cx.notify();
-        }),
-    )
-    .debug_selector(|| "tool-link-detector-card".into())
-    .w_full()
-    .min_h(px(80.0))
-    .p(px(SPACING_12))
-    .bg(theme.surface)
-    .hover(move |style| style.bg(theme.surface_hover))
-    .active(move |style| style.bg(theme.surface_pressed))
-    .flex()
-    .items_center()
-    .gap(px(SPACING_12))
-    .child(
-        div()
-            .size(px(32.0))
-            .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .child(
-                Icon::new(card.icon)
-                    .size(px(20.0))
-                    .text_color(theme.accent_hover),
-            ),
-    )
-    .child(
-        div()
-            .flex_1()
-            .min_w_0()
-            .flex()
-            .flex_col()
-            .gap(px(SPACING_4))
-            .child(
-                div()
-                    .debug_selector(|| "tool-link-detector-title".into())
-                    .text_size(px(TEXT_BODY))
-                    .line_height(px(LINE_HEIGHT_BODY))
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.text)
-                    .child(card.title),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "tool-link-detector-description".into())
-                    .text_size(px(TEXT_LABEL))
-                    .line_height(px(LINE_HEIGHT_LABEL))
-                    .text_color(theme.text_secondary)
-                    .child(card.description),
-            ),
-    )
-    .child(
-        div()
-            .debug_selector(|| "tool-link-detector-status".into())
-            .flex_none()
-            .text_size(px(TEXT_LABEL))
-            .line_height(px(LINE_HEIGHT_LABEL))
-            .text_color(if enabled {
-                theme.success
-            } else {
-                theme.text_secondary
-            })
-            .child(if enabled { "已启用" } else { "已停用" }),
-    )
-    .child(
-        div()
-            .debug_selector(|| "tool-link-detector-configure".into())
-            .flex_none()
-            .text_size(px(TEXT_LABEL))
-            .line_height(px(LINE_HEIGHT_LABEL))
-            .text_color(theme.accent_hover)
-            .child("配置 →"),
-    );
+    let toggle_enabled = cx.listener(move |this, _, _, cx| {
+        let clipboard = this.clipboard.clone();
+        cx.defer(move |cx| {
+            if let Some(clipboard) = clipboard.upgrade() {
+                clipboard.update(cx, |application, cx| {
+                    application.set_link_detector_enabled(!application.link_detector_enabled(), cx);
+                });
+            }
+        });
+    });
+    // Body and Configure have distinct single activation owners.
+    let entry = focused_action(card.id, &focus, theme, false, window, cx, toggle_enabled)
+        .debug_selector(|| "tool-link-detector-card".into())
+        .tooltip(move |window, cx| Tooltip::new(card.description).build(window, cx))
+        .w(px(180.0))
+        .h(px(160.0))
+        .flex_none()
+        .child(
+            ListItem::new("tool-link-detector-item")
+                .accessibility_label("链接识别工具")
+                .size_full()
+                .rounded_lg()
+                .bg(theme.surface)
+                .child(
+                    div()
+                        .size_full()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .justify_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .debug_selector(|| "tool-link-detector-icon".into())
+                                .size(px(32.0))
+                                .child(
+                                    Icon::new(card.icon)
+                                        .size(px(32.0))
+                                        .text_color(theme.text_secondary),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "tool-link-detector-title".into())
+                                .child(Label::new(card.title)),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "tool-link-detector-status".into())
+                                .flex()
+                                .items_center()
+                                .gap_1()
+                                .child(div().size(px(5.0)).rounded_full().bg(if enabled {
+                                    theme.success
+                                } else {
+                                    theme.text_muted
+                                }))
+                                .child(
+                                    Label::new(if enabled { "已启用" } else { "已停用" })
+                                        .text_xs()
+                                        .text_color(theme.text_secondary),
+                                ),
+                        )
+                        .child(
+                            Button::new("tool-link-detector-configure")
+                                .debug_selector(|| "tool-link-detector-configure".into())
+                                .label("配置")
+                                .small()
+                                .outline()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    open_tool_settings_window(this, card, cx);
+                                    cx.notify();
+                                })),
+                        ),
+                ),
+        );
     div()
         .id("tools-page")
         .debug_selector(|| "tools-page".into())
@@ -169,8 +223,11 @@ pub(crate) fn render_tools(
                         .debug_selector(|| "tools-grid".into())
                         .w_full()
                         .flex()
-                        .flex_col()
-                        .child(entry),
+                        .flex_wrap()
+                        .items_start()
+                        .gap(px(SPACING_12))
+                        .child(entry)
+                        .child(currency_settings::render_card(this, window, cx)),
                 ),
         )
         .into_any_element()
@@ -182,15 +239,166 @@ pub(crate) struct ToolSettingsWindowBody {
     description: &'static str,
     enabled: bool,
     auto_hide_seconds: u64,
-    auto_open_browser: bool,
-    copy_only: bool,
     position: LinkPanelPosition,
-    clipboard: gpui::WeakEntity<ClipboardApplication>,
+    inputs: Option<ToolSettingInputs>,
+    clipboard: gpui_kit::WeakEntity<ClipboardApplication>,
 }
 
 impl ToolSettingsWindowBody {
+    #[cfg(test)]
+    pub(super) fn foundation_fixture() -> Self {
+        Self {
+            title: "链接识别",
+            description: "复制内容后识别网页链接及现有文件路径；点击打开，也可单独复制链接或路径",
+            enabled: false,
+            auto_hide_seconds: 6,
+            position: LinkPanelPosition::Center,
+            inputs: None,
+            clipboard: gpui_kit::WeakEntity::new_invalid(),
+        }
+    }
+    #[cfg(test)]
+    pub(super) fn dwell_input(&self) -> Entity<InputState> {
+        self.inputs
+            .as_ref()
+            .expect("initialized controls")
+            .dwell
+            .clone()
+    }
+
+    #[cfg(test)]
+    pub(super) fn position_input(&self) -> Entity<SelectState<Vec<PositionChoice>>> {
+        self.inputs
+            .as_ref()
+            .expect("initialized controls")
+            .position
+            .clone()
+    }
+
+    #[cfg(test)]
+    pub(super) fn foundation_values(&self) -> (bool, u64, LinkPanelPosition) {
+        (self.enabled, self.auto_hide_seconds, self.position)
+    }
+
+    fn ensure_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.inputs.is_some() {
+            return;
+        }
+        let seconds = self.auto_hide_seconds.to_string();
+        let dwell = cx.new(|cx| {
+            let mut state = InputState::new(window, cx).validate(|value, _| {
+                value.is_empty()
+                    || (value.len() <= 2 && value.bytes().all(|byte| byte.is_ascii_digit()))
+            });
+            state.set_value(seconds, window, cx);
+            state.set_step(None, window, cx);
+            state
+        });
+        let selected_index = LinkPanelPosition::ALL
+            .iter()
+            .position(|position| *position == self.position)
+            .map(|index| IndexPath::default().row(index));
+        let position = cx.new(|cx| {
+            SelectState::new(
+                LinkPanelPosition::ALL
+                    .into_iter()
+                    .map(PositionChoice)
+                    .collect::<Vec<_>>(),
+                selected_index,
+                window,
+                cx,
+            )
+        });
+        let input_subscription = cx.subscribe_in(
+            &dwell,
+            window,
+            |_, input, event: &InputEvent, window, cx| {
+                let value = input.read(cx).value().to_string();
+                let commit = matches!(event, InputEvent::Change);
+                let restore = matches!(event, InputEvent::Blur | InputEvent::PressEnter { .. });
+                if commit || restore {
+                    cx.defer_in(window, move |this, window, cx| {
+                        if let Ok(seconds) = value.parse::<u64>()
+                            && (DWELL_MIN_SECONDS..=DWELL_MAX_SECONDS).contains(&seconds)
+                        {
+                            this.apply_dwell(seconds, cx);
+                        }
+                        if restore {
+                            this.restore_dwell_input(window, cx);
+                        }
+                    });
+                }
+            },
+        );
+        let step_subscription = cx.subscribe_in(
+            &dwell,
+            window,
+            |_, _, event: &NumberInputEvent, window, cx| {
+                let NumberInputEvent::Step(action) = *event;
+                cx.defer_in(window, move |this, window, cx| {
+                    let seconds = match action {
+                        StepAction::Decrement => this
+                            .auto_hide_seconds
+                            .saturating_sub(DWELL_STEP_SECONDS)
+                            .max(DWELL_MIN_SECONDS),
+                        StepAction::Increment => {
+                            (this.auto_hide_seconds + DWELL_STEP_SECONDS).min(DWELL_MAX_SECONDS)
+                        }
+                    };
+                    this.apply_dwell(seconds, cx);
+                    this.restore_dwell_input(window, cx);
+                });
+            },
+        );
+        let position_subscription = cx.subscribe_in(
+            &position,
+            window,
+            |_, _, event: &SelectEvent<Vec<PositionChoice>>, window, cx| {
+                let SelectEvent::Confirm(position) = event;
+                if let Some(position) = *position {
+                    cx.defer_in(window, move |this, _, cx| {
+                        if this.position != position {
+                            this.position = position;
+                            Self::defer_clipboard_update(
+                                this.clipboard.clone(),
+                                cx,
+                                move |clipboard, cx| {
+                                    clipboard.set_link_panel_position(position, cx)
+                                },
+                            );
+                            cx.notify();
+                        }
+                    });
+                }
+            },
+        );
+        self.inputs = Some(ToolSettingInputs {
+            dwell,
+            position,
+            _subscriptions: vec![input_subscription, step_subscription, position_subscription],
+        });
+    }
+
+    fn apply_dwell(&mut self, seconds: u64, cx: &mut Context<Self>) {
+        if self.auto_hide_seconds == seconds {
+            return;
+        }
+        self.auto_hide_seconds = seconds;
+        Self::defer_clipboard_update(self.clipboard.clone(), cx, move |clipboard, cx| {
+            clipboard.set_link_panel_auto_hide_ms(seconds * 1_000, cx)
+        });
+        cx.notify();
+    }
+
+    fn restore_dwell_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(inputs) = &self.inputs {
+            inputs.dwell.update(cx, |input, cx| {
+                input.set_value(self.auto_hide_seconds.to_string(), window, cx)
+            });
+        }
+    }
     fn defer_clipboard_update(
-        clipboard: gpui::WeakEntity<ClipboardApplication>,
+        clipboard: gpui_kit::WeakEntity<ClipboardApplication>,
         cx: &mut Context<Self>,
         update: impl FnOnce(&mut ClipboardApplication, &mut Context<ClipboardApplication>) + 'static,
     ) {
@@ -203,8 +411,23 @@ impl ToolSettingsWindowBody {
 }
 
 impl Render for ToolSettingsWindowBody {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::zed_dark();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.ensure_inputs(window, cx);
+        crate::theme::observe_theme(window, cx);
+        let theme = Theme::active(cx);
+        let inputs = self.inputs.as_ref().expect("tool controls initialized");
+        let auto_hide_control = div()
+            .id("tool-settings-duration")
+            .debug_selector(|| "tool-settings-duration".into())
+            .w_full()
+            .child(NumberInput::new(&inputs.dwell).suffix("秒"))
+            .into_any_element();
+        let position_control = div()
+            .id("tool-settings-position")
+            .debug_selector(|| "tool-settings-position".into())
+            .w_full()
+            .child(Select::new(&inputs.position).accessibility_label("悬浮窗位置"))
+            .into_any_element();
         let enabled_toggle = cx.listener(|this, _event, _window, cx| {
             this.enabled = !this.enabled;
             let enabled = this.enabled;
@@ -214,172 +437,38 @@ impl Render for ToolSettingsWindowBody {
             cx.notify();
         });
 
-        let seconds_minus = cx.listener(|this, _event, _window, cx| {
-            this.auto_hide_seconds = this.auto_hide_seconds.saturating_sub(2).max(2);
-            let auto_hide_ms = this.auto_hide_seconds * 1_000;
-            Self::defer_clipboard_update(this.clipboard.clone(), cx, move |clipboard, cx| {
-                clipboard.set_link_panel_auto_hide_ms(auto_hide_ms, cx);
-            });
-            cx.notify();
-        });
-        let seconds_plus = cx.listener(|this, _event, _window, cx| {
-            this.auto_hide_seconds = (this.auto_hide_seconds + 2).min(60);
-            let auto_hide_ms = this.auto_hide_seconds * 1_000;
-            Self::defer_clipboard_update(this.clipboard.clone(), cx, move |clipboard, cx| {
-                clipboard.set_link_panel_auto_hide_ms(auto_hide_ms, cx);
-            });
-            cx.notify();
-        });
-        let auto_hide_control = div()
-            .flex()
-            .items_center()
-            .gap(px(SPACING_8))
-            .child(
-                Button::new("tool-settings-dwell-minus")
-                    .debug_selector(|| "tool-settings-dwell-minus".into())
-                    .label("-")
-                    .small()
-                    .outline()
-                    .size(px(28.0))
-                    .on_click(seconds_minus),
-            )
+        // Kit owns field labels/help and compact spacing. The existing feature
+        // shell remains the sole scroll/native-chrome owner inside 460 × 320.
+        let content = div()
+            .debug_selector(|| "tool-settings-panel-section".into())
+            .w_full()
             .child(
                 div()
-                    .debug_selector(|| "tool-settings-dwell-value".into())
-                    .w(px(48.0))
-                    .text_size(px(TEXT_BODY))
-                    .line_height(px(LINE_HEIGHT_BODY))
-                    .text_color(theme.text)
-                    .text_center()
-                    .child(format!("{} 秒", self.auto_hide_seconds)),
-            )
-            .child(
-                Button::new("tool-settings-dwell-plus")
-                    .debug_selector(|| "tool-settings-dwell-plus".into())
-                    .label("+")
-                    .small()
-                    .outline()
-                    .size(px(28.0))
-                    .on_click(seconds_plus),
+                    .debug_selector(|| "tool-settings-form".into())
+                    .w_full()
+                    .child(
+                        Form::horizontal()
+                            .small()
+                            .label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))
+                            .child(compact_tool_field(
+                                "tool-dwell-label",
+                                "tool-dwell-help",
+                                "tool-dwell-control",
+                                "自动关闭时间",
+                                "2–60 秒；每次调整 2 秒。",
+                                auto_hide_control,
+                            ))
+                            .child(compact_tool_field(
+                                "tool-position-label",
+                                "tool-position-help",
+                                "tool-position-control",
+                                "悬浮窗位置",
+                                "位置限制在所选显示器内。",
+                                position_control,
+                            )),
+                    ),
             )
             .into_any_element();
-
-        let open_browser_toggle = cx.listener(|this, _event, _window, cx| {
-            this.auto_open_browser = !this.auto_open_browser;
-            if this.auto_open_browser {
-                this.copy_only = false;
-            }
-            let auto_open_browser = this.auto_open_browser;
-            let copy_only = this.copy_only;
-            Self::defer_clipboard_update(this.clipboard.clone(), cx, move |clipboard, cx| {
-                clipboard.set_link_panel_auto_open_browser(auto_open_browser, cx);
-                if auto_open_browser {
-                    clipboard.set_link_panel_copy_only(copy_only, cx);
-                }
-            });
-            cx.notify();
-        });
-        let copy_only_toggle = cx.listener(|this, _event, _window, cx| {
-            this.copy_only = !this.copy_only;
-            if this.copy_only {
-                this.auto_open_browser = false;
-            }
-            let auto_open_browser = this.auto_open_browser;
-            let copy_only = this.copy_only;
-            Self::defer_clipboard_update(this.clipboard.clone(), cx, move |clipboard, cx| {
-                clipboard.set_link_panel_copy_only(copy_only, cx);
-                if copy_only {
-                    clipboard.set_link_panel_auto_open_browser(auto_open_browser, cx);
-                }
-            });
-            cx.notify();
-        });
-        let position_view = cx.entity().downgrade();
-        let selected_position = self.position;
-        let position_control = Button::new("tool-settings-position")
-            .debug_selector(|| "tool-settings-position".into())
-            .label(link_panel_position_label(self.position))
-            .small()
-            .outline()
-            .w(px(124.0))
-            .dropdown_menu_with_anchor(Corner::TopRight, move |menu, _window, _cx| {
-                LinkPanelPosition::ALL
-                    .into_iter()
-                    .fold(menu.min_w(px(124.0)), |menu, position| {
-                        let position_view = position_view.clone();
-                        let selector = link_panel_position_selector(position);
-                        let label = link_panel_position_label(position);
-                        menu.item(
-                            PopupMenuItem::element(move |_, _| {
-                                div()
-                                    .id(selector)
-                                    .debug_selector(move || selector.into())
-                                    .w_full()
-                                    .child(label)
-                            })
-                            .checked(position == selected_position)
-                            .on_click(move |_, window, cx| {
-                                let position_view = position_view.clone();
-                                window.defer(cx, move |_, cx| {
-                                    let _ = position_view.update(cx, |view, cx| {
-                                        view.position = position;
-                                        let clipboard = view.clipboard.clone();
-                                        Self::defer_clipboard_update(
-                                            clipboard,
-                                            cx,
-                                            move |clipboard, cx| {
-                                                clipboard.set_link_panel_position(position, cx);
-                                            },
-                                        );
-                                        cx.notify();
-                                    });
-                                });
-                            }),
-                        )
-                    })
-            });
-
-        let content = settings_section(
-            theme,
-            "tool-settings-panel-section",
-            "面板行为",
-            vec![
-                settings_row(
-                    theme,
-                    "自动关闭时间",
-                    "识别面板显示后等待关闭的时间（2–60 秒）。",
-                    auto_hide_control,
-                ),
-                settings_row(
-                    theme,
-                    "悬浮窗位置",
-                    "左上角、中央或右上角；位置按显示器范围约束。",
-                    position_control.into_any_element(),
-                ),
-                settings_row(
-                    theme,
-                    "自动打开浏览器",
-                    "关闭“仅复制”后才打开；只适用于网页链接。",
-                    settings_toggle(
-                        theme,
-                        "tool-settings-open-browser",
-                        self.auto_open_browser,
-                        open_browser_toggle,
-                    ),
-                ),
-                settings_row(
-                    theme,
-                    "仅复制",
-                    "默认开启；点击只复制，文件和网页都不启动。",
-                    settings_toggle(
-                        theme,
-                        "tool-settings-copy-only",
-                        self.copy_only,
-                        copy_only_toggle,
-                    ),
-                ),
-            ],
-        );
         let on_close = cx.listener(|_, _event, window, _cx| window.remove_window());
         feature_settings_window(
             theme,
@@ -395,6 +484,7 @@ impl Render for ToolSettingsWindowBody {
                 },
                 title: self.title.into(),
                 description: self.description.into(),
+                enabled_label: "启用链接识别".into(),
                 enabled: self.enabled,
             },
             enabled_toggle,
@@ -418,11 +508,11 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
         this.tool_settings_windows.remove(card.id);
     }
 
-    let (enabled, auto_hide_seconds, auto_open_browser, copy_only, position) = this
+    let (enabled, auto_hide_seconds, position) = this
         .clipboard
         .upgrade()
         .map(|application| application.read(cx).link_panel_settings())
-        .unwrap_or((false, 6, false, true, LinkPanelPosition::Center));
+        .unwrap_or((false, 6, LinkPanelPosition::Center));
     let clipboard = this.clipboard.clone();
     let window_size = size(px(460.0), px(320.0));
     let window_bounds = WindowBounds::centered(window_size, cx);
@@ -441,20 +531,29 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
             app_id: Some(format!("NxTools.ToolSettings.{}", card.id)),
             window_min_size: Some(window_size),
             window_decorations: Some(WindowDecorations::Client),
+            app_owns_titlebar_drag: false,
+            inactive_frame_interval: None,
+            icon: None,
             tabbing_identifier: None,
         },
         move |window, cx| {
-            let body = cx.new(|_| ToolSettingsWindowBody {
-                title: card.title,
-                description: card.description,
-                enabled,
-                auto_hide_seconds,
-                auto_open_browser,
-                copy_only,
-                position,
-                clipboard: clipboard.clone(),
-            });
-            cx.new(|cx| gpui_component::Root::new(body, window, cx))
+            if card.id == currency_settings::CARD.id {
+                let body = cx.new(|cx| {
+                    currency_settings::CurrencySettingsBody::new(clipboard.clone(), window, cx)
+                });
+                cx.new(|cx| gpui_kit::base::Root::new(body, window, cx))
+            } else {
+                let body = cx.new(|_| ToolSettingsWindowBody {
+                    title: card.title,
+                    description: card.description,
+                    enabled,
+                    auto_hide_seconds,
+                    position,
+                    inputs: None,
+                    clipboard: clipboard.clone(),
+                });
+                cx.new(|cx| gpui_kit::base::Root::new(body, window, cx))
+            }
         },
     );
     if let Ok(window) = opened {

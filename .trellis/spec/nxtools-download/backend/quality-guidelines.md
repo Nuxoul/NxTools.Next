@@ -18,7 +18,7 @@ Preserve request/task/plan/artifact identity, synced checkpoints and cancellatio
 - Retain shrink identity through pending clear/join; no growth while shrink is pending. Persist Waiting before durable adjacent merge; preserve prefix and active connection cap.
 - Both ranges Waiting, cancelled bytes zero, adjacent. Never prepend an unwritten left range to a progressed right range.
 - Completed DASH fragment must be nonempty with checkpoint-matching length; mismatches re-fetch. Valid uncheckpointed crash-window adoption remains, without claiming equal-length hash integrity.
-- HEAD+Range are joined; safe routed/certificate-policy client reuse invalidates on network-policy generation, has bounded TTL, and probe requests use ten-second deadline. Strip reqwest URL payloads from errors.
+- HEAD+Range start concurrently; after a usable successful response (length, valid range or recognized media), collect complementary headers for350ms. Empty200headers must still await the other attempt; failed-first retains other/fallback. SkippedRange never proves resume. Safe routed/certificate-policy client reuse invalidates on network-policy generation, has30sTTL, and probe attempts retain10sdeadline. Strip reqwest URL payloads from errors.
 
 ### 4. Validation & Error Matrix
 - Missing/non-Waiting/nonadjacent merge or invalid prefix -> typed TransferPlanError, unchanged plan.
@@ -81,3 +81,24 @@ stream.set_nonblocking(false).expect("accepted fixture blocking mode");
 stream.set_read_timeout(Some(Duration::from_secs(2))).expect("bounded fixture read");
 stream.set_write_timeout(Some(Duration::from_secs(2))).expect("bounded fixture write");
 ```
+
+## Windows junction fixture rejection (2026-10-12)
+`category_directory_cannot_escape_through_a_real_junction` must exercise the real isolated junction boundary and assert no admitted task/no outside Nested directory. On this workstation canonicalization can fail earlier with native448 (ERROR_UNTRUSTED_MOUNT_POINT), a safe OS rejection rather than application InvalidCategoryDirectory. Accept only that exact Io.raw_os_error()448 alongside the original typed rejection, not arbitrary IO failure. Production traversal policy is unchanged; full engine_contract103/103 rerun passes. Evidence: `repo:rust/crates/nxtools-download/tests/engine_contract.rs`.
+
+Foreground policy uses `DownloadEngine::set_runtime_speed_cap(Option<u64>, Uuid)` on existing shared limiter; desired manual value/persisted SQLite and task caps remain unchanged. Actual ceiling is minimum enabled manual/runtime;None removes only runtime and restores latest manual state.0is rejected, identical calls log nothing, reopen discards runtime only. Required `repo:rust/crates/nxtools-download/tests/runtime_speed_cap_contract.rs`8tests cover persistence/concurrency/failure/no-diagnostic boundaries; Desktop owns foreground/config, not engine window polling.
+
+## Scenario: Interactive probe completion without unusable first-response wins
+### 1. Scope / Trigger
+HEAD/Range/manifest latency, cancellation and routed client reuse changes. Evidence: `repo:rust/crates/nxtools-download/src/http.rs`, `repo:rust/crates/nxtools-download/tests/http_client_contract.rs`, `repo:rust/crates/nxtools-download/tests/resolution_contract.rs`.
+### 2. Signatures
+`HttpDownloadClient::probe_timed(&DownloadRequest) -> Result<(DownloadProbe,ProbeTimings),HttpDownloadError>`; `usable_probe_response(&Response)`; ProbeTimings adds head_companion_skipped/range_companion_skipped. Existing DownloadResolutionOperation check owns cancellation.
+### 3. Contracts
+Both attempts share immutable routed/certificate client. A successful length/validRange/recognizedmedia response may collect the companion for350ms; empty200 must still await necessary metadata. Firstfailure awaitsother; bothfailure retains plainGETfallback. TimelyHEAD-onlyfilename retained; overduefuture dropped, no detached latefilename mutation. SkippedRange cannot claim resume.10sprobeattempt/30stransferstall unchanged; manifests keep boundedbody/readtimeouts. Clientcache generation/route/certificate/30sTTL unchanged. Existing correlated accepted/completed/failed carries fixedstages/ms/skipflags, noURL/header/cookie/endpoint.
+### 4. Validation & Error Matrix
+SlowHEAD + usableRange -> boundedcompletion. SlowRange + usableHEAD -> conservative noresume. EmptyHEAD -> awaitactualRange length/validator. SlowHLS/DASHbody -> typedfailure, no incompletepublication. CancelafterHTTPstart -> operationretired promptly, no task/artifact. Explicitproxyfailure never fallsbackDirect.
+### 5. Good/Base/Bad Cases
+Good: delayed200msHEADfilename merged;1sslowHEAD no longer holds usableRange path. Base: redirect/requestcontext/Rangevalidation unchanged. Bad: first200winswithoutmetadata, lowerglobaltimeouts or lateheader overwrites acceptedfilename.
+### 6. Tests Required
+HTTP26 localcontracts includinglatency/emptyHEAD/slowmanifest; resolution15 inclHTTPstagecancel; Downloadlib117 clientreuse/generation/certificate tests and serialengine103. NetworkrealDirect/Systeminjected/Manual3tests; injectedSystem doesnotproveOSregistry/PAC. Actualexternalresource unspecified, reportremainingreproductionneeded; no browser/resolverrewritewithoutcausalrepro.
+### 7. Wrong vs Correct
+Wrong: joinbothfullrequestdeadlines or blindlyacceptfirstsuccess. Correct: usablemetadata -> boundedcompaniongrace; otherwise preserveother/fallback, originalimmutablecontext/cancel/publication.

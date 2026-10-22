@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use anyhow::Result;
-use gpui::{AssetSource, SharedString};
+use gpui_kit::{AssetSource, SharedString};
 
 pub struct NxToolsAssets;
 
@@ -34,6 +34,9 @@ impl AssetSource for NxToolsAssets {
             }
             "material-symbols/folder.svg" => {
                 Some(include_bytes!("../assets/material-symbols/folder.svg"))
+            }
+            "material-symbols/folder-zip.svg" => {
+                Some(include_bytes!("../assets/material-symbols/folder-zip.svg"))
             }
             "material-symbols/add.svg" => {
                 Some(include_bytes!("../assets/material-symbols/add.svg"))
@@ -119,21 +122,72 @@ impl AssetSource for NxToolsAssets {
             )),
             _ => None,
         };
-        Ok(bytes.map(Cow::Borrowed))
+        match bytes {
+            Some(bytes) => Ok(Some(Cow::Borrowed(bytes))),
+            None => gpui_kit::assets::Assets.load(path),
+        }
     }
 
-    fn list(&self, _path: &str) -> Result<Vec<SharedString>> {
-        Ok(Vec::new())
+    fn list(&self, path: &str) -> Result<Vec<SharedString>> {
+        let mut paths = gpui_kit::assets::Assets.list(path)?;
+        use gpui_kit::assets::IconNamed;
+        for icon_path in crate::icons::MaterialIcon::ALL
+            .iter()
+            .map(|icon| icon.path())
+            .chain(
+                crate::icons::CaptionIcon::ALL
+                    .iter()
+                    .map(|icon| icon.path()),
+            )
+            .chain(
+                [
+                    "brand/nxtools.png",
+                    "icons/check.svg",
+                    "icons/chevron-right.svg",
+                    "icons/circle-x.svg",
+                ]
+                .into_iter()
+                .map(SharedString::from),
+            )
+        {
+            if icon_path.starts_with(path) && !paths.contains(&icon_path) {
+                paths.push(icon_path);
+            }
+        }
+        Ok(paths)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui_component::IconNamed;
+    use gpui_kit::component::IconNamed;
 
     use crate::icons::{CaptionIcon, MaterialIcon};
 
+    #[test]
+    fn kit_assets_are_available_without_replacing_product_aliases() {
+        for path in [
+            "icons/search.svg",
+            "icons/chevron-down.svg",
+            "icons/close.svg",
+        ] {
+            assert!(
+                NxToolsAssets.load(path).expect("Kit asset load").is_some(),
+                "missing Kit asset {path}"
+            );
+        }
+        let paths = NxToolsAssets
+            .list("material-symbols/")
+            .expect("product catalog");
+        assert!(paths.contains(&SharedString::from("material-symbols/search.svg")));
+        assert_eq!(
+            NxToolsAssets.load("icons/check.svg").expect("alias"),
+            NxToolsAssets
+                .load("material-symbols/check.svg")
+                .expect("product icon")
+        );
+    }
     #[test]
     fn all_registered_icons_are_embedded() {
         for &icon in MaterialIcon::ALL {

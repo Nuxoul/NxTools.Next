@@ -198,6 +198,7 @@ pub(crate) async fn run_hls_task(
             is_master: false,
             variants: Vec::new(),
         })),
+        resolution: None,
     };
     let (temporary_path, final_path) =
         HttpDownloadClient::artifact_paths(request, &probe, task_id)?;
@@ -320,6 +321,10 @@ pub(crate) async fn run_hls_task(
             0,
         )?;
         pending_segments.push_back(segment.clone());
+    }
+    if adopted_segments > 0 {
+        // Crash-window adoption has bytes but no matching durable time.
+        control.statistics.invalidate();
     }
     if adopted_segments > 0 || reset_segments > 0 {
         info!(
@@ -499,8 +504,8 @@ pub(crate) async fn run_hls_task(
         state
             .task
             .transition_to(DownloadStatus::Paused, now_unix_ms())?;
-        state.control = None;
         inner.persist(state)?;
+        state.control = None;
         inner.emit(DownloadEvent::TaskChanged {
             task: Box::new(state.task.clone()),
         });
@@ -550,8 +555,8 @@ pub(crate) async fn run_hls_task(
         state
             .task
             .transition_to(DownloadStatus::Cancelled, now_unix_ms())?;
-        state.control = None;
         inner.persist(state)?;
+        state.control = None;
         inner.emit(DownloadEvent::TaskChanged {
             task: Box::new(state.task.clone()),
         });

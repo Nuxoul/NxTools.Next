@@ -1,8 +1,7 @@
-use gpui::{
+use gpui_kit::{
     Animation, AnimationExt, Context, Entity, IntoElement, Render, Subscription, Window, div,
     ease_in_out, prelude::*, px, transparent_black,
 };
-use gpui_component::PixelsExt;
 use nxtools_core::{DownloadTaskbarProgressMode, DownloadTaskbarProgressOverlaySettings};
 use nxtools_download::DownloadStatus;
 use nxtools_ipc::PlatformBridge;
@@ -23,6 +22,23 @@ const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
 const TASKBAR_OVERLAY_LANE_GAP: f32 = 1.0;
 const TASKBAR_OVERLAY_ENTER_DURATION: Duration = Duration::from_millis(90);
 const TASKBAR_OVERLAY_EXIT_DURATION: Duration = Duration::from_millis(120);
+
+fn defer_transparent_taskbar_root(window: &Window, cx: &mut Context<DownloadTaskbarOverlayView>) {
+    let handle = window.window_handle();
+    cx.defer(move |cx| {
+        let _ = handle.update(cx, |_, window, cx| {
+            // Kit WindowState paints an opaque Root behind a transparent child.
+            // Override only this window's public Root instance style, after the
+            // constructor lease ends; keep all Kit overlays/focus/decorations.
+            if let Some(root) = window.root::<gpui_kit::base::Root>().flatten() {
+                root.update(cx, |root, cx| {
+                    root.style().background = Some(transparent_black().into());
+                    cx.notify();
+                });
+            }
+        });
+    });
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct TaskbarOverlayVisibilityTransition {
@@ -341,6 +357,7 @@ impl DownloadTaskbarOverlayView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        defer_transparent_taskbar_root(window, cx);
         let observed_application = application.clone();
         let observed_view = cx.entity();
         let subscription = cx.observe(&application, move |_, _, cx| {
@@ -577,6 +594,8 @@ impl DownloadTaskbarOverlayView {
 impl Render for DownloadTaskbarOverlayView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::ui::motion::observe_motion(window, cx);
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
         let theme = self.theme;
         let visibility_generation = self.visibility.generation;
         let visibility_exiting = self.visibility.exiting;
@@ -605,7 +624,7 @@ impl Render for DownloadTaskbarOverlayView {
                 root = root
                     .when(*editing, |root| {
                         root.cursor_move().on_mouse_down(
-                            gpui::MouseButton::Left,
+                            gpui_kit::MouseButton::Left,
                             cx.listener(move |this, _event, window, cx| {
                                 cx.stop_propagation();
                                 if move_handle == 0 {
@@ -770,7 +789,7 @@ impl Render for DownloadTaskbarOverlayView {
                                 .w(px(12.0))
                                 .h(px(12.0))
                                 .cursor_e_resize()
-                                .on_mouse_down(gpui::MouseButton::Left, resize_listener)
+                                .on_mouse_down(gpui_kit::MouseButton::Left, resize_listener)
                                 .child(
                                     div()
                                         .absolute()
@@ -786,7 +805,7 @@ impl Render for DownloadTaskbarOverlayView {
                 }
                 if crate::ui::motion::motion_allowed(cx) {
                     root.with_animation(
-                    gpui::SharedString::from(format!(
+                    gpui_kit::SharedString::from(format!(
                         "download-taskbar-visibility-{visibility_generation}-{visibility_exiting}"
                     )),
                     Animation::new(if visibility_exiting {
@@ -815,7 +834,7 @@ fn taskbar_progress_lane_element(
     index: usize,
     lane: DownloadTaskbarOverlayLane,
     motion_allowed: bool,
-) -> gpui::AnyElement {
+) -> gpui_kit::AnyElement {
     let track = div()
         .relative()
         .w_full()
@@ -863,7 +882,7 @@ fn taskbar_metrics_element(
     theme: Theme,
     metrics: DownloadTaskbarOverlayMetrics,
     settings: &DownloadTaskbarProgressOverlaySettings,
-) -> gpui::AnyElement {
+) -> gpui_kit::AnyElement {
     let eta = metrics
         .total_bytes
         .filter(|total| metrics.bytes_per_second > 0 && *total > metrics.downloaded_bytes)
@@ -942,7 +961,7 @@ fn taskbar_metric_item(
     leading_label: Option<&'static str>,
     value: String,
     trailing_label: Option<&'static str>,
-) -> gpui::AnyElement {
+) -> gpui_kit::AnyElement {
     div()
         .debug_selector(move || selector.into())
         .flex_none()
@@ -1301,3 +1320,7 @@ mod tests {
         assert!(!visibility.complete_exit(exit_generation));
     }
 }
+
+#[cfg(test)]
+#[path = "ui/auxiliary_theme_tests.rs"]
+mod auxiliary_theme_tests;

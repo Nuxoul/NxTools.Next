@@ -1,0 +1,7 @@
+1. Read runtime event evidence and legacy constructor/base/show/hide/key/text/hover chain, inspect real framework event boundary, add actual production red-capable reproductions.
+2. Rank falsifiable causes from reds; minimal original-owner routing/preview-cancel fix with bounded semantic diagnostics; preserve IME/overlay/release/generation and callback leases.
+3. Focused real key/text/preview/pause/presentation tests then strict lint/workspace/fullDesktop once and source/spec/catalog/scopedfmt. Record exact installed evidence vs deferred native/physical/visual verification.
+
+Checkpoint:4actualbehavioralreds -> ownerfix5/5 -> expandedinput8/8passed before final correlation/IMEpreference cleanup. Current final compiled reruns blocked by concurrent ArchiveJob/ArchivePicker and desktop_archive_intent/Receipt integration; lateststrictClippy blocked at protocollarge_enum_variant. Lifecycle/spec/catalog/scopedfmt pass. Task remainsin_progress; do not claim latesttree/fullDesktop/installed acceptance. Exact logs and deferredchecks in outcomes.md; installedread-only evidence in diagnosis.md.
+
+Closeout2026-10-22: the above blocker/freshness checkpoint is superseded by exact latest-source verification during the authorized Kit0.8.0 upgrade: input8/8,panel38/38,presentation14/14,preview17/17,fullDesktop979/0,strict testClippy/workspace and seven lifecycle/source/spec/catalog/scopedfmt PASS. Source/compiled task complete; installed/physical/native/visual acceptance remains unperformed. See final outcomes section and sibling upgrade outcomes.

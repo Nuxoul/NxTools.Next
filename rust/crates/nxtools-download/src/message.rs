@@ -50,6 +50,25 @@ pub enum DownloadCommand {
     Probe {
         request: DownloadRequest,
     },
+    ProbeResolved {
+        request: DownloadRequest,
+        resolution: crate::DownloadResolutionOptions,
+    },
+    SubmitResolved {
+        request: DownloadRequest,
+        #[serde(default)]
+        mode: DownloadSubmitMode,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        idempotency_key: Option<Uuid>,
+        resolution: crate::DownloadResolutionOptions,
+    },
+    BrowserSubmitResolved {
+        handoff_id: Uuid,
+        request: DownloadRequest,
+        #[serde(default)]
+        mode: DownloadSubmitMode,
+        resolution: crate::DownloadResolutionOptions,
+    },
     Submit {
         request: DownloadRequest,
         #[serde(default)]
@@ -256,6 +275,8 @@ pub struct DownloadProbe {
     pub validator: ResourceValidator,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub media: Option<DownloadMediaProbe>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolution: Option<Box<crate::DownloadProbeResolution>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,6 +330,8 @@ pub struct DownloadTaskSummary {
     pub created_at_unix_ms: i64,
     pub updated_at_unix_ms: i64,
     pub completed_at_unix_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_statistics: Option<crate::DownloadTransferStatistics>,
     pub downloaded_bytes: u64,
     pub total_bytes: Option<u64>,
     pub file_name: Option<String>,
@@ -492,5 +515,6 @@ pub enum DownloadFaultCode {
     FileInUse,
     Cancelled,
     Unavailable,
+    ResolutionRequired,
     Internal,
 }

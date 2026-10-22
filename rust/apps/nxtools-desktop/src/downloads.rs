@@ -9,19 +9,20 @@ use std::time::{Duration, Instant};
 use chrono::{
     Datelike, Duration as ChronoDuration, Local, NaiveDate, NaiveTime, TimeZone, Timelike,
 };
-use gpui::{
-    AnyElement, AnyWindowHandle, App, Context, Corner, Entity, EventEmitter, Focusable, FontWeight,
-    IntoElement, MouseButton, Render, Rgba, ScrollHandle, Subscription, Task, Window,
+use gpui_kit::base::Root;
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use gpui_kit::component::popover::Popover;
+use gpui_kit::component::scroll::ScrollableElement;
+use gpui_kit::component::select::{Select, SelectState};
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{Disableable, Icon, IndexPath, Sizable};
+use gpui_kit::{
+    Anchor, AnyElement, AnyWindowHandle, App, Context, Entity, EventEmitter, Focusable, FontWeight,
+    IntoElement, MouseButton, Render, ScrollHandle, Subscription, Task, Window,
     WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowDecorations, WindowKind,
     WindowOptions, div, prelude::*, px, size,
 };
-use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::popover::Popover;
-use gpui_component::scroll::ScrollableElement;
-use gpui_component::select::{Select, SelectState};
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{Disableable, Icon, IndexPath, PixelsExt, Root, Sizable};
 use nxtools_core::DownloadRowDoubleClickActionSettings;
 use nxtools_core::{
     AppConfig, DownloadCategorySettings, DownloadDuplicateStrategySettings, DownloadSettings,
@@ -70,32 +71,25 @@ use crate::notifications::NotificationCenter;
 use crate::theme::Theme;
 use crate::ui::components::action::{
     SegmentedOption, action_button, danger_hover_button_variant, icon_action, icon_action_button,
-    icon_action_tooltip_surface, primary_button_variant, segmented_control,
+    icon_action_tooltip_surface, segmented_control,
 };
 use crate::ui::components::dialog::{DialogShellIds, dialog_shell};
-use crate::ui::components::field::{
-    field_shell, inline_error, labeled_control, labeled_field, multiline_field_shell,
-    path_picker_shell,
-};
-#[cfg(test)]
-use crate::ui::components::list::RADIO_SELECTION_DOT_SIZE;
-use crate::ui::components::list::{compact_list_row, radio_list_row};
-use crate::ui::components::popover::{list_box, popover_shell};
+use crate::ui::components::field::{field_shell, inline_error, path_picker_shell};
 use crate::ui::components::settings::{
     SettingsShellIds, dialog_footer, settings_shell, settings_toggle,
 };
 use crate::ui::components::titlebar::client_titlebar;
 use crate::ui::metrics::{
-    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, PROGRESS_TRACK_HEIGHT,
-    RADIUS_CONTROL, RADIUS_FLOATING, SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12,
-    SPACING_16,
+    CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,
+    SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12, SPACING_16,
 };
 use crate::ui::native_window_handle;
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_TITLE, TEXT_BODY,
-    TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE, TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_META,
+    TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
 };
 
+mod artifact_actions;
 mod browser_handoff_impl;
 mod completion_shutdown_impl;
 #[cfg(debug_assertions)]
@@ -106,6 +100,7 @@ pub(crate) mod fixed_transition_preview;
 mod new_download_view;
 #[cfg(test)]
 mod polish_tests;
+mod progress_display;
 mod schedule_view;
 mod settings_view;
 mod shutdown_window;
@@ -114,6 +109,9 @@ mod task_windows_impl;
 #[cfg(debug_assertions)]
 pub(crate) mod visual_preview;
 
+use self::artifact_actions::PendingDownloadArtifactAction;
+#[cfg(test)]
+use self::artifact_actions::resolve_download_artifact_target;
 use self::delete_confirmation::*;
 use self::new_download_view::*;
 use self::schedule_view::*;
@@ -132,9 +130,6 @@ pub(crate) enum DownloadApplicationEvent {
     },
     FfmpegInstallChanged {
         state: FfmpegInstallViewState,
-    },
-    BrowserExtensionExportCompleted {
-        status: String,
     },
     TaskbarOverlayEditChanged {
         settings: DownloadTaskbarProgressOverlaySettings,
@@ -221,6 +216,7 @@ struct DownloadSettingsDraft {
     adaptive_segment_min_mib: u16,
     max_concurrent_tasks: u16,
     global_speed_limit_bytes_per_second: Option<u64>,
+    background_speed_limit: nxtools_core::BackgroundDownloadLimitSettings,
     show_progress_window: bool,
     show_completion_window: bool,
     completion_sound_enabled: bool,
@@ -329,15 +325,6 @@ impl DownloadSettingsPathAction {
 struct PendingExtensionExport {
     command_id: uuid::Uuid,
     format: &'static str,
-    started_at: Instant,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct PendingDownloadArtifactAction {
-    correlation_id: uuid::Uuid,
-    task_id: DownloadTaskId,
-    action: ShellOpenAction,
-    window: Option<TaskWindowIdentity>,
     started_at: Instant,
 }
 
@@ -567,20 +554,6 @@ fn download_task_icon_resource_key(task: &DownloadEngineTask) -> Option<String> 
     (!extension.is_empty()).then(|| format!("{DOWNLOAD_TASK_ICON_SIZE}:type:.{extension}"))
 }
 
-fn resolve_download_artifact_target(
-    final_path: Option<&Path>,
-    save_directory: &Path,
-    action: ShellOpenAction,
-) -> Result<(PathBuf, bool), String> {
-    if let Some(path) = final_path.filter(|path| path.is_file() || path.is_dir()) {
-        return Ok((path.to_path_buf(), false));
-    }
-    if action == ShellOpenAction::SelectInExplorer {
-        return Ok((save_directory.to_path_buf(), true));
-    }
-    Err("任务还没有可用的最终文件路径。".into())
-}
-
 struct DownloadShutdownWindow {
     window: AnyWindowHandle,
     view: Entity<DownloadShutdownCountdownView>,
@@ -647,6 +620,7 @@ pub(crate) struct DownloadApplication {
     taskbar_overlay_edit_gesture_active: bool,
     pending_taskbar_overlay_gestures: HashSet<uuid::Uuid>,
     config: AppConfig,
+    foreground_process_id: Option<u32>,
     pending_artifact_actions: HashMap<uuid::Uuid, PendingDownloadArtifactAction>,
     config_path: PathBuf,
     log_directory: PathBuf,
@@ -779,14 +753,9 @@ impl DownloadApplication {
                 let Some(this) = this.upgrade() else {
                     return;
                 };
-                if this
-                    .update(cx, |application, cx| {
-                        application.handle_engine_event(event, cx);
-                    })
-                    .is_err()
-                {
-                    return;
-                }
+                this.update(cx, |application, cx| {
+                    application.handle_engine_event(event, cx);
+                });
             }
         });
         let browser_dialog_receiver =
@@ -801,14 +770,9 @@ impl DownloadApplication {
                 let Some(this) = this.upgrade() else {
                     return;
                 };
-                if this
-                    .update(cx, |application, cx| {
-                        application.open_browser_download_dialog(request, cx);
-                    })
-                    .is_err()
-                {
-                    return;
-                }
+                this.update(cx, |application, cx| {
+                    application.open_browser_download_dialog(request, cx);
+                });
             }
         });
         Self {
@@ -844,7 +808,7 @@ impl DownloadApplication {
             pending_new_download_handoff: None,
             _new_download_close_subscription: {
                 let application = cx.entity().downgrade();
-                cx.on_window_closed(move |cx| {
+                cx.on_window_closed(move |cx, _| {
                     let application = application.clone();
                     cx.defer(move |cx| {
                         let _ = application.update(cx, |application, cx| {
@@ -869,6 +833,7 @@ impl DownloadApplication {
             taskbar_overlay_edit_gesture_active: false,
             pending_taskbar_overlay_gestures: HashSet::new(),
             config,
+            foreground_process_id: None,
             pending_artifact_actions: HashMap::new(),
             config_path,
             log_directory,
@@ -1081,6 +1046,7 @@ impl DownloadApplication {
                 .and_then(|queue| queue.max_concurrent_tasks)
                 .unwrap_or(3),
             global_speed_limit_bytes_per_second: self.engine.global_speed_limit(),
+            background_speed_limit: self.config.download.background_speed_limit.clone(),
             show_progress_window: self.show_progress_window,
             show_completion_window: self.show_completion_window,
             completion_sound_enabled: self.config.download.completion_sound_enabled,
@@ -1129,13 +1095,33 @@ impl DownloadApplication {
         idempotency_key: Option<uuid::Uuid>,
         cx: &mut Context<Self>,
     ) -> Result<DownloadTaskId, String> {
+        self.submit_with_resolution_options(request, mode, idempotency_key, None, cx)
+    }
+    pub(crate) fn submit_with_resolution_options(
+        &mut self,
+        request: DownloadRequest,
+        mode: DownloadSubmitMode,
+        idempotency_key: Option<uuid::Uuid>,
+        resolution: Option<nxtools_download::DownloadResolutionOptions>,
+        cx: &mut Context<Self>,
+    ) -> Result<DownloadTaskId, String> {
         let delayed_progress =
             mode == DownloadSubmitMode::StartNow && request.scheduled_at_unix_ms.is_some();
-        let outcome = self.execute(DownloadCommand::Submit {
-            request,
-            mode,
-            idempotency_key,
-        });
+        let command = if let Some(resolution) = resolution {
+            DownloadCommand::SubmitResolved {
+                request,
+                mode,
+                idempotency_key,
+                resolution,
+            }
+        } else {
+            DownloadCommand::Submit {
+                request,
+                mode,
+                idempotency_key,
+            }
+        };
+        let outcome = self.execute(command);
         let task_id = match outcome {
             DownloadCommandOutcome::Accepted {
                 task_id: Some(task_id),
@@ -1257,7 +1243,7 @@ impl DownloadApplication {
                 if let Some(first) = failures.first() {
                     self.notifications.update(cx, |notifications, cx| {
                         notifications.show_error(
-                            "download-batch-action",
+                            format!("download-batch-action-{}", uuid::Uuid::new_v4()),
                             format!("有 {} 个任务操作失败", failures.len()),
                             first.message.clone(),
                             cx,
@@ -1321,390 +1307,8 @@ impl DownloadApplication {
                 self.refresh(cx);
                 Ok(())
             }
-            DownloadCommandOutcome::Rejected { fault } => {
-                self.action_error("无法保存每日计划", fault.message, cx)
-            }
-            _ => self.action_error(
-                "无法保存每日计划",
-                "下载引擎返回了无效的队列操作结果".into(),
-                cx,
-            ),
-        }
-    }
-
-    fn final_artifact_path(&self, task_id: DownloadTaskId) -> Result<PathBuf, String> {
-        let detail = self
-            .task_detail
-            .as_ref()
-            .filter(|detail| detail.task.task.id() == task_id)
-            .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| load_download_task_detail(&self.engine, task_id));
-        detail?
-            .task
-            .final_path
-            .clone()
-            .ok_or_else(|| "任务还没有可用的最终文件路径。".into())
-    }
-
-    pub(crate) fn open_task_artifact(
-        &mut self,
-        task_id: DownloadTaskId,
-        action: ShellOpenAction,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_task_artifact_with_window(task_id, action, None, cx);
-    }
-
-    pub(crate) fn open_task_artifact_from_task_window(
-        &mut self,
-        task_id: DownloadTaskId,
-        action: ShellOpenAction,
-        window: TaskWindowIdentity,
-        cx: &mut Context<Self>,
-    ) {
-        self.open_task_artifact_with_window(task_id, action, Some(window), cx);
-    }
-
-    fn open_task_artifact_with_window(
-        &mut self,
-        task_id: DownloadTaskId,
-        action: ShellOpenAction,
-        window: Option<TaskWindowIdentity>,
-        cx: &mut Context<Self>,
-    ) {
-        if self
-            .pending_artifact_actions
-            .values()
-            .any(|pending| pending.task_id == task_id)
-        {
-            info!(
-                event = "download.artifact.shell_action_coalesced",
-                task_id = %task_id.as_uuid(),
-                ?action,
-                "duplicate download artifact action ignored while a result is pending"
-            );
-            return;
-        }
-        let correlation_id = uuid::Uuid::new_v4();
-        let started_at = Instant::now();
-
-        let detail = self
-            .task_detail
-            .as_ref()
-            .filter(|detail| detail.task.task.id() == task_id)
-            .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| load_download_task_detail(&self.engine, task_id));
-        let (target, used_save_directory_fallback) = match detail.and_then(|detail| {
-            resolve_download_artifact_target(
-                detail.task.final_path.as_deref(),
-                &detail.task.task.request().save_directory,
-                action,
-            )
-        }) {
-            Ok(target) => target,
-            Err(error) => {
-                warn!(
-                    event = "download.artifact.shell_action_failed",
-                    %correlation_id,
-                    task_id = %task_id.as_uuid(),
-                    ?action,
-                    failure_kind = "target_unavailable",
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "download artifact target could not be resolved"
-                );
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-artifact-missing-{}", task_id.as_uuid()),
-                        "无法打开下载文件",
-                        error,
-                        cx,
-                    );
-                });
-                return;
-            }
-        };
-        if used_save_directory_fallback && let Err(error) = std::fs::create_dir_all(&target) {
-            warn!(
-                event = "download.artifact.shell_action_failed",
-                %correlation_id,
-                task_id = %task_id.as_uuid(),
-                ?action,
-                failure_kind = "save_directory_unavailable",
-                native_error_code = ?error.raw_os_error(),
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "download reveal could not prepare the task save directory"
-            );
-            self.notifications.update(cx, |notifications, cx| {
-                notifications.show_error(
-                    format!("download-artifact-open-{}", task_id.as_uuid()),
-                    "无法打开所在文件夹",
-                    "保存目录无法访问，完成窗口仍保留，可检查权限后重试。",
-                    cx,
-                );
-            });
-            return;
-        }
-        let path = target.to_string_lossy().into_owned();
-        info!(
-            event = "download.artifact.reveal_target_resolved",
-            %correlation_id,
-            task_id = %task_id.as_uuid(),
-            used_save_directory_fallback,
-            target_is_directory = target.is_dir(),
-            "download reveal target resolved"
-        );
-
-        let pending = PendingDownloadArtifactAction {
-            correlation_id,
-            task_id,
-            action,
-            window,
-            started_at,
-        };
-        match self.platform.send_command_correlated(
-            PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
-                target: path,
-                action,
-            }),
-            correlation_id,
-        ) {
-            Ok(command_id) => {
-                self.pending_artifact_actions.insert(command_id, pending);
-                info!(
-                    event = "download.artifact.shell_action_accepted",
-                    %correlation_id,
-                    %command_id,
-                    task_id = %task_id.as_uuid(),
-                    ?action,
-                    from_task_window = window.is_some(),
-                    "download artifact Shell action accepted"
-                );
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor()
-                        .timer(DOWNLOAD_SETTINGS_PATH_ACTION_TIMEOUT)
-                        .await;
-                    let _ = this.update(cx, |application, cx| {
-                        application.artifact_action_timed_out(command_id, cx);
-                    });
-                })
-                .detach();
-            }
-            Err(error) => {
-                warn!(
-                    event = "download.artifact.shell_action_failed",
-                    %correlation_id,
-                    task_id = %task_id.as_uuid(),
-                    ?action,
-                    failure_kind = match &error {
-                        PlatformBridgeError::Disconnected => "platform_disconnected",
-                        PlatformBridgeError::Busy => "queue_busy",
-                        PlatformBridgeError::DuplicateCommandId => "duplicate_command_id",
-                    },
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "download artifact Shell action was not accepted"
-                );
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-artifact-open-{}", task_id.as_uuid()),
-                        if action == ShellOpenAction::SelectInExplorer {
-                            "无法打开所在文件夹"
-                        } else {
-                            "无法执行文件操作"
-                        },
-                        "资源管理器操作未能排入队列，完成窗口仍保留，可重试。",
-                        cx,
-                    );
-                });
-            }
-        }
-    }
-
-    fn artifact_action_timed_out(&mut self, command_id: uuid::Uuid, cx: &mut Context<Self>) {
-        let Some(pending) = self.pending_artifact_actions.remove(&command_id) else {
-            return;
-        };
-        warn!(
-            event = "download.artifact.shell_action_failed",
-            correlation_id = %pending.correlation_id,
-            %command_id,
-            task_id = %pending.task_id.as_uuid(),
-            ?pending.action,
-            failure_kind = "timeout",
-            elapsed_ms = pending.started_at.elapsed().as_millis(),
-            "download artifact Shell action timed out"
-        );
-        self.notifications.update(cx, |notifications, cx| {
-            notifications.show_error(
-                format!("download-artifact-open-{}", pending.task_id.as_uuid()),
-                if pending.action == ShellOpenAction::SelectInExplorer {
-                    "无法打开所在文件夹"
-                } else {
-                    "无法执行文件操作"
-                },
-                if pending.action == ShellOpenAction::SelectInExplorer {
-                    "未能确认资源管理器已切到目标文件夹；完成窗口仍保留，可重试。"
-                } else {
-                    "Windows 未能确认文件操作，请重试。"
-                },
-                cx,
-            );
-        });
-    }
-
-    fn begin_task_file_drag(
-        &mut self,
-        task_id: DownloadTaskId,
-        source_window_handle: i64,
-        cx: &mut Context<Self>,
-    ) {
-        let Ok(path) = self
-            .final_artifact_path(task_id)
-            .map(|path| path.to_string_lossy().into_owned())
-        else {
-            return;
-        };
-        match self
-            .platform
-            .send_command(PlatformCommand::BeginFileDrag(BeginFileDragCommand {
-                path,
-                source_window_handle,
-            })) {
-            Ok(correlation_id) => {
-                info!(
-                    task_id = %task_id.as_uuid(),
-                    %correlation_id,
-                    source_window_handle,
-                    "download file drag requested"
-                );
-            }
-            Err(error) => {
-                warn!(
-                    task_id = %task_id.as_uuid(),
-                    source_window_handle,
-                    %error,
-                    "download file drag request rejected"
-                );
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-file-drag-{}", task_id.as_uuid()),
-                        "无法开始拖拽文件",
-                        error.to_string(),
-                        cx,
-                    );
-                });
-            }
-        }
-    }
-
-    #[allow(
-        dead_code,
-        reason = "retained for the Phase 3 task context-menu delete action"
-    )]
-    pub(crate) fn request_delete_confirmation(
-        &mut self,
-        task_id: DownloadTaskId,
-        cx: &mut Context<Self>,
-    ) {
-        // The user-configurable contract for "删除文件": when the file delete
-        // is disabled, the menu item degenerates to a list-only removal.
-        if !self.config.download.task_removal_deletes_file {
-            let _ = self.remove(task_id, false, cx);
-            return;
-        }
-        if let Some(window) = self.delete_confirmation_windows.get(&task_id).cloned() {
-            if window
-                .update(cx, |_, window, _| window.activate_window())
-                .is_ok()
-            {
-                return;
-            }
-            self.delete_confirmation_windows.remove(&task_id);
-        }
-        let application = cx.entity();
-        let path = self
-            .task(task_id)
-            .and_then(|task| task.final_path.as_ref())
-            .map_or_else(|| "最终文件".into(), |path| path.display().to_string());
-        let window_size = size(px(380.0), px(178.0));
-        let window_bounds = WindowBounds::centered(window_size, cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(window_bounds),
-                titlebar: None,
-                focus: true,
-                show: true,
-                kind: WindowKind::Normal,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: false,
-                display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
-                app_id: Some("NxTools.Download.DeleteConfirmation".into()),
-                window_min_size: Some(window_size),
-                window_decorations: Some(WindowDecorations::Client),
-                tabbing_identifier: None,
-            },
-            move |window, cx| {
-                let close_application = application.clone();
-                let closing_window = window.window_handle();
-                window.on_window_should_close(cx, move |_, cx| {
-                    let application = close_application.clone();
-                    cx.defer(move |cx| {
-                        application.update(cx, |application, _| {
-                            application
-                                .handle_native_delete_confirmation_close(task_id, closing_window);
-                        });
-                    });
-                    true
-                });
-                let view = cx.new(|_| DeleteDownloadView {
-                    theme: Theme::zed_dark(),
-                    application,
-                    task_id,
-                    path,
-                });
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
-        match opened {
-            Ok(window) => {
-                self.delete_confirmation_windows
-                    .insert(task_id, window.into());
-            }
-            Err(error) => {
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-delete-confirm-{}", task_id.as_uuid()),
-                        "无法打开删除确认窗口",
-                        error.to_string(),
-                        cx,
-                    );
-                });
-            }
-        }
-    }
-
-    fn close_delete_confirmation(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
-        if let Some(window) = self.delete_confirmation_windows.remove(&task_id) {
-            let _ = window.update(cx, |_, window, _| window.remove_window());
-        }
-    }
-
-    fn handle_native_delete_confirmation_close(
-        &mut self,
-        task_id: DownloadTaskId,
-        closing_window: AnyWindowHandle,
-    ) {
-        if self.delete_confirmation_windows.get(&task_id) == Some(&closing_window) {
-            self.delete_confirmation_windows.remove(&task_id);
-        }
-    }
-
-    fn confirm_delete_artifact(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
-        if self.remove(task_id, true, cx).is_ok() {
-            self.close_delete_confirmation(task_id, cx);
+            DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
+            _ => Err("下载引擎返回了无效的队列操作结果".into()),
         }
     }
 
@@ -1715,7 +1319,12 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         self.notifications.update(cx, |notifications, cx| {
-            notifications.show_error("download-task-action", title, message.clone(), cx);
+            notifications.show_error(
+                format!("download-task-action-{}", uuid::Uuid::new_v4()),
+                title,
+                message.clone(),
+                cx,
+            );
         });
         Err(message)
     }
@@ -1868,7 +1477,7 @@ impl DownloadApplication {
             Err(error) => {
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        "download-directory-picker",
+                        format!("download-directory-picker-{}", uuid::Uuid::new_v4()),
                         "无法打开目录选择器",
                         error.to_string(),
                         cx,
@@ -1993,7 +1602,7 @@ impl DownloadApplication {
                 self.set_ffmpeg_install_state(FfmpegInstallViewState::Failed(message.clone()), cx);
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        "ffmpeg-install-start",
+                        format!("ffmpeg-install-{correlation_id}"),
                         "无法自动下载 FFmpeg",
                         message,
                         cx,
@@ -2024,14 +1633,9 @@ impl DownloadApplication {
                 let Some(this) = this.upgrade() else {
                     return;
                 };
-                if this
-                    .update(cx, |application, cx| {
-                        application.handle_ffmpeg_install_progress(correlation_id, update, cx);
-                    })
-                    .is_err()
-                {
-                    return;
-                }
+                this.update(cx, |application, cx| {
+                    application.handle_ffmpeg_install_progress(correlation_id, update, cx);
+                });
             }
             let Ok(result) = completion.recv().await else {
                 return;
@@ -2039,7 +1643,7 @@ impl DownloadApplication {
             let Some(this) = this.upgrade() else {
                 return;
             };
-            let _ = this.update(cx, |application, cx| {
+            this.update(cx, |application, cx| {
                 application.finish_ffmpeg_install(correlation_id, result, cx);
             });
         })
@@ -2140,7 +1744,7 @@ impl DownloadApplication {
                     );
                     self.notifications.update(cx, |notifications, cx| {
                         notifications.show_error(
-                            "ffmpeg-install-failed",
+                            format!("ffmpeg-install-{correlation_id}"),
                             "FFmpeg 自动安装失败",
                             message,
                             cx,
@@ -2164,7 +1768,7 @@ impl DownloadApplication {
                 });
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_success(
-                        "ffmpeg-install-completed",
+                        format!("ffmpeg-install-{correlation_id}"),
                         "FFmpeg 已安装",
                         "已下载到用户目录并自动配置，DASH 双轨任务可以直接合并。",
                         cx,
@@ -2204,7 +1808,7 @@ impl DownloadApplication {
                 self.set_ffmpeg_install_state(FfmpegInstallViewState::Failed(message.clone()), cx);
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        "ffmpeg-install-failed",
+                        format!("ffmpeg-install-{correlation_id}"),
                         "FFmpeg 自动安装失败",
                         message,
                         cx,
@@ -2393,7 +1997,7 @@ impl DownloadApplication {
         if pending.action == DownloadSettingsPathAction::Copy {
             self.notifications.update(cx, |notifications, cx| {
                 notifications.show_success(
-                    format!("download-settings-path-{}-copy", presentation.key),
+                    format!("download-settings-path-{}", pending.correlation_id),
                     "路径已复制",
                     format!("{}路径已写入剪贴板", presentation.display_name),
                     cx,
@@ -2440,11 +2044,7 @@ impl DownloadApplication {
         };
         self.notifications.update(cx, |notifications, cx| {
             notifications.show_error(
-                format!(
-                    "download-settings-path-{}-{}-failed",
-                    presentation.key,
-                    pending.action.name()
-                ),
+                format!("download-settings-path-{}", pending.correlation_id),
                 title,
                 message,
                 cx,
@@ -2569,7 +2169,7 @@ impl DownloadApplication {
                 );
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        "download-ffmpeg-picker",
+                        format!("download-ffmpeg-picker-{}", pending.correlation_id),
                         "无法选择 FFmpeg",
                         user_message,
                         cx,
@@ -2588,7 +2188,11 @@ impl DownloadApplication {
                 );
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        format!("download-ffmpeg-page-{}", source.name()),
+                        format!(
+                            "download-ffmpeg-page-{}-{}",
+                            source.name(),
+                            pending.correlation_id
+                        ),
                         "无法打开 FFmpeg 下载链接",
                         user_message,
                         cx,
@@ -2645,7 +2249,7 @@ impl DownloadApplication {
             Err(error) => {
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(
-                        "download-settings-window",
+                        format!("download-settings-window-{}", uuid::Uuid::new_v4()),
                         "无法打开下载设置",
                         error.to_string(),
                         cx,
@@ -2685,6 +2289,7 @@ impl DownloadApplication {
                 window_min_size: Some(size(px(72.0), px(6.0))),
                 window_decorations: Some(WindowDecorations::Client),
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let close_application = application.clone();
@@ -3100,6 +2705,7 @@ impl DownloadApplication {
             open_directory_on_completion: draft.open_directory_on_completion,
             task_removal_deletes_file: draft.task_removal_deletes_file,
             taskbar_progress_overlay: draft.taskbar_progress_overlay.clone(),
+            background_speed_limit: draft.background_speed_limit.clone(),
         };
         if let Err(error) =
             nxtools_download::DownloadHttpPolicy::from_download_settings(&next_download_settings)
@@ -3158,6 +2764,7 @@ impl DownloadApplication {
                 }
             };
         self.config = next_config;
+        self.apply_background_speed_policy(correlation_id)?;
         if let Err(error) = self
             .engine
             .update_download_http_policy(&self.config.download)
@@ -3215,7 +2822,7 @@ impl DownloadApplication {
         self.refresh(cx);
         self.notifications.update(cx, |notifications, cx| {
             notifications.show_success(
-                "download-settings-saved",
+                format!("download-settings-saved-{correlation_id}"),
                 "下载设置已保存",
                 "新任务将使用更新后的下载策略。",
                 cx,
@@ -3265,11 +2872,64 @@ impl DownloadApplication {
         }
     }
 
+    fn apply_background_speed_policy(&self, correlation_id: uuid::Uuid) -> Result<(), String> {
+        let policy = &self.config.download.background_speed_limit;
+        let cap = (policy.enabled
+            && self
+                .foreground_process_id
+                .is_some_and(|process_id| process_id != std::process::id()))
+        .then_some(policy.bytes_per_second);
+        self.engine
+            .set_runtime_speed_cap(cap, correlation_id)
+            .map_err(|_| "下载设置已保存，但临时限速未能应用，请重试。".into())
+    }
+
+    fn defer_effective_limit_display(&self, cx: &mut Context<Self>) {
+        let limit = self.engine.effective_global_speed_limit();
+        let views = self
+            .task_windows
+            .values()
+            .map(|entry| entry.view.downgrade())
+            .collect::<Vec<_>>();
+        cx.defer(move |cx| {
+            for view in views {
+                let _ = view.update(cx, |view, cx| {
+                    if view.effective_global_speed_limit != limit {
+                        view.effective_global_speed_limit = limit;
+                        cx.notify();
+                    }
+                });
+            }
+        });
+    }
+
     pub(crate) fn handle_platform_notification(
         &mut self,
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        if let PlatformNotification::Event(PlatformEvent::ForegroundChanged(foreground)) =
+            &notification
+        {
+            let previous_limit = self.engine.effective_global_speed_limit();
+            self.foreground_process_id = (foreground.window_handle != 0
+                && foreground.process_id != 0)
+                .then_some(foreground.process_id);
+            if self
+                .apply_background_speed_policy(uuid::Uuid::new_v4())
+                .is_err()
+            {
+                warn!(
+                    event = "download.background_limit.apply_failed",
+                    failure_kind = "runtime_policy",
+                    "foreground limit policy could not be applied"
+                );
+            }
+            if previous_limit != self.engine.effective_global_speed_limit() {
+                self.defer_effective_limit_display(cx);
+            }
+            return;
+        }
         if matches!(&notification, PlatformNotification::Connected) {
             self.failed_task_icon_resources.clear();
             self.request_task_icons();
@@ -3320,6 +2980,9 @@ impl DownloadApplication {
             pending_command_ids,
         } = &notification
         {
+            self.foreground_process_id = None;
+            let _ = self.apply_background_speed_policy(uuid::Uuid::new_v4());
+            self.defer_effective_limit_display(cx);
             warn!(
                 event = "downloads.platform_disconnected",
                 generation,
@@ -3329,34 +2992,7 @@ impl DownloadApplication {
             if let Some(pending) = self.pending_new_download_handoff.as_ref() {
                 self.finish_new_download_handoff(pending.command_id, false, "disconnected", cx);
             }
-            for (command_id, pending) in self.pending_artifact_actions.drain() {
-                warn!(
-                    event = "download.artifact.shell_action_failed",
-                    correlation_id = %pending.correlation_id,
-                    %command_id,
-                    task_id = %pending.task_id.as_uuid(),
-                    ?pending.action,
-                    failure_kind = "platform_disconnected",
-                    elapsed_ms = pending.started_at.elapsed().as_millis(),
-                    "download artifact Shell action was invalidated by PlatformHost disconnect"
-                );
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-artifact-open-{}", pending.task_id.as_uuid()),
-                        if pending.action == ShellOpenAction::SelectInExplorer {
-                            "无法打开所在文件夹"
-                        } else {
-                            "无法执行文件操作"
-                        },
-                        if pending.action == ShellOpenAction::SelectInExplorer {
-                            "Windows 连接已断开，完成窗口仍保留，可重新点击打开所在文件夹。"
-                        } else {
-                            "Windows 连接已断开，任务窗口仍可重试。"
-                        },
-                        cx,
-                    );
-                });
-            }
+            self.disconnect_artifact_actions(cx);
             self.pending_task_icons.clear();
             self.pending_task_icon_resources.clear();
             self.pending_task_window_activations.clear();
@@ -3365,7 +3001,11 @@ impl DownloadApplication {
             self.pending_settings_path_actions.clear();
             if let Some(pending) = self.pending_extension_export.take() {
                 let elapsed = pending.started_at.elapsed().as_millis();
-                self.publish_extension_export_status("导出失败:Windows 连接已断开".into(), cx);
+                self.publish_extension_export_status(
+                    pending.command_id,
+                    "导出失败:Windows 连接已断开".into(),
+                    cx,
+                );
                 warn!(
                     event = "download.browser_extension.export_failed",
                     command_id = %pending.command_id,
@@ -3419,69 +3059,7 @@ impl DownloadApplication {
             });
             return;
         }
-        if let Some(pending) = self.pending_artifact_actions.remove(&correlation_id) {
-            if result.success {
-                if let Some(window) = pending.window {
-                    if self.close_task_window_if_identity(pending.task_id, window, cx) {
-                        info!(
-                            event = "download.artifact.task_window_closed",
-                            correlation_id = %pending.correlation_id,
-                            command_id = %correlation_id,
-                            task_id = %pending.task_id.as_uuid(),
-                            window_handle = window.native_window_handle,
-                            window_generation = %window.generation,
-                            "download artifact action completed and task window closed"
-                        );
-                    } else {
-                        info!(
-                            event = "download.artifact.task_window_close_suppressed",
-                            correlation_id = %pending.correlation_id,
-                            command_id = %correlation_id,
-                            task_id = %pending.task_id.as_uuid(),
-                            window_handle = window.native_window_handle,
-                            window_generation = %window.generation,
-                            reason = "window_generation_changed",
-                            "download artifact action completed but its task window was no longer current"
-                        );
-                    }
-                }
-                info!(
-                    event = "download.artifact.shell_action_completed",
-                    correlation_id = %pending.correlation_id,
-                    command_id = %correlation_id,
-                    task_id = %pending.task_id.as_uuid(),
-                    ?pending.action,
-                    elapsed_ms = pending.started_at.elapsed().as_millis(),
-                    "download artifact Shell action completed"
-                );
-            } else {
-                warn!(
-                    event = "download.artifact.shell_action_failed",
-                    correlation_id = %pending.correlation_id,
-                    command_id = %correlation_id,
-                    task_id = %pending.task_id.as_uuid(),
-                    ?pending.action,
-                    native_error_code = ?result.native_error_code,
-                    elapsed_ms = pending.started_at.elapsed().as_millis(),
-                    "download artifact Shell action failed"
-                );
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-artifact-open-{}", pending.task_id.as_uuid()),
-                        if pending.action == ShellOpenAction::SelectInExplorer {
-                            "无法打开所在文件夹"
-                        } else {
-                            "无法执行文件操作"
-                        },
-                        if pending.action == ShellOpenAction::SelectInExplorer {
-                            "资源管理器未能确认目标文件夹已切到前台；完成窗口仍保留，可重试。"
-                        } else {
-                            "Windows 未能完成文件操作，请重试。"
-                        },
-                        cx,
-                    );
-                });
-            }
+        if self.handle_artifact_action_result(correlation_id, &result, cx) {
             return;
         }
         if let Some(pending) = self.pending_task_icons.remove(&correlation_id) {
@@ -3618,7 +3196,11 @@ impl DownloadApplication {
                         elapsed_ms = elapsed,
                         "browser extension export cancelled in the save dialog"
                     );
-                    self.publish_extension_export_status("已取消导出浏览器扩展".into(), cx);
+                    self.publish_extension_export_status(
+                        pending.command_id,
+                        "已取消导出浏览器扩展".into(),
+                        cx,
+                    );
                     return;
                 }
                 let file_name = result
@@ -3632,7 +3214,7 @@ impl DownloadApplication {
                     })
                     .unwrap_or_default();
                 let status = format!("已导出:{file_name}");
-                self.publish_extension_export_status(status, cx);
+                self.publish_extension_export_status(pending.command_id, status, cx);
                 info!(
                     event = "download.browser_extension.exported",
                     format = pending.format,
@@ -3645,7 +3227,7 @@ impl DownloadApplication {
                     .clone()
                     .unwrap_or_else(|| "Windows 未返回错误详情".into());
                 let status = format!("导出失败:{reason}");
-                self.publish_extension_export_status(status, cx);
+                self.publish_extension_export_status(pending.command_id, status, cx);
                 warn!(
                     event = "download.browser_extension.export_failed",
                     format = pending.format,
@@ -3748,7 +3330,7 @@ impl DownloadApplication {
                 .unwrap_or_else(|| "Windows 未返回错误详情".into());
             self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
-                    "download-directory-picker",
+                    format!("download-directory-picker-{correlation_id}"),
                     "无法选择下载目录",
                     reason,
                     cx,
@@ -3780,7 +3362,7 @@ impl DownloadApplication {
             let Some(this) = this.upgrade() else {
                 return;
             };
-            let _ = this.update(cx, |application, cx| {
+            this.update(cx, |application, cx| {
                 if application
                     .failed_task_icon_resources
                     .get(&resource_key)

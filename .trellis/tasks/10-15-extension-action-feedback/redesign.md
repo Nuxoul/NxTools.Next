@@ -1,0 +1,20 @@
+# Approved visual and interaction correction
+
+## User authorization
+2026-10-15 user explicitly requests implementation, not another planning/documentation-only response: redesign Extensions like Other Tools catalog cells, visibly outlined header commands, and more helpful state-driven interaction. Continue the original task; preserve all tested extension runtime/trust/settings/result behavior. No new Trellis task/phase or repeated user confirmation.
+
+## Behavior delta and boundaries
+Replace long prose rows with responsive catalog cells using Kit ListItem/Icon/Label/Tag and real outlined Buttons; layout only arranges them. At minimum744px manager content use two natural-height ~340pxcells (not an invented Card/Grid component); name/version, short purpose, trigger badge, concise readiness, primary next step and details. Keep full details in existing Settings. Primary next step is current trust -> enabled -> usage: Check/Trust, Enable, How to Use. Running/recent run state takes precedence only for pending runs; no fake enabled=running claim. Click is explicit, preserves whole-user warning and independent enablement. Detail usage dialog provides real per-handler instructions and direct settings/environment recovery links, no invented run without input.
+
+Use Kit Toolbar public content layout with actual outlined Medium32 Buttons; do not pass standalone app-header actions through Toolbar.child ghost+compact. Import primary directly opens existing ZIP chooser and reveals legacy path form as Advanced; original chooser/generation/preview confirmation remains. Header runtime/chain/activity and Back commands keep visible boundaries. Existing page indices0..5 and Input/draft state remain. No new native show path or automatic program probe/render IO.
+
+Invocation feedback uses concise outcome summary first, named plugin/action once, clear source-provided explanation and host-confirmed saved evidence separated. Cancel/View Result/Close remain reachable outside long scroll, using official Dialog slots/real Buttons. No blind Retry, no auto-copy, no new background engine/records. Recent activity shows useful state/elapsed/result count and explicit per-run actions, no IDs as primary copy.
+
+## Design tokens and exact component selection
+Use existing Kit Default Light/Dark semantic tokens and original CJK/mono; no new hex palette. Body text uses official default/readable text_sm. Grid gap12/16, semantic cells from official ListItem with theme-owned border/surface, natural wrapping with bounded compact display snippets and complete purpose on explicit detail/help. Main1060x650/min920x480/rail176 unchanged. Official0.7.1 source inspected: toolbar ToolbarItem::sized/Toolbar::content; Button::prepare_for_toolbar=ghost().compact(), outline(), Sizable; ListItem child/style/click; Tag variants; Settings render slots; existing Dialog/Action/Close. Retain native/paging/controller owners.
+
+## Invariants and diagnostics
+No import/trust/enable conflation. Local state/IDs installed before deferred cross-owner effects, stale/closed current-origin checks unchanged, pending cancels retain runtime cleanup ownership, no input payload telemetry. UI navigation has no native operation; reuse existing low-noise management/invocation diagnostics. No animation/pointer logs or new permanent timers. No package/install/service/user clipboard/plugin execution.
+
+## Acceptance
+Add and RUN an actual render red before replacing catalog: two packages share one row with separated cells and preserve Medium action hits; source state-specific next-step clicks open actual trust/usage without persistence. Header final paint/official Button comparison proves nontransparent border (not only type/height); pointer and keyboard remain one action. Test default/minimum Light/Dark and multi-handler/long purpose/sparse/missing runtime/pending/success/failure feedback. Retain full Desktop regressions/strict/workspace/fmt/lifecycle/catalog/spec gates. Inspect current GPUI screenshots directly; AI visual inspection is not USER acceptance. Do not recycle old screenshots as new evidence.

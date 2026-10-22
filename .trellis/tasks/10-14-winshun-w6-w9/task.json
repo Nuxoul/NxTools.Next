@@ -1,0 +1,29 @@
+{
+  "id": "winshun-w6-w9",
+  "name": "winshun-w6-w9",
+  "title": "W6-W9 cross-feature extensions",
+  "description": "Declarative packages and trusted scripts for Downloads, Quick Launch, Clipboard and tools, including URL resolution chains, stable results and disclosed settings.",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "W6-W9 implementation",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-14",
+  "completedAt": "2026-10-15",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-14-winshun-w6-command-packages",
+    "10-14-winshun-w7-w9-trusted-plugins"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Approved W6-W9 source implementation and isolated joint acceptance completed; explicit trust/enable gates retained. No package/install/commit; installed/Release acceptance remains unperformed. See outcomes.md.",
+  "meta": {}
+}

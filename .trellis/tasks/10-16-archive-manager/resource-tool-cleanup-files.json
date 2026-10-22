@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-19T21:23:24.631516+08:00",
+  "removed": [
+    {
+      "path": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-zip-method-yeu3vzia.tjc",
+      "scope": "exact_byte_verified_interrupted_fixture_only",
+      "files": [
+        {
+          "relative": "52fb93a6b505417cbf3c750c377b1b91\\empty.bin",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "relative": "52fb93a6b505417cbf3c750c377b1b91\\资料\\payload.bin",
+          "bytes": 1050,
+          "sha256": "e886ea86544c0dba2061c9369fea8cf668b61423f6ce0c2c15e012d2bb7c53af"
+        },
+        {
+          "relative": "fad07d962493497980bf88ae7630c836\\资料\\payload.bin",
+          "bytes": 10,
+          "sha256": "7d3eb7b4421724496aeefa2111397dbe044b80e63c4f63f73245d3763c301a8c"
+        },
+        {
+          "relative": "source.zip",
+          "bytes": 643,
+          "sha256": "bdfc5d2824d97db352efa0aa3e86d73ec625ba70b14ba91dc2501ad62adea213"
+        }
+      ]
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\small.zip",
+      "sha256": "d11981a5ce97c821acfc87877ed9efad9ed035401e41b3787004b6f625b21268"
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\credit.zip",
+      "sha256": "0da73a3074c5ea138c301e7ee1dce1d1e3d730a2e6937f41b89c74a600248afd"
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\tests\\performance\\archive-resources\\__pycache__\\run.cpython-313.pyc",
+      "scope": "task_python_bytecode"
+    }
+  ],
+  "retained_evidence": [
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\entries.jsonl",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\fixture-summary.json",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\owned-resource-fixtures",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\tool-stop-small-correctness-samples.jsonl",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\tool-stop-small-correctness.json",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-472e22b0-0c6f-497b-9ccb-204bde1da998\\probe-owner",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-472e22b0-0c6f-497b-9ccb-204bde1da998\\status.json",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-472e22b0-0c6f-497b-9ccb-204bde1da998\\stop.json",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-9a0c3e2e-c27e-4d4d-90e8-9250009795fb\\probe-owner",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-9a0c3e2e-c27e-4d4d-90e8-9250009795fb\\status.json",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-b0cd5493-215d-4e97-9adf-c2c7d1eca427\\status.json",
+    "C:\\Users\\Administrator\\.pi-desktop\\scratch\\bf4f40e2-11aa-482c-90a4-a0d1b194908f\\archive-resources-1b85a6a9-75c0-48b3-83e3-ceb6b3bcba5a\\control-b0cd5493-215d-4e97-9adf-c2c7d1eca427\\stop.json"
+  ],
+  "fixed_helper_absent": true,
+  "smoke_outputs_absent": true
+}

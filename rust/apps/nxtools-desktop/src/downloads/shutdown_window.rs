@@ -1,4 +1,6 @@
 use super::*;
+use gpui_kit::component::alert::Alert;
+use gpui_kit::component::dialog::{DialogContent, DialogFooter};
 
 pub(crate) struct DownloadShutdownCountdownView {
     pub(crate) theme: Theme,
@@ -25,7 +27,9 @@ impl DownloadShutdownCountdownView {
 }
 
 impl Render for DownloadShutdownCountdownView {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
         let theme = self.theme;
         let correlation_id = self.correlation_id;
         let cancel_application = self.application.clone();
@@ -46,16 +50,13 @@ impl Render for DownloadShutdownCountdownView {
             },
         );
         let status_badge_size = 76.0_f32;
-        let body = div()
-            .size_full()
-            .px(px(SPACING_16))
-            .py(px(SPACING_12))
-            .flex()
-            .items_center()
-            .gap(px(SPACING_16))
+        let body = DialogContent::new().size_full().min_w_0()
+            .px(px(SPACING_16)).py(px(SPACING_8))
+            .child(div().flex().items_center().gap(px(SPACING_16))
             .child(
                 div()
                     .size(px(status_badge_size))
+                    .flex_none()
                     .rounded(px(status_badge_size / 2.0))
                     .border_1()
                     .border_color(theme.danger)
@@ -85,6 +86,8 @@ impl Render for DownloadShutdownCountdownView {
                     .gap(px(SPACING_8))
                     .child(
                         div()
+                            .debug_selector(|| "download-shutdown-heading".into())
+                            .w_full()
                             .text_size(px(TEXT_TITLE))
                             .line_height(px(LINE_HEIGHT_TITLE))
                             .font_weight(FontWeight::SEMIBOLD)
@@ -95,20 +98,15 @@ impl Render for DownloadShutdownCountdownView {
                                 "所有下载已完成，即将关机"
                             }),
                     )
-                    .child(
-                        div()
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_secondary)
-                            .child("这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。"),
-                    ),
-            )
+                    .child(div().debug_selector(|| "download-shutdown-consequence".into())
+                        .w_full().child(Alert::warning("download-shutdown-risk",
+                            "这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。")
+                            .icon(Icon::new(MaterialIcon::Info)).xsmall())),
+            ))
             .into_any_element();
         let footer = dialog_footer(
-            div()
-                .flex()
+            DialogFooter::new()
                 .items_center()
-                .gap(px(SPACING_8))
                 .child(
                     action_button("download-shutdown-now-button", "立即关机")
                         .debug_selector(|| "download-shutdown-danger-now-action".into())

@@ -7,6 +7,29 @@ historical component/reference measurements do not silently override the later a
 For spec-only changes run `python tests/architecture/spec-contracts.py`; this checks documents,
 not product behavior or native/release acceptance.
 
+For EVERY Desktop UI task, first read the short mandatory
+[component-first selection rules](.trellis/spec/shared/ui-component-selection.md), then the
+[current official component table](docs/reference-code/gpui-kit-component-table.md) and the
+[locked API index](docs/reference-code/gpui-kit-component-index.md). Prefer existing official
+styled compound components and their public slots before custom ordinary controls. Record
+the requested layout shape, exact released API, visible variant/size and parent adaptations.
+`Toolbar.child(Button)` in locked0.8.0 still forces `ghost().compact()`; sizing alone does not preserve
+outlined actions. Import/environment/chain/activity header commands need recognizable official
+button boundaries. Extensions catalog presentation must follow the user-requested Other Tools
+cell/tile form, not the rejected long prose list; do not invent a Card/Grid component or confuse
+catalog cells with DataTable cells. Custom layout may arrange official components, not repaint
+their substitutes. Missing review is not unsupported capability. Imports, passing tests and
+AI-inspected screenshots do not certify visual/user acceptance. Run the local documentation
+gate `python tests/architecture/gpui-component-catalog.py` when updating the catalog/rules.
+The user-approved current graph is Kit/Base/Component/Assets0.8.0 with default gpui-pre0.3.9.
+Read [the current release/API delta](docs/reference-code/gpui-kit-080.md) before the historical
+0.7.1 catalog. Only notification-duration and Windows no-activate framework patches are carried;
+GPUI Fast remains disabled. The separately approved2026-10-22 plan adopts the pinned Markdown
+editor with only passive element.rs and three cull.rs lowbit substitutions; see
+[editor provenance](docs/reference-code/markdown-editor.md). Run both
+`python tests/architecture/gpui-release-contracts.py` and
+`python tests/architecture/markdown-editor-contracts.py`.
+
 ## Reference-driven migration
 
 Reference review is a blocking prerequisite, not an optional follow-up. For any feature that

@@ -8,13 +8,23 @@ license.workspace = true
 anyhow.workspace = true
 async-channel.workspace = true
 chrono.workspace = true
-gpui.workspace = true
-gpui-component.workspace = true
+gpui-kit = { workspace = true, features = [
+    "tree-sitter-bash", "tree-sitter-c", "tree-sitter-cpp", "tree-sitter-csharp",
+    "tree-sitter-css", "tree-sitter-go", "tree-sitter-html", "tree-sitter-java",
+    "tree-sitter-javascript", "tree-sitter-markdown", "tree-sitter-python",
+    "tree-sitter-rust", "tree-sitter-sql", "tree-sitter-tsx", "tree-sitter-typescript",
+] }
+gpui-kit-markdown-editor.workspace = true
+image.workspace = true
 imagesize.workspace = true
+markdown.workspace = true
+reqwest.workspace = true
+nxtools-archive = { path = "../../crates/nxtools-archive" }
 nxtools-clipboard = { path = "../../crates/nxtools-clipboard" }
 nxtools-core = { path = "../../crates/nxtools-core" }
 nxtools-download = { path = "../../crates/nxtools-download" }
 nxtools-download-ipc = { path = "../../crates/nxtools-download-ipc" }
+nxtools-extensions = { path = "../../crates/nxtools-extensions" }
 nxtools-finder = { path = "../../crates/nxtools-finder" }
 nxtools-ipc = { path = "../../crates/nxtools-ipc" }
 nxtools-network = { path = "../../crates/nxtools-network" }
@@ -23,6 +33,8 @@ rusqlite.workspace = true
 raw-window-handle.workspace = true
 windows-sys.workspace = true
 serde_json.workspace = true
+serde.workspace = true
+url.workspace = true
 sha2.workspace = true
 tokio.workspace = true
 tracing.workspace = true
@@ -30,8 +42,10 @@ unicode-width.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
-gpui = { workspace = true, features = ["test-support"] }
+gpui-kit = { workspace = true, features = ["test-support"] }
 tempfile = "3.20.0"
+nxtools-extensions = { path = "../../crates/nxtools-extensions", features = ["test-support"] }
+zip.workspace = true
 
 [build-dependencies]
 embed-resource = "3.0.11"

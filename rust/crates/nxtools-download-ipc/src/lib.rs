@@ -307,6 +307,8 @@ fn is_mutating_command(command: &DownloadCommand) -> bool {
     matches!(
         command,
         DownloadCommand::Submit { .. }
+            | DownloadCommand::SubmitResolved { .. }
+            | DownloadCommand::BrowserSubmitResolved { .. }
             | DownloadCommand::BrowserSubmit { .. }
             | DownloadCommand::BrowserBatchSubmit { .. }
             | DownloadCommand::BrowserOpenDialog { .. }
@@ -519,6 +521,7 @@ mod tests {
         );
         assert_eq!(final_url.len(), MAX_HLS_VARIANT_URL_BYTES);
         let probe = DownloadProbe {
+            resolution: None,
             final_url,
             file_name: Some("master.m3u8".into()),
             total_bytes: Some(2 * 1024 * 1024),
@@ -808,6 +811,20 @@ mod tests {
             mode: nxtools_download::DownloadSubmitMode::QueueOnly,
             idempotency_key: None,
         }));
+        assert!(is_mutating_command(&DownloadCommand::SubmitResolved {
+            request: sample_ipc_request(),
+            mode: nxtools_download::DownloadSubmitMode::QueueOnly,
+            idempotency_key: None,
+            resolution: nxtools_download::DownloadResolutionOptions::default(),
+        }));
+        assert!(is_mutating_command(
+            &DownloadCommand::BrowserSubmitResolved {
+                handoff_id: uuid::Uuid::new_v4(),
+                request: sample_ipc_request(),
+                mode: nxtools_download::DownloadSubmitMode::QueueOnly,
+                resolution: nxtools_download::DownloadResolutionOptions::default(),
+            }
+        ));
         assert!(!is_mutating_command(&DownloadCommand::Snapshot {
             query: DownloadQuery::default(),
         }));

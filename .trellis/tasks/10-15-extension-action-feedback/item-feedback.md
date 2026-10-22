@@ -1,0 +1,18 @@
+# User-authorized item-local Clipboard processing feedback
+
+## Superseding request
+User explicitly rejects the previous compact feedback ABOVE Clipboard history. Processing progress and outcome must appear INSIDE the exact history item selected through the context menu, with restrained motion. This supersedes ux-refinement.md's same-panel-top feedback placement only. Native overflow menu, direct submenus, runtime/trust/history/effect owners and sequence9 installer remain unchanged.
+
+## Smallest change boundary
+- Carry immutable source history item_id in ClipboardOrigin (not current selection/index). Original manual pending/runtime/host-confirmed results remain.
+- ClipboardPanel retains bounded item-ID keyed feedback projections, not one panel-global banner. Original virtual-list row composes the existing official ListItem with the item-local feedback as its lower content slot. Preserve original content/metadata; no replacement text or automatic selection/copy.
+- Notify original ListState::remeasure_items for expansion/collapse so existing scroll anchor/selection survives; no reset to row0 or new list controller. Filtering/reordering/offscreen/recycling cannot attach feedback to a different item. Projection no longer painted offscreen means no offscreen animation; no extra timers/poll loops/log frames.
+- Busy indicator: released Kit0.7.1 Spinner::new().small() gated by existing UiMotionPreference; unknown/reduced policy shows static official Icon. Repeating spinner ONLY pending and visible. Brief completion/entry opacity transition may use existing AnimationExt with120ms; not spatial/height animation, fabricated percentage or palette fork. Stop all repeat frames on terminal and honor live reduced-motion changes.
+- Official Medium/default32 result/cancel/details; semantic icon-only close24. One bounded ~76px feedback slot, normal ListItem remains original; controls stop pointer/click propagation so no paste or row activation. Dismiss only this item/run; cancel remains per-run; exact-origin result navigation unchanged. Same source's newest invocation may replace its projection; unrelated sources remain independent.
+- Files: extensions/manual_actions.rs source ID/callback tests; ui/extension_feedback.rs entity/projection/actions; ui/mod.rs row projection/lifecycle/remeasure; ui/history.rs public composition + fixture callsites; Debug visual_preview/extensions.rs. No C#/IPC/native/engine/store/plugin-example changes, packaging/install/services/commits.
+
+## Reference and diagnostics
+Read docs/reference-code/clipboard.md then legacy Controls/ClipboardHistoryListView.cs472–491 select-before-right-action and Views/ClipboardHistoryPopupWindow.axaml.cs127–153/248–259/967–1002 constructor/Open/search focus/menu/Hide boundary. New row processing display has no old equivalent and is user-requested. Keep menu-close->preview-hide->native-hide and deferred cross-owner application leases. Existing manual accepted/cancel/terminal and exact-result diagnostics reused; no new cross-process operation or animation/payload logs.
+
+## Acceptance
+Actual current-frame test red before implementation: processing a nonselected/second source shows feedback INSIDE its stable-ID row not top/other row. Test source ID through selection/order/filter/recycling, multiple source records, row heights/scroll preserving, actual cancel/dismiss/result clicks without native paste, terminal/nochange/error/cancelling and latehost effects, live reduced/unknown motion and no repeated idle frames. Reuse own temp SQLite/worker/fakebridge; no user data. Full Desktop/scoped strict/workspace/fmt/lifecycle/spec/catalog and Debug actual captures; direct visual/user/installed acceptance separate. Do not certify aesthetics from test counts.

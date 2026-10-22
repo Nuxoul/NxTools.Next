@@ -1,4 +1,4 @@
-use gpui::{AnyElement, IntoElement, div, prelude::*, px};
+use gpui_kit::{AnyElement, IntoElement, div, prelude::*, px};
 
 use crate::theme::Theme;
 use crate::ui::metrics::{SETTINGS_FOOTER_HEIGHT, TITLEBAR_HEIGHT};

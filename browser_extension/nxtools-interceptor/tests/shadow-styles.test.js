@@ -62,21 +62,14 @@ test("both shadow roots interpolate the shared module (EX-14)", () => {
   );
 });
 
-test("module keeps the slice contracts reachable (EX-11/12/13)", () => {
-  // EX-11 trigger: 28px graphite control on the desktop 4px control radius.
-  assert.match(styles.mediaEntry, /border-radius:\s*4px/);
-  // EX-12 panel: standard 6px popover, two-level rows with the muted mono meta.
-  assert.match(styles.mediaEntry, /\.panel\s*{[^}]*border-radius:\s*6px/);
-  assert.match(styles.mediaEntry, /\.choice-meta\s*{[^}]*var\(--nt-text-muted,\s*#858991\)/);
-  // EX-13 drop target: quiet surface, dashed shared border, accent entry.
-  assert.match(styles.dropTarget, /border:\s*1px dashed var\(--nt-border,\s*#44474f\)/);
-  assert.match(
-    styles.dropTarget,
-    /:host\(\.inside\)\s+\.target\s*{[^}]*var\(--nt-accent-soft,\s*#273744\)/,
-  );
-  // Neither section reintroduces the retired teal grammar.
-  const both = `${styles.mediaEntry}\n${styles.dropTarget}`;
-  assert.doesNotMatch(both, /backdrop-filter|rgba\(56,\s*214,\s*199|border-radius:\s*9px|border-radius:\s*999px/);
+test("redesigned roots preserve compact entry, bounded chooser and minimum drop feedback", () => {
+  assert.match(styles.mediaEntry, /width:\s*28px; height:\s*28px/);
+  assert.match(styles.mediaEntry, /\.panel\s*{[^}]*border-radius:\s*8px/);
+  assert.match(styles.mediaEntry, /\.choice-meta\s*{[^}]*var\(--nt-text-secondary\)/);
+  assert.match(styles.dropTarget, /border:\s*1px dashed var\(--nt-border\)/);
+  assert.match(styles.dropTarget, /:host\(\.inside\)\s+\.target\s*{[^}]*var\(--nt-accent-soft\)/);
+  assert.match(styles.dropTarget, /@container \(max-height:\s*65px\)/);
+  assert.doesNotMatch(`${styles.mediaEntry}\n${styles.dropTarget}`, /backdrop-filter|infinite|rgba\(56,\s*214,\s*199/);
 });
 
 console.log("shadow styles tests passed");

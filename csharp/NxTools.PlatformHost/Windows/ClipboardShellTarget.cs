@@ -7,6 +7,7 @@ namespace NxTools.PlatformHost.Windows;
 internal enum ShellTargetKind
 {
     Open,
+    OpenWith,
     SelectInExplorer,
     RunElevated,
     RegistryKey,
@@ -47,6 +48,7 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
         var kind = action switch
         {
             "open" => ShellTargetKind.Open,
+            "open_with" => ShellTargetKind.OpenWith,
             "select_in_explorer" => ShellTargetKind.SelectInExplorer,
             "run_elevated" => ShellTargetKind.RunElevated,
             "registry_key" => ShellTargetKind.RegistryKey,
@@ -73,6 +75,12 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
         if (kind == ShellTargetKind.Open && !IsSafeOpenTarget(value))
         {
             error = "The open target must be an HTTP(S) URL or an existing filesystem path.";
+            return false;
+        }
+        if (kind == ShellTargetKind.OpenWith &&
+            (!Path.IsPathFullyQualified(value) || !File.Exists(value)))
+        {
+            error = "Open With requires an absolute path to an existing file.";
             return false;
         }
         if (kind == ShellTargetKind.SelectInExplorer &&
@@ -114,6 +122,11 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
 
     public WindowsCommandResult Launch(Action<string>? stageChanged = null)
     {
+        if (Kind == ShellTargetKind.OpenWith)
+        {
+            return OpenWithShellDialog.Show(Target, stageChanged);
+        }
+
         if (Kind == ShellTargetKind.SelectInExplorer)
         {
             return ExplorerShellActivation.LaunchAndActivate(Target, stageChanged);

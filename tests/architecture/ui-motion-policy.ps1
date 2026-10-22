@@ -16,7 +16,10 @@ Assert-Has 'csharp/NxTools.PlatformHost/Windows/PendingMotionPublication.cs' 'if
 Assert-Has 'csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.EventWindow.cs' 'case WmTimer when message.WParam.ToInt64\(\) == SystemMotionRetryTimerId:[\s\S]*?PublishPendingSystemMotion' 'Motion retry must use the original event STA'
 Assert-Has 'csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.EventWindow.cs' '_pendingMotion.Stop\(\)' 'Motion slot must retire on Stop'
 Assert-Has 'rust/apps/nxtools-desktop/src/ui/motion.rs' 'observe_global::<UiMotionPreference>[\s\S]*?cx.defer\(move \|cx\|[\s\S]*?view.update' 'Preference observer must defer weak local view notification'
-Assert-Has 'rust/apps/nxtools-desktop/src/main_window/notifications.rs' 'notification.exiting && crate::ui::motion::reduced_motion\(cx\)' 'A reduced mid-exit notification must not reappear'
+Assert-Has 'rust/apps/nxtools-desktop/src/notifications/presentation.rs' 'NotificationList::new\(window, cx\)' 'Official notification list must own card animation and close completion'
+Assert-Has 'rust/apps/nxtools-desktop/src/platform_events.rs' 'cx.set_reduce_motion\(\s*preference.reduced_motion \|\| preference.native_error_code != 0\s*,?\s*\)' 'Native policy must reach official GPUI animations'
+Assert-Has 'rust/apps/nxtools-desktop/src/platform_events.rs' 'cx.set_global\(UiMotionPreference::default\(\)\);\s*cx.set_reduce_motion\(true\)' 'Disconnected adapter must also reduce official GPUI animations'
+Assert-Has 'rust/apps/nxtools-desktop/src/main_window/tests.rs' 'notification_exiting_generation_stays_hidden_when_motion_is_reduced_mid_exit' 'Keep real official mid-exit regression'
 foreach ($consumer in @(
     'rust/apps/nxtools-desktop/src/downloads/new_download_view.rs',
     'rust/apps/nxtools-desktop/src/downloads/task_window.rs',
@@ -24,8 +27,7 @@ foreach ($consumer in @(
     'rust/apps/nxtools-desktop/src/quick_launch/panel.rs',
     'rust/apps/nxtools-desktop/src/quick_launch/preview.rs',
     'rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs',
-    'rust/apps/nxtools-desktop/src/ui/preview.rs',
-    'rust/apps/nxtools-desktop/src/main_window/notifications.rs'
+    'rust/apps/nxtools-desktop/src/ui/preview.rs'
 )) {
     Assert-Has $consumer '(motion_allowed|reduced_motion|animated_surface)' 'Animation consumer must read the shared system policy'
 }

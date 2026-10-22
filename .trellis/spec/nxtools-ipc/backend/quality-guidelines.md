@@ -82,3 +82,12 @@ bridge.send_command_with_id(command, command_id)?;
 Wrong: received bytes -> deadline = now + timeout.
 Correct: initial deadline unchanged until first newline -> disarm.
 ```
+
+## Cancelled partial-frame read regression
+
+`repo:rust/crates/nxtools-ipc/src/lib.rs#read_bounded_frame_into` stores consumed prefix in the
+original connection, not an interruptible future-local Vec. Deterministic duplex prefix8192bytes
+then timeout/select interruption then suffix must decode exact original+next frame; old behavior
+returned tail alone. Preserve existing preallocation1MiB, oversized/EOF/UTF8/nextframe tests,
+ordinary-notice saturation real EOF, original cancel fairness and overflow epoch. Never fix a
+partial read by raising product deadlines or creating a second reader runtime.

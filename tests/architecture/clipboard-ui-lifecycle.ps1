@@ -12,91 +12,49 @@ $clipboardPagePath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\
 $clipboardPageSource = Get-Content -Raw -LiteralPath $clipboardPagePath
 $uiTestsSource = Get-Content -Raw -LiteralPath $uiTestsPath
 
-$splitSurfaceStart = $settingsSource.IndexOf('pub(crate) fn settings_split_surface(')
-$splitSurfaceEnd = $settingsSource.IndexOf('pub(crate) fn settings_shell(', $splitSurfaceStart)
-if ($splitSurfaceStart -lt 0 -or $splitSurfaceEnd -le $splitSurfaceStart) {
-    throw 'Could not isolate the shared continuous split-settings surface.'
+# Queue06 official Settings owns search, selection and scroll; business owners remain original.
+foreach ($contract in @('Settings::new("clipboard-official-settings")', 'SettingPage::new(',
+    'SettingGroup::new()', 'SettingItem::render(', 'aligned_setting_row(', '.justify_end()',
+    '.resettable(false)', 'Form::vertical()', 'Field::new()', 'fn render_clipboard_control(',
+    'clipboard-settings-workspace', 'clipboard-storage-path', '"呼出与快捷操作"', '"保留与隐私"', '"归档与存储"',
+    'application.set_clipboard_modifier_action(modifier, action)', 'application.set_clipboard_retention(',
+    'update_clipboard_capture_limit(', 'application.request_clipboard_export(cx)',
+    'application.request_clipboard_import(cx)', 'application.request_clipboard_database_backup(cx)',
+    'application.request_clipboard_database_compaction(cx)', 'application.request_clipboard_storage_migration(cx)',
+    '.disabled(management_busy)', 'cx.defer(', 'this.hotkey_focus.focus(window, cx)',
+    '"clipboard-hotkey-row"', '"clipboard-hotkey-help"', '"clipboard-hotkey-registration-status"')) {
+    if (-not $clipboardPageSource.Contains($contract)) { throw "Clipboard Settings component/owner missing: $contract" }
 }
-$splitSurface = $settingsSource.Substring(
-    $splitSurfaceStart,
-    $splitSurfaceEnd - $splitSurfaceStart
-)
-foreach ($requiredSplitContract in @(
-    'SettingsSplitSurfaceIds',
-    '.border_1()',
-    '.border_color(theme.border_subtle)',
-    '.bg(theme.surface)',
-    '.flex_1()',
-    '.min_w_0()',
-    '.w(px(1.0))',
-    '.w(px(secondary_width))',
-    '.px(px(SPACING_12))'
-)) {
-    if (-not $splitSurface.Contains($requiredSplitContract)) {
-        throw 'CL-01 requires one shared flexible/fixed split surface with a quiet center seam.'
-    }
+if (-not $settingsSource.Contains('label.child(super::tooltip::description_help(help_selector, help))')) {
+    throw 'Shared aligned setting row must retain actual title-adjacent help Tooltip.'
 }
-if ($splitSurface.Contains('.rounded(') -or
-    $splitSurface.Contains('theme.accent') -or
-    $splitSurface.Contains('shadow')) {
-    throw 'CL-01 split settings must stay square, continuous and neutral.'
+if ($clipboardPageSource.Contains('workbench_settings_section(') -or
+    $clipboardPageSource.Contains('workbench_status_row(') -or
+    $clipboardPageSource.Contains('.appearance(false)')) {
+    throw 'Clipboard Settings must not retain whole-page hand-painted hierarchy or ordinary-control suppression.'
 }
-
-$clipboardRenderStart = $clipboardPageSource.IndexOf('fn render_clipboard(')
-$clipboardRenderEnd = $clipboardPageSource.IndexOf('fn click_action_label(', $clipboardRenderStart)
-if ($clipboardRenderStart -lt 0 -or $clipboardRenderEnd -le $clipboardRenderStart) {
-    throw 'Could not isolate the production clipboard workspace.'
-}
-$clipboardRender = $clipboardPageSource.Substring(
-    $clipboardRenderStart,
-    $clipboardRenderEnd - $clipboardRenderStart
-)
-foreach ($requiredClipboardContract in @(
-    'settings_split_surface(',
-    'CLIPBOARD_SETTINGS_SECONDARY_WIDTH',
-    'clipboard-settings-workspace',
-    'clipboard-settings-split-surface',
-    'clipboard-settings-primary-column',
-    'clipboard-settings-column-divider',
-    'clipboard-settings-secondary-column',
-    '"呼出与快捷操作"',
-    '"保留与隐私"'
-)) {
-    if (-not $clipboardRender.Contains($requiredClipboardContract)) {
-        throw 'CL-01 clipboard settings must keep their existing primary/secondary ownership inside the shared surface.'
-    }
-}
-if ($clipboardRender.Contains('.rounded(px(5.0))') -or
-    $clipboardRender.Contains('.child(div().w(px(1.0)).bg(theme.border_subtle))')) {
-    throw 'CL-01 must not retain the private rounded split-surface implementation.'
-}
-
-foreach ($requiredProductionEvidence in @(
-    'fn clipboard_settings_keep_one_continuous_primary_secondary_surface(',
-    'one continuous clipboard settings surface',
-    'single clipboard settings column divider',
-    'surface.left() - workspace.left()',
-    'workspace.right() - surface.right()',
-    'primary.right(), divider.left()',
-    'divider.right(), secondary.left()',
-    'secondary.size.width',
-    'primary.size.width > secondary.size.width'
-)) {
-    if (-not $mainWindowTestsSource.Contains($requiredProductionEvidence)) {
-        throw 'CL-01 requires a real production-window regression for the protected split geometry.'
-    }
+$clipboardKitTests = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\clipboard_page\kit_migration_tests.rs')
+foreach ($contract in @('queue06_production_mounts_official_settings_search',
+    'queue06_original_steps_preserve_section_disk_and_worker_root',
+    'queue06_storage_actions_busy_cancel_and_error_never_run_data_operations',
+    'queue06_minimum_scroll_reaches_storage_footer_and_keeps_notifications',
+    'queue06_long_storage_path_stays_bounded_and_footer_reachable',
+    'queue06_modifier_and_hotkey_cancel_keep_original_owner',
+    'queue06_search_filters_without_saving_and_optional_help_is_real_tooltip',
+    'window', 'simulate_resize', 'ClipboardCaptureWorkerHandle::spawn(', 'KeyUpEvent')) {
+    if (-not $clipboardKitTests.Contains($contract)) { throw "Clipboard production regression missing: $contract" }
 }
 
 $historyRowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\history.rs'
-$listPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\list.rs'
 $historyRowSource = Get-Content -Raw -LiteralPath $historyRowPath
-$listSource = Get-Content -Raw -LiteralPath $listPath
 
-if (-not $listSource.Contains('pub(crate) fn compact_result_row(')) {
-    throw 'CL-03 requires the shared compact_result_row shell in ui/components/list.rs.'
+foreach ($contract in @('ListItem::new(', '.selected(selected)', '.aria_selected(selected)',
+    'focusable_content(', 'Toolbar::new(', '.content(management_button(', 'Label::new(',
+    'action_from_click(event, modifier_actions)', 'handler(action.clone(), event, window, cx)')) {
+    if (-not $historyRowSource.Contains($contract)) { throw "Clipboard history component/owner missing: $contract" }
 }
-if (-not $historyRowSource.Contains('compact_result_row(')) {
-    throw 'CL-03 requires clipboard history rows to render through the shared compact_result_row shell.'
+if ($historyRowSource.Contains('use crate::ui::components::list::compact_result_row')) {
+    throw 'Clipboard history must use actual styled ListItem, not retired painted shell.'
 }
 if ($historyRowSource.Contains('fn history_row_border') -or
     $historyRowSource.Contains('fn history_row_background')) {
@@ -108,6 +66,36 @@ $popupModSource = Get-Content -Raw -LiteralPath $popupModPath
 if ($popupModSource.Contains('.text_xs()')) {
     throw 'CL-04 requires clipboard popup typography to use ui::typography tokens instead of gpui text_xs.'
 }
+foreach ($contract in @('InputGroup::new("clipboard-search-group")',
+    'InputGroupAddon::new("clipboard-search-actions")', 'InputGroupButton::new("search-scope-toggle")',
+    'Input::new(&self.search_input)', 'Form::vertical()', 'Form::horizontal()', 'Field::new()',
+    'self.render_markdown_editor(window, cx)', 'Input::new(&self.category_name_input)',
+    'checkbox::Checkbox::new(', 'panel.toggle_search_scope(cx)', 'panel.save_edit(window, cx)',
+    'panel.save_category_editor(window, cx)', 'panel.cancel_edit(window, cx)',
+    'panel.cancel_category_editor(window, cx)', 'panel.restore_last_deleted(cx)',
+    'CATEGORY_EDITOR_HEIGHT: f32 = 244.0', 'clipboard-category-editor-backdrop', '.occlude()',
+    'let preview_enabled = !is_editing_category', 'self.query_dispatch_generation')) {
+    if (-not $popupModSource.Contains($contract)) { throw "Clipboard search/editor component-owner missing: $contract" }
+}
+$markdownEdit = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\markdown_edit.rs')
+foreach ($contract in @('Textarea::new(&self.edit_input)', 'BlockEditor::new(&self.edit_rich)', 'clipboard-rich-editor-scroll', 'window.defer(cx,', 'markdown_edit_value')) {
+    if (-not $markdownEdit.Contains($contract)) { throw "Unified Clipboard editor/source ownership missing: $contract" }
+}
+foreach ($contract in @('edit_generation', 'edit_save_pending', 'panel.editing_item_id != Some(item_id)', 'panel.markdown_edit_value(cx) == text')) {
+    if (-not $popupModSource.Contains($contract)) { throw "Clipboard save identity/draft gate missing: $contract" }
+}
+if ($popupModSource.Contains('.appearance(false)') -or $popupModSource.Contains('.bordered(false)') -or
+    $popupModSource.Contains('.focus_bordered(false)')) {
+    throw 'Clipboard ordinary search/editor frames must belong to actual styled compounds/controls.'
+}
+$popupKitTests = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\kit_migration_tests.rs')
+foreach ($contract in @('queue07_search_edit_scope_clear_preserves_input_and_query_generation',
+    'queue07_text_form_edits_saves_temp_worker_and_restores_focus',
+    'queue07_category_modal_occludes_search_and_saves_name_sources',
+    'queue07_long_text_and_resize_keep_form_footer_and_cancel_identity',
+    'queue07_released_tabs_direct_keyboard_does_not_replace_category_action')) {
+    if (-not $popupKitTests.Contains($contract)) { throw "Clipboard production adoption regression missing: $contract" }
+}
 $categoryTabStart = $popupModSource.IndexOf('fn category_tab(')
 $categoryTabEnd = $popupModSource.IndexOf('fn dialog_button(', $categoryTabStart)
 if ($categoryTabStart -lt 0 -or $categoryTabEnd -le $categoryTabStart) {
@@ -115,8 +103,10 @@ if ($categoryTabStart -lt 0 -or $categoryTabEnd -le $categoryTabStart) {
 }
 $categoryTab = $popupModSource.Substring($categoryTabStart, $categoryTabEnd - $categoryTabStart)
 foreach ($requiredTabContract in @(
-    '.text_size(px(TEXT_LABEL))',
-    '.line_height(px(LINE_HEIGHT_LABEL))',
+    'Tab::new()',
+    '.underline()',
+    '.xsmall()',
+    '.track_focus(&focus)',
     'Tooltip::new(',
     'context_menu_shell(',
     '.on_drag(',
@@ -127,9 +117,12 @@ foreach ($requiredTabContract in @(
         throw "CL-04 category strip contract missing: $requiredTabContract"
     }
 }
+if (-not $popupKitTests.Contains('feedback_category_tabs_pointer_and_focused_release_have_one_owner')) {
+    throw 'Actual Tab pointer/focus/release production regression missing.'
+}
 
-Write-Host 'PASS clipboard history rows render through the shared compact result row shell'
-Write-Host 'PASS clipboard category strip uses token typography with preserved drag, wheel and menu lifecycle'
+Write-Host 'PASS clipboard history uses actual stateless ListItem/Toolbar/Label on original variable-height/action owners'
+Write-Host 'PASS clipboard actual Kit Tab keeps one focused click owner with preserved drag, wheel and menu lifecycle'
 
 $previewPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\preview.rs'
 $previewSource = Get-Content -Raw -LiteralPath $previewPath
@@ -151,3 +144,57 @@ if (-not $uiTestsSource.Contains('fn image_resource_cache_evicts_the_oldest_entr
 }
 
 Write-Host 'PASS clipboard preview shares the QL preview shell with a bounded 96-entry resource cache'
+
+# Clipboard's production trigger must never fall back to a clipped source-window menu or HMENU.
+$projectMenuSource = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\project_menu.rs')
+$nativeMenuSource = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\native_context_menu.rs')
+$styledMenuSource = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\styled_menu_surface.rs')
+foreach ($contract in @('PopupMenu::build(', 'PopupMenuItem::submenu(', 'PopupMenuItem::element(', '.checked(', '.disabled(', '.scrollable(true)', 'DismissEvent', 'Root::new(', 'WindowBackgroundAppearance::Transparent')) {
+    if (-not $styledMenuSource.Contains($contract)) { throw "Official outside-HWND menu missing: $contract" }
+}
+foreach ($contract in @('popup_window_handle:', '.take()', 'window.defer(', 'window.draw(cx).clear(cx)', 'cx.defer(show)', 'pending.command_id == command_id', 'fn handle_notification', 'source_process_id:', 'trigger.upgrade()', 'styled_menu_surface::open(')) {
+    if (-not $nativeMenuSource.Contains($contract)) { throw "Styled menu lifecycle missing: $contract" }
+}
+if ($nativeMenuSource.Contains('window.on_next_frame(')) {
+    throw 'Hidden menu preparation must not await an ordinary Windows frame before reveal.'
+}
+$nativeMenuTests = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\native_context_menu_tests.rs')
+foreach ($contract in @('hidden_menu_preparation_builds_scene_without_platform_frame_before_reveal', 'hidden_menu_mismatched_native_viewport_never_reveals', 'hidden_menu_retired_trigger_or_disconnect_cannot_reveal')) {
+    if (-not $nativeMenuTests.Contains($contract)) { throw "Hidden menu lifecycle regression missing: $contract" }
+}
+if ($projectMenuSource.Contains('menu.open(items, token, position, previous_focus, window, cx)')) {
+    throw 'Production trigger must not silently fall back to the clipped source-window menu.'
+}
+$nativeMenuAdapter = Get-Content -Raw -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\NativeContextMenuCoordinator.cs')
+foreach ($contract in @('PrepareStyledSurface(', 'MonitorFromPoint', 'GetMonitorInfoW', 'ClientToScreen', 'PopupWindowHandle')) {
+    if (-not $nativeMenuAdapter.Contains($contract)) { throw "Styled menu native placement missing: $contract" }
+}
+$menuTests = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\components\styled_menu_surface_tests.rs')
+foreach ($contract in @('official_menu_renders_outside_source_budget', 'disabled_ancestor', 'terminal_is_once_deferred', 'stale_trigger')) {
+    if (-not $menuTests.Contains($contract)) { throw "Production menu regression missing: $contract" }
+}
+Write-Host 'PASS Clipboard official PopupMenu has independent GPUI surface and native placement/session guards (source only)'
+
+$linkPanelSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\tools\link_panel.rs')
+foreach ($contract in @('ListItem::new(', 'StatusBar::new()', 'Label::new(', '.small()',
+    'window.remove_window();', 'cx.defer(move |cx|', 'application.dispatch_link_panel_route(',
+    'link_panel_height(this.links.len(), true)', 'fn arm_auto_hide(', 'fn swap_links(')) {
+    if (-not $linkPanelSource.Contains($contract)) { throw "Link component/original owner missing: $contract" }
+}
+$toolSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\tools_page.rs')
+foreach ($contract in @('ListItem::new("tool-link-detector-item")', 'focused_action(card.id,',
+    'Label::new(card.title)', '.bg(theme.surface)', '.text_xs()', 'let toggle_enabled = cx.listener(',
+    'application.set_link_detector_enabled(!application.link_detector_enabled(), cx)',
+    'cx.stop_propagation();', 'open_tool_settings_window(this, card, cx);',
+    'NumberInput::new(', 'Select::new(', 'Form::horizontal()')) {
+    if (-not $toolSource.Contains($contract)) { throw "Tools presentation/original settings missing: $contract" }
+}
+if (-not $mainWindowTestsSource.Contains('tool_card_toggles_and_configure_opens_without_toggling') -or
+    -not $clipboardKitTests.Contains('clipboard_hotkey_recorder_is_right_aligned_beside_title')) {
+    throw 'Card toggle/Configure isolation and hotkey first-row/right-edge regression missing.'
+}
+foreach ($contract in @('Empty::new()', 'EmptyHeader::new()', 'EmptyTitle::new()',
+    'Alert::error("clipboard-history-query-alert"', 'entries_empty && !search_loading && query_failed')) {
+    if (-not $popupModSource.Contains($contract)) { throw "Clipboard distinct state presentation missing: $contract" }
+}
+Write-Host 'PASS Link/Tools stateless presentation keeps original close/defer/timer/settings boundaries (source only)'

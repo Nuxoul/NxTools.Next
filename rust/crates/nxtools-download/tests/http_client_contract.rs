@@ -44,6 +44,45 @@ fn single_stream_probe(request: &DownloadRequest) -> DownloadProbe {
         content_type: None,
         validator: ResourceValidator::default(),
         media: None,
+        resolution: None,
+    }
+}
+
+#[tokio::test]
+async fn probe_empty_head_metadata_does_not_discard_a_necessary_range_response() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start_concurrent();
+    let probe = HttpDownloadClient::new()
+        .expect("client")
+        .probe(&request(&server, "/head-no-metadata"))
+        .await
+        .expect("necessary range metadata");
+    assert_eq!(probe.total_bytes, Some(16));
+    assert!(
+        probe.supports_ranges,
+        "empty success headers cannot supersede actual Range evidence"
+    );
+    assert!(probe.validator.etag.is_some());
+}
+
+#[tokio::test]
+async fn probe_slow_hls_and_dash_bodies_obey_the_existing_read_deadline() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start_concurrent();
+    let client =
+        HttpDownloadClient::with_stall_timeout(Duration::from_millis(150)).expect("bounded client");
+    for path in ["/hls/slow-body.m3u8", "/dash/slow-body.mpd"] {
+        let started = std::time::Instant::now();
+        let result = client.probe(&request(&server, path)).await;
+        assert!(
+            result.is_err(),
+            "slow manifest must not publish incomplete metadata"
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(700),
+            "manifest body deadline: {:?}",
+            started.elapsed()
+        );
     }
 }
 
@@ -450,6 +489,7 @@ async fn malformed_or_ignored_ranges_are_rejected_before_the_artifact_is_changed
                 ResourceValidator::default()
             },
             media: None,
+            resolution: None,
         };
 
         let error = client
@@ -787,17 +827,22 @@ async fn probe_falls_back_to_plain_get_when_head_and_range_are_both_rejected() {
 #[tokio::test]
 async fn probe_keeps_head_only_metadata_and_bounds_a_slow_head() {
     let _contract = HTTP_CONTRACT_GATE.lock().await;
-    // `/head-slow` answers HEAD after 3 s with no Content-Disposition and the
-    // Range GET immediately. A real server answers both concurrently.
+    // HEAD sleeps1s while the actual Range response already carries usable metadata.
+    // Interactive confirmation must not wait for irrelevant slow HEAD metadata.
     let server = DeterministicHttpServer::start_concurrent();
     let client = HttpDownloadClient::new().expect("create HTTP client");
 
+    let started = std::time::Instant::now();
     let probe = client
         .probe(&request(&server, "/head-slow"))
         .await
         .expect("a slow HEAD still lets the probe complete");
 
-    // Both responses are awaited, so every header either one carries is used.
+    assert!(
+        started.elapsed() < Duration::from_millis(700),
+        "usable Range metadata waited for slow HEAD: {:?}",
+        started.elapsed()
+    );
     assert_eq!(probe.total_bytes, Some(16));
     assert!(probe.supports_ranges);
 }
@@ -818,4 +863,39 @@ async fn probe_uses_a_content_disposition_that_only_head_carries() {
         Some("from-head.bin"),
         "a HEAD-only Content-Disposition must not be lost to the Range response"
     );
+}
+
+#[tokio::test]
+async fn probe_latency_slow_range_does_not_delay_head_or_claim_unverified_ranges() {
+    let _contract = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start_concurrent();
+    let client = HttpDownloadClient::new().expect("client");
+    let started = std::time::Instant::now();
+    let probe = client
+        .probe(&request(&server, "/range-slow"))
+        .await
+        .expect("HEAD metadata");
+    assert!(
+        started.elapsed() < Duration::from_millis(700),
+        "slow range blocked usable HEAD: {:?}",
+        started.elapsed()
+    );
+    assert_eq!(probe.total_bytes, Some(16));
+    assert!(
+        !probe.supports_ranges,
+        "cancelled Range cannot certify range support"
+    );
+}
+#[tokio::test]
+async fn probe_latency_bounded_companion_wait_preserves_delayed_head_filename() {
+    let _contract = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start_concurrent();
+    let client = HttpDownloadClient::new().expect("client");
+    let probe = client
+        .probe(&request(&server, "/head-delayed-name"))
+        .await
+        .expect("companion metadata");
+    assert_eq!(probe.file_name.as_deref(), Some("delayed-head.bin"));
+    assert!(probe.supports_ranges);
+    assert_eq!(probe.total_bytes, Some(16));
 }

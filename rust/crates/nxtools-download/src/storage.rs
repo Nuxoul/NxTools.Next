@@ -20,7 +20,7 @@ use crate::{
     RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 12;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 13;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
@@ -31,6 +31,16 @@ pub(crate) fn request_fingerprint(
         "{:x}",
         Sha256::digest(serde_json::to_vec(request)?)
     ))
+}
+
+// Keep the existing request_json row and transaction owner. Legacy readers ignore this
+// optional field; new readers restore provenance without a destructive schema migration.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StoredResolvedRequest {
+    #[serde(flatten)]
+    request: DownloadRequest,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resolution: Option<crate::DownloadResolutionProvenance>,
 }
 
 fn sqlite_extended_code(error: &DownloadStorageError) -> Option<i32> {
@@ -190,6 +200,9 @@ impl SqliteDownloadStore {
         if current < 12 {
             connection.execute_batch(SCHEMA_V12)?;
         }
+        if current < 13 {
+            connection.execute_batch(SCHEMA_V13)?;
+        }
 
         Ok(Self {
             connection: Mutex::new(connection),
@@ -256,7 +269,9 @@ impl SqliteDownloadStore {
                     status,
                     created_at_unix_ms,
                     updated_at_unix_ms,
-                    completed_at_unix_ms
+                    completed_at_unix_ms,
+                    measured_payload_bytes,
+                    active_download_ms
                 FROM download_tasks
                 WHERE task_id = ?1
                 "#,
@@ -278,7 +293,9 @@ impl SqliteDownloadStore {
                 status,
                 created_at_unix_ms,
                 updated_at_unix_ms,
-                completed_at_unix_ms
+                completed_at_unix_ms,
+                measured_payload_bytes,
+                active_download_ms
             FROM download_tasks
             ORDER BY created_at_unix_ms DESC
             "#,
@@ -1702,6 +1719,7 @@ impl SqliteDownloadStore {
                             last_modified,
                         },
                         media: None,
+                        resolution: None,
                     });
                     let error = match (error_code, error_message) {
                         (Some(code), Some(message)) => Some(DownloadFault {
@@ -1794,7 +1812,8 @@ impl SqliteDownloadStore {
         let statement = format!(
             r#"
             UPDATE download_tasks
-            SET status = 'paused', updated_at_unix_ms = ?
+            SET status = 'paused', updated_at_unix_ms = ?,
+                measured_payload_bytes = NULL, active_download_ms = NULL
             WHERE status IN ({placeholders})
             "#
         );
@@ -1914,7 +1933,10 @@ pub(crate) struct SubmissionReceipt {
 }
 
 fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), DownloadStorageError> {
-    let request_json = serde_json::to_string(&task.request)?;
+    let request_json = serde_json::to_string(&StoredResolvedRequest {
+        request: task.request().clone(),
+        resolution: task.resolution().cloned(),
+    })?;
     let origin = enum_name(&task.origin)?;
     connection.execute(
         r#"
@@ -1925,15 +1947,19 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
             status,
             created_at_unix_ms,
             updated_at_unix_ms,
-            completed_at_unix_ms
+            completed_at_unix_ms,
+            measured_payload_bytes,
+            active_download_ms
         )
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         ON CONFLICT(task_id) DO UPDATE SET
             request_json = excluded.request_json,
             origin = excluded.origin,
             status = excluded.status,
             updated_at_unix_ms = excluded.updated_at_unix_ms,
-            completed_at_unix_ms = excluded.completed_at_unix_ms
+            completed_at_unix_ms = excluded.completed_at_unix_ms,
+            measured_payload_bytes = excluded.measured_payload_bytes,
+            active_download_ms = excluded.active_download_ms
         "#,
         params![
             task.id.as_uuid().to_string(),
@@ -1943,6 +1969,14 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
             task.created_at_unix_ms,
             task.updated_at_unix_ms,
             task.completed_at_unix_ms,
+            task.transfer_statistics()
+                .map(|stats| i64::try_from(stats.transferred_bytes))
+                .transpose()
+                .map_err(|_| DownloadStorageError::IntegerOverflow)?,
+            task.transfer_statistics()
+                .map(|stats| i64::try_from(stats.active_download_ms))
+                .transpose()
+                .map_err(|_| DownloadStorageError::IntegerOverflow)?,
         ],
     )?;
     Ok(())
@@ -2224,15 +2258,15 @@ fn decode_task_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTask> {
     let id = Uuid::parse_str(&raw_id).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(error))
     })?;
-    let request = serde_json::from_str::<DownloadRequest>(&request_json).map_err(|error| {
+    let stored = serde_json::from_str::<StoredResolvedRequest>(&request_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error))
     })?;
     let origin = enum_from_name::<RequestOrigin>(&raw_origin, 2)?;
     let status = enum_from_name::<DownloadStatus>(&raw_status, 3)?;
 
-    DownloadTask::restore(
+    let mut task = DownloadTask::restore(
         DownloadTaskId::from_uuid(id),
-        request,
+        stored.request,
         origin,
         status,
         row.get(4)?,
@@ -2241,7 +2275,22 @@ fn decode_task_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTask> {
     )
     .map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(error))
-    })
+    })?;
+    let bytes = optional_nonnegative_u64(row.get(7)?, 7)?;
+    let duration = optional_nonnegative_u64(row.get(8)?, 8)?;
+    let statistics = match (bytes, duration) {
+        (Some(transferred_bytes), Some(active_download_ms)) => {
+            Some(crate::DownloadTransferStatistics {
+                transferred_bytes,
+                active_download_ms,
+            })
+        }
+        (None, None) => None,
+        _ => return Err(rusqlite::Error::InvalidQuery),
+    };
+    task.set_transfer_statistics(statistics);
+    task.set_resolution(stored.resolution);
+    Ok(task)
 }
 
 fn enum_name<T: Serialize>(value: &T) -> Result<String, DownloadStorageError> {
@@ -2641,11 +2690,126 @@ PRAGMA user_version = 12;
 COMMIT;
 "#;
 
+const SCHEMA_V13: &str = r#"
+BEGIN IMMEDIATE;
+ALTER TABLE download_tasks ADD COLUMN measured_payload_bytes INTEGER
+    CHECK(measured_payload_bytes IS NULL OR measured_payload_bytes >= 0);
+ALTER TABLE download_tasks ADD COLUMN active_download_ms INTEGER
+    CHECK(active_download_ms IS NULL OR active_download_ms >= 0)
+    CHECK((measured_payload_bytes IS NULL) = (active_download_ms IS NULL));
+PRAGMA user_version = 13;
+COMMIT;
+"#;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::hls::{HlsMediaPlaylist, HlsMediaSegment, HlsSegmentEncryption};
     use crate::{DownloadFault, DownloadProbe, DownloadRequest, DownloadStatus};
+
+    fn save_legacy_task_row(connection: &Connection, task: &DownloadTask) {
+        connection.execute(
+            "INSERT INTO download_tasks(task_id, request_json, origin, status, created_at_unix_ms, updated_at_unix_ms, completed_at_unix_ms) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![task.id().as_uuid().to_string(), serde_json::to_string(task.request()).expect("legacy request"),
+                enum_name(&task.origin()).expect("legacy origin"), task.status().storage_name(),
+                task.created_at_unix_ms(), task.updated_at_unix_ms(), task.completed_at_unix_ms()],
+        ).expect("seed actual old schema without new statistics columns");
+    }
+
+    #[test]
+    fn average_transaction_failure_rolls_back_statistics_with_artifact_and_task() {
+        let store = SqliteDownloadStore::open_in_memory().expect("statistics rollback store");
+        let mut task = sample_task("rollback-average.bin");
+        let initial = task.transfer_statistics();
+        let transfer = StoredTransferState {
+            temporary_path: Some(PathBuf::from("rollback-average.part")),
+            ..StoredTransferState::default()
+        };
+        store
+            .save_task_with_transfer(&task, &transfer)
+            .expect("initial durable pair");
+        task.set_transfer_statistics(Some(crate::DownloadTransferStatistics {
+            transferred_bytes: 100,
+            active_download_ms: 1_000,
+        }));
+        store
+            .inject_artifact_update_failure()
+            .expect("abort artifact transaction");
+        assert!(store.save_task_with_transfer(&task, &transfer).is_err());
+        assert_eq!(
+            store
+                .load_task(task.id())
+                .expect("read last good task")
+                .expect("task")
+                .transfer_statistics(),
+            initial
+        );
+    }
+
+    #[test]
+    fn average_interrupted_crash_window_invalidates_unpaired_statistics() {
+        let store = SqliteDownloadStore::open_in_memory().expect("crash-window statistics store");
+        let mut task = sample_task("crash-average.bin");
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Waiting,
+            DownloadStatus::Downloading,
+        ] {
+            task.transition_to(status, task.created_at_unix_ms() + 1)
+                .expect("active crash stage");
+        }
+        task.set_transfer_statistics(Some(crate::DownloadTransferStatistics {
+            transferred_bytes: 100,
+            active_download_ms: 1_000,
+        }));
+        store
+            .save_task(&task)
+            .expect("persist last observed pair before crash");
+        assert_eq!(
+            store
+                .recover_interrupted_tasks(task.created_at_unix_ms() + 2)
+                .expect("recover crash"),
+            1
+        );
+        let restored = store
+            .load_task(task.id())
+            .expect("read recovered task")
+            .expect("task");
+        assert_eq!(restored.status(), DownloadStatus::Paused);
+        assert_eq!(
+            restored.transfer_statistics(),
+            None,
+            "checkpoint may be ahead of measured time"
+        );
+    }
+
+    #[test]
+    fn average_schema_twelve_migration_retains_unknown_legacy_duration() {
+        let connection = Connection::open_in_memory().expect("v12 fixture");
+        for schema in [
+            SCHEMA_V1, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4, SCHEMA_V5, SCHEMA_V6, SCHEMA_V7, SCHEMA_V8,
+            SCHEMA_V9, SCHEMA_V10, SCHEMA_V11, SCHEMA_V12,
+        ] {
+            connection
+                .execute_batch(schema)
+                .expect("apply actual released migration");
+        }
+        let task = sample_task("v12-average.bin");
+        save_legacy_task_row(&connection, &task);
+        let store = SqliteDownloadStore::initialize(connection).expect("v13 migration");
+        assert_eq!(
+            store.schema_version().expect("migrated version"),
+            DOWNLOAD_SCHEMA_VERSION
+        );
+        assert_eq!(
+            store
+                .load_task(task.id())
+                .expect("legacy row")
+                .expect("task")
+                .transfer_statistics(),
+            None
+        );
+    }
 
     #[test]
     fn empty_database_file_is_quarantined_before_recreation() {
@@ -2654,7 +2818,10 @@ mod tests {
         std::fs::File::create(&database).expect("create empty database placeholder");
 
         let store = SqliteDownloadStore::open(&database).expect("recreate empty database");
-        assert_eq!(store.schema_version().expect("read schema version"), 12);
+        assert_eq!(
+            store.schema_version().expect("read schema version"),
+            DOWNLOAD_SCHEMA_VERSION
+        );
         assert!(
             std::fs::read_dir(directory.path())
                 .expect("read database directory")
@@ -2846,7 +3013,10 @@ mod tests {
         let task = sample_task("timeline.bin");
         {
             let store = SqliteDownloadStore::open(&database).expect("open store");
-            assert_eq!(store.schema_version().expect("schema version"), 12);
+            assert_eq!(
+                store.schema_version().expect("schema version"),
+                DOWNLOAD_SCHEMA_VERSION
+            );
             store.save_task(&task).expect("save task");
             let connection = store.lock().expect("lock store");
             for segment_count in 0..305_i64 {
@@ -2899,10 +3069,13 @@ mod tests {
             .execute_batch(SCHEMA_V3)
             .expect("create schema three");
         let task = sample_task("existing.bin");
-        save_task_row(&connection, &task).expect("save existing task");
+        save_legacy_task_row(&connection, &task);
 
         let store = SqliteDownloadStore::initialize(connection).expect("upgrade store");
-        assert_eq!(store.schema_version().expect("schema version"), 12);
+        assert_eq!(
+            store.schema_version().expect("schema version"),
+            DOWNLOAD_SCHEMA_VERSION
+        );
         let timeline = store
             .load_task_timeline(task.id(), 10)
             .expect("load seeded timeline");
@@ -2927,7 +3100,7 @@ mod tests {
                 .expect("apply legacy schema");
         }
         let task = sample_task("legacy-hls.ts");
-        save_task_row(&connection, &task).expect("save legacy HLS task");
+        save_legacy_task_row(&connection, &task);
         connection
             .execute(
                 r#"
@@ -2956,7 +3129,10 @@ mod tests {
             .expect("load upgraded HLS plan")
             .expect("upgraded HLS plan exists");
 
-        assert_eq!(store.schema_version().expect("schema version"), 12);
+        assert_eq!(
+            store.schema_version().expect("schema version"),
+            DOWNLOAD_SCHEMA_VERSION
+        );
         assert_eq!(
             restored.segments[0].media.encryption,
             HlsSegmentEncryption::None
@@ -3394,6 +3570,7 @@ mod tests {
                 content_type: Some("application/octet-stream".into()),
                 validator: ResourceValidator::default(),
                 media: None,
+                resolution: None,
             }),
             downloaded_bytes: 16,
             error: None::<DownloadFault>,

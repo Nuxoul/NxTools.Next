@@ -1,0 +1,5 @@
+# Clipboard row separation and icon fade
+
+User supplies separated rounded cells and a solid-to-transparent horizontal gradient. Keep vertical Clipboard history, natural text height, original actions/paging/preview. Visibly separate adjacent records and add a static icon-area tint fading into the normal theme surface. No horizontal carousel or full saturated repaint. User explicitly authorizes this narrow decorative gradient, superseding continuous borderless rows for this surface.
+
+Acceptance: real8DIP gap outside clickable card, subtle official ListItem border/radius, source icon crisp above type-tinted left-to-right fade (files theme yellow, images theme blue, text neutral); no pixels/actions in gap, no text clipping, visible official selection/hover/focus, real source icon/body/management clicks same owner, natural multiline heights retained in Light/Dark. Use released public gradient API/no dependency patch. Compile/static checks and report unperformed screenshot/physical/DPI acceptance separately. Preserve unrelated dirty Archive work; no delegation/package/install/service/live userdata operation.

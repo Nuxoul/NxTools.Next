@@ -1,0 +1,7 @@
+# Graphite default themes result — 2026-10-22
+
+NeworiginalGraphiteLight/DarkJSONassets implementapprovedcanvas/surface/raised/border/text/indigoanchors plus112validroleseach,completehover/pressed/selected/focus/semanticstatus/codecolors. PublicThemeRegistryregistersdistinctnames;load_themes_from_str doesnotreplacedefaultmaps,soexistingLight/Dark/Systemselectionexplicitlychoosesprojectconfigs. PublicTheme::update/change keepsKitcontrols/tokens/Base/businessprojectioncoherent. OptionalCatppuccin/Gruvbox/Solarizedwholepalettesretained,tested;fonts/radius/geometry/sourceiconRGBunchanged.
+
+Theme11+optional1compiledpass;numericstate/textcontrast/schema/sourcegatespass. Initial2exactRGB/HSLroundtripassertionsfailedatfloatprecision;channelanchorcomparison1e-5/originalinternalroleequalitypreserved. Noproductcolorbugmasked. `theme.rs` editingstoppedafterthreeEDIT_LINES_UNSEEN failuresinuserturn;optionaltestaddedasindependenttheme_graphite_tests.rs,notbypassingpathrestriction.
+
+[Designcomparison](../../../docs/ui/graphite-comparison.html)precededactualcaptures.16owned96DPIPrintWindowGPUIcaptures[here](../../../docs/audits/2026-10-22-ui-experience-captures/index.html);AIactuallyinspecteddark/lightresult/action/MarkdownsurfacesviaBrowser screenshot. Earlycomputer-usereadreturnedUIAwithoutimageattachment,notvisualevidence;laterBrowserrealPNGviewprovidedactualimage. No uservisualapproval/physical/mixedDPI/reader/installedacceptance. FinalDesktop1002,strictprojectlint/workspacepass;upstreameditorlintlimitationin[parent](../10-22-ui-experience-refresh/outcomes.md).

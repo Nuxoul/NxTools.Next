@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "id": "example.github-public-proxy",
+  "name": "GitHub 公开下载代理示例",
+  "version": "1.0.0",
+  "description": "明确同意后为公开 GitHub 下载链接添加 HTTPS 前缀；不联网、不读取凭据。镜像可见 URL 和内容，请核验上游签名。",
+  "permissions": [
+    {"id": "downloads.resolve", "reason": "读取当前解析请求，仅转换无请求头、Cookie、Referrer 的公开链接；返回清空的凭据上下文。声明仅供审查，不是沙箱。"}
+  ],
+  "runtime": {"program": "python", "timeout_ms": 10000},
+  "files": ["main.py", "protocol.py", "test_main.py", "README.md"],
+  "settings": [
+    {"key": "third_party_opt_in", "title": "我同意将公开 URL 和内容交给第三方镜像", "description": "默认关闭。镜像可查看或修改内容，必须从上游独立核验校验和/签名；不承诺速度或可用性。", "type": "bool", "default": false},
+    {"key": "proxy_prefix", "title": "HTTPS 代理前缀（仅示例）", "description": "ghproxy.net 仅为配置示例，未经国内可用性或安全背书。自定义普通域名，可使用 /public/ 形式路径，末尾须为 /。", "type": "text", "default": "https://ghproxy.net/"}
+  ],
+  "handlers": [
+    {
+      "id": "resolve", "title": "转换 GitHub 公开下载链接", "feature": "downloads", "entry": "resolve",
+      "url_matches": [
+        {"host": "github.com", "path": "/*/*/releases/download/*", "priority": 0},
+        {"host": "github.com", "path": "/*/*/archive/*", "priority": 0},
+        {"host": "raw.githubusercontent.com", "path": "/*/*/*/*", "priority": 0}
+      ],
+      "action": {"type": "script", "entry_file": "main.py"}
+    }
+  ]
+}

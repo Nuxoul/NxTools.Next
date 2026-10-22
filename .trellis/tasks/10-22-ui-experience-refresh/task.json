@@ -1,0 +1,33 @@
+{
+  "id": "ui-experience-refresh",
+  "name": "ui-experience-refresh",
+  "title": "Unified Markdown and six experience improvements",
+  "description": "Implement approved .pi plan without packaging or formal runtime launch",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-22",
+  "completedAt": "2026-10-22",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-22-notification-frame-pacing",
+    "10-22-markdown-unified",
+    "10-22-clipboard-image-modes",
+    "10-22-quick-launch-row-spacing",
+    "10-22-download-probe-latency",
+    "10-22-graphite-theme"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Implementation and scoped verification complete. Later user-authorized signed Release sequence20 generated for user acceptance; see packaging-acceptance.md. No install/deployment/commit/archive.",
+  "meta": {"source_verification":"passed","desktop_tests":1002,"editor_tests":234,"native_acceptance":"owned_isolated_96dpi_subset_passed","visual_acceptance":"ai_inspected_not_user_approved","physical_ime_mixed_dpi_reader":"not_performed","deployment":"not_performed","dependency_inclusive_clippy":"blocked_by_unmodified_upstream_serialize_nonminimal_bool","acceptance_package_sequence":20,"acceptance_package_signature":"verified_same_key","installer_generated":"2026-10-22T18:29:33+08:00"}
+}

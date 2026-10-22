@@ -1,0 +1,3 @@
+{"file":".trellis/spec/nxtools-finder/backend/quality-guidelines.md","reason":"Shared pinyin and legacy query/rank contracts"}
+{"file":"docs/reference-code/winshun.md","reason":"Verified W1 reference and deferred W2-W10 boundaries"}
+{"file":".trellis/tasks/10-13-winshun-w1-pinyin/design.md","reason":"Owner boundaries, public StyledText API and execution order"}

@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui::{
+use gpui_kit::base::Root;
+use gpui_kit::{
     AnyWindowHandle, AppContext, Bounds, Context, Entity, Global, Pixels, Point, Size, WeakEntity,
     WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, point,
     px, size,
 };
-use gpui_component::{PixelsExt, Root};
 use nxtools_clipboard::{
     BUILTIN_ALL_CATEGORY_ID, ClipboardAction, ClipboardCapturePolicy, ClipboardCategory,
     ClipboardDatabaseBackupReport, ClipboardDatabaseCompactionReport, ClipboardHistoryError,
@@ -32,8 +32,8 @@ use nxtools_protocol::{
     PasteImageCommand, PasteNativeFormatsCommand, PasteTextCommand,
     PickClipboardArchivePathCommand, PickClipboardStorageDirectoryCommand, PlatformCommand,
     PlatformEvent, SetClipboardHotKeyRecordingCommand, SetWindowBoundsCommand,
-    SetWindowPositionCommand, SetWindowShadowCommand, SetWindowTopmostCommand,
-    SetWindowVisibilityCommand, ShellOpenAction,
+    SetWindowNoActivateCommand, SetWindowPositionCommand, SetWindowShadowCommand,
+    SetWindowTopmostCommand, SetWindowVisibilityCommand, ShellOpenAction,
 };
 #[cfg(test)]
 use sha2::{Digest, Sha256};
@@ -46,7 +46,6 @@ use crate::tools::link_panel::LinkPanelRoute;
 use crate::ui::metrics::SPACING_24;
 use crate::ui::{
     ClipboardPanel, ClipboardPreview, PreviewLayout, native_window_handle, panel_bounds,
-    preview_layout,
 };
 
 const HISTORY_PAGE_SIZE: usize = 80;
@@ -58,6 +57,17 @@ const CF_DIBV5: u32 = 17;
 const PREVIEW_HOVER_DELAY: Duration = Duration::from_millis(800);
 const PREVIEW_LEAVE_DELAY: Duration = Duration::from_millis(90);
 const PREVIEW_SCROLL_RESUME_DELAY: Duration = Duration::from_millis(260);
+mod capture_pause;
+mod currency_tool;
+pub(crate) mod extension_adapter;
+pub(crate) use capture_pause::CapturePauseSnapshot;
+pub(crate) use currency_tool::CurrencyStatus;
+#[path = "clipboard_preview_presentation.rs"]
+mod preview_presentation;
+#[cfg(test)]
+#[path = "clipboard_resize_tests.rs"]
+mod resize_tests;
+const PANEL_SIZE_SAVE_DELAY: Duration = Duration::from_millis(350);
 const PREVIEW_STAGING_COORDINATE: i32 = -32_000;
 const RETENTION_INTERVAL_MS: i64 = 60 * 60 * 1000;
 const ARCHIVE_NOTIFICATION_ID: &str = "clipboard.archive";
@@ -88,6 +98,25 @@ impl ClipboardApplicationGlobal {
             _application: application,
         }
     }
+    pub(crate) fn application(&self) -> Entity<ClipboardApplication> {
+        self._application.clone()
+    }
+    pub(crate) fn context_menu_platform(&self, cx: &gpui_kit::App) -> Rc<PlatformBridge> {
+        self._application.read(cx).platform.clone()
+    }
+    pub(crate) fn context_menu_source_session(
+        &self,
+        source: AnyWindowHandle,
+        cx: &gpui_kit::App,
+    ) -> Option<uuid::Uuid> {
+        self._application
+            .read(cx)
+            .popup
+            .lifecycle
+            .current()
+            .filter(|popup| popup.window == source)
+            .map(|popup| popup.session_id)
+    }
 }
 
 impl Global for ClipboardApplicationGlobal {}
@@ -113,10 +142,13 @@ pub struct ClipboardApplication {
     management_operation_active: bool,
     deferred_captures: Vec<ClipboardCapture>,
     capture_suppression: Option<ClipboardCaptureSuppression>,
+    capture_pause: capture_pause::CapturePauseState,
     popup: PopupSession,
     preview: PreviewSession,
+    currency: currency_tool::CurrencyState,
     link_panel: crate::tools::link_panel::LinkPanelSession,
     pending_link_panel_actions: HashMap<uuid::Uuid, PendingLinkPanelAction>,
+    pending_extension_copies: HashMap<uuid::Uuid, extension_adapter::PendingExtensionCopy>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,11 +193,17 @@ struct PopupSession {
     pending_visibility: HashMap<uuid::Uuid, PendingPopupVisibility>,
     load_generation: u64,
     pending_load_generation: Option<u64>,
+    // Armed only after native reveal confirmation, never for hidden creation bounds.
+    size_tracking_session: Option<uuid::Uuid>,
+    pending_size: Option<(uuid::Uuid, nxtools_core::ClipboardPanelSize)>,
+    size_revision: u64,
+    size_save_active: bool,
 }
 
 #[derive(Debug)]
 struct ClipboardPopupSnapshot {
     page: ClipboardHistoryPage,
+    summary_counts: HashMap<i64, usize>,
     categories: Vec<ClipboardCategory>,
     category_sources: HashMap<String, HashSet<String>>,
     source_process_names: Vec<String>,
@@ -183,6 +221,14 @@ struct PreviewSession {
     scroll_suppressed: bool,
     candidate: Option<PreviewCandidate>,
     pending_stage: Option<PendingPreviewStage>,
+    timing: Option<PreviewTiming>,
+}
+
+struct PreviewTiming {
+    correlation_id: uuid::Uuid,
+    started_at: Instant,
+    native_started_at: Option<Instant>,
+    step_started_at: Option<Instant>,
 }
 
 #[derive(Clone)]
@@ -195,12 +241,21 @@ struct PreviewCandidate {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreviewStagePhase {
+    MeasureInitial,
+    MeasureReuse,
     MoveOffscreen,
+    ReuseBounds,
     ShowOffscreen,
+    ReuseNoActivate,
+    InitialNoActivate,
+    InitialBounds,
+    InitialTopmost,
+    InitialShow,
 }
 
 struct PendingPreviewStage {
     command_id: uuid::Uuid,
+    native_window_handle: i64,
     phase: PreviewStagePhase,
     generation: u64,
     item: ClipboardItem,
@@ -208,6 +263,7 @@ struct PendingPreviewStage {
     preview_size: Size<Pixels>,
     bounds: Bounds<Pixels>,
     panel_scale_factor: f32,
+    content_measured: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -287,7 +343,8 @@ fn preview_bounds(
     let max_y = (screen.bottom() - preview_size.height).max(screen.origin.y);
     let preferred_y = pointer_position.y - preview_size.height / 3.0;
     let y = preferred_y.max(screen.origin.y).min(max_y);
-    Bounds::new(point(x, y), preview_size)
+    let max_x = (screen.right() - preview_size.width).max(screen.origin.x);
+    Bounds::new(point(x.clamp(screen.origin.x, max_x), y), preview_size)
 }
 
 fn preview_device_origin(bounds: Bounds<Pixels>, scale_factor: f32) -> (i32, i32) {
@@ -302,8 +359,18 @@ async fn load_clipboard_popup_snapshot(
     scope: ClipboardSearchScope,
 ) -> Result<ClipboardPopupSnapshot, ClipboardHistoryError> {
     let page = worker
-        .query_category_page_async(query, category_id, scope, 0, HISTORY_PAGE_SIZE, None)
+        .query_summary_page_async(query, category_id, scope, 0, HISTORY_PAGE_SIZE, None, None)
         .await?;
+    let summary_counts = page
+        .items
+        .iter()
+        .map(|row| (row.item.id, row.text_character_count))
+        .collect();
+    let page = ClipboardHistoryPage {
+        items: page.items.into_iter().map(|row| row.item).collect(),
+        total: page.total,
+        has_more: page.has_more,
+    };
     let categories = worker.categories_async().await?;
     let mut category_sources = HashMap::new();
     for category in categories
@@ -322,6 +389,7 @@ async fn load_clipboard_popup_snapshot(
     let source_process_names = worker.source_process_names_async().await?;
     Ok(ClipboardPopupSnapshot {
         page,
+        summary_counts,
         categories,
         category_sources,
         source_process_names,
@@ -411,10 +479,13 @@ impl ClipboardApplication {
             management_operation_active: false,
             deferred_captures: Vec::new(),
             capture_suppression: None,
+            capture_pause: capture_pause::CapturePauseState::default(),
             popup: PopupSession::default(),
             preview: PreviewSession::default(),
+            currency: currency_tool::CurrencyState::default(),
             link_panel: crate::tools::link_panel::LinkPanelSession::default(),
             pending_link_panel_actions: HashMap::new(),
+            pending_extension_copies: HashMap::new(),
         };
         application
     }
@@ -497,7 +568,7 @@ impl ClipboardApplication {
         &self,
         id: &'static str,
         title: &'static str,
-        message: impl Into<gpui::SharedString>,
+        message: impl Into<gpui_kit::SharedString>,
         cx: &mut Context<Self>,
     ) {
         let message = message.into();
@@ -510,7 +581,7 @@ impl ClipboardApplication {
         &self,
         id: &'static str,
         title: &'static str,
-        message: impl Into<gpui::SharedString>,
+        message: impl Into<gpui_kit::SharedString>,
         cx: &mut Context<Self>,
     ) {
         let message = message.into();
@@ -523,7 +594,7 @@ impl ClipboardApplication {
         &self,
         id: &'static str,
         title: &'static str,
-        message: impl Into<gpui::SharedString>,
+        message: impl Into<gpui_kit::SharedString>,
         cx: &mut Context<Self>,
     ) {
         let message = message.into();
@@ -536,7 +607,7 @@ impl ClipboardApplication {
         &self,
         id: &'static str,
         title: &'static str,
-        message: impl Into<gpui::SharedString>,
+        message: impl Into<gpui_kit::SharedString>,
         details: Vec<NotificationDetail>,
         action: Option<NotificationAction>,
         cx: &mut Context<Self>,
@@ -551,7 +622,7 @@ impl ClipboardApplication {
         &self,
         id: &'static str,
         title: &'static str,
-        message: impl Into<gpui::SharedString>,
+        message: impl Into<gpui_kit::SharedString>,
         cx: &mut Context<Self>,
     ) {
         let message = message.into();
@@ -881,7 +952,9 @@ impl ClipboardApplication {
     fn refresh_committed_migration_config(&mut self, committed: AppConfig) {
         // A settings save can land after the worker's commit but before this
         // result callback. Never publish that earlier snapshot over newer edits.
+        let latest_size = self.config.clipboard_panel;
         self.config = AppConfig::load_from(&self.config_path).unwrap_or(committed);
+        self.config.clipboard_panel = latest_size;
     }
 
     fn finish_clipboard_management_operation(&mut self, cx: &mut Context<Self>) {
@@ -965,15 +1038,13 @@ impl ClipboardApplication {
     }
 
     /// Snapshot of the link panel user settings for the settings window.
-    pub(crate) fn link_panel_settings(&self) -> (bool, u64, bool, bool, LinkPanelPosition) {
+    pub(crate) fn link_panel_settings(&self) -> (bool, u64, LinkPanelPosition) {
         (
             self.config.clipboard.link_detector_enabled,
             self.config
                 .clipboard
                 .link_panel_auto_hide_ms
                 .saturating_div(1_000),
-            self.config.clipboard.link_panel_auto_open_browser,
-            self.config.clipboard.link_panel_copy_only,
             self.config.clipboard.link_panel_position,
         )
     }
@@ -986,8 +1057,6 @@ impl ClipboardApplication {
         let application = cx.entity().downgrade();
         let platform = Rc::clone(&self.platform);
         let link_panel_auto_hide_ms = self.config.clipboard.link_panel_auto_hide_ms;
-        let link_panel_auto_open_browser = self.config.clipboard.link_panel_auto_open_browser;
-        let link_panel_copy_only = self.config.clipboard.link_panel_copy_only;
         let link_panel_position = self.config.clipboard.link_panel_position;
         let panel_size = size(
             px(crate::tools::link_panel::LINK_PANEL_WIDTH),
@@ -1007,31 +1076,28 @@ impl ClipboardApplication {
         // window per capture leaked a ghost per copy — stale stacked popups
         // ate every click and none ever closed.
         if let Some(existing) = self.link_panel.window {
-            let window_handle_for_swap = self.link_panel.window_handle;
             if existing
-                .update(cx, |view, window, cx| match view
-                    .downcast::<crate::tools::link_panel::LinkPanelView>()
-                {
-                    Ok(view) => {
+                .update(cx, |root, window, cx| {
+                    let panel = root.downcast::<Root>().ok().and_then(|root| {
+                        root.read(cx)
+                            .view()
+                            .clone()
+                            .downcast::<crate::tools::link_panel::LinkPanelView>()
+                            .ok()
+                    });
+                    if let Some(view) = panel {
                         view.update(cx, |view, cx| {
-                            if let Some(handle) = window_handle_for_swap {
-                                view.swap_links(
-                                    links.clone(),
-                                    handle,
-                                    link_panel_auto_open_browser,
-                                    link_panel_copy_only,
-                                    cx,
-                                );
-                            } else {
-                                window.remove_window();
-                            }
+                            view.auto_hide_ms = link_panel_auto_hide_ms;
+                            view.swap_links(links.clone(), existing, cx);
+                            cx.notify();
                         });
-                    }
-                    Err(_) => {
+                        true
+                    } else {
                         window.remove_window();
+                        false
                     }
                 })
-                .is_ok()
+                .unwrap_or(false)
             {
                 let generation = self.link_panel.generation.wrapping_add(1);
                 self.link_panel.generation = generation;
@@ -1079,6 +1145,9 @@ impl ClipboardApplication {
                 app_id: Some("NxTools.LinkPanel".into()),
                 window_min_size: None,
                 window_decorations: Some(WindowDecorations::Client),
+                app_owns_titlebar_drag: false,
+                inactive_frame_interval: None,
+                icon: None,
                 tabbing_identifier: None,
             },
             move |window, cx| {
@@ -1111,8 +1180,7 @@ impl ClipboardApplication {
                         expanded: false,
                         auto_hide_ms: link_panel_auto_hide_ms,
                         window_handle: Some(window_handle),
-                        auto_open_browser: link_panel_auto_open_browser,
-                        copy_only: link_panel_copy_only,
+                        auto_hide_task: None,
                     };
                     view.arm_auto_hide(window_handle, cx);
                     view
@@ -1129,7 +1197,6 @@ impl ClipboardApplication {
         };
         self.link_panel.native_window_handle = *native_slot.borrow();
         self.link_panel.window = Some(window.into());
-        self.link_panel.window_handle = *any_handle_slot.borrow();
         let generation = self.link_panel.generation.wrapping_add(1);
         self.link_panel.generation = generation;
     }
@@ -1144,19 +1211,6 @@ impl ClipboardApplication {
         self.persist_clipboard_config(cx);
     }
 
-    pub(crate) fn set_link_panel_auto_open_browser(
-        &mut self,
-        enabled: bool,
-        cx: &mut Context<Self>,
-    ) {
-        self.config.clipboard.link_panel_auto_open_browser = enabled;
-        self.persist_clipboard_config(cx);
-    }
-
-    pub(crate) fn set_link_panel_copy_only(&mut self, enabled: bool, cx: &mut Context<Self>) {
-        self.config.clipboard.link_panel_copy_only = enabled;
-        self.persist_clipboard_config(cx);
-    }
     pub(crate) fn set_link_panel_position(
         &mut self,
         position: LinkPanelPosition,
@@ -1175,131 +1229,71 @@ impl ClipboardApplication {
     ) {
         let correlation_id = uuid::Uuid::new_v4();
         let started_at = Instant::now();
-        match route {
-            LinkPanelRoute::CopyOnly => {
+        let Some(command) =
+            crate::tools::link_panel::link_panel_shell_command(route, target, target_kind)
+        else {
+            warn!(
+                event = "tools.link_panel.route_rejected",
+                %correlation_id,
+                target_kind = target_kind.label(),
+                ?route,
+                value_length,
+                reason = "target_kind_mismatch",
+                "link panel refused an incompatible route"
+            );
+            return;
+        };
+        let action = match route {
+            LinkPanelRoute::Browser => ShellOpenAction::Open,
+            LinkPanelRoute::OpenShell { action } => action,
+        };
+        info!(
+            event = "tools.link_panel.route_started",
+            %correlation_id,
+            target_kind = target_kind.label(),
+            ?route,
+            value_length,
+            "link panel open requested"
+        );
+        // Browser and local targets share the existing C# Shell boundary. This
+        // keeps native launch/codes out of Rust and makes disconnected dispatch
+        // a typed rejection rather than an untestable cmd/browser side effect.
+        match self
+            .platform
+            .send_command_correlated(command, correlation_id)
+        {
+            Ok(command_id) => {
                 info!(
-                    event = "tools.link_panel.copy_only",
+                    event = "tools.link_panel.shell_accepted",
                     %correlation_id,
+                    %command_id,
                     target_kind = target_kind.label(),
+                    ?action,
                     value_length,
-                    accepted = true,
-                    "link panel copy-only route completed"
+                    "link panel shell route accepted"
+                );
+                self.pending_link_panel_actions.insert(
+                    command_id,
+                    PendingLinkPanelAction {
+                        correlation_id,
+                        target_kind,
+                        action,
+                        value_length,
+                        started_at,
+                    },
                 );
             }
-            LinkPanelRoute::Browser => {
-                if target_kind != DetectedLinkKind::Web {
-                    warn!(
-                        event = "tools.link_panel.route_rejected",
-                        %correlation_id,
-                        target_kind = target_kind.label(),
-                        route = "browser",
-                        value_length,
-                        reason = "non_web_target",
-                        "link panel refused to send a local target to the browser"
-                    );
-                    return;
-                }
-                let url = if target.contains("://") {
-                    target.to_owned()
-                } else {
-                    format!("https://{target}")
-                };
-                #[cfg(windows)]
-                {
-                    use std::os::windows::process::CommandExt as _;
-                    match std::process::Command::new("cmd")
-                        .args(["/C", "start", "", &url])
-                        .creation_flags(0x0800_0000)
-                        .spawn()
-                    {
-                        Ok(_) => info!(
-                            event = "tools.link_panel.browser_accepted",
-                            %correlation_id,
-                            target_kind = target_kind.label(),
-                            value_length,
-                            elapsed_ms = started_at.elapsed().as_millis() as u64,
-                            accepted = true,
-                            "link panel browser route accepted"
-                        ),
-                        Err(error) => warn!(
-                            event = "tools.link_panel.browser_failed",
-                            %correlation_id,
-                            target_kind = target_kind.label(),
-                            value_length,
-                            elapsed_ms = started_at.elapsed().as_millis() as u64,
-                            accepted = false,
-                            native_error_code = error.raw_os_error(),
-                            "link panel browser route failed"
-                        ),
-                    }
-                }
-                #[cfg(not(windows))]
-                {
-                    let _ = url;
-                    warn!(
-                        event = "tools.link_panel.browser_failed",
-                        %correlation_id,
-                        target_kind = target_kind.label(),
-                        value_length,
-                        elapsed_ms = started_at.elapsed().as_millis() as u64,
-                        accepted = false,
-                        reason = "unsupported_platform",
-                        "link panel browser route is unavailable on this platform"
-                    );
-                }
-            }
-            LinkPanelRoute::OpenShell { action } => {
-                let Some(command) =
-                    crate::tools::link_panel::link_panel_shell_command(route, target, target_kind)
-                else {
-                    warn!(
-                        event = "tools.link_panel.route_rejected",
-                        %correlation_id,
-                        target_kind = target_kind.label(),
-                        route = "shell",
-                        value_length,
-                        reason = "non_local_target",
-                        "link panel refused to send a web target to the shell"
-                    );
-                    return;
-                };
-                match self
-                    .platform
-                    .send_command_correlated(command, correlation_id)
-                {
-                    Ok(command_id) => {
-                        info!(
-                            event = "tools.link_panel.shell_accepted",
-                            %correlation_id,
-                            %command_id,
-                            target_kind = target_kind.label(),
-                            ?action,
-                            value_length,
-                            "link panel shell route accepted"
-                        );
-                        self.pending_link_panel_actions.insert(
-                            command_id,
-                            PendingLinkPanelAction {
-                                correlation_id,
-                                target_kind,
-                                action,
-                                value_length,
-                                started_at,
-                            },
-                        );
-                    }
-                    Err(error) => warn!(
-                        event = "tools.link_panel.shell_rejected",
-                        %correlation_id,
-                        target_kind = target_kind.label(),
-                        ?action,
-                        value_length,
-                        accepted = false,
-                        reason = %error,
-                        "link panel shell route was not accepted"
-                    ),
-                }
-            }
+            Err(error) => warn!(
+                event = "tools.link_panel.shell_rejected",
+                %correlation_id,
+                target_kind = target_kind.label(),
+                ?action,
+                value_length,
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                accepted = false,
+                reason = %error,
+                "link panel shell route was not accepted"
+            ),
         }
     }
 
@@ -1438,19 +1432,18 @@ impl ClipboardApplication {
         }
     }
 
-    /// Persists only the clipboard sections (settings and panel size), merged
-    /// into the file as it is now, then refreshes the cache from the merge so
-    /// a stale copy of another module's section is never written back.
+    /// Persist ordinary settings only; resize persistence independently owns panel size.
+    /// Preserve the latest disk storage root owned by the migration worker.
     fn save_clipboard_section(&mut self) -> anyhow::Result<()> {
         let mut clipboard = self.config.clipboard.clone();
-        let panel = self.config.clipboard_panel;
         let merged = AppConfig::update_section(&self.config_path, |config| {
             // Only the worker migration transaction owns the storage root.
             clipboard.storage_directory = config.clipboard.storage_directory.clone();
             config.clipboard = clipboard;
-            config.clipboard_panel = panel;
         })?;
+        let latest_size = self.config.clipboard_panel;
         self.config = merged;
+        self.config.clipboard_panel = latest_size;
         Ok(())
     }
 
@@ -1610,6 +1603,86 @@ impl ClipboardApplication {
             }
         }
     }
+    pub(crate) fn observe_panel_size(
+        &mut self,
+        session_id: uuid::Uuid,
+        window: AnyWindowHandle,
+        viewport: Size<Pixels>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.popup.size_tracking_session != Some(session_id)
+            || self
+                .popup
+                .lifecycle
+                .current()
+                .is_none_or(|popup| popup.session_id != session_id || popup.window != window)
+        {
+            return;
+        }
+        let width = viewport.width.as_f32();
+        let height = viewport.height.as_f32();
+        if !width.is_finite() || !height.is_finite() || width < 280.0 || height < 280.0 {
+            return;
+        }
+        let panel =
+            nxtools_core::ClipboardPanelSize::clamped(width.round() as u32, height.round() as u32);
+        if self.config.clipboard_panel == panel {
+            return;
+        }
+        // Memory intent is immediate: reopen need not wait for durable IO.
+        self.config.clipboard_panel = panel;
+        self.popup.pending_size = Some((session_id, panel));
+        self.popup.size_revision = self.popup.size_revision.wrapping_add(1);
+        if self.popup.size_save_active {
+            return;
+        }
+        self.popup.size_save_active = true;
+        let config_path = self.config_path.clone();
+        cx.spawn(async move |this, cx| {
+            loop {
+                let Ok(revision) = this.update(cx, |app, _| app.popup.size_revision) else {
+                    return;
+                };
+                cx.background_executor().timer(PANEL_SIZE_SAVE_DELAY).await;
+                let Ok(pending) = this.update(cx, |app, _| {
+                    if app.popup.size_revision != revision { return None; }
+                    app.popup.pending_size.map(|pending| (revision, pending))
+                }) else { return; };
+                let Some((revision, (session_id, panel))) = pending else { continue; };
+                let started_at = Instant::now();
+                info!(event = "clipboard.panel_size.save_started", %session_id, revision,
+                    width = panel.width, height = panel.height);
+                let path = config_path.clone();
+                let result = cx.background_executor().spawn(async move {
+                    AppConfig::update_section(&path, |config| config.clipboard_panel = panel)
+                }).await;
+                let Ok(done) = this.update(cx, |app, cx| {
+                    match result {
+                        Ok(_) => info!(event = "clipboard.panel_size.save_completed", %session_id,
+                            revision, elapsed_ms = started_at.elapsed().as_millis() as u64),
+                        Err(_) => {
+                            warn!(event = "clipboard.panel_size.save_failed", %session_id, revision,
+                                reason = "config_commit", elapsed_ms = started_at.elapsed().as_millis() as u64);
+                            let notifications = app.notifications.downgrade();
+                            cx.defer(move |cx| {
+                                let _ = notifications.update(cx, |notifications, cx| {
+                                    notifications.show_error("clipboard.panel_size", "剪贴板窗口尺寸保存失败",
+                                        "本次窗口尺寸仍可使用，但重启后可能恢复旧尺寸；请检查配置文件后重新调整窗口。", cx);
+                                });
+                            });
+                        }
+                    }
+                    // Never replace a newer in-memory size/settings snapshot with this merge.
+                    if app.popup.size_revision == revision {
+                        app.popup.pending_size = None;
+                        app.popup.size_save_active = false;
+                        true
+                    } else { false }
+                }) else { return; };
+                if done { return; }
+            }
+        }).detach();
+    }
 
     pub(crate) fn hide_popup(
         &mut self,
@@ -1640,6 +1713,9 @@ impl ClipboardApplication {
                 return Err(error);
             }
         };
+        if self.popup.size_tracking_session == Some(session_id) {
+            self.popup.size_tracking_session = None;
+        }
         self.popup.pending_visibility.insert(
             command_id,
             PendingPopupVisibility {
@@ -1783,13 +1859,32 @@ impl ClipboardApplication {
 
     fn schedule_preview_candidate(&mut self, candidate: PreviewCandidate, cx: &mut Context<Self>) {
         let generation = self.preview.generation;
+        self.preview.timing = Some(PreviewTiming {
+            correlation_id: uuid::Uuid::new_v4(),
+            started_at: Instant::now(),
+            native_started_at: None,
+            step_started_at: None,
+        });
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(PREVIEW_HOVER_DELAY).await;
+            let worker = this.update(cx, |this, _| {
+                (this.preview.generation == generation && !this.preview.scroll_suppressed
+                    && this.preview.hovered_item_id == Some(candidate.item.id))
+                    .then(|| this.history_worker.clone())
+            }).ok().flatten();
+            let Some(worker) = worker else { return; };
+            let Ok(item) = worker.active_item_async(candidate.item.id).await else { return; };
+            let candidate = PreviewCandidate { item, ..candidate };
             let _ = this.update(cx, |this, cx| {
                 if this.preview.generation == generation
                     && !this.preview.scroll_suppressed
                     && this.preview.hovered_item_id == Some(candidate.item.id)
                 {
+                    if let Some(timing) = this.preview.timing.as_ref() {
+                        info!(event = "clipboard.preview.hover_ready", correlation_id = %timing.correlation_id,
+                            generation, hover_intent_ms = PREVIEW_HOVER_DELAY.as_millis() as u64,
+                            elapsed_ms = timing.started_at.elapsed().as_millis() as u64);
+                    }
                     this.show_preview(candidate, cx);
                 }
             });
@@ -1833,6 +1928,33 @@ impl ClipboardApplication {
         }
     }
 
+    pub(crate) fn dismiss_preview_for_interaction(
+        &mut self,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let active = self.preview.candidate.is_some()
+            || self.preview.hovered_item_id.is_some()
+            || self.preview.pending_stage.is_some()
+            || self.preview.visible;
+        if active {
+            info!(
+                event = "clipboard.preview.interaction_cancelled",
+                reason,
+                generation = self.preview.generation
+            );
+        }
+        self.dismiss_preview(cx);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn has_pending_preview_for_test(&self) -> bool {
+        self.preview.candidate.is_some()
+            || self.preview.hovered_item_id.is_some()
+            || self.preview.pending_stage.is_some()
+            || self.preview.visible
+    }
+
     pub(crate) fn dismiss_preview(&mut self, _cx: &mut Context<Self>) {
         self.preview.hovered_item_id = None;
         self.preview.candidate = None;
@@ -1842,6 +1964,12 @@ impl ClipboardApplication {
     }
 
     fn hide_preview_window(&mut self) {
+        if let Some(timing) = self.preview.timing.take()
+            && timing.native_started_at.is_some()
+        {
+            info!(event = "clipboard.preview.lifecycle_ended", correlation_id = %timing.correlation_id,
+                elapsed_ms = timing.started_at.elapsed().as_millis() as u64);
+        }
         self.preview.pending_stage = None;
         if self.preview.visible
             && self.preview.native_window_handle != 0
@@ -1931,10 +2059,13 @@ impl ClipboardApplication {
             .pending_stage
             .take()
             .expect("matching preview stage must exist");
+        if stage.native_window_handle != self.preview.native_window_handle {
+            return true;
+        }
         if !success {
             error!(
                 %correlation_id,
-                reason = error_message.unwrap_or("unknown Windows error"),
+                has_native_error = error_message.is_some(),
                 phase = ?stage.phase,
                 "failed to prepare clipboard preview"
             );
@@ -1948,13 +2079,41 @@ impl ClipboardApplication {
             stage.item.id,
             self.preview.scroll_suppressed,
             self.preview.native_window_handle,
-            self.preview.native_window_handle,
+            stage.native_window_handle,
         ) {
+            if matches!(
+                stage.phase,
+                PreviewStagePhase::InitialNoActivate
+                    | PreviewStagePhase::InitialBounds
+                    | PreviewStagePhase::InitialTopmost
+                    | PreviewStagePhase::InitialShow
+            ) {
+                self.hide_preview_window();
+            }
             return true;
         }
 
         match stage.phase {
-            PreviewStagePhase::MoveOffscreen if !self.preview.visible => {
+            PreviewStagePhase::ReuseNoActivate => {
+                stage.phase = PreviewStagePhase::MoveOffscreen;
+                self.stage_reused_preview(stage);
+            }
+            PreviewStagePhase::MeasureInitial | PreviewStagePhase::MeasureReuse => return true,
+            PreviewStagePhase::InitialNoActivate
+            | PreviewStagePhase::InitialBounds
+            | PreviewStagePhase::InitialTopmost
+            | PreviewStagePhase::InitialShow => {
+                self.advance_initial_preview_presentation(stage, cx);
+            }
+            PreviewStagePhase::MoveOffscreen => {
+                if stage.content_measured {
+                    stage.phase = PreviewStagePhase::ReuseBounds;
+                    self.queue_reused_preview_bounds(stage, cx);
+                } else {
+                    self.begin_preview_content_measurement(stage, false, cx);
+                }
+            }
+            PreviewStagePhase::ReuseBounds if !self.preview.visible => {
                 match self
                     .platform
                     .send_command(PlatformCommand::SetWindowVisibility(
@@ -1977,7 +2136,7 @@ impl ClipboardApplication {
                     }
                 }
             }
-            PreviewStagePhase::MoveOffscreen | PreviewStagePhase::ShowOffscreen => {
+            PreviewStagePhase::ReuseBounds | PreviewStagePhase::ShowOffscreen => {
                 self.preview.visible = true;
                 self.render_staged_preview(stage, cx);
             }
@@ -1999,10 +2158,12 @@ impl ClipboardApplication {
         let platform = Rc::clone(&self.platform);
         let (x, y) = preview_device_origin(stage.bounds, stage.panel_scale_factor);
         let update_result = preview.window.update(cx, move |_, window, app| {
-            window.resize(stage.preview_size);
+            // C# already acknowledged the final offscreen bounds; no competing
+            // asynchronous GPUI native resize before the replacement frame.
             if view
                 .update(app, |preview, cx| {
-                    preview.set_item(stage.item, stage.layout, cx)
+                    if stage.item.kind != ClipboardKind::Text { preview.set_item(stage.item, stage.layout, window, cx); }
+                    else { preview.set_measured_layout(stage.layout, cx); }
                 })
                 .is_err()
             {
@@ -2042,6 +2203,11 @@ impl ClipboardApplication {
                     }
                     application.preview.visible = true;
                     application.preview.displayed_item_id = Some(requested_item_id);
+                    if let Some(timing) = application.preview.timing.take() {
+                        info!(event = "clipboard.preview.reuse_reveal_queued", correlation_id = %timing.correlation_id,
+                            generation, elapsed_ms = timing.started_at.elapsed().as_millis() as u64,
+                            native_elapsed_ms = ?timing.native_started_at.map(|started| started.elapsed().as_millis() as u64));
+                    }
                 });
             });
             window.refresh();
@@ -2055,6 +2221,9 @@ impl ClipboardApplication {
     }
 
     fn show_preview(&mut self, candidate: PreviewCandidate, cx: &mut Context<Self>) {
+        if let Some(timing) = self.preview.timing.as_mut() {
+            timing.native_started_at = Some(Instant::now());
+        }
         let PreviewCandidate {
             item,
             panel_bounds,
@@ -2068,12 +2237,21 @@ impl ClipboardApplication {
             .or_else(|| cx.primary_display());
         let screen = display
             .as_ref()
-            .map(|display| display.bounds())
+            .map(|display| display.visible_bounds())
             .unwrap_or_else(|| Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0))));
-        let layout = preview_layout(
+        let adjacent_width = ((screen.right() - panel_bounds.right()).as_f32() - 10.0)
+            .max((panel_bounds.left() - screen.left()).as_f32() - 10.0)
+            .clamp(64.0, screen.size.width.as_f32().max(64.0));
+        let layout = crate::ui::preview_layout_with_image_mode(
             &item,
-            screen.size.width.as_f32(),
+            if item.kind == ClipboardKind::Image {
+                adjacent_width
+            } else {
+                screen.size.width.as_f32()
+            },
             screen.size.height.as_f32(),
+            panel_scale_factor,
+            self.config.clipboard.image_view_mode,
         );
         let preview_size = size(px(layout.window_width), px(layout.window_height));
         let bounds = preview_bounds(panel_bounds, preview_size, screen, pointer_position);
@@ -2081,6 +2259,7 @@ impl ClipboardApplication {
         if self.preview.window.is_some() && self.preview.native_window_handle != 0 {
             let stage = PendingPreviewStage {
                 command_id: uuid::Uuid::nil(),
+                native_window_handle: self.preview.native_window_handle,
                 phase: PreviewStagePhase::MoveOffscreen,
                 generation: self.preview.generation,
                 item,
@@ -2088,8 +2267,9 @@ impl ClipboardApplication {
                 preview_size,
                 bounds,
                 panel_scale_factor,
+                content_measured: false,
             };
-            self.stage_reused_preview(stage);
+            self.begin_reused_preview_presentation(stage, cx);
             return;
         }
         self.preview.window = None;
@@ -2098,17 +2278,28 @@ impl ClipboardApplication {
         self.preview.displayed_item_id = None;
 
         let application = cx.entity().downgrade();
-        let platform = Rc::clone(&self.platform);
         let native_window_slot = Rc::new(RefCell::new(None));
         let opened_native_window_slot = Rc::clone(&native_window_slot);
         let preview_view_slot = Rc::new(RefCell::new(None));
         let opened_preview_view_slot = Rc::clone(&preview_view_slot);
+        let initial_stage = PendingPreviewStage {
+            command_id: uuid::Uuid::nil(),
+            native_window_handle: 0,
+            phase: PreviewStagePhase::InitialNoActivate,
+            generation: self.preview.generation,
+            item: item.clone(),
+            layout,
+            preview_size,
+            bounds,
+            panel_scale_factor,
+            content_measured: false,
+        };
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: None,
                 focus: false,
-                show: true,
+                show: false,
                 kind: WindowKind::PopUp,
                 is_movable: false,
                 is_resizable: false,
@@ -2118,20 +2309,16 @@ impl ClipboardApplication {
                 app_id: Some("NxTools.ClipboardPreview".into()),
                 window_min_size: None,
                 window_decorations: Some(WindowDecorations::Client),
+                app_owns_titlebar_drag: false,
+                inactive_frame_interval: None,
+                icon: None,
                 tabbing_identifier: None,
             },
             move |window, cx| {
                 let preview_window_handle = native_window_handle(window);
                 *opened_native_window_slot.borrow_mut() = preview_window_handle;
-                if let Some(window_handle) = preview_window_handle {
-                    let _ = platform.send_command(PlatformCommand::SetWindowTopmost(
-                        SetWindowTopmostCommand {
-                            window_handle,
-                            enabled: true,
-                        },
-                    ));
-                }
-                let preview = cx.new(|_cx| ClipboardPreview::new(item, layout, application));
+                let preview =
+                    cx.new(|cx| ClipboardPreview::new(item, layout, application, window, cx));
                 *opened_preview_view_slot.borrow_mut() = Some(preview.downgrade());
                 cx.new(|cx| Root::new(preview, window, cx))
             },
@@ -2145,8 +2332,7 @@ impl ClipboardApplication {
                         window: window.into(),
                         view,
                     });
-                    self.preview.visible = true;
-                    self.preview.displayed_item_id = self.preview.hovered_item_id;
+                    self.begin_preview_content_measurement(initial_stage, true, cx);
                 } else {
                     let window: AnyWindowHandle = window.into();
                     let _ = window.update(cx, |_, window, _| window.remove_window());
@@ -2278,6 +2464,51 @@ fn native_formats_restore_primary_kind(
 }
 
 impl ClipboardApplication {
+    pub(crate) fn context_menu_failed(
+        &mut self,
+        source: AnyWindowHandle,
+        source_session: Option<uuid::Uuid>,
+        message: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(popup) = self
+            .popup
+            .lifecycle
+            .current()
+            .filter(|popup| popup.window == source && Some(popup.session_id) == source_session)
+            .cloned()
+        else {
+            return;
+        };
+        cx.defer(move |cx| {
+            let _ = popup.panel.update(cx, |panel, cx| {
+                panel.extension_start_failed(popup.session_id, message, cx)
+            });
+        });
+    }
+    pub(crate) fn context_menu_outside(
+        &mut self,
+        source: AnyWindowHandle,
+        source_session: Option<uuid::Uuid>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(popup) = self
+            .popup
+            .lifecycle
+            .current()
+            .filter(|popup| popup.window == source && Some(popup.session_id) == source_session)
+            .cloned()
+        else {
+            return;
+        };
+        cx.defer(move |cx| {
+            let _ = popup.window.update(cx, |_, window, cx| {
+                let _ = popup
+                    .panel
+                    .update(cx, |panel, cx| panel.close_from_native_menu(window, cx));
+            });
+        });
+    }
     pub(crate) fn handle_platform_notification(
         &mut self,
         notification: PlatformNotification,
@@ -2285,6 +2516,8 @@ impl ClipboardApplication {
     ) {
         match notification {
             PlatformNotification::Connected => {
+                self.reapply_capture_pause(cx);
+                self.abandon_extension_copies(cx);
                 // A reconnect invalidates every command that was pending on the previous pipe.
                 self.pending_configuration.clear();
                 self.abandon_blacklist_configuration();
@@ -2347,6 +2580,8 @@ impl ClipboardApplication {
                 generation,
                 pending_command_ids,
             } => {
+                self.disconnect_capture_pause(cx);
+                self.abandon_extension_copies(cx);
                 warn!(
                     event = "clipboard.platform_disconnected",
                     generation,
@@ -2402,6 +2637,12 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
+                if self.handle_capture_pause_result(correlation_id, &result, cx) {
+                    return;
+                }
+                if self.complete_extension_copy(correlation_id, &result, cx) {
+                    return;
+                }
                 if let Some(pending) = self.pending_link_panel_actions.remove(&correlation_id) {
                     let elapsed_ms = pending.started_at.elapsed().as_millis() as u64;
                     if result.success {
@@ -2572,8 +2813,10 @@ impl ClipboardApplication {
                     let elapsed_ms = pending.started_at.elapsed().as_millis() as u64;
                     if result.success {
                         if pending.visible {
+                            self.popup.size_tracking_session = Some(popup.session_id);
                             let _ = popup.window.update(cx, |_, window, app| {
                                 let _ = popup.panel.update(app, |panel, cx| {
+                                    panel.enable_size_tracking(window);
                                     panel.focus_search_input(window, cx);
                                 });
                             });
@@ -2611,6 +2854,9 @@ impl ClipboardApplication {
                             );
                         }
                         error!(%correlation_id, %reason, "failed to change clipboard popup visibility");
+                        if !pending.visible {
+                            self.popup.size_tracking_session = Some(popup.session_id);
+                        }
                         let _ = popup.window.update(cx, |_, window, app| {
                             let _ = popup.panel.update(app, |panel, cx| {
                                 if pending.visible {
@@ -2712,6 +2958,11 @@ impl ClipboardApplication {
     fn handle_platform_event(&mut self, event: PlatformEvent, cx: &mut Context<Self>) {
         match event {
             PlatformEvent::ClipboardCaptured(capture) => {
+                self.invalidate_currency_capture();
+                if self.capture_is_paused(&capture) {
+                    remove_clipboard_capture_staging(&capture);
+                    return;
+                }
                 if self.management_operation_active {
                     self.deferred_captures.push(capture);
                     info!(
@@ -2780,6 +3031,7 @@ impl ClipboardApplication {
                     // Link detection remains on the GPUI side because it only updates
                     // presentation state; persistence is owned by the worker.
                     self.handle_link_detector_capture(&text, cx);
+                    self.handle_currency_capture(&text, cx);
                 }
                 if captured_at_unix_ms.saturating_sub(self.last_cleanup_at_unix_ms)
                     >= RETENTION_INTERVAL_MS
@@ -2846,8 +3098,13 @@ impl ClipboardApplication {
                     });
                 });
             }
-            PlatformEvent::TrayActionRequested(_)
+            PlatformEvent::ArchiveRead(_)
+            | PlatformEvent::ArchivePassword(_)
+            | PlatformEvent::ArchiveJob(_)
+            | PlatformEvent::ArchivePicker(_)
+            | PlatformEvent::TrayActionRequested(_)
             | PlatformEvent::SystemMotionPreferenceChanged(_)
+            | PlatformEvent::SystemThemePreferenceChanged(_)
             | PlatformEvent::QuickLaunchPanelRequested(_)
             | PlatformEvent::QuickLaunchDirectoryContextResolved(_)
             | PlatformEvent::QuickLaunchAutoSwitchRequested(_)
@@ -2906,6 +3163,7 @@ impl ClipboardApplication {
                             total: 0,
                             has_more: false,
                         },
+                        summary_counts: HashMap::new(),
                         categories: Vec::new(),
                         category_sources: HashMap::new(),
                         source_process_names: Vec::new(),
@@ -2930,6 +3188,7 @@ impl ClipboardApplication {
         let session_id = uuid::Uuid::new_v4();
         let application = cx.entity().downgrade();
         let worker = self.history_worker.clone();
+        let capture_pause = self.capture_pause_snapshot();
         let target = request.target.clone();
         let panel_slot = Rc::new(RefCell::new(None));
         let native_window_slot = Rc::new(RefCell::new(None));
@@ -2950,6 +3209,9 @@ impl ClipboardApplication {
                 app_id: Some("NxTools.Clipboard".into()),
                 window_min_size: Some(size(px(280.0), px(280.0))),
                 window_decorations: Some(WindowDecorations::Client),
+                app_owns_titlebar_drag: false,
+                inactive_frame_interval: None,
+                icon: None,
                 tabbing_identifier: None,
             },
             move |window, cx| {
@@ -2970,6 +3232,8 @@ impl ClipboardApplication {
                         window,
                         cx,
                     )
+                    .with_summary_counts(snapshot.summary_counts)
+                    .with_capture_pause(capture_pause)
                 });
                 *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
                 cx.new(|cx| Root::new(panel, window, cx))
@@ -3050,6 +3314,7 @@ impl ClipboardApplication {
                     return;
                 };
                 self.popup.lifecycle.stage(popup, topmost_command);
+                self.popup.size_tracking_session = None;
                 info!(
                     %session_id,
                     target = %request.target.process_name,
@@ -3071,6 +3336,39 @@ impl ClipboardApplication {
             }
             Err(error) => error!(%error, "failed to open clipboard popup"),
         }
+    }
+}
+
+impl ClipboardApplication {
+    pub(crate) fn set_image_view_mode(
+        &mut self,
+        mode: nxtools_core::ClipboardImageViewMode,
+        cx: &mut Context<Self>,
+    ) {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started = Instant::now();
+        info!(event="clipboard.preview.mode_save_started", %correlation_id, ?mode);
+        match AppConfig::update_section(&self.config_path, |config| {
+            config.clipboard.image_view_mode = mode
+        }) {
+            Ok(merged) => {
+                let panel = self.config.clipboard_panel;
+                self.config = merged;
+                self.config.clipboard_panel = panel;
+                self.dismiss_preview(cx);
+                info!(event="clipboard.preview.mode_saved", %correlation_id, ?mode, elapsed_ms=started.elapsed().as_millis());
+            }
+            Err(_) => {
+                warn!(event="clipboard.preview.mode_save_failed", %correlation_id, reason="config_commit", elapsed_ms=started.elapsed().as_millis());
+                self.notify_error(
+                    "clipboard-image-view-mode",
+                    "图片预览设置",
+                    "保存失败，仍使用原来的视图模式。请检查配置文件是否可写。",
+                    cx,
+                );
+            }
+        }
+        cx.notify();
     }
 }
 
@@ -3137,6 +3435,32 @@ mod asset_tests {
         assert!(pending.is_none());
     }
 
+    #[test]
+    fn first_clipboard_preview_is_hidden_and_uses_confirmed_passive_presentation() {
+        let source = include_str!("clipboard.rs");
+        let open = source
+            .split("fn show_preview(")
+            .nth(1)
+            .expect("production preview creation")
+            .split("\n}\n")
+            .next()
+            .expect("preview body");
+        assert!(
+            open.contains("show: false"),
+            "first preview must start hidden"
+        );
+        assert!(
+            open.contains("begin_preview_content_measurement"),
+            "first hidden preview must measure before entering confirmed native chain"
+        );
+        let presentation = include_str!("clipboard_preview_presentation.rs");
+        assert!(presentation.contains("stage.phase = PreviewStagePhase::InitialNoActivate"));
+        assert!(presentation.contains("self.begin_initial_preview_presentation(stage, cx)"));
+        assert!(
+            !open.contains("self.preview.visible = true"),
+            "queue/create is not native shown confirmation"
+        );
+    }
     #[test]
     fn preview_window_is_reused_instead_of_recreated_for_hover_changes() {
         assert_eq!(
@@ -3591,9 +3915,9 @@ mod asset_tests {
         ));
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn settings_save_during_migration_result_delay_preserves_committed_destination(
-        cx: &mut gpui::TestAppContext,
+        cx: &mut gpui_kit::TestAppContext,
     ) {
         let temporary = tempfile::tempdir().expect("create synthetic migration directory");
         let source = temporary.path().join("source");

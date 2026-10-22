@@ -9,3 +9,10 @@
 # picking either side (task state lives in task.json, not index.md). See
 # .trellis/spec/cli/backend/directory-structure.md for details.
 .trellis/workspace/*/journal-*.md merge=union
+
+# Preserve exact upstream and fixture bytes used by provenance/hash contracts.
+vendor/** -text
+docs/reference-code/gpui-kit-component-catalog.json -text
+rust/apps/nxtools-desktop/assets/currency-catalog.json -text
+rust/apps/nxtools-desktop/src/tools/currency-fixtures/*.json -text
+rust/crates/nxtools-archive/tests/fixtures/** -text

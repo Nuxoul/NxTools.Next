@@ -1,0 +1,7 @@
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official compound first, parent adaptation and exact tier rules"}
+{"file":"docs/reference-code/gpui-kit-component-table.md","reason":"Locked version choices for Kbd Empty DescriptionList Marker Spinner Progress"}
+{"file":"docs/reference-code/gpui-kit-component-index.md","reason":"Bounded API reads, official Toolbar variant caveat"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop state/render/native and test ownership"}
+{"file":".trellis/tasks/10-18-ui-component-followup/prd.md","reason":"Approved low-risk scope and parallel archive file/build separation"}
+{"file":".trellis/tasks/10-18-ui-component-followup/design.md","reason":"Exact official composition and intentionally deferred compatibility candidates"}
+{"file":".trellis/tasks/10-18-ui-component-followup/implement.md","reason":"Red real-paint regression and final production checks"}

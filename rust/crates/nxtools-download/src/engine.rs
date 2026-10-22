@@ -4,12 +4,11 @@ use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use chrono::{DateTime, Datelike, Days, Local, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use nxtools_core::{DownloadSettings, NetworkSettings};
 use nxtools_network::proxy_mode_name;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 use crate::capacity::{StorageCapacityProbe, SystemStorageCapacityProbe};
 use crate::http::{
@@ -18,27 +17,23 @@ use crate::http::{
     is_file_in_use_error,
 };
 use crate::storage::{
-    BrowserHandoffSave, IdempotentSubmissionSave, QueueAdmission, RedownloadOperationSave,
-    StoredTransferState,
+    IdempotentSubmissionSave, QueueAdmission, RedownloadOperationSave, StoredTransferState,
 };
 use crate::{
-    ArtifactAllocation, BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
-    DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadAggregateMetrics, DownloadBatchAction,
+    ArtifactAllocation, BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction,
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
-    DownloadCommandResult, DownloadDailySchedule, DownloadEvent, DownloadEventEnvelope,
-    DownloadEventSequencer, DownloadFault, DownloadFaultCode, DownloadHttpPolicy,
-    DownloadHttpPolicyError, DownloadOrganizationPolicy, DownloadOrganizationPolicyError,
-    DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueue, DownloadQueueAction,
-    DownloadQueuePlacement, DownloadRateLimitError, DownloadRateLimiter, DownloadRequest,
-    DownloadRequestError, DownloadRequestMedia, DownloadSchedule, DownloadSegment,
-    DownloadSegmentError, DownloadSegmentProgress, DownloadSegmentState,
-    DownloadSegmentTransferControl, DownloadSegmentTransferOutcome, DownloadSnapshot,
+    DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer,
+    DownloadFault, DownloadFaultCode, DownloadHttpPolicy, DownloadHttpPolicyError,
+    DownloadOrganizationPolicy, DownloadOrganizationPolicyError, DownloadProbe, DownloadProgress,
+    DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
+    DownloadRequestMedia, DownloadSegment, DownloadSegmentError, DownloadSegmentProgress,
+    DownloadSegmentState, DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
     DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
-    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskDetail, DownloadTaskError,
-    DownloadTaskId, DownloadTaskSummary, DownloadTransferContext, DownloadTransferControl,
-    DownloadWeekday, FfmpegInstallControl, FfmpegInstallOperation, HttpDownloadClient,
-    HttpDownloadError, MAX_BROWSER_BATCH_ITEMS, NetworkPolicy, NetworkPolicyError, RequestOrigin,
-    SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
+    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskError, DownloadTaskId,
+    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, FfmpegInstallControl,
+    FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError, NetworkPolicy,
+    NetworkPolicyError, RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan,
+    TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -46,6 +41,19 @@ static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = Onc
 #[derive(Clone)]
 pub struct DownloadEngine {
     inner: Arc<DownloadEngineInner>,
+}
+
+#[derive(Clone)]
+pub struct WeakDownloadEngine(std::sync::Weak<DownloadEngineInner>);
+impl WeakDownloadEngine {
+    pub fn upgrade(&self) -> Option<DownloadEngine> {
+        self.0.upgrade().map(|inner| DownloadEngine { inner })
+    }
+}
+impl DownloadEngine {
+    pub fn downgrade(&self) -> WeakDownloadEngine {
+        WeakDownloadEngine(Arc::downgrade(&self.inner))
+    }
 }
 
 type OperationHttpClients = HashMap<(u64, String, bool), (HttpDownloadClient, Instant)>;
@@ -60,8 +68,10 @@ pub(crate) struct DownloadEngineInner {
     ffmpeg_install_active: AtomicBool,
     store: SqliteDownloadStore,
     global_rate_limiter: DownloadRateLimiter,
+    global_speed_limits: Mutex<GlobalSpeedLimits>,
     capacity_probe: Arc<dyn StorageCapacityProbe>,
     tasks: Mutex<HashMap<DownloadTaskId, EngineTaskState>>,
+    resolution: Mutex<resolution::ResolutionState>,
     scheduler_gate: Mutex<()>,
     schedule_wake_generation: AtomicU64,
     daily_schedule_wake_generation: AtomicU64,
@@ -75,6 +85,22 @@ pub(crate) struct DownloadEngineInner {
     browser_dialog_handoffs: Mutex<VecDeque<uuid::Uuid>>,
     browser_dialog_available: AtomicBool,
     browser_blob_staging_root: Option<PathBuf>,
+}
+
+/// Desired manual state is durable; the foreground policy is session-only.
+/// Both setters hold the same gate through persistence and limiter publication.
+struct GlobalSpeedLimits {
+    manual: Option<u64>,
+    runtime_cap: Option<u64>,
+}
+
+impl GlobalSpeedLimits {
+    fn effective(&self) -> Option<u64> {
+        match (self.manual, self.runtime_cap) {
+            (Some(manual), Some(runtime)) => Some(manual.min(runtime)),
+            (manual, runtime) => manual.or(runtime),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -94,15 +120,6 @@ pub enum BrowserDownloadDialogSource {
     },
 }
 
-struct BrowserBlobImportRequest {
-    handoff_id: uuid::Uuid,
-    blob: BrowserBlob,
-    save_directory: PathBuf,
-    file_name: String,
-    category_id: Option<String>,
-    save_directory_explicit: bool,
-}
-
 #[derive(Clone)]
 struct EngineTaskState {
     task: DownloadTask,
@@ -110,6 +127,15 @@ struct EngineTaskState {
     control: Option<DownloadTransferControl>,
     last_progress_event: Option<Instant>,
     transfer_rate: Option<TransferRateSampler>,
+}
+
+impl EngineTaskState {
+    fn capture_transfer_statistics(&mut self) {
+        if let Some(control) = &self.control {
+            self.task
+                .set_transfer_statistics(control.statistics.snapshot());
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -134,9 +160,17 @@ const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
 const ADAPTIVE_SHRINK_SPEED_SHARE_PERCENT: u64 = 60;
 const MIB: u64 = 1024 * 1024;
 
+mod browser;
 mod dash_runner;
 mod hls_runner;
+mod projection;
+mod queue;
+mod resolution;
 mod segmented_runner;
+
+use browser::BrowserBlobImportRequest;
+use projection::snapshot_from_state;
+pub use queue::daily_schedule_window_contains;
 
 pub(crate) use dash_runner::*;
 pub(crate) use hls_runner::*;
@@ -366,88 +400,10 @@ pub struct DownloadEngineTask {
     #[serde(default)]
     pub scheduled: bool,
 }
-impl DownloadTaskSummary {
-    pub fn into_engine_task(self) -> Result<DownloadEngineTask, crate::DownloadTaskInvariantError> {
-        let request = DownloadRequest {
-            source_url: self.source_url,
-            save_directory: PathBuf::from("."),
-            save_directory_explicit: false,
-            file_name: self.file_name,
-            headers: Vec::new(),
-            cookie: None,
-            referrer: None,
-            certificate_policy: Default::default(),
-            connection_limit: Some(1),
-            speed_limit_bytes_per_second: None,
-            expected_total_bytes: self.total_bytes,
-            scheduled_at_unix_ms: None,
-            adaptive_segment_policy: None,
-            media: None,
-            category_id: self.category_id,
-            category_name: self.category_name,
-            duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
-        };
-        let task = DownloadTask::restore(
-            self.task_id,
-            request,
-            self.origin,
-            self.status,
-            self.created_at_unix_ms,
-            self.updated_at_unix_ms,
-            self.completed_at_unix_ms,
-        )?;
-        Ok(DownloadEngineTask {
-            task,
-            probe: None,
-            downloaded_bytes: self.downloaded_bytes,
-            total_bytes: self.total_bytes,
-            error: self.error,
-            final_path: self.final_path,
-            temporary_path: None,
-            queue_eligible: self.queue_eligible,
-            has_final_artifact: self.has_final_artifact,
-            scheduled: self.scheduled,
-        })
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DownloadScheduleMoment {
     pub weekday: DownloadWeekday,
     pub minute_of_day: u16,
-}
-
-impl DownloadScheduleMoment {
-    fn now_local() -> Self {
-        let now = Local::now();
-        Self {
-            weekday: weekday_from_chrono(now.weekday()),
-            minute_of_day: u16::try_from(now.hour() * 60 + now.minute())
-                .expect("local clock minute is within a day"),
-        }
-    }
-}
-
-/// Returns whether a daily start/stop window contains a local weekday and minute. The start
-/// endpoint is inclusive and the stop endpoint is exclusive, so an automatic stop configured for
-/// 07:30 is applied when the local clock reaches 07:30.
-pub fn daily_schedule_window_contains(
-    schedule: &DownloadDailySchedule,
-    moment: DownloadScheduleMoment,
-) -> bool {
-    if !schedule.enabled_start || !schedule.enabled_stop {
-        return false;
-    }
-    if schedule.start_minute <= schedule.stop_minute {
-        return schedule.days.contains(&moment.weekday)
-            && moment.minute_of_day >= schedule.start_minute
-            && moment.minute_of_day < schedule.stop_minute;
-    }
-    if moment.minute_of_day >= schedule.start_minute {
-        return schedule.days.contains(&moment.weekday);
-    }
-    let previous_day = previous_weekday(moment.weekday);
-    schedule.days.contains(&previous_day) && moment.minute_of_day < schedule.stop_minute
 }
 
 impl DownloadEngine {
@@ -672,8 +628,13 @@ impl DownloadEngine {
                 ffmpeg_install_active: AtomicBool::new(false),
                 store,
                 global_rate_limiter: DownloadRateLimiter::new(global_speed_limit)?,
+                global_speed_limits: Mutex::new(GlobalSpeedLimits {
+                    manual: global_speed_limit,
+                    runtime_cap: None,
+                }),
                 capacity_probe,
                 tasks: Mutex::new(tasks),
+                resolution: Mutex::new(resolution::ResolutionState::default()),
                 scheduler_gate: Mutex::new(()),
                 schedule_wake_generation: AtomicU64::new(0),
                 daily_schedule_wake_generation: AtomicU64::new(0),
@@ -756,27 +717,82 @@ impl DownloadEngine {
         Ok(receiver)
     }
 
-    /// Attaches the one in-process GPUI consumer for browser confirmation-window requests.
-    /// This channel is intentionally separate from serializable download events because the
-    /// request can contain credentials and request headers.
-    pub fn take_browser_dialog_receiver(
-        &self,
-    ) -> Result<async_channel::Receiver<BrowserDownloadDialogRequest>, DownloadEngineError> {
-        let receiver = self
-            .inner
-            .browser_dialog_receiver
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?
-            .take()
-            .ok_or(DownloadEngineError::BrowserDialogSubscriberAlreadyTaken)?;
+    /// Returns the persisted desired manual limit, not the temporary policy ceiling.
+    /// `None` means unlimited. Clones of this engine share the same desired state.
+    pub fn global_speed_limit(&self) -> Option<u64> {
         self.inner
-            .browser_dialog_available
-            .store(true, Ordering::Release);
-        Ok(receiver)
+            .global_speed_limits
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .manual
     }
 
-    pub fn global_speed_limit(&self) -> Option<u64> {
+    /// Returns the actual shared transfer limiter ceiling: the minimum enabled
+    /// manual global limit and runtime cap. Per-task limiters remain independent.
+    pub fn effective_global_speed_limit(&self) -> Option<u64> {
         self.inner.global_rate_limiter.bytes_per_second()
+    }
+
+    /// Applies a session-only global ceiling without changing SQLite or task caps.
+    /// The caller owns foreground policy and ordering: pass `Some(positive_bytes)`
+    /// while another application is active, and `None` on disable/return to NxTools.
+    /// `Some(0)` is rejected; `None` removes only the policy, restoring the latest
+    /// desired manual limit. Engine reopen starts with no runtime cap.
+    ///
+    /// This updates the existing shared limiter in place, waking active waiters
+    /// when the effective ceiling changes. Identical policy calls are silent;
+    /// changed calls emit correlated `runtime_started`/`runtime_changed` diagnostics
+    /// with numeric limits and elapsed time only. No download task event is emitted.
+    pub fn set_runtime_speed_cap(
+        &self,
+        bytes_per_second: Option<u64>,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        let started_at = Instant::now();
+        if bytes_per_second == Some(0) {
+            warn!(
+                event = "download.speed_limit.runtime_rejected",
+                %correlation_id,
+                reason = "zero_limit",
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                "temporary download speed cap rejected"
+            );
+            return Err(DownloadRateLimitError::ZeroLimit.into());
+        }
+        let mut limits = self
+            .inner
+            .global_speed_limits
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        if limits.runtime_cap == bytes_per_second {
+            return Ok(());
+        }
+        info!(
+            event = "download.speed_limit.runtime_started",
+            %correlation_id,
+            enabled = bytes_per_second.is_some(),
+            "temporary download speed cap update started"
+        );
+        let updated = GlobalSpeedLimits {
+            manual: limits.manual,
+            runtime_cap: bytes_per_second,
+        };
+        let effective = updated.effective();
+        self.inner
+            .global_rate_limiter
+            .set_bytes_per_second(effective)?;
+        *limits = updated;
+        info!(
+            event = "download.speed_limit.runtime_changed",
+            %correlation_id,
+            enabled = bytes_per_second.is_some(),
+            bytes_per_second = bytes_per_second.unwrap_or_default(),
+            effective_enabled = effective.is_some(),
+            effective_bytes_per_second = effective.unwrap_or_default(),
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            "temporary download speed cap applied"
+        );
+        Ok(())
     }
 
     pub fn set_ffmpeg_executable_path(
@@ -855,13 +871,6 @@ impl DownloadEngine {
         })
     }
 
-    pub fn queue_order(&self, queue_id: &str) -> Result<Vec<DownloadTaskId>, DownloadEngineError> {
-        self.inner
-            .store
-            .load_queue_order(queue_id)
-            .map_err(Into::into)
-    }
-
     pub fn set_global_speed_limit(
         &self,
         bytes_per_second: Option<u64>,
@@ -875,15 +884,32 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
         DownloadRateLimiter::new(bytes_per_second)?;
+        let mut limits = self
+            .inner
+            .global_speed_limits
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        if limits.manual == bytes_per_second {
+            return Ok(());
+        }
+        // Commit desired intent before publishing it; policy never enters storage.
         self.inner.store.save_global_speed_limit(bytes_per_second)?;
+        let updated = GlobalSpeedLimits {
+            manual: bytes_per_second,
+            runtime_cap: limits.runtime_cap,
+        };
+        let effective = updated.effective();
         self.inner
             .global_rate_limiter
-            .set_bytes_per_second(bytes_per_second)?;
+            .set_bytes_per_second(effective)?;
+        *limits = updated;
         info!(
             event = "download.speed_limit.global_changed",
             %correlation_id,
             enabled = bytes_per_second.is_some(),
             bytes_per_second = bytes_per_second.unwrap_or_default(),
+            effective_enabled = effective.is_some(),
+            effective_bytes_per_second = effective.unwrap_or_default(),
             "global download speed limit changed"
         );
         Ok(())
@@ -913,7 +939,7 @@ impl DownloadEngine {
             committed
                 .task
                 .set_speed_limit(bytes_per_second, now_unix_ms());
-            self.inner.persist(&committed)?;
+            self.inner.persist(&mut committed)?;
             if let Some(control) = committed.control.as_ref() {
                 control.set_task_speed_limit(bytes_per_second)?;
             }
@@ -952,6 +978,59 @@ impl DownloadEngine {
 
         let outcome = match envelope.command {
             DownloadCommand::Probe { request } => self.probe_blocking(request, request_id),
+            DownloadCommand::ProbeResolved {
+                request,
+                resolution,
+            } => self
+                .probe_resolved_correlated(
+                    request,
+                    resolution,
+                    crate::DownloadResolutionControl::default(),
+                    request_id,
+                )
+                .map(DownloadCommandOutcome::Probe),
+            DownloadCommand::SubmitResolved {
+                request,
+                mode,
+                idempotency_key,
+                resolution,
+            } => self
+                .submit_resolved_correlated(
+                    request,
+                    envelope.origin,
+                    mode,
+                    idempotency_key,
+                    request_id,
+                    resolution,
+                    crate::DownloadResolutionControl::default(),
+                )
+                .map(|(task_id, duplicate)| {
+                    if idempotency_key.is_some() {
+                        DownloadCommandOutcome::IdempotentAccepted { task_id, duplicate }
+                    } else {
+                        DownloadCommandOutcome::Accepted {
+                            task_id: Some(task_id),
+                        }
+                    }
+                }),
+            DownloadCommand::BrowserSubmitResolved {
+                handoff_id,
+                request,
+                mode,
+                resolution,
+            } => {
+                self.submit_browser_with_resolution(
+                    handoff_id,
+                    request,
+                    mode,
+                    request_id,
+                    resolution,
+                    crate::DownloadResolutionControl::default(),
+                )
+                .map(|(task_id, duplicate)| {
+                    DownloadCommandOutcome::BrowserAccepted { task_id, duplicate }
+                })
+            }
             DownloadCommand::Submit {
                 request,
                 mode,
@@ -1113,19 +1192,30 @@ impl DownloadEngine {
 
     fn probe_blocking(
         &self,
-        mut request: DownloadRequest,
+        request: DownloadRequest,
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadCommandOutcome, DownloadEngineError> {
+        self.probe_with_resolution(
+            request,
+            crate::DownloadResolutionOptions {
+                operation_id: correlation_id,
+                mode: crate::DownloadResolutionMode::Resolve,
+            },
+            crate::DownloadResolutionControl::default(),
+        )
+        .map(DownloadCommandOutcome::Probe)
+    }
+
+    fn probe_effective_blocking(
+        &self,
+        request: DownloadRequest,
+        correlation_id: uuid::Uuid,
+        operation: Option<crate::DownloadResolutionOperation>,
+    ) -> Result<DownloadProbe, DownloadEngineError> {
         let started = Instant::now();
-        let policy_result = self
-            .inner
-            .download_http_policy
-            .apply_to_request(&mut request);
         let certificate_policy = request.certificate_policy;
         let client_started = Instant::now();
-        let client = policy_result
-            .map_err(DownloadEngineError::from)
-            .and_then(|()| self.inner.http_for_operation_traced(certificate_policy));
+        let client = self.inner.http_for_operation_traced(certificate_policy);
         let client_ms = client_started.elapsed().as_millis() as u64;
         let client_reused = client.as_ref().is_ok_and(|(_, reused)| *reused);
         let (proxy_mode, proxy_source) =
@@ -1146,22 +1236,34 @@ impl DownloadEngine {
             "download resource probe started"
         );
         let mut stage_timings = None;
-        let result = (|| {
-            request.validate()?;
-            let client = client?.0;
-            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-            download_runtime()?.spawn(async move {
-                let _ = sender.send(client.probe_timed(&request).await);
+        let result =
+            (|| {
+                request.validate()?;
+                let client = client?.0;
+                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+                download_runtime()?.spawn(async move {
+                let result = if let Some(operation) = operation {
+                    let future = client.probe_timed(&request);
+                    tokio::pin!(future);
+                    loop {
+                        tokio::select! {
+                            result = &mut future => break result.map_err(DownloadEngineError::from),
+                            () = tokio::time::sleep(Duration::from_millis(10)) => {
+                                if let Err(error) = operation.check() { break Err(error.into()); }
+                            }
+                        }
+                    }
+                } else { client.probe_timed(&request).await.map_err(DownloadEngineError::from) };
+                let _ = sender.send(result);
             });
-            receiver
-                .recv()
-                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
-                .map_err(DownloadEngineError::from)
-        })()
-        .map(|(probe, timings)| {
-            stage_timings = Some(timings);
-            probe
-        });
+                receiver
+                    .recv()
+                    .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+            })()
+            .map(|(probe, timings)| {
+                stage_timings = Some(timings);
+                probe
+            });
         match result {
             Ok(probe) => {
                 let (media_kind, variant_count) = match probe.media.as_ref() {
@@ -1189,10 +1291,12 @@ impl DownloadEngine {
                     range_ms = timings.range_ms,
                     fallback_ms = timings.fallback_ms,
                     manifest_ms = timings.manifest_ms,
+                    head_companion_skipped = timings.head_companion_skipped,
+                    range_companion_skipped = timings.range_companion_skipped,
                     elapsed_ms = started.elapsed().as_millis(),
                     "download resource probe completed"
                 );
-                Ok(DownloadCommandOutcome::Probe(probe))
+                Ok(probe)
             }
             Err(error) => {
                 warn!(
@@ -1300,674 +1404,6 @@ impl DownloadEngine {
         DownloadCommandOutcome::Batch { results }
     }
 
-    fn run_queue_action(
-        &self,
-        action: DownloadQueueAction,
-        correlation_id: uuid::Uuid,
-    ) -> Result<DownloadCommandOutcome, DownloadEngineError> {
-        let queue = match action {
-            DownloadQueueAction::Move {
-                queue_id,
-                task_ids,
-                placement,
-            } => {
-                let _scheduler = self
-                    .inner
-                    .scheduler_gate
-                    .lock()
-                    .map_err(|_| DownloadEngineError::LockPoisoned)?;
-                let mut order = self.inner.store.load_queue_order(&queue_id)?;
-                // Manual ordering covers every task in the queue (completed,
-                // failed, paused, active): the user-arranged order is a
-                // persisted preference, not an admission decision. Gating it
-                // on admission eligibility made moves on finished tasks fail
-                // silently, so the order never stuck across restarts.
-                let known: HashSet<_> = order.iter().copied().collect();
-                for task_id in &task_ids {
-                    if !known.contains(task_id) {
-                        return Err(DownloadEngineError::InvalidQueueMove(*task_id));
-                    }
-                }
-                move_queue_items(&mut order, &task_ids, placement);
-                self.inner.store.replace_queue_order(&queue_id, &order)?;
-                info!(
-                    event = "download.queue.reordered",
-                    %correlation_id,
-                    queue_id,
-                    placement = ?placement,
-                    target_count = task_ids.len(),
-                    "download queue order changed"
-                );
-                self.queue(&queue_id)?
-            }
-            DownloadQueueAction::SetMaxConcurrent {
-                queue_id,
-                max_concurrent_tasks,
-            } => {
-                if max_concurrent_tasks == 0 {
-                    return Err(DownloadEngineError::InvalidQueueConcurrency);
-                }
-                let queue = self
-                    .inner
-                    .store
-                    .set_queue_max_concurrent(&queue_id, max_concurrent_tasks)?;
-                if let Err(error) = self.schedule_queue(&queue_id, correlation_id) {
-                    warn!(
-                        event = "download.queue.refill_deferred",
-                        %correlation_id,
-                        queue_id,
-                        error = %error,
-                        "queue concurrency was committed; refill remains eligible for retry"
-                    );
-                }
-                info!(
-                    event = "download.queue.concurrency_changed",
-                    %correlation_id,
-                    queue_id,
-                    max_concurrent_tasks,
-                    "download queue concurrency changed"
-                );
-                queue
-            }
-            DownloadQueueAction::SetSchedule { queue_id, schedule } => {
-                return self
-                    .set_queue_schedule_correlated(&queue_id, schedule, correlation_id)
-                    .map(|queue| DownloadCommandOutcome::QueueChanged { queue });
-            }
-        };
-        Ok(DownloadCommandOutcome::QueueChanged { queue })
-    }
-
-    fn queue(&self, queue_id: &str) -> Result<DownloadQueue, DownloadEngineError> {
-        self.inner
-            .store
-            .load_queues()?
-            .into_iter()
-            .find(|queue| queue.id == queue_id)
-            .ok_or_else(|| DownloadStorageError::QueueNotFound(queue_id.to_owned()).into())
-    }
-
-    pub fn set_queue_schedule(
-        &self,
-        queue_id: &str,
-        schedule: Option<DownloadSchedule>,
-    ) -> Result<DownloadQueue, DownloadEngineError> {
-        self.set_queue_schedule_correlated(queue_id, schedule, uuid::Uuid::new_v4())
-    }
-
-    fn set_queue_schedule_correlated(
-        &self,
-        queue_id: &str,
-        schedule: Option<DownloadSchedule>,
-        correlation_id: uuid::Uuid,
-    ) -> Result<DownloadQueue, DownloadEngineError> {
-        let started_at = Instant::now();
-        if let Some(daily) = schedule.as_ref().map(|schedule| &schedule.daily) {
-            daily.validate().map_err(DownloadEngineError::Schedule)?;
-        }
-        let queue = self
-            .inner
-            .store
-            .set_queue_schedule(queue_id, schedule.as_ref())?;
-        info!(
-            event = "download.schedule.daily_changed",
-            %correlation_id,
-            queue_id,
-            enabled = queue.schedule.is_some(),
-            "daily queue schedule changed"
-        );
-        if let Err(error) = self.process_daily_schedules_at_correlated(
-            DownloadScheduleMoment::now_local(),
-            correlation_id,
-        ) {
-            warn!(
-                event = "download.schedule.daily_change_failed",
-                %correlation_id,
-                queue_id,
-                committed = true,
-                elapsed_ms = started_at.elapsed().as_millis(),
-                error = %error,
-                "daily queue schedule was persisted but runtime reconciliation failed"
-            );
-            return Err(error);
-        }
-        let queue = match self.queue(queue_id) {
-            Ok(queue) => queue,
-            Err(error) => {
-                warn!(
-                    event = "download.schedule.daily_change_failed",
-                    %correlation_id,
-                    queue_id,
-                    stage = "reload_queue",
-                    committed = true,
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    error = %error,
-                    "daily queue schedule was persisted but its resulting snapshot could not be loaded"
-                );
-                return Err(error);
-            }
-        };
-        info!(
-            event = "download.schedule.daily_change_completed",
-            %correlation_id,
-            queue_id,
-            elapsed_ms = started_at.elapsed().as_millis(),
-            "daily queue schedule change completed"
-        );
-        Ok(queue)
-    }
-
-    /// Reconciles all persisted daily queue schedules at a supplied local wall-clock moment.
-    /// The public seam makes cross-midnight behavior deterministic in contract tests.
-    pub fn process_daily_schedules_at(
-        &self,
-        moment: DownloadScheduleMoment,
-    ) -> Result<usize, DownloadEngineError> {
-        self.process_daily_schedules_at_correlated(moment, uuid::Uuid::new_v4())
-    }
-
-    fn process_daily_schedules_at_correlated(
-        &self,
-        moment: DownloadScheduleMoment,
-        correlation_id: uuid::Uuid,
-    ) -> Result<usize, DownloadEngineError> {
-        let started_at = Instant::now();
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        let mut changed_count = 0_usize;
-        for queue in self.inner.store.load_queues()? {
-            let Some(daily) = queue.schedule.as_ref() else {
-                continue;
-            };
-            let daily = &daily.daily;
-            daily.validate().map_err(DownloadEngineError::Schedule)?;
-            let desired_running = daily_schedule_desired_running(daily, moment);
-            let Some(desired_running) = desired_running else {
-                continue;
-            };
-            if desired_running == queue.is_running {
-                if desired_running {
-                    self.start_daily_queue_locked(&queue.id, correlation_id)?;
-                }
-                continue;
-            }
-            self.inner
-                .store
-                .set_queue_running(&queue.id, desired_running)?;
-            if desired_running {
-                self.start_daily_queue_locked(&queue.id, correlation_id)?;
-            } else {
-                self.pause_daily_queue_locked(&queue.id)?;
-            }
-            changed_count = changed_count.saturating_add(1);
-            info!(
-                event = "download.schedule.daily_queue_transition",
-                %correlation_id,
-                queue_id = queue.id,
-                running = desired_running,
-                minute_of_day = moment.minute_of_day,
-                weekday = ?moment.weekday,
-                "daily queue scheduling state changed"
-            );
-        }
-        drop(_scheduler);
-        self.refresh_daily_schedule_wake()?;
-        info!(
-            event = "download.schedule.daily_reconcile_completed",
-            %correlation_id,
-            changed_count,
-            elapsed_ms = started_at.elapsed().as_millis(),
-            "daily queue schedule reconciliation completed"
-        );
-        Ok(changed_count)
-    }
-
-    fn activate_daily_queue_locked(&self, queue_id: &str) -> Result<(), DownloadEngineError> {
-        let queue_task_ids = self.inner.store.load_queue_order(queue_id)?;
-        let tasks = self.inner.lock_tasks()?;
-        for task_id in queue_task_ids {
-            let Some(state) = tasks.get(&task_id) else {
-                continue;
-            };
-            if !matches!(
-                state.task.status(),
-                DownloadStatus::Created | DownloadStatus::Paused
-            ) || self.inner.store.is_queue_task_user_paused(task_id)?
-            {
-                continue;
-            }
-            self.inner.store.set_queue_task_eligible(task_id, true)?;
-        }
-        Ok(())
-    }
-
-    fn start_daily_queue_locked(
-        &self,
-        queue_id: &str,
-        correlation_id: uuid::Uuid,
-    ) -> Result<(), DownloadEngineError> {
-        self.activate_daily_queue_locked(queue_id)?;
-        if let Err(error) = self.schedule_queue_locked(queue_id, correlation_id) {
-            warn!(
-                event = "download.schedule.daily_start_admission_deferred",
-                %correlation_id,
-                queue_id,
-                error = %error,
-                "open daily queue retains eligible work for a later refill"
-            );
-        }
-        Ok(())
-    }
-
-    fn pause_daily_queue_locked(&self, queue_id: &str) -> Result<(), DownloadEngineError> {
-        let queue_task_ids = self.inner.store.load_queue_order(queue_id)?;
-        let tasks = self.inner.lock_tasks()?;
-        for task_id in queue_task_ids {
-            let Some(state) = tasks.get(&task_id) else {
-                continue;
-            };
-            if !is_active_download_status(state.task.status()) {
-                continue;
-            }
-            self.inner.store.set_queue_task_eligible(task_id, false)?;
-            state
-                .control
-                .as_ref()
-                .ok_or(DownloadEngineError::MissingTransferControl(task_id))?
-                .pause();
-        }
-        Ok(())
-    }
-
-    fn refresh_daily_schedule_wake(&self) -> Result<(), DownloadEngineError> {
-        let queues = self.inner.store.load_queues()?;
-        let generation = self
-            .inner
-            .daily_schedule_wake_generation
-            .fetch_add(1, Ordering::SeqCst)
-            .saturating_add(1);
-        let now = Local::now();
-        let Some(next_trigger) = next_daily_schedule_trigger(&queues, now) else {
-            return Ok(());
-        };
-        let wait_ms = next_trigger
-            .timestamp_millis()
-            .saturating_sub(now.timestamp_millis())
-            .max(1);
-        let engine = self.clone();
-        download_runtime()?.spawn(async move {
-            tokio::time::sleep(Duration::from_millis(
-                u64::try_from(wait_ms).unwrap_or(60_000),
-            ))
-            .await;
-            if engine
-                .inner
-                .daily_schedule_wake_generation
-                .load(Ordering::SeqCst)
-                != generation
-            {
-                return;
-            }
-            let correlation_id = uuid::Uuid::new_v4();
-            let [scheduled_moment, current_moment] =
-                daily_schedule_wake_moments(next_trigger, Local::now());
-            let scheduled_result =
-                engine.process_daily_schedules_at_correlated(scheduled_moment, correlation_id);
-            let current_result =
-                engine.process_daily_schedules_at_correlated(current_moment, correlation_id);
-            if let Err(error) = scheduled_result.and(current_result) {
-                warn!(
-                    event = "download.schedule.daily_wake_failed",
-                    %correlation_id,
-                    error = %error,
-                    "daily queue schedule wake failed"
-                );
-            }
-        });
-        Ok(())
-    }
-
-    fn schedule_queue(
-        &self,
-        queue_id: &str,
-        correlation_id: uuid::Uuid,
-    ) -> Result<(), DownloadEngineError> {
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        self.schedule_queue_locked(queue_id, correlation_id)
-    }
-
-    fn schedule_queue_locked(
-        &self,
-        queue_id: &str,
-        correlation_id: uuid::Uuid,
-    ) -> Result<(), DownloadEngineError> {
-        let queue = self.queue(queue_id)?;
-        if !queue.is_running {
-            return Ok(());
-        }
-        let limit = usize::from(queue.max_concurrent_tasks.unwrap_or(3).max(1));
-        let queue_task_ids = self
-            .inner
-            .store
-            .load_queue_order(queue_id)?
-            .into_iter()
-            .collect::<HashSet<_>>();
-        let active_count = {
-            let tasks = self.inner.lock_tasks()?;
-            tasks
-                .values()
-                .filter(|state| {
-                    queue_task_ids.contains(&state.task.id())
-                        && is_active_download_status(state.task.status())
-                })
-                .count()
-        };
-        let available_slots = limit.saturating_sub(active_count);
-        if available_slots == 0 {
-            return Ok(());
-        }
-        download_runtime()?;
-
-        let candidates = self.inner.store.load_eligible_queue_order(queue_id)?;
-        let mut admitted = 0_usize;
-        for task_id in candidates {
-            if admitted >= available_slots {
-                break;
-            }
-            let restored_segment_bytes =
-                self.inner.store.load_transfer_plan(task_id)?.map(|plan| {
-                    plan.segments()
-                        .iter()
-                        .map(crate::DownloadSegment::downloaded_bytes)
-                        .sum()
-                });
-            let changed_task = {
-                let mut tasks = self.inner.lock_tasks()?;
-                let Some(state) = tasks.get_mut(&task_id) else {
-                    continue;
-                };
-                if !matches!(
-                    state.task.status(),
-                    DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
-                ) {
-                    continue;
-                }
-                let mut committed = state.clone();
-                let next = if committed.task.status() == DownloadStatus::Created {
-                    DownloadStatus::Probing
-                } else {
-                    DownloadStatus::Waiting
-                };
-                committed.task.transition_to(next, now_unix_ms())?;
-                committed.transfer.downloaded_bytes = restored_segment_bytes.unwrap_or(0);
-                committed.transfer.error = None;
-                committed.control = Some(DownloadTransferControl::with_rate_limiters(
-                    self.inner.global_rate_limiter.clone(),
-                    DownloadRateLimiter::new(
-                        committed.task.request().speed_limit_bytes_per_second,
-                    )?,
-                ));
-                committed.last_progress_event = None;
-                self.inner.store.save_task_with_transfer_and_eligibility(
-                    &committed.task,
-                    &committed.transfer,
-                    false,
-                )?;
-                *state = committed;
-                state.task.clone()
-            };
-            self.inner.emit(DownloadEvent::TaskChanged {
-                task: Box::new(changed_task),
-            });
-            spawn_download_worker(
-                Arc::clone(&self.inner),
-                queue_id.to_owned(),
-                task_id,
-                correlation_id,
-            )?;
-            admitted += 1;
-        }
-        info!(
-            event = "download.queue.admitted",
-            %correlation_id,
-            queue_id,
-            admitted,
-            active_before = active_count,
-            max_concurrent_tasks = limit,
-            "eligible download tasks admitted from queue"
-        );
-        Ok(())
-    }
-
-    fn command_snapshot(
-        &self,
-        query: DownloadQuery,
-    ) -> Result<DownloadSnapshot, DownloadEngineError> {
-        if query.compact {
-            return self.command_compact_snapshot(query);
-        }
-        let search = query
-            .search
-            .as_deref()
-            .map(str::trim)
-            .filter(|search| !search.is_empty())
-            .map(str::to_lowercase);
-        let limit = query.limit.unwrap_or(u32::MAX) as usize;
-        let task_details = self
-            .tasks()?
-            .into_iter()
-            .filter(|snapshot| {
-                let request = snapshot.task.request();
-                (query.statuses.is_empty() || query.statuses.contains(&snapshot.task.status()))
-                    && search.as_ref().is_none_or(|search| {
-                        request.source_url.to_lowercase().contains(search)
-                            || request
-                                .file_name
-                                .as_deref()
-                                .is_some_and(|name| name.to_lowercase().contains(search))
-                            || request
-                                .category_name
-                                .as_deref()
-                                .is_some_and(|name| name.to_lowercase().contains(search))
-                            || snapshot.final_path.as_ref().is_some_and(|path| {
-                                path.to_string_lossy().to_lowercase().contains(search)
-                            })
-                    })
-            })
-            .take(limit)
-            .collect::<Vec<_>>();
-        let tasks = task_details
-            .iter()
-            .map(|snapshot| snapshot.task.clone())
-            .collect();
-        Ok(DownloadSnapshot {
-            generation: self.inner.session_generation,
-            sequence: self.inner.event_sequencer.current(),
-            tasks,
-            queues: self.inner.store.load_queues()?,
-            aggregate_metrics: DownloadAggregateMetrics::default(),
-            task_details,
-            task_summaries: Vec::new(),
-        })
-    }
-
-    fn command_compact_snapshot(
-        &self,
-        query: DownloadQuery,
-    ) -> Result<DownloadSnapshot, DownloadEngineError> {
-        let queues = self.inner.store.load_queues()?;
-        let mut eligible = HashSet::new();
-        let mut queue_positions = HashMap::new();
-        for queue in &queues {
-            if queue.id == "default" {
-                for (position, task_id) in self
-                    .inner
-                    .store
-                    .load_queue_order(&queue.id)?
-                    .into_iter()
-                    .enumerate()
-                {
-                    queue_positions.entry(task_id).or_insert(position);
-                }
-            }
-            eligible.extend(self.inner.store.load_eligible_queue_order(&queue.id)?);
-        }
-        let search = query
-            .search
-            .as_deref()
-            .map(str::trim)
-            .filter(|search| !search.is_empty())
-            .map(str::to_lowercase);
-        let limit = query.limit.unwrap_or(u32::MAX) as usize;
-        let mut summaries = self
-            .inner
-            .lock_tasks()?
-            .values()
-            .map(|state| {
-                let request = state.task.request();
-                let file_name = request
-                    .file_name
-                    .clone()
-                    .or_else(|| state.transfer.probe.as_ref()?.file_name.clone())
-                    .or_else(|| {
-                        state
-                            .transfer
-                            .final_path
-                            .as_ref()?
-                            .file_name()?
-                            .to_str()
-                            .map(str::to_owned)
-                    });
-                DownloadTaskSummary {
-                    task_id: state.task.id(),
-                    origin: state.task.origin(),
-                    status: state.task.status(),
-                    created_at_unix_ms: state.task.created_at_unix_ms(),
-                    updated_at_unix_ms: state.task.updated_at_unix_ms(),
-                    completed_at_unix_ms: state.task.completed_at_unix_ms(),
-                    downloaded_bytes: state.transfer.downloaded_bytes,
-                    total_bytes: state
-                        .transfer
-                        .probe
-                        .as_ref()
-                        .and_then(|probe| probe.total_bytes)
-                        .or(request.expected_total_bytes),
-                    file_name,
-                    final_path: state.transfer.final_path.clone(),
-                    source_url: request.source_url.clone(),
-                    category_name: request.category_name.clone(),
-                    category_id: request.category_id.clone(),
-                    error: state.transfer.error.clone(),
-                    queue_eligible: eligible.contains(&state.task.id()),
-                    has_final_artifact: state.transfer.final_committed
-                        && state.transfer.final_path.is_some(),
-                    scheduled: request.scheduled_at_unix_ms.is_some(),
-                }
-            })
-            .filter(|summary| {
-                (query.statuses.is_empty() || query.statuses.contains(&summary.status))
-                    && search.as_ref().is_none_or(|search| {
-                        summary.source_url.to_lowercase().contains(search)
-                            || summary
-                                .file_name
-                                .as_deref()
-                                .is_some_and(|name| name.to_lowercase().contains(search))
-                            || summary
-                                .category_name
-                                .as_deref()
-                                .is_some_and(|name| name.to_lowercase().contains(search))
-                            || summary.final_path.as_ref().is_some_and(|path| {
-                                path.to_string_lossy().to_lowercase().contains(search)
-                            })
-                    })
-            })
-            .collect::<Vec<_>>();
-        summaries.sort_by_key(|summary| {
-            (
-                queue_positions
-                    .get(&summary.task_id)
-                    .copied()
-                    .unwrap_or(usize::MAX),
-                std::cmp::Reverse(summary.created_at_unix_ms),
-            )
-        });
-        summaries.truncate(limit);
-        Ok(DownloadSnapshot {
-            generation: self.inner.session_generation,
-            sequence: self.inner.event_sequencer.current(),
-            tasks: Vec::new(),
-            queues,
-            aggregate_metrics: DownloadAggregateMetrics::default(),
-            task_details: Vec::new(),
-            task_summaries: summaries,
-        })
-    }
-
-    fn command_task_detail(
-        &self,
-        task_id: DownloadTaskId,
-        correlation_id: uuid::Uuid,
-    ) -> Result<DownloadTaskDetail, DownloadEngineError> {
-        let started_at = Instant::now();
-        info!(
-            event = "download.detail.requested",
-            %correlation_id,
-            task_id = %task_id.as_uuid(),
-            "download task detail requested"
-        );
-        let result: Result<DownloadTaskDetail, DownloadEngineError> = (|| {
-            let task = self
-                .task(task_id)?
-                .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
-            let segments = self
-                .inner
-                .store
-                .load_transfer_plan(task_id)?
-                .map(|plan| plan.segments().to_vec())
-                .unwrap_or_default();
-            let timeline = self.inner.store.load_task_timeline(task_id, 300)?;
-            Ok(DownloadTaskDetail {
-                task,
-                segments,
-                timeline,
-            })
-        })();
-        match result {
-            Ok(detail) => {
-                info!(
-                    event = "download.detail.loaded",
-                    %correlation_id,
-                    task_id = %task_id.as_uuid(),
-                    segment_count = detail.segments.len(),
-                    timeline_count = detail.timeline.len(),
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "download task detail loaded"
-                );
-                Ok(detail)
-            }
-            Err(error) => {
-                let fault = error.fault();
-                warn!(
-                    event = "download.detail.failed",
-                    %correlation_id,
-                    task_id = %task_id.as_uuid(),
-                    fault_code = ?fault.code,
-                    retryable = fault.retryable,
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "download task detail failed"
-                );
-                Err(error)
-            }
-        }
-    }
-
     fn rejected(&self, request_id: uuid::Uuid, fault: DownloadFault) -> DownloadCommandResult {
         self.inner.emit(DownloadEvent::CommandRejected {
             request_id,
@@ -2067,11 +1503,58 @@ impl DownloadEngine {
 
     fn submit_with_mode_idempotent_correlated(
         &self,
+        request: DownloadRequest,
+        origin: RequestOrigin,
+        mode: DownloadSubmitMode,
+        idempotency_key: Option<uuid::Uuid>,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        self.submit_resolved_correlated(
+            request,
+            origin,
+            mode,
+            idempotency_key,
+            correlation_id,
+            crate::DownloadResolutionOptions {
+                operation_id: correlation_id,
+                mode: crate::DownloadResolutionMode::Resolve,
+            },
+            crate::DownloadResolutionControl::default(),
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn submit_with_resolution(
+        &self,
+        request: DownloadRequest,
+        origin: RequestOrigin,
+        mode: DownloadSubmitMode,
+        idempotency_key: Option<uuid::Uuid>,
+        resolution: crate::DownloadResolutionOptions,
+        control: crate::DownloadResolutionControl,
+    ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
+        let correlation_id = resolution.operation_id;
+        self.submit_resolved_correlated(
+            request,
+            origin,
+            mode,
+            idempotency_key,
+            correlation_id,
+            resolution,
+            control,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn submit_resolved_correlated(
+        &self,
         mut request: DownloadRequest,
         origin: RequestOrigin,
         mode: DownloadSubmitMode,
         idempotency_key: Option<uuid::Uuid>,
         correlation_id: uuid::Uuid,
+        resolution: crate::DownloadResolutionOptions,
+        control: crate::DownloadResolutionControl,
     ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
         let request_fingerprint = idempotency_key
             .map(|_| crate::storage::request_fingerprint(&request))
@@ -2095,11 +1578,15 @@ impl DownloadEngine {
             );
             return Ok((task_id, true));
         }
-        self.inner
-            .download_http_policy
-            .apply_to_request(&mut request)?;
-        request.validate()?;
-        self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
+        let prepared =
+            self.prepare_request_resolution(request, resolution, control, correlation_id)?;
+        request = prepared.request.clone();
+        self.resolve_missing_file_name_with_operation(
+            &mut request,
+            correlation_id,
+            Some(prepared.operation.clone()),
+        )?;
+        self.check_request_resolution(&prepared)?;
         let _scheduler = self
             .inner
             .scheduler_gate
@@ -2127,12 +1614,14 @@ impl DownloadEngine {
         let mut tasks = self.inner.lock_tasks()?;
         apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
         request.validate()?;
+        let resolution_acceptance = self.lock_resolution_acceptance(&prepared)?;
         let now = now_unix_ms();
         let delayed_until_due = request
             .scheduled_at_unix_ms
             .is_some_and(|scheduled_at| scheduled_at > now);
         let scheduled_at_unix_ms = request.scheduled_at_unix_ms;
-        let task = DownloadTask::new(request, origin, now);
+        let mut task = DownloadTask::new(request, origin, now);
+        task.set_resolution(prepared.provenance.clone());
         let task_id = task.id();
         let transfer = StoredTransferState::default();
         let is_eligible = mode == DownloadSubmitMode::StartNow && !delayed_until_due;
@@ -2178,6 +1667,7 @@ impl DownloadEngine {
                 is_eligible,
             )?;
         }
+        drop(resolution_acceptance);
         tasks.insert(
             task_id,
             EngineTaskState {
@@ -2228,6 +1718,15 @@ impl DownloadEngine {
         request: &mut DownloadRequest,
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
+        self.resolve_missing_file_name_with_operation(request, correlation_id, None)
+    }
+
+    fn resolve_missing_file_name_with_operation(
+        &self,
+        request: &mut DownloadRequest,
+        correlation_id: uuid::Uuid,
+        operation: Option<crate::DownloadResolutionOperation>,
+    ) -> Result<(), DownloadEngineError> {
         if request.file_name.is_some() {
             return Ok(());
         }
@@ -2251,17 +1750,29 @@ impl DownloadEngine {
             "download acceptance file-name probe started"
         );
         let probe_request = request.clone();
-        let result = (|| {
-            let client = client?;
-            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-            download_runtime()?.spawn(async move {
-                let _ = sender.send(client.probe(&probe_request).await);
+        let result =
+            (|| {
+                let client = client?;
+                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+                download_runtime()?.spawn(async move {
+                let result = if let Some(operation) = operation {
+                    let future = client.probe(&probe_request);
+                    tokio::pin!(future);
+                    loop {
+                        tokio::select! {
+                            result = &mut future => break result.map_err(DownloadEngineError::from),
+                            () = tokio::time::sleep(Duration::from_millis(10)) => {
+                                if let Err(error) = operation.check() { break Err(error.into()); }
+                            }
+                        }
+                    }
+                } else { client.probe(&probe_request).await.map_err(DownloadEngineError::from) };
+                let _ = sender.send(result);
             });
-            receiver
-                .recv()
-                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
-                .map_err(DownloadEngineError::from)
-        })();
+                receiver
+                    .recv()
+                    .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+            })();
         let file_name = match result.and_then(|probe| {
             probe
                 .file_name
@@ -2295,737 +1806,6 @@ impl DownloadEngine {
             purpose = "acceptance_file_name",
             "download acceptance file-name probe completed"
         );
-        Ok(())
-    }
-
-    fn resolve_existing_browser_handoff(
-        &self,
-        handoff_id: uuid::Uuid,
-        request_fingerprint: &str,
-        correlation_id: uuid::Uuid,
-    ) -> Result<Option<DownloadTaskId>, DownloadEngineError> {
-        let Some(existing) = self.inner.store.browser_handoff(handoff_id)? else {
-            return Ok(None);
-        };
-        if existing
-            .request_fingerprint
-            .as_deref()
-            .is_some_and(|fingerprint| fingerprint != request_fingerprint)
-        {
-            warn!(
-                event = "download.browser_handoff.conflict",
-                %correlation_id,
-                %handoff_id,
-                ?existing.task_id,
-                "browser handoff replay conflicts with the accepted request"
-            );
-            return Err(DownloadEngineError::BrowserHandoffConflict(handoff_id));
-        }
-        if existing.request_fingerprint.is_none()
-            && !self
-                .inner
-                .store
-                .backfill_browser_handoff_fingerprint(handoff_id, request_fingerprint)?
-        {
-            let Some(refreshed) = self.inner.store.browser_handoff(handoff_id)? else {
-                return Ok(None);
-            };
-            if refreshed
-                .request_fingerprint
-                .as_deref()
-                .is_some_and(|fingerprint| fingerprint != request_fingerprint)
-            {
-                warn!(
-                    event = "download.browser_handoff.conflict",
-                    %correlation_id,
-                    %handoff_id,
-                    ?refreshed.task_id,
-                    "concurrent legacy browser handoff replay claimed a different request"
-                );
-                return Err(DownloadEngineError::BrowserHandoffConflict(handoff_id));
-            }
-            return Ok(Some(refreshed.task_id));
-        }
-        Ok(Some(existing.task_id))
-    }
-
-    fn submit_browser_correlated(
-        &self,
-        handoff_id: uuid::Uuid,
-        mut request: DownloadRequest,
-        mode: DownloadSubmitMode,
-        correlation_id: uuid::Uuid,
-    ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
-        let request_fingerprint = crate::storage::request_fingerprint(&request)?;
-        if let Some(task_id) =
-            self.resolve_existing_browser_handoff(handoff_id, &request_fingerprint, correlation_id)?
-        {
-            info!(
-                event = "download.browser_handoff.duplicate_accepted",
-                %correlation_id,
-                %handoff_id,
-                ?task_id,
-                "duplicate browser handoff resolved before request replay"
-            );
-            return Ok((task_id, true));
-        }
-        self.inner
-            .download_http_policy
-            .apply_to_request(&mut request)?;
-        request.validate()?;
-        self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        if let Some(task_id) =
-            self.resolve_existing_browser_handoff(handoff_id, &request_fingerprint, correlation_id)?
-        {
-            info!(
-                event = "download.browser_handoff.duplicate_accepted",
-                %correlation_id,
-                %handoff_id,
-                ?task_id,
-                "duplicate browser handoff resolved to the existing task"
-            );
-            return Ok((task_id, true));
-        }
-        let mut tasks = self.inner.lock_tasks()?;
-        apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
-        request.validate()?;
-        let now = now_unix_ms();
-        let task = DownloadTask::new(request, RequestOrigin::Browser, now);
-        let transfer = StoredTransferState::default();
-        let delayed_until_due = task
-            .request()
-            .scheduled_at_unix_ms
-            .is_some_and(|scheduled_at| scheduled_at > now);
-        let saved = self
-            .inner
-            .store
-            .save_browser_task_with_transfer_and_queue(
-                handoff_id,
-                &request_fingerprint,
-                &task,
-                &transfer,
-                "default",
-                mode == DownloadSubmitMode::StartNow && !delayed_until_due,
-            )
-            .map_err(|error| match error {
-                DownloadStorageError::BrowserHandoffConflict { .. } => {
-                    DownloadEngineError::BrowserHandoffConflict(handoff_id)
-                }
-                error => error.into(),
-            })?;
-        let task_id = match saved {
-            crate::storage::BrowserHandoffSave::Inserted(task_id) => task_id,
-            crate::storage::BrowserHandoffSave::Duplicate(task_id) => {
-                drop(tasks);
-                info!(
-                    event = "download.browser_handoff.duplicate_accepted",
-                    %correlation_id,
-                    %handoff_id,
-                    ?task_id,
-                    "duplicate browser handoff resolved to the existing task"
-                );
-                return Ok((task_id, true));
-            }
-        };
-
-        tasks.insert(
-            task_id,
-            EngineTaskState {
-                task,
-                transfer,
-                control: None,
-                last_progress_event: None,
-                transfer_rate: None,
-            },
-        );
-        drop(tasks);
-        self.inner.emit_task(task_id);
-        if delayed_until_due {
-            self.refresh_delayed_schedule_wake()?;
-        } else if mode == DownloadSubmitMode::StartNow
-            && let Err(error) = self.schedule_queue_locked("default", correlation_id)
-        {
-            warn!(
-                event = "download.browser_handoff.admission_deferred",
-                %correlation_id,
-                %handoff_id,
-                ?task_id,
-                error = %error,
-                "accepted browser task remains eligible for a later queue refill"
-            );
-        }
-        info!(
-            event = "download.browser_handoff.accepted",
-            %correlation_id,
-            %handoff_id,
-            ?task_id,
-            "browser handoff accepted"
-        );
-        Ok((task_id, false))
-    }
-
-    fn submit_browser_batch_correlated(
-        &self,
-        submissions: Vec<BrowserDownloadSubmission>,
-        correlation_id: uuid::Uuid,
-    ) -> Result<Vec<BrowserBatchSubmissionResult>, DownloadEngineError> {
-        if submissions.is_empty() || submissions.len() > MAX_BROWSER_BATCH_ITEMS {
-            return Err(DownloadEngineError::InvalidBrowserBatchSize {
-                count: submissions.len(),
-                maximum: MAX_BROWSER_BATCH_ITEMS,
-            });
-        }
-        let mut handoff_ids = HashSet::with_capacity(submissions.len());
-        for submission in &submissions {
-            if !handoff_ids.insert(submission.handoff_id) {
-                return Err(DownloadEngineError::DuplicateBrowserBatchHandoff);
-            }
-            submission.request.validate()?;
-        }
-
-        let started_at = Instant::now();
-        info!(
-            event = "download.browser_batch.started",
-            %correlation_id,
-            item_count = submissions.len(),
-            "browser batch submission started"
-        );
-        let mut accepted_count = 0_usize;
-        let mut duplicate_count = 0_usize;
-        let results = submissions
-            .into_iter()
-            .map(|submission| {
-                let handoff_id = submission.handoff_id;
-                match self.submit_browser_correlated(
-                    handoff_id,
-                    submission.request,
-                    DownloadSubmitMode::QueueOnly,
-                    correlation_id,
-                ) {
-                    Ok((task_id, duplicate)) => {
-                        accepted_count += 1;
-                        duplicate_count += usize::from(duplicate);
-                        BrowserBatchSubmissionResult {
-                            handoff_id,
-                            task_id: Some(task_id),
-                            duplicate,
-                            fault: None,
-                        }
-                    }
-                    Err(error) => BrowserBatchSubmissionResult {
-                        handoff_id,
-                        task_id: None,
-                        duplicate: false,
-                        fault: Some(error.fault()),
-                    },
-                }
-            })
-            .collect::<Vec<_>>();
-        info!(
-            event = "download.browser_batch.completed",
-            %correlation_id,
-            item_count = results.len(),
-            accepted_count,
-            duplicate_count,
-            rejected_count = results.len().saturating_sub(accepted_count),
-            elapsed_ms = started_at.elapsed().as_millis() as u64,
-            "browser batch submission completed"
-        );
-        Ok(results)
-    }
-
-    fn import_browser_blob_correlated(
-        &self,
-        import: BrowserBlobImportRequest,
-        correlation_id: uuid::Uuid,
-    ) -> Result<(DownloadTaskId, bool), DownloadEngineError> {
-        let BrowserBlobImportRequest {
-            handoff_id,
-            blob,
-            save_directory,
-            file_name,
-            category_id,
-            save_directory_explicit,
-        } = import;
-        let started_at = Instant::now();
-        let source_url = format!("https://browser-blob.invalid/{}", blob.id);
-        let mut request = DownloadRequest {
-            source_url: source_url.clone(),
-            save_directory,
-            save_directory_explicit,
-            file_name: Some(file_name.clone()),
-            headers: Vec::new(),
-            cookie: None,
-            referrer: None,
-            certificate_policy: crate::DownloadCertificatePolicy::Strict,
-            connection_limit: Some(1),
-            speed_limit_bytes_per_second: None,
-            expected_total_bytes: Some(blob.size),
-            scheduled_at_unix_ms: None,
-            adaptive_segment_policy: None,
-            media: None,
-            category_id,
-            category_name: None,
-            duplicate_strategy: crate::DownloadDuplicateStrategy::UseDefault,
-        };
-        let request_fingerprint = crate::storage::request_fingerprint(&request)?;
-        if let Some(task_id) =
-            self.resolve_existing_browser_handoff(handoff_id, &request_fingerprint, correlation_id)?
-        {
-            info!(
-                event = "download.browser_blob.duplicate_accepted",
-                %correlation_id,
-                %handoff_id,
-                ?task_id,
-                "duplicate browser Blob import resolved before staging access"
-            );
-            return Ok((task_id, true));
-        }
-        let staging_root = self
-            .inner
-            .browser_blob_staging_root
-            .as_ref()
-            .ok_or_else(|| {
-                DownloadEngineError::Runtime("browser Blob staging is unavailable".into())
-            })?;
-        if blob.size == 0 || blob.file_name.trim().is_empty() || file_name.trim().is_empty() {
-            return Err(DownloadRequestError::InvalidFileName.into());
-        }
-        let staged_path = staging_root.join(format!("{}.blob", blob.id));
-        let observed_size = std::fs::metadata(&staged_path)
-            .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
-            .len();
-        if observed_size != blob.size {
-            return Err(DownloadEngineError::Runtime(
-                "staged browser Blob size does not match its metadata".into(),
-            ));
-        }
-        request.validate()?;
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        if let Some(task_id) =
-            self.resolve_existing_browser_handoff(handoff_id, &request_fingerprint, correlation_id)?
-        {
-            info!(
-                event = "download.browser_blob.duplicate_accepted",
-                %correlation_id,
-                %handoff_id,
-                ?task_id,
-                "duplicate browser Blob import resolved after staging checks"
-            );
-            return Ok((task_id, true));
-        }
-        let mut tasks = self.inner.lock_tasks()?;
-        apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
-        request.validate()?;
-        let resolved_file_name = request
-            .file_name
-            .clone()
-            .ok_or(DownloadRequestError::InvalidFileName)?;
-        let final_path = request.save_directory.join(&resolved_file_name);
-        import_blob_artifact(&staged_path, &final_path)?;
-        let now = now_unix_ms();
-        let mut task = DownloadTask::new(request, RequestOrigin::Browser, now);
-        for status in [
-            DownloadStatus::Probing,
-            DownloadStatus::Waiting,
-            DownloadStatus::Downloading,
-            DownloadStatus::Finalizing,
-            DownloadStatus::Completed,
-        ] {
-            task.transition_to(status, now)?;
-        }
-        let transfer = StoredTransferState {
-            probe: Some(DownloadProbe {
-                final_url: source_url,
-                file_name: Some(resolved_file_name),
-                total_bytes: Some(blob.size),
-                supports_ranges: false,
-                content_type: blob.media_type,
-                validator: crate::ResourceValidator::default(),
-                media: None,
-            }),
-            downloaded_bytes: blob.size,
-            error: None,
-            temporary_path: None,
-            final_path: Some(final_path.clone()),
-            final_committed: true,
-        };
-        let saved = persist_browser_blob_with_compensation(&staged_path, &final_path, || {
-            self.inner.store.save_browser_task_with_transfer_and_queue(
-                handoff_id,
-                &request_fingerprint,
-                &task,
-                &transfer,
-                "default",
-                false,
-            )
-        });
-        if let Err(error) = saved {
-            match error {
-                BrowserBlobPersistenceError::Persistence(
-                    DownloadStorageError::BrowserHandoffConflict {
-                        handoff_id: conflict,
-                    },
-                ) if conflict == handoff_id => {
-                    return Err(DownloadEngineError::BrowserHandoffConflict(handoff_id));
-                }
-                BrowserBlobPersistenceError::Persistence(error) => {
-                    warn!(
-                        event = "download.browser_blob.persistence_rejected",
-                        %correlation_id,
-                        %handoff_id,
-                        blob_id = %blob.id,
-                        elapsed_ms = started_at.elapsed().as_millis(),
-                        "browser Blob database save failed and the artifact was restored to staging"
-                    );
-                    return Err(error.into());
-                }
-                BrowserBlobPersistenceError::Rollback {
-                    persistence,
-                    rollback,
-                } => {
-                    error!(
-                        event = "download.browser_blob.rollback_failed",
-                        %correlation_id,
-                        %handoff_id,
-                        blob_id = %blob.id,
-                        elapsed_ms = started_at.elapsed().as_millis(),
-                        error = %rollback,
-                        "browser Blob database rejection could not restore the staged artifact"
-                    );
-                    return Err(DownloadEngineError::Runtime(format!(
-                        "browser Blob database save failed ({persistence}); artifact rollback also failed ({rollback})"
-                    )));
-                }
-            }
-        }
-        let task_id = task.id();
-        tasks.insert(
-            task_id,
-            EngineTaskState {
-                task,
-                transfer,
-                control: None,
-                last_progress_event: None,
-                transfer_rate: None,
-            },
-        );
-        drop(tasks);
-        self.inner.emit_task(task_id);
-        info!(
-            event = "download.browser_blob.imported",
-            %correlation_id,
-            %handoff_id,
-            ?task_id,
-            size = blob.size,
-            elapsed_ms = started_at.elapsed().as_millis(),
-            "browser Blob imported as a completed download artifact"
-        );
-        Ok((task_id, false))
-    }
-
-    fn discard_browser_blob(
-        &self,
-        handoff_id: uuid::Uuid,
-        blob_id: uuid::Uuid,
-        correlation_id: uuid::Uuid,
-    ) -> Result<(), DownloadEngineError> {
-        let started_at = Instant::now();
-        let staging_root = self
-            .inner
-            .browser_blob_staging_root
-            .as_ref()
-            .ok_or_else(|| {
-                DownloadEngineError::Runtime("browser Blob staging is unavailable".into())
-            })?;
-        let staged_path = staging_root.join(format!("{blob_id}.blob"));
-        match std::fs::remove_file(staged_path) {
-            Ok(()) => info!(
-                event = "download.browser_blob.discarded",
-                %correlation_id,
-                %handoff_id,
-                %blob_id,
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "uncommitted browser Blob staging was discarded"
-            ),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => info!(
-                event = "download.browser_blob.cleanup_completed",
-                %correlation_id,
-                %handoff_id,
-                %blob_id,
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "browser Blob staging cleanup completed with no remaining artifact"
-            ),
-            Err(error) => {
-                warn!(
-                    event = "download.browser_blob.discard_failed",
-                    %correlation_id,
-                    %handoff_id,
-                    %blob_id,
-                    native_error_code = error.raw_os_error().unwrap_or_default(),
-                    elapsed_ms = started_at.elapsed().as_millis(),
-                    "browser Blob staging cleanup failed"
-                );
-                return Err(DownloadEngineError::Runtime(error.to_string()));
-            }
-        }
-        Ok(())
-    }
-
-    fn open_browser_dialog_correlated(
-        &self,
-        handoff_id: uuid::Uuid,
-        request: DownloadRequest,
-        correlation_id: uuid::Uuid,
-    ) -> Result<bool, DownloadEngineError> {
-        request.validate()?;
-        self.open_browser_dialog_source_correlated(
-            handoff_id,
-            BrowserDownloadDialogSource::Download(Box::new(request)),
-            correlation_id,
-        )
-    }
-
-    fn open_browser_blob_dialog_correlated(
-        &self,
-        handoff_id: uuid::Uuid,
-        blob: BrowserBlob,
-        save_directory: PathBuf,
-        correlation_id: uuid::Uuid,
-    ) -> Result<bool, DownloadEngineError> {
-        if self
-            .inner
-            .browser_dialog_handoffs
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?
-            .contains(&handoff_id)
-        {
-            info!(
-                event = "download.browser_dialog.duplicate_accepted",
-                %correlation_id,
-                %handoff_id,
-                "duplicate browser Blob confirmation-window request was suppressed"
-            );
-            return Ok(true);
-        }
-        let staging_root = self
-            .inner
-            .browser_blob_staging_root
-            .as_ref()
-            .ok_or_else(|| {
-                DownloadEngineError::Runtime("browser Blob staging is unavailable".into())
-            })?;
-        let staged_path = staging_root.join(format!("{}.blob", blob.id));
-        if blob.size == 0
-            || blob.file_name.trim().is_empty()
-            || std::fs::metadata(staged_path)
-                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
-                .len()
-                != blob.size
-        {
-            return Err(DownloadEngineError::Runtime(
-                "staged browser Blob is missing or incomplete".into(),
-            ));
-        }
-        self.open_browser_dialog_source_correlated(
-            handoff_id,
-            BrowserDownloadDialogSource::Blob {
-                blob,
-                save_directory,
-            },
-            correlation_id,
-        )
-    }
-
-    fn open_browser_dialog_source_correlated(
-        &self,
-        handoff_id: uuid::Uuid,
-        source: BrowserDownloadDialogSource,
-        correlation_id: uuid::Uuid,
-    ) -> Result<bool, DownloadEngineError> {
-        if !self.inner.browser_dialog_available.load(Ordering::Acquire) {
-            debug!(
-                event = "download.browser_dialog.consumer_not_ready",
-                %correlation_id,
-                %handoff_id,
-                "browser confirmation window is waiting for the GPUI consumer"
-            );
-            return Err(DownloadEngineError::BrowserDialogConsumerUnavailable);
-        }
-
-        let mut handoffs = self
-            .inner
-            .browser_dialog_handoffs
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        if handoffs.contains(&handoff_id) {
-            info!(
-                event = "download.browser_dialog.duplicate_accepted",
-                %correlation_id,
-                %handoff_id,
-                "duplicate browser confirmation-window request was suppressed"
-            );
-            return Ok(true);
-        }
-        let (completion, completed) = std::sync::mpsc::sync_channel(1);
-        self.inner
-            .browser_dialog_sender
-            .try_send(BrowserDownloadDialogRequest {
-                correlation_id,
-                handoff_id,
-                source,
-                completion,
-            })
-            .map_err(|_| DownloadEngineError::BrowserDialogUnavailable)?;
-        match completed.recv_timeout(Duration::from_secs(5)) {
-            Ok(Ok(())) => {}
-            Ok(Err(_))
-            | Err(std::sync::mpsc::RecvTimeoutError::Timeout)
-            | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                warn!(
-                    event = "download.browser_dialog.open_unconfirmed",
-                    %correlation_id,
-                    %handoff_id,
-                    "browser confirmation window was not confirmed by GPUI"
-                );
-                return Err(DownloadEngineError::BrowserDialogUnavailable);
-            }
-        }
-        handoffs.push_back(handoff_id);
-        while handoffs.len() > 4096 {
-            handoffs.pop_front();
-        }
-        info!(
-            event = "download.browser_dialog.accepted",
-            %correlation_id,
-            %handoff_id,
-            "browser confirmation-window request queued for GPUI"
-        );
-        Ok(false)
-    }
-
-    /// Releases delayed submissions whose absolute schedule has elapsed.
-    ///
-    /// This is a public engine boundary so the scheduler can be tested deterministically; the
-    /// normal runtime wake-up invokes the same method without polling from the UI.
-    pub fn process_due_schedules_at(&self, now_unix_ms: i64) -> Result<usize, DownloadEngineError> {
-        self.process_due_schedules_at_correlated(now_unix_ms, uuid::Uuid::new_v4())
-    }
-
-    fn process_due_schedules_at_correlated(
-        &self,
-        now_unix_ms: i64,
-        correlation_id: uuid::Uuid,
-    ) -> Result<usize, DownloadEngineError> {
-        let started_at = Instant::now();
-        let _scheduler = self
-            .inner
-            .scheduler_gate
-            .lock()
-            .map_err(|_| DownloadEngineError::LockPoisoned)?;
-        let mut released_task_ids = Vec::new();
-        {
-            let mut tasks = self.inner.lock_tasks()?;
-            for (task_id, state) in tasks.iter_mut() {
-                let Some(scheduled_at) = state.task.request().scheduled_at_unix_ms else {
-                    continue;
-                };
-                if scheduled_at > now_unix_ms || state.task.status() != DownloadStatus::Created {
-                    continue;
-                }
-                if self.inner.store.is_queue_task_eligible(*task_id)? {
-                    continue;
-                }
-                let mut committed = state.clone();
-                committed.task.clear_scheduled_start(now_unix_ms);
-                self.inner.store.save_task_with_transfer_and_eligibility(
-                    &committed.task,
-                    &committed.transfer,
-                    true,
-                )?;
-                *state = committed;
-                released_task_ids.push(*task_id);
-            }
-        }
-        for task_id in &released_task_ids {
-            self.inner.emit_task(*task_id);
-            info!(
-                event = "download.schedule.delayed_released",
-                %correlation_id,
-                ?task_id,
-                "delayed download became queue-eligible"
-            );
-        }
-        if !released_task_ids.is_empty()
-            && let Err(error) = self.schedule_queue_locked("default", correlation_id)
-        {
-            warn!(
-                event = "download.schedule.delayed_admission_deferred",
-                %correlation_id,
-                released_count = released_task_ids.len(),
-                error = %error,
-                "due delayed downloads remain eligible for a later queue refill"
-            );
-        }
-        drop(_scheduler);
-        self.refresh_delayed_schedule_wake()?;
-        info!(
-            event = "download.schedule.delayed_reconcile_completed",
-            %correlation_id,
-            released_count = released_task_ids.len(),
-            elapsed_ms = started_at.elapsed().as_millis(),
-            "delayed download reconciliation completed"
-        );
-        Ok(released_task_ids.len())
-    }
-
-    fn refresh_delayed_schedule_wake(&self) -> Result<(), DownloadEngineError> {
-        let now = now_unix_ms();
-        let next_due = self
-            .inner
-            .lock_tasks()?
-            .values()
-            .filter_map(|state| state.task.request().scheduled_at_unix_ms)
-            .filter(|scheduled_at| *scheduled_at > now)
-            .min();
-        let generation = self
-            .inner
-            .schedule_wake_generation
-            .fetch_add(1, Ordering::SeqCst)
-            .saturating_add(1);
-        let Some(next_due) = next_due else {
-            return Ok(());
-        };
-        let wait_ms = u64::try_from(next_due.saturating_sub(now))
-            .unwrap_or_default()
-            .max(1);
-        let engine = self.clone();
-        download_runtime()?.spawn(async move {
-            tokio::time::sleep(Duration::from_millis(wait_ms)).await;
-            if engine.inner.schedule_wake_generation.load(Ordering::SeqCst) != generation {
-                return;
-            }
-            let correlation_id = uuid::Uuid::new_v4();
-            if let Err(error) =
-                engine.process_due_schedules_at_correlated(now_unix_ms(), correlation_id)
-            {
-                warn!(
-                    event = "download.schedule.delayed_wake_failed",
-                    %correlation_id,
-                    error = %error,
-                    "delayed schedule wake failed"
-                );
-            }
-        });
         Ok(())
     }
 
@@ -3168,15 +1948,18 @@ impl DownloadEngine {
             return Ok(replacement_task_id);
         }
         let mut request = old.task.request().clone();
-        self.inner
-            .download_http_policy
-            .apply_to_request(&mut request)?;
+        if old.task.resolution().is_none() {
+            self.inner
+                .download_http_policy
+                .apply_to_request(&mut request)?;
+        }
         request.validate()?;
         self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
         let mut tasks = self.inner.lock_tasks()?;
         apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
         request.validate()?;
-        let task = DownloadTask::new(request, old.task.origin(), now_unix_ms());
+        let mut task = DownloadTask::new(request, old.task.origin(), now_unix_ms());
+        task.set_resolution(old.task.resolution().cloned());
         let task_id = task.id();
         let transfer = StoredTransferState::default();
         let saved = self
@@ -3679,57 +2462,6 @@ impl DownloadEngine {
         Ok(())
     }
 
-    pub fn task(
-        &self,
-        task_id: DownloadTaskId,
-    ) -> Result<Option<DownloadEngineTask>, DownloadEngineError> {
-        let mut snapshot = self
-            .inner
-            .lock_tasks()?
-            .get(&task_id)
-            .map(snapshot_from_state);
-        if let Some(snapshot) = snapshot.as_mut() {
-            snapshot.queue_eligible = match self.inner.store.is_queue_task_eligible(task_id) {
-                Ok(eligible) => eligible,
-                Err(DownloadStorageError::TaskNotFound(_)) => false,
-                Err(error) => return Err(error.into()),
-            };
-        }
-        Ok(snapshot)
-    }
-
-    pub fn tasks(&self) -> Result<Vec<DownloadEngineTask>, DownloadEngineError> {
-        let queue_order = self.inner.store.load_queue_order("default")?;
-        let queue_positions = queue_order
-            .into_iter()
-            .enumerate()
-            .map(|(position, task_id)| (task_id, position))
-            .collect::<HashMap<_, _>>();
-        let mut eligible = HashSet::new();
-        for queue in self.inner.store.load_queues()? {
-            eligible.extend(self.inner.store.load_eligible_queue_order(&queue.id)?);
-        }
-        let mut snapshots = self
-            .inner
-            .lock_tasks()?
-            .values()
-            .map(snapshot_from_state)
-            .collect::<Vec<_>>();
-        for snapshot in &mut snapshots {
-            snapshot.queue_eligible = eligible.contains(&snapshot.task.id());
-        }
-        snapshots.sort_by_key(|snapshot| {
-            (
-                queue_positions
-                    .get(&snapshot.task.id())
-                    .copied()
-                    .unwrap_or(usize::MAX),
-                std::cmp::Reverse(snapshot.task.created_at_unix_ms()),
-            )
-        });
-        Ok(snapshots)
-    }
-
     pub async fn wait_for_terminal(
         &self,
         task_id: DownloadTaskId,
@@ -3815,9 +2547,13 @@ impl DownloadEngineInner {
             .map_err(|_| DownloadEngineError::LockPoisoned)
     }
 
-    fn persist(&self, state: &EngineTaskState) -> Result<(), DownloadEngineError> {
-        self.store
-            .save_task_with_transfer(&state.task, &state.transfer)?;
+    fn persist(&self, state: &mut EngineTaskState) -> Result<(), DownloadEngineError> {
+        let mut task = state.task.clone();
+        if let Some(control) = &state.control {
+            task.set_transfer_statistics(control.statistics.snapshot());
+        }
+        self.store.save_task_with_transfer(&task, &state.transfer)?;
+        state.task = task;
         Ok(())
     }
 
@@ -4085,8 +2821,8 @@ fn transition_transfer_to_terminal(
         .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
     state.transfer.downloaded_bytes = downloaded_bytes;
     state.task.transition_to(status, now_unix_ms())?;
-    state.control = None;
     inner.persist(state)?;
+    state.control = None;
     inner.emit(DownloadEvent::TaskChanged {
         task: Box::new(state.task.clone()),
     });
@@ -4178,8 +2914,9 @@ fn commit_completed_state(
         .task
         .transition_to(DownloadStatus::Completed, now_unix_ms())?;
     committed.transfer.final_committed = true;
+    committed.capture_transfer_statistics();
     committed.control = None;
-    inner.persist(&committed)?;
+    inner.persist(&mut committed)?;
     *state = committed;
     inner.emit(DownloadEvent::TaskChanged {
         task: Box::new(state.task.clone()),
@@ -4223,42 +2960,25 @@ fn record_failure(
     {
         return;
     }
+    if let Err(storage_error) = inner.persist(state) {
+        // Preserve the existing best-effort failure publication policy, but
+        // never advertise a reliable measurement that wasn't committed.
+        state.task.set_transfer_statistics(None);
+        let sqlite_error = match &storage_error {
+            DownloadEngineError::Storage(DownloadStorageError::Sqlite(
+                rusqlite::Error::SqliteFailure(native, _),
+            )) => Some(native.extended_code),
+            _ => None,
+        };
+        warn!(event = "download.statistics.commit_failed", %correlation_id, ?task_id,
+            native_error = storage_error.native_os_error().unwrap_or_default(),
+            sqlite_extended_code = ?sqlite_error,
+            "terminal transfer statistics could not be committed");
+    }
     state.control = None;
-    let _ = inner.persist(state);
     inner.emit(DownloadEvent::TaskChanged {
         task: Box::new(state.task.clone()),
     });
-}
-
-fn snapshot_from_state(state: &EngineTaskState) -> DownloadEngineTask {
-    let file_name = state.task.request().file_name.as_deref().or_else(|| {
-        state
-            .transfer
-            .probe
-            .as_ref()
-            .and_then(|probe| probe.file_name.as_deref())
-    });
-    DownloadEngineTask {
-        task: state.task.clone(),
-        probe: state.transfer.probe.clone(),
-        downloaded_bytes: state.transfer.downloaded_bytes,
-        total_bytes: state
-            .transfer
-            .probe
-            .as_ref()
-            .and_then(|probe| probe.total_bytes)
-            .or(state.task.request().expected_total_bytes),
-        error: state.transfer.error.clone(),
-        final_path: state
-            .transfer
-            .final_path
-            .clone()
-            .or_else(|| file_name.map(|name| state.task.request().save_directory.join(name))),
-        temporary_path: state.transfer.temporary_path.clone(),
-        queue_eligible: false,
-        has_final_artifact: state.transfer.final_committed && state.transfer.final_path.is_some(),
-        scheduled: state.task.request().scheduled_at_unix_ms.is_some(),
-    }
 }
 
 fn target_reserved_by_tasks(
@@ -4384,138 +3104,6 @@ fn remove_path_if_exists(path: &Path) -> Result<(), std::io::Error> {
     }
 }
 
-fn move_queue_items(
-    order: &mut Vec<DownloadTaskId>,
-    task_ids: &[DownloadTaskId],
-    placement: DownloadQueuePlacement,
-) {
-    let selected = task_ids.iter().copied().collect::<HashSet<_>>();
-    match placement {
-        DownloadQueuePlacement::Top | DownloadQueuePlacement::Bottom => {
-            let (mut moved, mut retained): (Vec<_>, Vec<_>) = order
-                .iter()
-                .copied()
-                .partition(|task_id| selected.contains(task_id));
-            if placement == DownloadQueuePlacement::Top {
-                moved.append(&mut retained);
-                *order = moved;
-            } else {
-                retained.append(&mut moved);
-                *order = retained;
-            }
-        }
-        DownloadQueuePlacement::Up => {
-            for index in 1..order.len() {
-                if selected.contains(&order[index]) && !selected.contains(&order[index - 1]) {
-                    order.swap(index - 1, index);
-                }
-            }
-        }
-        DownloadQueuePlacement::Down => {
-            for index in (0..order.len().saturating_sub(1)).rev() {
-                if selected.contains(&order[index]) && !selected.contains(&order[index + 1]) {
-                    order.swap(index, index + 1);
-                }
-            }
-        }
-    }
-}
-
-fn daily_schedule_desired_running(
-    schedule: &DownloadDailySchedule,
-    moment: DownloadScheduleMoment,
-) -> Option<bool> {
-    if schedule.enabled_start && schedule.enabled_stop {
-        return Some(daily_schedule_window_contains(schedule, moment));
-    }
-    if !schedule.days.contains(&moment.weekday) {
-        return None;
-    }
-    if schedule.enabled_start && moment.minute_of_day == schedule.start_minute {
-        return Some(true);
-    }
-    if schedule.enabled_stop && moment.minute_of_day == schedule.stop_minute {
-        return Some(false);
-    }
-    None
-}
-
-fn next_daily_schedule_trigger(
-    queues: &[DownloadQueue],
-    now: DateTime<Local>,
-) -> Option<DateTime<Local>> {
-    queues
-        .iter()
-        .filter_map(|queue| queue.schedule.as_ref())
-        .flat_map(|schedule| {
-            let daily = &schedule.daily;
-            [
-                daily.enabled_start.then_some((daily.start_minute, false)),
-                daily.enabled_stop.then_some((daily.stop_minute, true)),
-            ]
-            .into_iter()
-            .flatten()
-            .flat_map(move |(minute, is_stop)| {
-                (0_u64..=7).filter_map(move |days_ahead| {
-                    let date = now.date_naive().checked_add_days(Days::new(days_ahead))?;
-                    let weekday = weekday_from_chrono(date.weekday());
-                    let schedule_day =
-                        if is_stop && daily.enabled_start && daily.start_minute > daily.stop_minute
-                        {
-                            previous_weekday(weekday)
-                        } else {
-                            weekday
-                        };
-                    if !daily.days.contains(&schedule_day) {
-                        return None;
-                    }
-                    let time =
-                        NaiveTime::from_hms_opt(u32::from(minute / 60), u32::from(minute % 60), 0)?;
-                    let local = Local
-                        .from_local_datetime(&NaiveDateTime::new(date, time))
-                        .earliest()?;
-                    (local > now).then_some(local)
-                })
-            })
-        })
-        .min()
-}
-
-fn daily_schedule_wake_moments(
-    scheduled: DateTime<Local>,
-    current: DateTime<Local>,
-) -> [DownloadScheduleMoment; 2] {
-    [scheduled, current].map(|moment| DownloadScheduleMoment {
-        weekday: weekday_from_chrono(moment.weekday()),
-        minute_of_day: u16::try_from(moment.hour() * 60 + moment.minute())
-            .expect("local clock minute is within a day"),
-    })
-}
-
-fn weekday_from_chrono(weekday: chrono::Weekday) -> DownloadWeekday {
-    match weekday {
-        chrono::Weekday::Mon => DownloadWeekday::Monday,
-        chrono::Weekday::Tue => DownloadWeekday::Tuesday,
-        chrono::Weekday::Wed => DownloadWeekday::Wednesday,
-        chrono::Weekday::Thu => DownloadWeekday::Thursday,
-        chrono::Weekday::Fri => DownloadWeekday::Friday,
-        chrono::Weekday::Sat => DownloadWeekday::Saturday,
-        chrono::Weekday::Sun => DownloadWeekday::Sunday,
-    }
-}
-
-fn previous_weekday(weekday: DownloadWeekday) -> DownloadWeekday {
-    match weekday {
-        DownloadWeekday::Monday => DownloadWeekday::Sunday,
-        DownloadWeekday::Tuesday => DownloadWeekday::Monday,
-        DownloadWeekday::Wednesday => DownloadWeekday::Tuesday,
-        DownloadWeekday::Thursday => DownloadWeekday::Wednesday,
-        DownloadWeekday::Friday => DownloadWeekday::Thursday,
-        DownloadWeekday::Saturday => DownloadWeekday::Friday,
-        DownloadWeekday::Sunday => DownloadWeekday::Saturday,
-    }
-}
-
 fn download_runtime() -> Result<&'static tokio::runtime::Runtime, DownloadEngineError> {
     DOWNLOAD_RUNTIME
         .get_or_init(|| {
@@ -4539,62 +3127,6 @@ fn probe_error_kind(error: &DownloadEngineError) -> &'static str {
     }
 }
 
-fn import_blob_artifact(source: &Path, destination: &Path) -> Result<(), DownloadEngineError> {
-    match std::fs::rename(source, destination) {
-        Ok(()) => Ok(()),
-        Err(rename_error) => {
-            let mut source_file = std::fs::File::open(source)
-                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
-            let mut destination_file = std::fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(destination)
-                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
-            if let Err(error) = std::io::copy(&mut source_file, &mut destination_file)
-                .and_then(|_| destination_file.sync_all())
-            {
-                let _ = std::fs::remove_file(destination);
-                return Err(DownloadEngineError::Runtime(format!(
-                    "could not import browser Blob after rename failed ({rename_error}): {error}"
-                )));
-            }
-            if let Err(error) = std::fs::remove_file(source) {
-                let _ = std::fs::remove_file(destination);
-                return Err(DownloadEngineError::Runtime(format!(
-                    "could not remove staged browser Blob after copy: {error}"
-                )));
-            }
-            Ok(())
-        }
-    }
-}
-
-#[derive(Debug)]
-enum BrowserBlobPersistenceError {
-    Persistence(DownloadStorageError),
-    Rollback {
-        persistence: DownloadStorageError,
-        rollback: Box<DownloadEngineError>,
-    },
-}
-
-fn persist_browser_blob_with_compensation(
-    staged_path: &Path,
-    final_path: &Path,
-    persist: impl FnOnce() -> Result<BrowserHandoffSave, DownloadStorageError>,
-) -> Result<BrowserHandoffSave, BrowserBlobPersistenceError> {
-    match persist() {
-        Ok(saved) => Ok(saved),
-        Err(persistence) => match import_blob_artifact(final_path, staged_path) {
-            Ok(()) => Err(BrowserBlobPersistenceError::Persistence(persistence)),
-            Err(rollback) => Err(BrowserBlobPersistenceError::Rollback {
-                persistence,
-                rollback: Box::new(rollback),
-            }),
-        },
-    }
-}
-
 fn new_engine_session_generation() -> u64 {
     let generation = uuid::Uuid::new_v4().as_u128() as u64;
     if generation == 0 { 1 } else { generation }
@@ -4612,6 +3144,8 @@ fn now_unix_ms() -> i64 {
 pub enum DownloadEngineError {
     #[error(transparent)]
     InvalidRequest(#[from] DownloadRequestError),
+    #[error(transparent)]
+    Resolution(#[from] crate::DownloadResolutionError),
     #[error(transparent)]
     Task(#[from] DownloadTaskError),
     #[error(transparent)]
@@ -4728,6 +3262,13 @@ impl DownloadEngineError {
             };
         }
         let (code, retryable) = match self {
+            Self::Resolution(crate::DownloadResolutionError::Cancelled) => {
+                (DownloadFaultCode::Cancelled, false)
+            }
+            Self::Resolution(crate::DownloadResolutionError::InvalidResult) => {
+                (DownloadFaultCode::InvalidRequest, false)
+            }
+            Self::Resolution(_) => (DownloadFaultCode::ResolutionRequired, true),
             Self::InvalidRequest(_)
             | Self::InvalidBrowserBatchSize { .. }
             | Self::DuplicateBrowserBatchHandoff
@@ -4830,9 +3371,17 @@ impl DownloadEngineError {
 
 #[cfg(test)]
 mod tests {
+    use super::browser::{BrowserBlobPersistenceError, persist_browser_blob_with_compensation};
+    use super::queue::{
+        daily_schedule_desired_running, daily_schedule_wake_moments, next_daily_schedule_trigger,
+    };
     use super::*;
     use crate::http::InjectedArtifactFault;
-    use crate::{ResourceValidator, SegmentedArtifactError};
+    use crate::{
+        DownloadDailySchedule, DownloadQuery, DownloadQueue, DownloadSchedule, DownloadSnapshot,
+        DownloadTaskDetail, ResourceValidator, SegmentedArtifactError,
+    };
+    use chrono::{Datelike, Local, TimeZone, Timelike};
     use std::io::{Read, Write};
     use std::net::TcpListener;
 
@@ -5706,6 +4255,7 @@ mod tests {
                 content_type: None,
                 validator: crate::ResourceValidator::default(),
                 media: None,
+                resolution: None,
             }),
             downloaded_bytes: 16,
             error: None,
@@ -5718,12 +4268,15 @@ mod tests {
             .store
             .save_task_with_transfer(&task, &transfer)
             .expect("persist finalizing state");
+        let saved_statistics = task.transfer_statistics();
+        let control = DownloadTransferControl::new();
+        control.statistics.add_bytes(100);
         engine.inner.tasks.lock().expect("lock tasks").insert(
             task_id,
             EngineTaskState {
                 task,
                 transfer,
-                control: None,
+                control: Some(control),
                 last_progress_event: None,
                 transfer_rate: None,
             },
@@ -5740,6 +4293,21 @@ mod tests {
             .expect("read task")
             .expect("task exists");
         assert_eq!(snapshot.task.status(), DownloadStatus::Finalizing);
+        assert_eq!(
+            snapshot.task.transfer_statistics(),
+            saved_statistics,
+            "failed terminal commit must not publish a measured pair ahead of SQLite"
+        );
+        assert_eq!(
+            engine
+                .inner
+                .store
+                .load_task(task_id)
+                .expect("durable failure task")
+                .expect("task")
+                .transfer_statistics(),
+            saved_statistics
+        );
         assert!(
             !engine
                 .inner

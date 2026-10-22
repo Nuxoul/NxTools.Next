@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Serialized Rust, scoped ownership and separate evidence tiers"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Actual visible official component grammar, not imports-only proof"}
+{"file":".trellis/tasks/10-18-ui-component-followup/prd.md","reason":"Real border/geometry/action and no archive/native-effects acceptance"}
+{"file":".trellis/tasks/10-18-ui-component-followup/design.md","reason":"Preserved callback/focus/controller and narrow parent adaptations"}
+{"file":".trellis/tasks/10-18-ui-component-followup/component-record.md","reason":"Exact released APIs/visible tiers/parent adaptations and source-reference invariants"}
+{"file":".trellis/tasks/10-18-ui-component-followup/outcomes.md","reason":"Genuine red-green,806fulltests and concurrentarchive/capture/release limitations"}

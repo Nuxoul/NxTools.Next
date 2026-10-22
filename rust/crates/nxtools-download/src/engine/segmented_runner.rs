@@ -478,8 +478,8 @@ pub(crate) async fn run_single_stream_task(
             state
                 .task
                 .transition_to(DownloadStatus::Paused, now_unix_ms())?;
-            state.control = None;
             inner.persist(state)?;
+            state.control = None;
             inner.emit(DownloadEvent::TaskChanged {
                 task: Box::new(state.task.clone()),
             });
@@ -504,8 +504,8 @@ pub(crate) async fn run_single_stream_task(
             state
                 .task
                 .transition_to(DownloadStatus::Cancelled, now_unix_ms())?;
-            state.control = None;
             inner.persist(state)?;
+            state.control = None;
             inner.emit(DownloadEvent::TaskChanged {
                 task: Box::new(state.task.clone()),
             });

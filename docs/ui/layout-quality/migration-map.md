@@ -1,7 +1,7 @@
-# Production migration map (not authorized in this delivery)
+# Production migration map
 
-## Boundary
-This round creates docs and a local browser prototype. No product Rust/C#/extension behavior, dependency, service, installation, user data or Cargo operation. User confirmation of the prototype is required before production migration. Candidate values do not silently overwrite current approved tokens.
+## Current authorization
+The original design-only delivery remains historical evidence. After pushed checkpoint42f60a8, the user explicitly authorized local production UI migration with all original functionality governing presentation. [Feature preservation ledger](feature-preservation.md) is mandatory: prototype omissions never authorize deletion of fields/actions/states. The first bounded product slice is implemented and checked; exact scope/limits are recorded in [the audit](../../audits/2026-10-09-feature-first-ui-migration.md). No package/install/service/user-data or automatic commit/push authorization is implied. Further native/user visual acceptance remains separate.
 
 [Inventory](surface-inventory.md) · [Design system](design-system.md) · [Blueprints](page-blueprints.md) · [Acceptance](acceptance-matrix.md)
 
@@ -49,3 +49,9 @@ C# verification only if a native seam changes; exact safe name filters and actua
 - Fixed276/278-era bugs must not be reopened by layout changes; current accepted new confirmation is278, ordinary task184.
 - Pinned GPUI0.2.2 lacks verified rendered screen-reader provider seam. HTML semantic labeling does not implement native accessibility. Dependency/provider upgrade is out of scope.
 - Current user-installed19:30 package and newer Debug global layout are distinct baselines. Do not claim prototype is installed or previous package contains it.
+
+## First local production slice status
+Foundation:176px/40px named rail and opt-in13/20 workbench roles, compact roles unchanged; representative global settings uses readable rows. Downloads:48px task row/name/support and local settings typography, all six filters/full columns/five details retained; fixed new/task HWND owners untouched. Quick Find:readable five-topic main config/stable control rails plus compact leaf alignment. Clipboard + Tools:continuous complete settings groups and stable history/link-panel leaf slots, old immediate/worker/native owners retained. Global:representative type/row projection only; same per-app save/apply logic. Integrated488/488 plus strict lint/workspace/fmt and11 gates pass. Native owned100% main/minimum/module switching and Clipboard scroll-to-storage inspected. Full auxiliary/state/mixed-DPI/installed visual acceptance not complete; do not mark stages fully accepted from this slice.
+
+## Remaining local production slice status
+The user requested continuation of all remaining source work. Downloads auxiliary 32px sibling controls/12/18 copy retain all fixed budgets/actions and accepted handoff/completion lifecycle. Quick Find advanced master/detail,scope,exclusion,diagnostics use workbench roles and bounded32px form actions. Clipboard compact editors retain300×440/244px budgets with genuinely constrained source scroll and stable footer. Notification full copy/details scroll inside336×112 with28px action; browser popup/shadow styling retains controller/IDs/palette. Final494 desktop tests, strict checks/build,21 extension tests/38 DOM checks and static preservation pass. Five owned native captures have budget/hash evidence; new PNG eye-inspection and installed/full-state/DPI/U/provider acceptance remain deferred. [Remaining audit](../../audits/2026-10-09-remaining-ui-layout-migration.md).

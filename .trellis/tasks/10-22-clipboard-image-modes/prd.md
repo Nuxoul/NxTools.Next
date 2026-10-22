@@ -1,0 +1,2 @@
+# Clipboard image modes
+Approved plan section3: Settings view mode Auto(default)/Fit/Panorama/Light/Mini/Compact. Auto maximizes available adjacent work area with long-image scroll; Fit complete no scroll; Panorama1sourcepixel=1devicepixel; Light/Mini/Compact Auto with whole-window short edge≤800/500/300devicepixels. Preserve aspect/list image190/file62, native passive staging/full original images.

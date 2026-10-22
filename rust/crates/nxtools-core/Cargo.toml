@@ -8,8 +8,11 @@ license.workspace = true
 anyhow.workspace = true
 directories.workspace = true
 fs2.workspace = true
+globset = { version = "=0.4.19", default-features = false }
+nxtools-extensions = { path = "../nxtools-extensions" }
 serde.workspace = true
 serde_json.workspace = true
+tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
 

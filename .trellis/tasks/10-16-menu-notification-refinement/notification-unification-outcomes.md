@@ -1,0 +1,36 @@
+# Notification unification and menu timeout — current source outcomes
+
+Historical sequence15 source outcome. The later user-approved [official integration outcome](official-notification-integration-outcomes.md) supersedes custom GroupBox/Alert cards, center-owned hover/timers and configurable1..60/default6 below. Current source uses official5seconds/group pause/stack; the sequence15 package remains unchanged and does not include that later implementation.
+
+## Delivered
+- Removed the real native nonclient caption/border/resize style and DWM shadow around the passive notification HWND; correct official GroupBox frame remains around text/actions/close. Actual complete-window and client readback both360x116 at96DPI, no0x00CF0000 native style bits. This fixes the outer HWND frame, not by painting over it.
+- Exit and same-source/anchor content changes repaint the existing HWND, never hide/reprepare/reveal. Visible height adjustment uses guarded keep_visible preparation; measurements during adjustment coalesce, not mark hidden preparation dirty. Actual anchor/source change retains acknowledged hide-before-placement. Final-hide replacement waits for hide acknowledgement then prepares latest content.
+- Global Settings -> General -> 通知停留时间 uses official NumberInput Medium32/144px lane,1..60integerseconds/default6. Old configs get6, persisted malformed bounds normalize1..60. Original draft/atomic Apply/Cancel; only committed save publishes next-turn. Ordinary Info/Success/Error use configured duration; explicit .duration(...) and persistent Progress/None retain semantics. Updating settings does not reset live countdowns.
+- Actual card hover pauses its remaining time; leaving resumes only remaining time. Bounded tasks canceled on hover/replace/evict/dismiss, ID+generation guards reject old timers/hover. Same-ID replacement inherits physical hover. Example:6s notice runs2s, pauses20s, leaves and expires after remaining4s, not another6.
+- Extensions enable/disable/save and other transient operations use one shared center; no page Saved row. Busy keeps catalog/search/InputState mounted and geometry stable, only actions disabled. Business completion is last_commit/commit_revision, not display text.
+- Completed [feedback audit](transient-message-audit.md). Migrated remaining Extensions, Quick Launch, Downloads, Clipboard operations and Global Settings failure paths. Clipboard category/pin/favorite/edit/undo/copy/native outcomes no longer paint custom header badges. Form validation, explicit trust/risk, durable query/task/registration health and user-opened reports remain contextual, not duplicate toasts. Browser/CLI/bootstrap keep their own requested channels, with no forced Desktop launch/new transport.
+- Clipboard menu hidden-scene deadlock fixed at original native/GPUI boundary: verified native bounds -> explicit hidden draw after owner leases -> deferred current-session/source/trigger check -> reveal -> activation acknowledgements. No timeout-as-ready/show-first/framework patch. Original official popup/cascade/cancel/selection and ownership retained.
+
+## Regression evidence
+Measured pre-fix failures: notification-exit-flicker-red.log (exit hid/reprepared), notification-native-frame-red.log (native caption/border persisted), notification-unification-clipboard-red.log (copy terminal never entered center). Other added tests are red-capable unless explicitly measured. Initial integrated791pass/4fail were old inline/timer expectations; preserved retry/draft/no-task/no-reparse assertions while updating output channel. Later full run caught resize path and test search selector; fixes retained no-hide assertion. Cross-thread worker fixture needed parking and owned shutdown barrier, not product worker changes.
+
+## Verification performed
+All Cargo serialized Rust1.96/jobs1/incremental0/codegen-units256; no packaging.
+- Exact-final full Desktop798passed/0failed/ignored,69.96s; notification-unification-final-desktop.log. Includes final-hide replacement and visible-resize/no-hide regressions.
+- Core58passed; Protocol48passed, including false omission/legacy default and true keep_visible wire roundtrip.
+- Scoped strict Clippy Desktop/Core/Protocol tests, workspace --tests, fmt --all --check PASS. Debug fixture build PASS, existing unused ClipboardApplication::extension_adapter warning unsuppressed in non-test binary.
+- C# Debug build0warnings/0errors; actual Tests.exe --fixtures256selected/run/pass,0skip/fail.
+-8source gates PASS: Clipboard UI, UI state, preview isolation, motion, Desktop shell, Download UI, QuickLaunch lifecycle and PlatformHost test selection. Spec gate94documents/13owners and catalog79pages/78lockedentries PASS; documentation consistency only.
+- Task contexts validate11implementation/15check unique existing files and valid task JSON; scoped git whitespace check PASS. Historical locked API index injection-size warning remains unchanged; bounded source reads used. Installer14 hash/ledger14 independently rechecked unchanged; no Cargo/rustc survivors.
+
+## Real owned GPUI -> production C# evidence
+- Notification full HWND `screen-native-bottom_right-eccf28f55cb74fc19abdd2e60cbd7ca2`: x2200,y1284/client360x116/outer360x116/workarea2560x1400/96DPI/style2483027968/foreground unchanged. Stable-visible exit observed127ms,8visible samples,1reveal, then one final hide; no native prepare/adjust/reveal during exit. Fixture initially requested dismissal before reveal acknowledgement and failed; corrected fixture waits actual stable visibility. This is lifecycle evidence, not a frame-by-frame visual approval.
+- Menu `menu-native-32fbf4ff01b04928bd87add7d0183117`: show_context_menu success -> set_window_visibility success -> activate_window success -> real ready marker, no hidden frame timeout. Owned synthetic source300x440; no real user clipboard/plugin/config read.
+- Exact-final Debug repeat `screen-native-bottom_right-1785712b57b94825b39263d714779e9b` and `menu-native-73eae1dcf2da4edeba500c9b71952169` both pass after final-hide race guard. Same complete-window/client360x116 at96DPI and unchanged foreground;159ms observed exit,10visible samples,1reveal/one final hide. Earlier capture/evidence above retained.
+- Captures generated of complete HWND, not only client; artifacts/notification-unification-ui/index.html. Direct viewing failed: Browser view did not become visible for the calling session. Physical user-item right click, mixed-DPI/multi-monitor, physical hover, reader and installed user visual acceptance remain unverified. No claim these tests certify every installed interaction appearance.
+
+## Release boundary
+No package/install/normal product start/service/user-data or plugin execution. Installer SHA256 remains5999BD624F031111EE6DD971577BD4B9E3D3A10556E7574F17193B1BDF72AF64; publisher sequence14 unchanged. Current source corrections are not included in that installer. No commit/push/archive.
+
+## Subsequent user-authorized acceptance package
+User then requested packaging. [Sequence15](release-package-sequence15.md) now includes this source correction; earlier source-only/installer14 statements describe the prior handoff. Release/signature/content and isolated installer checks pass; old14 backed up, no automatic install/product/service/user-data actions. Installed physical/visual acceptance remains the user's next step.

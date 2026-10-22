@@ -1,0 +1,13 @@
+# Graphite default theme integration
+
+Authority: approved `.pi/plan/统一-markdown-组件与六项体验改进-20261022-1342.md`, section6. This intentionally supersedes earlier built-in-only palette policy for Default Light/Dark/System, not optional official themes, fonts, geometry or native behavior.
+
+References inspected before implementation: Fluent semantic surface/foreground/state hierarchy (https://fluent2.microsoft.design/color), VS Code Modern themes (https://github.com/microsoft/vscode/tree/main/extensions/theme-defaults/themes). They inform role separation; no wholesale source/theme copying. Existing NxTools.Next theme selection is the behavioral baseline; a new palette is an explicit user change, not a legacy migration.
+
+Exact released API chain: `vendor/gpui-component-080/src/theme/registry.rs::load_themes_from_str` registers new names but does not replace `default_themes`, even with `is_default`. Therefore original project assets `nxtools-graphite-light.json` and `nxtools-graphite-dark.json` register distinct names, and `theme.rs::apply_active_theme` explicitly selects them for default modes. Public `Theme::update` assigns light/dark configs, then `Theme::change` applies config and synchronizes renderable tokens/Base. Existing optional Catppuccin/Gruvbox/Solarized configurations remain unmodified and selectable. Fonts retain installed YaHei UI/Consolas; no radius/type/control-size override.
+
+`Theme::active` remains a projection of current Kit colors; compatibility initial constructors parse the same project configs once through public Theme::apply_config. No independent runtime palette. Source-icon gradients remain original RGB metadata, not indigo. JSON uses actual0.8.0 schema names (`link`, `drag.border`, `progress.bar.background`, `slider.background`, `description_list.label.foreground`), not obsolete keys silently ignored by serde.
+
+Comparison: `docs/ui/graphite-comparison.html` is explicitly a design-only state board. `docs/audits/2026-10-22-ui-experience-captures/index.html` displays actual owned Debug GPUI PrintWindow captures at96DPI for dark/light × continuous/separated × collapsed/results/actions/Markdown. AI inspected these actual screenshots; no claim of user approval, physical interaction, mixed DPI, reader or installed acceptance. Native capture can include black exterior client-decoration reservation; not evidence of product DWM corner acceptance.
+
+Verification: theme11 + optional-config1 compiled regressions,112 schema roles per asset and normal/hover/pressed/status text contrast numeric checks; final Desktop1002. RGB/HSL roundtrip comparisons use channel tolerance1e-5, while internal original Kit role/token equality remains exact. These numeric/source checks do not certify perceived contrast or usability.

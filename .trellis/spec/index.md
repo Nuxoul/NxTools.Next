@@ -13,8 +13,10 @@ This is the first-party standards navigation entry. Read [authority and architec
 | --- | --- | --- |
 | Desktop | [backend](nxtools-desktop/backend/index.md), [UI](shared/ui-design.md) | GPUI views, application state, worker composition, native command routing |
 | Download | [backend](nxtools-download/backend/index.md) | Request/task/plan, HTTP/media, scheduling, artifact/SQLite ownership |
+| Archive | [backend](nxtools-archive/backend/index.md) | Host-neutral bounded metadata/codecs/control; partial Phase A ZIP and isolated RAR4/5+7z native-output fixtures, not full safety/UI completion |
 | Clipboard | [backend](nxtools-clipboard/backend/index.md) | History, query cursors, retention, archive/assets, migration staging |
 | Finder | [backend](nxtools-finder/backend/index.md) | Catalog/ranking/query/command preparation and usage history |
+| Extensions | [backend](nxtools-extensions/backend/index.md) | Host-neutral package identity/registry/manifest and bounded cross-feature invocation contracts |
 | Indexer | [backend](nxtools-indexer/backend/index.md) | Rust MFT/USN, mmap base+delta, authenticated service sessions |
 | Core | [backend](nxtools-core/backend/index.md) | Settings/defaults, section persistence, paths, instance/log guards |
 | Network | [backend](nxtools-network/backend/index.md) | Immutable operation route snapshot and client construction |
@@ -30,6 +32,7 @@ Native and extension topics are navigated here without inventing Rust workspace 
 
 ## Use and quality
 - Follow package index pre-development and quality check sections; read linked topic files, not only the index.
+- Desktop UI selection starts with [component-first rules](shared/ui-component-selection.md), [current0.8.0 release/API delta](../../docs/reference-code/gpui-kit-080.md), then [historical79-entry table](../../docs/reference-code/gpui-kit-component-table.md) and [API index](../../docs/reference-code/gpui-kit-component-index.md). Current0.8.0/defaultpre0.3.9 supersedes oldpins, not approvedlayout/variant/parent-transformation or business/nativecontracts. Type adoption is not visualacceptance.
 - Shared rules have one home; package topics name real sources/tests and exceptions. Do not duplicate changing constants across docs.
 - [Foundation gaps](shared/foundation-backlog.md) are explicit differences, not exemptions declaring compliance. Do not implement those gaps in a documentation-only task.
 - Run `python tests/architecture/spec-contracts.py` for document navigation/template/evidence/scenario checks. This does not validate UI, production behavior, external references or native release operation.

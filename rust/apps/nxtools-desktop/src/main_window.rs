@@ -7,18 +7,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Local};
-use gpui::{
-    Animation, AnimationExt, AnyElement, AnyWindowHandle, App, Context, Corner, Entity,
-    FocusHandle, IntoElement, KeyDownEvent, MouseButton, ObjectFit, Render, ScrollHandle,
-    ScrollStrategy, ScrollWheelEvent, Subscription, UniformListScrollHandle, Window, div,
-    ease_in_out, img, point, prelude::*, px, uniform_list,
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
+use gpui_kit::component::scroll::{ScrollableElement, Scrollbar};
+use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::component::{Disableable, Icon, Sizable};
+use gpui_kit::{
+    Anchor, AnyElement, AnyWindowHandle, App, Context, Entity, FocusHandle, IntoElement,
+    KeyDownEvent, MouseButton, ObjectFit, Render, ScrollHandle, ScrollStrategy, Subscription,
+    UniformListScrollHandle, Window, div, img, point, prelude::*, px, uniform_list,
 };
-use gpui_component::button::{Button, ButtonVariants};
-use gpui_component::input::{Input, InputEvent, InputState};
-use gpui_component::menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem};
-use gpui_component::scroll::{ScrollableElement, Scrollbar};
-use gpui_component::tooltip::Tooltip;
-use gpui_component::{Disableable, Icon, PixelsExt, Sizable};
 use nxtools_core::{
     ClipboardClickAction, ClipboardClickModifier, ClipboardHotKey, ClipboardHotKeyModifier,
     ClipboardSettings, CustomCommandSettings, SystemSettings,
@@ -41,7 +40,9 @@ use crate::clipboard::ClipboardApplication;
 use crate::downloads::DownloadApplication;
 use crate::icons::{CaptionIcon, MaterialIcon};
 use crate::network_settings::NetworkSettingsApplication;
-use crate::notifications::{NOTIFICATION_EXIT_DURATION, NotificationCenter, NotificationLevel};
+use crate::notifications::NotificationCenter;
+#[cfg(test)]
+use crate::notifications::NotificationLevel;
 use crate::quick_launch::{
     QuickLaunchApplication, QuickLaunchApplicationEvent, QuickLaunchHotkeyLifecycle,
     QuickLaunchPerformanceSnapshot,
@@ -56,13 +57,12 @@ use crate::ui::components::custom_command_editor::{
     CustomCommandEditorActions, CustomCommandEditorInputs, CustomCommandEditorState,
     custom_command_editor,
 };
-use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field, hotkey_setting_row};
+use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field};
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::path_list::path_exclusion_setting;
 use crate::ui::components::quick_launch_diagnostics::{
     QuickLaunchDiagnosticsActions, QuickLaunchDiagnosticsData, quick_launch_diagnostics,
 };
-use crate::ui::components::settings::{SettingsSplitSurfaceIds, settings_split_surface};
 use crate::ui::components::state::{
     empty_state, inline_error_state, interactive_state, progress_state,
 };
@@ -71,16 +71,19 @@ use crate::ui::components::volume_scope::{
     automatic_volume_scope_row, empty_volume_scope_row, volume_scope_row, volume_scope_setting,
 };
 use crate::ui::metrics::{
-    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, GROUP_HEADER_HEIGHT, RADIUS_CONTROL, SIDEBAR_ROW_HEIGHT,
-    SIDEBAR_WIDTH, SPACING_4, SPACING_8, SPACING_12, SPACING_16, SPACING_24, TITLEBAR_HEIGHT,
+    BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,
+    SPACING_12, TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_META, LINE_HEIGHT_PAGE_TITLE,
-    LINE_HEIGHT_TITLE, TEXT_BODY, TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE, TEXT_TITLE,
+    LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE,
     UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
 };
+mod archive_page;
+#[cfg(test)]
+mod archive_page_tests;
 mod clipboard_page;
 mod download_page;
+mod extensions_page;
 mod notifications;
 mod quick_launch_page;
 mod shell;
@@ -92,21 +95,15 @@ use self::clipboard_page::*;
 use self::download_page::*;
 use self::quick_launch_page::*;
 
-const NOTIFICATION_ENTER_DURATION: Duration = Duration::from_millis(150);
-const NOTIFICATION_CARD_WIDTH: f32 = 336.0;
-const NOTIFICATION_CARD_MAX_HEIGHT: f32 = 112.0;
-const QUICK_FIND_SCROLL_FRAME_DURATION: Duration = Duration::from_millis(12);
-const QUICK_FIND_SCROLL_LINE_HEIGHT: f32 = 38.0;
+#[cfg(test)]
 const QUICK_FIND_SCROLL_EASING: f32 = 0.42;
+#[cfg(test)]
 const QUICK_FIND_SCROLL_TARGET_SNAP_DISTANCE: f32 = 128.0;
 const QUICK_LAUNCH_SETTINGS_NAV_WIDTH: f32 = 160.0;
-const QUICK_LAUNCH_SETTINGS_NAV_ROW_HEIGHT: f32 = 40.0;
-const QUICK_LAUNCH_SETTINGS_PAGE_HEADER_HEIGHT: f32 = 48.0;
-const CLIPBOARD_SETTINGS_SECONDARY_WIDTH: f32 = 410.0;
 const DOWNLOAD_FILTER_STRIP_HEIGHT: f32 = 38.0;
-const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 408.0;
+const DOWNLOAD_FILTER_SEGMENTED_WIDTH: f32 = 576.0;
 const DOWNLOAD_TABLE_HEADER_HEIGHT: f32 = 28.0;
-const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 46.0;
+const DOWNLOAD_TASK_ROW_HEIGHT: f32 = 48.0;
 const DOWNLOAD_BATCH_TOOLBAR_HEIGHT: f32 = 36.0;
 const DOWNLOAD_DETAIL_HEIGHT: f32 = 176.0;
 const DOWNLOAD_DETAIL_TAB_HEIGHT: f32 = 30.0;
@@ -123,28 +120,30 @@ const DOWNLOAD_PROGRESS_COLUMN_WIDTH: f32 = DOWNLOAD_TRANSFERRED_COLUMN_WIDTH
     + DOWNLOAD_SPEED_COLUMN_WIDTH
     + DOWNLOAD_REMAINING_COLUMN_WIDTH;
 const DOWNLOAD_STATUS_COLUMN_WIDTH: f32 = 68.0;
+const DOWNLOAD_CATEGORY_COLUMN_WIDTH: f32 = 64.0;
 const DOWNLOAD_CREATED_COLUMN_WIDTH: f32 = 68.0;
 pub(crate) struct MainWindow {
     theme: Theme,
     shell: ShellState,
-    clipboard: gpui::WeakEntity<ClipboardApplication>,
-    quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
-    downloads: gpui::WeakEntity<DownloadApplication>,
+    clipboard: gpui_kit::WeakEntity<ClipboardApplication>,
+    quick_launch: gpui_kit::WeakEntity<QuickLaunchApplication>,
+    downloads: gpui_kit::WeakEntity<DownloadApplication>,
+    extension_application: Option<Entity<crate::extensions::ExtensionApplication>>,
+    extension_manager: Option<Entity<extensions_page::ExtensionManagerView>>,
+    archive_settings: Option<Entity<archive_page::ArchiveSettingsView>>,
     network_settings: Option<Entity<NetworkSettingsApplication>>,
     platform: Option<Rc<PlatformBridge>>,
     native_window_handle: i64,
     system_settings: Rc<RefCell<SystemSettings>>,
     notifications: Entity<NotificationCenter>,
-    download_search_input: gpui::Entity<InputState>,
-    custom_command_keyword: gpui::Entity<InputState>,
-    custom_command_title: gpui::Entity<InputState>,
-    custom_command_program: gpui::Entity<InputState>,
-    custom_command_arguments: gpui::Entity<InputState>,
-    custom_command_working_directory: gpui::Entity<InputState>,
+    download_search_input: gpui_kit::Entity<InputState>,
+    custom_command_keyword: gpui_kit::Entity<InputState>,
+    custom_command_title: gpui_kit::Entity<InputState>,
+    custom_command_program: gpui_kit::Entity<InputState>,
+    custom_command_arguments: gpui_kit::Entity<InputState>,
+    custom_command_working_directory: gpui_kit::Entity<InputState>,
     quick_launch_settings_page: QuickLaunchSettingsPage,
-    quick_find_scroll: ScrollHandle,
-    quick_find_scroll_target: f32,
-    quick_find_scroll_animation: u64,
+    exclusion_focus: FocusHandle,
     selected_index_exclusion: Option<usize>,
     selected_custom_command: Option<usize>,
     custom_command_draft_generation: u64,
@@ -164,8 +163,9 @@ pub(crate) struct MainWindow {
     custom_command_run_as_admin: bool,
     custom_command_run_silently: bool,
     hotkey_focus: FocusHandle,
-    module_focus: [FocusHandle; 4],
+    module_focus: [FocusHandle; 6],
     tool_focus: FocusHandle,
+    currency_tool_focus: FocusHandle,
     recording_hotkey: Option<HotkeyRecordingTarget>,
     clipboard_overview: ClipboardOverview,
     clipboard_overview_generation: u64,
@@ -185,9 +185,9 @@ impl MainWindow {
     }
 
     pub(crate) fn new(
-        clipboard: gpui::WeakEntity<ClipboardApplication>,
-        quick_launch: gpui::WeakEntity<QuickLaunchApplication>,
-        downloads: gpui::WeakEntity<DownloadApplication>,
+        clipboard: gpui_kit::WeakEntity<ClipboardApplication>,
+        quick_launch: gpui_kit::WeakEntity<QuickLaunchApplication>,
+        downloads: gpui_kit::WeakEntity<DownloadApplication>,
         shell_context: MainWindowShellContext,
         notifications: Entity<NotificationCenter>,
         window: &mut Window,
@@ -378,11 +378,31 @@ impl MainWindow {
                 }
             })
             .unwrap_or_default();
+        let extension_application = quick_launch.upgrade().map(|quick| {
+            let (config, config_path) = quick.read(cx).extension_config_snapshot();
+            let platform = shell_context.platform.clone();
+            let quick = quick.downgrade();
+            let application = cx.new(|_| {
+                crate::extensions::ExtensionApplication::new(config, config_path, platform, quick)
+            });
+            crate::extensions::register_global(&application, cx);
+            application.update(cx, |application, cx| {
+                application.bind_ui(clipboard.clone(), notifications.clone(), cx)
+            });
+            application
+        });
+        let archive_settings = quick_launch.upgrade().map(|application| {
+            let (config, path) = application.read(cx).extension_config_snapshot();
+            cx.new(|cx| archive_page::ArchiveSettingsView::new(config.archive, path, window, cx))
+        });
         let mut main_window = Self {
             theme: Theme::zed_dark(),
             shell: ShellState::default(),
             clipboard,
             quick_launch,
+            extension_application,
+            extension_manager: None,
+            archive_settings,
             downloads: downloads.clone(),
             network_settings: shell_context.settings,
             platform: shell_context.platform,
@@ -396,9 +416,7 @@ impl MainWindow {
             custom_command_arguments,
             custom_command_working_directory,
             quick_launch_settings_page: QuickLaunchSettingsPage::default(),
-            quick_find_scroll: ScrollHandle::new(),
-            quick_find_scroll_target: 0.0,
-            quick_find_scroll_animation: 0,
+            exclusion_focus: cx.focus_handle(),
             selected_index_exclusion: None,
             selected_custom_command: initial_custom_command.as_ref().map(|_| 0),
             custom_command_draft_generation: 0,
@@ -428,6 +446,7 @@ impl MainWindow {
             hotkey_focus,
             module_focus: std::array::from_fn(|_| cx.focus_handle().tab_stop(true)),
             tool_focus: cx.focus_handle().tab_stop(true),
+            currency_tool_focus: cx.focus_handle().tab_stop(true),
             recording_hotkey: None,
             _subscriptions: subscriptions,
         };
@@ -438,11 +457,15 @@ impl MainWindow {
 impl Render for MainWindow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::ui::motion::observe_motion(window, cx);
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
         let content = match self.shell.active_module() {
             MainModule::Downloads => self.render_downloads(cx),
             MainModule::QuickFind => self.render_quick_find(cx),
             MainModule::Clipboard => self.render_clipboard(cx),
             MainModule::Tools => self.render_tools(window, cx),
+            MainModule::Extensions => self.render_extensions(window, cx),
+            MainModule::Archive => self.render_archive(),
         };
         div()
             .id("nxtools-main-window")
@@ -454,8 +477,6 @@ impl Render for MainWindow {
             .on_key_down(cx.listener(|this, event, _window, cx| {
                 if this.recording_hotkey.is_some() {
                     this.handle_hotkey_recording(event, cx);
-                } else {
-                    this.handle_index_exclusion_keyboard(event, cx);
                 }
             }))
             .font_family(UI_FONT_FAMILY)
@@ -472,8 +493,13 @@ impl Render for MainWindow {
                     .child(self.render_sidebar(window, cx))
                     .child(div().flex_1().min_w_0().h_full().child(content)),
             )
-            .child(self.render_notifications(cx))
+            .child(self.render_notifications(window, cx))
     }
 }
 #[cfg(test)]
+mod currency_tests;
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod kit_foundation_tests;

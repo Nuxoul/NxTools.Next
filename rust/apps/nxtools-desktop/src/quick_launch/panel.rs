@@ -1,42 +1,46 @@
 use super::*;
 use crate::ui::metrics::SPACING_4;
-use gpui_component::button::{Button, ButtonVariants};
+use gpui_kit::component::button::{Button, ButtonVariants};
+use gpui_kit::component::input::Input;
 
 /// Keep keyboard focus/ring outside the fixed 40/26/48 content rails.
 pub(super) fn quick_launch_focusable_row(
-    id: impl Into<gpui::ElementId>,
+    id: impl Into<gpui_kit::ElementId>,
     theme: Theme,
     disabled: bool,
     content: AnyElement,
     window: &mut Window,
     cx: &mut App,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
-) -> gpui::Stateful<Div> {
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
+) -> gpui_kit::base::Button {
     let id = id.into();
     let focus = window
         .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle().tab_stop(true))
         .read(cx)
         .clone();
-    let focused = focus.is_focused(window) && !disabled;
-    crate::ui::components::action::focused_action(id, &focus, theme, disabled, window, on_click)
+    crate::ui::components::action::focused_action(id, &focus, theme, disabled, window, cx, on_click)
         .border_0()
         .w_full()
         .flex_none()
         .child(content)
-        .when(focused, |row| {
-            row.child(
-                div()
-                    .absolute()
-                    .inset_0()
-                    .border_2()
-                    .rounded(px(RADIUS_CONTROL))
-                    .border_color(theme.focus_ring),
-            )
-        })
+        .when(
+            focus.is_focused(window) && !disabled && window.last_input_was_keyboard(),
+            |row| {
+                row.child(
+                    div()
+                        .absolute()
+                        .inset_0()
+                        .border_2()
+                        .rounded(px(RADIUS_CONTROL))
+                        .border_color(theme.focus_ring),
+                )
+            },
+        )
 }
 
 pub(crate) struct QuickLaunchPanel {
     pub(crate) theme: Theme,
+    pub(crate) row_style: nxtools_core::QuickLaunchRowStyle,
     pub(crate) application: WeakEntity<QuickLaunchApplication>,
     pub(crate) target: nxtools_protocol::ForegroundContext,
     pub(crate) navigation_context: Option<nxtools_protocol::DirectoryNavigationContext>,
@@ -106,6 +110,12 @@ impl QuickLaunchPanel {
                 InputEvent::Change => {
                     let query = state.read(cx).value().to_string();
                     this.dismiss_preview(cx);
+                    let application = this.application.clone();
+                    cx.defer(move |cx| {
+                        let _ = application.update(cx, |application, _| {
+                            application.cancel_extension_providers()
+                        });
+                    });
                     this.ime_enter_gate.observe_change();
                     this.query_dispatch_generation =
                         this.query_dispatch_generation.wrapping_add(1).max(1);
@@ -136,7 +146,15 @@ impl QuickLaunchPanel {
                     this.status = None;
                     cx.notify();
                 }
-                InputEvent::PressEnter { secondary } => {
+                InputEvent::PressEnter { secondary, shift } => {
+                    // The native IME may consume its confirming key without
+                    // emitting PressEnter. A live preedit must never execute.
+                    let composing = state.update(cx, |state, cx| {
+                        state.marked_text_range(window, cx).is_some()
+                    });
+                    if composing {
+                        return;
+                    }
                     if !this.ime_enter_gate.consume_enter() {
                         return;
                     }
@@ -147,11 +165,7 @@ impl QuickLaunchPanel {
                     } else {
                         if let Some(result) = this.results.get(this.selected) {
                             this.activate_selected(
-                                quick_launch_primary_action(
-                                    result,
-                                    *secondary,
-                                    window.modifiers().shift,
-                                ),
+                                quick_launch_primary_action(result, *secondary, *shift),
                                 QuickLaunchActionTrigger::Enter,
                                 cx,
                             );
@@ -168,7 +182,7 @@ impl QuickLaunchPanel {
                 });
                 this.ime_enter_gate.observe_composition(composing);
             });
-        let key_listener = cx.listener(|this, event: &gpui::KeystrokeEvent, window, cx| {
+        let key_listener = cx.listener(|this, event: &gpui_kit::KeystrokeEvent, window, cx| {
             if !this.is_open || !this.search_input.focus_handle(cx).is_focused(window) {
                 return;
             }
@@ -184,6 +198,7 @@ impl QuickLaunchPanel {
         let key_subscription = cx.intercept_keystrokes(key_listener);
         Self {
             theme: Theme::zed_dark(),
+            row_style: nxtools_core::QuickLaunchRowStyle::default(),
             application,
             target,
             navigation_context,
@@ -262,6 +277,12 @@ impl QuickLaunchPanel {
         self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
         self.search_pending = false;
         self.action_mode = None;
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            let _ = application.update(cx, |application, _| {
+                application.cancel_extension_providers()
+            });
+        });
         self.dismiss_preview(cx);
         window.resize(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT)));
         cx.notify();
@@ -336,7 +357,7 @@ impl QuickLaunchPanel {
     }
 
     pub(crate) fn focus_search(&self, window: &mut Window, cx: &mut Context<Self>) {
-        self.search_input.focus_handle(cx).focus(window);
+        self.search_input.focus_handle(cx).focus(window, cx);
     }
 
     pub(crate) fn enter_recent_directory_mode(
@@ -401,7 +422,7 @@ impl QuickLaunchPanel {
     pub(crate) fn handle_navigation_key(
         &mut self,
         key: &str,
-        modifiers: gpui::Modifiers,
+        modifiers: gpui_kit::Modifiers,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
@@ -437,6 +458,12 @@ impl QuickLaunchPanel {
                 QuickLaunchEscapeAction::ClearQuery => {
                     self.search_input
                         .update(cx, |state, cx| state.set_value(String::new(), window, cx));
+                    self.query_dispatch_generation =
+                        self.query_dispatch_generation.wrapping_add(1).max(1);
+                    self.ime_enter_gate.reset();
+                    self.dismiss_preview(cx);
+                    self.run_search(String::new(), cx);
+                    self.sync_window_content_size("", window);
                 }
                 QuickLaunchEscapeAction::Close => self.close(cx),
             }
@@ -630,6 +657,9 @@ impl QuickLaunchPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if !self.is_open || self.search_pending {
+            return;
+        }
         if self.action_mode.is_some() {
             return;
         }
@@ -656,6 +686,10 @@ impl QuickLaunchPanel {
             state.set_placeholder("搜索操作", window, cx);
             state.set_value(String::new(), window, cx);
         });
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.search_pending = false;
+        self.ime_enter_gate.reset();
+        self.sync_window_content_size("", window);
         self.focus_search(window, cx);
         if query_shell_actions {
             schedule_application_update(
@@ -704,6 +738,11 @@ impl QuickLaunchPanel {
             .expect("action mode remains active while restoring its parent query")
             .exit();
         debug_assert_eq!(restored.selected_entry_id, context.selected_entry_id);
+        let query = self.search_input.read(cx).value().to_string();
+        self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
+        self.search_pending = false;
+        self.ime_enter_gate.reset();
+        self.sync_window_content_size(&query, window);
         self.focus_search(window, cx);
         cx.notify();
     }
@@ -761,15 +800,36 @@ impl QuickLaunchPanel {
         trigger: QuickLaunchActionTrigger,
         cx: &mut Context<Self>,
     ) {
+        if !self.is_open || self.search_pending {
+            self.status = Some("正在搜索，请等待当前结果后重试".into());
+            cx.notify();
+            return;
+        }
         let Some(result) = self.results.get(self.selected).cloned() else {
             return;
         };
         let query = self.search_input.read(cx).value().to_string();
-        schedule_application_update(
-            self.application.clone(),
-            move |application, cx| application.execute(result, action, query, trigger, cx),
-            cx,
-        );
+        let generation = self.query_dispatch_generation;
+        let panel = cx.entity().downgrade();
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            let current = panel.upgrade().is_some_and(|panel| {
+                let panel = panel.read(cx);
+                panel.is_open
+                    && !panel.search_pending
+                    && panel.query_dispatch_generation == generation
+                    && panel.search_input.read(cx).value().as_ref() == query
+                    && panel
+                        .results
+                        .get(panel.selected)
+                        .is_some_and(|selected| selected.entry.id == result.entry.id)
+            });
+            if current && let Some(application) = application.upgrade() {
+                application.update(cx, |application, cx| {
+                    application.execute(result, action, query, trigger, cx)
+                });
+            }
+        });
     }
 
     pub(crate) fn activate_selected_recent_directory(&mut self, cx: &mut Context<Self>) {
@@ -828,6 +888,11 @@ impl QuickLaunchPanel {
     }
 
     pub(crate) fn activate_selected_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.is_open || self.search_pending {
+            self.status = Some("正在搜索，请等待当前结果后重试".into());
+            cx.notify();
+            return;
+        }
         if self.enter_selected_submenu(window, cx) {
             return;
         }
@@ -839,19 +904,37 @@ impl QuickLaunchPanel {
         };
         let result = mode.target().clone();
         let query = mode.parent.query.clone();
-        schedule_application_update(
-            self.application.clone(),
-            move |application, cx| {
-                application.execute(
-                    result,
-                    action,
-                    query,
-                    QuickLaunchActionTrigger::ActionMode,
-                    cx,
-                )
-            },
-            cx,
-        );
+        let generation = self.query_dispatch_generation;
+        let input = self.search_input.read(cx).value().to_string();
+        let mode_id = mode.id();
+        let level_id = mode.current_level_id();
+        let panel = cx.entity().downgrade();
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            let current = panel.upgrade().is_some_and(|panel| {
+                let panel = panel.read(cx);
+                panel.is_open
+                    && !panel.search_pending
+                    && panel.query_dispatch_generation == generation
+                    && panel.search_input.read(cx).value().as_ref() == input
+                    && panel.action_mode.as_ref().is_some_and(|mode| {
+                        mode.matches_shell_query(mode_id, level_id, &result.entry.id)
+                            && mode.parent.query == query
+                            && mode.selected_action().as_ref() == Some(&action)
+                    })
+            });
+            if current && let Some(application) = application.upgrade() {
+                application.update(cx, |application, cx| {
+                    application.execute(
+                        result,
+                        action,
+                        query,
+                        QuickLaunchActionTrigger::ActionMode,
+                        cx,
+                    )
+                });
+            }
+        });
     }
 
     pub(crate) fn apply_shell_actions(
@@ -921,13 +1004,47 @@ impl QuickLaunchPanel {
         )
     }
 
+    /// Query/engine health stays attached to the last-good search results.
     pub(crate) fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
-        self.set_status(message, cx);
+        self.search_pending = false;
+        self.status = Some(message);
+        cx.notify();
     }
 
     pub(crate) fn set_status(&mut self, message: String, cx: &mut Context<Self>) {
+        self.notify_operation(
+            crate::notifications::NotificationLevel::Success,
+            message,
+            cx,
+        );
+    }
+
+    pub(crate) fn notify_operation(
+        &mut self,
+        level: crate::notifications::NotificationLevel,
+        message: String,
+        cx: &mut Context<Self>,
+    ) {
         self.search_pending = false;
-        self.status = Some(message);
+        self.status = None;
+        let application = self.application.clone();
+        // Even the center lookup crosses an owner lease; a result callback may still hold
+        // QuickLaunchApplication while updating this panel. Resolve it on the next turn.
+        cx.defer(move |cx| {
+            let center = application
+                .upgrade()
+                .map(|app| app.read(cx).notifications.clone())
+                .or_else(|| crate::notifications::current(cx));
+            if let Some(center) = center {
+                let notice = crate::notifications::AppNotification::new(
+                    format!("quick-launch-operation-{}", uuid::Uuid::new_v4()),
+                    level,
+                    "快速启动",
+                    message,
+                );
+                center.update(cx, |center, cx| center.push(notice, cx));
+            }
+        });
         cx.notify();
     }
 
@@ -997,19 +1114,27 @@ impl QuickLaunchPanel {
             result.entry.target.clone()
         };
         let shortcut_hint = quick_launch_shortcut_hint(visible_position);
-        let name_highlights = quick_launch_match_ranges(&result.entry.name, &query)
-            .into_iter()
-            .map(|range| {
-                (
-                    range,
-                    HighlightStyle {
-                        color: Some(theme.accent.into()),
-                        font_weight: Some(gpui::FontWeight::SEMIBOLD),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect::<Vec<_>>();
+        let name_highlights = if result
+            .subtitle
+            .as_deref()
+            .is_some_and(|label| label.contains("同音近似"))
+        {
+            nxtools_finder::FileQuery::parse(&query).homophone_match_ranges(&result.entry.name)
+        } else {
+            quick_launch_match_ranges(&result.entry.name, &query)
+        }
+        .into_iter()
+        .map(|range| {
+            (
+                range,
+                HighlightStyle {
+                    color: Some(theme.accent.into()),
+                    font_weight: Some(gpui_kit::FontWeight::SEMIBOLD),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
         let row = quick_launch_row_shell(theme, selected)
             .id(("quick-launch-result", index))
             .active(move |row| row.bg(theme.surface_pressed))
@@ -1040,12 +1165,12 @@ impl QuickLaunchPanel {
                     panel.pointer_moved_result(index, position, cx);
                 });
             })
-            .on_mouse_down(gpui::MouseButton::Left, move |_event, _window, cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Left, move |_event, _window, cx| {
                 let _ = press_panel.update(cx, |panel, cx| {
                     panel.select_result(index, cx);
                 });
             })
-            .on_mouse_down(gpui::MouseButton::Right, move |_event, window, cx| {
+            .on_mouse_down(gpui_kit::MouseButton::Right, move |_event, window, cx| {
                 let _ = right_click_panel.update(cx, |panel, cx| {
                     panel.enter_action_mode(index, window, cx);
                 });
@@ -1105,7 +1230,7 @@ impl QuickLaunchPanel {
                         div()
                             .debug_selector(move || format!("quick-launch-result-subtitle-{index}"))
                             .h(px(LINE_HEIGHT_LABEL))
-                            .text_size(px(TEXT_LABEL))
+                            .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_secondary)
                             .truncate()
@@ -1127,8 +1252,8 @@ impl QuickLaunchPanel {
                     .when_some(shortcut_hint, |rail, hint| rail.child(hint)),
             )
             .into_any_element();
-        quick_launch_focusable_row(
-            gpui::SharedString::from(format!("quick-launch-result-focus-{}", result.entry.id)),
+        let row = quick_launch_focusable_row(
+            gpui_kit::SharedString::from(format!("quick-launch-result-focus-{}", result.entry.id)),
             theme,
             click_action.is_none(),
             row,
@@ -1172,7 +1297,15 @@ impl QuickLaunchPanel {
                 }
             });
         })
-        .into_any_element()
+        .into_any_element();
+        div()
+            .w_full()
+            .flex_none()
+            .flex()
+            .flex_col()
+            .child(row)
+            .child(div().h(px(self.row_style.gap())).flex_none())
+            .into_any_element()
     }
 
     pub(crate) fn render_action(
@@ -1217,6 +1350,7 @@ impl QuickLaunchPanel {
                 div()
                     .debug_selector(move || format!("quick-launch-action-icon-{index}"))
                     .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
+                    .flex_none()
                     .flex()
                     .items_center()
                     .justify_center()
@@ -1230,7 +1364,7 @@ impl QuickLaunchPanel {
                             .child(img(icon_path).size(px(18.0)).object_fit(ObjectFit::Contain))
                     })
                     .when_some(item.icon, |container, icon| {
-                        container.child(gpui_component::Icon::new(icon).size(px(18.0)))
+                        container.child(gpui_kit::component::Icon::new(icon).size(px(18.0)))
                     }),
             )
             .child(
@@ -1268,13 +1402,13 @@ impl QuickLaunchPanel {
                     .justify_end()
                     .when(has_submenu, |rail| {
                         rail.child(
-                            gpui_component::Icon::new(MaterialIcon::ChevronRight)
+                            gpui_kit::component::Icon::new(MaterialIcon::ChevronRight)
                                 .size(px(16.0))
                                 .text_color(theme.icon_muted),
                         )
                     }),
             );
-        let focus_id = gpui::SharedString::from(format!(
+        let focus_id = gpui_kit::SharedString::from(format!(
             "quick-launch-action-focus-{}-{}-{index}",
             self.action_mode
                 .as_ref()
@@ -1339,12 +1473,13 @@ impl QuickLaunchPanel {
                         .flex()
                         .items_center()
                         .text_size(px(TEXT_META))
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
+                        .font_weight(gpui_kit::FontWeight::SEMIBOLD)
                         .text_color(theme.text_muted)
                         .child(label),
                 )
             })
             .child(row)
+            .child(div().h(px(self.row_style.gap())).flex_none())
             .into_any_element()
     }
 }
@@ -1352,7 +1487,8 @@ impl QuickLaunchPanel {
 impl Render for QuickLaunchPanel {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::ui::motion::observe_motion(window, cx);
-        let search_focused = self.search_input.focus_handle(cx).is_focused(window);
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
         let theme = self.theme;
         let panel = cx.entity().downgrade();
         let recent_button_panel = panel.clone();
@@ -1447,7 +1583,11 @@ impl Render for QuickLaunchPanel {
                         "quick-launch-results-empty",
                         MaterialIcon::Search,
                         QUICK_LAUNCH_EMPTY_RESULTS_LABEL,
-                        "尝试缩短关键词，或输入应用、文件和命令名称。",
+                        if recent_modified_filter(&query).is_some() {
+                            "输入 recent: 后可加文件名筛选；旧索引缺少修改时间时需重建索引。"
+                        } else {
+                            "尝试缩短关键词，或输入 recent: 查看最近修改文件。"
+                        },
                     ))
                 })
                 .into_any_element()
@@ -1479,7 +1619,7 @@ impl Render for QuickLaunchPanel {
             )
             .size_full()
             .p(px(SPACING_8))
-            .track_scroll(self.result_scroll.clone());
+            .track_scroll(&self.result_scroll);
             div()
                 .id("quick-launch-results-scroll")
                 .relative()
@@ -1520,6 +1660,16 @@ impl Render for QuickLaunchPanel {
         div()
             .id("quick-launch-window")
             .debug_selector(|| "quick-launch-window".into())
+            .on_key_up(cx.listener(|this, _event, window, cx| {
+                if this.search_input.focus_handle(cx).is_focused(window) {
+                    let composing = this.search_input.update(cx, |state, cx| {
+                        state.marked_text_range(window, cx).is_some()
+                    });
+                    if !composing {
+                        this.ime_enter_gate.reset();
+                    }
+                }
+            }))
             .relative()
             .size_full()
             .overflow_hidden()
@@ -1527,21 +1677,19 @@ impl Render for QuickLaunchPanel {
             .bg(theme.canvas)
             .text_color(theme.text)
             .border_1()
-            .border_color(theme.window_border)
+            // Reserve the original inset without enclosing the Kit input in
+            // another outline, in collapsed, result and action presentations.
+            .border_color(theme.canvas)
             .flex()
             .flex_col()
             .child(
                 div()
                     .debug_selector(|| "quick-launch-search-header".into())
                     .h(px(SEARCH_HEADER_HEIGHT))
-                    .px(px(SPACING_8))
+                    .px(px(SPACING_4))
                     .flex_none()
                     .border_b_1()
-                    .border_color(if search_focused {
-                        theme.focus_ring
-                    } else {
-                        theme.border_subtle
-                    })
+                    .border_color(theme.canvas)
                     .bg(theme.canvas)
                     .flex()
                     .items_center()
@@ -1549,23 +1697,35 @@ impl Render for QuickLaunchPanel {
                     .text_size(px(TEXT_BODY))
                     .line_height(px(LINE_HEIGHT_BODY))
                     .child(
-                        gpui_component::Icon::new(MaterialIcon::Search)
-                            .size(px(16.0))
-                            .text_color(theme.icon_muted),
-                    )
-                    .child(
-                        div().min_w_0().flex_1().child(
-                            Input::new(&self.search_input)
-                                .appearance(false)
-                                .bordered(false)
-                                .focus_bordered(false)
-                                .text_size(px(TEXT_BODY))
-                                .line_height(px(LINE_HEIGHT_BODY)),
-                        ),
+                        div()
+                            .debug_selector(|| "quick-launch-search-group".into())
+                            .min_w_0()
+                            .flex_1()
+                            .on_mouse_down(gpui_kit::MouseButton::Left, {
+                                let input = self.search_input.clone();
+                                move |_, window, cx| input.focus_handle(cx).focus(window, cx)
+                            })
+                            .child(
+                                Input::new(&self.search_input)
+                                    .aria_label("速启搜索")
+                                    .focus_bordered(false)
+                                    .w_full()
+                                    .text_size(px(TEXT_BODY))
+                                    .line_height(px(LINE_HEIGHT_BODY))
+                                    .prefix(
+                                        div().id("quick-launch-search-icon").child(
+                                            gpui_kit::component::Icon::new(MaterialIcon::Search)
+                                                .size(px(16.0))
+                                                .text_color(theme.icon_muted),
+                                        ),
+                                    ),
+                            ),
                     )
                     .when(recent_button_visible, |header| {
                         header.child(
                             Button::new("quick-launch-recent-directories")
+                                .debug_selector(|| "quick-launch-recent-action".into())
+                                .accessibility_label("最近目录")
                                 .ghost()
                                 .tooltip("最近目录")
                                 .size(px(28.0))
@@ -1592,8 +1752,9 @@ impl Render for QuickLaunchPanel {
                                         }
                                     });
                                 })
-                                .child(
-                                    gpui_component::Icon::new(MaterialIcon::History).size(px(15.0)),
+                                .icon(
+                                    gpui_kit::component::Icon::new(MaterialIcon::History)
+                                        .size(px(15.0)),
                                 ),
                         )
                     }),
@@ -1632,7 +1793,7 @@ pub(crate) fn quick_launch_result_fallback_icon(
         .debug_selector(move || format!("quick-launch-result-icon-fallback-{index}"))
         .size(px(18.0))
         .flex_none()
-        .child(gpui_component::Icon::new(source_icon(source)).size(px(18.0)))
+        .child(gpui_kit::component::Icon::new(source_icon(source)).size(px(18.0)))
         .into_any_element()
 }
 
@@ -1653,7 +1814,7 @@ pub(crate) fn quick_launch_bounds(
     request: &QuickLaunchPanelRequest,
     expanded: bool,
     cx: &App,
-) -> (Bounds<gpui::Pixels>, Option<gpui::DisplayId>) {
+) -> (Bounds<gpui_kit::Pixels>, Option<gpui_kit::DisplayId>) {
     let desired = size(
         px(PANEL_WIDTH),
         px(if expanded {
@@ -1665,7 +1826,7 @@ pub(crate) fn quick_launch_bounds(
     let display = cx
         .displays()
         .into_iter()
-        .find(|display| u32::from(display.id()) == request.cursor_display_index)
+        .find(|display| u64::from(display.id()) == u64::from(request.cursor_display_index))
         .or_else(|| cx.displays().into_iter().next());
     let Some(display) = display else {
         return (Bounds::new(point(px(100.0), px(100.0)), desired), None);
@@ -1679,3 +1840,7 @@ pub(crate) fn quick_launch_bounds(
     let y = screen.top() + (screen.size.height - panel_size.height) / 4.0;
     (Bounds::new(point(x, y), panel_size), Some(display.id()))
 }
+
+#[cfg(test)]
+#[path = "auxiliary_theme_tests.rs"]
+mod auxiliary_theme_tests;

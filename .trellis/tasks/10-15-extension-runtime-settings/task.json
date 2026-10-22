@@ -1,0 +1,12 @@
+{
+  "id": "extension-runtime-settings",
+  "name": "extension-runtime-settings",
+  "title": "Extension import layout and runtime environment settings",
+  "status": "review",
+  "dev_type": "fullstack",
+  "package": "nxtools-desktop",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "notes": "Source implementation and isolated verification complete; included in user-authorized signed Release sequence7 package2026-10-15. See ../10-15-extension-zip-import/release-package.md. User visual/installed acceptance pending; original picker failure root cause unconfirmed. No agent install/service/userdata/commit/push."
+}

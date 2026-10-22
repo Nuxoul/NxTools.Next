@@ -1,0 +1,7 @@
+# Boundary and component selection
+
+Gap: natural text summary cards currently have no maximum. Real owner: ui/history.rs composes the current Kit0.7.1 stateless ListItem + non-scroll safe TextView + metadata/feedback in original GPUI ListState. Public Styled max_h/overflow_hidden constraints preserve official idle/selected/hover/focus; no replacement controls or framework patch. Header commands retain existing official XSmall ghost Buttons/public Toolbar.content; no variant/parent adaptation change.
+
+210DIP includes all text card chrome; slot max218DIP includes external8DIPgap. Body allowance210-(verticalpadding10+metadata24+gap4)=172DIP; reserve existing76DIPfeedback allowance when mounted. Keep header/feedback nonshrinking, naturally size summaries below cap, clip over-budget list body without adding nested scrolling. This supersedes only the earlier unbounded list-height requirement; full rich preview measurement/scroll/footer/passive native lifecycle unchanged.
+
+Expected product/test changes: ui/history.rs (named text-card maximum/body budget/public constraints), ui/efficiency_tests.rs (actual official card/slot/header/body bounds at widths and light/dark, short natural and capped long content, original payload action), existing history/extension tests only if directly affected. Task/reference/spec documents capture the explicit new authority. No new callbacks/state/IO/diagnostics: existing action/worker/native diagnostic boundaries remain unchanged; layout adds no per-frame logs. Preserve all unrelated dirty work.

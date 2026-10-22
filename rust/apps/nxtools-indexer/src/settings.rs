@@ -41,7 +41,10 @@ pub(crate) fn persist_system_index_settings(settings: &IndexSettings) -> Result<
     persist_index_settings(&system_index_settings_path(), settings)
 }
 
-fn persist_index_settings(path: &std::path::Path, settings: &IndexSettings) -> Result<()> {
+pub(super) fn persist_index_settings(
+    path: &std::path::Path,
+    settings: &IndexSettings,
+) -> Result<()> {
     let directory = path.parent().context("index settings path has no parent")?;
     fs::create_dir_all(directory)
         .with_context(|| format!("create index settings directory {}", directory.display()))?;

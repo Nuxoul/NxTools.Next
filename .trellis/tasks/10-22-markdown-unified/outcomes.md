@@ -1,0 +1,7 @@
+# Unified Markdown result — 2026-10-22
+
+Four production seams now share pinned Apacheeditor0.1.0/31608fa: Clipboard400charlist/fullpassivepreview/explicitedit andQuickLaunchtext/Markdown. Originalfullpayload separate; safe64KiB/1200line/ASTbudgets, placeholderimages/inertlinks, keyedcache andsingleviewport/nativegeneration retained. Explicitrich/source modes preserve no-edit/cancel bytes; richchangedsavecan normalizewithnotice, sourceCRLFexact.
+
+Approvedvendor57fileprovenance allows onlyelement.rspassiveprojection/noinputfocuscarethandlers andsupplementalexactly3cull.rslowbitstableRust substitutions. NoFast/syntect/alllanguageactivation/nightly/bootstrap. Actualpassivefocusred/defaultinteractivegreen,hostlinkbubblefailurecorrectedatpassivecallback; finaleditor234/234,Markdown14/14,ClipboardUI201/201,QL153/153,fullDesktop1002/1002. Richsave1/1,stalecompletionred→green,sourceexact/duplicate/failuredraft2/2. Oldsavecompletedclosedreopenededitor; originalowner now checksedit_generation/pendingID/item/currentdraft. Noextraworker/controller.
+
+Workspacecheck andstrictprojectClippy--no-depspass. Dependency-inclusivestrictClippystopsatunchangedserialize.rs:215nonminimal_bool; notpatched/suppressedbecauseoutsideapproval. Sources/provenancepassed. Actual96DPI GPUI Markdowntitle/list/table/code screenshot inspected; ownedQuick/Clipboardnative2eachpassedclient/noactivate/primaryUIAonly,notfullMarkdownreader. PhysicalWindowsIME/mixedDPI/user/installedacceptanceunperformed. Full [parent evidence](../10-22-ui-experience-refresh/outcomes.md).

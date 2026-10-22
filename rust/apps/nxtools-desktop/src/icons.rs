@@ -1,7 +1,7 @@
 use std::path::Path;
 
-use gpui::SharedString;
-use gpui_component::IconNamed;
+use gpui_kit::SharedString;
+use gpui_kit::component::IconNamed;
 
 pub(crate) fn shell_icon_path_is_renderable(path: &Path) -> bool {
     path.is_file()
@@ -42,7 +42,6 @@ impl IconNamed for CaptionIcon {
     }
 }
 
-#[cfg(test)]
 impl CaptionIcon {
     pub(crate) const ALL: &'static [Self] =
         &[Self::Minimize, Self::Maximize, Self::Restore, Self::Close];
@@ -64,7 +63,6 @@ macro_rules! material_icons {
             }
         }
 
-        #[cfg(test)]
         impl MaterialIcon {
             pub(crate) const ALL: &'static [Self] = &[
                 $( Self::$variant, )+
@@ -83,6 +81,7 @@ material_icons! {
     TextFields => "material-symbols/text-fields.svg",
     Image => "material-symbols/image.svg",
     Folder => "material-symbols/folder.svg",
+    FolderZip => "material-symbols/folder-zip.svg",
     Add => "material-symbols/add.svg",
     Edit => "material-symbols/edit.svg",
     Keep => "material-symbols/keep.svg",

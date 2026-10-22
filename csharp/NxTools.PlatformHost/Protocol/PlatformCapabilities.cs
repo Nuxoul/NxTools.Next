@@ -34,11 +34,16 @@ internal static class PlatformCapabilities
     public const string BrowserNativeMessaging = "browser_native_messaging";
     public const string DesktopShell = "desktop_shell";
     public const string TrayEvents = "tray_events";
+    // Adapter availability only. Each worker must independently negotiate its read contract.
+    public const string ArchiveRead = "archive_read_v1";
+    public const string ArchiveEntry = "archive_entry_v1";
 
     public static string[] Create(bool clipboardHotKeyAvailable, bool quickLaunchHotKeyAvailable = false)
     {
         var capabilities = new List<string>
         {
+            ArchiveRead,
+            ArchiveEntry,
             ForegroundContext,
             ClipboardTextCapture,
             ClipboardImageCapture,

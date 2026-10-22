@@ -1,0 +1,17 @@
+# Extension runtime settings design
+
+## Boundary and reference
+User rejects actual installed 24px Small actions beside default32px Input, duplicate import invitation and generic picker error. Import path actions use released Medium/default tier and items_center; empty invitation is absent while import/preview is open. Screenshot failure's original native cause is not reproduced; fixed diagnostic classes/native codes and retry/manual path preserve truthful failure recovery.
+
+Read `docs/reference-code/winshun.md`, read-only WinShun `src/plugin/Programs.cpp:95–170`, original manifest picker -> StaDialogRunner -> OpenFileDialog and ExtensionProcessRunner suspended-admission/Job/cleanup boundary. Rust owns defaults/override/trust/config generation; GPUI renders and retains drafts; C# owns native file dialog and interpreter process. No second platform reader or runtime.
+
+## Released component adoption
+Complete official component index reviewed. Locked Component0.7.1 Form::child accepts Field, Field::child accepts rendered content; default Input and Button::with_size(Size::Medium) supply32px path controls without reconstructed height. Toolbar owns action composition. Existing Settings/Page/Group/Item retains six-page navigation; public default_selected_index(SelectIndex{page_ix:5,group_ix:None}) seeds a remounted detail after environment editing, not a parallel active-page controller. Global environment uses Form with bounded overflow viewport and nonshrinking footer; per-package Settings page opens the same editor. KitDefaultLight/Dark and existing fonts/window/rail budgets unchanged.
+
+## Configuration and lifecycle
+PackageRegistry.runtime_defaults keys python/node/powershell/pwsh; InstalledPackage.runtime_override optional. Resolution override -> default -> legacy approved executable only without configured selection. EXE resolves staged entry only. Original locked AppConfig section transaction validates before write and republishes committed registry; effective-path changes revoke affected trust/disable/clear automatic intents, unaffected overrides retain authorization. Save alone never trusts/enables. Authorization renders readonly saved path and re-resolves current configuration at approval.
+
+View owns persistent Input entities/draft request UUIDs. Cross-owner request/save is deferred; original window handle owns asynchronous input update. Matching request and unchanged input required; typing/cancel/reopen rejects old reply. Save closes only on successful original commit, failure keeps draft. Cancel performs no config write; it does not claim to close an outstanding native dialog, whose own Cancel remains authoritative. Probe process has3s native limit; Rust transport wait30s, file chooser300s. Closed view/window cannot apply results. Disconnect drains pending; admission <=4; no payload logs.
+
+## Native probe
+Typed pick_extension_runtime/inspect_extension_runtime support four programs, no arbitrary shell command. Single existing .exe picker; explicit version argv only. Existing ordinary-token suspended Job runner:256MiB,2processes,4KiB output, bounded cleanup, no success before CleanupComplete. Lock image and compare pre/post SHA256; <=128 printable version, no stdout/path logging. Returned identity is informational; actual trust hashes again. No interpreter download, pip/dependency install, general environment variable management, user-config/service/clipboard/credential mutation, package/install/commit/push.

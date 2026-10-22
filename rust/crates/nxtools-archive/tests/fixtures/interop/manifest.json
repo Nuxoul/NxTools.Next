@@ -1,0 +1,48 @@
+{
+  "producer": "7-Zip 26.00 (x64) : Copyright (c) 1999-2026 Igor Pavlov : 2026-02-12",
+  "executable_sha256": "4bcc005758c5e604c0aaa257b6097846a4a708e62a9c0c7471fa360fad863f1f",
+  "commands": [
+    [
+      "a",
+      "-t7z",
+      "-m0=BCJ",
+      "-m1=LZMA2:d=64k",
+      "-ms=off",
+      "-mhc=off",
+      "-mtc=off",
+      "-mta=off",
+      "-mtm=off",
+      "x86-bcj-lzma2.7z",
+      "x86.bin"
+    ],
+    [
+      "l",
+      "-slt",
+      "-sccUTF-8",
+      "x86-bcj-lzma2.7z"
+    ],
+    [
+      "t",
+      "x86-bcj-lzma2.7z"
+    ],
+    [
+      "x",
+      "-y",
+      "-ooracle",
+      "x86-bcj-lzma2.7z"
+    ]
+  ],
+  "coder_chain_proof": "7-Zip -slt archive Method=LZMA2:12 BCJ and member Method=BCJ LZMA2:12; explicit BCJ+LZMA2, dictionary reduced for 4096-byte input",
+  "test_exit": 0,
+  "independent_extract_exact": true,
+  "files": {
+    "x86.bin": {
+      "size": 4096,
+      "sha256": "b7b46b694042e3b4270ca0928fee293974fc1b9fcddf802e39f51da7cc0d91e5"
+    },
+    "x86-bcj-lzma2.7z": {
+      "size": 155,
+      "sha256": "9524f23142ec77b4a2ce94779dd44f6be6cf7cbc06efae072a9d09dec3814d07"
+    }
+  }
+}

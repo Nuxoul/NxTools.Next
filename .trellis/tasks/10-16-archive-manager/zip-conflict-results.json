@@ -1,0 +1,25 @@
+{
+  "slice": "Phase A B2 ZIP extraction conflicts only",
+  "status": "implemented_scoped_checks_passed_pending_independent_acceptance",
+  "full_B2_PhaseA_A_to_F_complete": false,
+  "scratch": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\949da288-1ef9-46b3-a698-90f543613cf5",
+  "red": {"list": 1, "run": 1, "pass": 0, "fail": 1, "skip": 0, "exit": 1, "log": "conflict-red-run.log"},
+  "green_main_chain": {"pass": 1, "fail": 0, "skip": 0, "exit": 0, "log": "conflict-green-run.log"},
+  "new_native_scenarios": 16,
+  "final": {
+    "rust_small": {"pass": 29, "fail": 0, "ignored": 0, "targets": 6, "exit": 0, "log": "conflict-small.log"},
+    "clippy_isolated": {"exit": 0, "log": "conflict-clippy-isolated.log"},
+    "clippy_default": {"exit": 0, "log": "conflict-clippy-default.log"},
+    "fmt_archive": {"exit": 0, "log": "conflict-fmt.log"},
+    "dotnet": {"exit": 0, "warnings": 0, "errors": 0, "log": "conflict-final-dotnet.log"},
+    "matching_worker": {"exit": 0, "features": "isolated-codecs", "log": "conflict-configured-worker.log"},
+    "csharp": {"list": 4, "run": 4, "pass": 4, "skip": 0, "fail": 0, "not_run": 0, "exit": 0, "exact_LIST_RUN_PASS_names_equal": true, "log": "conflict-configured-run.log"},
+    "spec_context_selector_diff": {"exits": [0,0,0,0], "existing_native_contracts_size_warning": true}
+  },
+  "retained_incomplete_attempt": {"selected": 4, "run": 4, "pass": 3, "skip": 1, "fail": 0, "exit": 0, "counts_as_acceptance_PASS": false, "reason": "missing_NXTOOLS_ARCHIVE_CODEC_FIXTURES", "log": "conflict-final-run.log"},
+  "native_assertions": ["Ask_bound_observation_Overwrite_exact_bytes", "Skip_old_bytes_and_exact_count", "AutoRename_legal_numbered_same_directory", "all3apply_all_choices_one_prompt", "new_task_no_inherited_choice", "stale_duplicate_retired_tickets", "changed_target_old_approval_refused", "cancel_before_and_after_actual_commit", "raced_numbered_name_no_replace", "internal_collision_no_prompt", "reserved_original_archive_numbered_name", "owned_partial_cleanup_foreign_retained"],
+  "source_delete_assertion": {"public_engine": true, "files_skipped": 3, "files_committed": 0, "reason": "members_skipped", "native_delete_invoked": false},
+  "historical_task_files_unchanged_before_checkpoint": 107,
+  "remaining": ["independent_ZIP_conflict_acceptance", "other_format_conflict_integration", "B3", "full_B2_PhaseA_A_to_F"],
+  "not_executed": ["password_matrix", "all_format_conflicts", "long_path_matrix", "100k", "1GiB", "large_ZIP64", "performance_sampling", "UI", "PhaseB", "UNC", "native_recycle", "system_changes", "formal_program", "package", "install", "sign", "commit", "push", "global_workspace_check"]
+}

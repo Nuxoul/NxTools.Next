@@ -1,66 +1,43 @@
 use super::*;
-use crate::icons::MaterialIcon;
-use crate::ui::components::action::focusable_content;
-use crate::ui::metrics::RADIUS_CONTROL;
-use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_TITLE, TEXT_BODY, TEXT_TITLE};
-use gpui::{AnyElement, App, FontWeight, SharedString};
-use gpui_component::Icon;
+use gpui_kit::component::button::Button;
+use gpui_kit::component::checkbox::Checkbox;
+use gpui_kit::component::label::Label;
+use gpui_kit::{AnyElement, SharedString};
 
 const CLIPBOARD_COLUMN: f32 = 96.0;
 const QUICK_COLUMN: f32 = 80.0;
 const ACTION_COLUMN: f32 = 56.0;
 const ROW_HEIGHT: f32 = 40.0;
-const CONTROL_HEIGHT: f32 = 32.0;
 
-fn scope_action(
+fn scope_checkbox(
     id: SharedString,
-    theme: Theme,
     checked: bool,
     pending: bool,
-    on_click: impl Fn(&gpui::ClickEvent, &mut Window, &mut App) + 'static,
+    on_change: impl Fn(&bool, &mut Window, &mut gpui_kit::App) + 'static,
 ) -> AnyElement {
-    let mark_selector = format!("{id}-mark");
-    let marker = div()
-        .debug_selector(move || mark_selector.clone())
-        .size(px(16.0))
-        .flex_none()
-        .rounded(px(RADIUS_CONTROL))
-        .border_1()
-        .border_color(if checked {
-            theme.accent
-        } else {
-            theme.text_muted
-        })
-        .bg(if checked { theme.accent } else { theme.canvas })
+    let selector = id.to_string();
+    let help = if id.contains("clipboard") {
+        "禁用此应用的剪贴板捕获"
+    } else {
+        "禁用此应用的快速启动"
+    };
+    div()
+        .debug_selector(move || selector.clone())
+        .h(px(32.0))
+        .w_full()
         .flex()
         .items_center()
         .justify_center()
-        .when(checked, |mark| {
-            mark.child(
-                Icon::new(MaterialIcon::Check)
-                    .size(px(12.0))
-                    .text_color(theme.image_well),
-            )
-        });
-    let action_selector = id.to_string();
-    focusable_content(
-        id,
-        theme,
-        pending,
-        div()
-            .debug_selector(move || action_selector.clone())
-            .h(px(CONTROL_HEIGHT))
-            .w_full()
-            .flex()
-            .items_center()
-            .justify_center()
-            .when(pending, |element| element.opacity(0.5))
-            .child(marker)
-            .into_any_element(),
-        on_click,
-    )
+        .child(
+            Checkbox::new(id.clone())
+                .accessibility_label(help)
+                .tooltip(help)
+                .checked(checked)
+                .disabled(pending)
+                .on_change(on_change),
+        )
+        .into_any_element()
 }
-
 fn centered_column(selector: &'static str, width: f32, label: &'static str) -> AnyElement {
     div()
         .debug_selector(move || selector.into())
@@ -70,86 +47,10 @@ fn centered_column(selector: &'static str, width: f32, label: &'static str) -> A
         .flex()
         .items_center()
         .justify_center()
-        .child(label)
+        .child(Label::new(label).text_sm())
         .into_any_element()
 }
-
 impl NetworkSettingsView {
-    pub(super) fn render_navigation(&self, cx: &mut Context<Self>) -> AnyElement {
-        let theme = self.theme;
-        let mut rail = div()
-            .debug_selector(|| "global-settings-navigation".into())
-            .w(px(128.0))
-            .h_full()
-            .flex_none()
-            .px(px(8.0))
-            .py(px(16.0))
-            .border_r_1()
-            .border_color(theme.border_subtle)
-            .flex()
-            .flex_col()
-            .gap(px(4.0))
-            .text_size(px(TEXT_BODY))
-            .line_height(px(LINE_HEIGHT_BODY));
-        for (id, label, tab) in [
-            (
-                "global-settings-tab-general",
-                "常规",
-                GlobalSettingsTab::General,
-            ),
-            (
-                "global-settings-tab-network",
-                "网络",
-                GlobalSettingsTab::Network,
-            ),
-            (
-                "global-settings-tab-blacklist",
-                "应用黑名单",
-                GlobalSettingsTab::Blacklist,
-            ),
-        ] {
-            let selected = self.tab == tab;
-            rail = rail.child(focusable_content(
-                id,
-                theme,
-                self.saving,
-                div()
-                    .debug_selector(move || id.into())
-                    .w_full()
-                    .h(px(32.0))
-                    .px(px(12.0))
-                    .rounded(px(RADIUS_CONTROL))
-                    .flex()
-                    .items_center()
-                    .bg(if selected {
-                        theme.element_selected
-                    } else {
-                        theme.canvas
-                    })
-                    .text_color(if selected {
-                        theme.text
-                    } else {
-                        theme.text_secondary
-                    })
-                    .font_weight(if selected {
-                        FontWeight::MEDIUM
-                    } else {
-                        FontWeight::NORMAL
-                    })
-                    .hover(move |style| style.bg(theme.surface_hover))
-                    .child(label)
-                    .into_any_element(),
-                cx.listener(move |this, _, _, cx| {
-                    if !this.saving {
-                        this.tab = tab;
-                        cx.notify();
-                    }
-                }),
-            ));
-        }
-        rail.into_any_element()
-    }
-
     pub(super) fn add_rule(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.saving {
             return;
@@ -192,27 +93,22 @@ impl NetworkSettingsView {
         info!(event = "global.blacklist.draft_completed", %correlation_id, rule_count = self.rules.len(), elapsed_ms = started_at.elapsed().as_millis(), "application rule draft updated");
         cx.notify();
     }
-
-    pub(super) fn render_blacklist(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_blacklist_table(&self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let pending = self.saving;
         let header = div()
             .w_full()
             .h(px(ROW_HEIGHT))
             .flex_none()
-            .px(px(12.0))
+            .px_3()
             .flex()
             .items_center()
-            .border_b_1()
-            .border_color(theme.border_subtle)
-            .text_color(theme.text_secondary)
-            .font_weight(FontWeight::MEDIUM)
             .child(
                 div()
                     .debug_selector(|| "global-blacklist-header-app".into())
                     .flex_1()
                     .min_w_0()
-                    .child("应用进程"),
+                    .child(Label::new("应用进程").text_sm()),
             )
             .child(centered_column(
                 "global-blacklist-header-clipboard",
@@ -240,66 +136,61 @@ impl NetworkSettingsView {
             let clipboard = rule.disable_clipboard;
             let quick = rule.disable_quick_launch;
             let selected = self.editing_rule == Some(index);
-            let label_selector = format!("global-blacklist-label-{index}");
-            let row_selector = format!("global-blacklist-row-{index}");
-            let app_action = focusable_content(
-                SharedString::from(label_selector.clone()),
-                theme,
-                pending,
-                div()
-                    .debug_selector(move || label_selector.clone())
+            let app_action =
+                Button::new(SharedString::from(format!("global-blacklist-edit-{index}")))
+                    .ghost()
+                    .small()
                     .w_full()
-                    .h(px(CONTROL_HEIGHT))
-                    .min_w_0()
-                    .flex()
-                    .items_center()
-                    .text_color(theme.text)
-                    .child(div().truncate().child(format!("{}.exe", rule.process)))
-                    .into_any_element(),
-                cx.listener(move |this, _, window, cx| {
-                    if this.saving {
-                        return;
-                    }
-                    this.editing_rule = Some(index);
-                    this.new_disable_clipboard = clipboard;
-                    this.new_disable_quick_launch = quick;
-                    this.process_input.update(cx, |input, cx| {
-                        input.focus(window, cx);
-                        input.set_value(format!("{process}.exe"), window, cx)
-                    });
-                    cx.notify();
-                }),
-            );
-            rows = rows.child(div().debug_selector(move || row_selector.clone())
-                .w_full().h(px(ROW_HEIGHT)).flex_none().px(px(12.0)).flex().items_center()
-                .border_b_1().border_color(theme.border_subtle)
+                    .justify_start()
+                    .disabled(pending)
+                    .debug_selector(move || format!("global-blacklist-label-{index}"))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .w_full()
+                            .truncate()
+                            .child(format!("{}.exe", rule.process)),
+                    )
+                    .tooltip(format!("{}.exe · 点击编辑", rule.process))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        if this.saving {
+                            return;
+                        }
+                        this.editing_rule = Some(index);
+                        this.new_disable_clipboard = clipboard;
+                        this.new_disable_quick_launch = quick;
+                        this.process_input.update(cx, |input, cx| {
+                            input.focus(window, cx);
+                            input.set_value(format!("{process}.exe"), window, cx)
+                        });
+                        cx.notify();
+                    }));
+            rows = rows.child(div().debug_selector(move || format!("global-blacklist-row-{index}"))
+                .w_full().h(px(ROW_HEIGHT)).flex_none().px_3().flex().items_center()
                 .when(selected, |row| row.bg(theme.element_selected))
-                .hover(move |style| style.bg(theme.surface_hover))
-                .child(div().flex_1().min_w_0().child(app_action))
+                .child(div().flex_1().min_w_0().overflow_hidden().child(app_action))
                 .child(div().debug_selector(move || format!("global-blacklist-clipboard-cell-{index}"))
-                    .w(px(CLIPBOARD_COLUMN)).flex_none().child(scope_action(
-                        format!("global-blacklist-clipboard-{index}").into(), theme, clipboard, pending,
-                        cx.listener(move |this, _, _, cx| {
+                    .w(px(CLIPBOARD_COLUMN)).flex_none().child(scope_checkbox(
+                        format!("global-blacklist-clipboard-{index}").into(), clipboard, pending,
+                        cx.listener(move |this, requested: &bool, _, cx| {
                             if !this.saving {
-                                this.rules[index].disable_clipboard = !clipboard; cx.notify();
-                                info!(event = "global.blacklist.draft_scope_changed", correlation_id = %uuid::Uuid::new_v4(), clipboard = true, disabled = !clipboard, elapsed_ms = 0, "application rule scope updated");
+                                this.rules[index].disable_clipboard = *requested; cx.notify();
+                                info!(event = "global.blacklist.draft_scope_changed", correlation_id = %uuid::Uuid::new_v4(), clipboard = true, disabled = *requested, elapsed_ms = 0, "application rule scope updated");
                             }
                         }))))
                 .child(div().debug_selector(move || format!("global-blacklist-quick-cell-{index}"))
-                    .w(px(QUICK_COLUMN)).flex_none().child(scope_action(
-                        format!("global-blacklist-quick-{index}").into(), theme, quick, pending,
-                        cx.listener(move |this, _, _, cx| {
+                    .w(px(QUICK_COLUMN)).flex_none().child(scope_checkbox(
+                        format!("global-blacklist-quick-{index}").into(), quick, pending,
+                        cx.listener(move |this, requested: &bool, _, cx| {
                             if !this.saving {
-                                this.rules[index].disable_quick_launch = !quick; cx.notify();
-                                info!(event = "global.blacklist.draft_scope_changed", correlation_id = %uuid::Uuid::new_v4(), clipboard = false, disabled = !quick, elapsed_ms = 0, "application rule scope updated");
+                                this.rules[index].disable_quick_launch = *requested; cx.notify();
+                                info!(event = "global.blacklist.draft_scope_changed", correlation_id = %uuid::Uuid::new_v4(), clipboard = false, disabled = *requested, elapsed_ms = 0, "application rule scope updated");
                             }
                         }))))
                 .child(div().debug_selector(move || format!("global-blacklist-remove-cell-{index}"))
-                    .w(px(ACTION_COLUMN)).flex_none().child(focusable_content(
-                        SharedString::from(format!("global-blacklist-remove-{index}")), theme, pending,
-                        div().h(px(CONTROL_HEIGHT)).w_full().flex().items_center().justify_center()
-                            .text_color(theme.text_secondary).child("移除").into_any_element(),
-                        cx.listener(move |this, _, _, cx| {
+                    .w(px(ACTION_COLUMN)).flex_none().child(Button::new(SharedString::from(format!("global-blacklist-remove-{index}")))
+                        .ghost().small().label("移除").disabled(pending)
+                        .on_click(cx.listener(move |this, _, _, cx| {
                             if this.saving { return; }
                             this.rules.remove(index); this.editing_rule = None;
                             info!(event = "global.blacklist.draft_removed", correlation_id = %uuid::Uuid::new_v4(), rule_count = this.rules.len(), elapsed_ms = 0, "application rule removed from draft");
@@ -310,55 +201,69 @@ impl NetworkSettingsView {
             rows = rows.child(
                 div()
                     .h(px(80.0))
-                    .px(px(12.0))
+                    .px_3()
                     .flex()
                     .items_center()
-                    .text_color(theme.text_muted)
-                    .child("暂无应用规则。添加应用后选择要禁用的功能。"),
+                    .child(Label::new("暂无应用规则。添加应用后选择要禁用的功能。").text_sm()),
             );
         }
-        let input = Input::new(&self.process_input)
-            .appearance(false)
-            .bordered(false)
-            .disabled(pending)
-            .text_size(px(TEXT_BODY));
+        div()
+            .w_full()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(Label::new("按应用独立禁用功能，勾选项在应用设置后生效。").text_sm())
+            .child(
+                div()
+                    .debug_selector(|| "global-blacklist-table".into())
+                    .w_full()
+                    .border_1()
+                    .border_color(theme.border_subtle)
+                    .overflow_hidden()
+                    .child(header)
+                    .child(rows),
+            )
+            .into_any_element()
+    }
+    pub(super) fn render_blacklist_editor(&self, cx: &mut Context<Self>) -> AnyElement {
+        let pending = self.saving;
         let editor = div()
             .debug_selector(|| "global-blacklist-new-row".into())
             .w_full()
-            .h(px(ROW_HEIGHT))
-            .px(px(12.0))
+            .min_w_0()
             .flex()
             .items_center()
-            .child(div().flex_1().min_w_0().pr(px(8.0)).child(field_shell(
-                theme,
-                "global-blacklist-process-field",
-                input,
-            )))
+            .gap_2()
             .child(
                 div()
-                    .w(px(CLIPBOARD_COLUMN))
-                    .flex_none()
-                    .child(scope_action(
-                        "global-blacklist-new-clipboard".into(),
-                        theme,
-                        self.new_disable_clipboard,
-                        pending,
-                        cx.listener(|this, _, _, cx| {
-                            if !this.saving {
-                                this.new_disable_clipboard = !this.new_disable_clipboard;
-                                cx.notify();
-                            }
-                        }),
-                    )),
+                    .flex_1()
+                    .min_w_0()
+                    .debug_selector(|| "global-blacklist-process-field".into())
+                    .child(
+                        Input::new(&self.process_input)
+                            .aria_label("应用进程名")
+                            .disabled(pending),
+                    ),
             )
-            .child(div().w(px(QUICK_COLUMN)).flex_none().child(scope_action(
+            .child(div().w(px(64.0)).flex_none().child(scope_checkbox(
+                "global-blacklist-new-clipboard".into(),
+                self.new_disable_clipboard,
+                pending,
+                cx.listener(|this, requested: &bool, _, cx| {
+                    if !this.saving {
+                        this.new_disable_clipboard = *requested;
+                        cx.notify();
+                    }
+                }),
+            )))
+            .child(div().w(px(64.0)).flex_none().child(scope_checkbox(
                 "global-blacklist-new-quick".into(),
-                theme,
                 self.new_disable_quick_launch,
                 pending,
-                cx.listener(|this, _, _, cx| {
+                cx.listener(|this, requested: &bool, _, cx| {
                     if !this.saving {
-                        this.new_disable_quick_launch = !this.new_disable_quick_launch;
+                        this.new_disable_quick_launch = *requested;
                         cx.notify();
                     }
                 }),
@@ -366,83 +271,23 @@ impl NetworkSettingsView {
             .child(
                 div()
                     .debug_selector(|| "global-blacklist-add-action".into())
-                    .w(px(ACTION_COLUMN))
-                    .h(px(CONTROL_HEIGHT))
                     .flex_none()
                     .child(
-                        action_button(
-                            "global-blacklist-add",
-                            if self.editing_rule.is_some() {
+                        Button::new("global-blacklist-add")
+                            .small()
+                            .outline()
+                            .label(if self.editing_rule.is_some() {
                                 "更新"
                             } else {
                                 "添加"
-                            },
-                        )
-                        .h(px(CONTROL_HEIGHT))
-                        .w_full()
-                        .text_size(px(TEXT_BODY))
-                        .disabled(pending)
-                        .on_click(cx.listener(|this, _, window, cx| this.add_rule(window, cx))),
+                            })
+                            .disabled(pending)
+                            .on_click(cx.listener(|this, _, window, cx| this.add_rule(window, cx))),
                     ),
             );
-        div()
-            .w_full()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .gap(px(16.0))
-            .text_size(px(TEXT_BODY))
-            .line_height(px(LINE_HEIGHT_BODY))
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.0))
-                    .child(
-                        div()
-                            .debug_selector(|| "global-blacklist-page-title".into())
-                            .text_size(px(TEXT_TITLE))
-                            .line_height(px(LINE_HEIGHT_TITLE))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child("应用黑名单"),
-                    )
-                    .child(
-                        div()
-                            .text_color(theme.text_secondary)
-                            .child("按应用独立禁用功能，勾选项在应用设置后生效。"),
-                    ),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "global-blacklist-table".into())
-                    .w_full()
-                    .border_1()
-                    .border_color(theme.border_subtle)
-                    .rounded(px(RADIUS_CONTROL))
-                    .overflow_hidden()
-                    .child(header)
-                    .child(rows),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.0))
-                    .child(div().px(px(12.0)).font_weight(FontWeight::MEDIUM).child(
-                        if self.editing_rule.is_some() {
-                            "编辑应用"
-                        } else {
-                            "添加应用"
-                        },
-                    ))
-                    .child(editor)
-                    .child(
-                        div()
-                            .px(px(12.0))
-                            .text_color(theme.text_muted)
-                            .child("填写进程名，例如 notepad.exe；点击已有应用可编辑。"),
-                    ),
-            )
-            .into_any_element()
+        Form::vertical().small().child(Field::new()
+            .label(if self.editing_rule.is_some() { "编辑应用" } else { "添加应用" })
+            .description("填写进程名，例如 notepad.exe；点击已有应用可编辑。左侧勾选禁用剪贴板，右侧勾选禁用速启。")
+            .child(editor)).into_any_element()
     }
 }

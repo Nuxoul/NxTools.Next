@@ -12,7 +12,7 @@ namespace NxTools.PlatformHost.Windows;
 
 internal sealed partial class WindowsPlatformAdapter
 {
-    private static class NativeMethods
+    private static partial class NativeMethods
     {
         internal static int InputSize => Marshal.SizeOf<Input>();
 
@@ -173,13 +173,13 @@ internal sealed partial class WindowsPlatformAdapter
             int width,
             int height,
             uint flags);
-[DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
 [return: MarshalAs(UnmanagedType.Bool)]
 private static extern bool GetClientRect(
     IntPtr window,
     out NativeWindowRectangle bounds);
 
-        [DllImport("user32.dll")]
+        [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool ClientToScreen(
             IntPtr window,
@@ -648,18 +648,29 @@ private static extern bool GetClientRect(
                 return new WindowsCommandResult(false, "Window bounds must have a positive size.");
             }
 
-            return SetWindowPos(
-                window,
-                IntPtr.Zero,
-                x,
-                y,
-                width,
-                height,
-                SwpNoZOrder | SwpNoActivate)
+            // Every GPUI caller supplies a client/content size in device pixels.
+            // Keep the existing outer x/y placement contract, but compensate the
+            // actual frame rather than shrinking content by the native border.
+            if (!AnchoredWindowPlacement.TryGetWindowRectangle(window, out var outer) ||
+                !TryGetClientScreenRectangle(window, out var client))
+                return new WindowsCommandResult(false, "The GPUI client rectangle is unavailable.");
+            var insets = NativeWindowInsets.From(outer, client);
+            var outerWidth = (long)width + insets.Left + insets.Right;
+            var outerHeight = (long)height + insets.Top + insets.Bottom;
+            if (outerWidth <= 0 || outerHeight <= 0 || outerWidth > int.MaxValue || outerHeight > int.MaxValue)
+                return new WindowsCommandResult(false, "Requested client bounds exceed the native size range.");
+            var applied = SetWindowPos(window, IntPtr.Zero, x, y,
+                (int)outerWidth, (int)outerHeight,
+                SwpNoZOrder | SwpNoActivate | SwpFrameChanged);
+            if (!applied)
+            {
+                var nativeError = Marshal.GetLastWin32Error();
+                return new WindowsCommandResult(false, "Native client bounds application failed.", NativeErrorCode: nativeError);
+            }
+            return TryGetClientScreenRectangle(window, out var after) &&
+                after.Width == width && after.Height == height
                 ? new WindowsCommandResult(true)
-                : new WindowsCommandResult(
-                    false,
-                    $"SetWindowPos(bounds) failed with Win32={Marshal.GetLastWin32Error()}.");
+                : new WindowsCommandResult(false, "Windows did not apply the requested GPUI client bounds.");
         }
 
         /// <summary>

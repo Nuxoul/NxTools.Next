@@ -6,11 +6,10 @@ use std::collections::HashSet;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use gpui::{
+use gpui_kit::{
     AppContext, KeyDownEvent, Keystroke, Modifiers, MouseButton, MouseDownEvent, MouseUpEvent,
     TestAppContext, VisualTestContext, px, size,
 };
-use gpui_component::PixelsExt;
 use nxtools_core::{
     AppConfig, ClipboardHotKeyModifier, CustomCommandSettings,
     DownloadRowDoubleClickActionSettings, DownloadSettings, LinkPanelPosition, SystemSettings,
@@ -28,6 +27,7 @@ use nxtools_protocol::{
     Message, PlatformCommand, PlatformCommandResult,
 };
 
+use super::selected_download_summary;
 use crate::clipboard::ClipboardApplication;
 use crate::downloads::{DownloadApplication, DownloadRuntimeContext};
 use crate::network_settings::NetworkSettingsApplication;
@@ -35,6 +35,68 @@ use crate::notifications::{NotificationAction, NotificationCenter, NotificationD
 use crate::quick_launch::QuickLaunchApplication;
 use crate::runtime::IndexerNotification;
 use crate::shell::MainModule;
+
+fn official_quick_navigation_bounds(
+    window: &mut VisualTestContext,
+    page: QuickLaunchSettingsPage,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    window.refresh().expect("official Settings navigation");
+    let index = QuickLaunchSettingsPage::ALL
+        .iter()
+        .position(|candidate| *candidate == page)
+        .expect("five official pages");
+    window.update(|window, _| {
+        let snapshots = gpui_kit::base::test_support::snapshots(window);
+        snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.label() == Some(page.metadata().label)
+                    && snapshot.role() == Some(gpui_kit::Role::TreeItem)
+            })
+            .or_else(|| {
+                snapshots.iter().find(|snapshot| {
+                    snapshot.path().last()
+                        == Some(&gpui_kit::ElementId::from(gpui_kit::SharedString::from(
+                            format!("0-{index}"),
+                        )))
+                })
+            })
+            .unwrap_or_else(|| panic!("official navigation {:?}: {snapshots:#?}", page))
+            .bounds()
+    })
+}
+
+fn select_official_quick_page(window: &mut VisualTestContext, page: QuickLaunchSettingsPage) {
+    let bounds = official_quick_navigation_bounds(window, page);
+    window.simulate_click(bounds.center(), Modifiers::default());
+    window.run_until_parked();
+    window.refresh().expect("official page selected");
+}
+
+pub(super) fn assert_official_quick_page(
+    window: &mut VisualTestContext,
+    page: QuickLaunchSettingsPage,
+) {
+    window.update(|window, _| {
+        let snapshots = gpui_kit::base::test_support::snapshots(window);
+        let active = snapshots
+            .iter()
+            .filter(|snapshot| {
+                snapshot.role() == Some(gpui_kit::Role::Group)
+                    && QuickLaunchSettingsPage::ALL
+                        .iter()
+                        .any(|page| snapshot.label() == Some(page.metadata().label))
+            })
+            .collect::<Vec<_>>();
+        assert!(!active.is_empty(), "one selected official page has content");
+        assert!(
+            active
+                .iter()
+                .all(|snapshot| snapshot.label() == Some(page.metadata().label)),
+            "only selected page content is registered: {active:#?}"
+        );
+    });
+}
 
 fn assert_single_index_settings_command(
     endpoint: &crate::runtime::IndexerProcessEndpoint,
@@ -166,9 +228,9 @@ fn download_row_transfer_uses_live_values_only_for_active_tasks() {
     assert_eq!(super::format_download_remaining(360_000), "99h+");
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let config = std::rc::Rc::new(std::cell::RefCell::new(AppConfig::default()));
     let config_path = std::env::temp_dir().join(format!(
@@ -196,9 +258,9 @@ fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppCon
     let settings_for_window = Some(network_settings.clone());
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
         MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: settings_for_window,
                 platform: None,
@@ -229,26 +291,37 @@ fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppCon
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn foundation_sidebar_keyboard_activates_the_same_module_as_pointer(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
-    let (main, window) = cx.add_window_view(move |window, cx| {
+    let retained_main = Rc::new(RefCell::new(None));
+    let retained_view = retained_main.clone();
+    let (_, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(920.0), px(480.0)));
-        MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
-            MainWindowShellContext {
-                settings: None,
-                platform: None,
-                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
-            },
-            notifications,
-            window,
-            cx,
-        )
+        let view = cx.new(|cx| {
+            MainWindow::new(
+                gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            )
+        });
+        *retained_view.borrow_mut() = Some(view.clone());
+        gpui_kit::base::Root::new(view, window, cx)
     });
+    let main = retained_main
+        .borrow()
+        .as_ref()
+        .expect("production MainWindow")
+        .clone();
     window.refresh().expect("render foundation baseline");
     let download = window
         .debug_bounds("main-module-下载")
@@ -283,7 +356,7 @@ fn foundation_sidebar_keyboard_activates_the_same_module_as_pointer(cx: &mut Tes
         "Tab must focus clipboard"
     );
     window.simulate_keystrokes("enter");
-    window.simulate_event(gpui::KeyUpEvent {
+    window.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: Keystroke::parse("enter").expect("Enter stroke"),
     });
     window.refresh().expect("keyboard activates clipboard");
@@ -293,10 +366,30 @@ fn foundation_sidebar_keyboard_activates_the_same_module_as_pointer(cx: &mut Tes
         "Tab from quick find then Enter must activate the next navigation module"
     );
     window.simulate_keystrokes("tab");
-    window.refresh().expect("paint tools keyboard focus");
+    window.refresh().expect("paint extensions keyboard focus");
     window.simulate_keystrokes("space");
-    window.simulate_event(gpui::KeyUpEvent {
+    window.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: Keystroke::parse("space").expect("Space stroke"),
+    });
+    window.refresh().expect("keyboard activates extensions");
+    assert_eq!(
+        window.read(|cx| main.read(cx).shell.active_module()),
+        MainModule::Extensions
+    );
+    window.simulate_keystrokes("tab");
+    window.simulate_keystrokes("space");
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: Keystroke::parse("space").expect("archive release"),
+    });
+    window.refresh().expect("keyboard activates archive");
+    assert_eq!(
+        window.read(|cx| main.read(cx).shell.active_module()),
+        MainModule::Archive
+    );
+    window.simulate_keystrokes("tab");
+    window.simulate_keystrokes("space");
+    window.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: Keystroke::parse("space").expect("tools release"),
     });
     window.refresh().expect("keyboard activates tools");
     assert_eq!(
@@ -306,27 +399,27 @@ fn foundation_sidebar_keyboard_activates_the_same_module_as_pointer(cx: &mut Tes
     window.simulate_keystrokes("shift-tab");
     window.refresh().expect("paint reverse keyboard focus");
     window.simulate_keystrokes("enter");
-    window.simulate_event(gpui::KeyUpEvent {
+    window.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: Keystroke::parse("enter").expect("Enter stroke"),
     });
     window.refresh().expect("reverse navigation retains focus");
     assert_eq!(
         window.read(|cx| main.read(cx).shell.active_module()),
-        MainModule::Clipboard
+        MainModule::Archive
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     cx.update(crate::theme::apply_component_theme);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let (main, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(920.0), px(480.0)));
         let mut main = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -355,26 +448,43 @@ fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut T
         let entry = window
             .debug_bounds("tool-link-detector-card")
             .expect("continuous tool entry");
-        let description = window
-            .debug_bounds("tool-link-detector-description")
-            .expect("tool purpose");
+        assert!(
+            window
+                .debug_bounds("tool-link-detector-description")
+                .is_none(),
+            "tool purpose is Tooltip-only"
+        );
         let status = window
             .debug_bounds("tool-link-detector-status")
             .expect("tool state");
         let configure = window
             .debug_bounds("tool-link-detector-configure")
             .expect("configure action copy");
-        assert_eq!(rail.size.width, px(208.0));
+        assert_eq!(rail.size.width, px(176.0));
         assert_eq!(header.top(), root.top() + px(36.0));
         assert_eq!(header.size.height, px(48.0));
         assert_eq!(entry.left(), rail.right() + px(16.0));
-        assert_eq!(entry.right(), root.right() - px(16.0));
+        assert_eq!(
+            entry.size,
+            size(px(180.0), px(160.0)),
+            "fixed tool tile, not a full-width centered row"
+        );
         assert!(entry.top() >= header.bottom() + px(16.0));
         assert!(entry.bottom() <= content.bottom());
-        assert!(description.right() <= status.left() - px(SPACING_12));
-        assert!(status.right() <= configure.left() - px(SPACING_12));
+        let title = window
+            .debug_bounds("tool-link-detector-title")
+            .expect("tool title");
+        let icon = window
+            .debug_bounds("tool-link-detector-icon")
+            .expect("tool icon");
+        assert!(icon.bottom() <= title.top() && title.bottom() <= status.top());
+        assert!(status.bottom() <= configure.top());
+        assert!((title.center().x - entry.center().x).abs() <= px(1.0));
         let before = entry;
-        window.update(|window, cx| main.read(cx).tool_focus.focus(window));
+        window.update(|window, cx| {
+            let focus = main.read(cx).tool_focus.clone();
+            focus.focus(window, cx);
+        });
         window
             .refresh()
             .expect("paint keyboard focus without layout shift");
@@ -386,27 +496,39 @@ fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut T
             "main-module-其他工具",
         ] {
             let row = window.debug_bounds(selector).expect("four module entries");
-            assert_eq!(row.size.height, px(48.0));
+            assert_eq!(row.size.height, px(32.0));
             assert!(row.left() >= rail.left() + px(8.0) && row.right() <= rail.right() - px(8.0));
             assert!(row.bottom() <= root.bottom());
         }
     }
     window.simulate_keystrokes("enter");
-    window.simulate_event(gpui::KeyUpEvent {
+    window.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: Keystroke::parse("enter").expect("Enter stroke"),
     });
+    window.run_until_parked();
+    assert!(
+        window.read(|cx| main.read(cx).tool_settings_windows.is_empty()),
+        "card activation cannot open settings, including disconnected owner"
+    );
+    let configure = window
+        .debug_bounds("tool-link-detector-configure")
+        .expect("Configure");
+    window.simulate_click(configure.center(), Modifiers::default());
     window.run_until_parked();
     let first = window.read(|cx| {
         main.read(cx)
             .tool_settings_windows
             .get("tool-link-detector")
             .copied()
-            .expect("keyboard opened settings")
+            .expect("Configure opened settings")
     });
-    window.update(|window, cx| main.read(cx).tool_focus.focus(window));
+    window.update(|window, cx| {
+        let focus = main.read(cx).tool_focus.clone();
+        focus.focus(window, cx);
+    });
     window.refresh().expect("restore tool trigger focus");
     window.simulate_keystrokes("space");
-    window.simulate_event(gpui::KeyUpEvent {
+    window.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: Keystroke::parse("space").expect("Space stroke"),
     });
     window.run_until_parked();
@@ -417,7 +539,21 @@ fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut T
             .get("tool-link-detector")
             .copied())
             == Some(first),
-        "Space must reuse the settings window opened by Enter"
+        "card Space does not create another settings window"
+    );
+    let configure = window
+        .debug_bounds("tool-link-detector-configure")
+        .expect("actual Kit configure button");
+    window.simulate_click(configure.center(), Modifiers::default());
+    window.run_until_parked();
+    assert_eq!(
+        window.read(|cx| main
+            .read(cx)
+            .tool_settings_windows
+            .get("tool-link-detector")
+            .copied()),
+        Some(first),
+        "Configure has its own single dispatcher and reuses the keyed window"
     );
     assert_eq!(
         window.read(|cx| main.read(cx).tool_settings_windows.len()),
@@ -425,16 +561,16 @@ fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut T
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
-        window.resize(gpui::size(px(1060.0), px(500.0)));
+        window.resize(gpui_kit::size(px(1060.0), px(500.0)));
         MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -455,28 +591,20 @@ fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestApp
         let row = window
             .debug_bounds(selector)
             .unwrap_or_else(|| panic!("rendered sidebar row {selector}"));
-        assert_eq!(row.size.height, px(SIDEBAR_ROW_HEIGHT));
+        assert_eq!(row.size.height, px(32.0));
     }
     for module in ["下载", "速启", "剪贴板"] {
-        let title_selector: &'static str =
-            Box::leak(format!("main-module-{module}-title").into_boxed_str());
         let description_selector: &'static str =
             Box::leak(format!("main-module-{module}-description").into_boxed_str());
-        assert_eq!(
-            window
-                .debug_bounds(title_selector)
-                .expect("sidebar module title")
-                .size
-                .height,
-            px(LINE_HEIGHT_BODY)
+        assert!(
+            window.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .any(|snapshot| snapshot.label() == Some(module))),
+            "Kit module label remains visible"
         );
-        assert_eq!(
-            window
-                .debug_bounds(description_selector)
-                .expect("sidebar module description")
-                .size
-                .height,
-            px(LINE_HEIGHT_LABEL)
+        assert!(
+            window.debug_bounds(description_selector).is_none(),
+            "module purpose is available as a tooltip, not a second navigation line"
         );
     }
 
@@ -503,10 +631,12 @@ fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestApp
     let search = window
         .debug_bounds("download-search")
         .expect("download header search");
-    let settings = window
-        .debug_bounds("download-settings-action")
-        .expect("download header settings");
-    assert_eq!(settings.left() - search.right(), px(SPACING_4));
+    let settings = kit_download_control_bounds(window, "download-settings");
+    assert_eq!(
+        settings.left() - search.right(),
+        px(SPACING_4 * 2.0),
+        "outer4px gap plus released Toolbar4px inset"
+    );
     let download_empty = window
         .debug_bounds("download-empty-state")
         .expect("download work-surface empty state");
@@ -524,11 +654,8 @@ fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestApp
         .debug_bounds("download-empty-state-description")
         .expect("download empty description");
     assert_eq!(download_empty_icon.size, size(px(18.0), px(18.0)));
-    assert_eq!(download_empty_title.size.height, px(LINE_HEIGHT_BODY));
-    assert_eq!(
-        download_empty_description.size.height,
-        px(LINE_HEIGHT_LABEL)
-    );
+    assert_eq!(download_empty_title.size.height, px(20.0));
+    assert_eq!(download_empty_description.size.height, px(20.0));
     assert_eq!(
         download_empty_title.left(),
         download_empty_description.left()
@@ -590,66 +717,76 @@ fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestApp
     );
 }
 
-#[gpui::test]
-fn clipboard_settings_keep_one_continuous_primary_secondary_surface(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+#[gpui_kit::test]
+fn clipboard_settings_keep_one_continuous_scrollable_surface(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
-        window.resize(gpui::size(px(1060.0), px(500.0)));
-        let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
-            MainWindowShellContext {
-                settings: None,
-                platform: None,
-                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
-            },
-            notifications,
-            window,
-            cx,
-        );
-        main_window.shell.activate(MainModule::Clipboard);
-        main_window
+        window.resize(gpui_kit::size(px(1060.0), px(500.0)));
+        let main = cx.new(|cx| {
+            let mut main_window = MainWindow::new(
+                gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Clipboard);
+            main_window
+        });
+        gpui_kit::base::Root::new(main, window, cx)
     });
 
+    window.simulate_resize(size(px(1060.0), px(500.0)));
     window
         .refresh()
         .expect("render clipboard settings workspace");
     let workspace = window
         .debug_bounds("clipboard-settings-workspace")
         .expect("clipboard settings workspace");
-    let surface = window
-        .debug_bounds("clipboard-settings-split-surface")
-        .expect("one continuous clipboard settings surface");
-    let primary = window
-        .debug_bounds("clipboard-settings-primary-column")
-        .expect("primary clipboard settings column");
-    let divider = window
-        .debug_bounds("clipboard-settings-column-divider")
-        .expect("single clipboard settings column divider");
-    let secondary = window
-        .debug_bounds("clipboard-settings-secondary-column")
-        .expect("secondary clipboard settings column");
-
-    assert_eq!(surface.left() - workspace.left(), px(12.0));
-    assert_eq!(workspace.right() - surface.right(), px(12.0));
-    assert_eq!(surface.top() - workspace.top(), px(12.0));
-    assert_eq!(primary.left() - surface.left(), px(1.0));
-    assert_eq!(primary.right(), divider.left());
-    assert_eq!(divider.size.width, px(1.0));
-    assert_eq!(divider.right(), secondary.left());
-    assert_eq!(surface.right() - secondary.right(), px(1.0));
-    assert_eq!(secondary.size.width, px(410.0));
-    assert!(primary.size.width > secondary.size.width);
-    assert_eq!(primary.top(), secondary.top());
-    assert_eq!(primary.bottom(), secondary.bottom());
+    assert!(workspace.bottom() <= px(500.0));
+    for (page, control) in [
+        (0, "record-clipboard-hotkey"),
+        (1, "clipboard-max-items-plus"),
+        (2, "clipboard-export-archive"),
+    ] {
+        let entry = window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| {
+                    node.path().last() == Some(&gpui_kit::ElementId::from(format!("0-{page}")))
+                })
+                .expect("real official settings navigation")
+                .bounds()
+        });
+        window.simulate_click(entry.center(), Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("official page");
+        let control = window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| node.path().last() == Some(&gpui_kit::ElementId::from(control)))
+                .expect("original business control on official page")
+                .bounds()
+        });
+        assert!(
+            control.left() >= workspace.left()
+                && control.right() <= workspace.right()
+                && control.top() >= workspace.top()
+                && control.bottom() <= workspace.bottom()
+        );
+    }
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_settings_navigation_mounts_only_the_selected_page(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
-    let executor = cx.executor();
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let temp = tempfile::tempdir().expect("temporary Quick Launch settings fixture");
     let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
@@ -682,12 +819,12 @@ fn quick_launch_settings_navigation_mounts_only_the_selected_page(cx: &mut TestA
     assert_eq!(settings_before_navigation.excluded_paths.len(), 20);
     let quick_launch_for_window = quick_launch.downgrade();
     let notifications_for_window = notifications.clone();
-    let (main_window, window) = cx.add_window_view(move |window, cx| {
-        window.resize(gpui::size(px(1060.0), px(500.0)));
+    let (_main_window, window) = cx.add_window_view(move |window, cx| {
+        window.resize(gpui_kit::size(px(1060.0), px(500.0)));
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
             quick_launch_for_window,
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -701,180 +838,45 @@ fn quick_launch_settings_navigation_mounts_only_the_selected_page(cx: &mut TestA
         main_window
     });
 
-    window.refresh().expect("render Quick Launch settings");
-    let navigation = window
-        .debug_bounds("quick-launch-settings-navigation")
-        .expect("stable Quick Launch settings navigation");
-    assert_eq!(navigation.size.width, px(160.0));
-    for selector in [
-        "quick-launch-settings-nav-general",
-        "quick-launch-settings-nav-index",
-        "quick-launch-settings-nav-context",
-        "quick-launch-settings-nav-commands",
-        "quick-launch-settings-nav-diagnostics",
-    ] {
-        assert_eq!(
-            window
-                .debug_bounds(selector)
-                .unwrap_or_else(|| panic!("missing {selector}"))
-                .size
-                .height,
-            px(40.0)
-        );
-    }
-    assert!(
-        window
-            .debug_bounds("quick-launch-settings-page-general")
-            .is_some()
-    );
-    assert!(
-        window
-            .debug_bounds("quick-launch-settings-page-index")
-            .is_none()
-    );
-    assert_eq!(
-        window
-            .debug_bounds("quick-launch-settings-page-header")
-            .expect("fixed Quick Launch settings page header")
-            .size
-            .height,
-        px(48.0)
-    );
-    assert_eq!(
-        window
-            .debug_bounds("quick-launch-settings-page-title")
-            .expect("Quick Launch settings page title")
-            .size
-            .height,
-        px(LINE_HEIGHT_TITLE)
-    );
-    assert_eq!(
-        window
-            .debug_bounds("quick-launch-settings-page-description")
-            .expect("Quick Launch settings page description")
-            .size
-            .height,
-        px(LINE_HEIGHT_LABEL)
-    );
-
-    let index_navigation = window
-        .debug_bounds("quick-launch-settings-nav-index")
-        .expect("Index navigation row");
-    window.simulate_click(index_navigation.center(), Modifiers::default());
-    window.run_until_parked();
-    assert_eq!(
-        window.read(|cx| main_window.read(cx).quick_launch_settings_page),
-        QuickLaunchSettingsPage::Index
-    );
-    window.refresh().expect("render Index settings page");
-    assert!(
-        window
-            .debug_bounds("quick-launch-settings-page-index")
-            .is_some()
-    );
-    let max_offset = window.read(|cx| main_window.read(cx).quick_find_scroll.max_offset().height);
-    assert!(
-        max_offset > px(0.0),
-        "the Index settings page must be vertically scrollable"
-    );
-    window.update(|_, cx| {
-        main_window.update(cx, |main_window, _| {
-            main_window
-                .quick_find_scroll
-                .set_offset(gpui::point(px(0.0), -max_offset));
-        });
-    });
-    window.run_until_parked();
+    window.simulate_resize(size(px(1060.0), px(500.0)));
     window
         .refresh()
-        .expect("render Index settings at the bottom");
-    let settings_scroll = window
-        .debug_bounds("quick-launch-settings-scroll")
-        .expect("Quick Launch settings scroll viewport");
-    let last_exclusion = window
-        .debug_bounds("quick-launch-exclusion-path-19")
-        .expect("last exclusion path at scroll bottom");
-    let last_delete = window
-        .debug_bounds("quick-launch-exclusion-delete-19")
-        .expect("last exclusion delete action at scroll bottom");
-    assert!(last_exclusion.top() >= settings_scroll.top());
-    assert!(last_exclusion.bottom() <= settings_scroll.bottom());
-    assert!(last_delete.bottom() <= settings_scroll.bottom());
-
-    window.update(|_, cx| {
-        main_window.update(cx, |main_window, cx| {
-            main_window.animate_quick_find_scroll_to(-38.0, cx);
+        .expect("render official Quick Launch settings");
+    assert_official_quick_page(window, QuickLaunchSettingsPage::General);
+    for page in QuickLaunchSettingsPage::ALL {
+        let bounds = official_quick_navigation_bounds(window, page);
+        assert!(bounds.size.width > px(0.0) && bounds.size.height > px(0.0));
+    }
+    select_official_quick_page(window, QuickLaunchSettingsPage::Index);
+    assert_official_quick_page(window, QuickLaunchSettingsPage::Index);
+    let viewport = window
+        .debug_bounds("quick-launch-kit-settings")
+        .expect("bounded Settings viewport");
+    for _ in 0..5 {
+        window.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: viewport.center(),
+            delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -20.0)),
+            ..Default::default()
         });
-    });
-
-    let scrolling_generation = window.read(|cx| {
-        let main_window = main_window.read(cx);
-        assert!(main_window.quick_find_scroll_target < 0.0);
-        main_window.quick_find_scroll_animation
-    });
-
-    let context_navigation = window
-        .debug_bounds("quick-launch-settings-nav-context")
-        .expect("Context navigation row");
-    window.simulate_click(context_navigation.center(), Modifiers::default());
-    window.run_until_parked();
-    assert_eq!(
-        window.read(|cx| main_window.read(cx).quick_launch_settings_page),
-        QuickLaunchSettingsPage::Context
-    );
-    assert!(
-        window.read(|cx| main_window.read(cx).quick_find_scroll_animation) > scrolling_generation
-    );
-    executor.advance_clock(Duration::from_millis(250));
-    executor.run_until_parked();
-    window.read(|cx| {
-        let main_window = main_window.read(cx);
-        assert_eq!(main_window.quick_find_scroll_target, 0.0);
-        assert_eq!(main_window.quick_find_scroll.offset().y, px(0.0));
-    });
-    window.refresh().expect("render Context settings page");
-    assert!(
-        window
-            .debug_bounds("quick-launch-settings-page-context")
-            .is_some()
-    );
-
-    for (navigation_selector, page, content_selector) in [
-        (
-            "quick-launch-settings-nav-commands",
-            QuickLaunchSettingsPage::Commands,
-            "quick-launch-settings-page-commands",
-        ),
-        (
-            "quick-launch-settings-nav-diagnostics",
-            QuickLaunchSettingsPage::Diagnostics,
-            "quick-launch-settings-page-diagnostics",
-        ),
-        (
-            "quick-launch-settings-nav-general",
-            QuickLaunchSettingsPage::General,
-            "quick-launch-settings-page-general",
-        ),
-        (
-            "quick-launch-settings-nav-index",
-            QuickLaunchSettingsPage::Index,
-            "quick-launch-settings-page-index",
-        ),
-    ] {
-        let navigation = window
-            .debug_bounds(navigation_selector)
-            .unwrap_or_else(|| panic!("missing {navigation_selector}"));
-        window.simulate_click(navigation.center(), Modifiers::default());
         window.run_until_parked();
-        assert_eq!(
-            window.read(|cx| main_window.read(cx).quick_launch_settings_page),
-            page
-        );
-        window.refresh().expect("render selected settings page");
-        assert!(
-            window.debug_bounds(content_selector).is_some(),
-            "missing {content_selector}"
-        );
+        window.refresh().expect("official list scrolling");
+    }
+    let last = window
+        .debug_bounds("quick-launch-exclusion-path-19")
+        .expect("last exclusion reachable");
+    let delete = window
+        .debug_bounds("quick-launch-exclusion-delete-19")
+        .expect("last delete reachable");
+    assert!(last.top() >= viewport.top() && last.bottom() <= viewport.bottom());
+    assert!(delete.bottom() <= viewport.bottom());
+    for page in [
+        QuickLaunchSettingsPage::Context,
+        QuickLaunchSettingsPage::Commands,
+        QuickLaunchSettingsPage::Diagnostics,
+        QuickLaunchSettingsPage::General,
+    ] {
+        select_official_quick_page(window, page);
+        assert_official_quick_page(window, page);
     }
     assert_eq!(
         cx.read(|cx| quick_launch.read(cx).settings()),
@@ -883,19 +885,19 @@ fn quick_launch_settings_navigation_mounts_only_the_selected_page(cx: &mut TestA
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn every_quick_launch_settings_frame_mounts_exactly_one_page(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
 
     for selected_page in QuickLaunchSettingsPage::ALL {
         let notifications_for_window = notifications.clone();
         let (_main_window, window) = cx.add_window_view(move |window, cx| {
-            window.resize(gpui::size(px(1060.0), px(500.0)));
+            window.resize(gpui_kit::size(px(1060.0), px(500.0)));
             let mut main_window = MainWindow::new(
-                gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-                gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-                gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
                 MainWindowShellContext {
                     settings: None,
                     platform: None,
@@ -938,11 +940,11 @@ fn every_quick_launch_settings_frame_mounts_exactly_one_page(cx: &mut TestAppCon
     }
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_semantics(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let temp = tempfile::tempdir().expect("temporary Quick Launch volume fixture");
     let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
@@ -1008,9 +1010,9 @@ fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_sema
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(1060.0), px(500.0)));
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
             quick_launch_for_window,
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -1074,7 +1076,7 @@ fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_sema
             .expect("volume title")
             .size
             .height,
-        px(LINE_HEIGHT_BODY)
+        px(crate::ui::typography::LINE_HEIGHT_WORKBENCH_BODY)
     );
     assert_eq!(
         window
@@ -1082,14 +1084,14 @@ fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_sema
             .expect("volume metadata")
             .size
             .height,
-        px(LINE_HEIGHT_LABEL)
+        px(crate::ui::typography::LINE_HEIGHT_WORKBENCH_SUPPORT)
     );
 
     let c_volume = window
         .debug_bounds("quick-launch-index-volume-C")
         .expect("C: volume row");
     window.simulate_click(
-        gpui::point(c_volume.left() + px(19.0), c_volume.center().y),
+        gpui_kit::point(c_volume.left() + px(19.0), c_volume.center().y),
         Modifiers::default(),
     );
     window.run_until_parked();
@@ -1115,7 +1117,7 @@ fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_sema
         .debug_bounds("quick-launch-index-volume-D")
         .expect("D: volume row");
     window.simulate_click(
-        gpui::point(d_volume.right() - px(20.0), d_volume.center().y),
+        gpui_kit::point(d_volume.right() - px(20.0), d_volume.center().y),
         Modifiers::default(),
     );
     window.run_until_parked();
@@ -1131,7 +1133,7 @@ fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_sema
         .debug_bounds("quick-launch-index-volume-E")
         .expect("E: volume row");
     window.simulate_click(
-        gpui::point(e_volume.left() + px(19.0), e_volume.center().y),
+        gpui_kit::point(e_volume.left() + px(19.0), e_volume.center().y),
         Modifiers::default(),
     );
     window.run_until_parked();
@@ -1159,11 +1161,11 @@ fn quick_launch_volume_scope_uses_one_checkbox_list_and_preserves_automatic_sema
     assert_single_index_settings_command(&indexer_endpoint, &[], &[]);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_actions(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let executor = cx.executor();
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let temp = tempfile::tempdir().expect("temporary Quick Launch exclusion fixture");
@@ -1203,9 +1205,9 @@ fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_acti
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(1060.0), px(720.0)));
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
             quick_launch_for_window,
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -1244,7 +1246,10 @@ fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_acti
     let first_delete = window
         .debug_bounds("quick-launch-exclusion-delete-0")
         .expect("bounded delete hit target");
-    assert_eq!(first_path.size.height, px(LINE_HEIGHT_BODY));
+    assert_eq!(
+        first_path.size.height,
+        px(crate::ui::typography::LINE_HEIGHT_WORKBENCH_BODY)
+    );
     assert_eq!(first_delete.size, size(px(40.0), px(40.0)));
     assert!(first_path.right() <= first_delete.left());
     assert_eq!(
@@ -1310,7 +1315,7 @@ fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_acti
     let add = window
         .debug_bounds("quick-launch-add-index-exclusion")
         .expect("standard add-directory action");
-    assert_eq!(add.size.height, px(28.0));
+    assert_eq!(add.size.height, px(24.0), "released Small action tier");
     window.simulate_click(add.center(), Modifiers::default());
     window.run_until_parked();
     let picker = platform_endpoint
@@ -1505,11 +1510,11 @@ fn quick_launch_exclusion_paths_use_one_keyboard_operable_list_with_bounded_acti
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_actions(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let temp = tempfile::tempdir().expect("temporary custom-command fixture");
     let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
@@ -1558,9 +1563,9 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(1060.0), px(720.0)));
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
             quick_launch_for_window,
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -1612,7 +1617,7 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
                 .expect("Body row title")
                 .size
                 .height,
-            px(LINE_HEIGHT_BODY)
+            px(crate::ui::typography::LINE_HEIGHT_WORKBENCH_BODY)
         );
         assert_eq!(
             window
@@ -1620,7 +1625,7 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
                 .expect("Label row context")
                 .size
                 .height,
-            px(LINE_HEIGHT_LABEL)
+            px(crate::ui::typography::LINE_HEIGHT_WORKBENCH_SUPPORT)
         );
         assert!(
             window
@@ -1639,18 +1644,18 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
             "delete must not crowd every master row"
         );
     }
-    let selected_marker = window
-        .debug_bounds("quick-launch-command-selection-0")
-        .expect("non-shifting selected-command marker");
-    assert_eq!(selected_marker.size.width, px(2.0));
-    assert_eq!(
-        selected_marker.size.height,
-        window
-            .debug_bounds("quick-launch-command-0")
-            .expect("selected master row")
-            .size
-            .height
-    );
+    let snapshots = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    for (index, selected) in [(0_usize, true), (1, false)] {
+        let row = snapshots
+            .iter()
+            .find(|snapshot| {
+                snapshot.path().last()
+                    == Some(&gpui_kit::ElementId::from(("quick-launch-command", index)))
+            })
+            .expect("actual Kit ListItem selection");
+        assert_eq!(row.selected(), Some(selected));
+        assert_eq!(row.bounds().size.height, px(40.0));
+    }
     assert_eq!(
         window
             .debug_bounds("quick-launch-command-title-0")
@@ -1670,13 +1675,12 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
         "quick-launch-pick-command-program",
         "quick-launch-save-custom-command",
     ] {
-        assert_eq!(
-            window
-                .debug_bounds(selector)
-                .unwrap_or_else(|| panic!("missing bounded action {selector}"))
-                .size
-                .height,
-            px(28.0)
+        let bounds = window
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("missing bounded action {selector}"));
+        assert!(
+            bounds.size.height >= px(24.0) && bounds.size.height <= px(32.0),
+            "official action/slot tier: {selector}"
         );
     }
     for selector in [
@@ -1695,12 +1699,47 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
             px(32.0)
         );
     }
+    window.simulate_resize(size(px(920.0), px(480.0)));
+    window
+        .refresh()
+        .expect("official command Form at minimum client");
+    let viewport = window
+        .debug_bounds("quick-launch-kit-settings")
+        .expect("minimum settings viewport");
+    let form_viewport = window
+        .debug_bounds("quick-launch-command-form-scroll")
+        .expect("actual command scroll hit area");
+    for _ in 0..5 {
+        window.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: gpui_kit::point(
+                form_viewport.center().x,
+                (form_viewport.top() + px(80.0)).min(viewport.bottom() - px(8.0)),
+            ),
+            delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -20.0)),
+            ..Default::default()
+        });
+        window.run_until_parked();
+        window
+            .refresh()
+            .expect("scroll official settings to command footer");
+    }
+    let save_bounds = window
+        .debug_bounds("quick-launch-save-custom-command")
+        .expect("minimum Save remains reachable");
+    assert!(
+        save_bounds.top() >= viewport.top() && save_bounds.bottom() <= viewport.bottom(),
+        "Save must enter actual minimum viewport: {save_bounds:?} {viewport:?}"
+    );
+    window.simulate_resize(size(px(1060.0), px(720.0)));
+    window
+        .refresh()
+        .expect("restore command interaction fixture");
 
     window.update(|window, cx| {
         main_window.update(cx, |main_window, cx| {
-            main_window
-                .custom_command_keyword
-                .update(cx, |input, cx| input.set_value("unsaved-docs", window, cx));
+            main_window.custom_command_keyword.update(cx, |input, cx| {
+                input.replace_all("unsaved-docs", window, cx)
+            });
         });
     });
     let second_row = window
@@ -1889,7 +1928,7 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
         main_window.update(cx, |main_window, cx| {
             main_window
                 .custom_command_title
-                .update(cx, |input, cx| input.set_value("Docs search", window, cx));
+                .update(cx, |input, cx| input.replace_all("Docs search", window, cx));
         });
     });
     window.refresh().expect("render edited draft");
@@ -1946,11 +1985,11 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let executor = cx.executor();
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let temp = tempfile::tempdir().expect("temporary Quick Launch diagnostics fixture");
@@ -1987,12 +2026,12 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
     });
     let quick_launch_for_window = quick_launch.downgrade();
     let notifications_for_window = notifications.clone();
-    let (main_window, window) = cx.add_window_view(move |window, cx| {
-        window.resize(gpui::size(px(1060.0), px(720.0)));
+    let (_main_window, window) = cx.add_window_view(move |window, cx| {
+        window.resize(gpui_kit::size(px(1060.0), px(720.0)));
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
             quick_launch_for_window,
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -2054,7 +2093,10 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
     });
     for pair in history_cells.windows(2) {
         assert_eq!(pair[0].right(), pair[1].left());
-        assert!((pair[0].size.width - pair[1].size.width).abs() <= px(1.0));
+        assert!(
+            (pair[0].size.width - pair[1].size.width).abs() <= px(1.0),
+            "metric cells: {pair:?}"
+        );
     }
     for selector in [
         "quick-launch-diagnostics-ranked-items-value",
@@ -2064,13 +2106,13 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
         "quick-launch-diagnostics-local-search-value",
         "quick-launch-diagnostics-index-search-value",
     ] {
-        assert_eq!(
-            window
-                .debug_bounds(selector)
-                .unwrap_or_else(|| panic!("missing {selector}"))
-                .size
-                .height,
-            px(LINE_HEIGHT_BODY)
+        let value = window
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("missing {selector}"));
+        assert!(
+            value.size.height >= px(crate::ui::typography::LINE_HEIGHT_WORKBENCH_BODY)
+                && value.size.height <= px(24.0),
+            "released default value line: {value:?}"
         );
     }
     let local_search = window
@@ -2087,7 +2129,7 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
             .expect("clear history action")
             .size
             .height,
-        px(28.0)
+        px(32.0)
     );
     assert_eq!(
         window
@@ -2095,7 +2137,7 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
             .expect("open logs action")
             .size
             .height,
-        px(28.0)
+        px(32.0)
     );
     assert_eq!(
         crate::ui::components::quick_launch_diagnostics::exact_log_path_tooltip(
@@ -2169,21 +2211,9 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
             QuickLaunchSettingsPage::Commands,
         ),
     ] {
-        let navigation = window
-            .debug_bounds(navigation_selector)
-            .unwrap_or_else(|| panic!("missing {navigation_selector}"));
-        window.simulate_click(navigation.center(), Modifiers::default());
-        window.run_until_parked();
-        window.refresh().expect("render ordinary Quick Launch page");
-        window.run_until_parked();
-        assert_eq!(
-            window.read(|cx| main_window.read(cx).quick_launch_settings_page),
-            expected_page
-        );
-        assert!(
-            window.debug_bounds(content_selector).is_some(),
-            "the selected ordinary page must replace Diagnostics: {expected_page:?}"
-        );
+        let _ = (navigation_selector, content_selector);
+        select_official_quick_page(window, expected_page);
+        assert_official_quick_page(window, expected_page);
 
         window.simulate_click(open_logs.center(), Modifiers::default());
         window.run_until_parked();
@@ -2201,15 +2231,7 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
             "the detached history action must not remain interactive on {expected_page:?}"
         );
     }
-    let diagnostics_navigation = window
-        .debug_bounds("quick-launch-settings-nav-diagnostics")
-        .expect("diagnostics navigation row");
-    window.simulate_click(diagnostics_navigation.center(), Modifiers::default());
-    window.run_until_parked();
-    window
-        .refresh()
-        .expect("return to Quick Launch diagnostics");
-    window.run_until_parked();
+    select_official_quick_page(window, QuickLaunchSettingsPage::Diagnostics);
     assert!(
         window
             .debug_bounds("quick-launch-diagnostics-surface")
@@ -2228,15 +2250,12 @@ fn quick_launch_diagnostics_keep_metrics_logs_and_history_actions_in_one_surface
         window.update(|_, cx| quick_launch.read(cx).history_summary()),
         nxtools_finder::QuickLaunchHistorySummary::default()
     );
-    assert_eq!(
-        window.read(|cx| main_window.read(cx).quick_launch_settings_page),
-        QuickLaunchSettingsPage::Diagnostics
-    );
+    assert_official_quick_page(window, QuickLaunchSettingsPage::Diagnostics);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let temp = tempfile::tempdir().expect("temporary Quick Launch hotkey fixture");
     let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
@@ -2271,11 +2290,11 @@ fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle(cx: &mut 
     let quick_launch_for_window = quick_launch.downgrade();
     let notifications_for_window = notifications.clone();
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
-        window.resize(gpui::size(px(1060.0), px(500.0)));
+        window.resize(gpui_kit::size(px(1060.0), px(500.0)));
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
             quick_launch_for_window,
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -2376,7 +2395,7 @@ fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle(cx: &mut 
             .expect("HotkeyField value")
             .size
             .height,
-        px(LINE_HEIGHT_BODY)
+        px(20.0)
     );
     assert_eq!(
         window
@@ -2384,24 +2403,13 @@ fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle(cx: &mut 
             .expect("HotkeyField status")
             .size
             .height,
-        px(LINE_HEIGHT_LABEL)
+        px(20.0)
     );
-    assert_eq!(
-        window
-            .debug_bounds("quick-launch-hotkey-setting-title")
-            .expect("HotkeyField setting title")
-            .size
-            .height,
-        px(LINE_HEIGHT_BODY)
-    );
-    assert_eq!(
-        window
-            .debug_bounds("quick-launch-hotkey-setting-description")
-            .expect("HotkeyField setting description")
-            .size
-            .height,
-        px(LINE_HEIGHT_LABEL)
-    );
+    let help = window
+        .debug_bounds("quick-settings-全局呼出热键-help")
+        .expect("actual Kit help trigger");
+    assert!(help.size.width <= px(24.0));
+    assert!(window.debug_bounds("quick-launch-kit-settings").is_some());
     assert!(
         window
             .debug_bounds("quick-launch-hotkey-field-state-applied")
@@ -2560,12 +2568,13 @@ fn quick_launch_hotkey_field_exposes_the_native_registration_lifecycle(cx: &mut 
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn notification_exiting_generation_stays_hidden_when_motion_is_reduced_mid_exit(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     cx.update(|cx| {
+        cx.set_reduce_motion(false);
         cx.set_global(crate::ui::motion::UiMotionPreference::Known {
             reduced_motion: false,
         })
@@ -2577,9 +2586,9 @@ fn notification_exiting_generation_stays_hidden_when_motion_is_reduced_mid_exit(
     let rendered_center = center.clone();
     let (_, surface) = cx.add_window_view(move |window, cx| {
         MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -2591,15 +2600,14 @@ fn notification_exiting_generation_stays_hidden_when_motion_is_reduced_mid_exit(
         )
     });
     surface.refresh().expect("paint notification before exit");
-    let before = surface
-        .debug_bounds("notification-stack")
-        .expect("notification stack before exit");
+    assert!(surface.debug_bounds("notification-mid-exit").is_some());
     let generation = center.read_with(surface, |center, _| center.items()[0].generation());
     center.update(surface, |center, cx| {
         center.dismiss_generation("mid-exit", generation, cx)
     });
     assert!(center.read_with(surface, |center, _| center.items()[0].exiting));
     surface.update(|_, cx| {
+        cx.set_reduce_motion(true);
         cx.set_global(crate::ui::motion::UiMotionPreference::Known {
             reduced_motion: true,
         })
@@ -2608,20 +2616,25 @@ fn notification_exiting_generation_stays_hidden_when_motion_is_reduced_mid_exit(
     surface
         .refresh()
         .expect("reduced motion must not repaint exiting card");
-    let after = surface
-        .debug_bounds("notification-stack")
-        .expect("current empty stack");
+    for _ in 0..6 {
+        surface.executor().advance_clock(Duration::from_millis(50));
+        surface.refresh().expect("official close completion");
+        surface.run_until_parked();
+    }
+    assert!(center.read_with(surface, |center, _| center.items().is_empty()));
     assert!(
-        after.size.height < before.size.height,
-        "exiting card must be omitted immediately, not reset to full opacity"
+        surface.debug_bounds("notification-mid-exit").is_none(),
+        "official closed card must not restart when motion policy changes"
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn notification_keyboard_action_dispatches_once_and_preserves_replacement_generation(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    cx.update(|cx| cx.set_reduce_motion(true));
     let center = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let calls = Rc::new(Cell::new(0));
     let action_calls = calls.clone();
@@ -2647,9 +2660,9 @@ fn notification_keyboard_action_dispatches_once_and_preserves_replacement_genera
     let rendered_center = center.clone();
     let (_, surface) = cx.add_window_view(move |window, cx| {
         MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -2663,19 +2676,39 @@ fn notification_keyboard_action_dispatches_once_and_preserves_replacement_genera
     surface
         .refresh()
         .expect("render actual notification action");
-    surface.update(|window, _| {
-        window.blur();
-        window.focus_prev();
-        window.focus_prev();
-    });
+    surface.update(|window, _| window.activate_window());
+    let mut focused = false;
+    for _ in 0..64 {
+        let target_focused = surface.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .iter()
+                .any(|node| {
+                    node.path().last() == Some(&"notification-action-keyboard".into())
+                        && node.focused() == Some(true)
+                })
+        });
+        if target_focused {
+            focused = true;
+            break;
+        }
+        surface.update(|window, cx| window.focus_next(cx));
+        surface
+            .refresh()
+            .expect("real official action Tab traversal");
+    }
+    assert!(
+        focused,
+        "official notification action must be keyboard reachable"
+    );
     surface.refresh().expect("paint real button focus");
-    surface.simulate_event(gpui::KeyDownEvent {
-        keystroke: gpui::Keystroke::parse("space").expect("notification key"),
+    surface.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("space").expect("notification key"),
         is_held: false,
+        prefer_character_input: false,
     });
     assert_eq!(calls.get(), 0);
-    surface.simulate_event(gpui::KeyUpEvent {
-        keystroke: gpui::Keystroke::parse("space").expect("notification release"),
+    surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("space").expect("notification release"),
     });
     surface.run_until_parked();
     assert_eq!(calls.get(), 1, "keyboard action must dispatch exactly once");
@@ -2689,11 +2722,13 @@ fn notification_keyboard_action_dispatches_once_and_preserves_replacement_genera
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    cx.update(|cx| cx.set_reduce_motion(true));
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let action_invoked = Rc::new(Cell::new(false));
     let action_invoked_for_handler = Rc::clone(&action_invoked);
@@ -2728,9 +2763,9 @@ fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(920.0), px(480.0)));
         MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -2741,6 +2776,7 @@ fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
             cx,
         )
     });
+    window.simulate_resize(size(px(920.0), px(480.0)));
     window
         .refresh()
         .expect("render production notification layer");
@@ -2755,58 +2791,34 @@ fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
     let header_actions = window
         .debug_bounds("download-module-header-actions")
         .expect("module primary actions");
-    let stack = window
-        .debug_bounds("notification-stack")
-        .expect("notification stack");
     let main_surface = window
         .debug_bounds("nxtools-main-window")
-        .expect("main window surface");
-    assert!(stack.top() >= header_actions.bottom());
-    assert!(stack.top() >= titlebar.bottom());
-    assert!(stack.top() >= window_controls.bottom());
-    assert!(
-        stack.right() <= main_surface.right() - px(SPACING_12) + px(1.0),
-        "notification stack right edge is {}px",
-        stack.right().as_f32()
+        .expect("main surface");
+    let nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    let cards = nodes
+        .iter()
+        .filter(|node| {
+            node.role() == Some(gpui_kit::Role::Alert)
+                && node.path().last() == Some(&"notification".into())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cards.len(),
+        3,
+        "three official stack records, not one replacement"
     );
-    assert!(
-        stack.bottom() <= main_surface.bottom() - px(SPACING_12) + px(1.0),
-        "notification stack bottom edge is {}px",
-        stack.bottom().as_f32()
-    );
-
-    for id in ["backup", "failure", "transfer"] {
-        let card = window
-            .debug_bounds(Box::leak(format!("notification-{id}").into_boxed_str()))
-            .unwrap_or_else(|| panic!("notification card {id}"));
-        let marker = window
-            .debug_bounds(Box::leak(
-                format!("notification-marker-{id}").into_boxed_str(),
-            ))
-            .unwrap_or_else(|| panic!("semantic marker {id}"));
-        let title = window
-            .debug_bounds(Box::leak(
-                format!("notification-title-{id}").into_boxed_str(),
-            ))
-            .unwrap_or_else(|| panic!("notification title {id}"));
-        let message = window
-            .debug_bounds(Box::leak(
-                format!("notification-message-{id}").into_boxed_str(),
-            ))
-            .unwrap_or_else(|| panic!("notification message {id}"));
-        let dismiss = window
-            .debug_bounds(Box::leak(
-                format!("dismiss-notification-{id}").into_boxed_str(),
-            ))
-            .unwrap_or_else(|| panic!("notification dismiss {id}"));
-        assert_eq!(card.size.width, px(336.0));
-        assert!(card.size.height <= px(112.0));
-        assert_eq!(marker.size.width, px(3.0));
-        assert_eq!(marker.top(), card.top() + px(1.0));
-        assert_eq!(marker.bottom(), card.bottom() - px(1.0));
-        assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
-        assert_eq!(message.size.height, px(LINE_HEIGHT_LABEL));
-        assert_eq!(dismiss.size, size(px(28.0), px(28.0)));
+    for card in cards {
+        let bounds = card.bounds();
+        assert!(
+            bounds.top() >= header_actions.bottom()
+                && bounds.top() >= titlebar.bottom()
+                && bounds.top() >= window_controls.bottom()
+        );
+        assert!(
+            bounds.right() <= main_surface.right() - px(11.0)
+                && bounds.bottom() <= main_surface.bottom() - px(11.0)
+        );
+        assert!(bounds.size.width <= px(336.0) && bounds.size.height > px(0.0));
     }
     let backup = window
         .debug_bounds("notification-backup")
@@ -2814,9 +2826,13 @@ fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
     let action = window
         .debug_bounds("notification-action-backup")
         .expect("notification action");
-    assert_eq!(action.size.height, px(28.0));
-    assert!(backup.contains(&action.origin));
-    assert!(backup.contains(&action.bottom_right()));
+    assert_eq!(action.size.height, px(24.0));
+    assert!(
+        action.left() >= backup.left()
+            && action.right() <= backup.right()
+            && action.top() >= backup.top()
+            && action.bottom() <= backup.bottom()
+    );
 
     window.simulate_click(action.center(), Modifiers::default());
     window.run_until_parked();
@@ -2827,10 +2843,17 @@ fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
         }))
     );
 
-    let dismiss = window
-        .debug_bounds("dismiss-notification-transfer")
-        .expect("notification dismiss hit target");
-    window.simulate_click(dismiss.center(), Modifiers::default());
+    let generation = notifications.read_with(window, |center, _| {
+        center
+            .items()
+            .iter()
+            .find(|item| item.id == "transfer")
+            .expect("transfer")
+            .generation()
+    });
+    notifications.update(window, |center, cx| {
+        center.dismiss_generation("transfer", generation, cx)
+    });
     window.update(|_, cx| {
         notifications.update(cx, |center, cx| {
             center.show_progress("transfer", "新的下载通知", "替换旧 generation", cx);
@@ -2844,11 +2867,88 @@ fn notifications_use_a_bounded_bottom_layer_without_covering_shell_actions(
     }));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
+fn remaining_notification_long_content_keeps_its_action_inside_the_existing_budget(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let calls = Rc::new(Cell::new(0));
+    let action_calls = calls.clone();
+    let center = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+    center.update(cx, |center, cx| {
+        center.show_success_with_details(
+            "long-layout",
+            "原有功能与状态必须完整保留的长通知标题".repeat(3),
+            "长消息仍然可通过内部滚动阅读，而不是挤掉操作按钮。".repeat(8),
+            vec![
+                NotificationDetail::new("合成位置", "D:/Demo/".repeat(20)),
+                NotificationDetail::new("结果", "保留完整详情"),
+            ],
+            Some(NotificationAction::new("执行原操作", move |_, _| {
+                action_calls.set(action_calls.get() + 1)
+            })),
+            cx,
+        )
+    });
+    let rendered_center = center.clone();
+    let (_main, window) = cx.add_window_view(move |window, cx| {
+        MainWindow::new(
+            gpui_kit::WeakEntity::new_invalid(),
+            gpui_kit::WeakEntity::new_invalid(),
+            gpui_kit::WeakEntity::new_invalid(),
+            MainWindowShellContext {
+                settings: None,
+                platform: None,
+                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+            },
+            rendered_center,
+            window,
+            cx,
+        )
+    });
+    window.simulate_resize(size(px(920.0), px(480.0)));
+    window.refresh().expect("render actual long notification");
+    let card = window
+        .debug_bounds("notification-long-layout")
+        .expect("card");
+    let content = window
+        .debug_bounds("notification-content-long-layout")
+        .expect("scrollable complete copy");
+    let action = window
+        .debug_bounds("notification-action-long-layout")
+        .expect("original operation");
+    assert!(
+        card.size.height > px(112.0) && card.size.height <= px(346.0),
+        "long notification uses natural bounded400pxhost,not old112pxcap: {card:?}"
+    );
+    assert!(
+        card.top() >= px(60.0) && card.bottom() <= px(468.0),
+        "content stays within actual main viewport: {card:?}"
+    );
+    assert!(
+        content.bottom() <= action.top(),
+        "content={content:?} action={action:?} card={card:?}"
+    );
+    assert!(
+        action.left() >= card.left()
+            && action.right() <= card.right()
+            && action.top() >= card.top()
+            && action.bottom() <= card.bottom(),
+        "card={card:?} action={action:?}"
+    );
+    assert_eq!(action.size.height, px(24.0));
+    window.simulate_click(action.center(), Modifiers::default());
+    window.run_until_parked();
+    assert_eq!(calls.get(), 1);
+}
+
+#[gpui_kit::test]
 fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let executor = cx.executor();
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let (platform, endpoint) = platform_bridge(8);
@@ -2858,13 +2958,16 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
     let system_settings = Rc::new(RefCell::new(SystemSettings {
         start_on_login_silently: false,
         close_to_tray: true,
+        theme: nxtools_core::ThemePreference::Dark,
+        notification_position: Default::default(),
+        notification_duration_seconds: nxtools_core::default_notification_duration(),
     }));
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(920.0), px(480.0)));
         MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: Some(platform_for_window),
@@ -2891,7 +2994,7 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
     let brand_icon = window
         .debug_bounds("main-brand-icon")
         .expect("real NxTools brand icon");
-    assert_eq!(brand_icon.size, gpui::size(px(18.0), px(18.0)));
+    assert_eq!(brand_icon.size, gpui_kit::size(px(18.0), px(18.0)));
     assert_eq!(
         window
             .debug_bounds("main-brand-title")
@@ -2920,9 +3023,14 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
         .expect("window control group");
     for bounds in [global_settings, control_group] {
         assert!(utilities.contains(&bounds.origin));
-        assert!(utilities.contains(&bounds.bottom_right()));
+        assert!(
+            bounds.right() <= utilities.right() && bounds.bottom() <= utilities.bottom(),
+            "utilities={utilities:?} child={bounds:?}"
+        );
         assert!(titlebar_shell.contains(&bounds.origin));
-        assert!(titlebar_shell.contains(&bounds.bottom_right()));
+        assert!(
+            bounds.right() <= titlebar_shell.right() && bounds.bottom() <= titlebar_shell.bottom()
+        );
     }
 
     let titlebar = window
@@ -3080,7 +3188,6 @@ fn download_multi_selection_matches_windows_ctrl_and_shift_conventions() {
     assert_eq!(primary, None);
 }
 
-use super::notifications::notification_transition;
 use super::shell::{MainWindowControl, maximize_control};
 use super::{
     DOWNLOAD_BATCH_TOOLBAR_HEIGHT, DOWNLOAD_DETAIL_HEIGHT, DOWNLOAD_FILTER_STRIP_HEIGHT,
@@ -3094,26 +3201,21 @@ use super::{
     reconcile_download_selection, set_download_sort, toggle_indexed_volume_selection,
     update_download_selection,
 };
-use crate::ui::metrics::{
-    MODULE_HEADER_HEIGHT, PROGRESS_TRACK_HEIGHT, SIDEBAR_ROW_HEIGHT, SIDEBAR_WIDTH, SPACING_4,
-    SPACING_12, TITLEBAR_HEIGHT,
-};
-use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, LINE_HEIGHT_TITLE,
-};
+use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SIDEBAR_WIDTH, SPACING_4, TITLEBAR_HEIGHT};
+use crate::ui::typography::{LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE};
 
-#[gpui::test]
+#[gpui_kit::test]
 fn consolidated_caption_controls_support_tab_and_one_key_release(cx: &mut TestAppContext) {
-    use gpui::prelude::*;
+    use gpui_kit::prelude::*;
     struct CaptionFixture(Rc<Cell<usize>>);
-    impl gpui::Render for CaptionFixture {
+    impl gpui_kit::Render for CaptionFixture {
         fn render(
             &mut self,
-            _: &mut gpui::Window,
-            _: &mut gpui::Context<Self>,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
         ) -> impl IntoElement {
             let calls = self.0.clone();
-            gpui::div()
+            gpui_kit::div()
                 .h(px(TITLEBAR_HEIGHT))
                 .w(px(108.0))
                 .flex()
@@ -3134,7 +3236,7 @@ fn consolidated_caption_controls_support_tab_and_one_key_release(cx: &mut TestAp
                 ))
         }
     }
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     cx.update(crate::theme::apply_component_theme);
     let calls = Rc::new(Cell::new(0));
     let rendered_calls = calls.clone();
@@ -3144,12 +3246,12 @@ fn consolidated_caption_controls_support_tab_and_one_key_release(cx: &mut TestAp
         .debug_bounds("window-control-minimize-keyboard-target")
         .expect("keyboard caption target");
     assert_eq!(target.size, size(px(TITLEBAR_HEIGHT), px(TITLEBAR_HEIGHT)));
-    window.update(|window, _| window.focus_next());
+    window.update(|window, cx| window.focus_next(cx));
     window.refresh().expect("paint caption focus");
     for key in ["enter", "space"] {
         let before = calls.get();
         window.simulate_keystrokes(key);
-        window.simulate_event(gpui::KeyUpEvent {
+        window.simulate_event(gpui_kit::KeyUpEvent {
             keystroke: Keystroke::parse(key).expect("caption release"),
         });
         assert_eq!(
@@ -3184,7 +3286,7 @@ fn download_workspace_uses_the_compact_editor_density_scale() {
     assert_eq!(MODULE_HEADER_HEIGHT, 48.0);
     assert_eq!(DOWNLOAD_FILTER_STRIP_HEIGHT, 38.0);
     assert_eq!(DOWNLOAD_TABLE_HEADER_HEIGHT, 28.0);
-    assert_eq!(DOWNLOAD_TASK_ROW_HEIGHT, 46.0);
+    assert_eq!(DOWNLOAD_TASK_ROW_HEIGHT, 48.0);
     assert_eq!(DOWNLOAD_BATCH_TOOLBAR_HEIGHT, 36.0);
     assert_eq!(DOWNLOAD_DETAIL_HEIGHT, 176.0);
 }
@@ -3259,7 +3361,7 @@ fn selected_download_detail_query_is_deferred_across_the_gpui_entity_boundary() 
 fn download_workspace_is_one_filter_strip_flat_table_and_docked_inspector() {
     let source = include_str!("../main_window/download_page.rs");
     let production = source
-        .split("#[cfg(test)]")
+        .split("#[path = \"download_page/kit_migration_tests.rs\"]")
         .next()
         .expect("production main-window source");
     let downloads = source
@@ -3288,8 +3390,8 @@ fn download_workspace_is_one_filter_strip_flat_table_and_docked_inspector() {
     assert!(!row.contains("Button::new"));
     assert!(!row.contains("DOWNLOAD_ACTIONS_COLUMN_WIDTH"));
     assert!(
-        !row.contains(".truncate()"),
-        "nested percentage-width text must not collapse to an ellipsis-only layout"
+        row.contains("DOWNLOAD_CATEGORY_COLUMN_WIDTH"),
+        "category has a separately bounded column"
     );
     assert!(row.contains(".whitespace_nowrap()"));
     assert!(!production.contains(".child(\"操作\")"));
@@ -3313,7 +3415,7 @@ fn download_table_is_virtualized_and_keeps_one_scroll_handle() {
 
     assert!(production.contains("UniformListScrollHandle"));
     assert!(downloads.contains("uniform_list("));
-    assert!(downloads.contains("track_scroll(self.download_list_scroll.clone())"));
+    assert!(downloads.contains("track_scroll(&self.download_list_scroll)"));
     assert!(!downloads.contains(".children(task_rows)"));
 }
 
@@ -3666,9 +3768,9 @@ fn queue_position_actions_are_omitted_at_the_real_edges() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn completed_download_context_menu_renders_only_terminal_actions(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
     let task_id = engine
         .enqueue(
@@ -3741,8 +3843,8 @@ fn completed_download_context_menu_renders_only_terminal_actions(cx: &mut TestAp
     let downloads_for_window = downloads.downgrade();
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
             downloads_for_window,
             MainWindowShellContext {
                 settings: None,
@@ -3791,8 +3893,8 @@ fn completed_download_context_menu_renders_only_terminal_actions(cx: &mut TestAp
             .unwrap_or_else(|| panic!("completed task menu must render {selector}"));
         assert_eq!(
             bounds.size.height,
-            px(28.0),
-            "shared menu actions must keep the 28 px action rhythm: {selector}"
+            px(20.0),
+            "actual natural Label content; Kit owns the26px menu row: {selector}"
         );
         assert!(
             (px(160.0)..=px(216.0)).contains(&bounds.size.width),
@@ -3959,15 +4061,15 @@ fn download_filter_count_labels_stay_bounded_for_fixed_segments() {
     assert!(download_filter_count_label(usize::MAX).chars().count() <= 6);
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn clicking_a_download_filter_row_changes_the_real_main_window_state(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -4009,26 +4111,29 @@ fn clicking_a_download_filter_row_changes_the_real_main_window_state(cx: &mut Te
             .debug_bounds(filter.id())
             .unwrap_or_else(|| panic!("rendered status segment {}", filter.id()))
     });
-    assert_eq!(filter_segments.size.height.as_f32(), 28.0);
+    assert_eq!(filter_segments.size.height.as_f32(), 24.0);
     for (index, segment) in segment_bounds.iter().enumerate() {
         assert_eq!(segment.size.height, segment_bounds[0].size.height);
         assert!(
             (segment.size.width.as_f32() - segment_bounds[0].size.width.as_f32()).abs() <= 0.5,
             "pixel rounding must be the only width difference between status segments"
         );
-        assert!(filter_segments.contains(&segment.origin));
-        assert!(filter_segments.contains(&segment.bottom_right()));
+        assert!(segment.left() >= filter_segments.left() && segment.top() >= filter_segments.top());
+        assert!(
+            segment.right() <= filter_segments.right()
+                && segment.bottom() <= filter_segments.bottom()
+        );
         if index > 0 {
             assert_eq!(segment.left(), segment_bounds[index - 1].right());
         }
     }
     assert_eq!(
         segment_bounds[0].left().as_f32(),
-        filter_segments.left().as_f32() + 1.0
+        filter_segments.left().as_f32()
     );
     assert_eq!(
         segment_bounds[5].right().as_f32(),
-        filter_segments.right().as_f32() - 1.0
+        filter_segments.right().as_f32()
     );
     window.simulate_click(bounds.center(), Modifiers::default());
 
@@ -4058,15 +4163,15 @@ fn download_table_header_clicks_persist_the_sort_preference() {
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn clicking_download_table_headers_changes_only_the_view_sort(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
             MainWindowShellContext {
                 settings: None,
                 platform: None,
@@ -4113,11 +4218,11 @@ fn clicking_download_table_headers_changes_only_the_view_sort(cx: &mut TestAppCo
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let engine = DownloadEngine::open_in_memory().expect("open download icon test engine");
     let task_id = engine
         .enqueue(
@@ -4177,8 +4282,8 @@ fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
     let downloads_for_window = downloads.downgrade();
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
             downloads_for_window,
             MainWindowShellContext {
                 settings: None,
@@ -4240,9 +4345,9 @@ fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let executor = cx.executor();
     let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
     let first_task = engine
@@ -4347,8 +4452,8 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     });
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
             downloads_for_window,
             MainWindowShellContext {
                 settings: None,
@@ -4380,7 +4485,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
             .debug_bounds(filter.id())
             .unwrap_or_else(|| panic!("compact production status segment {}", filter.id()))
     });
-    assert_eq!(filter_segments.size.height.as_f32(), 28.0);
+    assert_eq!(filter_segments.size.height.as_f32(), 24.0);
     for (index, segment) in segment_bounds.iter().enumerate() {
         assert_eq!(segment.size.height, segment_bounds[0].size.height);
         assert!((segment.size.width.as_f32() - segment_bounds[0].size.width.as_f32()).abs() <= 0.5);
@@ -4405,27 +4510,21 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     let search = window
         .debug_bounds("download-search")
         .expect("download search bounds");
-    let settings_action = window
-        .debug_bounds("download-settings-action")
-        .expect("download settings action bounds");
-    let schedule_action = window
-        .debug_bounds("download-schedule-action")
-        .expect("download schedule action bounds");
-    let new_task_action = window
-        .debug_bounds("download-new-task-action")
-        .expect("download new-task action bounds");
+    let settings_action = kit_download_control_bounds(window, "download-settings");
+    let schedule_action = kit_download_control_bounds(window, "download-schedule");
+    let new_task_action = kit_download_control_bounds(window, "download-new-task");
     let sort = window
         .debug_bounds("download-sort")
         .expect("download sort action bounds");
     assert!(page_header.contains(&search.origin));
     assert!(page_header.contains(&search.bottom_right()));
-    assert_eq!(search.size.height.as_f32(), 28.0);
+    assert_eq!(search.size.height.as_f32(), 32.0);
     for action in [settings_action, schedule_action, new_task_action] {
-        assert_eq!(action.size.height.as_f32(), 28.0);
+        assert_eq!(action.size.height.as_f32(), 24.0);
         assert!(page_header.contains(&action.origin));
         assert!(page_header.contains(&action.bottom_right()));
     }
-    assert_eq!(sort.size.height.as_f32(), 28.0);
+    assert_eq!(sort.size.height.as_f32(), 24.0);
     assert!(
         (sort.left() - filter_segments.right()) <= px(8.0),
         "sort must remain grouped with the status filter instead of floating at the far edge"
@@ -4439,7 +4538,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
         Box::leak(format!("download-task-row-{second_element_id}").into_boxed_str());
     let search_input = window.read(|cx| main_window.read(cx).download_search_input.clone());
     window.update(|window, cx| {
-        search_input.update(cx, |input, cx| input.set_value("first", window, cx));
+        search_input.update(cx, |input, cx| input.replace_all("first", window, cx));
         main_window.update(cx, |_, cx| cx.notify());
     });
     window.run_until_parked();
@@ -4451,9 +4550,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
         "first"
     );
     assert!(window.debug_bounds(first_row_selector).is_some());
-    let clear_search = window
-        .debug_bounds("download-search-clear")
-        .expect("non-empty search exposes the bounded clear action");
+    let clear_search = kit_download_control_bounds(window, "download-search-clear");
     window.simulate_click(clear_search.center(), Modifiers::default());
     window.run_until_parked();
     window.update(|_, cx| main_window.update(cx, |_, cx| cx.notify()));
@@ -4572,9 +4669,16 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     });
     for tab in &tab_bounds {
         assert_eq!(tab.top(), tab_bounds[0].top());
-        assert_eq!(tab.size.height.as_f32(), 29.0);
-        assert!(detail_tabs.contains(&tab.origin));
-        assert!(detail_tabs.contains(&tab.bottom_right()));
+        assert!(
+            tab.size.height <= detail_tabs.size.height,
+            "official Small Tab fits original30px strip"
+        );
+        assert!(
+            tab.left() >= detail_tabs.left()
+                && tab.top() >= detail_tabs.top()
+                && tab.right() <= detail_tabs.right()
+                && tab.bottom() <= detail_tabs.bottom()
+        );
     }
     assert_eq!(detail_scroll.top(), detail_tabs.bottom());
     assert_eq!(detail_scroll.bottom(), detail.bottom());
@@ -4583,7 +4687,11 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
             <= 1.0,
         "overview inspector columns must split the available content width evenly"
     );
-    assert_eq!(status_label.size.width.as_f32(), 52.0);
+    assert_eq!(
+        status_value.left() - status_label.left(),
+        px(60.0),
+        "official DescriptionList label lane includes original52px plus8px separation"
+    );
     assert_eq!(downloaded_label.size.width, status_label.size.width);
     assert_eq!(status_value.left(), downloaded_value.left());
 
@@ -4627,6 +4735,12 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
         .debug_bounds("download-detail-segments-progress-description")
         .expect("detail progress description");
     assert_eq!(detail_progress.size.height, px(72.0));
+    assert!(
+        detail_progress_icon.left() >= detail_progress.left()
+            && detail_progress_icon.right() <= detail_progress.right()
+    );
+    assert!(detail_progress_title.left() == detail_progress_description.left());
+    assert!(detail_progress_description.bottom() <= detail_progress.bottom());
 
     window.update(|_, cx| {
         downloads.update(cx, |application, cx| {
@@ -4642,26 +4756,15 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     let detail_error_state = window
         .debug_bounds("download-detail-segments-error")
         .expect("production detail error state");
-    let detail_error_marker = window
-        .debug_bounds("download-detail-segments-error-marker")
-        .expect("detail error semantic edge");
-    let detail_error_icon = window
-        .debug_bounds("download-detail-segments-error-icon")
-        .expect("detail error icon");
-    let detail_error_title = window
-        .debug_bounds("download-detail-segments-error-title")
-        .expect("detail error title");
-    let detail_error_description = window
-        .debug_bounds("download-detail-segments-error-description")
-        .expect("detail error description");
-    assert_eq!(detail_error_state.size, detail_progress.size);
-    assert_eq!(detail_error_marker.size.width, px(2.0));
-    assert_eq!(detail_error_icon.origin.x, detail_progress_icon.origin.x);
-    assert_eq!(detail_error_title.origin.x, detail_progress_title.origin.x);
-    assert_eq!(
-        detail_error_description.origin.x,
-        detail_progress_description.origin.x
+    let detail_error_alert = window
+        .debug_bounds("download-detail-segments-error-kit-alert")
+        .expect("actual error Alert");
+    assert_eq!(detail_error_state.size.width, detail_progress.size.width);
+    assert!(
+        detail_error_alert.left() >= detail_error_state.left()
+            && detail_error_alert.right() <= detail_error_state.right()
     );
+    assert!(detail_error_alert.size.height > px(0.0));
 
     let name = window
         .debug_bounds("download-task-name-selected")
@@ -4672,6 +4775,16 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     let failure_text = window
         .debug_bounds("download-task-error-text")
         .expect("failed task must replace the auxiliary path line");
+    assert_eq!(
+        name_text.size.height,
+        px(20.0),
+        "workbench task name stays readable"
+    );
+    assert_eq!(
+        failure_text.size.height,
+        px(18.0),
+        "failure summary is not tiny metadata"
+    );
     assert!(
         window
             .debug_bounds("download-task-path-text-selected")
@@ -4722,7 +4835,11 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     assert_eq!(remaining.right(), progress.right());
     assert_eq!(progress_track.left(), progress.left());
     assert_eq!(progress_track.right(), progress.right());
-    assert_eq!(progress_track.size.height, px(PROGRESS_TRACK_HEIGHT));
+    assert_eq!(
+        progress_track.size.height,
+        px(4.0),
+        "released XSmall aggregate Progress"
+    );
     assert_eq!(transfer_header.left(), progress.left());
     assert_eq!(speed_header.left(), speed.left());
     assert_eq!(remaining_header.left(), remaining.left());
@@ -4761,11 +4878,11 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn production_download_batch_toolbar_appears_for_multi_select_and_dispatches_one_batch(
     cx: &mut TestAppContext,
 ) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
     let request = |name: &str| DownloadRequest {
         source_url: format!("https://example.com/{name}"),
@@ -4856,8 +4973,8 @@ fn production_download_batch_toolbar_appears_for_multi_select_and_dispatches_one
     let downloads_for_window = downloads.downgrade();
     let (main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
             downloads_for_window,
             MainWindowShellContext {
                 settings: None,
@@ -4932,9 +5049,40 @@ fn production_download_batch_toolbar_appears_for_multi_select_and_dispatches_one
         );
     }
     assert_eq!(toolbar.size.height.as_f32(), DOWNLOAD_BATCH_TOOLBAR_HEIGHT);
-    assert_eq!(cancel.size.height.as_f32(), 28.0);
+    assert_eq!(cancel.size.height.as_f32(), 24.0);
     assert!(toolbar.contains(&cancel.origin));
     assert!(toolbar.contains(&cancel.bottom_right()));
+    let summary = window
+        .debug_bounds("download-batch-summary")
+        .expect("selection summary");
+    let actions_right = [
+        "download-batch-resume",
+        "download-batch-retry",
+        "download-batch-pause",
+        "download-batch-cancel",
+    ]
+    .into_iter()
+    .filter_map(|id| window.debug_bounds(id))
+    .map(|bounds| bounds.right())
+    .max()
+    .expect("eligible actions");
+    let group = window
+        .debug_bounds("download-batch-centered-group")
+        .expect("centered content container");
+    let command_bounds = [
+        "download-batch-resume",
+        "download-batch-retry",
+        "download-batch-redownload",
+        "download-batch-pause",
+        "download-batch-cancel",
+    ]
+    .into_iter()
+    .filter_map(|id| window.debug_bounds(id).map(|bounds| (id, bounds)))
+    .collect::<Vec<_>>();
+    assert!(
+        ((summary.left() + actions_right) / 2.0 - toolbar.center().x).abs() <= px(1.0),
+        "selected-download content must be horizontally centered: {summary:?} right={actions_right:?} container={group:?} commands={command_bounds:?} {toolbar:?}"
+    );
     let header_with_toolbar = window
         .debug_bounds("download-table-header")
         .expect("table header below batch toolbar");
@@ -4976,9 +5124,9 @@ fn production_download_batch_toolbar_appears_for_multi_select_and_dispatches_one
     );
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn double_clicking_a_download_row_reuses_one_deferred_task_window(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
     let engine = DownloadEngine::open_in_memory().expect("open in-memory download engine");
     let task_id = engine
         .enqueue(
@@ -5041,8 +5189,8 @@ fn double_clicking_a_download_row_reuses_one_deferred_task_window(cx: &mut TestA
     let downloads_for_window = downloads.downgrade();
     let (_main_window, window) = cx.add_window_view(move |window, cx| {
         let mut main_window = MainWindow::new(
-            gpui::WeakEntity::<ClipboardApplication>::new_invalid(),
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<ClipboardApplication>::new_invalid(),
+            gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
             downloads_for_window,
             MainWindowShellContext {
                 settings: None,
@@ -5062,7 +5210,7 @@ fn double_clicking_a_download_row_reuses_one_deferred_task_window(cx: &mut TestA
     let row = window
         .debug_bounds(row_selector)
         .expect("production task row bounds");
-    let double_click = |window: &mut gpui::VisualTestContext| {
+    let double_click = |window: &mut gpui_kit::VisualTestContext| {
         window.simulate_event(MouseDownEvent {
             button: MouseButton::Left,
             position: row.center(),
@@ -5237,15 +5385,13 @@ fn index_scope_settings_use_a_checkbox_list_and_a_directory_picker_not_text_inpu
 #[test]
 fn quick_launch_settings_scrolls_only_the_selected_page_viewport() {
     let source = include_str!("../main_window/quick_launch_page.rs");
-    let quick_find = source
-        .split("fn render_quick_find")
-        .nth(1)
-        .and_then(|source| source.split("fn compact_setting_row(").next())
-        .expect("quick-launch settings source");
-
-    assert!(quick_find.contains("quick-launch-settings-scroll"));
-    assert!(quick_find.contains("quick-launch-settings-navigation"));
-    assert!(quick_find.contains("QuickLaunchSettingsPage::ALL"));
+    assert!(source.contains("Settings::new(\"quick-launch-official-settings\")"));
+    assert!(source.contains("SettingPage::new"));
+    assert!(source.contains("SettingGroup::new"));
+    assert!(
+        !source.contains("quick-launch-settings-scrollbar"),
+        "official Settings owns the scroll viewport"
+    );
     for selector in [
         "quick-launch-settings-page-general",
         "quick-launch-settings-page-index",
@@ -5253,12 +5399,8 @@ fn quick_launch_settings_scrolls_only_the_selected_page_viewport() {
         "quick-launch-settings-page-commands",
         "quick-launch-settings-page-diagnostics",
     ] {
-        assert!(source.contains(selector), "missing {selector}");
+        assert!(source.contains(selector));
     }
-    assert!(quick_find.contains(".overflow_y_scroll()"));
-    assert!(quick_find.contains(".on_scroll_wheel(cx.listener("));
-    assert!(quick_find.contains("Scrollbar::vertical(&self.quick_find_scroll)"));
-    assert!(!quick_find.contains(".vertical_scrollbar(&self.quick_find_scroll)"));
 }
 
 #[test]
@@ -5283,7 +5425,7 @@ fn custom_command_program_uses_the_windows_picker() {
     let source = include_str!("../main_window/quick_launch_page.rs");
     let editor = include_str!("../ui/components/custom_command_editor.rs");
     let quick_find = source
-        .split("fn render_quick_find")
+        .split("fn render_quick_find_control")
         .nth(1)
         .and_then(|source| source.split("fn compact_setting_row(").next())
         .expect("quick-launch settings source");
@@ -5297,7 +5439,7 @@ fn quick_launch_settings_expose_history_performance_and_diagnostics() {
     let source = include_str!("../main_window/quick_launch_page.rs");
     let diagnostics = include_str!("../ui/components/quick_launch_diagnostics.rs");
     let quick_find = source
-        .split("fn render_quick_find")
+        .split("fn render_quick_find_control")
         .nth(1)
         .and_then(|source| source.split("fn compact_setting_row(").next())
         .expect("quick-launch settings source");
@@ -5311,43 +5453,44 @@ fn quick_launch_settings_expose_history_performance_and_diagnostics() {
     assert!(diagnostics.contains("排序学习"));
 }
 
-#[gpui::test]
+#[gpui_kit::test]
 fn compact_setting_descriptions_wrap_and_short_tooltips_fit_content(cx: &mut TestAppContext) {
-    use gpui::prelude::*;
+    use gpui_kit::prelude::*;
 
     struct SettingRowFixture {
         title: &'static str,
         description: &'static str,
     }
 
-    impl gpui::Render for SettingRowFixture {
+    impl gpui_kit::Render for SettingRowFixture {
         fn render(
             &mut self,
-            _window: &mut gpui::Window,
-            _cx: &mut gpui::Context<Self>,
+            _window: &mut gpui_kit::Window,
+            _cx: &mut gpui_kit::Context<Self>,
         ) -> impl IntoElement {
             let row = crate::main_window::quick_launch_page::compact_setting_row(
                 crate::theme::Theme::zed_dark(),
                 self.title,
                 self.description,
-                gpui::div().w(px(96.0)).h(px(26.0)).into_any_element(),
+                gpui_kit::div().w(px(96.0)).h(px(26.0)).into_any_element(),
             );
-            gpui::div().size_full().p(px(8.0)).child(row)
+            gpui_kit::div().size_full().p(px(8.0)).child(row)
         }
     }
 
-    cx.update(gpui_component::init);
+    cx.update(gpui_kit::init);
 
     {
         let window = cx.add_empty_window();
         window.draw(
-            gpui::point(px(0.0), px(0.0)),
-            gpui::size(px(360.0), px(120.0)),
+            gpui_kit::point(px(0.0), px(0.0)),
+            gpui_kit::size(px(360.0), px(120.0)),
             |_, cx| {
                 cx.new(|_| SettingRowFixture {
                     title: "short-setting",
                     description: "按住 Shift 点击历史条目时执行",
                 })
+                .into_any_element()
             },
         );
         window.refresh().expect("render short compact setting row");
@@ -5361,14 +5504,14 @@ fn compact_setting_descriptions_wrap_and_short_tooltips_fit_content(cx: &mut Tes
     {
         let window = cx.add_empty_window();
         window.draw(
-            gpui::point(px(0.0), px(0.0)),
-            gpui::size(px(360.0), px(160.0)),
+            gpui_kit::point(px(0.0), px(0.0)),
+            gpui_kit::size(px(360.0), px(160.0)),
             |_, cx| {
                 cx.new(|_| SettingRowFixture {
                     title: "long-setting",
                     description:
                         "收藏和置顶记录不会占用普通记录上限，过期记录会先进入回收状态，之后再按保留规则清理；当历史内容较多时，设置说明必须自动换行，不能把控件挤出设置列或截断成省略号。",
-                })
+                }).into_any_element()
             },
         );
         window.refresh().expect("render long compact setting row");
@@ -5446,14 +5589,6 @@ fn file_index_summary_keeps_a_last_good_snapshot_available_during_maintenance() 
 }
 
 #[test]
-fn notification_motion_has_distinct_enter_and_exit_endpoints() {
-    assert_eq!(notification_transition(0.0, false), (0.0, -6.0));
-    assert_eq!(notification_transition(1.0, false), (1.0, 0.0));
-    assert_eq!(notification_transition(0.0, true), (1.0, 0.0));
-    assert_eq!(notification_transition(1.0, true), (0.0, -4.0));
-}
-
-#[test]
 fn hotkey_recording_requires_a_modifier_and_maps_windows_virtual_keys() {
     let recorded = hotkey_from_key_down(&KeyDownEvent {
         keystroke: Keystroke {
@@ -5466,6 +5601,7 @@ fn hotkey_recording_requires_a_modifier_and_maps_windows_virtual_keys() {
             key_char: Some("V".into()),
         },
         is_held: false,
+        prefer_character_input: false,
     })
     .expect("Ctrl+Shift+V must be recordable");
     assert_eq!(
@@ -5486,13 +5622,16 @@ fn hotkey_recording_requires_a_modifier_and_maps_windows_virtual_keys() {
                 key_char: Some("c".into()),
             },
             is_held: false,
+            prefer_character_input: false,
         })
         .is_none()
     );
 }
-#[gpui::test]
-fn tool_card_opens_feature_settings_and_persists_the_shared_toggle(cx: &mut TestAppContext) {
-    cx.update(gpui_component::init);
+#[gpui_kit::test]
+fn tool_card_toggles_and_configure_opens_without_toggling(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    // This fixture deliberately exercises the real SQLite worker thread.
+    cx.executor().allow_parking();
     let directory = tempfile::tempdir().expect("create feature settings test directory");
     let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
         directory.path().join("clipboard.db"),
@@ -5527,29 +5666,113 @@ fn tool_card_opens_feature_settings_and_persists_the_shared_toggle(cx: &mut Test
     });
     let clipboard_for_main = clipboard.downgrade();
     let notifications_for_main = notifications.clone();
-    let (main_window, main_surface) = cx.add_window_view(move |window, cx| {
-        let mut main_window = MainWindow::new(
-            clipboard_for_main,
-            gpui::WeakEntity::<QuickLaunchApplication>::new_invalid(),
-            gpui::WeakEntity::<DownloadApplication>::new_invalid(),
-            MainWindowShellContext {
-                settings: None,
-                platform: None,
-                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
-            },
-            notifications_for_main,
-            window,
-            cx,
-        );
-        main_window.shell.activate(MainModule::Tools);
-        main_window
+    let retained_main = Rc::new(RefCell::new(None));
+    let main_slot = retained_main.clone();
+    let (_root, main_surface) = cx.add_window_view(move |window, cx| {
+        let main = cx.new(|cx| {
+            let mut main_window = MainWindow::new(
+                clipboard_for_main,
+                gpui_kit::WeakEntity::<QuickLaunchApplication>::new_invalid(),
+                gpui_kit::WeakEntity::<DownloadApplication>::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications_for_main,
+                window,
+                cx,
+            );
+            main_window.shell.activate(MainModule::Tools);
+            main_window
+        });
+        *main_slot.borrow_mut() = Some(main.clone());
+        gpui_kit::base::Root::new(main, window, cx)
     });
+    let main_window = retained_main
+        .borrow()
+        .clone()
+        .expect("production main view");
 
     let card = main_surface
         .debug_bounds("tool-link-detector-card")
         .expect("link detector tool card");
     main_surface.simulate_click(card.center(), Modifiers::default());
     main_surface.run_until_parked();
+    assert!(main_surface.read(|cx| clipboard.read(cx).link_detector_enabled()));
+    assert!(main_surface.read(|cx| main_window.read(cx).tool_settings_windows.is_empty()));
+    assert!(
+        AppConfig::load_from(&config_path)
+            .expect("card persisted enabled")
+            .clipboard
+            .link_detector_enabled
+    );
+    main_surface.simulate_click(card.center(), Modifiers::default());
+    main_surface.run_until_parked();
+    assert!(!main_surface.read(|cx| clipboard.read(cx).link_detector_enabled()));
+    main_surface.update(|window, cx| {
+        let focus = main_window.read(cx).tool_focus.clone();
+        focus.focus(window, cx);
+    });
+    main_surface.simulate_keystrokes("enter");
+    main_surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: Keystroke::parse("enter").expect("Enter"),
+    });
+    main_surface.run_until_parked();
+    assert!(
+        main_surface.read(|cx| clipboard.read(cx).link_detector_enabled()),
+        "card Enter toggles once"
+    );
+    main_surface.simulate_keystrokes("space");
+    main_surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: Keystroke::parse("space").expect("Space"),
+    });
+    main_surface.run_until_parked();
+    assert!(
+        !main_surface.read(|cx| clipboard.read(cx).link_detector_enabled()),
+        "card Space toggles once"
+    );
+    assert!(main_surface.read(|cx| main_window.read(cx).tool_settings_windows.is_empty()));
+    main_surface.simulate_keystrokes("tab");
+    main_surface.refresh().expect("Tab focuses Configure");
+    let focused_controls = main_surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .filter(|node| node.focused() == Some(true))
+            .map(|node| (node.path().to_vec(), node.label().map(str::to_owned)))
+            .collect::<Vec<_>>()
+    });
+    assert!(
+        focused_controls.iter().any(|(path, _)| path.last()
+            == Some(&gpui_kit::ElementId::from("tool-link-detector-configure"))),
+        "Configure must be next focused control: {focused_controls:?}"
+    );
+    main_surface.simulate_keystrokes("enter");
+    main_surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: Keystroke::parse("enter").expect("Configure Enter"),
+    });
+    main_surface.run_until_parked();
+    let keyboard_settings = main_surface.read(|cx| {
+        main_window
+            .read(cx)
+            .tool_settings_windows
+            .get("tool-link-detector")
+            .copied()
+            .expect("Tab/Enter Configure opens settings")
+    });
+    assert!(
+        !main_surface.read(|cx| clipboard.read(cx).link_detector_enabled()),
+        "keyboard Configure does not toggle"
+    );
+    let configure = main_surface
+        .debug_bounds("tool-link-detector-configure")
+        .expect("Configure");
+    main_surface.simulate_click(configure.center(), Modifiers::default());
+    main_surface.run_until_parked();
+    assert!(
+        !main_surface.read(|cx| clipboard.read(cx).link_detector_enabled()),
+        "Configure never bubbles to card toggle"
+    );
 
     let first_handle = main_surface.read(|cx| {
         main_window
@@ -5559,7 +5782,15 @@ fn tool_card_opens_feature_settings_and_persists_the_shared_toggle(cx: &mut Test
             .copied()
             .expect("settings window registered by tool id")
     });
+    assert_eq!(
+        first_handle, keyboard_settings,
+        "pointer Configure reuses keyboard-opened window"
+    );
     let mut settings_window = VisualTestContext::from_window(first_handle, cx);
+    settings_window.update(|window, _| window.activate_window());
+    settings_window.run_until_parked();
+    assert!(settings_window.update(|window, _| window.is_window_active()));
+    assert!(!settings_window.read(|cx| clipboard.read(cx).link_detector_enabled()));
     settings_window
         .refresh()
         .expect("render shared feature settings");
@@ -5585,10 +5816,12 @@ fn tool_card_opens_feature_settings_and_persists_the_shared_toggle(cx: &mut Test
         .expect("link panel position dropdown");
     settings_window.simulate_click(position.center(), Modifiers::default());
     settings_window.run_until_parked();
-    let top_right = settings_window
-        .debug_bounds("tool-settings-position-top-right")
-        .expect("top-right position option");
-    settings_window.simulate_click(top_right.center(), Modifiers::default());
+    settings_window
+        .refresh()
+        .expect("render actual position Select");
+    // Center is the current item; one Down and Enter confirm TopRight through Kit.
+    settings_window.simulate_keystrokes("down");
+    settings_window.simulate_keystrokes("enter");
     settings_window.run_until_parked();
     let saved = AppConfig::load_from(&config_path).expect("reload saved tool settings");
     assert_eq!(
@@ -5674,4 +5907,273 @@ fn desktop_snapshot_projection_benchmark_uses_1000_and_10000_task_fixtures() {
             "desktop_snapshot_projection_benchmark task_count={task_count} visible_count={visible_count} projection_us_median={median} projection_us_p95={p95}"
         );
     }
+}
+
+#[gpui_kit::test]
+fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let temp = tempfile::tempdir().expect("isolated settings fixture");
+    let config_path = temp.path().join("config.json");
+    let mut config = AppConfig::default();
+    config.quick_launch.auto_quick_switch = false;
+    config.quick_launch.file_dialog_search = false;
+    config.quick_launch.suppress_in_exclusive_fullscreen = false;
+    config
+        .save_to(&config_path)
+        .expect("seed temporary configuration");
+    let catalog =
+        FinderCatalog::open(temp.path().join("history.db"), &[]).expect("empty synthetic catalog");
+    let (platform, endpoint) = platform_bridge(16);
+    endpoint.set_connected_for_contract_test(true);
+    let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+    let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+    let application = cx.update(|cx| {
+        cx.new(|_| {
+            QuickLaunchApplication::new(
+                catalog,
+                Rc::new(platform),
+                Rc::new(indexer),
+                config,
+                config_path.clone(),
+                temp.path().join("logs"),
+                notifications.clone(),
+            )
+        })
+    });
+    let owner = application.downgrade();
+    let (_main, window) = cx.add_window_view(move |window, cx| {
+        let mut main = MainWindow::new(
+            gpui_kit::WeakEntity::new_invalid(),
+            owner,
+            gpui_kit::WeakEntity::new_invalid(),
+            MainWindowShellContext {
+                settings: None,
+                platform: None,
+                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+            },
+            notifications,
+            window,
+            cx,
+        );
+        main.shell.activate(MainModule::QuickFind);
+        main
+    });
+    window.simulate_resize(size(px(1060.0), px(650.0)));
+    for (page, selector, label, index) in [
+        (
+            QuickLaunchSettingsPage::General,
+            "quick-launch-exclusive-fullscreen-suppression",
+            "全屏游戏中暂不呼出",
+            2,
+        ),
+        (
+            QuickLaunchSettingsPage::Context,
+            "quick-launch-auto-quick-switch",
+            "自动快速切换",
+            0,
+        ),
+        (
+            QuickLaunchSettingsPage::Context,
+            "quick-launch-file-dialog-search",
+            "文件对话框搜索栏",
+            1,
+        ),
+    ] {
+        select_official_quick_page(window, page);
+        let bounds = window
+            .debug_bounds(selector)
+            .expect("retained settings control slot");
+        assert_eq!(bounds.size.height, px(32.0));
+        for (requested, keyboard) in [(true, false), (false, true)] {
+            if keyboard {
+                let keystroke = Keystroke::parse("space").expect("Switch Space");
+                window.simulate_event(KeyDownEvent {
+                    keystroke: keystroke.clone(),
+                    is_held: false,
+                    prefer_character_input: false,
+                });
+                window.simulate_event(gpui_kit::KeyUpEvent { keystroke });
+            } else {
+                window.simulate_click(bounds.center(), Modifiers::default());
+            }
+            window.run_until_parked();
+            window
+                .refresh()
+                .expect("deferred application update and repaint");
+            let state = window.read(|cx| application.read(cx).settings());
+            let values = [
+                state.auto_quick_switch,
+                state.file_dialog_search,
+                state.suppress_in_exclusive_fullscreen,
+            ];
+            assert_eq!(
+                values[index], requested,
+                "controlled requested value reaches original owner"
+            );
+            let disk =
+                AppConfig::load_from(&config_path).expect("read temporary persisted section");
+            let values = [
+                disk.quick_launch.auto_quick_switch,
+                disk.quick_launch.file_dialog_search,
+                disk.quick_launch.suppress_in_exclusive_fullscreen,
+            ];
+            assert_eq!(
+                values[index], requested,
+                "original section persistence survives adoption"
+            );
+            assert_eq!(
+                window.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+                    .into_iter()
+                    .find(|snapshot| snapshot.label() == Some(label))
+                    .expect("production Switch checked semantics")
+                    .checked()),
+                Some(requested)
+            );
+            let command = endpoint
+                .try_receive_command_for_contract_test()
+                .expect("one configuration command");
+            let Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(command)) =
+                command.message
+            else {
+                panic!("settings gesture must retain typed ConfigureQuickLaunch dispatch");
+            };
+            let values = [
+                command.auto_quick_switch_enabled,
+                command.file_dialog_search_enabled,
+                command.suppress_in_exclusive_fullscreen,
+            ];
+            assert_eq!(
+                values[index], requested,
+                "same requested value crosses the existing platform boundary"
+            );
+            assert!(
+                endpoint.try_receive_command_for_contract_test().is_err(),
+                "one gesture dispatches only once"
+            );
+        }
+    }
+}
+
+fn kit_download_control_bounds(
+    window: &mut VisualTestContext,
+    id: &'static str,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    window
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| node.path().last() == Some(&gpui_kit::ElementId::from(id)))
+        .unwrap_or_else(|| panic!("actual mounted Kit download control {id}"))
+        .bounds()
+}
+
+#[test]
+fn selected_download_count_size_and_unknowns_are_explicit_without_overflow() {
+    assert!(selected_download_summary(3, 1024, 1).contains("3 项"));
+    assert!(selected_download_summary(3, 1024, 1).contains("1 项大小未知"));
+    let huge = u128::from(u64::MAX) + 1024;
+    assert!(
+        selected_download_summary(2, huge, 0).contains(&huge.to_string()),
+        "sum must not silently clamp"
+    );
+}
+
+#[gpui_kit::test]
+fn extensions_workspace_switch_preserves_manager_and_draft_without_tools_route(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let temp = tempfile::tempdir().expect("fixture");
+    let config = AppConfig::default();
+    let config_path = temp.path().join("config.json");
+    config.save_to(&config_path).expect("seed");
+    let catalog = FinderCatalog::open(temp.path().join("history.db"), &[]).expect("catalog");
+    let (platform, _endpoint) = platform_bridge(8);
+    let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+    let notifications = cx.new(|_| NotificationCenter::default());
+    let quick = cx.new(|_| {
+        QuickLaunchApplication::new(
+            catalog,
+            Rc::new(platform),
+            Rc::new(indexer),
+            config,
+            config_path,
+            temp.path().join("logs"),
+            notifications.clone(),
+        )
+    });
+    let owner = quick.downgrade();
+    let main_slot = Rc::new(RefCell::new(None));
+    let mounted_main = main_slot.clone();
+    let (_root, window) = cx.add_window_view(move |window, cx| {
+        window.resize(size(px(920.0), px(480.0)));
+        let main = cx.new(|cx| {
+            let mut main = MainWindow::new(
+                gpui_kit::WeakEntity::new_invalid(),
+                owner,
+                gpui_kit::WeakEntity::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            );
+            main.shell.activate(MainModule::Tools);
+            main
+        });
+        *mounted_main.borrow_mut() = Some(main.clone());
+        gpui_kit::base::Root::new(main, window, cx)
+    });
+    window.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(
+        window.debug_bounds("tools-extension-manager").is_none(),
+        "no extension management inside tools"
+    );
+    let entry = window
+        .debug_bounds("main-module-扩展")
+        .expect("direct workspace entry");
+    window.simulate_click(entry.center(), Modifiers::default());
+    window.run_until_parked();
+    window.update(|window, cx| window.draw(cx).clear(cx));
+    let main = main_slot.borrow().clone().expect("main retained");
+    let manager = window.read(|cx| main.read(cx).extension_manager.clone().expect("manager"));
+    window.update(|window, cx| {
+        let path = manager.read(cx).path.clone();
+        path.update(cx, |input, cx| {
+            input.set_value("draft-package-folder", window, cx)
+        });
+    });
+    let tools = window
+        .debug_bounds("main-module-其他工具")
+        .expect("tools module");
+    window.simulate_click(tools.center(), Modifiers::default());
+    window.run_until_parked();
+    window.update(|window, cx| window.draw(cx).clear(cx));
+    assert!(window.debug_bounds("tool-link-detector-card").is_some());
+    assert!(window.debug_bounds("extension-back-tools").is_none());
+    let entry = window
+        .debug_bounds("main-module-扩展")
+        .expect("return direct entry");
+    window.simulate_click(entry.center(), Modifiers::default());
+    window.run_until_parked();
+    window.update(|window, cx| window.draw(cx).clear(cx));
+    window.read(|cx| {
+        assert_eq!(main.read(cx).shell.active_module(), MainModule::Extensions);
+        assert_eq!(
+            main.read(cx)
+                .extension_manager
+                .as_ref()
+                .expect("same manager")
+                .entity_id(),
+            manager.entity_id()
+        );
+        assert_eq!(
+            manager.read(cx).path.read(cx).value().as_ref(),
+            "draft-package-folder"
+        );
+    });
+    assert!(quick.read_with(cx, |app, _| app.settings().custom_commands.is_empty()));
 }

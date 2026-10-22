@@ -161,11 +161,36 @@ pub enum NetworkPolicyError {
 mod tests {
     use std::io::{Read, Write};
     use std::net::TcpListener;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use nxtools_core::{NetworkProxySettings, NetworkSettings};
 
     use super::*;
+
+    fn accept_bounded(listener: TcpListener) -> std::net::TcpStream {
+        listener.set_nonblocking(true).expect("bounded listener");
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "route fixture accept deadline");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(error) => panic!("route fixture accept failed: {error}"),
+            }
+        };
+        stream
+            .set_nonblocking(false)
+            .expect("blocking fixture socket");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("read deadline");
+        stream
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .expect("write deadline");
+        stream
+    }
 
     #[test]
     fn operation_snapshot_is_immutable_across_policy_updates() {
@@ -192,10 +217,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind proxy fixture");
         let address = listener.local_addr().expect("proxy fixture address");
         let fixture = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept proxied request");
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .expect("set fixture timeout");
+            let mut stream = accept_bounded(listener);
             let mut request = [0_u8; 4096];
             let read = stream.read(&mut request).expect("read proxied request");
             let request = String::from_utf8_lossy(&request[..read]);
@@ -232,5 +254,57 @@ mod tests {
             .expect("proxied request");
         assert_eq!(response.bytes().await.expect("response body"), "proxied");
         fixture.join().expect("join proxy fixture");
+    }
+    #[tokio::test]
+    async fn direct_and_system_routes_use_real_requests_with_an_injected_resolver() {
+        for mode in [NetworkProxyMode::Direct, NetworkProxyMode::System] {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("route fixture");
+            let address = listener.local_addr().expect("route address");
+            let fixture = std::thread::spawn(move || {
+                let mut stream = accept_bounded(listener);
+                let mut bytes = [0u8; 4096];
+                let count = stream.read(&mut bytes).expect("actual request");
+                let request = String::from_utf8_lossy(&bytes[..count]);
+                match mode {
+                    NetworkProxyMode::Direct => {
+                        assert!(request.starts_with("GET /route-check HTTP/1.1"))
+                    }
+                    NetworkProxyMode::System => {
+                        assert!(request.starts_with("GET http://example.invalid:"))
+                    }
+                    _ => unreachable!(),
+                }
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                    )
+                    .expect("response");
+            });
+            let policy = NetworkPolicy::new(NetworkSettings {
+                proxy: NetworkProxySettings {
+                    mode,
+                    ..Default::default()
+                },
+            })
+            .expect("policy");
+            let builder = Client::builder()
+                .resolve("example.invalid", address)
+                .proxy(reqwest::Proxy::all(format!("http://{address}")).expect("injected resolver"))
+                .timeout(Duration::from_secs(2));
+            let response = policy
+                .snapshot()
+                .expect("snapshot")
+                .build_client(builder)
+                .expect("client")
+                .get(format!(
+                    "http://example.invalid:{}/route-check",
+                    address.port()
+                ))
+                .send()
+                .await
+                .expect("routed request");
+            assert_eq!(response.bytes().await.expect("body"), "ok");
+            fixture.join().expect("join bounded route fixture");
+        }
     }
 }

@@ -1,5 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+// GPUI derive output resolves through the Kit, without a direct GPUI dependency.
+extern crate gpui_kit as gpui;
+
+mod archive;
+#[cfg(test)]
+mod archive_component_spike;
+mod archive_launch;
 mod assets;
 mod clipboard;
 mod clipboard_worker;
@@ -7,6 +14,7 @@ mod completion_actions;
 mod download_taskbar_overlay;
 mod download_window_lifecycle;
 mod downloads;
+mod extensions;
 mod icons;
 mod main_window;
 mod network_settings;
@@ -18,6 +26,8 @@ mod runtime;
 mod shell;
 mod startup_failure;
 mod theme;
+#[cfg(test)]
+mod theme_graphite_tests;
 mod tools;
 mod ui;
 #[cfg(test)]
@@ -27,11 +37,11 @@ use anyhow::{Context as _, Result};
 use assets::NxToolsAssets;
 use clipboard::{ClipboardApplication, ClipboardApplicationGlobal};
 use downloads::{DownloadApplication, DownloadRuntimeContext};
-use gpui::{
-    App, AppContext, Application, TitlebarOptions, WindowBackgroundAppearance, WindowBounds,
-    WindowDecorations, WindowKind, WindowOptions, px, size,
+use gpui_kit::base::Root;
+use gpui_kit::{
+    App, AppContext, TitlebarOptions, WindowBackgroundAppearance, WindowBounds, WindowDecorations,
+    WindowKind, WindowOptions, px, size,
 };
-use gpui_component::Root;
 use main_window::{MainWindow, MainWindowShellContext};
 use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
@@ -65,7 +75,7 @@ enum DesktopLaunchMode {
 const MAIN_WINDOW_LOGICAL_WIDTH: f32 = 1060.0;
 const MAIN_WINDOW_LOGICAL_HEIGHT: f32 = 650.0;
 
-fn main_window_logical_size() -> gpui::Size<gpui::Pixels> {
+fn main_window_logical_size() -> gpui_kit::Size<gpui_kit::Pixels> {
     size(
         px(MAIN_WINDOW_LOGICAL_WIDTH),
         px(MAIN_WINDOW_LOGICAL_HEIGHT),
@@ -74,24 +84,24 @@ fn main_window_logical_size() -> gpui::Size<gpui::Pixels> {
 
 struct MainWindowPlacement {
     bounds: WindowBounds,
-    display_id: Option<gpui::DisplayId>,
+    display_id: Option<gpui_kit::DisplayId>,
 }
 
 fn main_window_placement_for_display(
-    display: Option<(gpui::DisplayId, gpui::Bounds<gpui::Pixels>)>,
+    display: Option<(gpui_kit::DisplayId, gpui_kit::Bounds<gpui_kit::Pixels>)>,
 ) -> MainWindowPlacement {
     let window_size = main_window_logical_size();
     match display {
         Some((display_id, display_bounds)) => MainWindowPlacement {
-            bounds: WindowBounds::Windowed(gpui::Bounds::centered_at(
+            bounds: WindowBounds::Windowed(gpui_kit::Bounds::centered_at(
                 display_bounds.center(),
                 window_size,
             )),
             display_id: Some(display_id),
         },
         None => MainWindowPlacement {
-            bounds: WindowBounds::Windowed(gpui::Bounds::new(
-                gpui::point(px(0.0), px(0.0)),
+            bounds: WindowBounds::Windowed(gpui_kit::Bounds::new(
+                gpui_kit::point(px(0.0), px(0.0)),
                 window_size,
             )),
             display_id: None,
@@ -107,8 +117,13 @@ fn main_window_placement(cx: &App) -> MainWindowPlacement {
 }
 
 impl DesktopLaunchMode {
-    fn from_arguments(arguments: impl IntoIterator<Item = String>) -> Result<Self> {
-        let arguments = arguments.into_iter().collect::<Vec<_>>();
+    fn from_arguments<S: AsRef<std::ffi::OsStr>>(
+        arguments: impl IntoIterator<Item = S>,
+    ) -> Result<Self> {
+        let arguments = arguments
+            .into_iter()
+            .map(|argument| argument.as_ref().to_os_string())
+            .collect::<Vec<_>>();
         let background = arguments.iter().any(|argument| argument == "--background");
         let silent_start = arguments
             .iter()
@@ -139,6 +154,8 @@ impl DesktopLaunchMode {
             .context("--browser-dialog requires --browser-correlation-id")?
             .get(1)
             .context("--browser-dialog requires a correlation ID value")?
+            .to_str()
+            .context("--browser-correlation-id must be Unicode")?
             .parse::<Uuid>()
             .context("--browser-correlation-id must be a UUID")?;
         Ok(Self::BrowserDialog { correlation_id })
@@ -168,8 +185,14 @@ impl DesktopLaunchMode {
     }
 }
 
-fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Result<()> {
-    let mut runtime = DesktopRuntime::initialize(instance_wait)?;
+fn run(
+    instance_wait: std::time::Duration,
+    launch_mode: DesktopLaunchMode,
+    initial_archive: Option<nxtools_protocol::desktop_archive_intent::DesktopArchiveIntent>,
+) -> Result<()> {
+    let (main_focus, main_show) =
+        archive_launch::main_window_presentation(launch_mode, initial_archive.is_some());
+    let mut runtime = DesktopRuntime::initialize(instance_wait, initial_archive)?;
     install_panic_logging();
     let platform_bridge = runtime
         .platform_bridge
@@ -183,6 +206,10 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
         .clipboard_worker
         .take()
         .context("desktop runtime did not provide clipboard history worker")?;
+    let archive_launches = runtime
+        .archive_launches
+        .take()
+        .context("desktop archive ingress unavailable")?;
     let finder_catalog = runtime
         .finder_catalog
         .take()
@@ -197,28 +224,56 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
     let network_policy = runtime.network_policy.clone();
     let app_config = runtime.config.clone();
     let config_path = runtime.config_path.clone();
+    let archive_ui_state_path = nxtools_core::AppPaths::discover()?
+        .data_dir
+        .join("archive-ui-state.json");
     let log_dir = runtime.log_dir.clone();
+    let extension_service = runtime.extension_service.clone();
+    let extension_ui_calls = runtime.extension_ui_calls.take();
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
 
     let worker_shutdown = clipboard_worker.clone();
-    Application::new()
+    gpui_kit::application()
         .with_assets(NxToolsAssets)
         .run(move |cx: &mut App| {
-            gpui_component::init(cx);
+            gpui_kit::init(cx);
+            crate::ui::markdown_document::init(cx);
+            //Unknown native animation preference is conservative until PlatformHost's snapshot.
+            cx.set_reduce_motion(true);
             crate::theme::apply_component_theme(cx);
+            crate::theme::set_theme_preference(app_config.system.theme, cx);
 
             let notifications = cx.new(|_| NotificationCenter::default());
+            crate::notifications::register(&notifications, cx);
+            notifications.update(cx, |center, cx| {
+                center.set_position(app_config.system.notification_position, cx);
+                center.set_duration_seconds(app_config.system.notification_duration_seconds, cx);
+            });
             let platform_bridge = Rc::new(platform_bridge);
+            crate::archive::register(
+                Rc::clone(&platform_bridge),
+                app_config.archive.clone(),
+                archive_ui_state_path,
+                cx,
+            );
+            crate::archive::set_config_path(config_path.clone(), cx);
+            crate::archive_launch::start(archive_launches, Rc::clone(&platform_bridge), cx);
+            cx.set_global(crate::extensions::ui_host::ExtensionServiceGlobal(
+                extension_service.clone(),
+            ));
             // Close-to-tray is an active platform capability, not merely a persisted preference.
             // Keep it disabled until PlatformHost confirms that the tray icon and startup adapter
             // were configured, otherwise a failed tray creation could hide the only UI surface.
             let system_settings = Rc::new(std::cell::RefCell::new(SystemSettings {
                 start_on_login_silently: false,
                 close_to_tray: false,
+                theme: app_config.system.theme,
+                notification_position: app_config.system.notification_position,
+                notification_duration_seconds: app_config.system.notification_duration_seconds,
             }));
             let network_settings = cx.new(|_| {
                 NetworkSettingsApplication::new(
-                    network_policy,
+                    network_policy.clone(),
                     app_config.clone(),
                     config_path.clone(),
                     notifications.clone(),
@@ -264,6 +319,9 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                     cx,
                 )
             });
+            clipboard.update(cx, |owner, cx| {
+                owner.bind_currency_network(network_policy.clone(), cx)
+            });
             network_settings.update(cx, |owner, _| {
                 owner.bind_clipboard(clipboard.downgrade());
                 owner.bind_quick_launch(quick_launch.downgrade());
@@ -288,6 +346,9 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                 downloads.open_taskbar_overlay(cx);
             });
             cx.set_global(ClipboardApplicationGlobal::new(clipboard.clone()));
+            if let Some(receiver) = extension_ui_calls {
+                crate::extensions::ui_host::start_ui_host(receiver, cx);
+            }
 
             let clipboard_for_window = clipboard.downgrade();
             let quick_launch_for_window = quick_launch.downgrade();
@@ -297,6 +358,7 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
             let close_platform = Rc::clone(&platform_bridge);
             let close_behavior = Rc::clone(&system_settings);
             let startup_started_at = Instant::now();
+            let screen_notifications = notifications.clone();
             let placement = main_window_placement(cx);
             let window = cx.open_window(
                 WindowOptions {
@@ -306,8 +368,8 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                         appears_transparent: true,
                         traffic_light_position: None,
                     }),
-                    focus: launch_mode.main_window_focus(),
-                    show: launch_mode.main_window_show(),
+                    focus: main_focus,
+                    show: main_show,
                     kind: WindowKind::Normal,
                     is_movable: true,
                     is_resizable: true,
@@ -317,6 +379,9 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                     app_id: Some("NxTools.Next".into()),
                     window_min_size: Some(size(px(920.0), px(480.0))),
                     window_decorations: Some(WindowDecorations::Client),
+                    app_owns_titlebar_drag: false,
+                    inactive_frame_interval: None,
+                    icon: None,
                     tabbing_identifier: None,
                 },
                 move |window, cx| {
@@ -396,6 +461,14 @@ fn run(instance_wait: std::time::Duration, launch_mode: DesktopLaunchMode) -> Re
                         .flatten()
                 })
                 .unwrap_or_default();
+            if let Ok(source) = &window {
+                crate::notifications::screen::attach(
+                    screen_notifications,
+                    Rc::clone(&platform_bridge),
+                    (*source).into(),
+                    cx,
+                );
+            }
             if main_window_handle != 0
                 && let Ok(paths) = AppPaths::discover()
             {
@@ -448,12 +521,16 @@ fn install_panic_logging() {
 
 fn main() {
     #[cfg(not(debug_assertions))]
-    if std::env::args().any(|argument| argument == "--ui-preview") {
+    if std::env::args_os().any(|argument| argument == "--ui-preview") {
         eprintln!("Isolated UI preview is available only in Debug builds.");
         std::process::exit(2);
     }
     #[cfg(debug_assertions)]
-    match main_window::visual_preview::requested(&std::env::args().collect::<Vec<_>>()) {
+    match main_window::visual_preview::requested(
+        &std::env::args_os()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect::<Vec<_>>(),
+    ) {
         Ok(true) => {
             main_window::visual_preview::run();
             return;
@@ -465,10 +542,20 @@ fn main() {
         }
     }
     let instance_wait = protected_restart_instance_wait();
-    let launch_mode = match DesktopLaunchMode::from_arguments(std::env::args()) {
+    let launch_mode = match DesktopLaunchMode::from_arguments(std::env::args_os()) {
         Ok(launch_mode) => launch_mode,
         Err(error) => {
             eprintln!("NxTools could not parse its startup intent: {error:#}");
+            std::process::exit(2);
+        }
+    };
+    let archive_intent = match std::env::current_dir()
+        .ok()
+        .and_then(|cwd| archive_launch::parse_arguments(std::env::args_os().skip(1), &cwd).ok())
+    {
+        Some(intent) => intent,
+        None => {
+            eprintln!("NxTools could not parse archive startup arguments (InvalidRequest).");
             std::process::exit(2);
         }
     };
@@ -477,21 +564,41 @@ fn main() {
         Ok(false) => {}
         Err(error) => eprintln!("NxTools could not use the protected desktop copy: {error:#}"),
     }
-    if launch_mode.should_summon_running_instance() {
-        // A second ordinary desktop launch is not a failure: summon the
-        // running instance's main window and exit cleanly.
-        match runtime::summon_running_desktop() {
-            Ok(true) => return,
-            Ok(false) => {}
-            Err(error) => eprintln!("NxTools could not summon the running instance: {error:#}"),
-        }
-    } else {
-        match runtime::desktop_instance_is_running() {
-            Ok(true) => return,
-            Ok(false) => {}
-            Err(error) => {
-                eprintln!("NxTools could not check the existing desktop instance: {error:#}");
+    let forwarded = archive_launch::route_before_startup(
+        archive_intent.as_ref(),
+        runtime::forward_running_archive,
+        || {
+            if launch_mode.should_summon_running_instance() {
+                match runtime::summon_running_desktop() {
+                    Ok(forwarded) => Ok(forwarded),
+                    Err(error) => {
+                        eprintln!("NxTools could not summon the running instance: {error:#}");
+                        Ok(false)
+                    }
+                }
+            } else {
+                match runtime::desktop_instance_is_running() {
+                    Ok(running) => Ok(running),
+                    Err(error) => {
+                        eprintln!(
+                            "NxTools could not check the existing desktop instance: {error:#}"
+                        );
+                        Ok(false)
+                    }
+                }
             }
+        },
+    );
+    match forwarded {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(error) => {
+            let failure = error
+                .downcast_ref::<nxtools_protocol::desktop_archive_intent::LaunchFailure>()
+                .copied()
+                .unwrap_or(nxtools_protocol::desktop_archive_intent::LaunchFailure::Disconnected);
+            eprintln!("NxTools archive handoff failed ({failure}).");
+            std::process::exit(1);
         }
     }
     let result = match launch_mode {
@@ -500,17 +607,28 @@ fn main() {
         DesktopLaunchMode::Normal
         | DesktopLaunchMode::SilentStart
         | DesktopLaunchMode::BrowserDialog { .. } => {
-            run(instance_wait, launch_mode).context("desktop startup failed")
+            run(instance_wait, launch_mode, archive_intent.clone())
+                .context("desktop startup failed")
         }
     };
     if let Err(error) = result {
-        // An instance conflict is not a product failure: the running instance
-        // owns the desktop, so leave quietly without polluting the failure
-        // report or raising a native dialog.
-        let error_text = format!("{error:#}");
-        if error_text.contains("another desktop instance is already running") {
-            eprintln!("NxTools is already running; no new window was opened.");
-            std::process::exit(0);
+        match archive_launch::recover_instance_race(
+            &error,
+            archive_intent.as_ref(),
+            runtime::forward_running_archive,
+        ) {
+            Ok(true) => return,
+            Ok(false) => {}
+            Err(error) => {
+                let failure = error
+                    .downcast_ref::<nxtools_protocol::desktop_archive_intent::LaunchFailure>()
+                    .copied()
+                    .unwrap_or(
+                        nxtools_protocol::desktop_archive_intent::LaunchFailure::Disconnected,
+                    );
+                eprintln!("NxTools archive handoff after startup race failed ({failure}).");
+                std::process::exit(1);
+            }
         }
         let log_dir = AppPaths::discover().ok().map(|paths| paths.log_dir);
         let platform_host = std::env::current_exe().ok().and_then(|executable| {
@@ -529,10 +647,12 @@ fn main() {
 }
 
 fn protected_restart_instance_wait() -> std::time::Duration {
-    let mut arguments = std::env::args();
+    let mut arguments = std::env::args_os();
     while let Some(argument) = arguments.next() {
         if argument == "--wait-for-instance-release-ms"
-            && let Some(milliseconds) = arguments.next().and_then(|value| value.parse::<u64>().ok())
+            && let Some(milliseconds) = arguments
+                .next()
+                .and_then(|value| value.to_str().and_then(|value| value.parse::<u64>().ok()))
         {
             return std::time::Duration::from_millis(milliseconds.min(15_000));
         }
@@ -651,7 +771,7 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
 #[cfg(test)]
 mod protected_desktop_tests {
     use super::*;
-    use gpui::TestAppContext;
+    use gpui_kit::TestAppContext;
 
     #[test]
     fn browser_dialog_launch_minimizes_main_window_without_claiming_focus() {
@@ -725,7 +845,7 @@ mod protected_desktop_tests {
         }
     }
 
-    #[gpui::test]
+    #[gpui_kit::test]
     fn initial_window_placement_binds_bounds_to_the_native_display(cx: &mut TestAppContext) {
         let display_id = cx.update(|app| {
             app.primary_display()
@@ -733,8 +853,8 @@ mod protected_desktop_tests {
                 .id()
         });
         for dpi_scale in [1.0_f32, 1.25, 1.5] {
-            let logical_display_bounds = gpui::Bounds::new(
-                gpui::point(px(0.0), px(0.0)),
+            let logical_display_bounds = gpui_kit::Bounds::new(
+                gpui_kit::point(px(0.0), px(0.0)),
                 size(px(2560.0 / dpi_scale), px(1440.0 / dpi_scale)),
             );
             let placement =
@@ -755,7 +875,7 @@ mod protected_desktop_tests {
         );
         assert_eq!(
             fallback.bounds.get_bounds().origin,
-            gpui::point(px(0.0), px(0.0))
+            gpui_kit::point(px(0.0), px(0.0))
         );
     }
 

@@ -1,0 +1,82 @@
+{"file":".trellis/spec/index.md","reason":"Owner routing and current authority"}
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust state/layout, GPUI rendering and C# Windows ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Deferred callbacks, bounded correlated operations and atomic section saves"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Mandatory component-first selection and Toolbar variant transformation"}
+{"file":".trellis/tasks/10-16-archive-manager/ui-spec.md","reason":"Full component ledger and mandatory links to complete current UI authority"}
+{"file":"docs/reference-code/gpui-kit-component-table.md","reason":"Current official component discovery"}
+{"file":".trellis/tasks/10-16-archive-manager/README.md","reason":"Handoff decisions and full-read links; long current UI/API references must be explicitly read"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Bounded STA, native OLE, result identity and Windows safety ownership"}
+{"file":"docs/reference-code/archive.md","reason":"Bandizip resources, supplied source findings and evidence limits"}
+{"file":".trellis/tasks/10-16-archive-manager/prd.md","reason":"Approved A–F first-release requirements and capability scope"}
+{"file":".trellis/tasks/10-16-archive-manager/design.md","reason":"Technical interface, UI ledger, settings and safety design"}
+{"file":".trellis/tasks/10-16-archive-manager/implement.md","reason":"Canonical phase sequence and completion gates"}
+{"file":".trellis/tasks/10-16-archive-manager/acceptance.md","reason":"Red-capable real-interface acceptance cases"}
+{"file":".trellis/spec/nxtools-archive/backend/index.md","reason":"Implemented Phase A public engine and source-backed owner contracts"}
+{"file":".trellis/tasks/10-16-archive-manager/research/codec-capability-gates.md","reason":"Exact codec resource/cancellation/split gaps; worker decision required"}
+{"file":".trellis/tasks/10-16-archive-manager/acceptance-remediation.md","reason":"Historical source lease/budget repair evidence; strict-CAS overwrite FAIL is superseded by later approved contract, not current blocker"}
+{"file":".trellis/tasks/10-16-archive-manager/overwrite-remediation.md","reason":"Latest approved rechecked atomic-path contract, accepted TOCTOU, native ABI and exact verification; strict target-ID CAS superseded"}
+{"file":".trellis/tasks/10-16-archive-manager/overwrite-acceptance-remediation.md","reason":"Latest independent target-error and terminal-log repairs, actual worker red/green32fixtures, current-call ownership and remaining Phase A"}
+{"file":".trellis/tasks/10-16-archive-manager/phase-a-capability-matrix.md","reason":"Capability evidence; single current owner phase-a-checkpoint.md; historical reds preserved"}
+{"file":".trellis/spec/platformhost/archive-creation.md","reason":"Schema2 creation/partial_read_v1 compatibility, exact held token reads, full read-back verification and native ownership"}
+{"file":".trellis/tasks/10-16-archive-manager/research/xz-capability.md","reason":"Exact XZ allocation/index/encoder and typed decoder-I/O evidence; previous per-turn edit-stop resolved"}
+{"file":".trellis/tasks/10-16-archive-manager/xz-read-evidence.md","reason":"Public XZ adapters and actual98Job/worker operations, source/budget/integrity/cancel contracts and exact red-green results"}
+{"file":".trellis/tasks/10-16-archive-manager/phase-a-checkpoint.md","reason":"Unique current Phase A status; exact integrated counts and remaining exits, not historical baselines"}
+{"file":".trellis/tasks/10-16-archive-manager/research/zstd-capability.md","reason":"Exact native dependency/window/frame/error/license APIs, independent oracle and actual bounded read/native evidence"}
+{"file":".trellis/tasks/10-16-archive-manager/research/zip-read-capability.md","reason":"Exact method/crypto API and independent oracles,77/54remediation references;historical AESred/edit-stop preserved not current blocker"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-read-remediation.md","reason":"Two independent defects red-green,AES strict framing/HMAC/CRC,combination/noEOS public/native evidence,exact integration and globalfmt limitation"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-create-contract.md","reason":"Minimal creation/source/output/wire seam and exact ZIP8.6.0 public writer/reference findings"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-create-evidence.md","reason":"Historical pre-independent-review creation evidence;descriptor/EOF/large-timeout fixes and4GiBZIP64PASS retained,not proof against later admission findings"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-create-remediation.md","reason":"Historical immutable admission/namespace,parent fixes82/75;later output-preparation repair governs current status"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-create-acceptance-review.md","reason":"Preserved independent rejection and concrete defects;old82/62not proof against mutable admission/namespace findings"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-create-remediation-acceptance.md","reason":"Retained independent pre-admission directory-side-effect failure;75PASSdid not detect missing internal roots"}
+{"file":".trellis/tasks/10-16-archive-manager/zip-create-output-preparation.md","reason":"Actual worker red-green,held read-only preparation before create,retained-directory cleanup policy,82/80integration incl largeZIP64once"}
+{"file":".trellis/tasks/10-16-archive-manager/research/tree-create-capability.md","reason":"Exact7z/TAR/TGZ/TXZ APIs,header memory,source references and native directory payload invariant"}
+{"file":".trellis/tasks/10-16-archive-manager/tree-create-evidence.md","reason":"Actual per-format red-green,independent oracle,source/native lifecycle,budget/error repairs and final integration evidence"}
+{"file":".trellis/tasks/10-16-archive-manager/tree-create-acceptance-review.md","reason":"Preserved independent source-confirmed verifier typed-I/O finding;no real failing-disk/data-loss evidence"}
+{"file":".trellis/tasks/10-16-archive-manager/sevenz-create-typed-io-remediation.md","reason":"Private real create/verifier fault seam,first storage provenance,red2pass5fail to green7/7,final93Rust89CSharp,ZIP64once and remaining PhaseA"}
+{"file":".trellis/spec/nxtools-archive/backend/extraction-metadata.md","reason":"Typed format metadata,explicit legacy-wire authority and exact UnRAR pack1 ABI"}
+{"file":".trellis/spec/platformhost/archive-extraction-metadata.md","reason":"Held native metadata/fixed bounded MOTW,directory ownership and metadata-aware cleanup"}
+{"file":".trellis/tasks/10-16-archive-manager/extraction-metadata-contract.md","reason":"Approved slice and original publication/default/compatibility/failure invariants"}
+{"file":".trellis/tasks/10-16-archive-manager/extraction-metadata-evidence.md","reason":"Actual per-format red-green,review repair,96Rust/106CSharp plus postrepair105,ZIP64once and honest native limits"}
+{"file":".trellis/tasks/10-16-archive-manager/extraction-metadata-acceptance.md","reason":"Preserved independent GNUnegative/PAXempty P2 findings;historical96/106not this repair"}
+{"file":".trellis/tasks/10-16-archive-manager/research/extraction-metadata-sources.md","reason":"Verified GNUfixed12signed encoding/POSIXlocal deletion/globalclear compatibility and independent oracle limits"}
+{"file":".trellis/tasks/10-16-archive-manager/tar-time-remediation.md","reason":"Bounded twoP2 repair,exact red-green/current integration and cleanup;no PhaseB or fullPhaseA claim"}
+{"file":".trellis/tasks/10-16-archive-manager/tar-time-acceptance.md","reason":"Independent accepted historical TAR baseline;not this slice verification"}
+{"file":".trellis/tasks/10-16-archive-manager/source-deletion-contract.md","reason":"Explicit consent/full lifecycle/whole-root refusal/minimal internal qualification and native evidence boundary"}
+{"file":".trellis/tasks/10-16-archive-manager/research/source-recycle-native-capability.md","reason":"Installed SDK/public Shell APIs,source lease sharing/race,no real recycle authority and exact pending decision"}
+{"file":".trellis/spec/nxtools-archive/backend/source-deletion.md","reason":"Lifecycle facts,private schema2 compatibility,source-root coverage and default-off one-shot qualification"}
+{"file":".trellis/spec/platformhost/archive-source-deletion.md","reason":"Original object/session authorization,bounded STA/typed per-source results,independent archive projection and privacy"}
+{"file":".trellis/tasks/10-16-archive-manager/source-deletion-evidence.md","reason":"Actual red-green/108Rust117CSharp/ZIP64once and native protection decision evidence limits"}
+{"file":".trellis/tasks/10-16-archive-manager/source-deletion-acceptance.md","reason":"Preserved independent P1 old evidence/new source/clone authority and P2 deterministic stalefinish;108/117historicalgreennot proof"}
+{"file":".trellis/tasks/10-16-archive-manager/source-deletion-remediation.md","reason":"Original productionRun private session and lifecyclemarker owner fixes,actualred-green112Rust119CSharp,ZIP64once and nativecontractunchanged"}
+{"file":".trellis/tasks/10-16-archive-manager/product-read-contract.md","reason":"Bounded Phase A real product owner/pipe/runner call chain, helper responsibility and lifecycle invariants"}
+{"file":".trellis/tasks/10-16-archive-manager/product-read-wire.md","reason":"Exact product read v1, typed errors, metadata budget/credit and old private request compatibility"}
+{"file":".trellis/spec/nxtools-archive/backend/product-read.md","reason":"Executable headless owner/IPC/native terminal and credit regression contracts"}
+{"file":".trellis/tasks/10-16-archive-manager/product-read-evidence.md","reason":"Actual real-chain red-green,final124/126,names/ZIP64once and retained failures/cleanup"}
+{"file":".trellis/tasks/10-16-archive-manager/product-read-csharp-evidence.md","reason":"C# actual helper/session/Job/credit/detached fixture verification and development/deployment limits"}
+{"file":".trellis/tasks/10-16-archive-manager/product-read-acceptance.md","reason":"Immutable independent P2-1 runtime reproduction and P2-2 source-confirmed-only original evidence"}
+{"file":".trellis/tasks/10-16-archive-manager/product-read-p2-remediation.md","reason":"This repair original router cancellation owner, atomic overflow epoch, deterministic reds, actual worker pressure cleanup and exact fresh verification"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-acceptance-contract.md","reason":"Bounded Debug resource authority,preflight/repetition/fixture/cleanup and explicit product-budget limits"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-acceptance-evidence.md","reason":"Actual100k/1GiB measurements,timeoutcause red-green,partial limitations,exact stable gates and all preserved failures"}
+{"file":".trellis/tasks/10-16-archive-manager/research/resource-boundaries.md","reason":"Verified engine/worker/runner/Job/product ceilings and timeoutcause ordering without overlarge reference injection"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-tool-repair-contract.md","reason":"Tool-only safe-stop owner/state, required PID sample validity and separate dispatch timing; historical reports immutable"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-acceptance-review.md","reason":"Preserved independent P1/P2 symptoms to lock down with real behavior red-green; not a passed current tool contract"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-tool-repair-acceptance.md","reason":"Immutable independent acceptance: original three corrections passed, C#132/132 prior evidence, retained malformed RESOURCE summary P2 and unexplained historical exit"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-summary-p2-repair.md","reason":"Python-only summary P2 red-green, bounded independent summary_parse completeness, valid events/later attempts and unchanged raw facts/input hashes; stop after Python/document gates"}
+{"file":".trellis/tasks/10-16-archive-manager/resource-summary-p2-acceptance.md","reason":"Immutable independent acceptance closes final tool summary P2; old resource/history results are not current product100k evidence"}
+{"file":".trellis/tasks/10-16-archive-manager/product-100k-contract.md","reason":"Explicit finite readv2/defaultcompatibility, independent model/Job/transport/retained budgets, legacybootstrap upgrade before source reads and preserved lifecycle"}
+{"file":".trellis/tasks/10-16-archive-manager/product-100k-evidence.md","reason":"Actual100kmanifest/Debugsample and stoppedattempt+declaredrepeat, partialframe red-green, final150/53/30Rust134CSharp and cleanup/history limits"}
+{"file":".trellis/tasks/10-16-archive-manager/product-100k-acceptance.md","reason":"Immutable independent primary100kcorrectnessPASS but fullobservationFailed/Stopped due statusPermissionError; followupreuseunverified, exactcontenderunknown"}
+{"file":".trellis/tasks/10-16-archive-manager/status-read-p2-contract.md","reason":"Pythononly native32/33finite recovery sharedmain/sampler/final, preserved errorcodes and stale-status failclosed; no product/writer/budget/large-rerun scope"}
+{"file":".trellis/tasks/10-16-archive-manager/status-read-p2-evidence.md","reason":"Realreader/driver red2->green,14status42Python and exactnotrunlimits; toolfix does not replace independent resourceacceptance"}
+{"file":".trellis/tasks/10-16-archive-manager/status-read-p2-acceptance.md","reason":"Prior independent PASS of bounded32/33readerrepair; no oldFailedrewrite or allwriter-races guarantee"}
+{"file":".trellis/tasks/10-16-archive-manager/product-100k-post-status-observation.md","reason":"ONEauthorizedfresh100kpostrepair observation PASS/same-routerassertion with exactPID/statusread/cleanup/rawhashes; newobservation pendingindependentacceptance, notPhaseA/ENG08signoff"}
+{"file":".trellis/tasks/10-16-archive-manager/product-100k-post-status-acceptance.md","reason":"Independent PASS of one finite100k product correctness/Debug resource/original connection cleanup reuse; no repeat, historical Failed/Stopped unchanged"}
+{"file":".trellis/tasks/10-16-archive-manager/windows-long-path-contract.md","reason":"Authorized Phase A local Windows long-path real product/source/native output contract, dangerous member separation and truthful original publication/cancel/cleanup; no system policy or source deletion"}
+{"file":".trellis/tasks/10-16-archive-manager/research/windows-long-path-sources.md","reason":"Reference-first exact legacy/Archiver/SupaZip path/open/create/extract/publication/cancel sources; source inspection is not runtime Windows long-path proof"}
+{"file":".trellis/tasks/10-16-archive-manager/windows-long-path-evidence.md","reason":"Actual local long-path product/native ZIP regression commands and first test-infrastructure failures retained; production unchanged, pending independent acceptance"}
+{"file":".trellis/tasks/10-16-archive-manager/windows-long-path-acceptance.md","reason":"Independently accepted bounded localZIP long-path source/product/native publication slice; no completeENG08or repeatmatrix"}
+{"file":".trellis/tasks/10-16-archive-manager/worker-cancel-contract.md","reason":"Original input reception/work-thread observation/no later output and native actualcleanup remain distinct; fixed worker-local timing,small deterministic real barriers,no new runtime"}
+{"file":".trellis/tasks/10-16-archive-manager/worker-cancel-evidence.md","reason":"Actual missingfacts red then1green/final6CSharp77Rust,worker receiveobserve/native credit/pausedcontrol/originaltypedIPC and cleanup-held source/partial/slots; pendingindependentacceptance"}
+{"file":".trellis/tasks/10-16-archive-manager/worker-cancel-acceptance.md","reason":"Independent PASS of named cooperative receive/observe/credit/pause/nativecleanup conditions; not fullENG09,no repeatmatrix"}
+{"file":".trellis/tasks/10-16-archive-manager/phase-a-exit-ledger.md","reason":"Canonical PhaseA exitID subconditions/evidence levels and finite B1-B3/C1-C5/D1-D3; sole next Autoencoding slice, no stage/safety amendment or implementation thisturn"}

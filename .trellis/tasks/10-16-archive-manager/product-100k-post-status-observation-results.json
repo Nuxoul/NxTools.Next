@@ -1,0 +1,104 @@
+{
+  "schema": 1,
+  "date": "2026-10-20",
+  "phase": "Phase A — Engine contracts and safety foundation",
+  "status": "New observation complete; pending independent acceptance",
+  "not_full_slice_or_phase_acceptance": true,
+  "authorization": {"product100k_v2_runs": 1, "automatic_retry": false, "performance_repeat": false, "other_large_cases": 0, "implementation_changes": 0},
+  "commands": [
+    {"command": "python -m unittest discover -s tests/performance/archive-resources -p test_*.py -v", "exit": 0, "tests": 42, "passed": 42, "failed": 0, "errors": 0, "skipped": 0, "elapsed_seconds": 0.538, "log_sha256": "e64b84355bcafc9b4cbdbf4b52e12672a0f91580a9838db2be8afae63ae4b591"},
+    {"command": "python tests/performance/archive-resources/fixtures.py ROOT --catalog-only", "exit": 0, "no_1gib_generated": true},
+    {"command": "python tests/performance/archive-resources/run.py ROOT product100k-v2 correctness", "exit": 0, "probe_exit": 0, "start": "2026-10-20T10:29:09.616035+08:00", "end": "2026-10-20T10:29:22.147588+08:00", "external_command_seconds": 12.530884300000253, "observation_count": 1},
+    {"command": "python post-status-100k-assert.py (scratch read-only assertions; no product execution)", "exit": 0, "assertions": 42, "all_pass": true}
+  ],
+  "provenance": {
+    "source_binary_baseline_files": 386,
+    "baseline_sha256": "9c2fd98d2f11d1f71782337ab93d8adfcadb0b459baf2610900075f2509f7199",
+    "source_and_binaries_unchanged_during_observation": true,
+    "builds_this_turn": 0,
+    "small_real_chain_extra_runs": 0,
+    "rebuild_not_required": "Existing Debug binaries newer than relevant Rust/C# sources; worker/probe fingerprints both isolated-codecs with -C codegen-units=256; accepted status repair is Python only",
+    "worker": {"path": "target/debug/nxtools-archive-worker.exe", "bytes": 9895424, "sha256": "b3adcdfa7a963132f963c23b46e233072accb4358e6b9364023df1d770f49b63", "mtime": "2026-10-20T08:44:02.258272+08:00", "features": ["isolated-codecs"]},
+    "probe": {"path": "target/debug/examples/resource_probe.exe", "bytes": 6723584, "sha256": "9150fb002231f0511ce45bf7d799905a5eb69d875d522287886442feabb328cf", "mtime": "2026-10-20T08:43:57.477628+08:00", "features": ["isolated-codecs"]},
+    "isolated_test_apphost": {"path": "csharp/NxTools.PlatformHost.Tests/bin/Debug/net8.0-windows/NxTools.PlatformHost.Tests.exe", "sha256": "c4c3fb04e085b2ca48261c7a8def7df60e6236410bc9493ba54ec3b958be244e"},
+    "test_dll_sha256": "727358361e3aba4ccea225be42b51eb7a2556bc5a1885fdf2d08a1a037d1f7a2",
+    "product_dll_sha256": "e91dfc141663263a9486b82de818e07036c4707e8a00ae5f194905ea3803d6bc",
+    "control_py_sha256": "111a785b82ffeabc25980a7f29b53748c5a988e8ab7523e86dd67daec5426b97",
+    "driver_loop_py_sha256": "46a3fcc4d1af7bfadf508e09f7e217b6f4d74ec18944fd7f9f0a5a53078fd6eb",
+    "run_py_sha256": "1492818f65f9b52c6002c8326d1b7b3130b98242de34fed1feaf925fb212799b",
+    "accepted_status_repair_report_sha256": "f32f38dd4f73f47eb17942721d9aef56bf3fa8f7c11b4a3fab38fe159a12a85e"
+  },
+  "preflight": {"cargo_rustc_archive_processes": 0, "archive_test_pipes": 0, "fixed_helpers": 0, "physical_bytes": 34095611904, "available_bytes": 20470222848, "commit_limit_bytes": 55570448384, "commit_headroom_bytes": 26443866112, "disk_free_c_bytes": 20683292672, "disk_free_d_bytes": 44753063936},
+  "fixture": {
+    "root": "archive-resources-90ea1e79-dcf7-4d8b-9eda-87bbd4318e72",
+    "entries": 100000, "directories": 100, "unicode_files": 100, "empty_files": 9081, "payload_bytes": 1362285,
+    "zip_bytes": 12161983, "zip_sha256": "34a9f9fe2e1d669b825d3557e523cadf00aeabf1ebfe187c99fcd4475cda956d",
+    "manifest_bytes": 8470828, "manifest_sha256": "4fd4bdca3f5ceb0f388206c1c2a12cf827be97856313f3be85c5efb31e2768dc",
+    "credit_zip_bytes": 537, "credit_zip_sha256": "2e12e154c10fbcb8b35883ab8375c3acd101322156752e3a4ff3a3b1b036e571",
+    "generator_sha256": "381e35b7eec5ce89bad68ebc71d1179c41afeb4a7415c0e58ab473617360111f",
+    "streamed_product_manifest_all_fields_exact": true,
+    "independent_offline_zip_manifest_all100000_fields_exact": true,
+    "no_extra_product_execution_for_offline_check": true,
+    "all_inputs_retained": true
+  },
+  "run_id": "55bde2b1-9f51-4954-964f-1dfa74c643ac",
+  "operation_id": "5a4b55b1-294a-4c4a-9fb0-fce3e8e282c6",
+  "snapshot_id": "9ce8cd0d-5a79-4a9e-a99f-b016274c9ddc",
+  "primary": {
+    "format": "Zip", "member_fields": ["ordinal", "name", "kind", "size", "packed_size", "encrypted", "provenance", "codepage"],
+    "same_actual_snapshot": true, "contiguous_original_ordinals": true, "contiguous_batch_sequence": true,
+    "entries": 100000, "files_verified_open_count": 100000, "batch_count": 391,
+    "owner_remote_terminal_equal": true, "status": "succeeded", "code": null, "cleanup_complete": true,
+    "first_batch_ms": 3273.9116, "full_product_terminal_ms": 11399.649800000001, "runner_elapsed_ms": 11392,
+    "whole_probe_ms": 12429.177199999685, "product_timeout_ms_unchanged": 30000,
+    "max_batch_entries": 256, "max_batch_bytes": 42817, "max_inflight_batches": 1,
+    "private_cumulative_bytes": 16745255, "csharp_business_received_bytes": 16708854, "rust_business_received_bytes": 16707854,
+    "private_transport_budget_bytes": 67108864, "consumer_cumulative_budget_bytes": 67108864,
+    "engine_metadata_budget_bytes": 134217728, "engine_work_budget_bytes": 67108864, "job_process_budget_bytes": 268435456,
+    "ack_refunds_history_quota": false, "no_successful_truncation": true, "default_resource_limit": true, "unversioned_100k_invalid_request_assertion_completed": true
+  },
+  "same_connection_reuse": {
+    "completed_fact": true, "fact_name": "cleanup.same_router_reused",
+    "followup_operation_id": "2966702d-60cf-4faa-bb24-f4399ff9c105", "followup_worker_pid": 2296,
+    "followup_admission_and_success_assertions_completed": true, "followup_actual_cleanup_assertion_completed": true,
+    "helper_remove_after_original_and_followup_cleanup": true,
+    "single_one_shot_pipe_host_pid": 1496, "host_reconnect_path": false,
+    "connection_generation_unchanged_evidence": "Original generation asserted after primary; the same bridge and single TEST host connect once without reconnect and execute subsequent credit.zip request; same_router_reused is emitted only after admission, succeeded terminal and cleanup assertions complete",
+    "numeric_generation": null,
+    "numeric_generation_caveat": "Not serialized by existing accepted scenario; no numeric value invented",
+    "followup_full_terminal_persisted": false,
+    "followup_terminal_caveat": "Existing scenario asserts succeeded/cleanup complete and original guard reads remote terminal for all3operation IDs, then removes owned package; final same_router fact preserved. No inference solely from a later worker."
+  },
+  "verdicts": {"operation": "Succeeded", "measurement": "Complete", "stop_requested": false, "forced": false, "cleanup": "Confirmed", "resource_verdict": "PASS", "failure": null, "stderr_bytes": 0, "owner_status_errors": []},
+  "status_reads": {
+    "callers": {
+      "driver": {"reads": 1051, "attempts": 1051, "retries": 0, "recoveries": 0, "exhausted": 0, "failures": 0, "missing": 2},
+      "sampler": {"reads": 188, "attempts": 188, "retries": 0, "recoveries": 0, "exhausted": 0, "failures": 0, "missing": 1},
+      "final": {"reads": 1, "attempts": 1, "retries": 0, "recoveries": 0, "exhausted": 0, "failures": 0, "missing": 0}
+    },
+    "errors": [], "error_count": 0, "errors_truncated": false,
+    "final_fresh_cleaned_status_matches_run": true,
+    "no_conflict_observed_is_not_a_retry_recovery_test": true
+  },
+  "process_samples": [
+    {"pid": 23352, "parent_pid": 8476, "role": "Rust caller/probe_owner", "image": "target/debug/examples/resource_probe.exe", "valid_samples": 359, "counter_failures": 0, "identity_verified": true, "peak_working_set_bytes": 9105408, "peak_private_bytes": 2723840, "max_valid_gap_ms": 68.23000000000002, "alive_at_end": false},
+    {"pid": 1496, "parent_pid": 23352, "role": "isolated C# host", "image": "csharp/NxTools.PlatformHost.Tests/bin/Debug/net8.0-windows/NxTools.PlatformHost.Tests.exe", "valid_samples": 355, "counter_failures": 0, "identity_verified": true, "peak_working_set_bytes": 63897600, "peak_private_bytes": 32841728, "max_valid_gap_ms": 68.23000000000002, "alive_at_end": false},
+    {"pid": 14956, "parent_pid": 1496, "role": "actual100k Rust worker", "operation_id": "5a4b55b1-294a-4c4a-9fb0-fce3e8e282c6", "valid_samples": 326, "counter_failures": 0, "identity_verified": true, "peak_working_set_bytes": 67133440, "peak_private_bytes": 70897664, "max_valid_gap_ms": 68.23000000000002, "alive_at_end": false},
+    {"pid": 7664, "parent_pid": 1496, "role": "separate default refusal worker", "valid_samples": 11, "counter_failures": 0, "identity_verified": true, "alive_at_end": false},
+    {"pid": 2296, "parent_pid": 1496, "role": "separate small followup worker", "operation_id": "2966702d-60cf-4faa-bb24-f4399ff9c105", "valid_samples": 3, "counter_failures": 0, "identity_verified": true, "alive_at_end": false}
+  ],
+  "cleanup": {"original_source_released": true, "original_helper_released": true, "all3operations_remote_cleanup_complete": true, "source_released": true, "helper_released": true, "host_exited": true, "pipe_closed": true, "package_removed_by_original_guard": true, "postrun_archive_processes": 0, "postrun_archive_test_pipes": 0, "fixed_test_helpers": 0, "input_and_log_evidence_retained_not_cleaned": true},
+  "raw_evidence": {
+    "session_scratch": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\30608b1f-4d13-4908-94fc-6b4d37c1bb7d",
+    "attempt_sha256": "09f0eff71e8abfaddf148b6259f7575a06a7b5840ccb82675374ac32814dee16",
+    "samples_sha256": "a055d18f1fef2218f204e1eb261733f704db9ae7b87811f428ebbc5c43a117a0",
+    "final_status_sha256": "eca3f2fa26e8636ce85fce587414bd90a5aa4cdfcb6edf4439ecb2c5822692fb",
+    "driver_log": "post-status-100k-observation.log", "driver_log_sha256": "922b10b3b416b769f11821fd4b404a432699f41fade3ce6e2baa8683759ad356",
+    "command_ledger": "post-status-100k-command-result.json", "command_ledger_sha256": "0db78d459ce4ab9f13f4ad4c6f653644258d999e97ae25724b5a91e3e1036d88",
+    "assertions": "post-status-100k-assertions.json", "assertions_sha256": "14fe3ef08fba80512353d7130c755d173ca36cda14253f2ebba2924f5554936d",
+    "new_raw_files_hashed": 9, "older_session_raw_files_hashed_unchanged": 12
+  },
+  "preservation": {"original_independent_full_observation": "Failed /Stopped; unchanged", "original_independent_reuse": "not verified in that original attempt; unchanged", "original_contender_cause": "still unproved; no claim all writer races eliminated", "product_100k_acceptance_sha256": "0e3e145e1753f322731f9d0fb1f30e551608a11af4ba6426210a379fb648824d", "status_read_p2_acceptance_sha256": "f32f38dd4f73f47eb17942721d9aef56bf3fa8f7c11b4a3fab38fe159a12a85e"},
+  "caveats": ["New observation pending independent acceptance; not full slice/ENG08/Phase A/A–F acceptance", "Debug, ordinary cache state, no Release1.5s promise", "First business batch is not first paint", "20ms requested/50ms discovery; actual gap68.23ms, sampled peaks not absolute peaks", "Cumulative serialized bytes are not simultaneous retained RSS; Job budget is reservation, not measured memory", "Caller/host lifetimes include setup/default refusal/small reuse; actual100k worker separated by exact PID", "Native code/error/recovery counters were zero in this observation; no claim to re-exercise recovery or fix all writer contention", "No Cargo/C# build, code change, other real-chain test, measurement repeat,1GiB/largeZIP64, Desktop/installedhost/package/install/sign/commit/push/source delete/recycle/system change"],
+  "final_document_gates": {"spec_contracts": {"documents": 106, "owners": 14, "exit": 0}, "task_context": {"implement_entries": 73, "check_entries": 70, "exit": 0, "existing_warning": "native-contracts.md35497bytes>32768; unchanged"}, "platformhost_selector": "PASS source gate", "git_diff_check_exit": 0, "scoped_whitespace_conflict_temporary_marker": "PASS", "opening_baseline_files": 386, "authorized_changed_existing_files": 4, "unchanged_baseline_files": 382, "unchanged_historical_task_files": 82, "new_raw_files_unchanged": 9, "older_session_raw_files_unchanged": 12, "source_binaries_dependencies_unchanged": true, "tracked_dirty_diff_unchanged": true, "owned_archive_processes": 0, "archive_test_pipes": 0, "fixed_helpers": 0, "hygiene_file": "post-status-100k-final-hygiene.json"}
+}

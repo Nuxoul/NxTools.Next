@@ -1,0 +1,12 @@
+{
+  "id": "extension-workspace-ui",
+  "name": "extension-workspace-ui",
+  "title": "Extensions workspace placement and management UI correction",
+  "status": "review",
+  "dev_type": "frontend",
+  "package": "nxtools-desktop",
+  "createdAt": "2026-10-15",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "notes": "Source721Desktop/strict/workspace/fmt/5gates and5actualGPUIcaptures verified. User requested packaging: signedseq6installer delivered2026-10-15 for acceptance. PendinguserUI/installedapproval; no agentinstall/service/userdata/commit/push. See release-package.md."
+}

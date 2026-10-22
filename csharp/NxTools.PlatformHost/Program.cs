@@ -9,6 +9,13 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (ExtensionHost.ExtensionHostBroker.IsMode(args))
+        {
+            if (!ExtensionHost.ExtensionHostBroker.TryParent(args, out var extensionParent)) return 2;
+            using var extensionLog = PlatformLog.CreateDefault();
+            return await ExtensionHost.ExtensionHostBroker.RunAsync(extensionParent,
+                Console.OpenStandardInput(), Console.OpenStandardOutput(), extensionLog);
+        }
         IndexerServiceInstaller.PinCurrentProcessImage();
         if (TryParseElevatedDirectoryHelper(
                 args,
@@ -41,9 +48,22 @@ internal static class Program
                 : ErrorDialog.Show(errorReportPath!);
         }
         using var log = PlatformLog.CreateDefault();
-        if (TryParseIndexerServiceInstall(args, out var indexerPath))
+        if (args.Length == 1 && args[0] == "--trusted-update-service")
+            return TrustedUpdateBroker.RunService(log);
+        if (args.Length == 1 && args[0] == "--prepare-trusted-update")
         {
-            return IndexerServiceInstaller.InstallElevated(indexerPath!, log);
+            if (!TrustedUpdateBroker.IsEnrolled()) return 0;
+            var outcome = await TrustedUpdateBroker.RequestAsync(AppContext.BaseDirectory, Guid.NewGuid(), CancellationToken.None, log);
+            return outcome.Success ? 0 : 1;
+        }
+        if (args.Length == 3 && args[0] == "--deploy-trusted-release" && Guid.TryParse(args[2], out var trustedCorrelation))
+        {
+            if (!System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem) return 1;
+            return IndexerServiceInstaller.InstallElevated(args[1], log, trustedCorrelation, enrollUpdater: false);
+        }
+        if (IndexerServiceInstaller.TryParseInstallArguments(args, out var indexerPath, out var installCorrelation))
+        {
+            return IndexerServiceInstaller.InstallElevated(indexerPath!, log, installCorrelation);
         }
         log.Write("info", "process.start", fields: new Dictionary<string, object?>
         {
@@ -133,18 +153,6 @@ internal static class Program
         }
     }
 
-    private static bool TryParseIndexerServiceInstall(
-        IReadOnlyList<string> args,
-        out string? indexerPath)
-    {
-        indexerPath = null;
-        if (args.Count != 2 || args[0] != "--install-indexer-service")
-        {
-            return false;
-        }
-        indexerPath = args[1];
-        return true;
-    }
 
     private static bool TryParseElevatedDirectoryHelper(
         IReadOnlyList<string> args,

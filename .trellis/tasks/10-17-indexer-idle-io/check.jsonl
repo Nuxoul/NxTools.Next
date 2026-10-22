@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Actual tests, memory policy and separate source/native/package acceptance"}
+{"file":".trellis/spec/nxtools-indexer/backend/quality-guidelines.md","reason":"Last-good/search/admission/cache regression and release idle restart requirement"}
+{"file":".trellis/tasks/10-17-indexer-idle-io/prd.md","reason":"Concrete sustained I/O symptom and bounded durability acceptance"}
+{"file":".trellis/tasks/10-17-indexer-idle-io/design.md","reason":"Cursor+changes commit and old version3 compatibility"}
+{"file":".trellis/tasks/10-17-indexer-idle-io/outcomes.md","reason":"Measured installed red vs real writer red-green, exact safe tests and unmodified service/package acceptance limits"}

@@ -1,0 +1,2 @@
+# Unified Markdown
+Approved parent plan section2: replace Clipboard list/full preview/edit and Quick Launch text/Markdown preview with pinned editor0.1.0, not edit-only. Preserve complete original payload, safe400char/210DIP/8DIP list, resource bounds, passive native stages, source display, no-edit/cancel byte preservation and explicit-save-only writes. No new file editing/implicit resources/framework upgrade.

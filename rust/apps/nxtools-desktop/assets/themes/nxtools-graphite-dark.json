@@ -1,0 +1,38 @@
+{
+  "name": "NxTools Graphite Dark",
+  "author": "NxTools",
+  "themes": [{
+    "name": "NxTools Graphite Dark",
+    "mode": "dark",
+    "colors": {
+      "background": "#181A1F", "foreground": "#E7E9EE", "border": "#3B404B",
+      "accent.background": "#303540", "accent.foreground": "#E7E9EE",
+      "accordion.background": "#202329",
+      "group_box.background": "#202329", "group_box.foreground": "#E7E9EE", "group_box.title.foreground": "#B4BAC6",
+      "button.background": "#292D35", "button.foreground": "#E7E9EE", "button.hover.background": "#363C47", "button.active.background": "#414957",
+      "primary.background": "#A5B4FC", "primary.foreground": "#181A1F", "primary.hover.background": "#BBC6FF", "primary.active.background": "#929FE6",
+      "secondary.background": "#292D35", "secondary.foreground": "#E7E9EE", "secondary.hover.background": "#363C47", "secondary.active.background": "#414957",
+      "muted.background": "#292D35", "muted.foreground": "#929BAA", "caret": "#A5B4FC", "input.border": "#3B404B", "ring": "#A5B4FC",
+      "popover.background": "#292D35", "popover.foreground": "#E7E9EE", "description_list.label.foreground": "#B4BAC6",
+      "list.background": "#202329", "list.active.background": "#333B51", "list.active.border": "#5A6684", "list.hover.background": "#303540", "list.even.background": "#23272E", "list.head.background": "#292D35",
+      "table.background": "#202329", "table.active.background": "#333B51", "table.active.border": "#5A6684", "table.hover.background": "#303540", "table.even.background": "#23272E", "table.head.background": "#292D35", "table.head.foreground": "#B4BAC6", "table.row.border": "#3B404B",
+      "sidebar.background": "#202329", "sidebar.foreground": "#E7E9EE", "sidebar.border": "#303540", "sidebar.accent.background": "#333B51", "sidebar.accent.foreground": "#E7E9EE", "sidebar.primary.background": "#A5B4FC", "sidebar.primary.foreground": "#181A1F",
+      "tab.background": "#00000000", "tab.foreground": "#B4BAC6", "tab.active.background": "#292D35", "tab.active.foreground": "#E7E9EE", "tab_bar.background": "#202329", "tab_bar.segmented.background": "#202329",
+      "title_bar.background": "#181A1F", "title_bar.border": "#3B404B", "status_bar.background": "#202329", "status_bar.border": "#3B404B", "window.border": "#3B404B",
+      "selection.background": "#485B8C", "drag.border": "#A5B4FC", "drop_target.background": "#A5B4FC33",
+      "link": "#B8C4FF", "link.hover": "#D1D9FF", "link.active": "#A5B4FC",
+      "success.background": "#7BC9A0", "success.foreground": "#14261D", "success.hover.background": "#9ADBB9", "success.active.background": "#65B98D",
+      "warning.background": "#E2BE78", "warning.foreground": "#302510", "warning.hover.background": "#EED09A", "warning.active.background": "#D1A95F",
+      "danger.background": "#F28B93", "danger.foreground": "#32171B", "danger.hover.background": "#F6A7AD", "danger.active.background": "#DF747F",
+      "info.background": "#A5B4FC", "info.foreground": "#181A1F", "info.hover.background": "#BBC6FF", "info.active.background": "#929FE6",
+      "base.red": "#F28B93", "base.red.light": "#F6A7AD", "base.green": "#7BC9A0", "base.green.light": "#9ADBB9", "base.yellow": "#E2BE78", "base.yellow.light": "#EED09A", "base.blue": "#A5B4FC", "base.blue.light": "#BBC6FF", "base.magenta": "#C4A8E6", "base.magenta.light": "#D7C1EE", "base.cyan": "#93BCC8", "base.cyan.light": "#B4D2DA",
+      "progress.bar.background": "#A5B4FC", "slider.background": "#A5B4FC", "slider.thumb.background": "#E7E9EE", "switch.background": "#555E6E", "skeleton.background": "#303540",
+      "scrollbar.background": "#00000000", "scrollbar.thumb.background": "#929BAA99", "scrollbar.thumb.hover.background": "#B4BAC6", "overlay": "#00000080",
+      "chart.1": "#A5B4FC", "chart.2": "#7BC9A0", "chart.3": "#E2BE78", "chart.4": "#C4A8E6", "chart.5": "#F28B93", "chart.bullish": "#7BC9A0", "chart.bearish": "#F28B93", "chart.grid": "#3B404B"
+    },
+    "highlight": {
+      "editor.foreground": "#E7E9EE", "editor.background": "#202329", "editor.active_line.background": "#292D35", "editor.line_number": "#929BAA", "editor.active_line_number": "#E7E9EE", "editor.invisible": "#929BAA66",
+      "syntax": { "comment": {"color":"#929BAA"}, "keyword":{"color":"#C4A8E6"}, "string":{"color":"#7BC9A0"}, "number":{"color":"#E2BE78"}, "type":{"color":"#BBC6FF"}, "function":{"color":"#A5B4FC"}, "property":{"color":"#E7E9EE"}, "variable":{"color":"#E7E9EE"}, "punctuation":{"color":"#B4BAC6"} }
+    }
+  }]
+}

@@ -28,6 +28,10 @@ foreach ($contract in @(
         throw "Shared work-state component contract is missing: $contract"
     }
 }
+foreach ($component in @('Empty::new()', 'EmptyContent::new()', 'Alert::error(', 'Spinner::new().small()', 'motion_allowed(cx)')) {
+    if (-not $state.Contains($component)) { throw "Shared state actual component/motion boundary missing: $component" }
+}
+if ($state.Contains('Progress::new(')) { throw 'progress_state is loading copy, not a fabricated determinate percentage.' }
 
 if (-not $main.Contains('"download-empty-state"') -or
     -not $main.Contains('"download-detail-segments-progress"') -or

@@ -57,3 +57,12 @@ This task investigates and designs the update trust/deployment path. Product beh
 - The signing public key, manifest format, key-rotation/recovery procedure, and release pipeline are still implementation inputs to define; the private signing key must never enter the repository or client package.
 - Separate service/update UAC from user-invoked “Run as administrator” and elevated-directory helper prompts.
 - Local state proves the current package/protected hash mismatch and multiple launch paths, but does not prove which route produced every reported prompt. Exact repeat frequency and historical update route remain evidence gaps.
+
+## Approved implementation continuation
+
+The user confirmed one authorization per updated package, not repeated authorization for
+the same installed release, then approved implementation after the reference comparison.
+The historical investigation-only restrictions above describe the earlier phase. Current
+approved source scope is recorded in [implementation-approved.md](implementation-approved.md).
+Live enrollment/service changes, production signing-key provisioning and installed native
+acceptance remain separate; approval to implement is not proof that they were executed.
