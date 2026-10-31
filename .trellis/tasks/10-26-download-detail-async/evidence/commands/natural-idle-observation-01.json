@@ -1,0 +1,25 @@
+﻿[
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  100080,
+                              "ParentProcessId":  99176,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test --locked -p nx-core --test lifecycle -- --ignored"
+                          },
+                          {
+                              "ProcessId":  97024,
+                              "ParentProcessId":  100080,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name lifecycle --edition=2024 crates\\nx-core\\tests\\lifecycle.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=69 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=1 --deny=unsafe_op_in_unsafe_fn --warn=clippy::all --test --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values())\" -C metadata=4dd8bebb71016ff7 -C extra-filename=-a99738cfb6166337 --out-dir D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps -L dependency=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps --extern bytes=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libbytes-979635b08e650c36.rlib --extern http_body_util=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libhttp_body_util-1418a563088936dd.rlib --extern hyper=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libhyper-015d303733b76696.rlib --extern hyper_util=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libhyper_util-bf8163ff6a7adaaa.rlib --extern nx_core=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_core-a16a92c034074bf0.rlib --extern serde=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libserde-dca27448fc158165.rlib --extern serde_json=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libserde_json-4d1eaa0733fad99e.rlib --extern serde_yaml_ng=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libserde_yaml_ng-c820204dae521fef.rlib --extern thiserror=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libthiserror-23d3865395c3dc8e.rlib --extern tokio=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtokio-07e59a87d8ed60eb.rlib --extern uuid=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libuuid-54ff207693823edc.rlib --extern windows=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libwindows-6edc92b2cc108fb4.rlib"
+                          }
+                      ],
+        "utc":  "2026-10-26T08:37:09.6921229Z"
+    },
+    {
+        "processes":  [
+
+                      ],
+        "utc":  "2026-10-26T08:37:25.2537978Z"
+    }
+]

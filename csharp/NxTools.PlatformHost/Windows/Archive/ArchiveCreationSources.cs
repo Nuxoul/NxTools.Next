@@ -180,6 +180,14 @@ internal sealed class ArchiveCreationSources : IDisposable
         }
     }
 
+    // Replacement content is one regular held root, never a recursive source-tree add.
+    internal void RequireSingleRegularFile()
+    {
+        CheckOpen();
+        if (roots.Count != 1 || roots[0].Record.Directory) throw new ArchiveOutputException("invalid_source");
+        RevalidateRoots();
+    }
+
     internal object Execute(Guid operationId, JsonElement call)
     {
         Guid? callId = null;

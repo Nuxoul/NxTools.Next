@@ -58,3 +58,36 @@ ownership. No legacy Link tool equivalent or new native lifecycle is claimed.
 Real production red reproduced body-click opening settings without enabling; pointer,
 keyboard and temporary durable-save/settings compatibility regression then passed.
 Evidence: .trellis/tasks/10-14-installed-feedback-actions/ui-outcomes.md.
+
+## Source-aware extraction and background detection
+
+`ClipboardApplication::handle_link_detector_capture` submits detection on the existing
+clipboard owner. `clipboard/link_detection.rs` owns one running background detection
+and one latest queued capture; `tools/link_detector.rs::detect_links` owns source-aware
+extraction, target validation and deduplicated filesystem checks. Completion must match
+the current capture generation, pause generation and enabled state before showing a panel.
+New content, rejected captures, pause, blacklist updates and tool toggles retire pending
+detection results; duplicate delivery retains the same accepted request.
+An already-blocked filesystem query is not forcibly interrupted; it never runs on GPUI
+and cannot cause replacement worker growth. Accepted/start/terminal diagnostics carry
+one operation ID and bounded counts/elapsed/reason, never text, URLs or paths.
+
+Candidate boundaries depend on their source: standalone HTTP(S), explicit quotes/angle
+brackets, inline Markdown destinations, ordinary prose and complete local-path lines.
+Standalone and explicitly wrapped HTTP(S) targets preserve punctuation inside the target;
+prose excludes sentence separators and unmatched enclosing brackets. Markdown label text
+is not a target. Internal apostrophes in ordinary names do not terminate single quotes.
+Bare domains retain the known-TLD policy and support ports, queries and fragments.
+Explicit HTTP(S) continues to use the existing `url` dependency for host/port validation.
+
+A drive/UNC-leading unquoted line is one complete path, including spaces; a missing path
+does not fall back to an existing prefix. Multiple paths use separate lines or explicit
+quotes. Each distinct candidate is validated once, including negative path checks. Only
+the first 64 lines, a bounded candidate set and first 8 distinct matches are considered;
+the existing native clipboard byte limit remains authoritative. No network URL requests
+or payload diagnostics are introduced.
+
+The original one-panel reuse, focus, placement, timer, close-before-deferred-dispatch,
+explicit Copy and echo suppression remain. `link_panel_shell_command` still maps Web to
+HTTP(S) Shell Open, LocalFile to SelectInExplorer and LocalDirectory to Open. There is no
+legacy Link equivalent. Source/worker boundary tests do not certify native or visual use.

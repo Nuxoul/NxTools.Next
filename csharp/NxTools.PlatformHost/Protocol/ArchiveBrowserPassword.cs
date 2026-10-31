@@ -31,13 +31,16 @@ internal static class ArchiveBrowserPassword
             var prompt = data.GetProperty("prompt").Deserialize<ArchiveBrowserPasswordPrompt>(JsonDefaults.Options) ?? throw new InvalidDataException();
             if (envelope.CorrelationId != prompt.OperationId || prompt.Attempt is < 1 or > 3) return false;
             var password = data.GetProperty("password");
-            string? text = null;
             if (password.ValueKind != JsonValueKind.Null) {
                 if (password.ValueKind != JsonValueKind.Array || password.GetArrayLength() > 4096) return false;
-                secret = password.EnumerateArray().Select(item => item.GetByte()).ToArray();
-                text = new UTF8Encoding(false, true).GetString(secret);
-                if (text.Contains('\0')) return false;
+                secret = new byte[password.GetArrayLength()]; var index = 0;
+                foreach (var item in password.EnumerateArray()) secret[index++] = item.GetByte();
+                if (!ArchiveWorkerRunner.ValidPasswordBytes(secret)) return false;
             }
+            if (entries.IsAuthorizationPasswordOperation(prompt.OperationId))
+                return entries.RespondAuthorizationPassword(prompt.OperationId, prompt.SessionId, prompt.Generation, prompt.Ticket, secret);
+            // Legacy reads and selected-entry opens retain their existing short-lived string route.
+            var text = secret is null ? null : new UTF8Encoding(false, true).GetString(secret);
             return reads.RespondPassword(prompt, text) || entries.RespondPassword(prompt.OperationId, prompt.SessionId, prompt.Generation, prompt.Ticket, text);
         } catch (Exception failure) when (failure is JsonException or InvalidDataException or InvalidOperationException or FormatException or DecoderFallbackException or KeyNotFoundException) { return false; }
         finally { if (secret is not null) CryptographicOperations.ZeroMemory(secret); }

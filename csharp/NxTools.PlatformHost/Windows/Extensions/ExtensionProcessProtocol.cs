@@ -18,6 +18,8 @@ internal sealed record ExtensionStartRequest
     public long MemoryBytes { get; init; } = 512L * 1024 * 1024;
     public int MaxProcesses { get; init; } = 8;
     public string Stdin { get; init; } = "";
+    // Host-owned opt-in; the child never chooses its native outer budget.
+    public int? DataPlane { get; init; }
 }
 
 internal sealed record ExtensionProcessEvent(
@@ -39,6 +41,9 @@ internal static class ExtensionProcessProtocol
     internal const int InputLimit = 1024 * 1024;
     internal const int StdoutLimit = 4 * 1024 * 1024;
     internal const int StderrLimit = 64 * 1024;
+    internal const int DataWireLimit = 24 * 1024 * 1024;
+    internal static int InputBudget(ExtensionStartRequest request) => InputLimit + (request.DataPlane == 2 ? DataWireLimit : 0);
+    internal static int StdoutBudget(ExtensionStartRequest request) => StdoutLimit + (request.DataPlane == 2 ? DataWireLimit : 0);
     internal static readonly UTF8Encoding Utf8 = new(false, true);
     internal static readonly JsonSerializerOptions Json = new()
     {
@@ -105,7 +110,8 @@ internal static class ExtensionProcessProtocol
             request.MemoryBytes is < 1 or > 1073741824 || request.MaxProcesses is < 1 or > 8 ||
             !LocalFullPath(request.Executable) || !LocalFullPath(request.WorkingDirectory) ||
             request.Arguments is null || request.Arguments.Length > 128 ||
-            request.Arguments.Any(arg => arg is null || arg.Contains('\0')) || request.Stdin is null)
+            request.Arguments.Any(arg => arg is null || arg.Contains('\0')) || request.Stdin is null ||
+            request.DataPlane is not (null or 2))
             throw new ExtensionFailure("invalid_start");
         var line = ExtensionNative.CommandLine(request.Executable, request.Arguments);
         if (line.Length >= 32767) throw new ExtensionFailure("arguments_limit");

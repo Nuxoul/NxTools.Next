@@ -1,0 +1,17 @@
+[
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "BFFC41F9F629821CFE64161F3D191B90749F83CBC1A8FDA0CFF454DCA390B520",
+        "Path":  "D:\\Code\\NxTools.Next-main\\rust\\crates\\nxtools-extensions\\src\\blobs.rs"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "7468C11B2A5C04768AF36A268A0A71D75D512692AE53827E2ABFFEA2B3E014C4",
+        "Path":  "D:\\Code\\NxTools.Next-main\\rust\\crates\\nxtools-extensions\\src\\blob_calls.rs"
+    },
+    {
+        "Algorithm":  "SHA256",
+        "Hash":  "D0210A4D84A9C316E31EF6B16BA29132B57963BA34B7EA02D5AEA94BBD383F31",
+        "Path":  "D:\\Code\\NxTools.Next-main\\rust\\crates\\nxtools-extensions\\src\\session.rs"
+    }
+]

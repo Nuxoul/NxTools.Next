@@ -1,0 +1,9 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/main_window.rs
++++ queue07/rust/apps/nxtools-desktop/src/main_window.rs
+@@ -511,3 +511,6 @@
+ 
+ #[cfg(test)]
+ mod kit_foundation_tests;
++
++#[cfg(test)]
++mod shared_rem_tests;

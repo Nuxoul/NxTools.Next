@@ -1,0 +1,10 @@
+{
+  "baseline_files": 630,
+  "changed_existing_files": [
+    "tests/architecture/quick-launch-lifecycle.ps1"
+  ],
+  "unchanged_files": 629,
+  "security_predicates_preserved": 73,
+  "historical_files_unchanged": 4778,
+  "product_scripts_rust_csharp_generated_hashes_unchanged": true
+}

@@ -1,0 +1,6 @@
+{
+  "production_owner_and_new_test_sha256": "7683e4372c7dc29c46946de2ceac1c50a5b04cdf654e891f00e75fe16a6df00f",
+  "mapping_snapshot_sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+  "mutation": "scratch only: UnsupportedTransport -> Succeeded, keeping remaining match exhaustive",
+  "scope": "exact production EventControl and appended regression with real crate dependencies; isolated owner test, not full Desktop compilation"
+}

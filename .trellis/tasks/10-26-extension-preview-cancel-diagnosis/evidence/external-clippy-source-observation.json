@@ -1,0 +1,8 @@
+{
+  "path": "rust/crates/nxtools-extensions/src/session.rs",
+  "sha256": "73620590926e436636e58e692a276902c228d786705516b9d86d60aeba130d2f",
+  "owned_edit": false,
+  "task_start_baseline_available": false,
+  "observed_snapshot": "evidence/session.external-clippy-observed.rs.txt",
+  "note": "Strict Clippy failed large_enum_variant at WireInvocation; no task changes or suppression"
+}

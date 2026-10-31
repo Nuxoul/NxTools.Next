@@ -1,0 +1,2444 @@
+[
+  {
+    "symbol": "TITLEBAR_HEIGHT",
+    "references": [
+      {
+        "path": "main_window.rs",
+        "line": 75,
+        "text": "SPACING_12, TITLEBAR_HEIGHT,"
+      },
+      {
+        "path": "main_window/notifications.rs",
+        "line": 12,
+        "text": "TITLEBAR_HEIGHT + 48.0,"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 88,
+        "text": ".h(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 434,
+        "text": ".w(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "path": "ui/components/dialog.rs",
+        "line": 4,
+        "text": "use crate::ui::metrics::{SETTINGS_FOOTER_HEIGHT, TITLEBAR_HEIGHT};"
+      },
+      {
+        "path": "ui/components/dialog.rs",
+        "line": 32,
+        "text": ".h(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 9,
+        "text": "use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT};"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 120,
+        "text": ".h(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 140,
+        "text": ".w(px(TITLEBAR_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "MODULE_HEADER_HEIGHT",
+    "references": [
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 9,
+        "text": "use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT};"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 67,
+        "text": ".h(px(MODULE_HEADER_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "SIDEBAR_WIDTH",
+    "references": [
+      {
+        "path": "main_window.rs",
+        "line": 74,
+        "text": "BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 268,
+        "text": ".w(px(SIDEBAR_WIDTH))"
+      }
+    ]
+  },
+  {
+    "symbol": "SIDEBAR_ROW_HEIGHT",
+    "references": []
+  },
+  {
+    "symbol": "CONTROL_HEIGHT_COMPACT",
+    "references": []
+  },
+  {
+    "symbol": "CONTROL_HEIGHT_DEFAULT",
+    "references": []
+  },
+  {
+    "symbol": "CONTROL_HEIGHT_ACTION",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 83,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 74,
+        "text": "BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2607,
+        "text": ".size(ordinary_rem(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2632,
+        "text": ".size(ordinary_rem(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1162,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 64,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 66,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, GROUP_HEADER_HEIGHT,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2726,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2734,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2758,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2799,
+        "text": ".size(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3870,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/components/action.rs",
+        "line": 9,
+        "text": "use crate::ui::metrics::CONTROL_HEIGHT_ACTION;"
+      },
+      {
+        "path": "ui/components/action.rs",
+        "line": 407,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 20,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SPACING_4};"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 26,
+        "text": "const ROW: f32 = CONTROL_HEIGHT_ACTION;"
+      }
+    ]
+  },
+  {
+    "symbol": "CONTROL_HEIGHT_INPUT",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 83,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2879,
+        "text": "+ CONTROL_HEIGHT_INPUT"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1287,
+        "text": ".min_h(ordinary_rem(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 66,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, GROUP_HEADER_HEIGHT,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2661,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 18,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 462,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 478,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/components/field.rs",
+        "line": 6,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_8};"
+      },
+      {
+        "path": "ui/components/field.rs",
+        "line": 31,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 12,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 110,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 14,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_4, SPACING_12};"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 75,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 219,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      }
+    ]
+  },
+  {
+    "symbol": "SETTINGS_ROW_MIN_HEIGHT",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 84,
+        "text": "SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12, SPACING_16,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2403,
+        "text": "self.row_count as f32 * SETTINGS_ROW_MIN_HEIGHT"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2407,
+        "text": ".min(px(SETTINGS_ROW_MIN_HEIGHT * 3.0));"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2932,
+        "text": "SETTINGS_ROW_MIN_HEIGHT,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2934,
+        "text": "SETTINGS_ROW_MIN_HEIGHT * 3.0,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2945,
+        "text": "SETTINGS_ROW_MIN_HEIGHT,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2947,
+        "text": "SETTINGS_ROW_MIN_HEIGHT * 3.0,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 3235,
+        "text": ".min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2659,
+        "text": ".min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 7,
+        "text": "use crate::ui::metrics::{SETTINGS_ROW_MIN_HEIGHT, SPACING_8};"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 32,
+        "text": ".h(px(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 119,
+        "text": ".h(px(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 157,
+        "text": "assert_eq!(radio.size.height, px(SETTINGS_ROW_MIN_HEIGHT));"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 158,
+        "text": "assert_eq!(category.size.height, px(SETTINGS_ROW_MIN_HEIGHT));"
+      }
+    ]
+  },
+  {
+    "symbol": "BADGE_HEIGHT",
+    "references": [
+      {
+        "path": "main_window.rs",
+        "line": 74,
+        "text": "BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2648,
+        "text": ".h(px(BADGE_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "ICON_GLYPH_SMALL",
+    "references": [
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 165,
+        "text": "use crate::ui::metrics::ICON_GLYPH_SMALL;"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2081,
+        "text": ".size(ordinary_rem(ICON_GLYPH_SMALL))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 33,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, ICON_GLYPH_SMALL, SPACING_8,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 790,
+        "text": ".size(px(ICON_GLYPH_SMALL)),"
+      }
+    ]
+  },
+  {
+    "symbol": "PROGRESS_TRACK_HEIGHT",
+    "references": [
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 17,
+        "text": "use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_4, SPACING_8};"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 799,
+        "text": ".h(px(PROGRESS_TRACK_HEIGHT))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3,
+        "text": "use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, ordinary_rem};"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2814,
+        "text": ".gap(px(PROGRESS_TRACK_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "NOTIFICATION_META_BLOCK_HEIGHT",
+    "references": [
+      {
+        "path": "ui/mod.rs",
+        "line": 67,
+        "text": "NOTIFICATION_META_BLOCK_HEIGHT, RADIUS_CONTROL,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2706,
+        "text": ".h(px(NOTIFICATION_META_BLOCK_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "GROUP_HEADER_HEIGHT",
+    "references": [
+      {
+        "path": "ui/mod.rs",
+        "line": 66,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, GROUP_HEADER_HEIGHT,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3321,
+        "text": ".h(px(GROUP_HEADER_HEIGHT))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3403,
+        "text": ".h(px(GROUP_HEADER_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "SETTINGS_FOOTER_HEIGHT",
+    "references": [
+      {
+        "path": "ui/components/dialog.rs",
+        "line": 4,
+        "text": "use crate::ui::metrics::{SETTINGS_FOOTER_HEIGHT, TITLEBAR_HEIGHT};"
+      },
+      {
+        "path": "ui/components/dialog.rs",
+        "line": 49,
+        "text": ".h(px(SETTINGS_FOOTER_HEIGHT))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 4,
+        "text": "FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 99,
+        "text": ".h(px(SETTINGS_FOOTER_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "FEATURE_WINDOW_TITLE_LANE_HEIGHT",
+    "references": [
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 70,
+        "text": "use crate::ui::metrics::FEATURE_WINDOW_TITLE_LANE_HEIGHT;"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 78,
+        "text": ".min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 92,
+        "text": ".min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 4,
+        "text": "FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 213,
+        "text": ".min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "COMPACT_RESULT_ROW_HEIGHT",
+    "references": [
+      {
+        "path": "quick_launch.rs",
+        "line": 57,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 33,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, ICON_GLYPH_SMALL, SPACING_8,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 575,
+        "text": ".h(px(COMPACT_RESULT_ROW_HEIGHT))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 1521,
+        "text": "assert_eq!(row.size.height, px(COMPACT_RESULT_ROW_HEIGHT));"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 73,
+        "text": ".h(px(COMPACT_RESULT_ROW_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "symbol": "COMPACT_RESULT_ICON_RAIL_WIDTH",
+    "references": [
+      {
+        "path": "quick_launch.rs",
+        "line": 57,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 33,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, ICON_GLYPH_SMALL, SPACING_8,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 477,
+        "text": ".size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 604,
+        "text": ".size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1182,
+        "text": ".size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1352,
+        "text": ".size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))"
+      }
+    ]
+  },
+  {
+    "symbol": "COMPACT_RESULT_TRAILING_RAIL_WIDTH",
+    "references": [
+      {
+        "path": "quick_launch.rs",
+        "line": 57,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1243,
+        "text": ".w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1397,
+        "text": ".w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))"
+      }
+    ]
+  },
+  {
+    "symbol": "RADIUS_NONE",
+    "references": [
+      {
+        "path": "main_window/shell.rs",
+        "line": 463,
+        "text": ".rounded(px(crate::ui::metrics::RADIUS_NONE))"
+      }
+    ]
+  },
+  {
+    "symbol": "RADIUS_CONTROL",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 83,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 17,
+        "text": "use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_4, SPACING_8};"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 781,
+        "text": ".rounded(px(RADIUS_CONTROL)),"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 74,
+        "text": "BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,"
+      },
+      {
+        "path": "quick_launch.rs",
+        "line": 58,
+        "text": "RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2811,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1180,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 125,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 34,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1732,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1772,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 30,
+        "text": "use crate::ui::metrics::RADIUS_CONTROL;"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 1014,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 67,
+        "text": "NOTIFICATION_META_BLOCK_HEIGHT, RADIUS_CONTROL,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 263,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2708,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2800,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3181,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3276,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/preview.rs",
+        "line": 18,
+        "text": "use crate::ui::metrics::RADIUS_CONTROL;"
+      },
+      {
+        "path": "ui/preview.rs",
+        "line": 49,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/components/action.rs",
+        "line": 10,
+        "text": "use crate::ui::metrics::RADIUS_CONTROL;"
+      },
+      {
+        "path": "ui/components/action.rs",
+        "line": 38,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 18,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 182,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 12,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 121,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 20,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SPACING_4};"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 653,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 11,
+        "text": "use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 59,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      }
+    ]
+  },
+  {
+    "symbol": "RADIUS_FLOATING",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 83,
+        "text": "CONTROL_HEIGHT_ACTION, CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, RADIUS_FLOATING,"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 318,
+        "text": ".rounded(px(RADIUS_FLOATING))"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 8,
+        "text": "use crate::ui::metrics::{RADIUS_FLOATING, SPACING_4};"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 176,
+        "text": ".rounded(px(RADIUS_FLOATING))"
+      }
+    ]
+  },
+  {
+    "symbol": "SPACING_4",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 84,
+        "text": "SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12, SPACING_16,"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 17,
+        "text": "use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_4, SPACING_8};"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 191,
+        "text": "SPACING_4 as u32"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 690,
+        "text": "SPACING_4"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 970,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 74,
+        "text": "BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,"
+      },
+      {
+        "path": "quick_launch.rs",
+        "line": 58,
+        "text": "RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2269,
+        "text": ".gap(measure(SPACING_4))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2938,
+        "text": "px(NEW_DOWNLOAD_MEDIA_BASE_HEIGHT + 16.0 + SPACING_4 + rows_height),"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2951,
+        "text": "px(NEW_DOWNLOAD_MEDIA_BASE_HEIGHT + 16.0 + SPACING_4 + 15.0 + rows_height),"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2181,
+        "text": ".mr(px(SPACING_4))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2551,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2622,
+        "text": ".gap(px(SPACING_4));"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2932,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2935,
+        "text": ".pb(px(SPACING_4))"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1163,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 161,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 81,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 630,
+        "text": ".gap(px(crate::ui::metrics::SPACING_4))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 2,
+        "text": "use crate::ui::metrics::SPACING_4;"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1215,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1463,
+        "text": ".mt(px(SPACING_4))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1464,
+        "text": ".pt(px(SPACING_4))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1532,
+        "text": ".mb(px(SPACING_4))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1689,
+        "text": ".px(px(SPACING_4))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 610,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 8,
+        "text": "use crate::ui::metrics::{RADIUS_FLOATING, SPACING_4};"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 180,
+        "text": ".py(px(SPACING_4));"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 220,
+        "text": ".mx(px(SPACING_4))"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 332,
+        "text": ".mx(px(SPACING_4))"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 359,
+        "text": ".mx(px(SPACING_4))"
+      },
+      {
+        "path": "tools/link_panel.rs",
+        "line": 373,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/hotkey.rs",
+        "line": 5,
+        "text": "use crate::ui::metrics::{SPACING_4, SPACING_8};"
+      },
+      {
+        "path": "ui/components/hotkey.rs",
+        "line": 84,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 12,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 93,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 20,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SPACING_4};"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 24,
+        "text": "const EDGE: f32 = SPACING_4;"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 28,
+        "text": "const PAD: f32 = SPACING_4;"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 14,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_4, SPACING_12};"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 183,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 263,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 4,
+        "text": "FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 227,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 11,
+        "text": "use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 39,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 108,
+        "text": ".gap(px(SPACING_4))"
+      }
+    ]
+  },
+  {
+    "symbol": "SPACING_8",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 84,
+        "text": "SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12, SPACING_16,"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 17,
+        "text": "use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_4, SPACING_8};"
+      },
+      {
+        "path": "download_taskbar_overlay.rs",
+        "line": 902,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 74,
+        "text": "BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 32,
+        "text": "use crate::ui::metrics::SPACING_8;"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1304,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch.rs",
+        "line": 58,
+        "text": "RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 40,
+        "text": ".py(px(SPACING_8))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2160,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2279,
+        "text": ".gap(measure(SPACING_8))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2878,
+        "text": "+ SPACING_8 * 2.0"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2880,
+        "text": "+ SPACING_8"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 54,
+        "text": ".px(px(SPACING_16)).py(px(SPACING_8))"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 86,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2692,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1158,
+        "text": ".py(px(SPACING_8))"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 118,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 33,
+        "text": "COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, ICON_GLYPH_SMALL, SPACING_8,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 468,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 579,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 74,
+        "text": ".px(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 79,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1472,
+        "text": ".px(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1525,
+        "text": ".p(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1533,
+        "text": ".px(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1536,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1621,
+        "text": ".p(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1696,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1769,
+        "text": ".bottom(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 559,
+        "text": ".mt(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 560,
+        "text": ".pt(px(SPACING_8))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 677,
+        "text": ".p(px(SPACING_8))"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2827,
+        "text": ".mb(px(crate::ui::metrics::SPACING_8))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 18,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 134,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 340,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/field.rs",
+        "line": 6,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_8};"
+      },
+      {
+        "path": "ui/components/field.rs",
+        "line": 36,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/hotkey.rs",
+        "line": 5,
+        "text": "use crate::ui::metrics::{SPACING_4, SPACING_8};"
+      },
+      {
+        "path": "ui/components/hotkey.rs",
+        "line": 91,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 7,
+        "text": "use crate::ui::metrics::{SETTINGS_ROW_MIN_HEIGHT, SPACING_8};"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 34,
+        "text": ".px(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 62,
+        "text": ".top(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 63,
+        "text": ".bottom(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 12,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 81,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 199,
+        "text": ".ml(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 4,
+        "text": "FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 241,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 298,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 9,
+        "text": "use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT};"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 77,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 11,
+        "text": "use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 34,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 95,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 169,
+        "text": ".gap(px(SPACING_8))"
+      }
+    ]
+  },
+  {
+    "symbol": "SPACING_12",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 84,
+        "text": "SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12, SPACING_16,"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 75,
+        "text": "SPACING_12, TITLEBAR_HEIGHT,"
+      },
+      {
+        "path": "quick_launch.rs",
+        "line": 58,
+        "text": "RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2263,
+        "text": ".pl(measure(SPACING_12))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2404,
+        "text": "+ self.row_count.saturating_sub(1) as f32 * SPACING_12,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1170,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 119,
+        "text": ".pl(px(SPACING_12))"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 8,
+        "text": "use crate::ui::metrics::{SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 249,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 34,
+        "text": "SPACING_12,"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 464,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 576,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 763,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1767,
+        "text": ".left(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1768,
+        "text": ".right(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 523,
+        "text": ".p(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 604,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 643,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 685,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 18,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 99,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 128,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 12,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 76,
+        "text": ".py(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 87,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 245,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 14,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_4, SPACING_12};"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 173,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 176,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 251,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 256,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 297,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 4,
+        "text": "FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 157,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 198,
+        "text": ".p(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 204,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 217,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 294,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 9,
+        "text": "use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT};"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 70,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 123,
+        "text": ".pl(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 11,
+        "text": "use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 29,
+        "text": ".py(px(SPACING_12))"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 217,
+        "text": ".px(px(SPACING_12))"
+      }
+    ]
+  },
+  {
+    "symbol": "SPACING_16",
+    "references": [
+      {
+        "path": "downloads.rs",
+        "line": 84,
+        "text": "SETTINGS_ROW_MIN_HEIGHT, SPACING_4, SPACING_8, SPACING_12, SPACING_16,"
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 39,
+        "text": ".px(px(SPACING_16))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2148,
+        "text": ".pl(px(SPACING_16))"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 54,
+        "text": ".px(px(SPACING_16)).py(px(SPACING_8))"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 55,
+        "text": ".child(div().flex().items_center().gap(px(SPACING_16))"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 67,
+        "text": ".pb(px(SPACING_16))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 141,
+        "text": ".px(px(SPACING_16))"
+      },
+      {
+        "path": "downloads/window_support.rs",
+        "line": 260,
+        "text": ".pl(px(SPACING_16))"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 8,
+        "text": "use crate::ui::metrics::{SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 241,
+        "text": ".p(px(SPACING_16))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 18,
+        "text": "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 334,
+        "text": ".px(px(SPACING_16))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 362,
+        "text": ".p(px(SPACING_16))"
+      }
+    ]
+  },
+  {
+    "symbol": "SPACING_24",
+    "references": [
+      {
+        "path": "clipboard.rs",
+        "line": 46,
+        "text": "use crate::ui::metrics::SPACING_24;"
+      },
+      {
+        "path": "clipboard.rs",
+        "line": 415,
+        "text": "let inset = px(SPACING_24);"
+      }
+    ]
+  },
+  {
+    "symbol": "ordinary_rem",
+    "references": [
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 4,
+        "text": "use crate::ui::metrics::ordinary_rem;"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1388,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1389,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1393,
+        "text": ".child(div().debug_selector(|| \"download-new-schedule-hour-rail\".into()).w(ordinary_rem(66.0)).child("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1395,
+        "text": ".menu_width(ordinary_rem(66.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1400,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1404,
+        "text": ".child(div().debug_selector(|| \"download-new-schedule-minute-rail\".into()).w(ordinary_rem(66.0)).child("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1406,
+        "text": ".menu_width(ordinary_rem(66.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1657,
+        "text": "- ordinary_rem(48.0).to_pixels(window.rem_size());"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1668,
+        "text": ".w_full().h(ordinary_rem(CATEGORY_ROW_HEIGHT)).py_0()"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1672,
+        "text": ".w_full().min_w_0().truncate().text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1673,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1680,
+        "text": ".w_full().min_w_0().truncate().text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1681,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1730,
+        "text": ".w_full().h(ordinary_rem(CATEGORY_ROW_HEIGHT)).py_0()"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1748,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1749,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1764,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1765,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1789,
+        "text": ".h(ordinary_rem(42.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1793,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1920,
+        "text": ".label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1950,
+        "text": "ordinary_rem(72.0).to_pixels(window.rem_size()),"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2048,
+        "text": ".label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2059,
+        "text": "line.h(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2062,
+        "text": "line.min_h(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2081,
+        "text": ".size(ordinary_rem(ICON_GLYPH_SMALL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2101,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2102,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2255,
+        "text": "let measure = ordinary_rem;"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2402,
+        "text": "let height = ordinary_rem("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2453,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2454,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2460,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2461,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2559,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2560,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2591,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2592,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2598,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2599,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2703,
+        "text": ".h(ordinary_rem(28.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2734,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2764,
+        "text": ".h(ordinary_rem(14.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2769,
+        "text": ".w(ordinary_rem(40.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2776,
+        "text": ".text_size(ordinary_rem(TEXT_META))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2782,
+        "text": "div().h(ordinary_rem(19.0)).flex_none().flex().children("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2806,
+        "text": ".w(ordinary_rem(40.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2809,
+        "text": ".h(ordinary_rem(19.0))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2812,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 3235,
+        "text": ".min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 2,
+        "text": "use crate::ui::metrics::ordinary_rem;"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 171,
+        "text": "let trigger_label_width = ordinary_rem(212.0).to_pixels(rem).min("
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 173,
+        "text": "- ordinary_rem(24.0 + 50.0 + 8.0 + 114.0).to_pixels(rem)"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 259,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 260,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 266,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 267,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 283,
+        "text": ".label_width(ordinary_rem(82.0).to_pixels(rem))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 302,
+        "text": ".h(ordinary_rem(2.0 * LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 305,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 306,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 329,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 330,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 430,
+        "text": ".w(ordinary_rem(50.0))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 448,
+        "text": ".w(ordinary_rem(114.0))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 459,
+        "text": ".w(ordinary_rem(114.0))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 460,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 461,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 3,
+        "text": "use crate::ui::metrics::ordinary_rem;"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1004,
+        "text": ".w(ordinary_rem(286.0))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1014,
+        "text": "ordinary_rem(250.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1118,
+        "text": ".min_h(ordinary_rem(40.0))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1176,
+        "text": ".w(ordinary_rem(228.0))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1287,
+        "text": ".min_h(ordinary_rem(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1306,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1307,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_BODY))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1316,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1317,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1334,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1335,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1480,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1481,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1713,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1720,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1727,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1744,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1751,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1835,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1842,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1849,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1856,
+        "text": "ordinary_rem(88.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2111,
+        "text": "ordinary_rem(286.0),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2207,
+        "text": ".w(ordinary_rem(120.0))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2318,
+        "text": "ordinary_rem(440.0).to_pixels(window.rem_size()).as_f32(),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2357,
+        "text": ".sidebar_width(ordinary_rem(164.0).to_pixels(window.rem_size()))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2607,
+        "text": ".size(ordinary_rem(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2632,
+        "text": ".size(ordinary_rem(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2659,
+        "text": ".min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2668,
+        "text": ".w(ordinary_rem(36.0))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2670,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2671,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2685,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2686,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 4,
+        "text": "use crate::ui::metrics::ordinary_rem;"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 316,
+        "text": ".size(ordinary_rem(34.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 325,
+        "text": ".size(ordinary_rem(18.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 345,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 346,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 359,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 360,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 481,
+        "text": ".size(ordinary_rem(16.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 516,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 517,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 758,
+        "text": ".h(ordinary_rem(32.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 765,
+        "text": ".size(ordinary_rem(16.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 785,
+        "text": ".size(ordinary_rem(16.0)),"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 838,
+        "text": ".h(ordinary_rem(16.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 860,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 861,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 876,
+        "text": ".label_width(ordinary_rem(44.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 913,
+        "text": ".h(ordinary_rem(16.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 915,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 916,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 935,
+        "text": ".min_h(ordinary_rem(24.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1021,
+        "text": ".max_h(ordinary_rem(32.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1023,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1024,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1044,
+        "text": ".h(ordinary_rem(16.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1045,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1046,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1093,
+        "text": ".h(ordinary_rem(24.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1114,
+        "text": ".h(ordinary_rem(24.0))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1145,
+        "text": ".text_size(ordinary_rem(TEXT_BODY))"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1146,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3,
+        "text": "use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, ordinary_rem};"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1376,
+        "text": ".h(ordinary_rem(DOWNLOAD_TASK_ROW_HEIGHT))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1494,
+        "text": ".size(ordinary_rem(26.0))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1518,
+        "text": ".size(ordinary_rem(15.0))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1552,
+        "text": ".text_size(ordinary_rem(TEXT_WORKBENCH_BODY))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1553,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_BODY))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1579,
+        "text": ".text_size(ordinary_rem(TEXT_WORKBENCH_SUPPORT))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1580,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1633,
+        "text": ".w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1635,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1656,
+        "text": ".w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1663,
+        "text": ".h(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1667,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1676,
+        "text": ".w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1689,
+        "text": ".w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1702,
+        "text": ".w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1729,
+        "text": ".w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1731,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1732,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1742,
+        "text": ".w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1747,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1748,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3301,
+        "text": ".w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3313,
+        "text": ".w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3319,
+        "text": ".w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3326,
+        "text": ".w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3337,
+        "text": ".w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3342,
+        "text": ".h(ordinary_rem(DOWNLOAD_TABLE_HEADER_HEIGHT))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3350,
+        "text": ".text_size(ordinary_rem(TEXT_META))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3356,
+        "text": ".w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3370,
+        "text": ".w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 3420,
+        "text": ".text_size(ordinary_rem(TEXT_META))"
+      }
+    ]
+  }
+]

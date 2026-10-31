@@ -1,0 +1,37 @@
+﻿[
+    {
+        "name":  "gpui-component-catalog.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-gpui-component-catalog.py.log"
+    },
+    {
+        "name":  "gpui-release-contracts.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-gpui-release-contracts.py.log"
+    },
+    {
+        "name":  "markdown-editor-contracts.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-markdown-editor-contracts.py.log"
+    },
+    {
+        "name":  "spec-contracts.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-spec-contracts.py.log"
+    },
+    {
+        "name":  "archive-cli.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-archive-cli.py.log"
+    },
+    {
+        "name":  "archive-phase-f-shell.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-archive-phase-f-shell.py.log"
+    },
+    {
+        "name":  "archive-phase-f-spike.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\gate-archive-phase-f-spike.py.log"
+    }
+]

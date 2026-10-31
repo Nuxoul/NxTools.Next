@@ -69,9 +69,9 @@ try {
     }
     $isolatedTargets = Get-UpgradeTargets $installed $protected $null
     $script:simulateUnavailableImage = $true
-    $deniedCode = 0
-    try { Stop-UpgradeTargets $isolatedTargets | Out-Null } catch { $deniedCode = $_.Exception.NativeErrorCode }
-    Assert-Upgrade ($deniedCode -eq 5) 'unreadable process identity requests elevation instead of guessing'
+    $queryOnlyCount = Stop-UpgradeTargets @{}
+    $ownedProcess.Refresh(); $otherProcess.Refresh()
+    Assert-Upgrade ($queryOnlyCount -eq 0 -and !$ownedProcess.HasExited -and !$otherProcess.HasExited) 'CIM-null native query establishes identities without guessing or terminating non-targets'
     $script:simulateUnavailableImage = $false
     $unapprovedBlocked = $false
     try { Stop-UpgradeTargets @{} $unrelated | Out-Null } catch { $unapprovedBlocked = $_.Exception.Message -like '*identity is not approved*' }

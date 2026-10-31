@@ -168,6 +168,8 @@ fn extract_request_preserves_selection_binding_strategy_conflict_and_no_delete_a
                 size: 12,
                 modified_unix_ns: 1,
             },
+            sevenz_edit: None,
+            tar_edit: None,
         },
         ordinals: vec![2, 7],
     };
@@ -260,10 +262,13 @@ fn immutable_modify_draft_maps_all_actions_to_same_job_contract() {
                 size: 7,
                 modified_unix_ns: 4,
             },
+            sevenz_edit: None,
+            tar_edit: None,
         },
         action: ArchiveJobModifyAction::Delete,
         ordinals: vec![2],
         value: None,
+        source_prefix: None,
         added: vec![],
         codepage: 65001,
     };
@@ -289,4 +294,62 @@ fn immutable_modify_draft_maps_all_actions_to_same_job_contract() {
     assert_eq!(draft.request().expect("add").paths.len(), 2);
     draft.browser.format = "SevenZ".into();
     assert!(draft.request().is_err());
+}
+
+#[test]
+fn hz5_reclamation_defaults_off_and_maps_explicit_start_and_continue_intents() {
+    let settings = ArchiveSettings {
+        default_destination: ArchiveDestination::Here,
+        conflict_policy: ArchiveConflictPolicy::Ask,
+        ..Default::default()
+    };
+    let mut start = ExtractDraft::new(&settings, r"C:\owned\stored.zip".into(), None);
+    assert!(!start.reclamation && !start.continue_reclamation);
+    assert!(
+        start
+            .request(&settings)
+            .expect("ordinary extract")
+            .extract
+            .expect("extract")
+            .reclamation
+            .is_none()
+    );
+    start.reclamation = true;
+    let start_id = Uuid::parse_str(&start.recovery_id).expect("stable generated recovery UUID");
+    assert_eq!(
+        start
+            .request(&settings)
+            .expect("explicit reclamation start")
+            .extract
+            .expect("extract")
+            .reclamation,
+        Some(ArchiveReclamationIntent {
+            mode: ArchiveReclamationMode::Start,
+            recovery_id: start_id,
+        })
+    );
+    start.strategy = ArchiveDestination::Name;
+    assert!(
+        start
+            .request(&settings)
+            .expect_err("unsupported strategy must remain visible")
+            .contains("当前文件夹")
+    );
+
+    let recovery_id = Uuid::new_v4();
+    let mut continuation =
+        ExtractDraft::continue_reclamation(&settings, r"C:\owned\stored.zip".into());
+    continuation.recovery_id = recovery_id.to_string();
+    let request = continuation
+        .request(&settings)
+        .expect("fresh-process continuation");
+    assert_eq!(request.paths, vec![r"C:\owned\stored.zip"]);
+    assert_eq!(request.destination.as_deref(), Some(r"C:\owned"));
+    assert_eq!(
+        request.extract.expect("extract").reclamation,
+        Some(ArchiveReclamationIntent {
+            mode: ArchiveReclamationMode::Continue,
+            recovery_id,
+        })
+    );
 }

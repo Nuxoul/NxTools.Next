@@ -1,0 +1,30 @@
+﻿[
+    {
+        "name":  "manager-related-tests",
+        "command":  "cargo test -p nxtools-desktop main_window::extensions_page::tests:: -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  6.9792178,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\manager-related-tests.log"
+    },
+    {
+        "name":  "import-confirmation-related-tests",
+        "command":  "cargo test -p nxtools-desktop main_window::extensions_page::import_confirmation:: -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  2.3689117,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\import-confirmation-related-tests.log"
+    },
+    {
+        "name":  "picker-lifecycle-related",
+        "command":  "cargo test -p nxtools-desktop extensions::tests::w6_picker_cancel_disconnect_and_late_result_never_import -- --exact --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  1.2654895,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\picker-lifecycle-related.log"
+    },
+    {
+        "name":  "desktop-strict-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  101,
+        "elapsed_seconds":  4.1018349,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\desktop-strict-clippy.log"
+    }
+]

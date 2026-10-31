@@ -33,6 +33,14 @@ public static class TrustedReleaseManifest
     private static readonly string[] RequiredPaths =
     [
         "NxTools.exe", "NxTools.PlatformHost.exe", "NxTools.Indexer.exe", "NxTools.BrowserHost.exe", "NxTools.Cli.exe",
+        "NxTools.ArchiveWorker.exe", "NxTools.ShellSelectionHelper.exe", "NxTools.ShellSelectionHelper.dll",
+        "NxTools.ShellSelectionHelper.deps.json", "NxTools.ShellSelectionHelper.runtimeconfig.json",
+        "LICENSE-MIT", "LICENSE-APACHE", "THIRD_PARTY_NOTICES.md", ExtensionPrefix + "manifest.json"
+    ];
+    // Historical completeness is available only after exact durable recovery identity binding.
+    private static readonly string[] RecoveryRequiredPaths =
+    [
+        "NxTools.exe", "NxTools.PlatformHost.exe", "NxTools.Indexer.exe", "NxTools.BrowserHost.exe", "NxTools.Cli.exe",
         "LICENSE-MIT", "LICENSE-APACHE", "THIRD_PARTY_NOTICES.md", ExtensionPrefix + "manifest.json"
     ];
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -43,8 +51,25 @@ public static class TrustedReleaseManifest
 
     public static VerifiedRelease VerifyPackage(string root, byte[] expectedPublicKey, long minimumSequence)
     {
-        ArgumentNullException.ThrowIfNull(expectedPublicKey);
         if (minimumSequence < 0) throw new ArgumentOutOfRangeException(nameof(minimumSequence));
+        return Verify(root, expectedPublicKey, minimumSequence, null);
+    }
+
+    // Recovery authority comes only from an already durable, exact snapshot identity.
+    internal static VerifiedRelease VerifyRecoverySnapshot(string root, byte[] expectedPublicKey,
+        long expectedSequence, Guid expectedReleaseId, string expectedManifestSha)
+    {
+        if (expectedSequence <= 0 || expectedReleaseId == Guid.Empty || !IsHash(expectedManifestSha))
+            throw new InvalidDataException("Invalid recovery snapshot identity.");
+        return Verify(root, expectedPublicKey, 0, new(expectedSequence, expectedReleaseId, expectedManifestSha));
+    }
+
+    private sealed record RecoveryIdentity(long Sequence, Guid ReleaseId, string ManifestSha256);
+
+    private static VerifiedRelease Verify(string root, byte[] expectedPublicKey, long minimumSequence,
+        RecoveryIdentity? recovery)
+    {
+        ArgumentNullException.ThrowIfNull(expectedPublicKey);
         expectedPublicKey = expectedPublicKey.ToArray();
         using var rsa = RSA.Create();
         rsa.ImportSubjectPublicKeyInfo(expectedPublicKey, out var consumed);
@@ -64,7 +89,12 @@ public static class TrustedReleaseManifest
             RejectDuplicateProperties(document.RootElement);
             var manifest = JsonSerializer.Deserialize<ReleaseManifest>(bytes, JsonOptions)
                 ?? throw new InvalidDataException("Missing release manifest.");
-            ValidateManifest(manifest, expectedPublicKey, minimumSequence);
+            var manifestSha = Hash(bytes);
+            // No historical completeness exception until all three durable fields match authenticated bytes.
+            if (recovery is not null && (manifest.ReleaseSequence != recovery.Sequence ||
+                manifest.ReleaseId != recovery.ReleaseId || !StringComparer.Ordinal.Equals(manifestSha, recovery.ManifestSha256)))
+                throw new InvalidDataException("Recovery snapshot identity mismatch.");
+            ValidateManifest(manifest, expectedPublicKey, minimumSequence, recovery is null ? RequiredPaths : RecoveryRequiredPaths);
             manifest = manifest with { Files = new ReadOnlyCollection<ReleaseFile>(manifest.Files.ToArray()) };
             var files = new List<(ReleaseFile File, FileStream Stream)>();
             foreach (var file in manifest.Files)
@@ -73,7 +103,7 @@ public static class TrustedReleaseManifest
                 VerifyFile(stream, file);
                 files.Add((file, stream));
             }
-            return new VerifiedRelease(manifest, Hash(bytes), handles, files, manifestStream, signatureStream);
+            return new VerifiedRelease(manifest, manifestSha, handles, files, manifestStream, signatureStream, recovery is not null);
         }
         catch { handles.Dispose(); throw; }
     }
@@ -161,7 +191,8 @@ public static class TrustedReleaseManifest
         finally { CryptographicOperations.ZeroMemory(pem); }
     }
 
-    private static void ValidateManifest(ReleaseManifest manifest, byte[] spki, long minimumSequence)
+    private static void ValidateManifest(ReleaseManifest manifest, byte[] spki, long minimumSequence,
+        IReadOnlyList<string>? requiredPaths = null)
     {
         if (manifest.SchemaVersion != 1 || manifest.Product != "nxtools-next" || manifest.ReleaseId == Guid.Empty || manifest.ReleaseSequence <= minimumSequence)
             throw new InvalidDataException("Unsupported, invalid or replayed release.");
@@ -180,7 +211,13 @@ public static class TrustedReleaseManifest
             total = checked(total + file.Size);
             if (total > MaximumTotalBytes) throw new InvalidDataException("Release too large.");
         }
-        if (RequiredPaths.Any(path => !paths.Contains(path))) throw new InvalidDataException("Incomplete release.");
+        if ((requiredPaths ?? RequiredPaths).Any(path => !paths.Contains(path))) throw new InvalidDataException("Incomplete release.");
+    }
+
+    internal static void ValidateApplicationRelease(VerifiedRelease release, byte[] expectedPublicKey)
+    {
+        if (release.RecoveryOnly) throw new InvalidDataException("Recovery snapshot cannot admit a new update.");
+        ValidateManifest(release.Manifest, expectedPublicKey, 0);
     }
 
     private static bool IsHash(string? value) => value is { Length: 64 } && value.All(Uri.IsHexDigit);
@@ -260,6 +297,18 @@ public static class TrustedReleaseManifest
     }
 
     // Lock every ancestor directory against rename/delete, open the final component without following
+    internal static void RemoveSupersededArchiveFiles(string target, VerifiedRelease previous, VerifiedRelease failed)
+    {
+        var oldNames = previous.Files.Select(file => file.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        using var handles = new PackageHandles(target);
+        foreach (var file in failed.Files.Where(file => !oldNames.Contains(file.Path) &&
+            (file.Path == "NxTools.ArchiveWorker.exe" || file.Path.StartsWith("NxTools.ShellSelectionHelper.", StringComparison.Ordinal))))
+        {
+            if (!File.Exists(Path.Combine(target, file.Path))) continue;
+            handles.DeleteExact(file);
+        }
+    }
+
     // a reparse point, then inspect the opened handle (not a race-prone pre-open path check).
     internal sealed class PackageHandles : IDisposable
     {
@@ -295,9 +344,22 @@ public static class TrustedReleaseManifest
             }
             catch { handle.Dispose(); throw; }
         }
-        private static SafeFileHandle OpenHandle(string path, bool directory)
+        internal void DeleteExact(ReleaseFile file)
         {
-            var handle = CreateFileW(path, directory ? 0u : 0x80000000u, 1, IntPtr.Zero, 3, 0x00200000u | (directory ? 0x02000000u : 0u), IntPtr.Zero);
+            ValidatePath(file.Path);
+            var path = Path.Combine(root, file.Path.Replace('/', Path.DirectorySeparatorChar));
+            LockDirectory(Path.GetDirectoryName(path)!);
+            using var handle = OpenHandle(path, false, delete: true);
+            using var stream = new FileStream(handle, FileAccess.Read);
+            VerifyFile(stream, file);
+            var disposition = 1;
+            if (!SetFileInformationByHandle(handle, 4, ref disposition, sizeof(int)))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Exact recovery cleanup failed.");
+        }
+
+        private static SafeFileHandle OpenHandle(string path, bool directory, bool delete = false)
+        {
+            var handle = CreateFileW(path, directory ? 0u : 0x80000000u | (delete ? 0x00010000u : 0u), 1, IntPtr.Zero, 3, 0x00200000u | (directory ? 0x02000000u : 0u), IntPtr.Zero);
             if (handle.IsInvalid) { var code = Marshal.GetLastWin32Error(); handle.Dispose(); throw new System.ComponentModel.Win32Exception(code, "Release handle open failed."); }
             if (!GetFileInformationByHandle(handle, out var info))
             { var code = Marshal.GetLastWin32Error(); handle.Dispose(); throw new System.ComponentModel.Win32Exception(code, "Release handle inspection failed."); }
@@ -317,6 +379,9 @@ public static class TrustedReleaseManifest
             public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime, AccessTime, WriteTime;
             public uint VolumeSerial, SizeHigh, SizeLow, Links, IndexHigh, IndexLow;
         }
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetFileInformationByHandle(SafeFileHandle file, int info, ref int value, int size);
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true, ExactSpelling = true)]
         private static extern SafeFileHandle CreateFileW(string path, uint access, uint share, IntPtr security, uint creation, uint flags, IntPtr template);
         [DllImport("kernel32.dll", SetLastError = true)]
@@ -330,15 +395,18 @@ public sealed class VerifiedRelease : IDisposable
     public ReleaseManifest Manifest { get; }
     public string ManifestSha256 { get; }
     public IReadOnlyList<ReleaseFile> Files => Manifest.Files;
+    internal bool RecoveryOnly { get; }
     private readonly TrustedReleaseManifest.PackageHandles handles;
     private readonly IReadOnlyList<(ReleaseFile File, FileStream Stream)> files;
     private readonly FileStream manifestStream, signatureStream;
     private bool disposed;
     internal VerifiedRelease(ReleaseManifest manifest, string sha256, TrustedReleaseManifest.PackageHandles handles,
-        IReadOnlyList<(ReleaseFile File, FileStream Stream)> files, FileStream manifestStream, FileStream signatureStream)
+        IReadOnlyList<(ReleaseFile File, FileStream Stream)> files, FileStream manifestStream, FileStream signatureStream,
+        bool recoveryOnly = false)
     {
         Manifest = manifest; ManifestSha256 = sha256; this.handles = handles; this.files = files;
         this.manifestStream = manifestStream; this.signatureStream = signatureStream;
+        RecoveryOnly = recoveryOnly;
     }
 
     /// <summary>Copies only authenticated artifacts and sidecars from the original locked handles.

@@ -1,0 +1,142 @@
+﻿[
+    {
+        "path":  "rust/crates/nxtools-protocol/src/archive_job.rs",
+        "original_delivery_sha256":  "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a",
+        "revision_start_sha256":  "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/src/worker_conflict.rs",
+        "original_delivery_sha256":  "c7157a04b08de8b7f41df9851071611db87cdd630e46b81e09a74be6a33199de",
+        "revision_start_sha256":  "c7157a04b08de8b7f41df9851071611db87cdd630e46b81e09a74be6a33199de"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/src/worker_output.rs",
+        "original_delivery_sha256":  "dc8cf790186065fc9557215c50a9bdd953c7b11501fc260462c6ae2fa7725912",
+        "revision_start_sha256":  "dc8cf790186065fc9557215c50a9bdd953c7b11501fc260462c6ae2fa7725912"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs",
+        "original_delivery_sha256":  "20e6dfb7d4329467d1495169d26af5a1360e56133c583468288e3237360df2e3",
+        "revision_start_sha256":  "20e6dfb7d4329467d1495169d26af5a1360e56133c583468288e3237360df2e3"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs",
+        "original_delivery_sha256":  "caa2b3dbdffa3d2d7409bb644fac28410cc7533889be06796c807ba614d4a187",
+        "revision_start_sha256":  "caa2b3dbdffa3d2d7409bb644fac28410cc7533889be06796c807ba614d4a187"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs",
+        "original_delivery_sha256":  "b6fb4337b08e82e685026fca1b4853bf631fdcd653c30de89d0f361caa36e7da",
+        "revision_start_sha256":  "b6fb4337b08e82e685026fca1b4853bf631fdcd653c30de89d0f361caa36e7da"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost.Tests/ArchiveCreateOverwriteTests.cs",
+        "original_delivery_sha256":  "908866e37ffc59210e8e757ef0d15e866bfbb6a75fbccf8211ffa4d0b02cc8a5",
+        "revision_start_sha256":  "908866e37ffc59210e8e757ef0d15e866bfbb6a75fbccf8211ffa4d0b02cc8a5"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/archive/progress.rs",
+        "original_delivery_sha256":  "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+        "revision_start_sha256":  "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/archive/readmission.rs",
+        "original_delivery_sha256":  "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb",
+        "revision_start_sha256":  "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb"
+    },
+    {
+        "path":  "rust/apps/nxtools-cli/src/archive/execution/tests.rs",
+        "original_delivery_sha256":  "813016f6f592a4c0017548b9e18fa39422da4bfa501b9a721667ab4892465375",
+        "revision_start_sha256":  "813016f6f592a4c0017548b9e18fa39422da4bfa501b9a721667ab4892465375"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs",
+        "original_delivery_sha256":  "559bd980b786e394d7d02dc872a7e4c1154dcc3c93c8c03e9fd1692575843068",
+        "revision_start_sha256":  "559bd980b786e394d7d02dc872a7e4c1154dcc3c93c8c03e9fd1692575843068"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/history.rs",
+        "original_delivery_sha256":  "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+        "revision_start_sha256":  "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/mod.rs",
+        "original_delivery_sha256":  "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+        "revision_start_sha256":  "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+        "original_delivery_sha256":  "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+        "revision_start_sha256":  "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads.rs",
+        "original_delivery_sha256":  "badd97e84410b64e9b6b155ebce6d94615fd0b29eb2ee7d8bc2408a168a7499f",
+        "revision_start_sha256":  "badd97e84410b64e9b6b155ebce6d94615fd0b29eb2ee7d8bc2408a168a7499f"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+        "original_delivery_sha256":  "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+        "revision_start_sha256":  "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+        "original_delivery_sha256":  "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+        "revision_start_sha256":  "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+        "original_delivery_sha256":  "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+        "revision_start_sha256":  "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+        "original_delivery_sha256":  "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+        "revision_start_sha256":  "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+        "original_delivery_sha256":  "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d",
+        "revision_start_sha256":  "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+        "original_delivery_sha256":  "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+        "revision_start_sha256":  "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/network_settings.rs",
+        "original_delivery_sha256":  "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+        "revision_start_sha256":  "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+        "original_delivery_sha256":  "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+        "revision_start_sha256":  "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+        "original_delivery_sha256":  "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+        "revision_start_sha256":  "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d"
+    },
+    {
+        "path":  "docs/reference-code/archive.md",
+        "original_delivery_sha256":  "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+        "revision_start_sha256":  "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/tests/prompt_display_contract.rs",
+        "original_delivery_sha256":  "0684751bf87a5f15294a333b7598c6012e8f370d09c46609254204886c294225",
+        "revision_start_sha256":  "0684751bf87a5f15294a333b7598c6012e8f370d09c46609254204886c294225"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/src/worker.rs",
+        "original_delivery_sha256":  "10ee8a96c06251041473c642df7b2cf3901b8f16479ca508e30f8cbb8fa0c05f",
+        "revision_start_sha256":  "10ee8a96c06251041473c642df7b2cf3901b8f16479ca508e30f8cbb8fa0c05f"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/tests/worker_wire.rs",
+        "original_delivery_sha256":  "274be3fae3e5a1c80d51b66319d4f7a8226134a9c27e2f5212cd6015fd8d5371",
+        "revision_start_sha256":  "274be3fae3e5a1c80d51b66319d4f7a8226134a9c27e2f5212cd6015fd8d5371"
+    }
+]

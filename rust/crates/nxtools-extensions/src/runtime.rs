@@ -1,7 +1,7 @@
 use crate::{
     BrokerClient, BrokerError, BrokerSecretStore, BrokerStart, Causality, DeclarativeAction,
-    InstalledPackage, Invocation, InvocationIdentity, InvocationNotice, PackageRegistry,
-    ScriptProgram, SecretStore,
+    InstalledPackage, InvocationIdentity, InvocationNotice, PackageRegistry, ScriptProgram,
+    SecretStore,
 };
 use serde_json::Value;
 use std::{
@@ -18,10 +18,17 @@ use std::{
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc, watch};
 use uuid::Uuid;
 
+#[path = "runtime_storage.rs"]
+mod storage_binding;
+use storage_binding::RunPackage;
+
 pub type HostFuture<'a> = Pin<Box<dyn Future<Output = HostReply> + Send + 'a>>;
 /// Existing feature owners implement this boundary; runtime never owns their DB/window state.
 pub trait FeatureAdapter: Send + Sync {
     fn describe(&self) -> Value;
+    fn describe_for(&self, _context: &HostContext) -> Value {
+        self.describe()
+    }
     fn call<'a>(
         &'a self,
         context: &'a HostContext,
@@ -29,12 +36,14 @@ pub trait FeatureAdapter: Send + Sync {
         params: Value,
     ) -> HostFuture<'a>;
 }
+#[derive(Clone)]
 pub struct HostContext {
     pub identity: InvocationIdentity,
     pub feature: String,
     pub entry: String,
     pub causality: Causality,
     pub cancellation: watch::Receiver<bool>,
+    pub blobs: Option<crate::blobs::BlobRun>,
 }
 pub struct HostReply {
     pub success: bool,
@@ -44,7 +53,7 @@ impl HostReply {
     pub fn error(code: &'static str) -> Self {
         Self {
             success: false,
-            value: serde_json::json!({"code":code}),
+            value: serde_json::json!({"code":code,"retryable":matches!(code,"busy"|"ui_queue_full"|"download_unavailable"|"clipboard_busy"|"disconnected"),"message":match code {"invalid_params"=>"Parameters do not match the method contract", "invalid_cursor"|"cursor_stale"=>"Restart the bounded query without a cursor", "resolution_required"=>"Explicit resolution is required before submitting", "ui_unavailable"=>"This operation needs an available desktop feature owner", "native_failed"=>"The Windows operation did not complete successfully", "unsupported"=>"This host does not implement the requested method", _=>"The host operation did not complete; inspect the stable error code"}}),
         }
     }
 }
@@ -68,6 +77,10 @@ pub enum RuntimeError {
     Stale,
     #[error("extension handler reported failure")]
     HandlerFailed,
+    #[error("extension transport is not available in this runtime")]
+    UnsupportedTransport,
+    #[error("extension settings are not ready")]
+    InvalidSettings,
 }
 pub struct InvokeRequest {
     pub package_id: String,
@@ -88,6 +101,7 @@ pub struct InvokeOutcome {
 struct ActiveRun {
     package: String,
     cancel: watch::Sender<bool>,
+    snapshot: Option<RunPackage>,
 }
 struct Inner {
     registry: RwLock<PackageRegistry>,
@@ -102,6 +116,10 @@ struct Inner {
     global: Arc<Semaphore>,
     plugins: Mutex<HashMap<String, Arc<Semaphore>>>,
     active: Mutex<HashMap<Uuid, ActiveRun>>,
+    blobs: crate::blobs::BlobStore,
+    progress: crate::progress::ProgressHub,
+    storage: Option<Arc<dyn crate::storage::StorageHost>>,
+    storage_binding_slots: Arc<Semaphore>,
 }
 #[derive(Clone)]
 pub struct ExtensionRuntime(Arc<Inner>);
@@ -111,6 +129,14 @@ impl ExtensionRuntime {
         registry: PackageRegistry,
         broker_path: PathBuf,
         adapter: Arc<dyn FeatureAdapter>,
+    ) -> Self {
+        Self::new_with_storage(registry, broker_path, adapter, None)
+    }
+    pub fn new_with_storage(
+        registry: PackageRegistry,
+        broker_path: PathBuf,
+        adapter: Arc<dyn FeatureAdapter>,
+        storage: Option<Arc<dyn crate::storage::StorageHost>>,
     ) -> Self {
         Self(Arc::new(Inner {
             registry: RwLock::new(registry),
@@ -125,6 +151,10 @@ impl ExtensionRuntime {
             verification: Arc::new(Semaphore::new(4)),
             plugins: Mutex::new(HashMap::new()),
             active: Mutex::new(HashMap::new()),
+            blobs: Default::default(),
+            progress: Default::default(),
+            storage,
+            storage_binding_slots: Arc::new(Semaphore::new(4)),
         }))
     }
     #[cfg(any(test, feature = "test-support"))]
@@ -150,6 +180,29 @@ impl ExtensionRuntime {
             .lock()
             .map_err(|_| RuntimeError::NativeUnavailable)? = Some(broker);
         Ok(())
+    }
+    pub fn subscribe_progress(&self) -> watch::Receiver<u64> {
+        self.0.progress.subscribe()
+    }
+    pub fn progress(&self, correlation_id: Uuid) -> Option<crate::InvocationProgress> {
+        let progress = self.0.progress.get(correlation_id)?;
+        let active = self
+            .0
+            .active
+            .lock()
+            .ok()?
+            .get(&progress.identity.run_id)
+            .is_some_and(|run| !*run.cancel.borrow());
+        if !active {
+            return None;
+        }
+        let current = self.snapshot().ok()?.packages.into_iter().any(|package| {
+            package.enabled
+                && package.trust.is_some()
+                && package.manifest.id == progress.identity.package_id
+                && package.content_hash == progress.identity.content_hash
+        });
+        current.then_some(progress)
     }
     pub fn snapshot(&self) -> Result<PackageRegistry, RuntimeError> {
         self.0
@@ -271,56 +324,35 @@ impl ExtensionRuntime {
             })
             .ok_or(RuntimeError::Untrusted)
     }
-    async fn still_current(&self, package: &InstalledPackage) -> Result<(), RuntimeError> {
+    fn registered_current(&self, package: &InstalledPackage) -> Result<(), RuntimeError> {
         let snapshot = self.snapshot()?;
-        let current = snapshot
+        if snapshot
             .packages
             .iter()
             .find(|current| current.manifest.id == package.manifest.id)
-            .ok_or(RuntimeError::Stale)?;
-        if current != package || !current.enabled {
+            != Some(package)
+            || !package.enabled
+        {
             return Err(RuntimeError::Stale);
         }
         let selected = snapshot
             .runtime_executable(&package.manifest.id)
             .map_err(|_| RuntimeError::Untrusted)?;
-        let permit = self
-            .0
-            .verification
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| RuntimeError::NativeUnavailable)?;
-        let owned = package.clone();
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            owned
-                .verify_approval()
-                .map_err(|_| RuntimeError::Untrusted)
-                .and_then(|()| {
-                    snapshot
-                        .verify_runtime_selection(&owned.manifest.id)
-                        .map_err(|_| RuntimeError::Untrusted)
-                })
-        })
-        .await
-        .map_err(|_| RuntimeError::NativeUnavailable)??;
-        let after_snapshot = self.snapshot()?;
-        let after = after_snapshot
-            .packages
-            .iter()
-            .find(|current| current.manifest.id == package.manifest.id)
-            .ok_or(RuntimeError::Stale)?;
-        if after != package
-            || !after.enabled
-            || after_snapshot
-                .runtime_executable(&package.manifest.id)
-                .map_err(|_| RuntimeError::Untrusted)?
-                != selected
+        if let Some(selected) = selected
+            && package.trust.as_ref().is_none_or(|trust| {
+                !crate::registry::same_runtime_selection(
+                    Some(&selected),
+                    Some(&trust.runtime.executable),
+                )
+            })
         {
             return Err(RuntimeError::Stale);
         }
         Ok(())
+    }
+    #[cfg(test)]
+    async fn still_current(&self, package: &InstalledPackage) -> Result<(), RuntimeError> {
+        self.still_run(&RunPackage::new(package.clone())).await
     }
     async fn execution_slots(
         &self,
@@ -354,9 +386,135 @@ impl ExtensionRuntime {
         Ok([plugin_slot, global_slot])
     }
 
+    fn describe_for(&self, context: &HostContext) -> Value {
+        let mut value = self.0.adapter.describe_for(context);
+        let Some(object) = value.as_object_mut() else {
+            return value;
+        };
+        let methods = object
+            .entry("methods")
+            .or_insert_with(|| Value::Array(Vec::new()));
+        if let Some(methods) = methods.as_array_mut() {
+            for method in crate::method_catalog(false, false, false)
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|method| {
+                    method["method"].as_str().is_some_and(|name| {
+                        name.starts_with("blobs.") || name.starts_with("storage.")
+                    })
+                })
+            {
+                if !methods
+                    .iter()
+                    .any(|existing| existing["method"] == method["method"])
+                {
+                    methods.push(method.clone());
+                }
+            }
+            for method in methods {
+                if method["minimum_transport"]
+                    .as_u64()
+                    .is_some_and(|version| version > 1)
+                    && context.blobs.is_none()
+                {
+                    method["available"] = Value::Bool(false);
+                    method["unavailable_code"] = Value::String("unsupported_transport".into());
+                } else if method["method"]
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("storage."))
+                {
+                    method["available"] = Value::Bool(self.0.storage.is_some());
+                    method["unavailable_code"] = if self.0.storage.is_some() {
+                        Value::Null
+                    } else {
+                        Value::String("capability_unavailable".into())
+                    };
+                }
+            }
+        }
+        value
+    }
+    async fn dispatch_host(
+        &self,
+        run: &RunPackage,
+        context: &HostContext,
+        method: &str,
+        params: Value,
+    ) -> Result<crate::blob_calls::Completion, RuntimeError> {
+        self.still_run(run).await?;
+        let package = run.snapshot()?;
+        if *context.cancellation.borrow() {
+            return Err(RuntimeError::Cancelled);
+        }
+        let started = Instant::now();
+        tracing::info!(event="extension.host_call.accepted",correlation_id=%context.identity.correlation_id,run_id=%context.identity.run_id,"extension host operation admitted");
+        if method.starts_with("storage.") {
+            let reply = self.storage_call(run, context, method, params).await;
+            self.still_run(run).await?;
+            tracing::info!(event="extension.host_call.terminal",correlation_id=%context.identity.correlation_id,run_id=%context.identity.run_id,success=reply.success,elapsed_ms=started.elapsed().as_millis(),"extension host operation terminated");
+            return Ok(reply.into());
+        }
+        if method.starts_with("blobs.") {
+            let result = crate::blob_calls::call(context, method, params).await;
+            self.still_run(run).await?;
+            tracing::info!(event="extension.host_call.terminal",correlation_id=%context.identity.correlation_id,run_id=%context.identity.run_id,success=result.reply.success,elapsed_ms=started.elapsed().as_millis(),"extension host operation terminated");
+            return Ok(result);
+        }
+        let reply = if method == "host.describe" {
+            let mut value = self.describe_for(context);
+            let object = value.as_object_mut().ok_or(RuntimeError::Protocol)?;
+            object.insert(
+                "transport".into(),
+                crate::session::transport_description(
+                    package
+                        .manifest
+                        .runtime
+                        .as_ref()
+                        .map_or(1, |runtime| runtime.protocol_version),
+                ),
+            );
+            HostReply {
+                success: true,
+                value,
+            }
+        } else if method == "credentials.get" {
+            let key = params.get("key").and_then(Value::as_str).filter(|key| {
+                package.manifest.settings.iter().any(|setting| {
+                    setting.key == *key && matches!(setting.field, crate::SettingType::Password)
+                })
+            });
+            if let Some(key) = key {
+                match self.secret_store()?.get(&package.manifest.id, key).await {
+                    Ok(value) => HostReply {
+                        success: true,
+                        value: serde_json::json!({"value":value}),
+                    },
+                    Err(_) => HostReply::error("credential_failed"),
+                }
+            } else {
+                HostReply::error("invalid_setting")
+            }
+        } else if context.feature == "downloads"
+            && context.entry == "resolve"
+            && matches!(
+                method,
+                "downloads.submit" | "downloads.probe" | "downloads.enqueue"
+            )
+        {
+            HostReply::error("resolver_reentry")
+        } else {
+            self.0.adapter.call(context, method, params).await
+        };
+        tracing::info!(event="extension.host_call.terminal",correlation_id=%context.identity.correlation_id,run_id=%context.identity.run_id,success=reply.success,elapsed_ms=started.elapsed().as_millis(),"extension host operation terminated");
+        self.still_run(run).await?;
+        Ok(reply.into())
+    }
+
     pub async fn invoke(&self, mut request: InvokeRequest) -> Result<InvokeOutcome, RuntimeError> {
         let accepted = Instant::now();
         let package = self.package(&request)?;
+        self.registered_current(&package)?;
         let handler = package
             .manifest
             .handlers
@@ -364,6 +522,13 @@ impl ExtensionRuntime {
             .find(|handler| handler.id == request.handler_id)
             .cloned()
             .ok_or(RuntimeError::HandlerUnavailable)?;
+        if handler
+            .accepts
+            .as_ref()
+            .is_some_and(|accepts| !accepts.accepts_context(&handler.feature, &request.context))
+        {
+            return Err(RuntimeError::HandlerUnavailable);
+        }
         let DeclarativeAction::Script { entry_file } = &handler.action else {
             return Err(RuntimeError::HandlerUnavailable);
         };
@@ -372,6 +537,9 @@ impl ExtensionRuntime {
             .runtime
             .as_ref()
             .ok_or(RuntimeError::HandlerUnavailable)?;
+        if !matches!(runtime.protocol_version, 1 | 2) || runtime.mode != crate::RuntimeMode::Once {
+            return Err(RuntimeError::UnsupportedTransport);
+        }
         let timeout = Duration::from_millis(u64::from(
             runtime.effective_timeout_ms(&handler.feature, &handler.entry),
         ));
@@ -385,18 +553,9 @@ impl ExtensionRuntime {
             handler_id: handler.id.clone(),
             content_hash: package.content_hash.clone(),
         };
+        let run_package = RunPackage::new(package.clone());
         let (cancel, mut local_cancel) = watch::channel(false);
-        self.0
-            .active
-            .lock()
-            .map_err(|_| RuntimeError::NativeUnavailable)?
-            .insert(
-                run_id,
-                ActiveRun {
-                    package: package.manifest.id.clone(),
-                    cancel,
-                },
-            );
+        self.register_run(run_id, run_package.clone(), cancel)?;
         let guard = ActiveGuard {
             runtime: self.clone(),
             run_id,
@@ -422,26 +581,58 @@ impl ExtensionRuntime {
             if *caller_cancel.borrow() || *execution_cancel.borrow() {
                 return Err(RuntimeError::Cancelled);
             }
+            if !package.manifest.settings_ready(&package.settings) {
+                return Err(RuntimeError::InvalidSettings);
+            }
             let slots = self.execution_slots(semaphore).await?;
-            self.still_current(&package).await?;
+            // The exact host-issued data binding may have updated this queued run.
+            self.still_run(&run_package).await?;
             let causality = request
                 .causality
                 .enter(&package.manifest.id, &handler.id)
                 .map_err(|_| RuntimeError::HandlerUnavailable)?;
+            let v2 = runtime.protocol_version == 2;
+            let mut invocation =
+                crate::session::WireInvocation::new(identity.clone(), runtime.protocol_version);
+            let blobs = invocation
+                .session_id()
+                .map(|session| self.0.blobs.invocation(identity.clone(), session));
+            let _blob_guard = BlobGuard(blobs.clone());
             let context = HostContext {
                 identity: identity.clone(),
                 feature: handler.feature.clone(),
                 entry: handler.entry.clone(),
                 causality: causality.clone(),
                 cancellation: execution_cancel.clone(),
+                blobs: blobs.clone(),
             };
-            let mut invocation = Invocation::new(identity.clone());
+            if !package.manifest.requires.is_empty() {
+                let description = self.describe_for(&context);
+                let methods = description
+                    .get("methods")
+                    .and_then(Value::as_array)
+                    .ok_or(RuntimeError::HandlerUnavailable)?;
+                if package.manifest.requires.iter().any(|required| {
+                    !methods.iter().any(|method| {
+                        method["method"] == required.method
+                            && method["version"] == required.version
+                            && method["available"] == true
+                    })
+                }) {
+                    return Err(RuntimeError::HandlerUnavailable);
+                }
+            }
+            let settings =
+                serde_json::to_value(package.manifest.effective_settings(&package.settings))
+                    .map_err(|_| RuntimeError::Protocol)?;
+            let causal_value =
+                serde_json::to_value(causality).map_err(|_| RuntimeError::Protocol)?;
             let input = invocation
-                .invoke_frame(
+                .initial_frame(
                     &handler.feature,
-                    request.context,
-                    serde_json::to_value(&package.settings).map_err(|_| RuntimeError::Protocol)?,
-                    serde_json::to_value(causality).map_err(|_| RuntimeError::Protocol)?,
+                    request.context.clone(),
+                    settings.clone(),
+                    causal_value.clone(),
                 )
                 .map_err(|_| RuntimeError::Protocol)?;
             let launch = prepare_launch(
@@ -457,8 +648,46 @@ impl ExtensionRuntime {
                 .map_err(map_broker)?;
             let mut complete = None;
             let mut stderr_bytes = 0usize;
+            let mut handshake = v2.then(|| tokio::time::Instant::now() + Duration::from_secs(5));
+            let mut calls = tokio::task::JoinSet::new();
+            let mut data_jobs = tokio::task::JoinSet::new();
+            if v2 {
+                tracing::info!(event="extension.session.transition",correlation_id=%identity.correlation_id,run_id=%run_id,stage="initializing","extension once session initialized");
+            }
             loop {
-                let event = native.next().await.map_err(map_broker)?;
+                self.0.progress.flush(run_id);
+                if blobs.as_ref().is_some_and(|run| run.ack_expired()) {
+                    return Err(RuntimeError::Timeout);
+                }
+                let event = tokio::select! {
+                    _ = async { if let Some(deadline)=handshake { tokio::time::sleep_until(deadline).await } else { std::future::pending::<()>().await } } => return Err(RuntimeError::Timeout),
+                    _ = tokio::time::sleep(Duration::from_millis(100)), if blobs.is_some() => continue,
+                    result = data_jobs.join_next(), if !data_jobs.is_empty() => {
+                        self.registered_run(&run_package)?;
+                        match result.ok_or(RuntimeError::Protocol)?.map_err(|_|RuntimeError::Protocol)?? {
+                            BlobIo::Uploaded { transfer, sequence, offset } => {
+                                native.write(invocation.data_ack_frame(transfer,sequence,offset).map_err(|_|RuntimeError::Protocol)?).map_err(map_broker)?;
+                            },
+                            BlobIo::Downloaded(Some(chunk)) => {
+                                native.write(invocation.data_frame(&chunk).map_err(|_|RuntimeError::Protocol)?).map_err(map_broker)?;
+                            },
+                            BlobIo::Downloaded(None) => {},
+                        }
+                        continue;
+                    },
+                    reply = calls.join_next(), if !calls.is_empty() => {
+                        let (call_id, completion): (String, crate::blob_calls::Completion) = reply.ok_or(RuntimeError::Protocol)?.map_err(|_|RuntimeError::Protocol)??;
+                        self.still_run(&run_package).await?;
+                        let download = completion.transfer.map(|transfer| invocation.register_transfer(transfer)).transpose().map_err(|_|RuntimeError::Protocol)?.flatten();
+                        let reply = completion.reply;
+                        native.write(invocation.host_result(&call_id,reply.success,reply.value,&identity).map_err(|_|RuntimeError::Protocol)?).map_err(map_broker)?;
+                        if let Some(transfer) = download {
+                            download_chunk(&mut data_jobs, blobs.clone().ok_or(RuntimeError::Protocol)?, transfer)?;
+                        }
+                        continue;
+                    },
+                    event = native.next() => event.map_err(map_broker)?,
+                };
                 match event.op.as_str() {
                     "started" => {}
                     "stderr" => {
@@ -468,7 +697,7 @@ impl ExtensionRuntime {
                         }
                     }
                     "stdout" => {
-                        self.still_current(&package).await?;
+                        self.registered_run(&run_package)?;
                         let notice = invocation
                             .accept(
                                 event
@@ -480,93 +709,125 @@ impl ExtensionRuntime {
                             )
                             .map_err(|_| RuntimeError::Protocol)?;
                         match notice {
-                            InvocationNotice::HostCall {
-                                call_id,
-                                method,
-                                params,
-                            } => {
-                                let host_started = Instant::now();
-                                tracing::info!(event="extension.host_call.accepted", correlation_id=%identity.correlation_id, run_id=%run_id, "extension host operation admitted");
-                                let reply = if method == "host.describe" {
-                                    HostReply {
-                                        success: true,
-                                        value: self.0.adapter.describe(),
-                                    }
-                                } else if method == "credentials.get" {
-                                    let key =
-                                        params.get("key").and_then(Value::as_str).filter(|key| {
-                                            package.manifest.settings.iter().any(|setting| {
-                                                setting.key == *key
-                                                    && matches!(
-                                                        setting.field,
-                                                        crate::SettingType::Password
-                                                    )
-                                            })
-                                        });
-                                    if let Some(key) = key {
-                                        match self
-                                            .secret_store()?
-                                            .get(&package.manifest.id, key)
-                                            .await
-                                        {
-                                            Ok(value) => HostReply {
-                                                success: true,
-                                                value: serde_json::json!({"value":value}),
-                                            },
-                                            Err(_) => HostReply::error("credential_failed"),
-                                        }
-                                    } else {
-                                        HostReply::error("invalid_setting")
-                                    }
-                                } else if handler.feature == "downloads"
-                                    && handler.entry == "resolve"
-                                    && matches!(
-                                        method.as_str(),
-                                        "downloads.submit"
-                                            | "downloads.probe"
-                                            | "downloads.enqueue"
+                            crate::SessionNotice::Ready => {
+                                self.still_run(&run_package).await?;
+                                handshake = None;
+                                tracing::info!(event="extension.session.transition",correlation_id=%identity.correlation_id,run_id=%run_id,stage="ready",elapsed_ms=accepted.elapsed().as_millis(),"extension once session ready");
+                                let input = invocation
+                                    .invoke_after_ready(
+                                        &handler.feature,
+                                        request.context.clone(),
+                                        settings.clone(),
+                                        causal_value.clone(),
                                     )
-                                {
-                                    HostReply::error("resolver_reentry")
-                                } else {
-                                    self.0.adapter.call(&context, &method, params).await
-                                };
-                                tracing::info!(event="extension.host_call.terminal", correlation_id=%identity.correlation_id, run_id=%run_id, success=reply.success, elapsed_ms=host_started.elapsed().as_millis(), "extension host operation terminated");
-                                self.still_current(&package).await?;
-                                native
-                                    .write(
-                                        invocation
-                                            .host_result(
-                                                &call_id,
-                                                reply.success,
-                                                reply.value,
-                                                &identity,
-                                            )
-                                            .map_err(|_| RuntimeError::Protocol)?,
-                                    )
-                                    .map_err(map_broker)?;
+                                    .map_err(|_| RuntimeError::Protocol)?;
+                                native.write(input).map_err(map_broker)?;
                             }
-                            InvocationNotice::ResultBatch { .. } => {
-                                if let Some(batches) = request.batches.as_ref() {
-                                    batches
-                                        .try_send((identity.clone(), notice))
-                                        .map_err(|_| RuntimeError::QueueFull)?;
+                            crate::SessionNotice::Progress(frame) => {
+                                self.0
+                                    .progress
+                                    .report(&identity, frame)
+                                    .map_err(|_| RuntimeError::Protocol)?;
+                            }
+                            crate::SessionNotice::RequestFinished => {
+                                tracing::info!(event="extension.session.transition",correlation_id=%identity.correlation_id,run_id=%run_id,stage="request_finished",elapsed_ms=accepted.elapsed().as_millis(),"extension once request quiesced; native cleanup still required");
+                            }
+                            crate::SessionNotice::Data(frame) => {
+                                if data_jobs.len() >= 4 {
+                                    return Err(RuntimeError::QueueFull);
+                                }
+                                let run = blobs.clone().ok_or(RuntimeError::Protocol)?;
+                                data_jobs.spawn(async move {
+                                    let offset = run
+                                        .upload(
+                                            frame.transfer_id,
+                                            frame.sequence,
+                                            frame.offset,
+                                            frame.data,
+                                        )
+                                        .await
+                                        .map_err(|_| RuntimeError::Protocol)?;
+                                    Ok(BlobIo::Uploaded {
+                                        transfer: frame.transfer_id,
+                                        sequence: frame.sequence,
+                                        offset,
+                                    })
+                                });
+                            }
+                            crate::SessionNotice::DataAck(frame) => {
+                                let run = blobs.clone().ok_or(RuntimeError::Protocol)?;
+                                if run
+                                    .acknowledge(frame.transfer_id, frame.sequence, frame.offset)
+                                    .map_err(|_| RuntimeError::Protocol)?
+                                {
+                                    download_chunk(&mut data_jobs, run, frame.transfer_id)?;
                                 }
                             }
-                            InvocationNotice::Completed { status, value } => {
-                                complete = Some((status, value));
-                            }
+                            crate::SessionNotice::Invocation(notice) => match notice {
+                                InvocationNotice::HostCall {
+                                    call_id,
+                                    method,
+                                    params,
+                                } => {
+                                    if v2 {
+                                        if calls.len() >= 8 {
+                                            return Err(RuntimeError::QueueFull);
+                                        }
+                                        let runtime = self.clone();
+                                        let package = run_package.clone();
+                                        let context = context.clone();
+                                        calls.spawn(async move {
+                                            runtime
+                                                .dispatch_host(&package, &context, &method, params)
+                                                .await
+                                                .map(|reply| (call_id, reply))
+                                        });
+                                        continue;
+                                    }
+                                    let reply = self
+                                        .dispatch_host(&run_package, &context, &method, params)
+                                        .await?
+                                        .reply;
+                                    self.still_run(&run_package).await?;
+                                    native
+                                        .write(
+                                            invocation
+                                                .host_result(
+                                                    &call_id,
+                                                    reply.success,
+                                                    reply.value,
+                                                    &identity,
+                                                )
+                                                .map_err(|_| RuntimeError::Protocol)?,
+                                        )
+                                        .map_err(map_broker)?;
+                                }
+                                InvocationNotice::ResultBatch { .. } => {
+                                    self.still_run(&run_package).await?;
+                                    if let Some(batches) = request.batches.as_ref() {
+                                        batches
+                                            .try_send((identity.clone(), notice))
+                                            .map_err(|_| RuntimeError::QueueFull)?;
+                                    }
+                                }
+                                InvocationNotice::Completed { status, value } => {
+                                    if !data_jobs.is_empty()
+                                        || blobs.as_ref().is_some_and(|run| !run.quiescent())
+                                    {
+                                        return Err(RuntimeError::Protocol);
+                                    }
+                                    self.still_run(&run_package).await?;
+                                    complete = Some((status, value));
+                                }
+                            },
                         }
                     }
                     "exited" => {
                         invocation
                             .process_exit(event.success, event.cleanup_complete)
                             .map_err(|_| RuntimeError::Protocol)?;
-                        self.still_current(&package).await?;
+                        self.still_run(&run_package).await?;
                         let (status, value) = complete.ok_or(RuntimeError::Protocol)?;
-                        if status == "error" {
-                            return Err(RuntimeError::HandlerFailed);
-                        }
                         return Ok(InvokeOutcome {
                             identity: identity.clone(),
                             status,
@@ -591,12 +852,45 @@ impl ExtensionRuntime {
         outcome
     }
 }
+struct BlobGuard(Option<crate::blobs::BlobRun>);
+impl Drop for BlobGuard {
+    fn drop(&mut self) {
+        if let Some(run) = &self.0 {
+            run.retire();
+        }
+    }
+}
+enum BlobIo {
+    Uploaded {
+        transfer: Uuid,
+        sequence: u64,
+        offset: usize,
+    },
+    Downloaded(Option<crate::blobs::BlobChunk>),
+}
+fn download_chunk(
+    jobs: &mut tokio::task::JoinSet<Result<BlobIo, RuntimeError>>,
+    run: crate::blobs::BlobRun,
+    transfer: Uuid,
+) -> Result<(), RuntimeError> {
+    if jobs.len() >= 4 {
+        return Err(RuntimeError::QueueFull);
+    }
+    jobs.spawn(async move {
+        run.next_chunk(transfer)
+            .await
+            .map(BlobIo::Downloaded)
+            .map_err(|_| RuntimeError::Protocol)
+    });
+    Ok(())
+}
 struct ActiveGuard {
     runtime: ExtensionRuntime,
     run_id: Uuid,
 }
 impl Drop for ActiveGuard {
     fn drop(&mut self) {
+        self.runtime.0.progress.retire(self.run_id);
         if let Ok(mut active) = self.runtime.0.active.lock()
             && let Some(run) = active.remove(&self.run_id)
         {
@@ -654,6 +948,7 @@ fn prepare_launch(
         memory_bytes: 512 * 1024 * 1024,
         max_processes: 8,
         stdin: input,
+        data_plane: (runtime.protocol_version == 2).then_some(2),
     })
 }
 fn local_windows_path(path: &std::path::Path) -> Result<String, RuntimeError> {
@@ -789,6 +1084,7 @@ mod tests {
             ActiveRun {
                 package: "fixture.inherited".into(),
                 cancel: inherited,
+                snapshot: None,
             },
         );
         runtime.0.active.lock().expect("active").insert(
@@ -796,6 +1092,7 @@ mod tests {
             ActiveRun {
                 package: "fixture.pinned".into(),
                 cancel: pinned,
+                snapshot: None,
             },
         );
         runtime
@@ -818,6 +1115,134 @@ mod tests {
         assert!(
             runtime.snapshot().expect("snapshot").packages[0]
                 .trust
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn expansion_storage_owned_binding_updates_exact_run_snapshots_but_publication_still_cancels() {
+        let (_root, registry, _) = configured_runtime_fixture();
+        let reviewed = registry.packages[0].clone();
+        let runtime = ExtensionRuntime::new(registry, PathBuf::new(), Arc::new(Adapter));
+        let run_package = RunPackage::new(reviewed.clone());
+        let (cancel, cancellation) = watch::channel(false);
+        runtime.0.active.lock().expect("active").insert(
+            Uuid::new_v4(),
+            ActiveRun {
+                package: reviewed.manifest.id.clone(),
+                cancel,
+                snapshot: Some(run_package.clone()),
+            },
+        );
+        let mut bound = reviewed.clone();
+        bound.data_uuid = Some(Uuid::new_v4());
+        runtime
+            .apply_storage_binding(&reviewed, &bound)
+            .expect("exact host metadata commit");
+        assert_eq!(run_package.snapshot().expect("run snapshot"), bound);
+        assert!(!*cancellation.borrow());
+        runtime
+            .registered_run(&run_package)
+            .expect("current run remains current");
+        let mut forged = bound.clone();
+        forged.enabled = false;
+        assert_eq!(
+            runtime.apply_storage_binding(&bound, &forged),
+            Err(RuntimeError::Stale)
+        );
+        let mut ordinary = runtime.snapshot().expect("registry");
+        ordinary.packages[0].data_uuid = Some(Uuid::new_v4());
+        runtime
+            .publish_registry(ordinary)
+            .expect("ordinary publication");
+        assert!(
+            *cancellation.borrow(),
+            "ordinary UUID changes are not silently ignored"
+        );
+        assert_eq!(
+            runtime.registered_run(&run_package),
+            Err(RuntimeError::Stale)
+        );
+    }
+
+    #[test]
+    fn expansion_storage_binding_rejects_stale_snapshot_before_active_registration() {
+        let (_root, registry, _) = configured_runtime_fixture();
+        let reviewed = registry.packages[0].clone();
+        let runtime = ExtensionRuntime::new(registry, PathBuf::new(), Arc::new(Adapter));
+        let old_run = RunPackage::new(reviewed.clone());
+        let mut bound = reviewed.clone();
+        bound.data_uuid = Some(Uuid::new_v4());
+        runtime
+            .apply_storage_binding(&reviewed, &bound)
+            .expect("binding won registration race");
+        let (cancel, _cancellation) = watch::channel(false);
+        assert_eq!(
+            runtime.register_run(Uuid::new_v4(), old_run, cancel),
+            Err(RuntimeError::Stale)
+        );
+        assert!(runtime.0.active.lock().expect("active").is_empty());
+        let (cancel, _cancellation) = watch::channel(false);
+        let current_run = RunPackage::new(bound);
+        runtime
+            .register_run(Uuid::new_v4(), current_run.clone(), cancel)
+            .expect("fresh exact snapshot");
+        runtime
+            .registered_run(&current_run)
+            .expect("current admitted run");
+        assert_eq!(runtime.0.active.lock().expect("active").len(), 1);
+    }
+
+    #[tokio::test]
+    async fn expansion_storage_v1_dispatch_and_discovery_never_allocate_or_delegate() {
+        let (_root, registry, _) = configured_runtime_fixture();
+        let package = registry.packages[0].clone();
+        let runtime = ExtensionRuntime::new(registry, PathBuf::new(), Arc::new(Adapter));
+        let (_cancel, cancellation) = watch::channel(false);
+        let context = HostContext {
+            identity: InvocationIdentity {
+                run_id: Uuid::new_v4(),
+                correlation_id: Uuid::new_v4(),
+                generation: 1,
+                package_id: package.manifest.id.clone(),
+                handler_id: "run".into(),
+                content_hash: package.content_hash.clone(),
+            },
+            feature: "tools".into(),
+            entry: "action".into(),
+            causality: Causality::root(Uuid::new_v4()),
+            cancellation,
+            blobs: None,
+        };
+        let reply = runtime
+            .dispatch_host(
+                &RunPackage::new(package),
+                &context,
+                "storage.get",
+                serde_json::json!({"key":"fixture"}),
+            )
+            .await
+            .expect("normal host error")
+            .reply;
+        assert!(!reply.success);
+        assert_eq!(reply.value["code"], "unsupported_transport");
+        let methods = runtime.describe_for(&context);
+        for method in methods["methods"]
+            .as_array()
+            .expect("methods")
+            .iter()
+            .filter(|method| {
+                method["method"]
+                    .as_str()
+                    .is_some_and(|name| name.starts_with("storage."))
+            })
+        {
+            assert_eq!(method["available"], false);
+            assert_eq!(method["unavailable_code"], "unsupported_transport");
+        }
+        assert!(
+            runtime.snapshot().expect("registry").packages[0]
+                .data_uuid
                 .is_none()
         );
     }
@@ -847,6 +1272,63 @@ mod tests {
             .still_current(&package)
             .await
             .expect("legacy approval fallback remains valid");
+    }
+    #[tokio::test(flavor = "current_thread")]
+    async fn remediation_completion_status_and_error_text_survive_real_process_cleanup() {
+        let root = tempfile::tempdir().expect("owned completion fixture");
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).expect("source");
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.completion","name":"Completion","version":"1","runtime":{"program":"python"},"files":["entry.py"],"handlers":[{"id":"run","title":"Run","feature":"tools","entry":"action","action":{"type":"script","entry_file":"entry.py"}}]});
+        std::fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("manifest"),
+        )
+        .expect("write manifest");
+        std::fs::write(source.join("entry.py"), "import json,sys\nf=json.loads(sys.stdin.readline())\nprint(json.dumps({'protocol_version':1,'op':'complete','run_id':f['run_id'],'status':f['context']['status'],'value':{'text':'Check input settings','code':'invalid_input'}}),flush=True)\n").expect("owned script");
+        let preview = crate::ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&root.path().join("packages"))
+            .expect("stage");
+        let hash = preview.content_hash.clone();
+        let mut registry = PackageRegistry::default();
+        registry
+            .install(preview, "fixture".into(), false)
+            .expect("install");
+        registry
+            .approve(
+                "fixture.completion",
+                &hash,
+                crate::RuntimeIdentity::inspect(&installed("python.exe")).expect("interpreter"),
+            )
+            .expect("approval");
+        registry
+            .set_enabled("fixture.completion", true, &[])
+            .expect("enable");
+        let fixture = fixture_path();
+        let runtime = ExtensionRuntime::new(registry, fixture.clone(), Arc::new(Adapter));
+        runtime
+            .bind_owned_fixture_broker(&fixture)
+            .expect("owned broker");
+        for status in ["error", "handled", "not_handled", "success"] {
+            let (_cancel, cancellation) = watch::channel(false);
+            let outcome = runtime
+                .invoke(InvokeRequest {
+                    package_id: "fixture.completion".into(),
+                    handler_id: "run".into(),
+                    correlation_id: Uuid::new_v4(),
+                    generation: 1,
+                    context: serde_json::json!({"status":status}),
+                    causality: Causality::root(Uuid::new_v4()),
+                    cancellation,
+                    batches: None,
+                })
+                .await
+                .expect("valid completion remains distinct from native/protocol failure");
+            assert_eq!(outcome.status, status);
+            assert_eq!(outcome.value["text"], "Check input settings");
+            assert_eq!(outcome.value["code"], "invalid_input");
+        }
+        runtime.shutdown();
     }
     fn installed(name: &str) -> PathBuf {
         std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))

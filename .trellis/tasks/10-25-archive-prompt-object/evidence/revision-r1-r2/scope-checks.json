@@ -1,0 +1,9 @@
+{
+  "source_edit": "PASS exact76-line diagnostic relocation only;6 standard registrations",
+  "diagnostic": "PASS byte-identical function/full-context snapshots;expected-one assertions retained",
+  "documents": "PASS English prose;Chinese retained only as exact product copy",
+  "old_evidence": "PASS all92 previous task artifacts byte-identical,includingparentreview",
+  "frozen_sources": "PASS all revision-start source hashes unchanged",
+  "old_manifest_scope": "Original manifest describes original version;revision manifest maps new hashes;no overwrite",
+  "full_desktop": "NOT RUN during R1/R2;historical1207/1208 failure preserved"
+}

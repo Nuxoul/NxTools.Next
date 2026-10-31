@@ -9,6 +9,12 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (ArchiveCliHost.IsMode(args))
+        {
+            if (!ArchiveCliHost.TryParse(args, out var archiveCliOptions)) return 2;
+            using var archiveCliLog = PlatformLog.CreateDefault();
+            return await ArchiveCliHost.RunAsync(archiveCliOptions, archiveCliLog);
+        }
         if (ExtensionHost.ExtensionHostBroker.IsMode(args))
         {
             if (!ExtensionHost.ExtensionHostBroker.TryParent(args, out var extensionParent)) return 2;
@@ -48,6 +54,8 @@ internal static class Program
                 : ErrorDialog.Show(errorReportPath!);
         }
         using var log = PlatformLog.CreateDefault();
+        if (args.Length == 1 && args[0] == "--maintain-trusted-bootstrap")
+            return TrustedBootstrapMaintenanceWindows.Run(log);
         if (args.Length == 1 && args[0] == "--trusted-update-service")
             return TrustedUpdateBroker.RunService(log);
         if (args.Length == 1 && args[0] == "--prepare-trusted-update")

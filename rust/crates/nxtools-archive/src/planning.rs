@@ -42,8 +42,37 @@ pub struct ExtractionPlan {
     pub(crate) session: uuid::Uuid,
     /// Share, do not copy, the immutable name projection this plan validated.
     pub(crate) projection: std::sync::Arc<[crate::ArchiveEntry]>,
+    pub(crate) isolated_browser_entry: bool,
 }
 impl ExtractionPlan {
+    /// One original ordinal into a fresh private cache lease, never a general extraction target.
+    pub(crate) fn browser_entry(
+        snapshot: &ArchiveSnapshot,
+        entry: &crate::ArchiveEntry,
+    ) -> Result<Self> {
+        if entry.kind != EntryKind::File || entry.warnings.contains(&EntryWarning::UnsafePath) {
+            return Err(ArchiveError::UnsafePath);
+        }
+        let relative = entry.display_path.replace('\\', "/");
+        crate::path_policy::validate_relative(&relative)?;
+        let parts = relative.split('/').collect::<Vec<_>>();
+        Ok(Self {
+            files: vec![PlannedFile {
+                id: entry.id,
+                relative: relative.clone(),
+                size: entry.size,
+            }],
+            directories: (1..parts.len()).map(|end| parts[..end].join("/")).collect(),
+            explicit_directories: Vec::new(),
+            subfolder: None,
+            total: entry.size,
+            full_archive: false,
+            skipped_special: 0,
+            session: snapshot.session,
+            projection: snapshot.entries.clone(),
+            isolated_browser_entry: true,
+        })
+    }
     pub(crate) fn replace_subfolder(&mut self, name: String) -> Result<()> {
         self.subfolder = Some(validate_stem(name)?);
         Ok(())
@@ -187,6 +216,7 @@ impl ExtractionPlan {
             skipped_special,
             session: snapshot.session,
             projection: snapshot.entries.clone(),
+            isolated_browser_entry: false,
         })
     }
 }

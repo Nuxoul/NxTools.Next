@@ -1,5 +1,7 @@
+mod archive_authorization;
 pub mod archive_job;
 pub mod archive_read;
+mod archive_virtual_drag;
 pub mod desktop_archive_intent;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -31,11 +33,13 @@ pub use local_pipe::{
 };
 
 const PENDING_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+const ARCHIVE_PICKER_TIMEOUT: Duration = Duration::from_secs(120);
 const PENDING_COMMAND_SWEEP: Duration = Duration::from_secs(1);
 
 struct PendingCommand {
     generation: u64,
     accepted_at: Instant,
+    timeout: Duration,
     summon_reply: Option<Sender<PlatformCommandResult>>,
 }
 
@@ -51,6 +55,8 @@ struct ActiveConnection {
     command_wake: Sender<()>,
     archive_reads: Vec<archive_read::ReadReservation>,
     archive_jobs: Vec<archive_job::JobReservation>,
+    archive_drag: Option<archive_virtual_drag::DragReservation>,
+    archive_authorizations: Vec<archive_authorization::AuthorizationReservation>,
     cancel_turn: bool,
     commands_paused: bool,
 }
@@ -83,6 +89,8 @@ impl PlatformCommandReceiver {
             && let Some(cancel) = active
                 .take_archive_cancel()
                 .or_else(|| active.take_job_cancel())
+                .or_else(|| active.take_drag_cancel())
+                .or_else(|| active.take_authorization_revoke())
         {
             return Ok(cancel);
         }
@@ -90,12 +98,16 @@ impl PlatformCommandReceiver {
             Ok(envelope) => {
                 active.note_archive_start(envelope.id);
                 active.note_job_start(envelope.id);
+                active.note_drag_start(envelope.id);
+                active.note_authorization_start(envelope.id);
                 active.cancel_turn = true;
                 Ok(envelope)
             }
             Err(error) => active
                 .take_archive_cancel()
                 .or_else(|| active.take_job_cancel())
+                .or_else(|| active.take_drag_cancel())
+                .or_else(|| active.take_authorization_revoke())
                 .ok_or(error),
         }
     }
@@ -156,6 +168,14 @@ impl CommandRouter {
         summon_reply: Option<Sender<PlatformCommandResult>>,
     ) -> std::result::Result<uuid::Uuid, QueueAdmissionError> {
         let command_id = envelope.id;
+        let timeout = if matches!(
+            &envelope.message,
+            Message::PlatformCommand(PlatformCommand::ArchivePicker(_))
+        ) {
+            ARCHIVE_PICKER_TIMEOUT
+        } else {
+            PENDING_COMMAND_TIMEOUT
+        };
         let active = self
             .active
             .as_ref()
@@ -167,6 +187,7 @@ impl CommandRouter {
                 generation: active.0,
                 accepted_at: Instant::now(),
                 summon_reply,
+                timeout,
             },
         );
         match active.1.try_send(envelope) {
@@ -351,6 +372,8 @@ impl PlatformServerEndpoint {
     ) -> Result<(), String> {
         self.observe_archive_cleanup(&notification);
         self.observe_job_cleanup(&notification);
+        self.observe_virtual_drag_cleanup(&notification);
+        self.observe_authorization_cleanup(&notification);
         if self.archive.intercept(&notification) {
             return Ok(());
         }
@@ -403,6 +426,8 @@ impl PlatformServerEndpoint {
             command_wake,
             archive_reads: Vec::new(),
             archive_jobs: Vec::new(),
+            archive_drag: None,
+            archive_authorizations: Vec::new(),
             cancel_turn: true,
         });
         let receiver = PlatformCommandReceiver {
@@ -444,6 +469,8 @@ impl PlatformServerEndpoint {
     async fn send_notification(&self, notification: PlatformNotification) -> Result<()> {
         self.observe_archive_cleanup(&notification);
         self.observe_job_cleanup(&notification);
+        self.observe_virtual_drag_cleanup(&notification);
+        self.observe_authorization_cleanup(&notification);
         if self.archive.intercept(&notification) {
             return Ok(());
         }
@@ -546,11 +573,28 @@ impl PlatformServerEndpoint {
         self.router
             .lock()
             .map(|mut router| {
+                let held_drag_receipts = router
+                    .active
+                    .as_ref()
+                    .and_then(|active| active.archive_drag.as_ref());
+                let held_drag_ids = router
+                    .pending
+                    .keys()
+                    .copied()
+                    .filter(|id| {
+                        held_drag_receipts.is_some_and(|drag| drag.receipt(*id))
+                            || router
+                                .active
+                                .as_ref()
+                                .is_some_and(|active| active.holds_authorization_receipt(*id))
+                    })
+                    .collect::<Vec<_>>();
                 router
                     .pending
-                    .extract_if(|_, pending| {
+                    .extract_if(|id, pending| {
                         pending.generation == generation
-                            && now.duration_since(pending.accepted_at) >= PENDING_COMMAND_TIMEOUT
+                            && !held_drag_ids.contains(id)
+                            && now.duration_since(pending.accepted_at) >= pending.timeout
                     })
                     .map(|(id, pending)| PendingTerminal {
                         id,
@@ -648,7 +692,61 @@ impl PlatformBridge {
         self.send_command_envelope(envelope)
     }
 
+    /// Passive archive demand is bound to the original read connection, under the same router lock.
+    pub fn send_archive_preview(
+        &self,
+        command: nxtools_protocol::archive_browser::ArchiveEntryCommand,
+        receipt: uuid::Uuid,
+        origin: u64,
+    ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        if !matches!(
+            command.action,
+            nxtools_protocol::archive_browser::ArchiveEntryAction::Preview
+                | nxtools_protocol::archive_browser::ArchiveEntryAction::PreviewText
+        ) || command.validate().is_err()
+        {
+            return Err(PlatformBridgeError::Disconnected);
+        }
+        let operation = command.operation_id;
+        let mut envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::ArchiveEntry(
+            command,
+        )));
+        envelope.id = receipt;
+        envelope.correlation_id = Some(operation);
+        let mut router = self
+            .router
+            .lock()
+            .map_err(|_| PlatformBridgeError::Disconnected)?;
+        if router
+            .active
+            .as_ref()
+            .is_none_or(|active| active.generation != origin)
+        {
+            return Err(PlatformBridgeError::Disconnected);
+        }
+        if router.pending.contains_key(&receipt) {
+            return Err(PlatformBridgeError::DuplicateCommandId);
+        }
+        router.enqueue(envelope, None).map_err(|error| match error {
+            QueueAdmissionError::Full => PlatformBridgeError::Busy,
+            _ => PlatformBridgeError::Disconnected,
+        })
+    }
     fn send_command_envelope(&self, envelope: Envelope) -> Result<uuid::Uuid, PlatformBridgeError> {
+        if matches!(&envelope.message,Message::PlatformCommand(PlatformCommand::ArchiveEntry(command)) if matches!(command.action,nxtools_protocol::archive_browser::ArchiveEntryAction::Authorize|nxtools_protocol::archive_browser::ArchiveEntryAction::Revoke))
+        {
+            return Err(PlatformBridgeError::Disconnected); // Preparation/revoke require captured origin.
+        }
+        let virtual_drag = match &envelope.message {
+            Message::PlatformCommand(
+                PlatformCommand::ArchiveVirtualDrag(command)
+                | PlatformCommand::ArchiveVirtualDragSpike(command),
+            ) => Some((**command).clone()),
+            _ => None,
+        };
+        if let Some(command) = virtual_drag {
+            return self.send_virtual_drag(envelope, &command, None);
+        }
         let command_id = envelope.id;
         let mut router = self
             .router
@@ -1517,6 +1615,57 @@ mod tests {
     }
 
     #[test]
+    fn archive_picker_keeps_native_dialog_receipt_for_two_minutes_only() {
+        use nxtools_protocol::archive_picker::{ArchivePickerCommand, ArchivePickerPurpose};
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let operation = uuid::Uuid::new_v4();
+        bridge
+            .send_command_with_id_correlated(
+                PlatformCommand::ArchivePicker(ArchivePickerCommand {
+                    version: 1,
+                    operation_id: operation,
+                    session_id: uuid::Uuid::new_v4(),
+                    generation: 1,
+                    owner_window_handle: 1,
+                    purpose: ArchivePickerPurpose::Destination,
+                    current_directory: None,
+                    suggested_name: None,
+                }),
+                operation,
+                operation,
+            )
+            .expect("dialog admitted");
+        let wire = server
+            .try_receive_command_for_contract_test()
+            .expect("actual picker envelope");
+        assert_eq!(wire.id, operation);
+        assert_eq!(wire.correlation_id, Some(operation));
+        assert!(
+            matches!(wire.message, Message::PlatformCommand(PlatformCommand::ArchivePicker(command)) if command.operation_id == operation)
+        );
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        assert!(
+            server
+                .expire_pending_commands(
+                    generation,
+                    Instant::now() + PENDING_COMMAND_TIMEOUT + Duration::from_millis(1),
+                )
+                .is_empty()
+        );
+        assert_eq!(
+            server
+                .expire_pending_commands(
+                    generation,
+                    Instant::now() + ARCHIVE_PICKER_TIMEOUT + Duration::from_millis(1),
+                )
+                .iter()
+                .map(|entry| entry.id)
+                .collect::<Vec<_>>(),
+            vec![operation]
+        );
+    }
+    #[test]
     fn timeout_sweep_is_scoped_to_the_connection_generation() {
         let (bridge, server) = platform_bridge(4);
         server.set_connected_for_contract_test(true);
@@ -1744,5 +1893,45 @@ mod archive_bridge_ownership_tests {
         );
         assert!(archive.notification_receiver().try_recv().is_err());
         drop(receiver);
+    }
+}
+
+#[cfg(test)]
+mod default_apps_command_tests {
+    use super::*;
+    #[tokio::test]
+    async fn shell_settings_fixed_command_retains_original_router_timeout() {
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let id = uuid::Uuid::new_v4();
+        bridge
+            .send_command_with_id(
+                PlatformCommand::OpenDefaultAppsSettings(
+                    nxtools_protocol::OpenDefaultAppsSettingsCommand {},
+                ),
+                id,
+            )
+            .expect("original command admission");
+        let queued = server
+            .try_receive_command_for_contract_test()
+            .expect("queued");
+        assert_eq!(queued.id, id);
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        let expired = server.expire_pending_commands(
+            generation,
+            Instant::now() + PENDING_COMMAND_TIMEOUT + Duration::from_millis(1),
+        );
+        server
+            .send_timeout_results(expired)
+            .await
+            .expect("original timeout");
+        let result = bridge
+            .notification_receiver()
+            .recv()
+            .await
+            .expect("terminal");
+        assert!(
+            matches!(result,PlatformNotification::CommandResult{correlation_id,result} if correlation_id==id && !result.success)
+        );
     }
 }

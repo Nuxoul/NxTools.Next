@@ -1,0 +1,18 @@
+﻿[
+    {
+        "exit":  1,
+        "name":  "strict-desktop-production-final"
+    },
+    {
+        "exit":  0,
+        "name":  "strict-desktop-tests-final"
+    },
+    {
+        "exit":  0,
+        "name":  "workspace-check-final"
+    },
+    {
+        "exit":  1,
+        "name":  "workspace-fmt-final"
+    }
+]

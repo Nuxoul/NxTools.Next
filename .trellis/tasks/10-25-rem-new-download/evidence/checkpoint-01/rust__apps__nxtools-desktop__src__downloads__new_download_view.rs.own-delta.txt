@@ -1,0 +1,10 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
++++ checkpoint-01/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
+@@ -3115,3 +3115,7 @@
+ #[cfg(test)]
+ #[path = "new_download_keyboard_tests.rs"]
+ mod keyboard_tests;
++
++#[cfg(test)]
++#[path = "new_download_rem_tests.rs"]
++mod rem_tests;

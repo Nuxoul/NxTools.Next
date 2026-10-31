@@ -1,0 +1,125 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/downloads.rs
++++ current/rust/apps/nxtools-desktop/src/downloads.rs
+@@ -95,6 +95,9 @@
+ #[cfg(debug_assertions)]
+ pub(crate) mod completion_transition_preview;
+ mod delete_confirmation;
++mod detail_request;
++#[cfg(test)]
++pub(crate) mod detail_request_tests;
+ mod directory_picker;
+ #[cfg(test)]
+ mod directory_picker_tests;
+@@ -117,6 +120,7 @@
+ #[cfg(test)]
+ use self::artifact_actions::resolve_download_artifact_target;
+ use self::delete_confirmation::*;
++pub(crate) use self::detail_request::DownloadDetailScope;
+ use self::directory_picker::*;
+ use self::new_download_view::*;
+ use self::schedule_view::*;
+@@ -578,6 +582,7 @@
+     tasks: Rc<Vec<DownloadEngineTask>>,
+     task_detail: Option<DownloadTaskDetail>,
+     task_detail_error: Option<(DownloadTaskId, String)>,
++    detail_requests: detail_request::DetailRequests,
+     snapshot_error: Option<String>,
+     queues: Vec<DownloadQueue>,
+     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
+@@ -787,6 +792,7 @@
+             tasks: Rc::new(tasks),
+             task_detail: None,
+             task_detail_error: None,
++            detail_requests: detail_request::DetailRequests::default(),
+             snapshot_error: None,
+             queues,
+             latest_progress: HashMap::new(),
+@@ -1023,27 +1029,6 @@
+ 
+     pub(crate) fn snapshot_error(&self) -> Option<&str> {
+         self.snapshot_error.as_deref()
+-    }
+-
+-    pub(crate) fn request_task_detail(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+-        if self.task_detail(task_id).is_some() {
+-            return;
+-        }
+-        match load_download_task_detail(&self.engine, task_id) {
+-            Ok(detail) => {
+-                self.task_detail = Some(detail);
+-                self.task_detail_error = None;
+-            }
+-            Err(error) => {
+-                warn!(
+-                    task_id = %task_id.as_uuid(),
+-                    "could not load selected download task detail"
+-                );
+-                self.task_detail = None;
+-                self.task_detail_error = Some((task_id, error));
+-            }
+-        }
+-        cx.notify();
+     }
+ 
+     fn default_queue(&self) -> Option<&DownloadQueue> {
+@@ -3507,30 +3492,8 @@
+         self.tasks = Rc::new(tasks);
+         self.queues = snapshot.queues;
+         self.request_task_icons();
+-        if refresh_task_detail
+-            && let Some(task_id) = self
+-                .task_detail
+-                .as_ref()
+-                .map(|detail| detail.task.task.id())
+-        {
+-            if self.tasks.iter().any(|task| task.task.id() == task_id) {
+-                match load_download_task_detail(&self.engine, task_id) {
+-                    Ok(detail) => {
+-                        self.task_detail = Some(detail);
+-                        self.task_detail_error = None;
+-                    }
+-                    Err(error) => {
+-                        warn!(
+-                            task_id = %task_id.as_uuid(),
+-                            "could not refresh selected download task detail"
+-                        );
+-                        self.task_detail_error = Some((task_id, error));
+-                    }
+-                }
+-            } else {
+-                self.task_detail = None;
+-                self.task_detail_error = None;
+-            }
++        if refresh_task_detail {
++            self.refresh_selected_task_detail(cx);
+         }
+         let task_states = self
+             .tasks
+@@ -3580,6 +3543,12 @@
+             self.last_event_sequence = 0;
+         }
+         let sequence = envelope.sequence;
++        let detail_rejected =
++            if let DownloadEvent::CommandRejected { request_id, .. } = &envelope.event {
++                self.claim_detail_rejection(*request_id, cx)
++            } else {
++                false
++            };
+         if self.last_event_sequence != 0 && sequence <= self.last_event_sequence {
+             warn!(
+                 event = "download.desktop.stale_event_dropped",
+@@ -3599,6 +3568,14 @@
+             );
+         }
+         self.last_event_sequence = sequence;
++        // Read-only TaskDetail rejection is owned by its correlated async reply.
++        // It cannot trigger a query -> rejection -> snapshot -> query loop.
++        if detail_rejected {
++            if sequence_gap {
++                self.refresh_snapshot(false, cx);
++            }
++            return;
++        }
+         let progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
+         if sequence_gap && progress_event {
+             self.refresh_snapshot(true, cx);

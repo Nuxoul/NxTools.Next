@@ -15,7 +15,14 @@ mod path_policy;
 pub mod planning;
 pub mod product;
 pub mod product_job;
+mod reclamation;
+#[cfg(feature = "isolated-codecs")]
+mod sevenz_edit_header;
+#[cfg(feature = "isolated-codecs")]
+mod sevenz_edit_plan;
 pub mod source_deletion;
+mod tar_edit;
+mod tar_edit_outer;
 pub mod worker;
 pub mod worker_browser;
 #[cfg(feature = "isolated-codecs")]
@@ -28,8 +35,11 @@ mod worker_output;
 mod worker_password;
 #[cfg(feature = "isolated-codecs")]
 mod worker_sevenz_create;
+#[cfg(feature = "isolated-codecs")]
+mod worker_sevenz_edit;
 mod worker_sources;
 mod worker_tar_create;
+mod worker_tar_edit;
 mod worker_tree_io;
 mod worker_volume_output;
 mod worker_zip_create;
@@ -42,7 +52,7 @@ pub use control::{ArchiveProgress, OperationControl};
 pub use engine::ArchiveEngine;
 pub use error::{ArchiveError, Result};
 pub use model::{
-    ArchiveCapabilities, ArchiveEntry, ArchiveFormat, ArchiveOutcome, ArchiveRequest,
-    ArchiveSnapshot, EntryId, EntryKind, EntryWarning, NameEncoding, NameProvenance, OpenRequest,
-    ResourceLimits,
+    ArchiveCapabilities, ArchiveEntry, ArchiveFormat, ArchiveModificationRefusal, ArchiveOperation,
+    ArchiveOutcome, ArchiveRequest, ArchiveSnapshot, EntryId, EntryKind, EntryWarning,
+    NameEncoding, NameProvenance, OpenRequest, ResourceLimits,
 };

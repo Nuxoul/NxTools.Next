@@ -1,0 +1,30 @@
+{
+  "id": "extensions-host-http",
+  "name": "extensions-host-http",
+  "title": "P4 — Proxy-aware HTTP",
+  "description": "R4/A4 exact declared origins and bounded proxy-aware requests",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "Approved R4/A4 exact declared origins and bounded proxy-aware host HTTP through original owners",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-25",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-25-extensions-capability-expansion",
+  "relatedFiles": [],
+  "notes": "P4 in progress. Prior exact-origin/schema slice verified; host BlobRun and pure HTTP contract latest compilation still pending. Added isolated Desktop HTTP client source with strict snapshot/redirect/body budgets and 10 owned loopback/proxy/compression/cancel fixture tests, not executed or wired into production. Repeated natural-idle preflight exit75/shared_busy, no Cargo launched. No dispatch/catalog/UI/SDK availability. See checkpoint.md. No native/deployment/peer termination authority.",
+  "meta": {
+    "implementation_approved": true,
+    "native_ui_authorized": false,
+    "deployed": false
+  }
+}

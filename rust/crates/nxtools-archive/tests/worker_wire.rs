@@ -380,7 +380,7 @@ fn legacy_or_unnegotiated_extraction_cannot_request_source_deletion() {
         request.validate().is_err(),
         "old raw host lacks extraction metadata/MOTW negotiation"
     );
-    request.extract_options = Some(nxtools_archive::worker::ExtractOptions { copy_motw: true });
+    request.extract_options = Some(nxtools_archive::worker::ExtractOptions { copy_motw: true, reclamation: None });
     assert!(request.validate().is_ok());
     request.operation = "test".into();
     assert!(request.validate().is_err(), "test-only never delete source");
@@ -687,4 +687,114 @@ fn shared_conflict_capability_preserves_zip_marker_and_admits_standalone_streams
         let result = child.wait_with_output().expect("cleanup");
         assert!(result.status.success() && result.stderr.is_empty());
     }
+}
+
+#[test]
+fn browser_password_private_authorization_has_no_read_output_or_prompt_authority() {
+    use nxtools_protocol::archive_browser::*;
+    let context = ArchiveBrowserContext {
+        snapshot_id: Uuid::new_v4(),
+        format: "Zip".into(),
+        comment: String::new(),
+        source: ArchiveSourceBinding {
+            native: "v1:test".into(),
+            digest: [1; 32],
+            size: 1,
+            modified_unix_ns: 1,
+        },
+        sevenz_edit: None,
+        tar_edit: None,
+    };
+    let mut prepare = WorkerRequest::open(Uuid::new_v4(), r"C:\owned\source.zip".into());
+    prepare.version = 2;
+    prepare.operation = "test".into();
+    prepare.password_interaction = Some(true);
+    prepare.browser_authorize = Some(context.clone());
+    prepare.limits.max_entry_bytes = 512 << 20;
+    prepare.limits.max_output_bytes = 512 << 20;
+    assert!(prepare.validate().is_ok());
+    prepare.operation = "extract".into();
+    assert!(prepare.validate().is_err());
+    prepare.operation = "test".into();
+    prepare.read_contract = Some(1);
+    assert!(prepare.validate().is_err());
+    let mut materialize = WorkerRequest::open(Uuid::new_v4(), r"C:\owned\source.zip".into());
+    materialize.version = 2;
+    materialize.operation = "extract".into();
+    materialize.browser_entry = Some(nxtools_archive::worker_browser::BrowserEntry {
+        ordinal: 0,
+        expected: context,
+    });
+    materialize.browser_password = Some(b"private-fixture-password".to_vec());
+    materialize.limits.max_entry_bytes = 512 << 20;
+    materialize.limits.max_output_bytes = 512 << 20;
+    materialize.limits.max_entries = 100_000;
+    materialize.limits.max_metadata_bytes = 128 << 20;
+    materialize.extract_options =
+        Some(nxtools_archive::worker::ExtractOptions { copy_motw: false, reclamation: None });
+    assert!(materialize.validate().is_ok());
+    materialize.password_interaction = Some(true);
+    assert!(materialize.validate().is_err());
+    materialize.password_interaction = None;
+    materialize.browser_entry = None;
+    assert!(materialize.validate().is_err());
+}
+
+#[test]
+fn capability_foundation_unsupported_source_rejects_at_worker_dispatch_without_writes() {
+    use serde_json::{Value, json};
+    use std::process::{Command, Stdio};
+    // An empty TAR is independently specified as two zero blocks. A forged ZIP context
+    // must not route it to a ZIP candidate builder or turn backend absence into stale identity.
+    let root = tempfile::tempdir().expect("owned fixture");
+    let path = root.path().join("not-a-zip.zip");
+    let before = vec![0u8; 1024];
+    std::fs::write(&path, &before).expect("empty TAR");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nxtools-archive-worker"))
+        .arg("--archive-worker")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("original worker");
+    let id = Uuid::new_v4();
+    write_frame(child.stdin.as_mut().expect("stdin"), &json!({
+        "schema":2,"operation_id":id,"op":"start","operation":"modify_zip",
+        "path":path,"job_execution":true,"job_modify":{
+            "browser":{"snapshot_id":Uuid::new_v4(),"format":"Zip","comment":"",
+                "source":{"native":"v1:fixture","digest":vec![0u8;32],"size":1024,"modified_unix_ns":1}},
+            "action":"comment","ordinals":[],"value":"must-not-write"}
+    })).expect("bounded request");
+    let mut terminal = None;
+    while let Some(frame) =
+        read_frame::<_, Value>(child.stdout.as_mut().expect("stdout")).expect("frame")
+    {
+        if frame["op"] == "failure" {
+            terminal = Some(frame);
+            break;
+        }
+        if frame["op"] == "native_call" {
+            let call = &frame["native"];
+            assert!(
+                matches!(
+                    call["action"].as_str(),
+                    Some("source_acquire" | "source_validated" | "edit_generating")
+                ),
+                "unsupported source must never begin, write, commit or acquire additions: {call}"
+            );
+            write_frame(child.stdin.as_mut().expect("stdin"), &json!({
+                "version":1,"operation_id":id,"op":"native_result","call_id":call["call_id"],"success":true
+            })).expect("read-only native reply");
+        }
+    }
+    drop(child.stdin.take());
+    let output = child
+        .wait_with_output()
+        .expect("actual worker exit releases task");
+    assert!(output.stderr.is_empty());
+    assert_eq!(std::fs::read(&path).expect("source retained"), before);
+    assert_eq!(
+        terminal.expect("typed terminal")["error_code"],
+        "UnsupportedOperation"
+    );
 }

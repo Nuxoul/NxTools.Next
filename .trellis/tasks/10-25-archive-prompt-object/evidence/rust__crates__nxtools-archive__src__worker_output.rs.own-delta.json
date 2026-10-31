@@ -1,0 +1,54 @@
+{
+  "path": "rust/crates/nxtools-archive/src/worker_output.rs",
+  "baseline_sha256": "67204ae8348abfbf9c492b18984ec9c4e933bd6d41c388661d66e541bb2a9dd3",
+  "delivery_sha256": "dc8cf790186065fc9557215c50a9bdd953c7b11501fc260462c6ae2fa7725912",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 139,
+      "baseline_end": 139,
+      "delivery_start": 139,
+      "delivery_end": 141,
+      "baseline_text": "",
+      "delivery_text": "    // Presentation only; unlike plan_prefix this never changes a native operation path.\n    display_prefix: Option<String>,\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 155,
+      "baseline_end": 155,
+      "delivery_start": 157,
+      "delivery_end": 158,
+      "baseline_text": "",
+      "delivery_text": "            display_prefix: None,\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 174,
+      "baseline_end": 174,
+      "delivery_start": 177,
+      "delivery_end": 178,
+      "baseline_text": "",
+      "delivery_text": "                    self.display_prefix = plan.subfolder().map(|name| format!(\"{name}/\"));\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 457,
+      "baseline_end": 457,
+      "delivery_start": 461,
+      "delivery_end": 470,
+      "baseline_text": "",
+      "delivery_text": "        let member_path = if self.plan_paths.is_none() {\n            self.display_prefix\n                .as_deref()\n                .and_then(|prefix| path.strip_prefix(prefix))\n                .unwrap_or(path)\n        } else {\n            path\n        }\n        .to_owned();\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 468,
+      "baseline_end": 469,
+      "delivery_start": 481,
+      "delivery_end": 482,
+      "baseline_text": "        let result = conflict.begin(self, &path, incoming);\n",
+      "delivery_text": "        let result = conflict.begin(self, &path, &member_path, incoming);\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

@@ -15,7 +15,7 @@ pub(super) struct Readmission {
 }
 enum Delivery {
     Attempt(Box<ArchiveJobCommand>, SyncSender<ArchiveJobTerminal>),
-    Finished(nxtools_archive::Result<ArchiveJobTerminal>),
+    Finished(Box<nxtools_archive::Result<ArchiveJobTerminal>>),
 }
 impl ArchiveApplication {
     pub(super) fn start_readmission(&mut self, id: Uuid, cx: &mut Context<Self>) {
@@ -23,8 +23,22 @@ impl ArchiveApplication {
             return;
         };
         let command = record.command.clone();
-        let control = OperationControl::with_operation_id(id);
-        let interaction = InteractionPort::new(id, 1);
+        if command
+            .request
+            .as_ref()
+            .and_then(|request| request.extract.as_ref())
+            .is_some_and(|extract| extract.reclamation.is_some())
+        {
+            tracing::error!(event="archive.reclamation.readmission_rejected",job_id=%id,"reclamation cannot enter ordinary finite output readmission");
+            self.job_terminal(
+                id,
+                super::jobs::local_terminal("reclamation_readmission_forbidden", true),
+                cx,
+            );
+            return;
+        }
+        let control = OperationControl::with_operation_id(command.operation_id);
+        let interaction = InteractionPort::new(command.operation_id, 1);
         self.jobs.readmissions.insert(
             id,
             Readmission {
@@ -52,7 +66,7 @@ impl ArchiveApplication {
                             .map_err(|_| nxtools_archive::ArchiveError::IoFailure)
                     },
                 );
-                let _ = sender.send_blocking(Delivery::Finished(result));
+                let _ = sender.send_blocking(Delivery::Finished(Box::new(result)));
             });
         if coordinator.is_err() {
             self.jobs.readmissions.remove(&id);
@@ -84,7 +98,7 @@ impl ArchiveApplication {
                                 return;
                             };
                             runtime.interaction.close();
-                            let terminal = match result {
+                            let terminal = match *result {
                                 Ok(terminal) => terminal,
                                 Err(error) => {
                                     let mut terminal = runtime.last.take().unwrap_or_else(|| {
@@ -145,6 +159,7 @@ impl ArchiveApplication {
             existing_bytes: Some(required.entry_bytes),
             incoming_bytes: Some(required.output_bytes),
             approved_limit: Some(required.output_bytes),
+            display: None,
         };
         let Some(record) = self.jobs.records.get_mut(&id) else {
             return;

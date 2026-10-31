@@ -1,0 +1,10 @@
+--- baseline/Cargo.lock
++++ current/Cargo.lock
+@@ -4931,6 +4931,7 @@
+  "async-channel",
+  "chrono",
+  "embed-resource",
++ "flate2",
+  "gpui-kit",
+  "gpui-kit-markdown-editor",
+  "image",

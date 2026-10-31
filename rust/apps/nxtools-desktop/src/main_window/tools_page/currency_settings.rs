@@ -66,15 +66,11 @@ pub(super) fn render_card(
                             .text_color(theme.text_secondary),
                     )
                     .child(Label::new(CARD.title))
-                    .child(
-                        Label::new(if enabled { "已启用" } else { "已停用" })
-                            .text_xs()
-                            .text_color(theme.text_secondary),
-                    )
+                    .child(tool_status(theme, enabled, "tool-currency-status-dot"))
                     .child(
                         Button::new("tool-currency-configure")
                             .debug_selector(|| "tool-currency-configure".into())
-                            .label("配置")
+                            .label("配置…")
                             .small()
                             .outline()
                             .on_click(cx.listener(|this, _, _, cx| {
@@ -254,14 +250,70 @@ impl Render for CurrencySettingsBody {
             ),
             _ => "暂无可用汇率，请更新数据".into(),
         };
-        let content = div().w_full().flex().flex_col().gap_3()
-            .child(Form::horizontal().small().label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))
-                .child(compact_tool_field("currency-target-label","currency-target-help","currency-target-control","目标币种","搜索代码、接口名称或常用中文名；数据源包含法币、贵金属及加密货币。",div().debug_selector(|| "currency-target".into()).w_full().child(Select::new(&self.target).menu_width(px(320.0)).menu_max_h(px(160.0)).search_placeholder("搜索币种代码或名称").accessibility_label("目标币种"))))
-                .child(compact_tool_field("currency-update-label","currency-update-help","currency-update-control","汇率数据","启用后每天刷新，也可手动更新。请求只包含固定基准币种，不发送复制内容。",Button::new("currency-update").debug_selector(|| "currency-update".into()).small().outline().label(if status.busy {"更新中…"} else {"更新汇率"}).disabled(status.busy).on_click(update))))
-            .child(div().debug_selector(|| "currency-rate-status".into()).child(Label::new(summary).text_sm()))
-            .when_some(status.updated_at, |view, updated| view.child(Label::new(format!("上次获取 {updated}")).text_sm()))
-            .when_some(status.error, |view, error| view.child(Alert::warning("currency-error", error)))
-            .child(Label::new("每日参考汇率，非实时成交价。来源：fawazahmed0 Currency API；jsDelivr / Cloudflare。$、刀、美刀按 USD；₩ 按 KRW。").text_sm().text_color(theme.text_secondary))
+        let content = div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                Form::horizontal()
+                    .small()
+                    .label_width(tool_settings_label_width(window))
+                    .child(compact_tool_field(
+                        "currency-target-label",
+                        "currency-target-help",
+                        "currency-target-control",
+                        "目标币种",
+                        "搜索代码、接口名称或常用中文名；数据源包含法币、贵金属及加密货币。",
+                        div()
+                            .debug_selector(|| "currency-target".into())
+                            .w_full()
+                            .min_w_0()
+                            .max_w(ordinary_rem(164.0))
+                            .child(
+                                Select::new(&self.target)
+                                    .w_full()
+                                    .menu_width(ordinary_rem(320.0))
+                                    .menu_max_h(px(160.0))
+                                    .search_placeholder("搜索币种代码或名称")
+                                    .accessibility_label("目标币种"),
+                            ),
+                    ))
+                    .child(compact_tool_field(
+                        "currency-update-label",
+                        "currency-update-help",
+                        "currency-update-control",
+                        "汇率数据",
+                        "启用后每天刷新，也可手动更新。请求只包含固定基准币种，不发送复制内容。",
+                        Button::new("currency-update")
+                            .debug_selector(|| "currency-update".into())
+                            .small()
+                            .outline()
+                            .label(if status.busy {
+                                "更新中…"
+                            } else {
+                                "更新汇率"
+                            })
+                            .disabled(status.busy)
+                            .on_click(update),
+                    )),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "currency-rate-status".into())
+                    .child(Label::new(summary).text_sm()),
+            )
+            .when_some(status.updated_at, |view, updated| {
+                view.child(Label::new(format!("上次获取 {updated}")).text_sm())
+            })
+            .when_some(status.error, |view, error| {
+                view.child(Alert::warning("currency-error", error))
+            })
+            .child(
+                Label::new("每日参考汇率，非实时成交价。")
+                    .text_sm()
+                    .text_color(theme.text_secondary),
+            )
             .into_any_element();
         feature_settings_window(
             theme,

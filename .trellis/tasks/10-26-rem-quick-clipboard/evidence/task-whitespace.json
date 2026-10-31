@@ -1,0 +1,39 @@
+{
+  "scope": "Four new task/verifier text files only; not Rust formatting",
+  "exit": 0,
+  "method": "Explicit trailing-whitespace/final-newline scan plus Git no-index diagnostics; raw difference exits retained",
+  "files": [
+    {
+      "file": "prd.md",
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    },
+    {
+      "file": "inventory.md",
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    },
+    {
+      "file": "outcomes.md",
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    },
+    {
+      "file": "evidence/verify.py",
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    }
+  ]
+}

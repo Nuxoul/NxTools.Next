@@ -814,3 +814,88 @@ Current correction closeout: official menu model placement now waits for a fresh
 
 ## Approved unified Markdown and image modes (2026-10-22 prerequisite)
 User supersedes TextView-only/edit-only scope: list summary, full passive textpreview and explicit editor adopt fixed external editor with narrowly approved passive element mode. Read [editor chain and invariants](markdown-editor.md) before implementation. Original full-by-ID/nativeformats/paste targets,400charsummary/210DIPtextcard/190image/62files/8gap, original category/search/IME/action ownership unchanged. Image modes defaultAuto/Fit/Panorama/Light800/Mini500/Compact300 use same passive HWND and true visible workarea; rawpixels/DPI/axis scroll separate from list geometry. Legacy ClipboardPreviewWindow constructor/update/PlaceNear/ApplyPassiveWindowStyle rechecked; fixed440x340 is intentionally superseded only for imagepreview. New settings use originalsectionmerge, failure retains live priorvalue/storage root. No productlaunch/package/install implied.
+
+## Approved density follow-up (2026-10-22)
+User supersedes fixed210DIP with whole-textcard setting120–320/default160; same400charsummary/fullpayload/nativeowner, image190/file62/gap8 unchanged. Currenthistory.rs caps body/slot/card at147/300/320; originalListState mustremeasureonnext-turnpresentationupdate,notreplacequery. Official0.8Settingsnumberfield owns bounds/step32DIP; deferred original section setter only. Conditional16DIPfeather allowed only asonepaintgradientusingexistinggeometry, noadditionalparse/layout/frameclock/blur orhitinterception. OriginalClipboardpopupconstructors61–125,PrepareForPopupShow206–239,HidePopup248–259 were reread; noinput/native lifecycle rewrite. Task10-22-clipboard-density-resource-names ownsred/green andacceptance.
+
+## Approved clipped-text finish and repeated input symptom (2026-10-22)
+User cancels hoverednotificationCtrlC entirely; noframeworknotificationpatch is authorized. User approves~14DIPstaticbody-onlyfeather and asks forverylightcardshadow plusreportsCtrl+digits/type-anywherestillfail andpreviewappears. KeepListItem/InputGroup/currentInputState,fullpayload,120..320/default160wholecard,gap8 andonepassivepreview. InspectoldClipboardHistoryPopupWindow.axaml.cs61–167constructor/Open/Activated,206–259Prepare/searchfocus/Hide,321–428tunnelnumber/TextInput. OriginalAvalonia base nativeShow/Hide isexternal/unavailable; existingexplicitprimaryactivationintent isclear, not proof ofnewnativebehavior.
+NewlyverifiedNext chain: clipboard.rs::open_panel creates hidden show:false/focus:true GPUI HWND -> nativebounds/topmostACK -> SetWindowVisibility(true)ACK -> GPUIsearchfocusonly. C# WindowsPlatformAdapter.NativeMethods.cs::SetWindowVisibility544–554 usesSW_SHOWNOACTIVATE; GPUIWindowswindow.rs578–588 defersinitialplacementwhenhidden,sofocus:truealonehasnotshown/activatedit. NoClipboardActivateWindowcommandexists; QuickLaunch has explicitnativeactivation. Addrealproductioncommand-chainredbeforefix: revealACK->current-sessionActivateWindow->activationACK->deferredsearchfocus,stale/hidden/disconnect/failurecannotactivate/revive. Do notcallGPUIactivate_windowonhiddenpreparedHWND (canreplayinitialplacement); C#existingnativeActivateWindowownsfocusAPI. No changes to passivepreviewpolicy/nativewriter, no realclipboard/globalinputtest.
+Feather usesexistingrenderedbodybounds,notnewparse/layout/timer; publicListItemgroup/group_hover canstylepaint-onlyoverlaywithoutsecondhoverstate. Matchactualnormal/hover/selectedcompositionincludingalpha beforeclaimingvisualcorrectness. Lightstaticshadow<=oneboundedshadowpermountedcard,notwholewindowblur/repeatinganimation; realpaint/clip/nohit/gap/payloadtests andboundedcostcomparisonrequired. Performanceclaim islimitedtomeasuredCPU/scene/idlework,notGPU/installedacceptance.
+
+## Stationary-pointer preview admission diagnosis (2026-10-22)
+User reports a preview appearing on summon without moving. Rechecked old `D:/Code/NxTools/Controls/ClipboardHistoryListView.cs` constructor79–85, ResetScroll107–114 and OnPointerMoved/UpdateHoveredPreviewItem434–460: pointer movement establishes the hovered index; preview entry is emitted only when that cached item changes; exit clears it. Popup constructor/Open/Activated61–167, Prepare/Hide206–259 and ShowPreviewWindowAfterDelay749–905 retain800ms, cancellation/item/visible checks and one passive auxiliary. Avalonia native base remains unavailable; Next's acknowledged C# presentation chain is not changed by this repair.
+Executed real-panel regression `idle_preview_mount_under_stationary_pointer_does_not_schedule`: empty mounted list -> pointer(45,155) -> restore rows -> draw three times without another move. Actual failure: painting a row underneath a stationary cursor arms the original preview timer (1failed/0passed). New fixture excludes old-session residue; no native show/activation event is needed. Exact published pre0.3.9 `elements/div.rs:3133–3184` schedules on_hover from paint as well as mouse events; `window.rs:3740` refreshes hit testing before paint. Thus hover presence is not pointer intent.
+Preserve requested300x440/default layout, released Component0.8.0 ListItem selected/hover styling and all existing size/parent adaptations. Public `ListItem::on_mouse_enter`132–137 maps to real on_mouse_move213–215, including moves inside an already-hovered row. Use that public slot for entry, reject unchanged panel-retained screen coordinates (seeded at creation, refreshed on native bounds changes and actual panel moves) and pressed/drag events, keep on_hover(false) for original leave cancellation. Deduplicate current-item entry at the original PreviewSession so movement does not restart800ms. Keep deferred current-panel readiness/session/query checks and original full-ID hydration, scroll suppression, generation/nativeACK/frame/reveal/one passive HWND owners. No timer increase, polling, global input, vendor, C#/protocol, style or notification changes; no pointer/payload logs. Physical/installed acceptance remains separate.
+
+## Session-only panel pin and menu feedback (2026-10-24)
+The newly approved task `10-24-runtime-interaction-feedback` intentionally changes auto-dismiss policy only while pinned for the current opening; successful paste remains visible and native target focus restoration is preserved. Explicit hide/reopen resets pin without persistence. Rechecked legacy `Views/ClipboardHistoryPopupWindow.axaml.cs:127-167,206-259`: Opened/Activated restore search, Deactivated skips hide while `_isContextMenuOpen`, HidePopup cancels preview/menu then calls inherited Avalonia Window.Hide (framework internals not available in checkout). Existing Next `ui/components/native_context_menu.rs::handle_notification -> finish -> clipboard.rs::context_menu_outside -> ClipboardPanel::close_from_native_menu` currently merges source-panel and external clicks. Distinguish these without replacing the menu owner; opening must retire pending/visible preview, new/delayed/cache reveal stays blocked for the menu lifetime. Preserve one preview HWND,800ms deliberate movement, query/session/generation checks and deferred cross-owner effects. This note records reference/approved invariants, not completed implementation or physical acceptance.
+
+## Audit #10 retained history focus identity prerequisite (2026-10-25)
+Canonical phase remains Clipboard + Tools. Rechecked legacy Controls/ClipboardHistoryListView.cs
+constructor79–99/PointerReleased472–491: coordinates resolve cached actual item and pass
+that item to selected/ItemClicked/ItemRightClicked. Popup constructor61–167 binds actions,
+Opened/Activated search focus, PrepareForPopupShow206–239 and HidePopup248–259 retain one
+reused popup/menu-before-preview-hide -> inherited Window.Hide; Preview remains independently
+passive. Avalonia native base unavailable, not new show/hide proof. No native owner change.
+Exact pre0.3.9 elements/list.rs::List has id=None and invokes render_item/layout_as_root/
+prepaint without adding an index element namespace. Window::use_keyed_state -> with_global_id
+uses the current full element stack. Component0.8.0 Button::render and project unchanged
+FocusableContent use that keyed state for actual FocusHandle; gpui div owns one release click.
+Before repair history slot/wrapper/ListItem/Toolbar/open and management Button IDs use index,
+so Prepend/front splice or reorder can retain focus/armed state on a different domain record.
+Required boundary: entry.id+action-kind throughout actual ancestry and production focus lookup,
+existing view/window namespace isolates panels; index only positions/debug hints/paging.
+Keep original bounded320rows/ListState.splice/query-generation/selection/full-by-ID worker
+actions/native menu/one preview/search InputState. Removed row/action retires focus/gesture;
+release must never invoke occupant of the old index. Original Ctrl-digit already arms itemID,
+so preserve its generation checks rather than add a second dispatcher. No shared-helper,
+vendor/native/protocol/theme/layout redesign. Real production focus/page/action red-green,
+exact own-deltas and separate physical/native/DPI/user limits belong to single-item task
+`.trellis/tasks/10-25-clipboard-stable-focus/`; no other audit item is authorized.
+Additional verified removal boundary: pre0.3.9 app/context.rs::Context::on_focus_lost
+retains a weak view subscription; window.rs::draw dispatches it after the rendered tree swap
+only when a previous nonempty focus path becomes empty. Window::focused alone can still
+return a strongly held orphan. Window::focus_lost_restore_target resolves only a still-mounted
+ancestor during that callback. A non-Tab panel focus scope can therefore qualify the original
+search fallback without a row cache, index lookup, global dispatcher, or cross-panel focus steal.
+Changing focus increments the original GPUI focus_generation, cancelling an old armed release.
+
+## Audit #8 command-result naming follow-up (2026-10-26)
+Actual Settings Buttons in main_window/clipboard_page.rs defer to ClipboardApplication:
+request_clipboard_export/import -> request_clipboard_archive_path -> typed
+PickClipboardArchivePath; request_clipboard_storage_migration -> PickClipboardStorageDirectory.
+The original matching CommandResult handler retires pending state and starts no worker operation
+when success carries no nonempty path. These picker commands use one U+2026 in visible labels;
+the original Button label also supplies its semantic name. Backup/Compact call
+start_clipboard_database_operation directly, with the original serialized worker and fixed
+database-parent/backups destination; they do not open a picker and retain no ellipsis.
+Existing history Delete is soft_delete_async with original undo/restore owner, not file deletion.
+No changed import/export/retention/privacy/storage policy or new confirmation is authorized.
+Production Button-label and synthetic pointer/Tab/Space/IPC-cancel regressions are recorded in
+.trellis/tasks/10-26-command-naming; no actual archive/data/native picker operation was performed.
+Strict/broad shared-tree failures and separate physical/reader/visual/user acceptance remain
+explicit there; these source entries do not declare global audit or release completion.
+
+## Approved summon-hotkey reset addition (2026-10-28)
+User asks for reset immediately left of a changed global shortcut. Rechecked old MainWindow.axaml.cs
+751–818 Configure/BeginCapture/Escape/captured callback -> ClipboardNativeService.cs41–65 hidden
+message-window/start/configure -> ClipboardHotKeyService.cs42–81 RegisterHotKey and125–129dispose.
+Only explicit settings default restoration is new; popup show/hide/focus and350msdebounce unchanged.
+Next existing set_clipboard_hotkey requires acknowledged recording: do not fake that state for reset.
+Admit fixed Coredefault through same pending ConfigureClipboard/CommandResult/section-save owner,
+block concurrent recording/configuration and retain old binding on native rejection. Official
+Medium32outlined Button in original Settings slot; no native framework/transport/provider change.
+
+## Ctrl-digit-only search input correction (2026-10-30)
+User explicitly requires Ctrl+number for indexed paste; unmodified digits are ordinary search text,
+including an empty query. This supersedes earlier legacy empty-query digit shortcuts. Rechecked old
+ClipboardHistoryPopupWindow constructor/Open/Activated127–167 and Prepare/Focus206–247: showing
+and activation focus the existing SearchBox; Hide248–260 clears menu/preview before inherited Hide.
+Next ClipboardPanel constructor/InputState -> original Root -> native reveal/ActivateWindow ACK ->
+focus_search_for_session retains one current session/input owner. Production regression without
+fixture focus repair confirms the input FocusHandle is focused, but plain numeric text is intercepted
+by efficiency.rs::number_shortcut_index's legacy empty-query branch. Require Control when arming;
+keep original item ID/query generation, Ctrl-first release, IME/editor/menu ownership and native
+success-only paste lifecycle. Ordinary numbers must reach the existing InputState without a paste
+command; do not add another dispatcher or global hook.

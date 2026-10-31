@@ -1,5 +1,6 @@
 use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
+use crate::ui::metrics::ordinary_rem;
 use crate::ui::typography::{
     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
@@ -161,6 +162,7 @@ pub(crate) fn parse_download_settings_draft(
     }
     Ok(DownloadSettingsDraft {
         default_directory: PathBuf::from(default_directory),
+        chrome_web_store_extension_id: String::new(),
         automatic_categories_enabled: false,
         categories: DownloadSettings::default().categories,
         duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
@@ -316,6 +318,9 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
     pub(crate) directory: Entity<InputState>,
+    pub(super) directory_picker: DownloadDirectoryDraft,
+    // Legacy configuration compatibility only; never exposed as an editable field.
+    chrome_web_store_extension_id: String,
     pub(crate) ffmpeg_executable: Entity<InputState>,
     pub(crate) default_request_headers: Entity<TextareaState>,
     pub(crate) default_cookie: Entity<InputState>,
@@ -519,38 +524,22 @@ impl DownloadSettingsView {
                 .default_value(snapshot.taskbar_progress_overlay.height.to_string())
                 .placeholder("8")
         });
+        let directory_subscription = cx.subscribe(&directory, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) {
+                this.directory_picker.edited();
+                let application = this.application.downgrade();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.cleanup_directory_picker(cx)
+                    });
+                });
+            }
+        });
         let subscription = cx.subscribe_in(
             &application,
             window,
             |this, _application, event: &DownloadApplicationEvent, window, cx| {
                 match event {
-                    DownloadApplicationEvent::DirectoryPicked { target, path } => {
-                        if *target != DownloadDirectoryTarget::Settings {
-                            return;
-                        }
-                        let directory = this.directory.clone();
-                        let path = path.to_string_lossy().into_owned();
-                        let source_window = window.window_handle();
-                        let view = cx.entity().downgrade();
-                        cx.defer(move |cx| {
-                            let _ = source_window.update(cx, |_, window, cx| {
-                                directory.update(cx, |input, cx| {
-                                    input.set_value(path, window, cx);
-                                });
-                                let _ = view.update(cx, |view, cx| {
-                                    #[cfg(test)]
-                                    {
-                                        view.category_presentation_revision =
-                                            view.category_presentation_revision.wrapping_add(1);
-                                    }
-                                    #[cfg(not(test))]
-                                    let _ = view;
-                                    cx.notify();
-                                });
-                            });
-                        });
-                        this.error = None;
-                    }
                     DownloadApplicationEvent::FfmpegExecutablePicked { path } => {
                         let ffmpeg_executable = this.ffmpeg_executable.clone();
                         let path = path.to_string_lossy().into_owned();
@@ -635,6 +624,8 @@ impl DownloadSettingsView {
             theme: Theme::zed_dark(),
             application,
             directory,
+            directory_picker: DownloadDirectoryDraft::default(),
+            chrome_web_store_extension_id: snapshot.chrome_web_store_extension_id.clone(),
             ffmpeg_executable,
             default_request_headers,
             default_cookie,
@@ -691,6 +682,7 @@ impl DownloadSettingsView {
             error: None,
             _subscriptions: vec![
                 subscription,
+                directory_subscription,
                 ffmpeg_input_subscription,
                 offset_x_subscription,
                 offset_y_subscription,
@@ -705,6 +697,28 @@ impl DownloadSettingsView {
             #[cfg(test)]
             category_action_invocations: 0,
         }
+    }
+
+    pub(super) fn request_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.saving {
+            return;
+        }
+        let Some((command_id, revision)) = self.directory_picker.begin() else {
+            return;
+        };
+        let request = DownloadDirectoryPickerRequest {
+            command_id,
+            revision,
+            window: window.window_handle(),
+            owner: DownloadDirectoryOwner::Settings(cx.entity().downgrade()),
+            current_directory: self.directory.read(cx).value().to_string(),
+        };
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            application.update(cx, |application, cx| {
+                application.request_directory(request, cx)
+            })
+        });
     }
 
     pub(crate) fn schedule_ffmpeg_discovery(&mut self, cx: &mut Context<Self>) {
@@ -763,6 +777,7 @@ impl DownloadSettingsView {
             taskbar_overlay_show_active_connections: self.taskbar_overlay_show_active_connections,
             taskbar_overlay_show_transferred_bytes: self.taskbar_overlay_show_transferred_bytes,
         })?;
+        draft.chrome_web_store_extension_id = self.chrome_web_store_extension_id.clone();
         draft.ffmpeg_executable_path = self.ffmpeg_executable.read(cx).value().trim().to_owned();
         draft.default_request_headers = self
             .default_request_headers
@@ -924,7 +939,13 @@ impl DownloadSettingsView {
                     error_kind = "validation",
                     "download settings validation failed"
                 );
-                self.error = Some(error);
+                self.error = None;
+                self.notify_operation(
+                    format!("download-settings-validation-{correlation_id}"),
+                    crate::notifications::NotificationLevel::Error,
+                    error,
+                    cx,
+                );
                 cx.notify();
                 return;
             }
@@ -971,18 +992,18 @@ impl DownloadSettingsView {
         let theme = self.theme;
         // The released Settings mounts only the requested field; draft ownership stays here.
         let current_directory = self.directory.read(cx).value().to_string();
-        let picker_current_directory = current_directory.clone();
-        let application = self.application.clone();
         let directory_control = div()
-            .w(px(286.0))
+            .w(ordinary_rem(286.0))
+            .max_w_full()
+            .min_w_0()
             .flex()
             .items_center()
-            .gap(px(SPACING_8))
+            .gap_2()
             .child(download_settings_input(
                 theme,
                 "download-settings-default-directory-field",
                 &self.directory,
-                px(250.0),
+                ordinary_rem(250.0),
             ))
             .child(
                 div()
@@ -991,18 +1012,13 @@ impl DownloadSettingsView {
                         icon_action_button(
                             "download-settings-pick-directory",
                             MaterialIcon::Folder,
+                            "选择默认保存目录…",
                         )
                         .outline()
-                        .on_click(move |_, _, cx| {
-                            let application = application.clone();
-                            let current_directory = picker_current_directory.clone();
-                            cx.defer(move |cx| {
-                                application.update(cx, |application, cx| {
-                                    application.request_settings_directory(current_directory, cx);
-                                });
-                            });
-                        }),
-                        "选择默认保存目录",
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.request_directory(window, cx);
+                        })),
+                        "选择默认保存目录…",
                         "download-settings-pick-directory-tooltip",
                     )),
             )
@@ -1091,7 +1107,7 @@ impl DownloadSettingsView {
                     .selected(selected)
                     .aria_selected(selected)
                     .accessibility_label(presentation.name.clone())
-                    .h(px(40.0))
+                    .min_h(ordinary_rem(40.0))
                     .py_0()
                     .w_full()
                     .tooltip(move |window, cx| {
@@ -1149,9 +1165,10 @@ impl DownloadSettingsView {
         );
         let category_list = div()
             .debug_selector(|| "download-settings-category-master".into())
-            .w(px(228.0))
+            .w(ordinary_rem(228.0))
             .h_full()
-            .flex_none()
+            .flex_shrink_1()
+            .min_w_0()
             .rounded(px(RADIUS_CONTROL))
             .border_1()
             .border_color(theme.border_subtle)
@@ -1173,7 +1190,8 @@ impl DownloadSettingsView {
                 div()
                     .debug_selector(|| "download-settings-category-add".into())
                     .w_full()
-                    .p(px(SPACING_8))
+                    .p_2()
+                    .flex_none()
                     .border_t_1()
                     .border_color(theme.border_subtle)
                     .child(
@@ -1253,12 +1271,13 @@ impl DownloadSettingsView {
                     .h_full()
                     .flex()
                     .flex_col()
-                    .gap(px(SPACING_8))
+                    .gap_2()
                     .child(
                         div()
                             .debug_selector(|| "download-settings-category-heading".into())
                             .w_full()
-                            .h(px(CONTROL_HEIGHT_INPUT))
+                            .min_h(ordinary_rem(CONTROL_HEIGHT_INPUT))
+                            .flex_none()
                             .border_b_1()
                             .border_color(theme.border_subtle)
                             .flex()
@@ -1269,15 +1288,15 @@ impl DownloadSettingsView {
                                     .min_w_0()
                                     .flex()
                                     .items_center()
-                                    .gap(px(SPACING_8))
+                                    .gap_2()
                                     .child(
                                         div()
                                             .debug_selector(|| {
                                                 "download-settings-category-heading-title".into()
                                             })
                                             .flex_none()
-                                            .text_size(px(TEXT_BODY))
-                                            .line_height(px(LINE_HEIGHT_BODY))
+                                            .text_size(ordinary_rem(TEXT_BODY))
+                                            .line_height(ordinary_rem(LINE_HEIGHT_BODY))
                                             .font_weight(FontWeight::MEDIUM)
                                             .text_color(theme.text)
                                             .child("分类规则"),
@@ -1286,8 +1305,8 @@ impl DownloadSettingsView {
                                         div()
                                             .min_w_0()
                                             .truncate()
-                                            .text_size(px(TEXT_LABEL))
-                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_size(ordinary_rem(TEXT_LABEL))
+                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                                             .text_color(theme.text_muted)
                                             .child(if enabled {
                                                 "参与自动匹配"
@@ -1301,11 +1320,11 @@ impl DownloadSettingsView {
                                     .flex_none()
                                     .flex()
                                     .items_center()
-                                    .gap(px(SPACING_8))
+                                    .gap_2()
                                     .child(
                                         div()
-                                            .text_size(px(TEXT_LABEL))
-                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_size(ordinary_rem(TEXT_LABEL))
+                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                                             .text_color(theme.text_secondary)
                                             .child("启用"),
                                     )
@@ -1350,7 +1369,8 @@ impl DownloadSettingsView {
                         div()
                             .debug_selector(|| "download-settings-category-action-toolbar".into())
                             .w_full()
-                            .pt(px(SPACING_8))
+                            .pt_2()
+                            .flex_none()
                             .border_t_1()
                             .border_color(theme.border_subtle)
                             .flex()
@@ -1363,7 +1383,7 @@ impl DownloadSettingsView {
                                     })
                                     .flex()
                                     .items_center()
-                                    .gap(px(SPACING_4))
+                                    .gap_1()
                                     .child(
                                         div()
                                             .debug_selector(|| {
@@ -1449,8 +1469,8 @@ impl DownloadSettingsView {
             })
             .unwrap_or_else(|| {
                 div()
-                    .text_size(px(TEXT_LABEL))
-                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_size(ordinary_rem(TEXT_LABEL))
+                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                     .text_color(theme.text_muted)
                     .child("暂无分类；可新增自定义规则")
                     .into_any_element()
@@ -1460,14 +1480,17 @@ impl DownloadSettingsView {
             .h(px(310.0))
             .flex()
             .items_start()
-            .gap(px(SPACING_12))
+            .gap_3()
             .child(category_list)
             .child(
                 div()
                     .min_w_0()
                     .flex_1()
                     .h_full()
-                    .pl(px(SPACING_12))
+                    .id("download-settings-category-editor-scroll")
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .pl_3()
                     .border_l_1()
                     .border_color(theme.border_subtle)
                     .child(category_editor),
@@ -1497,7 +1520,7 @@ impl DownloadSettingsView {
             .min_w_0()
             .flex()
             .items_center()
-            .gap(px(SPACING_8))
+            .gap_2()
             .child(div().flex_1().min_w_0().child(field_shell(
                 theme,
                 "download-settings-ffmpeg-field",
@@ -1510,6 +1533,7 @@ impl DownloadSettingsView {
                         icon_action_button(
                             "download-settings-pick-ffmpeg-button",
                             MaterialIcon::Folder,
+                            "选择 FFmpeg 可执行文件…",
                         )
                         .outline()
                         .on_click(move |_, _, cx| {
@@ -1521,7 +1545,7 @@ impl DownloadSettingsView {
                                 });
                             });
                         }),
-                        "选择 FFmpeg 可执行文件",
+                        "选择 FFmpeg 可执行文件…",
                         "download-settings-pick-ffmpeg-tooltip",
                     )),
             )
@@ -1581,13 +1605,14 @@ impl DownloadSettingsView {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(SPACING_8))
+            .gap_2()
             .child(
                 div()
                     .debug_selector(|| "download-settings-ffmpeg-install".into())
                     .child(
                         crate::ui::components::action::primary_action_button(
                             "download-settings-ffmpeg-install-button",
+                            "自动下载 FFmpeg",
                             if install_active {
                                 "正在下载…"
                             } else {
@@ -1633,7 +1658,7 @@ impl DownloadSettingsView {
             .w_full()
             .flex()
             .items_center()
-            .gap(px(SPACING_8))
+            .gap_2()
             .child(
                 div()
                     .debug_selector(|| "download-settings-ffmpeg-gyan".into())
@@ -1677,21 +1702,21 @@ impl DownloadSettingsView {
             theme,
             "download-settings-connection-limit-field",
             &self.connection_limit,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let adaptive_max_control = download_settings_input(
             theme,
             "download-settings-adaptive-max-field",
             &self.adaptive_segment_max_segments,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let adaptive_min_control = download_settings_input(
             theme,
             "download-settings-adaptive-min-field",
             &self.adaptive_segment_min_mib,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let adaptive_toggle = settings_toggle(
@@ -1708,14 +1733,14 @@ impl DownloadSettingsView {
             theme,
             "download-settings-concurrent-tasks-field",
             &self.concurrent_tasks,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let speed_control = download_settings_input(
             theme,
             "download-settings-speed-limit-field",
             &self.speed_limit_kib,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let progress_toggle = settings_toggle(
@@ -1799,28 +1824,28 @@ impl DownloadSettingsView {
             theme,
             "download-settings-taskbar-x-field",
             &self.taskbar_overlay_offset_x,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let taskbar_offset_y = download_settings_input(
             theme,
             "download-settings-taskbar-y-field",
             &self.taskbar_overlay_offset_y,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let taskbar_width = download_settings_input(
             theme,
             "download-settings-taskbar-width-field",
             &self.taskbar_overlay_width,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let taskbar_height = download_settings_input(
             theme,
             "download-settings-taskbar-height-field",
             &self.taskbar_overlay_height,
-            px(88.0),
+            ordinary_rem(88.0),
         )
         .into_any_element();
         let taskbar_progress_mode = download_settings_progress_mode(
@@ -1921,6 +1946,11 @@ impl DownloadSettingsView {
                 crate::ui::components::action::primary_action_button(
                     "download-settings-taskbar-edit-button",
                     if self.taskbar_overlay_editing {
+                        "结束任务栏布局预览"
+                    } else {
+                        "编辑任务栏布局"
+                    },
+                    if self.taskbar_overlay_editing {
                         "结束预览"
                     } else {
                         "编辑布局"
@@ -1957,7 +1987,7 @@ impl DownloadSettingsView {
                         .child(
                             action_button(
                                 "download-settings-extension-export-chrome-button",
-                                "导出 Chrome / Edge (.crx)",
+                                "导出 Chrome / Edge (.crx)…",
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let operation_id = uuid::Uuid::new_v4();
@@ -1994,7 +2024,7 @@ impl DownloadSettingsView {
                         .child(
                             action_button(
                                 "download-settings-extension-export-firefox-button",
-                                "导出 Firefox (.xpi)",
+                                "导出 Firefox (.xpi)…",
                             )
                             .on_click(cx.listener(|this, _, _, cx| {
                                 let operation_id = uuid::Uuid::new_v4();
@@ -2027,9 +2057,69 @@ impl DownloadSettingsView {
                                 });
                                 cx.notify();
                             })),
+                        )
+                        .child(
+                            action_button(
+                                "download-settings-extension-export-store-button",
+                                "导出 Chrome 商店 (.zip)…",
+                            )
+                            .outline()
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let operation_id = uuid::Uuid::new_v4();
+                                this.notify_operation(
+                                    format!("download-browser-export-{operation_id}"),
+                                    crate::notifications::NotificationLevel::Progress,
+                                    "正在导出 Chrome 商店上传包…".into(),
+                                    cx,
+                                );
+                                let application = this.application.clone();
+                                let view = cx.entity().downgrade();
+                                cx.defer(move |cx| {
+                                    let outcome = application.update(cx, |application, _| {
+                                        application.request_browser_extension_export(
+                                            "chrome_store",
+                                            operation_id,
+                                        )
+                                    });
+                                    if let Err(error) = outcome {
+                                        let _ = view.update(cx, |view, cx| {
+                                            view.notify_operation(
+                                                format!("download-browser-export-{operation_id}"),
+                                                crate::notifications::NotificationLevel::Error,
+                                                format!("导出失败:{error}"),
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                });
+                            })),
                         ),
                 )
                 .into_any_element(),
+            (DownloadSettingsPage::General, 6) => {
+                action_button("download-settings-chrome-store", "打开 Chrome 扩展商店")
+                    .small()
+                    .outline()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let application = this.application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |owner, cx| owner.open_chrome_store(cx))
+                        });
+                    }))
+                    .into_any_element()
+            }
+            (DownloadSettingsPage::General, 7) => {
+                action_button("download-settings-firefox-store", "打开 Firefox 扩展商店")
+                    .small()
+                    .outline()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let application = this.application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |owner, cx| owner.open_firefox_store(cx))
+                        });
+                    }))
+                    .into_any_element()
+            }
             (DownloadSettingsPage::Request, 0) => div()
                 .debug_selector(|| "download-settings-request-context-form".into())
                 .w_full()
@@ -2111,7 +2201,8 @@ impl DownloadSettingsView {
             ),
             (DownloadSettingsPage::Transfer, 10) => div()
                 .debug_selector(|| "download-settings-background-limit-field".into())
-                .w(px(120.0))
+                .w(ordinary_rem(120.0))
+                .max_w_full()
                 .child(
                     Input::new(&self.background_speed_limit_kib)
                         .aria_label("后台限速 KiB/s")
@@ -2221,7 +2312,7 @@ impl Render for DownloadSettingsView {
                         title,
                         help,
                         format!("download-settings-{title}-help"),
-                        440.0,
+                        ordinary_rem(440.0),
                         content(options, window, cx).into_any_element(),
                     )
                 })
@@ -2260,7 +2351,7 @@ impl Render for DownloadSettingsView {
             .child(
                 div().flex_1().min_h_0().w_full().child(
                     Settings::new("download-settings-kit")
-                        .sidebar_width(px(164.0))
+                        .sidebar_width(ordinary_rem(164.0).to_pixels(window.rem_size()))
                         .default_selected_index(SelectIndex {
                             page_ix: self.page.index(),
                             group_ix: None,
@@ -2284,7 +2375,7 @@ impl Render for DownloadSettingsView {
         let footer_actions = div()
             .flex()
             .items_center()
-            .gap(px(SPACING_8))
+            .gap_2()
             .child(
                 div()
                     .debug_selector(|| "download-settings-cancel".into())
@@ -2317,6 +2408,7 @@ impl Render for DownloadSettingsView {
                     .child(
                         crate::ui::components::action::primary_action_button(
                             "download-settings-apply-button",
+                            "应用下载设置",
                             if self.saving {
                                 "正在保存…"
                             } else {
@@ -2356,10 +2448,13 @@ pub(crate) fn download_settings_input(
     theme: Theme,
     selector: &'static str,
     input: &Entity<InputState>,
-    width: gpui_kit::Pixels,
+    width: impl Into<gpui_kit::Length>,
 ) -> impl IntoElement {
+    let width: gpui_kit::Length = width.into();
     div()
         .w(width)
+        .max_w_full()
+        .min_w_0()
         .child(field_shell(theme, selector, Input::new(input)))
 }
 
@@ -2506,43 +2601,51 @@ pub(crate) fn download_settings_path_row(
     let copy_application = application.clone();
     let copy_action = div()
         .debug_selector(move || format!("download-settings-path-{key}-copy"))
-        .size(px(CONTROL_HEIGHT_ACTION))
+        .size(ordinary_rem(CONTROL_HEIGHT_ACTION))
         .child(icon_action_tooltip_surface(
-            icon_action_button(presentation.copy_button_id, MaterialIcon::ContentCopy)
-                .outline()
-                .on_click(move |_, _, cx| {
-                    let application = copy_application.clone();
-                    cx.defer(move |cx| {
-                        application.update(cx, |application, cx| {
-                            application.perform_download_settings_path_action(
-                                path_kind,
-                                DownloadSettingsPathAction::Copy,
-                                cx,
-                            );
-                        });
+            icon_action_button(
+                presentation.copy_button_id,
+                MaterialIcon::ContentCopy,
+                presentation.copy_tooltip,
+            )
+            .outline()
+            .on_click(move |_, _, cx| {
+                let application = copy_application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.perform_download_settings_path_action(
+                            path_kind,
+                            DownloadSettingsPathAction::Copy,
+                            cx,
+                        );
                     });
-                }),
+                });
+            }),
             presentation.copy_tooltip,
             presentation.copy_tooltip_selector,
         ));
     let open_action = div()
         .debug_selector(move || format!("download-settings-path-{key}-open"))
-        .size(px(CONTROL_HEIGHT_ACTION))
+        .size(ordinary_rem(CONTROL_HEIGHT_ACTION))
         .child(icon_action_tooltip_surface(
-            icon_action_button(presentation.open_button_id, MaterialIcon::OpenInNew)
-                .outline()
-                .on_click(move |_, _, cx| {
-                    let application = application.clone();
-                    cx.defer(move |cx| {
-                        application.update(cx, |application, cx| {
-                            application.perform_download_settings_path_action(
-                                path_kind,
-                                DownloadSettingsPathAction::Open,
-                                cx,
-                            );
-                        });
+            icon_action_button(
+                presentation.open_button_id,
+                MaterialIcon::OpenInNew,
+                presentation.open_tooltip,
+            )
+            .outline()
+            .on_click(move |_, _, cx| {
+                let application = application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.perform_download_settings_path_action(
+                            path_kind,
+                            DownloadSettingsPathAction::Open,
+                            cx,
+                        );
                     });
-                }),
+                });
+            }),
             presentation.open_tooltip,
             presentation.open_tooltip_selector,
         ));
@@ -2550,19 +2653,19 @@ pub(crate) fn download_settings_path_row(
         .debug_selector(move || format!("download-settings-path-{label}"))
         .w_full()
         .min_w_0()
-        .min_h(px(SETTINGS_ROW_MIN_HEIGHT))
-        .px(px(SPACING_8))
+        .min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))
+        .px_2()
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
         .items_center()
-        .gap(px(SPACING_8))
+        .gap_2()
         .child(
             div()
-                .w(px(36.0))
+                .w(ordinary_rem(36.0))
                 .flex_none()
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
+                .text_size(ordinary_rem(TEXT_LABEL))
+                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_muted)
                 .child(label),
         )
@@ -2576,8 +2679,8 @@ pub(crate) fn download_settings_path_row(
                 .whitespace_nowrap()
                 .line_clamp(1)
                 .font_family(UI_MONO_FONT_FAMILY)
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
+                .text_size(ordinary_rem(TEXT_LABEL))
+                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                 .text_color(theme.text_secondary)
                 .tooltip(bounded_text_tooltip(
                     value_tooltip_selector,
@@ -2592,7 +2695,7 @@ pub(crate) fn download_settings_path_row(
                 .flex_none()
                 .flex()
                 .items_center()
-                .gap(px(SPACING_4))
+                .gap_1()
                 .child(copy_action)
                 .child(open_action),
         )
@@ -2662,12 +2765,26 @@ fn download_setting_groups(
             ),
             (
                 "浏览器扩展",
-                vec![(
-                    5,
-                    "下载拦截扩展",
-                    "Chrome / Edge 用开发者模式加载包内 browser_extension 目录，或导出签名安装包",
-                    true,
-                )],
+                vec![
+                    (
+                        7,
+                        "Firefox 商店",
+                        "打开已发布的 Firefox 下载拦截扩展页面",
+                        false,
+                    ),
+                    (
+                        5,
+                        "下载拦截扩展",
+                        "本地安装包与 Chrome 商店上传包分别导出",
+                        true,
+                    ),
+                    (
+                        6,
+                        "Chrome 商店",
+                        "打开已发布的 Chrome 下载拦截扩展；商店版和本地安装版自动连接，无需填写 ID",
+                        false,
+                    ),
+                ],
             ),
         ],
         Request => vec![
@@ -2922,3 +3039,7 @@ mod background_limit_ui_tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 }
+
+#[cfg(test)]
+#[path = "settings_task_rem_tests.rs"]
+mod settings_task_rem_tests;

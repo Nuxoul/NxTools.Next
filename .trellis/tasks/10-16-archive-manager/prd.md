@@ -2,6 +2,22 @@
 
 **Status: implementation authorized; first release covers Phases A–F.** The latest user approval confirms RAR4/RAR5 read/extract/test, ZIP editing, genuine split archives and native drag-out, navigation, documented dimensions/defaults and necessary dependency evaluation. No product completion is implied. Release/install/real registry/default-association/service changes, commits and pushes remain separately restricted.
 
+## Current continuation requirements — 2026-10-28 planning revision
+
+User requests the original task be replanned, NOT an implementation prompt. The consolidated
+[continuation requirements/design/order/acceptance](continuation-plan.md) owns UX01–UX05,
+EDIT01/EDIT02 and HZ2–HZ5; root sections below retain the original A–F baseline/history.
+This amendment promotes internal MD/TXT/image preview to required, adds ordinary single-volume
+7z/TAR-family editing and default-off gated source-space reclamation plus real-process crash
+testing/batch summary. Earlier optional-preview/ZIP-only/general-recovery exclusion wording
+is superseded only for that explicit continuation scope. RAR encoding remains excluded.
+Approved current Kit0.8.0/pre0.3.9, one tab host, official ListItem fallback and later UI contracts
+supersede historical0.7.1/per-archive-window/DataTable wording; no framework re-spike/reset.
+HZ1 AC01–03 is accepted; preserve it. This revision schedules future work, does not authorize
+product code or destructive execution; unresolved product choices are listed once in the
+continuation plan. Prior implementation approvals and acceptance remain at their original scope.
+Current execution status remains solely [checkpoint](phase-a-checkpoint.md).
+
 ## Goal
 
 Add a Bandizip-style archive manager to NxTools.Next. It has four parts:

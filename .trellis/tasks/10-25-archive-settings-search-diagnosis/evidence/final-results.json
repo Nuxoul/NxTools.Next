@@ -1,0 +1,37 @@
+﻿[
+    {
+        "name":  "fixed-standard-eight-seeds",
+        "command":  "cargo test -p nxtools-desktop main_window::archive_page_tests::archive_settings_official_search_never_saves -- --exact --test-threads=1 --nocapture",
+        "exit":  0,
+        "elapsed_seconds":  4.7769002999999994,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\fixed-standard-eight-seeds.log"
+    },
+    {
+        "name":  "fixed-archive-settings-group",
+        "command":  "cargo test -p nxtools-desktop main_window::archive_page_tests:: -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  29.123799299999998,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\fixed-archive-settings-group.log"
+    },
+    {
+        "name":  "desktop-strict-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  0,
+        "elapsed_seconds":  1.7367542999999999,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\desktop-strict-clippy.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "elapsed_seconds":  1.4822429,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\workspace-check.log"
+    },
+    {
+        "name":  "scoped-format",
+        "command":  "rustfmt --edition 2024 --config skip_children=true --check rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+        "exit":  0,
+        "elapsed_seconds":  0.18543579999999998,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\scoped-format.log"
+    }
+]

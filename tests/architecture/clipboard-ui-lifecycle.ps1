@@ -47,9 +47,11 @@ foreach ($contract in @('queue06_production_mounts_official_settings_search',
 
 $historyRowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\history.rs'
 $historyRowSource = Get-Content -Raw -LiteralPath $historyRowPath
+$historyRowSource = [regex]::Replace($historyRowSource, '(?m)^\s*//[^\r\n]*', '')
 
 foreach ($contract in @('ListItem::new(', '.selected(selected)', '.aria_selected(selected)',
-    'focusable_content(', 'Toolbar::new(', '.content(management_button(', 'Label::new(',
+    'focused_action(', '.use_keyed_state(("history-row-focus", self.entry.id as u64)',
+    'focus.contains_focused(window, cx)', 'Toolbar::new(', '.content(management_button(', 'Label::new(',
     'action_from_click(event, modifier_actions)', 'handler(action.clone(), event, window, cx)')) {
     if (-not $historyRowSource.Contains($contract)) { throw "Clipboard history component/owner missing: $contract" }
 }
@@ -63,6 +65,13 @@ if ($historyRowSource.Contains('fn history_row_border') -or
 
 $popupModPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\mod.rs'
 $popupModSource = Get-Content -Raw -LiteralPath $popupModPath
+# Standalone comments are not executable wiring. Keep existing checks, then inspect the real owner slices.
+$popupModSource = [regex]::Replace($popupModSource, '(?m)^\s*//[^\r\n]*', '')
+foreach ($contract in @('focus_lost_subscription = cx.on_focus_lost(window,',
+    'window.focus_lost_restore_target(cx).as_ref() == Some(&panel.focus_scope)',
+    '.track_focus(&self.focus_scope)', 'focus_lost_subscription,')) {
+    if (-not $popupModSource.Contains($contract)) { throw "Clipboard retained focus lifecycle missing: $contract" }
+}
 if ($popupModSource.Contains('.text_xs()')) {
     throw 'CL-04 requires clipboard popup typography to use ui::typography tokens instead of gpui text_xs.'
 }
@@ -78,12 +87,48 @@ foreach ($contract in @('InputGroup::new("clipboard-search-group")',
     if (-not $popupModSource.Contains($contract)) { throw "Clipboard search/editor component-owner missing: $contract" }
 }
 $markdownEdit = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\markdown_edit.rs')
+$markdownEdit = [regex]::Replace($markdownEdit, '(?m)^\s*//[^\r\n]*', '')
 foreach ($contract in @('Textarea::new(&self.edit_input)', 'BlockEditor::new(&self.edit_rich)', 'clipboard-rich-editor-scroll', 'window.defer(cx,', 'markdown_edit_value')) {
     if (-not $markdownEdit.Contains($contract)) { throw "Unified Clipboard editor/source ownership missing: $contract" }
 }
 foreach ($contract in @('edit_generation', 'edit_save_pending', 'panel.editing_item_id != Some(item_id)', 'panel.markdown_edit_value(cx) == text')) {
     if (-not $popupModSource.Contains($contract)) { throw "Clipboard save identity/draft gate missing: $contract" }
 }
+$beginStart = $popupModSource.IndexOf('fn begin_edit(')
+$cancelStart = $popupModSource.IndexOf('fn cancel_edit(', $beginStart)
+$saveStart = $popupModSource.IndexOf('fn save_edit(', $cancelStart)
+$saveEnd = $popupModSource.IndexOf('fn restore_last_deleted(', $saveStart)
+if ($beginStart -lt 0 -or $cancelStart -le $beginStart -or $saveStart -le $cancelStart -or $saveEnd -le $saveStart) {
+    throw 'Clipboard edit lifecycle function boundaries missing.'
+}
+$beginEdit = $popupModSource.Substring($beginStart, $cancelStart - $beginStart)
+$cancelEdit = $popupModSource.Substring($cancelStart, $saveStart - $cancelStart)
+$saveEdit = $popupModSource.Substring($saveStart, $saveEnd - $saveStart)
+if ($beginEdit -notmatch 'self\.edit_input\.update\([^;]+state\.set_value\(entry\.text\.clone\(\), window, cx\)' -or
+    -not $beginEdit.Contains('self.prepare_markdown_edit(&entry.text, window, cx)') -or
+    -not $cancelEdit.Contains('self.edit_save_pending = None;') -or
+    -not $cancelEdit.Contains('self.editing_item_id = None;') -or
+    -not $cancelEdit.Contains('self.search_input.focus_handle(cx).focus(window, cx);')) {
+    throw 'Clipboard original full-item input/cancel/focus owner disconnected.'
+}
+if ($markdownEdit -notmatch '(?s)let body = if source_mode\s*\{\s*Textarea::new\(&self\.edit_input\).*?\}\s*else\s*\{' -or
+    $markdownEdit -notmatch '\.child\(BlockEditor::new\(&self\.edit_rich\)' -or
+    -not $markdownEdit.Contains('.child(body)') -or
+    $markdownEdit.Contains('.passive(true)')) {
+    throw 'Clipboard source/rich editor must mount original entities as interactive content.'
+}
+if ($saveEdit -notmatch '(?s)self\.edit_save_pending = Some\(operation_id\);.*?cx\.spawn\(.*?worker\.update_text_async\(item_id, &text\)\.await' -or
+    $saveEdit -notmatch '(?s)if panel\.edit_generation != edit_generation\s*\|\| panel\.edit_save_pending != Some\(operation_id\)\s*\|\| panel\.editing_item_id != Some\(item_id\)\s*\{' -or
+    -not $saveEdit.Contains('panel.markdown_edit_value(cx) == text') -or
+    -not $saveEdit.Contains('cx.defer(move |cx|')) {
+    throw 'Clipboard async save must retain pending-before-dispatch, draft identity and deferred focus.'
+}
+$markdownDocument = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\markdown_document.rs')
+$markdownDocument = [regex]::Replace($markdownDocument, '(?m)^\s*//[^\r\n]*', '')
+foreach ($contract in @('BlockEditor::new(&self.editor).passive(true)', 'state.set_readonly(true, cx)', 'ImagePolicy::Placeholder')) {
+    if (-not $markdownDocument.Contains($contract)) { throw "Passive document owner disconnected: $contract" }
+}
+Write-Host 'PASS unified Clipboard editor mounts original interactive entities and passive documents with guarded save/cancel/focus owners (source only)'
 if ($popupModSource.Contains('.appearance(false)') -or $popupModSource.Contains('.bordered(false)') -or
     $popupModSource.Contains('.focus_bordered(false)')) {
     throw 'Clipboard ordinary search/editor frames must belong to actual styled compounds/controls.'

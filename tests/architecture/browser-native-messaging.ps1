@@ -31,7 +31,12 @@ if ($derivedExtensionId -ne 'haohhnpjfggpdadhcbjakjpkmkljkpif') {
     throw "Chromium manifest key changed the preserved extension ID to $derivedExtensionId."
 }
 
-$background = Get-Content -LiteralPath (Join-Path $extension 'background.js') -Raw
+# The background is split into classic-script modules listed by the manifest;
+# source contracts apply to the complete ordered set, not only the entry file.
+$background = (@($manifest.background.scripts) | ForEach-Object {
+        Get-Content -LiteralPath (Join-Path $extension $_) -Raw
+    }) -join "`n"
+$backgroundEntrySource = Get-Content -LiteralPath (Join-Path $extension 'background.js') -Raw
 Assert-Contains $background 'chrome.runtime.connectNative(NATIVE_HOST_NAME)' `
     'Browser extension must use Native Messaging.'
 Assert-Contains $background 'const { response, handoffId } = await sendDownloadItem(downloadItem);' `
@@ -42,8 +47,20 @@ Assert-Contains $background 'openDialog: settings.openDialog' `
     'Browser confirmation-window preference must cross the Native Messaging boundary.'
 Assert-Contains $background 'sanitizeCapturedHeaderObject(resource.requestHeaders)' `
     'Page-derived resource headers must be bounded and allowlisted at the cache boundary.'
-Assert-Contains $background 'importScripts("handoff-policy.js", "capture-policy.js", "blob-transfer-policy.js", "batch-handoff-policy.js")' `
-    'The service worker must load the bounded batch handoff policy.'
+$backgroundScripts = @($manifest.background.scripts)
+$backgroundEntry = [string]$manifest.background.service_worker
+if ($backgroundScripts.Count -lt 2 -or $backgroundScripts[-1] -ne $backgroundEntry) {
+    throw 'Firefox background.scripts must list every dependency followed by the shared service-worker entry.'
+}
+foreach ($requiredPolicy in 'handoff-policy.js', 'capture-policy.js', 'blob-transfer-policy.js', 'batch-handoff-policy.js') {
+    if (-not ($backgroundScripts -contains $requiredPolicy)) {
+        throw "The background must load $requiredPolicy in both Chrome and Firefox."
+    }
+    Assert-Contains $backgroundEntrySource "`"$requiredPolicy`"" `
+        "The Chrome service worker import list must include $requiredPolicy."
+}
+Assert-Contains $backgroundEntrySource 'if (typeof importScripts === "function")' `
+    'Firefox event pages have no importScripts; the entry must guard it.'
 Assert-Contains $background 'sendDesktopRequest("create_tasks"' `
     'Selected resources must cross Native Messaging as one correlated batch request.'
 Assert-Contains $background 'await persistResourcesNow()' `
@@ -96,7 +113,7 @@ Assert-Contains $blobPolicy 'result?.ok === true' `
 $contentScript = Get-Content -LiteralPath (Join-Path $extension 'content-script.js') -Raw
 Assert-Contains $contentScript 'NxToolsBlobTransferPolicy.handoffAccepted(result, lastError)' `
     'Runtime disconnects and missing service-worker responses must trigger the retained Blob fallback.'
-$background = Get-Content -LiteralPath (Join-Path $extension 'background.js') -Raw
+# $background is the complete ordered background script set loaded above.
 Assert-Contains $background '}, 15000, correlationId)' `
     'Blob prepare must preserve the shared feature correlation ID.'
 Assert-Contains $background '}, 20000, correlationId)' `
@@ -211,6 +228,29 @@ Assert-Contains $downloadStorage 'BROWSER_HANDOFF_RETENTION_MS' `
 
 $registrar = Get-Content -LiteralPath `
     (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\BrowserNativeMessagingRegistrar.cs') -Raw
+$browserHandoff = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads\browser_handoff_impl.rs') -Raw
+$downloadSettingsView = Get-Content -LiteralPath `
+    (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads\settings_view.rs') -Raw
+$publishedExtensionId = 'eldfplghejhopcmgfkacimanhaojakph'
+$rustIdentity = [regex]::Match($browserHandoff, 'CHROME_STORE_EXTENSION_ID: &str = "([a-p]{32})"').Groups[1].Value
+$nativeIdentity = [regex]::Match($registrar, 'ChromeWebStoreExtensionId = "([a-p]{32})"').Groups[1].Value
+if ($rustIdentity -ne $publishedExtensionId -or $nativeIdentity -ne $publishedExtensionId) {
+    throw 'Desktop default, store link and native exact allowlist must agree on the published Chrome identity.'
+}
+Assert-Contains $browserHandoff 'CHROME_STORE_EXTENSION_ID.to_owned()' `
+    'Empty legacy configuration must register the published identity automatically.'
+Assert-Contains $registrar 'if (!origins.Contains(storeOrigin)) origins.Add(storeOrigin);' `
+    'Published identity must coexist with old command and local identities without duplicates.'
+Assert-Contains $browserHandoff 'https://chromewebstore.google.com/detail/nxtools-download-intercep/{CHROME_STORE_EXTENSION_ID}' `
+    'Chrome store navigation must use the published entry and the same default identity.'
+if ($downloadSettingsView.Contains('download-settings-chrome-store-id') -or
+    $downloadSettingsView.Contains('Chrome 商店扩展 ID') -or
+    $downloadSettingsView -match 'chrome_web_store_extension_id: Entity<InputState>') {
+    throw 'Ordinary download settings must not expose the legacy extension ID input.'
+}
+Assert-Contains $downloadSettingsView 'owner.open_chrome_store(cx)' `
+    'Chrome store action must use the existing deferred application owner.'
 foreach ($browserKey in @(
         'Software\Google\Chrome\NativeMessagingHosts',
         'Software\Microsoft\Edge\NativeMessagingHosts',

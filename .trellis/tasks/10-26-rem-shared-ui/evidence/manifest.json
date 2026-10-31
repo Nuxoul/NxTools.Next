@@ -1,0 +1,1320 @@
+{
+  "task": "Queue07 shared ordinary UI scales",
+  "scope": "Source/compiled synthetic evidence; production-only strict lint blocked externally; no full Desktop/native/visual acceptance",
+  "sources": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+      "sha256": "36961f88fb2518c985d1c436bdc924d7330122f4020a7a7932f1c1c176969361",
+      "bytes": 22869
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+      "sha256": "5cc7930408a3854ab73217cec4c05b89ebb963f9c6d96be43e668e4b3cd9bd82",
+      "bytes": 111745
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+      "sha256": "2879b065d0c558ca7dd3498f3ce0aa6dd0acb308185aedbbd652d386e36f1170",
+      "bytes": 131437
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+      "sha256": "8a11213b56cc121917825198f54f73d42eb542a0c6efe59fea961020ea151b45",
+      "bytes": 44774
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs",
+      "sha256": "a8e3ee75a776b23ce04e359c5d2fc1756ccf5a947464b6d627b575db9ea830f1",
+      "bytes": 56375
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+      "sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e",
+      "bytes": 39415
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs",
+      "sha256": "512db11d2fe9178766c0e72f32556b953af80e6a5fde554e57d76ca23aba977f",
+      "bytes": 99733
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+      "sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b",
+      "bytes": 21733
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+      "sha256": "535236eca6630d5aaf0e38e75986988d7b2e07b33c48337c3227ede6e5047fda",
+      "bytes": 24083
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+      "sha256": "0d6d712991d10eccccbc377e6e387a4b62dc3741453cb1bb506191d59387841e",
+      "bytes": 1568
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/hotkey.rs",
+      "sha256": "7ed87d7f8b6bcd632485adf4385e6718310780fff9d9e51dcbad58cc3134511f",
+      "bytes": 7711
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/menu.rs",
+      "sha256": "47fd5db7f4b5b9450439f1da4700e1e37ee53169d38b2dc95612333bc78ce56f",
+      "bytes": 1622
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/mod.rs",
+      "sha256": "a22684b6c84965f7ae484d13e28fe9670b55a7f52f1acebdf74f3a5ca91a5d1c",
+      "bytes": 632
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+      "sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c",
+      "bytes": 14109
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs",
+      "sha256": "1deca08ac288f5a26c5cb64b3d31dbb3220fc2e100439f7d7c4d9e746149ec44",
+      "bytes": 14655
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+      "sha256": "e19bba4be4acb11da7dab5213401aebccad224440b0ba88c518d6be3bc1f152e",
+      "bytes": 20269
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/state.rs",
+      "sha256": "4b2bd86123cdaf7bb9d4e6fe7aaf0ecd0e4ae66de7ee1691d2b5903fe2fcd4c2",
+      "bytes": 9609
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/titlebar.rs",
+      "sha256": "e15e7221897038988dd8c88f40dd5fdb970e06e02896eeb6d3b3903b4f54209f",
+      "bytes": 5008
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/tooltip.rs",
+      "sha256": "6d60db37be16092d76e1f38904580a49884f82e0f1a214b4568c414bd870ff9c",
+      "bytes": 8133
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+      "sha256": "b2108299ed569d7d0c31db779e32f5f348ba4adddecf041ad72025948ee546a6",
+      "bytes": 12842
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs",
+      "sha256": "204df982153115bb296535339bea7b0c96f1160948a58a52ee8689139ea15c32",
+      "bytes": 20585
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs",
+      "sha256": "5b892c83db1ed8941d39df20fe3482b1252fe51464e32270cc2d377088921ccc",
+      "bytes": 13295
+    },
+    {
+      "path": "docs/reference-code/gpui.md",
+      "sha256": "25c240ad9bbe004b816aae991d55dffd04b7f7a6769e307b9cd6a3820df263f2",
+      "bytes": 34622
+    }
+  ],
+  "documents": [
+    {
+      "path": ".trellis/tasks/10-26-rem-shared-ui/prd.md",
+      "sha256": "ee0921e610373c4f30b618a16cf54d40b773d33e6f837a9f81ee37e0ac0aa61b",
+      "bytes": 11701
+    },
+    {
+      "path": ".trellis/tasks/10-26-rem-shared-ui/outcomes.md",
+      "sha256": "3b54aac742c2e1c35f5601ee80086d470082078054838a319a26831a83e4bfdc",
+      "bytes": 14426
+    }
+  ],
+  "evidence": [
+    {
+      "path": "evidence/baselines/docs/reference-code/gpui.md.baseline",
+      "sha256": "fff8ce57799a4cda72adc905d87f9ce8158a9bcb2bee440afae55f0024ba84df",
+      "bytes": 32263
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/downloads/settings_view.rs.baseline",
+      "sha256": "fa113dfa10cdacd2e257bc9f938263c81199409d2e38418a10f780ee1a97f3d7",
+      "bytes": 131475
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs.baseline",
+      "sha256": "09facb4ebe9fef25b992999e7543eb7f87020093fc260a161543f55e410b3839",
+      "bytes": 44706
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs.baseline",
+      "sha256": "22053a3fbd70a8d8d20b15a7f42c44c2da662fff93da3cb8693c9dfdf029f9f7",
+      "bytes": 56341
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window.rs.baseline",
+      "sha256": "641fe48ca573be4c126060f21441836a4b6ec1a789f795487b0f5ae2d771f1e4",
+      "bytes": 22833
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs.baseline",
+      "sha256": "c23e7f6dd605026b6d646bd8621d45ed8033c3693c98f70cb4c23eb56952d0c6",
+      "bytes": 37244
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/network_settings.rs.baseline",
+      "sha256": "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+      "bytes": 111711
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/action.rs.baseline",
+      "sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+      "bytes": 21747
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs.baseline",
+      "sha256": "8b374ffd17ca31429b472c3d4acf60f0689d1cde668be40aff3ec58ac646b0f2",
+      "bytes": 23127
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/field.rs.baseline",
+      "sha256": "5de208e485ea894dfd6687a7d3c8c103603fe27c035a3c10d213a6e0da722c6f",
+      "bytes": 1664
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs.baseline",
+      "sha256": "4df68d7648e2035df5ff4846c99b1a8f3fa27e37b37f2cee8c220e189dae1c51",
+      "bytes": 7754
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/menu.rs.baseline",
+      "sha256": "8891d340630d2da74acd0d6c9b2cf4d7478672c54a2083bf3ae08caac05a5c20",
+      "bytes": 1574
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/mod.rs.baseline",
+      "sha256": "13bd9ea814e30fe679bd3c17e68a4a9959229efb2024137b527ccadbac114b7b",
+      "bytes": 594
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/path_list.rs.baseline",
+      "sha256": "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+      "bytes": 14158
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs.baseline",
+      "sha256": "4139d6e5c54cfccfaab1a8bef9de6b1d2a643aa45f77783e3422ffcb3ea1665d",
+      "bytes": 14647
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/settings.rs.baseline",
+      "sha256": "292a9cb577521aa6c5b36ba19f205a4d30b28c7117fc1e8c5e466f1f66e34f71",
+      "bytes": 20407
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/state.rs.baseline",
+      "sha256": "3fc4a610343c09c3e60dd2e0998e6d73c7cc7cbe16963c5535ac2699b87eff12",
+      "bytes": 9358
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/titlebar.rs.baseline",
+      "sha256": "bc66ba9b138fd51cecab0073fe8813613692c242d80aa219753343365c76d0b7",
+      "bytes": 4972
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/tooltip.rs.baseline",
+      "sha256": "39eb663131fb3b60224138d8dcf2d192fe0068617b168199ba6f8f842ee6dd5f",
+      "bytes": 8075
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs.baseline",
+      "sha256": "1481ece158fb7766c04edbb4110bbcf692898559e5f189b591ff5c3654bb88a7",
+      "bytes": 12761
+    },
+    {
+      "path": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs.baseline",
+      "sha256": "54b48385099120aa9b700bdd03ca91fd7405367e7d5dba822d319d3fb654eddf",
+      "bytes": 96566
+    },
+    {
+      "path": "evidence/compiled-results.json",
+      "sha256": "e9a58c01618d957939731566cc4be04dddd819287d2a49dd71ac1a6188724221",
+      "bytes": 13205
+    },
+    {
+      "path": "evidence/components.consumers.json",
+      "sha256": "0caf9832b077a552d283f76f3893197e39f03fa5d8815e307dd9577d9de6186d",
+      "bytes": 78727
+    },
+    {
+      "path": "evidence/current/docs/reference-code/gpui.md.current",
+      "sha256": "25c240ad9bbe004b816aae991d55dffd04b7f7a6769e307b9cd6a3820df263f2",
+      "bytes": 34622
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/downloads/settings_view.rs.current",
+      "sha256": "2879b065d0c558ca7dd3498f3ce0aa6dd0acb308185aedbbd652d386e36f1170",
+      "bytes": 131437
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs.current",
+      "sha256": "8a11213b56cc121917825198f54f73d42eb542a0c6efe59fea961020ea151b45",
+      "bytes": 44774
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs.current",
+      "sha256": "a8e3ee75a776b23ce04e359c5d2fc1756ccf5a947464b6d627b575db9ea830f1",
+      "bytes": 56375
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs.current",
+      "sha256": "5b892c83db1ed8941d39df20fe3482b1252fe51464e32270cc2d377088921ccc",
+      "bytes": 13295
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window.rs.current",
+      "sha256": "36961f88fb2518c985d1c436bdc924d7330122f4020a7a7932f1c1c176969361",
+      "bytes": 22869
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs.current",
+      "sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e",
+      "bytes": 39415
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/network_settings.rs.current",
+      "sha256": "5cc7930408a3854ab73217cec4c05b89ebb963f9c6d96be43e668e4b3cd9bd82",
+      "bytes": 111745
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/action.rs.current",
+      "sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b",
+      "bytes": 21733
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs.current",
+      "sha256": "535236eca6630d5aaf0e38e75986988d7b2e07b33c48337c3227ede6e5047fda",
+      "bytes": 24083
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/field.rs.current",
+      "sha256": "0d6d712991d10eccccbc377e6e387a4b62dc3741453cb1bb506191d59387841e",
+      "bytes": 1568
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs.current",
+      "sha256": "7ed87d7f8b6bcd632485adf4385e6718310780fff9d9e51dcbad58cc3134511f",
+      "bytes": 7711
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/menu.rs.current",
+      "sha256": "47fd5db7f4b5b9450439f1da4700e1e37ee53169d38b2dc95612333bc78ce56f",
+      "bytes": 1622
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/mod.rs.current",
+      "sha256": "a22684b6c84965f7ae484d13e28fe9670b55a7f52f1acebdf74f3a5ca91a5d1c",
+      "bytes": 632
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs.current",
+      "sha256": "204df982153115bb296535339bea7b0c96f1160948a58a52ee8689139ea15c32",
+      "bytes": 20585
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/path_list.rs.current",
+      "sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c",
+      "bytes": 14109
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs.current",
+      "sha256": "1deca08ac288f5a26c5cb64b3d31dbb3220fc2e100439f7d7c4d9e746149ec44",
+      "bytes": 14655
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/settings.rs.current",
+      "sha256": "e19bba4be4acb11da7dab5213401aebccad224440b0ba88c518d6be3bc1f152e",
+      "bytes": 20269
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/state.rs.current",
+      "sha256": "4b2bd86123cdaf7bb9d4e6fe7aaf0ecd0e4ae66de7ee1691d2b5903fe2fcd4c2",
+      "bytes": 9609
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/titlebar.rs.current",
+      "sha256": "e15e7221897038988dd8c88f40dd5fdb970e06e02896eeb6d3b3903b4f54209f",
+      "bytes": 5008
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/tooltip.rs.current",
+      "sha256": "6d60db37be16092d76e1f38904580a49884f82e0f1a214b4568c414bd870ff9c",
+      "bytes": 8133
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs.current",
+      "sha256": "b2108299ed569d7d0c31db779e32f5f348ba4adddecf041ad72025948ee546a6",
+      "bytes": 12842
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs.current",
+      "sha256": "512db11d2fe9178766c0e72f32556b953af80e6a5fde554e57d76ca23aba977f",
+      "bytes": 99733
+    },
+    {
+      "path": "evidence/diffs/docs/reference-code/gpui.md.dirty-delta.txt",
+      "sha256": "b5e11016dde167f78163368b05dbb70f785d1faa582587ec9f4aded90aa37db2",
+      "bytes": 2762
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/downloads/settings_view.rs.dirty-delta.txt",
+      "sha256": "71aacaf18779614559988bebac945f0c98c1c303bc6e15c78fcfb0cfd296e269",
+      "bytes": 547
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs.dirty-delta.txt",
+      "sha256": "87a95d664c7bc45d641054fd8719daa0e677336f5fd17fdc31c812a83580362e",
+      "bytes": 951
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs.dirty-delta.txt",
+      "sha256": "1fd08a8e5574a9bea57e4819260c96619ee8785eebc14c59575f8169923201a9",
+      "bytes": 512
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/main_window.rs.dirty-delta.txt",
+      "sha256": "ffbd7c109b1dbe57259e7fb2e6c48910eb2eecb796a6386cdaa87a7080d9cdc0",
+      "bytes": 225
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs.dirty-delta.txt",
+      "sha256": "0f82228aedcfe2b243ed46b397068b9c10cdd4159cb386035d3e328b26fc91f1",
+      "bytes": 2584
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/network_settings.rs.dirty-delta.txt",
+      "sha256": "cd96b5079c45f10e6402189b8a1194f1b43c1209fd9542b781e601de73ac803d",
+      "bytes": 425
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/action.rs.dirty-delta.txt",
+      "sha256": "843aed8828877a0ef01da33211863d9f5e557436634f41056a687a4728bdfdf8",
+      "bytes": 635
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs.dirty-delta.txt",
+      "sha256": "3bf04d5ecd6ad25c52160a6d8e4666d8884308f614968139aafc1417c6223236",
+      "bytes": 15402
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/field.rs.dirty-delta.txt",
+      "sha256": "bbe2ab1ce11847957a54e8f9da1dd4cc8695653c3dd9e7ff21a91f9411c204a8",
+      "bytes": 970
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs.dirty-delta.txt",
+      "sha256": "41e51793f364b0e365f7182ddc056d10b70f287c97f15dc29e80e823781c054f",
+      "bytes": 1668
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/menu.rs.dirty-delta.txt",
+      "sha256": "b9942832e4ba0713686904d8d852106cb0c92b7108ad6ba6804e96353ce12173",
+      "bytes": 645
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/mod.rs.dirty-delta.txt",
+      "sha256": "71e7cc1b6a80eb7c724061254a1c66ffb8429b4a8c407fd301b08dc8aa7dbe34",
+      "bytes": 240
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/path_list.rs.dirty-delta.txt",
+      "sha256": "436c2f7f16cd21f159bbbcc12cb5258360d7f1a59e0de23a040f7b1c61c5ee3d",
+      "bytes": 5257
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs.dirty-delta.txt",
+      "sha256": "5df4c3cebae9cd656b4c7997f2135a454e1bd10ff615315ce15a6d914b91b1cd",
+      "bytes": 6659
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/settings.rs.dirty-delta.txt",
+      "sha256": "4ddeceb935ceac5c5e6c52076cc230293c1be4f561e2aa100f834d9696d77f2f",
+      "bytes": 4573
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/state.rs.dirty-delta.txt",
+      "sha256": "f49a09b125d7ac835078e12f1ced6172d503d3f54de4f954a6e06990ff1ff2d8",
+      "bytes": 2402
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/titlebar.rs.dirty-delta.txt",
+      "sha256": "36ae0795cdff5c008386ac92123f11651dc871c50c75eb2f0910f918ecef222b",
+      "bytes": 2999
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/tooltip.rs.dirty-delta.txt",
+      "sha256": "085e36fd95bf7ce9d81d36118e829cd409ef464ab6b9ad458b7efd73ce5293c5",
+      "bytes": 904
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs.dirty-delta.txt",
+      "sha256": "0bc896cd43351e1ae677f03c6aec16298fcab9920e2801e58d8c45f50603340f",
+      "bytes": 5990
+    },
+    {
+      "path": "evidence/diffs/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs.dirty-delta.txt",
+      "sha256": "dba236d32c209a450cfe8e212b58e94f840cd3e4b13d05e2b0460457ca5ddb67",
+      "bytes": 3497
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service.rs.baseline",
+      "sha256": "5b5651395d967742415536bd6405c2dc6e537a70e34893b0e47d681e6ccfdf71",
+      "bytes": 21765
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service.rs.diff.txt",
+      "sha256": "11412a5b355baaa8ab7e0ce4a0fe7b1417ee053768b9dabf690d952d127c99aa",
+      "bytes": 8293
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service.rs.observed",
+      "sha256": "87a57a3cddb97f19dca676102943b2f6c58c8e066c622ccda6156dd6d9a731b0",
+      "bytes": 26210
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service_storage.rs.new-observed",
+      "sha256": "8a8fc2a4d8ab94b558831ebf8c2b6fcdc9fca5ea49c5c470425ff35bae3b3dd7",
+      "bytes": 4147
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs.new-observed",
+      "sha256": "b13dacdb750d8ebbae8bda9d94f917d4d247d09d7b4319e21c482d57ef0e2d9e",
+      "bytes": 18481
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/ui_host.rs.baseline",
+      "sha256": "7d6e2eeb66e876b87e3746d6ca168493789b8d7eae7283b15bb340634faced5d",
+      "bytes": 20608
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/ui_host.rs.diff.txt",
+      "sha256": "929ee36b68a0df7b32a28167f1c3e3c237676356fc0aa8820d305bd8b12c2a1e",
+      "bytes": 2528
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/ui_host.rs.observed",
+      "sha256": "6c9899d7b9c01bb820d81270ba03fbbccb8522d28b1b4262e848dc03b68c9164",
+      "bytes": 22483
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions.rs.baseline",
+      "sha256": "e15c7289e0e633a7f1120fa86d555b7d035b76715453a40ad0e2b3475ecaf10d",
+      "bytes": 54321
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions.rs.diff.txt",
+      "sha256": "91bc32ddb4b50ff12a17ce0b3713645679b92abc5dec7f2f508f14af23dbe9ab",
+      "bytes": 3081
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions.rs.observed",
+      "sha256": "f26f289748e751a8512e1196b2b113ddc3ba2e350433ca45b0d86e745d094e37",
+      "bytes": 54486
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs.baseline",
+      "sha256": "0b47cdd4e89714454a049324065afb0ad39259abb487b3c408cdf38774b8889d",
+      "bytes": 23673
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs.diff.txt",
+      "sha256": "c9024aaabc0ecd5f05d54afee7e1fa4b92b0bd568e0c2f41bbe640cbeff3e44b",
+      "bytes": 1965
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs.observed",
+      "sha256": "c230afb00589fd60c561b3dd3a195c7522a0f0d595c9d0cc0a3a7aa5a26345a9",
+      "bytes": 25386
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/quick_launch.rs.baseline",
+      "sha256": "a8b3b13d41386a4e93fef91a643766464c6b7cc1dd47a4f9630486c0d3c4b20f",
+      "bytes": 159452
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/quick_launch.rs.diff.txt",
+      "sha256": "1356db4a9090f1ce72a72209551cb041051eb5a083cd5ec6aefd9bbb00d8e39a",
+      "bytes": 1232
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/quick_launch.rs.observed",
+      "sha256": "55d950208060777298b3118a350966b5a5717f66e8d1de338fc01bf1a89d6e6d",
+      "bytes": 160220
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/runtime.rs.baseline",
+      "sha256": "42e01db3b989814df8780fc0290a77c966c77023ecb240011031f666c818ccca",
+      "bytes": 36084
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/runtime.rs.diff.txt",
+      "sha256": "61aac4dd1e1adafebd1f6608371df7ff88dcbce2b1ce8be789054b64ccde665b",
+      "bytes": 1453
+    },
+    {
+      "path": "evidence/external/final/rust/apps/nxtools-desktop/src/runtime.rs.observed",
+      "sha256": "1301a6c28e13252868b624f92c41552658ff0401d834d3287e51dcd324771b28",
+      "bytes": 36280
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/extensions.rs.baseline",
+      "sha256": "e15c7289e0e633a7f1120fa86d555b7d035b76715453a40ad0e2b3475ecaf10d",
+      "bytes": 54321
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/extensions.rs.diff.txt",
+      "sha256": "91bc32ddb4b50ff12a17ce0b3713645679b92abc5dec7f2f508f14af23dbe9ab",
+      "bytes": 3081
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/extensions.rs.observed",
+      "sha256": "f26f289748e751a8512e1196b2b113ddc3ba2e350433ca45b0d86e745d094e37",
+      "bytes": 54486
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/quick_launch.rs.baseline",
+      "sha256": "a8b3b13d41386a4e93fef91a643766464c6b7cc1dd47a4f9630486c0d3c4b20f",
+      "bytes": 159452
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/quick_launch.rs.diff.txt",
+      "sha256": "1356db4a9090f1ce72a72209551cb041051eb5a083cd5ec6aefd9bbb00d8e39a",
+      "bytes": 1232
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/quick_launch.rs.observed",
+      "sha256": "55d950208060777298b3118a350966b5a5717f66e8d1de338fc01bf1a89d6e6d",
+      "bytes": 160220
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/runtime.rs.baseline",
+      "sha256": "42e01db3b989814df8780fc0290a77c966c77023ecb240011031f666c818ccca",
+      "bytes": 36084
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/runtime.rs.diff.txt",
+      "sha256": "61aac4dd1e1adafebd1f6608371df7ff88dcbce2b1ce8be789054b64ccde665b",
+      "bytes": 1453
+    },
+    {
+      "path": "evidence/external/rust/apps/nxtools-desktop/src/runtime.rs.observed",
+      "sha256": "1301a6c28e13252868b624f92c41552658ff0401d834d3287e51dcd324771b28",
+      "bytes": 36280
+    },
+    {
+      "path": "evidence/external-new-sources.json",
+      "sha256": "4fc7b2ff4abe493e6f9e70ca301e9462d739f2384983329644ec97d961d2d344",
+      "bytes": 709
+    },
+    {
+      "path": "evidence/external-observations-delivery.json",
+      "sha256": "acf0a4f32d5f19daa726c9b89624cc8fe61bf6e7a71a4e0bb7c57baa35119c53",
+      "bytes": 1948
+    },
+    {
+      "path": "evidence/external-observations-latest.json",
+      "sha256": "45fa0b02d39bceed6cd39a84c042317e21fc2879242edec477ce0269d623efd5",
+      "bytes": 1673
+    },
+    {
+      "path": "evidence/external-observations-publication.json",
+      "sha256": "7a3830a8c56a8c82ac478e1bdb9fbea857b777e4db9840384c1d083bc3da31b6",
+      "bytes": 2880
+    },
+    {
+      "path": "evidence/external-observations.json",
+      "sha256": "3c7b48c6becb4710b8ccde31dd3345d99a2a4badc644f2d33fda16ad27dd5f57",
+      "bytes": 359
+    },
+    {
+      "path": "evidence/external-service-observation.current",
+      "sha256": "f9361b1a533b8c31875dc47398f0f1650ebccfbcdedb63ef6ed2d7c510832b51",
+      "bytes": 21835
+    },
+    {
+      "path": "evidence/external-service-observation.diff.txt",
+      "sha256": "2a80013dd84a7d7c794ad5fcb8e8616a4d4bcc358c92c5db7913b8b213cfcad2",
+      "bytes": 190
+    },
+    {
+      "path": "evidence/format-preview.diff.txt",
+      "sha256": "d7c03fcc10effbcc1eca85c649a1533f3c8e78d8b9c454caf9a153a85e126265",
+      "bytes": 63622
+    },
+    {
+      "path": "evidence/git-status.txt",
+      "sha256": "c5fb880b9fc6134dda7ea60e9f70595c87644c1f9bd6a8fb6bd831bbebd2267e",
+      "bytes": 29941
+    },
+    {
+      "path": "evidence/historical-baseline.json",
+      "sha256": "6189449366cce49a2e549f4e13738f29903fdee81cb79c7151eed70e17405fd2",
+      "bytes": 169739
+    },
+    {
+      "path": "evidence/metrics.rs.consumers.json",
+      "sha256": "217af0267386805ecdc901771831340f1b7f8a646aaf08c5ca6c80d65ee44c74",
+      "bytes": 69740
+    },
+    {
+      "path": "evidence/own-checkpoint-delivery.json",
+      "sha256": "acdc96a5a8a7154145f26c3c49a290deb2780a0ec933bee1deb2267e2dc61d92",
+      "bytes": 3669
+    },
+    {
+      "path": "evidence/own-checkpoint.json",
+      "sha256": "14573d5068256c1942a9c94506d1dd4ea7201c7ddbf54292056441ad5328aa3a",
+      "bytes": 3669
+    },
+    {
+      "path": "evidence/own-deltas.json",
+      "sha256": "c6b28347417b05e2ac4cb85187a5dc395348e06affd78a3f8b3c79dbb8cffea0",
+      "bytes": 78676
+    },
+    {
+      "path": "evidence/production-lint-blocker/media.rs.observed",
+      "sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f",
+      "bytes": 15680
+    },
+    {
+      "path": "evidence/production-lint-blocker/media.rs.task-start",
+      "sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f",
+      "bytes": 15680
+    },
+    {
+      "path": "evidence/production-lint-blocker.json",
+      "sha256": "d0199185caaf576cb50598d16ca720dedb1033be6f513637c06461658e82340c",
+      "bytes": 366
+    },
+    {
+      "path": "evidence/protected-sources.json",
+      "sha256": "4d2cf6327335bcdd52b206d68799ac75968a25e9a4dc25639173ff67b8ba2913",
+      "bytes": 38839
+    },
+    {
+      "path": "evidence/protected-test-membership-final.json",
+      "sha256": "50bdb1266f0f45734a2a7573a878750901ab7ab91868ab75a9d076c32439b97d",
+      "bytes": 8168
+    },
+    {
+      "path": "evidence/publication-status.json",
+      "sha256": "14e2a79f1920687f070d4dad1cc29f99c64fd0e91381ac76ec59574dd503458f",
+      "bytes": 475
+    },
+    {
+      "path": "evidence/reference-review.txt",
+      "sha256": "73812faa440dcf668745a1638092ce1cd176380bc8f8e80b81f636ae95a9cfd3",
+      "bytes": 46965
+    },
+    {
+      "path": "evidence/runs/audit04-protected.json",
+      "sha256": "f2c49578535920df2daefd3a8d9348b542d5deff16249a64cb6e6c41f2c531bb",
+      "bytes": 222
+    },
+    {
+      "path": "evidence/runs/audit04-protected.log",
+      "sha256": "4b9d7e5dc07602d6ee77561594d42f6daee61a3352401bf8a17bc27a3f75f166",
+      "bytes": 1962
+    },
+    {
+      "path": "evidence/runs/audit05-protected.json",
+      "sha256": "0605ed6145ce1e2a94ded0f9b829840c215c3826e8d279f29838d0c5b6359b4f",
+      "bytes": 221
+    },
+    {
+      "path": "evidence/runs/audit05-protected.log",
+      "sha256": "5309311ba4dabe43a9a3af3bc40c72ace44135da0c475adb18858efa184744d5",
+      "bytes": 3956
+    },
+    {
+      "path": "evidence/runs/audit06-final.json",
+      "sha256": "e1436297fedad5941d3033bcc9d6445f37807daed3f88f3d06d4b24a26dea191",
+      "bytes": 239
+    },
+    {
+      "path": "evidence/runs/audit06-final.log",
+      "sha256": "3156990e56fbfe0c3574a181394fce8b1027a37f98067ddd98acee3216909441",
+      "bytes": 9316
+    },
+    {
+      "path": "evidence/runs/clipboard-ui-lifecycle-delivery.log",
+      "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f",
+      "bytes": 1346
+    },
+    {
+      "path": "evidence/runs/clipboard-ui-lifecycle.log",
+      "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f",
+      "bytes": 1346
+    },
+    {
+      "path": "evidence/runs/command-official-scroll-green.json",
+      "sha256": "0d32128f3c9506f2a328317ac91bf474142905b4d3bcd75557c92c1f14d2f8f5",
+      "bytes": 272
+    },
+    {
+      "path": "evidence/runs/command-official-scroll-green.log",
+      "sha256": "c9b6477e97cd3ea59e3de70621c88424d21509376bed126520c2dafdd97e07d3",
+      "bytes": 2138
+    },
+    {
+      "path": "evidence/runs/command-scroll-route-probe.json",
+      "sha256": "df5f74655891d101b51374b79800f0c5b16bdecf8b390f36b7ff6abbb528dae2",
+      "bytes": 271
+    },
+    {
+      "path": "evidence/runs/command-scroll-route-probe.log",
+      "sha256": "0db755796f2242d898a35ae11ef9686a4b854d015209689e998fa120b9238665",
+      "bytes": 5862
+    },
+    {
+      "path": "evidence/runs/components.consumers.json",
+      "sha256": "0caf9832b077a552d283f76f3893197e39f03fa5d8815e307dd9577d9de6186d",
+      "bytes": 78727
+    },
+    {
+      "path": "evidence/runs/consumers-viewport-diagnosis.json",
+      "sha256": "b720b37ac929c2a9e78a16d6b9f14d68479894c6651858b9b3b77eb742995160",
+      "bytes": 270
+    },
+    {
+      "path": "evidence/runs/consumers-viewport-diagnosis.log",
+      "sha256": "afb545e31192cf945cf317e87fa386b708a228eeb70322c0640f81e4f4027f45",
+      "bytes": 5964
+    },
+    {
+      "path": "evidence/runs/desktop-shell-lifecycle-delivery.log",
+      "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283",
+      "bytes": 336
+    },
+    {
+      "path": "evidence/runs/desktop-shell-lifecycle.log",
+      "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283",
+      "bytes": 336
+    },
+    {
+      "path": "evidence/runs/download-ui-lifecycle-delivery.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "path": "evidence/runs/download-ui-lifecycle.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "path": "evidence/runs/downloads-related-after-independent-repair.json",
+      "sha256": "f4f4a9ea285385d1e43db85dcfdabe112e703d23648fa42dc4664afa18169116",
+      "bytes": 252
+    },
+    {
+      "path": "evidence/runs/downloads-related-after-independent-repair.log",
+      "sha256": "dbfcbe69c92b11a9637816b2f4f6c8404051341d03e0aa99c110bcde62c7efa8",
+      "bytes": 44192
+    },
+    {
+      "path": "evidence/runs/downloads-related.json",
+      "sha256": "0afc3c44b6d825d0db617108bec4c9560b62e0287637d756d7b22140c04b292e",
+      "bytes": 228
+    },
+    {
+      "path": "evidence/runs/downloads-related.log",
+      "sha256": "e7779832ce60e43b8990c34d2aef6589fecfed27bc76099e1817efec8ac93e55",
+      "bytes": 6340
+    },
+    {
+      "path": "evidence/runs/editors-layout-red.json",
+      "sha256": "f34103346451cf5d5c328d8e1a0db3b43487913d0477d0cacb0c4fb1a2616aea",
+      "bytes": 253
+    },
+    {
+      "path": "evidence/runs/editors-layout-red.log",
+      "sha256": "0985582bb1390771cbd591c21d59fd5c0971ca76cf4c3d7e43940a0009f1aa19",
+      "bytes": 2118
+    },
+    {
+      "path": "evidence/runs/external-observations-delivery.json",
+      "sha256": "acf0a4f32d5f19daa726c9b89624cc8fe61bf6e7a71a4e0bb7c57baa35119c53",
+      "bytes": 1948
+    },
+    {
+      "path": "evidence/runs/external-observations-latest.json",
+      "sha256": "45fa0b02d39bceed6cd39a84c042317e21fc2879242edec477ce0269d623efd5",
+      "bytes": 1673
+    },
+    {
+      "path": "evidence/runs/external-observations.json",
+      "sha256": "3c7b48c6becb4710b8ccde31dd3345d99a2a4badc644f2d33fda16ad27dd5f57",
+      "bytes": 359
+    },
+    {
+      "path": "evidence/runs/final-checks.ps1",
+      "sha256": "bc9a9594108157ff33f64bc93d8eb812e83a56f77578ac130dfc12d8197e1f52",
+      "bytes": 532
+    },
+    {
+      "path": "evidence/runs/fixed-exceptions-exact-final.json",
+      "sha256": "a385def40bdb054175de76eb06f46e938e93f9af7902555a3d7d1e95fb79a0db",
+      "bytes": 257
+    },
+    {
+      "path": "evidence/runs/fixed-exceptions-exact-final.log",
+      "sha256": "81f158649b72e42c55940a459975731544fd8fd0f397d47078577b6b2b87f231",
+      "bytes": 970
+    },
+    {
+      "path": "evidence/runs/format-paths.json",
+      "sha256": "4ad4bae2990ffc4804f44c093d6a6dff60943bee00a59221f478f5153cca4e2b",
+      "bytes": 1334
+    },
+    {
+      "path": "evidence/runs/global-related.json",
+      "sha256": "874fede625853d25ae1deb45ccc5cb37b30e3d7a774455adec1369ed7c5463b1",
+      "bytes": 231
+    },
+    {
+      "path": "evidence/runs/global-related.log",
+      "sha256": "883fd23615ad4195c69c544415fa4dad49c1cfba73571e6c3bdc4d140d74d187",
+      "bytes": 9114
+    },
+    {
+      "path": "evidence/runs/gpui-component-catalog-delivery.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "path": "evidence/runs/gpui-component-catalog.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "path": "evidence/runs/gpui-release-contracts-delivery.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": "evidence/runs/gpui-release-contracts.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": "evidence/runs/historical-baseline.json",
+      "sha256": "6189449366cce49a2e549f4e13738f29903fdee81cb79c7151eed70e17405fd2",
+      "bytes": 169739
+    },
+    {
+      "path": "evidence/runs/last-verification.ps1",
+      "sha256": "96a0edb386e6a9de6720e9835c0a4374dde178623519137e4b6e22e0fc10023f",
+      "bytes": 1493
+    },
+    {
+      "path": "evidence/runs/main-related.json",
+      "sha256": "4d7de5d1d1f24331e17fb6ec5e6730b2a69c735d6e4b98c044a7e342b699f94f",
+      "bytes": 224
+    },
+    {
+      "path": "evidence/runs/main-related.log",
+      "sha256": "905931f637bf2175c7620d68deb18562d8c62220aedcf9fed1c06bee58d94995",
+      "bytes": 45824
+    },
+    {
+      "path": "evidence/runs/markdown-editor-contracts-delivery.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": "evidence/runs/markdown-editor-contracts.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": "evidence/runs/metrics.rs.consumers.json",
+      "sha256": "217af0267386805ecdc901771831340f1b7f8a646aaf08c5ca6c80d65ee44c74",
+      "bytes": 69740
+    },
+    {
+      "path": "evidence/runs/own-checkpoint-delivery.json",
+      "sha256": "acdc96a5a8a7154145f26c3c49a290deb2780a0ec933bee1deb2267e2dc61d92",
+      "bytes": 3669
+    },
+    {
+      "path": "evidence/runs/own-checkpoint.json",
+      "sha256": "14573d5068256c1942a9c94506d1dd4ea7201c7ddbf54292056441ad5328aa3a",
+      "bytes": 3669
+    },
+    {
+      "path": "evidence/runs/owned-existing-paths.json",
+      "sha256": "a852c5238fea2f604f78ba5125e4a541be90803c6176bd7331ded3e6f4c5ea41",
+      "bytes": 1263
+    },
+    {
+      "path": "evidence/runs/protected-test-membership-final.json",
+      "sha256": "50bdb1266f0f45734a2a7573a878750901ab7ab91868ab75a9d076c32439b97d",
+      "bytes": 8168
+    },
+    {
+      "path": "evidence/runs/protected-test-membership.json",
+      "sha256": "734e4861266d90ac2e08e3410c946bbc20d83e742cda135acc78ae7d279a20eb",
+      "bytes": 7389
+    },
+    {
+      "path": "evidence/runs/quick-presentation-final.json",
+      "sha256": "67a4714fe7c71923f7ae8a8414cb98ee81983d08445bb7fa7207dba53604b0c0",
+      "bytes": 249
+    },
+    {
+      "path": "evidence/runs/quick-presentation-final.log",
+      "sha256": "287ddacce7df3ec371a70b33cf4de8d07539114a1f840f65c6757e490078cdc5",
+      "bytes": 2924
+    },
+    {
+      "path": "evidence/runs/regression-results.json",
+      "sha256": "fdbc6fab4874501d2e97d9cb051ff9c3d390018a7bb7ddad2ed52d61681982b8",
+      "bytes": 441
+    },
+    {
+      "path": "evidence/runs/regressions.ps1",
+      "sha256": "470412d8cbe1655c8e484762478dc9260beb9a6eda41a3ea9eb4908357a2d553",
+      "bytes": 906
+    },
+    {
+      "path": "evidence/runs/run.ps1",
+      "sha256": "28900d0e0240781f3b58f65d857b1a50911d9e2ca0cd41a0d21bc23c7236dd7e",
+      "bytes": 974
+    },
+    {
+      "path": "evidence/runs/scoped-fmt-final.log",
+      "sha256": "0d53cb636919262bb777ede264bd9f9ffb5abd89d94b215249dd387ef13acb34",
+      "bytes": 78
+    },
+    {
+      "path": "evidence/runs/shared-consumers-exceptions.json",
+      "sha256": "ac5d25aad644bb11a4b47c750e98aff3d5381611fd0c3a2bb38b180d68fbe6bc",
+      "bytes": 261
+    },
+    {
+      "path": "evidence/runs/shared-consumers-exceptions.log",
+      "sha256": "750a4f968c0a0343abffd601232ac718fc871755d06bed3bf8b8257941d78054",
+      "bytes": 8130
+    },
+    {
+      "path": "evidence/runs/shared-consumers-initial.json",
+      "sha256": "39acc2b36e7629e5b66be17e0540dd3c54ed637abba22f0938e5dfdd091646b3",
+      "bytes": 250
+    },
+    {
+      "path": "evidence/runs/shared-consumers-initial.log",
+      "sha256": "83df86df4f47793cedfdd3f88b041ef16b1c990d7354aae4eedcac31382ad773",
+      "bytes": 5214
+    },
+    {
+      "path": "evidence/runs/shared-consumers-run.json",
+      "sha256": "7c6152927e1d7c0cf83bed805575d2cfa4e3aa70ec3e4e868f9c5761d29c856f",
+      "bytes": 247
+    },
+    {
+      "path": "evidence/runs/shared-consumers-run.log",
+      "sha256": "d0bbcfd05812f19b7d119ac71019aabc513d4b677f11ba9f48ff8eb65bd5c178",
+      "bytes": 5544
+    },
+    {
+      "path": "evidence/runs/shared-direct-final.json",
+      "sha256": "4199f0bbeb36b2cbfdd2bd64459cd4ca2a0e7a8c1ef31c7bb57f38e392cee5fe",
+      "bytes": 239
+    },
+    {
+      "path": "evidence/runs/shared-direct-final.log",
+      "sha256": "ac310b6b9cf80225ef91179dd68d01c8b405d1e7132b83d33108af4d26eb011c",
+      "bytes": 2834
+    },
+    {
+      "path": "evidence/runs/shared-green-initial.json",
+      "sha256": "99354f636f22a40d99d321ea83ed08597debd5335356316bb72580a1bc202fe2",
+      "bytes": 252
+    },
+    {
+      "path": "evidence/runs/shared-green-initial.log",
+      "sha256": "0169b0b2dabbe0e5eac79b1a0ca67ea581b5a1996671af7ecc519e1824d127ef",
+      "bytes": 1892
+    },
+    {
+      "path": "evidence/runs/shared-layout-red.json",
+      "sha256": "daf4fd09db118ea2734e1861739ef984bd7be4b7da8c153d2d53170b58577b9e",
+      "bytes": 251
+    },
+    {
+      "path": "evidence/runs/shared-layout-red.log",
+      "sha256": "b7ed609d24119e08928ac6159ec7eab1062f9c979a6c26130414995d40e27722",
+      "bytes": 4752
+    },
+    {
+      "path": "evidence/runs/shared-lines-scroll-check.json",
+      "sha256": "0e84634e420e1c8cf616bfd849b0fe3c3583ac7021514aafb3682ecc0e13f420",
+      "bytes": 259
+    },
+    {
+      "path": "evidence/runs/shared-lines-scroll-check.log",
+      "sha256": "8b9a75470e785863f012e602b57246d9462aa5956d58f4ac100f326f73c396bb",
+      "bytes": 8316
+    },
+    {
+      "path": "evidence/runs/shared-natural-form-green.json",
+      "sha256": "a3e884a089f98dd52ff700dadbee8f07aeb4d1fd0393207184ac7f54f57efa18",
+      "bytes": 252
+    },
+    {
+      "path": "evidence/runs/shared-natural-form-green.log",
+      "sha256": "7e0e6876d6abf73f1c3f7e6c2bcd0e0ec767103f8d437e0c6a0625352295c3dd",
+      "bytes": 6424
+    },
+    {
+      "path": "evidence/runs/shared-red.json",
+      "sha256": "c7bfc9debe8a7e8a4c6a31957fd0b50471420946a5af6a2dba9e662cf94fd55d",
+      "bytes": 236
+    },
+    {
+      "path": "evidence/runs/shared-red.log",
+      "sha256": "20875545941e12fea5fa38fdbececb8bc61ac18f592c66988a099176ad1ebf95",
+      "bytes": 3156
+    },
+    {
+      "path": "evidence/runs/source-baseline.json",
+      "sha256": "0e813f515b78da42c6b4629b0f2cdf1ba939b74806301b569fd3803f728507e8",
+      "bytes": 44715
+    },
+    {
+      "path": "evidence/runs/source-gates-delivery.json",
+      "sha256": "489f1a6b18052ae0993c54ddf70b2627b6fb3985704249af1785003ff6e42ddf",
+      "bytes": 2834
+    },
+    {
+      "path": "evidence/runs/source-gates.json",
+      "sha256": "c2629e671daacef09e2cc4840e08dbb2ad434e15df740b23a102fdac212f0302",
+      "bytes": 2735
+    },
+    {
+      "path": "evidence/runs/source-gates.ps1",
+      "sha256": "ddd1420226411d3e00f57b3551a369538c1947620b0179d2649e12cafbc45470",
+      "bytes": 1207
+    },
+    {
+      "path": "evidence/runs/spec-contracts-delivery.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": "evidence/runs/spec-contracts.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": "evidence/runs/strict-clippy.json",
+      "sha256": "db02c55f6f3f02841432078deb26da9eb82eb395052ff131b935f696e354811b",
+      "bytes": 215
+    },
+    {
+      "path": "evidence/runs/strict-clippy.log",
+      "sha256": "3205a392eecd92d95fd84e28a6108ac0cd8e410859570b187e4837deebc0ee39",
+      "bytes": 1468
+    },
+    {
+      "path": "evidence/runs/strict-production-final.json",
+      "sha256": "67e36c25145d816005f2f5016fa31b6206223cf404a0752ccf442f8c3b56059a",
+      "bytes": 219
+    },
+    {
+      "path": "evidence/runs/strict-production-final.log",
+      "sha256": "02f757a1f31df31f1dbd0f10598ded31c6e143a0dce7315dbf53c5048c3f74ac",
+      "bytes": 4050
+    },
+    {
+      "path": "evidence/runs/strict-production-import-clean.json",
+      "sha256": "ffd0383a90efc8f4d0e1a3bd7acef3f523a56c8801660603f2a74c84694f0969",
+      "bytes": 226
+    },
+    {
+      "path": "evidence/runs/strict-production-import-clean.log",
+      "sha256": "1c8356fe4c5d26a3147f9ea17fb4bcdd2137e7fe73a3279eb64b9890210a39e2",
+      "bytes": 1508
+    },
+    {
+      "path": "evidence/runs/strict-tests-delivery.json",
+      "sha256": "b42c1ee7fd731ef173a6ac4f5a89cc6410ceca86a89128f7e660d455b9b6d8db",
+      "bytes": 231
+    },
+    {
+      "path": "evidence/runs/strict-tests-delivery.log",
+      "sha256": "77f5ebd0639e4875a9bf9d9b3db16a1585d70774159f3963526fa0e8bb9aae11",
+      "bytes": 332
+    },
+    {
+      "path": "evidence/runs/strict-tests-final.json",
+      "sha256": "9d18cd734c18c51415e27642c052eaf395c9bee8d972d189a6ddb5a06aaaf6e3",
+      "bytes": 220
+    },
+    {
+      "path": "evidence/runs/strict-tests-final.log",
+      "sha256": "f2959bffa972fdc3065d6a164c6467b918087e077267121102e1a62dfdad43c4",
+      "bytes": 1468
+    },
+    {
+      "path": "evidence/runs/strict-tests-import-clean.json",
+      "sha256": "08df370b03a544cb0e074ad6672482d6d65c0970dfa4d434f6fa0f98ad79c229",
+      "bytes": 227
+    },
+    {
+      "path": "evidence/runs/strict-tests-import-clean.log",
+      "sha256": "ece001a212ce9502f171015f10778b7ef6f4db318271199bce230e6a4b489c90",
+      "bytes": 332
+    },
+    {
+      "path": "evidence/runs/typography.rs.consumers.json",
+      "sha256": "fc5a28bd1d70a390271c5c22f082538a57359d458dfa2b493e1525728ebd6116",
+      "bytes": 63451
+    },
+    {
+      "path": "evidence/runs/ui-consistency-delivery.log",
+      "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a",
+      "bytes": 86
+    },
+    {
+      "path": "evidence/runs/ui-consistency.log",
+      "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a",
+      "bytes": 86
+    },
+    {
+      "path": "evidence/runs/ui-motion-policy-delivery.log",
+      "sha256": "adc8f86392baa2b036578585fbd28130f9b9ed0214d79d6f01ed5c1d9458e6b6",
+      "bytes": 168
+    },
+    {
+      "path": "evidence/runs/ui-motion-policy.log",
+      "sha256": "adc8f86392baa2b036578585fbd28130f9b9ed0214d79d6f01ed5c1d9458e6b6",
+      "bytes": 168
+    },
+    {
+      "path": "evidence/runs/ui-related-after-independent-repair.json",
+      "sha256": "7a0eeaad44881029c20312ebebbe7ccaf38ffdda1fc4f0bda593d51c391ab92b",
+      "bytes": 238
+    },
+    {
+      "path": "evidence/runs/ui-related-after-independent-repair.log",
+      "sha256": "e406959e8b5ee62906c789596b294f72071ecefe64ee40f334ffdea3f14f9c02",
+      "bytes": 49402
+    },
+    {
+      "path": "evidence/runs/ui-related.json",
+      "sha256": "ea956fe9cb99926a3642bf0b1884fc7e05f77eb4003bc6460ddcbe1359edcaf4",
+      "bytes": 214
+    },
+    {
+      "path": "evidence/runs/ui-related.log",
+      "sha256": "08bf7d2ba2680453c3b6e1b7047d9f2a7600d03b84b44c9e3bc2846dde67a2e1",
+      "bytes": 5204
+    },
+    {
+      "path": "evidence/runs/ui-state-lifecycle-delivery.log",
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f",
+      "bytes": 108
+    },
+    {
+      "path": "evidence/runs/ui-state-lifecycle.log",
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f",
+      "bytes": 108
+    },
+    {
+      "path": "evidence/runs/ui-token-boundaries-delivery.log",
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1",
+      "bytes": 92
+    },
+    {
+      "path": "evidence/runs/ui-token-boundaries.log",
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1",
+      "bytes": 92
+    },
+    {
+      "path": "evidence/runs/workspace-check-delivery.json",
+      "sha256": "a81f6a1dd318f53b821c5ef5ec67728a83cabc81bb1b99df12857f6ba3e10aff",
+      "bytes": 204
+    },
+    {
+      "path": "evidence/runs/workspace-check-delivery.log",
+      "sha256": "df4ce970c36df9cc7e90bc13447cde75bb8ed6e06a96dde6c8dd476610d29a47",
+      "bytes": 760
+    },
+    {
+      "path": "evidence/runs/workspace-check-final.json",
+      "sha256": "b8ebad0902d0b0aa8438b91893ef3d1ef9056635390de664e44c959f2c022035",
+      "bytes": 200
+    },
+    {
+      "path": "evidence/runs/workspace-check-final.log",
+      "sha256": "df6862c6a7c6cf119f4c065ac96219faab2b59b53c5385d1ccbd17168871186f",
+      "bytes": 2018
+    },
+    {
+      "path": "evidence/runs/workspace-check.json",
+      "sha256": "d0b16c5bf39f1788979e5c910f6997cf56cb8930fc638bd05300d2ca7244b4d7",
+      "bytes": 194
+    },
+    {
+      "path": "evidence/runs/workspace-check.log",
+      "sha256": "8ab3c651df8220177f68cbc34ecab85be1f74b0ba89b57d9cd2d903352edf339",
+      "bytes": 2018
+    },
+    {
+      "path": "evidence/runs/workspace-fmt-delivery.json",
+      "sha256": "fcf9bee9cd9d2ebda3eb9c9902a18254f643821ca4330e6fa8e8a7001397f3df",
+      "bytes": 204
+    },
+    {
+      "path": "evidence/runs/workspace-fmt-delivery.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/runs/workspace-fmt-final.json",
+      "sha256": "2fb5691ccdfbae67107ef76b47b7e1fd9ffbfc236ded29cb423bbb1da65fffd3",
+      "bytes": 191
+    },
+    {
+      "path": "evidence/runs/workspace-fmt-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/runs/workspace-fmt-import-clean.json",
+      "sha256": "d7083c1a54e294ed8c37756b7a0309fe6c8453c8661b4970360f7c551d3b7a8f",
+      "bytes": 208
+    },
+    {
+      "path": "evidence/runs/workspace-fmt-import-clean.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/source-baseline.json",
+      "sha256": "0e813f515b78da42c6b4629b0f2cdf1ba939b74806301b569fd3803f728507e8",
+      "bytes": 44715
+    },
+    {
+      "path": "evidence/typography.rs.consumers.json",
+      "sha256": "fc5a28bd1d70a390271c5c22f082538a57359d458dfa2b493e1525728ebd6116",
+      "bytes": 63451
+    },
+    {
+      "path": "evidence/verify.py",
+      "sha256": "99336d78ab6874c9efcfff3c85fbb99c9d3547f03673bd4eb879479c3ccd251b",
+      "bytes": 4492
+    }
+  ]
+}

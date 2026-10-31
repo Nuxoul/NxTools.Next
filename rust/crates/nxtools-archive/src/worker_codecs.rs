@@ -316,8 +316,13 @@ fn sevenz_member_packed(
         .get(block + 1)
         .copied()
         .unwrap_or(archive.pack_sizes().len());
-    // Locked reader stores only the FIRST packed stream in entry.compressed_size. Sum the
-    // actual independent block's packed streams; never divide a shared solid block by member.
+    // Every currently admitted coder chain has one packed input. The locked parser
+    // permits orphan trailing pack sizes; an ambiguous span is UNKNOWN, not a larger
+    // denominator. Future unsupported multi-input graphs likewise have no risk ratio.
+    if end.checked_sub(first) != Some(1) {
+        return None;
+    }
+    // Never divide a shared solid block by member or trust entry.compressed_size.
     archive
         .pack_sizes()
         .get(first..end)?
@@ -334,7 +339,7 @@ fn run_sevenz<W: Write + Send>(
     interaction: &crate::interaction::InteractionPort,
 ) -> Result<(u64, u64)> {
     let lifecycle = control.source_delete_begin();
-    let set = volumes::SourceSet::open(request, control)?;
+    let set = volumes::SourceSet::open_sevenz(request, control)?;
     let path = set.primary();
     let before = (set.digest(), set.length());
     source_checkpoint(
@@ -464,7 +469,35 @@ fn run_sevenz<W: Write + Send>(
     let mut skipped = 0;
     validate_metadata(&mut entries, &limits, control)?;
     let entries: std::sync::Arc<[ArchiveEntry]> = entries.into();
-    crate::worker_browser::bind(
+    let edit_refusal = if request.operation == "open" {
+        let strict = (|| {
+            let password = request
+                .password
+                .as_deref()
+                .map(sevenz_rust2::Password::from)
+                .unwrap_or_default();
+            let mut source = set.sevenz_input(control)?;
+            let facts =
+                crate::sevenz_edit_header::inspect(&mut source, &limits, control, &password)?;
+            let encrypted = crate::worker_sevenz_edit::qualify(archive, &limits, control)?;
+            if facts.encrypted && !encrypted && archive.files.iter().any(|entry| entry.has_stream) {
+                return Err(ArchiveError::UnsupportedEncryption);
+            }
+            Ok(())
+        })();
+        strict.err().map(|error| match error {
+            ArchiveError::SourceChanged => crate::ArchiveModificationRefusal::SourceChanged,
+            ArchiveError::CorruptArchive => crate::ArchiveModificationRefusal::Corrupt,
+            ArchiveError::UnsupportedEncryption | ArchiveError::PasswordRequired => {
+                crate::ArchiveModificationRefusal::UnsupportedEncryption
+            }
+            ArchiveError::IoFailure => crate::ArchiveModificationRefusal::SourceUnavailable,
+            _ => crate::ArchiveModificationRefusal::UnsupportedStructure,
+        })
+    } else {
+        None
+    };
+    crate::worker_browser::bind_with_edit(
         request,
         request.operation_id,
         "SevenZ",
@@ -475,6 +508,10 @@ fn run_sevenz<W: Write + Send>(
         output,
         control,
         replies.clone(),
+        Some(nxtools_protocol::archive_browser::SevenzEditEligibility {
+            refusal: edit_refusal,
+        }),
+        None,
     )?;
     let selected =
         crate::worker_browser::selected(request, &entries)?.map(|entry| entry.id().ordinal);
@@ -499,12 +536,8 @@ fn run_sevenz<W: Write + Send>(
             return Err(ArchiveError::PasswordRequired);
         }
         let extracting = request.operation == "extract";
-        if extracting {
-            if let Some(ordinal) = selected {
-                validate_extraction(&entries[ordinal as usize..=ordinal as usize])?;
-            } else {
-                validate_extraction(&entries)?;
-            }
+        if extracting && selected.is_none() {
+            validate_extraction(&entries)?;
         }
         if extracting {
             set.verify(control)?;
@@ -533,10 +566,44 @@ fn run_sevenz<W: Write + Send>(
         let mut files = 0u64;
         let mut written_bytes = 0u64;
         let encrypted = entries.iter().any(|value| value.encrypted);
-        let by_name: std::collections::HashMap<_, _> = entries
-            .iter()
-            .map(|entry| (entry.display_path.as_str(), entry))
-            .collect();
+        // The locked reader visits block spans first, then all files without a block.
+        // Names cannot identify a callback: distinct 7z ordinals may share one name.
+        let callback_bytes = (entries.len() as u64)
+            .checked_mul(std::mem::size_of::<usize>() as u64)
+            .ok_or(ArchiveError::ResourceLimit)?;
+        if retained
+            .checked_add(callback_bytes)
+            .is_none_or(|bytes| bytes > limits.max_metadata_bytes)
+        {
+            return Err(ArchiveError::ResourceLimit);
+        }
+        let mut callback_ordinals = Vec::with_capacity(entries.len());
+        {
+            let archive = reader.archive();
+            for (block_index, &member_count) in block_members.iter().enumerate() {
+                let start = *archive
+                    .stream_map
+                    .block_first_file_index
+                    .get(block_index)
+                    .ok_or(ArchiveError::CorruptArchive)?;
+                let count =
+                    usize::try_from(member_count).map_err(|_| ArchiveError::ResourceLimit)?;
+                let end = start
+                    .checked_add(count)
+                    .filter(|end| *end <= entries.len())
+                    .ok_or(ArchiveError::CorruptArchive)?;
+                callback_ordinals.extend(start..end);
+            }
+            for (index, block) in archive.stream_map.file_block_index.iter().enumerate() {
+                if block.is_none() {
+                    callback_ordinals.push(index);
+                }
+            }
+        }
+        if callback_ordinals.len() != entries.len() {
+            return Err(ArchiveError::CorruptArchive);
+        }
+        let mut callback_ordinals = callback_ordinals.into_iter();
         let mut domain_error = None;
         let mut decoding_checkpoint = false;
         let result = (|| {
@@ -554,9 +621,13 @@ fn run_sevenz<W: Write + Send>(
                             native.source_checkpoint("source_decoding")?;
                         }
                     }
-                    let metadata = by_name
-                        .get(entry.name.as_str())
-                        .ok_or(ArchiveError::SourceChanged)?;
+                    let ordinal = callback_ordinals
+                        .next()
+                        .ok_or(ArchiveError::CorruptArchive)?;
+                    let metadata = entries.get(ordinal).ok_or(ArchiveError::CorruptArchive)?;
+                    if entry.name != metadata.display_path {
+                        return Err(ArchiveError::SourceChanged);
+                    }
                     let relative = metadata.display_path.replace('\\', "/");
                     let relative = relative.trim_end_matches('/');
                     let wanted = selected.is_none_or(|ordinal| ordinal == metadata.id().ordinal);
@@ -639,6 +710,9 @@ fn run_sevenz<W: Write + Send>(
                 return Err(error);
             }
             decoded.map_err(sevenz_error)?;
+            if callback_ordinals.next().is_some() {
+                return Err(ArchiveError::CorruptArchive);
+            }
             set.verify(control)?;
             // Solid-block integrity may be checked only at its end. No final file is
             // published until every decoder and the source recheck have succeeded.
@@ -765,7 +839,7 @@ fn run_rar<W: Write + Send>(
 ) -> Result<(u64, u64)> {
     let lifecycle = control.source_delete_begin();
     let path = Path::new(&request.path);
-    let set = volumes::SourceSet::open(request, control)?;
+    let set = volumes::SourceSet::open_rar(request, control)?;
     let before = (set.digest(), set.length());
     source_checkpoint(
         request,
@@ -794,9 +868,7 @@ fn run_rar<W: Write + Send>(
     let mut job_plan = crate::worker_job::codec_plan(request, entries.clone())?;
     let mut skipped = 0;
     if request.operation == "extract" {
-        if let Some(ordinal) = selected {
-            validate_extraction(&entries[ordinal as usize..=ordinal as usize])?;
-        } else {
+        if selected.is_none() {
             validate_extraction(&entries)?;
         }
         set.verify(control)?;
@@ -952,5 +1024,41 @@ mod browser_budget_tests {
         assert!(declared_preflight(&entries, &limits, None).is_err());
         assert!(declared_preflight(&entries, &limits, Some(1)).is_ok());
         assert!(declared_preflight(&entries, &limits, Some(0)).is_err());
+    }
+}
+
+#[cfg(test)]
+mod packed_risk_tests {
+    use super::*;
+    #[test]
+    fn orphan_packed_stream_is_not_an_independent_member_denominator() {
+        // Plain 7z Header/MainStreamsInfo: one Copy block, one1byte file, but two
+        // declared packed streams. Locked reader accepts the unused trailing stream.
+        let next = vec![
+            1, 4, 6, 0, 2, 9, 1, 1, 0, 7, 11, 1, 0, 1, 1, 0, 12, 1, 0, 8, 0, 0, 5, 1, 17, 5, 0,
+            b'a', 0, 0, 0, 0, 0,
+        ];
+        let mut signature = [0u8; 32];
+        signature[..6].copy_from_slice(b"7z\xbc\xaf\x27\x1c");
+        signature[6] = 0;
+        signature[7] = 4;
+        signature[20..28].copy_from_slice(&(next.len() as u64).to_le_bytes());
+        signature[28..32].copy_from_slice(&crc32fast::hash(&next).to_le_bytes());
+        let crc = crc32fast::hash(&signature[12..32]);
+        signature[8..12].copy_from_slice(&crc.to_le_bytes());
+        let mut bytes = signature.to_vec();
+        bytes.extend(next);
+        let archive = sevenz_rust2::Archive::read(
+            &mut std::io::Cursor::new(bytes),
+            &sevenz_rust2::Password::default(),
+        )
+        .expect("locked metadata parser");
+        assert_eq!(archive.pack_sizes(), &[1, 1]);
+        assert_eq!(archive.files.len(), 1);
+        assert_eq!(
+            sevenz_member_packed(&archive, 0, &[1]),
+            None,
+            "unreferenced stream cannot dilute risk ratio"
+        );
     }
 }

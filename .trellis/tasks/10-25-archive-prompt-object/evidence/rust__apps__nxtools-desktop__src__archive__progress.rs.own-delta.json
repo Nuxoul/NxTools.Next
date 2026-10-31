@@ -1,0 +1,72 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+  "baseline_sha256": "dc65157d165ad03dfb8a5ed51ea3821d5178233716e91dc8ce39c15e49ffa052",
+  "delivery_sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 7,
+      "baseline_end": 7,
+      "delivery_start": 7,
+      "delivery_end": 8,
+      "baseline_text": "",
+      "delivery_text": "    description_list::DescriptionList,\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 10,
+      "baseline_end": 10,
+      "delivery_start": 11,
+      "delivery_end": 12,
+      "baseline_text": "",
+      "delivery_text": "    label::Label,\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 14,
+      "baseline_end": 15,
+      "delivery_start": 16,
+      "delivery_end": 17,
+      "baseline_text": "    div, prelude::*,\n",
+      "delivery_text": "    base::TestSupportExt, div, prelude::*,\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 125,
+      "baseline_end": 126,
+      "delivery_start": 127,
+      "delivery_end": 128,
+      "baseline_text": "                ArchiveJobPromptKind::Conflict=>div().flex().flex_col().gap_2().child(format!(\"目标已有同名文件。现有大小：{}；传入大小：{}。\",number(prompt.existing_bytes),number(prompt.incoming_bytes))).child(Checkbox::new(\"archive-conflict-all\").label(\"应用到此任务后续冲突\").checked(apply.get()).on_click({let apply=apply.clone();move|checked,_,_|apply.set(*checked)})).into_any_element(),\n",
+      "delivery_text": "                ArchiveJobPromptKind::Conflict=>div().flex().flex_col().gap_2().child(format!(\"目标已有同名文件。现有大小：{}；传入大小：{}。\",number(prompt.existing_bytes),number(prompt.incoming_bytes))).child(prompt_objects(&prompt)).into_any_element(),\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 128,
+      "baseline_end": 129,
+      "delivery_start": 130,
+      "delivery_end": 131,
+      "baseline_text": "                ArchiveJobPromptKind::CreateOverwrite=>div().child(\"目标压缩包已存在。覆盖将保留原生确认的目标身份并在完整验证后一次发布；目标变化会拒绝覆盖。\").into_any_element(),\n",
+      "delivery_text": "                ArchiveJobPromptKind::CreateOverwrite=>div().flex().flex_col().gap_2().child(\"目标压缩包已存在。覆盖将保留原生确认的目标身份并在完整验证后一次发布；目标变化会拒绝覆盖。\").child(prompt_objects(&prompt)).into_any_element(),\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 138,
+      "baseline_end": 138,
+      "delivery_start": 140,
+      "delivery_end": 145,
+      "baseline_text": "",
+      "delivery_text": "            let footer=if prompt.kind==ArchiveJobPromptKind::Conflict{\n                div().flex_none().flex().flex_col().gap_2()\n                    .child(Checkbox::new(\"archive-conflict-all\").label(\"应用到此任务后续冲突\").checked(apply.get()).on_click({let apply=apply.clone();move|checked,_,_|apply.set(*checked)}))\n                    .child(footer).into_any_element()\n            }else{footer.into_any_element()};\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 171,
+      "baseline_end": 171,
+      "delivery_start": 178,
+      "delivery_end": 229,
+      "baseline_text": "",
+      "delivery_text": "}\n// Complete plain text, not Markdown/Tooltip-only content; visual line breaks remove no characters.\nfn prompt_identifier(id: &'static str, value: &str) -> gpui_kit::AnyElement {\n    let mut lines = String::with_capacity(value.len() + value.chars().count() / 24);\n    for (index, character) in value.chars().enumerate() {\n        if index > 0 && index % 24 == 0 {\n            lines.push('\\n');\n        }\n        lines.push(character);\n    }\n    div()\n        .id(id)\n        .role(gpui_kit::Role::Label)\n        .aria_label(value.to_owned())\n        .test_support()\n        .debug_selector(move || id.into())\n        .w_full()\n        .min_w_0()\n        .child(Label::new(lines).whitespace_normal())\n        .into_any_element()\n}\nfn prompt_objects(prompt: &ArchiveJobPrompt) -> gpui_kit::AnyElement {\n    const MISSING: &str = \"本次提示未提供对象标识\";\n    let display = prompt.display.as_ref();\n    let mut objects = DescriptionList::vertical().columns(1).bordered(false);\n    if prompt.kind == ArchiveJobPromptKind::Conflict {\n        objects = objects.item(\n            \"传入成员\",\n            prompt_identifier(\n                \"archive-prompt-member\",\n                display\n                    .and_then(|d| d.incoming_member.as_deref())\n                    .unwrap_or(MISSING),\n            ),\n            1,\n        );\n    }\n    objects\n        .item(\n            if prompt.kind == ArchiveJobPromptKind::Conflict {\n                \"被覆盖目标\"\n            } else {\n                \"输出压缩包\"\n            },\n            prompt_identifier(\n                \"archive-prompt-target\",\n                display.map_or(MISSING, |d| d.target.as_str()),\n            ),\n            1,\n        )\n        .into_any_element()\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

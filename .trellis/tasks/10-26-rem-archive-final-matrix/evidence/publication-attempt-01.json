@@ -1,0 +1,13 @@
+{
+  "command": "python <session-scratch>/rem-archive-final-matrix/publish.py",
+  "exit": 1,
+  "stage": "new task text Git no-index diagnostic interpretation",
+  "error": "AssertionError: Unexpected diff diagnostic: file-role-index.md",
+  "followup_observation": {
+    "command": "git diff --no-index --check -- NUL .trellis/tasks/10-26-rem-archive-final-matrix/file-role-index.md",
+    "raw_exit": 1,
+    "stdout": "RAW_EXIT=1; trailing_whitespace_lines=[]; one_final_newline=True",
+    "stderr": "warning: in the working copy of file-role-index.md, CRLF will be replaced by LF the next time Git touches it"
+  },
+  "classification": "Evidence publication tooling was too strict about a Git line-ending warning; no whitespace defect or product/layout red. Explicit task text scan passed. Existing copied artifacts retained unchanged, finalizer appends remaining checks/manifest without overwriting history or source."
+}

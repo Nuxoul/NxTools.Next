@@ -1,4 +1,4 @@
-use crate::{Manifest, PackageError, valid_id, valid_text};
+use crate::{ChoiceOption, Manifest, PackageError, TextValidation, valid_id, valid_text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -11,8 +11,35 @@ pub struct ScriptRuntime {
     pub arguments: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u32>,
+    #[serde(
+        default = "default_protocol_version",
+        skip_serializing_if = "is_legacy_protocol"
+    )]
+    pub protocol_version: u16,
+    #[serde(default, skip_serializing_if = "RuntimeMode::is_once")]
+    pub mode: RuntimeMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resident_entry_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_exit_seconds: Option<u16>,
 }
 impl ScriptRuntime {
+    pub fn once(program: ScriptProgram) -> Self {
+        Self {
+            program,
+            arguments: Vec::new(),
+            timeout_ms: None,
+            protocol_version: 1,
+            mode: RuntimeMode::Once,
+            resident_entry_file: None,
+            idle_exit_seconds: None,
+        }
+    }
+
+    pub fn effective_idle_exit_seconds(&self) -> u16 {
+        self.idle_exit_seconds.unwrap_or(120)
+    }
+
     pub fn effective_timeout_ms(&self, feature: &str, entry: &str) -> u32 {
         let (default, cap) = match (feature, entry) {
             ("quick_launch", _) => (3_000, 10_000),
@@ -20,6 +47,26 @@ impl ScriptRuntime {
             _ => (30_000, 120_000),
         };
         self.timeout_ms.unwrap_or(default).min(cap)
+    }
+}
+
+fn default_protocol_version() -> u16 {
+    1
+}
+fn is_legacy_protocol(version: &u16) -> bool {
+    *version == 1
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeMode {
+    #[default]
+    Once,
+    Resident,
+}
+impl RuntimeMode {
+    fn is_once(&self) -> bool {
+        *self == Self::Once
     }
 }
 
@@ -54,6 +101,8 @@ pub struct Setting {
     pub description: String,
     #[serde(flatten)]
     pub field: SettingType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validation: Option<TextValidation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -74,7 +123,7 @@ pub enum SettingType {
     },
     Choice {
         default: String,
-        options: Vec<String>,
+        options: Vec<ChoiceOption>,
     },
     File {
         #[serde(default)]
@@ -107,6 +156,21 @@ impl<'de> Deserialize<'de> for Setting {
             Some(Value::String(value)) => value,
             Some(_) => return Err(D::Error::custom("invalid setting description")),
         };
+        let validation = fields
+            .remove("validation")
+            .map(serde_json::from_value::<TextValidation>)
+            .transpose()
+            .map_err(D::Error::custom)?;
+        if validation.is_some()
+            && !matches!(
+                fields.get("type").and_then(Value::as_str),
+                Some("text" | "file" | "folder")
+            )
+        {
+            return Err(D::Error::custom(
+                "validation not supported for this setting type",
+            ));
+        }
         let allowed: &[&str] = match fields.get("type").and_then(Value::as_str) {
             Some("text" | "bool" | "file" | "folder") => &["type", "default"],
             Some("number") => &["type", "default", "min", "max"],
@@ -123,6 +187,7 @@ impl<'de> Deserialize<'de> for Setting {
             title,
             description,
             field,
+            validation,
         })
     }
 }
@@ -131,9 +196,14 @@ impl Setting {
     pub fn accepts(&self, value: &Value) -> bool {
         match &self.field {
             SettingType::Text { .. } | SettingType::File { .. } | SettingType::Folder { .. } => {
-                value
-                    .as_str()
-                    .is_some_and(|v| v.len() <= 32_768 && !v.contains('\0'))
+                value.as_str().is_some_and(|v| {
+                    v.len() <= 32_768
+                        && !v.contains('\0')
+                        && self
+                            .validation
+                            .as_ref()
+                            .is_none_or(|rules| rules.accepts(v))
+                })
             }
             SettingType::Bool { .. } => value.is_boolean(),
             SettingType::Number { min, max, .. } => {
@@ -141,9 +211,19 @@ impl Setting {
             }
             SettingType::Choice { options, .. } => value
                 .as_str()
-                .is_some_and(|v| options.iter().any(|option| option == v)),
+                .is_some_and(|v| options.iter().any(|option| option.value() == v)),
             SettingType::Password => false,
         }
+    }
+
+    /// Import/load may retain an explicitly unconfigured required field; Save/invoke may not.
+    pub(crate) fn accepts_stored(&self, value: &Value) -> bool {
+        self.accepts(value)
+            || (value.as_str() == Some("")
+                && self
+                    .validation
+                    .as_ref()
+                    .is_some_and(|rules| rules.required && rules.valid()))
     }
 
     pub fn default_value(&self) -> Option<Value> {
@@ -156,6 +236,37 @@ impl Setting {
             SettingType::Number { default, .. } => Some(Value::from(*default)),
             SettingType::Password => None,
         }
+    }
+}
+
+impl Manifest {
+    /// Readiness is stricter than declaration/load validity, including missing required values.
+    pub fn settings_ready(&self, values: &std::collections::BTreeMap<String, Value>) -> bool {
+        values.iter().all(|(key, value)| {
+            self.settings
+                .iter()
+                .any(|setting| setting.key == *key && setting.accepts(value))
+        }) && self.settings.iter().all(|setting| {
+            matches!(setting.field, SettingType::Password)
+                || values
+                    .get(&setting.key)
+                    .cloned()
+                    .or_else(|| setting.default_value())
+                    .is_some_and(|value| setting.accepts(&value))
+        })
+    }
+
+    pub(crate) fn effective_settings(
+        &self,
+        values: &std::collections::BTreeMap<String, Value>,
+    ) -> std::collections::BTreeMap<String, Value> {
+        let mut effective = values.clone();
+        for setting in &self.settings {
+            if let Some(default) = setting.default_value() {
+                effective.entry(setting.key.clone()).or_insert(default);
+            }
+        }
+        effective
     }
 }
 
@@ -225,6 +336,26 @@ pub(crate) fn validate_script_manifest(manifest: &Manifest) -> Result<(), Packag
         }
     }
     if let Some(runtime) = &manifest.runtime {
+        if !matches!(runtime.protocol_version, 1 | 2) {
+            return Err(PackageError::UnsupportedVersion);
+        }
+        match runtime.mode {
+            RuntimeMode::Once => {
+                if runtime.resident_entry_file.is_some() || runtime.idle_exit_seconds.is_some() {
+                    return Err(PackageError::InvalidManifest);
+                }
+            }
+            RuntimeMode::Resident => {
+                if runtime.protocol_version != 2
+                    || !runtime.resident_entry_file.as_ref().is_some_and(|entry| {
+                        relative_code_path(entry) && manifest.files.contains(entry)
+                    })
+                    || !(30..=600).contains(&runtime.effective_idle_exit_seconds())
+                {
+                    return Err(PackageError::InvalidManifest);
+                }
+            }
+        }
         if runtime
             .timeout_ms
             .is_some_and(|timeout| timeout == 0 || timeout > 120_000)
@@ -249,15 +380,30 @@ pub(crate) fn validate_script_manifest(manifest: &Manifest) -> Result<(), Packag
         {
             return Err(PackageError::InvalidManifest);
         }
-        if let SettingType::Choice { options, .. } = &setting.field
-            && (options.is_empty()
-                || options.len() > 100
-                || options.iter().any(|v| !valid_text(v, 256)))
-        {
+        if setting.validation.as_ref().is_some_and(|rules| {
+            !matches!(
+                setting.field,
+                SettingType::Text { .. } | SettingType::File { .. } | SettingType::Folder { .. }
+            ) || !rules.valid()
+        }) {
             return Err(PackageError::InvalidManifest);
         }
+        if let SettingType::Choice { options, .. } = &setting.field {
+            let mut values = HashSet::new();
+            if options.is_empty()
+                || options.len() > 100
+                || options.iter().any(|option| {
+                    !valid_text(option.value(), 256)
+                        || !valid_text(option.label(), 256)
+                        || option.labeled() != options[0].labeled()
+                        || (option.labeled() && !values.insert(option.value()))
+                })
+            {
+                return Err(PackageError::InvalidManifest);
+            }
+        }
         if let Some(value) = setting.default_value()
-            && !setting.accepts(&value)
+            && !setting.accepts_stored(&value)
         {
             return Err(PackageError::InvalidManifest);
         }

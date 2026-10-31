@@ -1,0 +1,29 @@
+--- baseline/rust/apps/nxtools-desktop/src/main_window/tests.rs
++++ current/rust/apps/nxtools-desktop/src/main_window/tests.rs
+@@ -3481,7 +3481,7 @@
+     assert_eq!(
+         queue_order
+             .iter()
+-            .map(|task| task.task.id())
++            .map(|index| tasks[*index].task.id())
+             .collect::<Vec<_>>(),
+         vec![first, second]
+     );
+@@ -3492,7 +3492,7 @@
+         DownloadSortState::default(),
+     );
+     assert_eq!(search.len(), 1);
+-    assert_eq!(search[0].task.id(), first);
++    assert_eq!(tasks[search[0]].task.id(), first);
+     let name_order = download_tasks_for_view(
+         &tasks,
+         DownloadTaskFilter::All,
+@@ -3505,7 +3505,7 @@
+     assert_eq!(
+         name_order
+             .iter()
+-            .map(|task| task.task.id())
++            .map(|index| tasks[*index].task.id())
+             .collect::<Vec<_>>(),
+         vec![second, first]
+     );

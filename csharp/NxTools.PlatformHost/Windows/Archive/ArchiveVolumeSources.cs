@@ -17,7 +17,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
     internal IReadOnlyList<string> Paths => paths.AsReadOnly();
     internal ArchiveSourceLease Primary => leases[0];
 
-    private ArchiveVolumeSources(string first, ulong maxMetadata, ulong maxEncoded)
+    private ArchiveVolumeSources(string first, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight, bool rarOutputPreflight, bool tarStreamOutputPreflight, bool zipOutputPreflight)
     {
         try
         {
@@ -37,7 +37,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
             var rarWidth=rarPart?Path.GetFileName(first)[(Path.GetFileName(first).LastIndexOf(".part",StringComparison.OrdinalIgnoreCase)+5)..^4].Length:1;
             if (rarPart) first = ResolveSibling(rarStem + ".part" + 1.ToString("D"+rarWidth) + ".rar");
             if (numbered7z) first = ResolveSibling(first);
-            Add(first, maxEncoded);
+            maxEncoded = Add(first, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight ? maxMetadata : 0, zipOutputPreflight ? maxMetadata : 0);
             if (numbered7z)
             {
                 using var stream = File.OpenRead(PrimaryPath);
@@ -109,7 +109,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
         }
         catch { Dispose(); throw; }
     }
-    internal static ArchiveVolumeSources Open(string path, ulong maxMetadata, ulong maxEncoded) => new(path, maxMetadata, maxEncoded);
+    internal static ArchiveVolumeSources Open(string path, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight = false, bool rarOutputPreflight = false, bool tarStreamOutputPreflight = false, bool zipOutputPreflight = false) => new(path, maxMetadata, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight, zipOutputPreflight);
     internal string Identity() { Verify(); return admissionIdentity!; }
     private string IdentityNow()
     {
@@ -132,13 +132,57 @@ internal sealed class ArchiveVolumeSources : IDisposable
     internal ReadOnlyMemory<byte>? CaptureZoneIdentifier(Func<bool, uint, uint>? flagsProbe = null) => Primary.CaptureZoneIdentifier(flagsProbe);
     public void Dispose() { foreach (var lease in leases) lease.Dispose(); leases.Clear(); paths.Clear(); }
 
-    private void Add(string path, ulong maxEncoded)
+    private ulong Add(string path, ulong maxEncoded, bool sevenzOutputPreflight = false, bool rarOutputPreflight = false, ulong tarStreamMetadata = 0, ulong zipMetadata = 0)
     {
         if (paths.Count >= MaxVolumes || paths.Any(value => string.Equals(value, path, StringComparison.OrdinalIgnoreCase)))
             throw new ArchiveOutputException("resource_limit");
         var lease = ArchiveSourceLease.Open(path);
         leases.Add(lease); paths.Add(path);
+        if (sevenzOutputPreflight && paths.Count == 1) {
+            // Inspect only after the original namespace/object lease is held. This is encoded
+            // source admission, not permission to write more output or raise Job memory.
+            using var source = File.OpenRead(path);
+            Span<byte> signature = stackalloc byte[6];
+            if (source.Read(signature) == 6 && signature.SequenceEqual(new byte[] { 0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c }))
+                maxEncoded = Math.Max(maxEncoded, 100UL << 30);
+        }
+        if (rarOutputPreflight && paths.Count == 1) {
+            // RAR-only extraction readmission reaches original metadata even at low output.
+            // The original held lease and family validation remain authoritative; this is not
+            // an output/decode or Job-memory grant. Capture the existing finite default.
+            using var source = File.OpenRead(path);
+            Span<byte> signature = stackalloc byte[8];
+            var count = source.Read(signature);
+            if (count >= 7 && signature[..7].SequenceEqual("Rar!\x1a\x07\x00"u8)
+                || count == 8 && signature.SequenceEqual("Rar!\x1a\x07\x01\0"u8))
+                maxEncoded = Math.Max(maxEncoded, ArchiveWorkerBudget.Capture(new { }).max_output_bytes);
+        }
+        if (tarStreamMetadata != 0 && paths.Count == 1) {
+            // Only original extraction/readmission selects this finite metadata-sized encoded
+            // reservation. It is not target output or decoder/Job credit, nor format acceptance.
+            using var source = File.OpenRead(path);
+            Span<byte> signature = stackalloc byte[512];
+            var count = source.Read(signature);
+            var stream = count >= 3 && signature[..3].SequenceEqual(new byte[] {0x1f,0x8b,8})
+                || count >= 4 && signature[..3].SequenceEqual("BZh"u8) && signature[3] is >= (byte)'1' and <= (byte)'9'
+                || count >= 6 && signature[..6].SequenceEqual(new byte[] {0xfd,0x37,0x7a,0x58,0x5a,0})
+                || count >= 4 && (BinaryPrimitives.ReadUInt32LittleEndian(signature) == 0xfd2fb528
+                    || (BinaryPrimitives.ReadUInt32LittleEndian(signature) & 0xfffffff0) == 0x184d2a50);
+            var tar = count == 512 && (signature.Slice(257,5).SequenceEqual("ustar"u8)
+                || signature.IndexOfAnyExcept((byte)0) < 0);
+            if (stream || tar) maxEncoded = Math.Max(maxEncoded, tarStreamMetadata);
+        }
+        if (zipMetadata != 0 && paths.Count == 1) {
+            // Borrow only the already admitted metadata reservation to read declarations.
+            // A held ZIP signature is not format validity or permission for target writes.
+            using var source = File.OpenRead(path);
+            Span<byte> signature = stackalloc byte[4];
+            if (source.Read(signature) == 4 && (signature.SequenceEqual("PK\x03\x04"u8)
+                || signature.SequenceEqual("PK\x05\x06"u8) || signature.SequenceEqual("PK\x01\x02"u8)))
+                maxEncoded = Math.Max(maxEncoded, zipMetadata);
+        }
         CheckEncoded(maxEncoded);
+        return maxEncoded;
     }
     private void CheckEncoded(ulong limit)
     {

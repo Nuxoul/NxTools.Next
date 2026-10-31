@@ -1,0 +1,491 @@
+[
+    {
+        "name":  "guard-cancelled",
+        "terminal":  {
+                         "outcome":  "cancelled",
+                         "code":  "cancelled",
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  135,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-afe1b666-3fca-46f7-8be6-b139e69f7cdd\\cancelled\\empty",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "guard-failed",
+        "terminal":  {
+                         "outcome":  "failed",
+                         "code":  "target_changed",
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  "FailedBeforeCommit",
+                         "elapsed_ms":  131,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-afe1b666-3fca-46f7-8be6-b139e69f7cdd\\failed\\empty",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "guard-unknown",
+        "terminal":  {
+                         "outcome":  "failed",
+                         "code":  "commit_outcome_unknown",
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  "CommitOutcomeUnknown",
+                         "elapsed_ms":  137,
+                         "native_error_code":  64,
+                         "journal":  [
+                                         {
+                                             "ordinal":  0,
+                                             "state":  "CommitOutcomeUnknown",
+                                             "replaced":  false,
+                                             "bytes":  8,
+                                             "native_identity":  "v1:5E825DB0825D8D81:0000000000000000000D00000012807B",
+                                             "cleanup":  "retained_uncertain"
+                                         }
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-afe1b666-3fca-46f7-8be6-b139e69f7cdd\\unknown\\empty",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "here-multiple-1",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  135,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\here-multiple",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "here-nested-1",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  106,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\here-nested\\outer",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "here-sole-1",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  168,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\here-sole\\empty",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "name-multiple-2",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  182,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\name-multiple\\name-multiple (2)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "name-multiple-3",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  154,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\name-multiple\\name-multiple (3)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "name-nested-2",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  166,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\name-nested\\name-nested (2)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "name-nested-3",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  137,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\name-nested\\name-nested (3)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "name-sole-2",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  120,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\name-sole\\name-sole (2)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "name-sole-3",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  149,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\name-sole\\name-sole (3)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "smart-multiple-2",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  155,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\smart-multiple\\smart-multiple (2)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "smart-multiple-3",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  106,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\smart-multiple\\smart-multiple (3)",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "smart-nested-1",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  122,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\smart-nested\\outer",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "smart-sole-1",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  134,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ],
+                         "result_location":  {
+                                                 "target":  "C:\\Users\\Administrator\\AppData\\Local\\Temp\\archive-product-40eef740-3a04-470f-8b24-63419690862b\\smart-sole\\empty",
+                                                 "action":  "open"
+                                             }
+                     }
+    },
+    {
+        "name":  "zero-here-False",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  132,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ]
+                     }
+    },
+    {
+        "name":  "zero-here-True",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  136,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ]
+                     }
+    },
+    {
+        "name":  "zero-name-False",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  108,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ]
+                     }
+    },
+    {
+        "name":  "zero-name-True",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  106,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ]
+                     }
+    },
+    {
+        "name":  "zero-smart-False",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  123,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ]
+                     }
+    },
+    {
+        "name":  "zero-smart-True",
+        "terminal":  {
+                         "outcome":  "succeeded",
+                         "code":  null,
+                         "files_committed":  0,
+                         "bytes_committed":  0,
+                         "files_verified":  0,
+                         "bytes_verified":  0,
+                         "files_skipped":  0,
+                         "cleanup_complete":  true,
+                         "commit_state":  null,
+                         "elapsed_ms":  103,
+                         "native_error_code":  null,
+                         "journal":  [
+
+                                     ]
+                     }
+    }
+]

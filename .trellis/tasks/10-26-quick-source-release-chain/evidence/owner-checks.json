@@ -1,0 +1,22 @@
+[
+  {
+    "name": "exact minimal existing gate inverse restores dirty baseline",
+    "result": "PASS"
+  },
+  {
+    "name": "all73original safety predicate tuples/order unchanged",
+    "result": "PASS"
+  },
+  {
+    "name": "original compound throw and all unrelated gate statements preserved",
+    "result": "PASS"
+  },
+  {
+    "name": "629protected files including product/build/publish/writer/security/generated sources unchanged",
+    "result": "PASS"
+  },
+  {
+    "name": "4778historical evidence files unchanged",
+    "result": "PASS"
+  }
+]

@@ -1,0 +1,203 @@
+{
+  "owner_checks": [
+    {
+      "label": "state constructors Enter IME picker probe350 generation TLS submit deferred lifecycle",
+      "equal": true,
+      "before_sha256": "5d3f66b0a0a82dda1bf7d1e356aae616f7ffe3af5a39119ca4780dc78e8cc93e",
+      "after_sha256": "5d3f66b0a0a82dda1bf7d1e356aae616f7ffe3af5a39119ca4780dc78e8cc93e"
+    },
+    {
+      "label": "Queue04 footer actions basic confirmed compact body caption footer",
+      "equal": true,
+      "before_sha256": "acb053972e8fd0d8dc37ae65b19a0d9975d29ada73533c738e989d26a21dc7ec",
+      "after_sha256": "acb053972e8fd0d8dc37ae65b19a0d9975d29ada73533c738e989d26a21dc7ec"
+    },
+    {
+      "label": "native size error media budget typed selection names window options",
+      "equal": true,
+      "before_sha256": "9e98ae105b5cada16fca201a45603484f3fc665b288bf99bd0b0c06bbe403cc9",
+      "after_sha256": "9e98ae105b5cada16fca201a45603484f3fc665b288bf99bd0b0c06bbe403cc9"
+    },
+    {
+      "label": "Queue04 basic Form Input picker helper and paste callback",
+      "equal": true,
+      "before_sha256": "8c1f96f0ce07e5d45d8130fa6dfc7da452644ccb9fb3522d54323856c066fc0b",
+      "after_sha256": "8c1f96f0ce07e5d45d8130fa6dfc7da452644ccb9fb3522d54323856c066fc0b"
+    },
+    {
+      "label": "HLS labels and classification",
+      "equal": true,
+      "before_sha256": "f7546c4f64c020fee700797b4e1a25ba7dd37009d29a672297826106e4de65b9",
+      "after_sha256": "f7546c4f64c020fee700797b4e1a25ba7dd37009d29a672297826106e4de65b9"
+    },
+    {
+      "label": "DASH nullable selection implementation",
+      "equal": true,
+      "before_sha256": "e248e56f776f9c7a5c83da98ea826b394b19148644e556845de1b575e0903f48",
+      "after_sha256": "e248e56f776f9c7a5c83da98ea826b394b19148644e556845de1b575e0903f48"
+    },
+    {
+      "label": "DASH original metadata and click owner",
+      "equal": true,
+      "before_sha256": "f51151d95625d4486303a49c3013cb35976d54ab39330f38f6418a20bdaa25be",
+      "after_sha256": "f51151d95625d4486303a49c3013cb35976d54ab39330f38f6418a20bdaa25be"
+    },
+    {
+      "label": "resolution details Popover and inspector motion lifecycle",
+      "equal": true,
+      "before_sha256": "e97a998fd5cfe4760add70da69e68fd34133406d3c9e633e7bba10ddfe1aa889",
+      "after_sha256": "e97a998fd5cfe4760add70da69e68fd34133406d3c9e633e7bba10ddfe1aa889"
+    },
+    {
+      "label": "original callback 00 on_click",
+      "equal": true,
+      "before_sha256": "cceca6a770802fde34a18338478396412a06b1cf6f5f98a28e5259e7a8e40f97",
+      "after_sha256": "cceca6a770802fde34a18338478396412a06b1cf6f5f98a28e5259e7a8e40f97"
+    },
+    {
+      "label": "original callback 01 on_open_change",
+      "equal": true,
+      "before_sha256": "6138bc1a20cdd27fd2d3850c680f337c6ff7935e4107d87ae9eb13647de472cf",
+      "after_sha256": "6138bc1a20cdd27fd2d3850c680f337c6ff7935e4107d87ae9eb13647de472cf"
+    },
+    {
+      "label": "original callback 02 on_click",
+      "equal": true,
+      "before_sha256": "e431baebda4a4c1709c89da46375e2a4068acd44fcc6c85fd846b088d8e42490",
+      "after_sha256": "e431baebda4a4c1709c89da46375e2a4068acd44fcc6c85fd846b088d8e42490"
+    },
+    {
+      "label": "original callback 03 on_click",
+      "equal": true,
+      "before_sha256": "cfa69f24c439d06e6f47aed02c3c3907bcc27889e5cb8431dfb20e3c30f62b1f",
+      "after_sha256": "cfa69f24c439d06e6f47aed02c3c3907bcc27889e5cb8431dfb20e3c30f62b1f"
+    },
+    {
+      "label": "original callback 04 on_click",
+      "equal": true,
+      "before_sha256": "a1e17b3157de7977e82cbfa0d1bc74f4980c8ccff464e188d956d0b5687e8fcc",
+      "after_sha256": "a1e17b3157de7977e82cbfa0d1bc74f4980c8ccff464e188d956d0b5687e8fcc"
+    },
+    {
+      "label": "original callback 05 on_click",
+      "equal": true,
+      "before_sha256": "a1e17b3157de7977e82cbfa0d1bc74f4980c8ccff464e188d956d0b5687e8fcc",
+      "after_sha256": "a1e17b3157de7977e82cbfa0d1bc74f4980c8ccff464e188d956d0b5687e8fcc"
+    },
+    {
+      "label": "original callback 06 on_click",
+      "equal": true,
+      "before_sha256": "d21527ec08ba0b8bb21971bd1e7f008b8f9eb716be55667b0511d350d3d80f68",
+      "after_sha256": "d21527ec08ba0b8bb21971bd1e7f008b8f9eb716be55667b0511d350d3d80f68"
+    },
+    {
+      "label": "original callback 07 on_open_change",
+      "equal": true,
+      "before_sha256": "500a674a3c9debba2e448299126280492428dc92827e14d609a0e0a0f9577629",
+      "after_sha256": "500a674a3c9debba2e448299126280492428dc92827e14d609a0e0a0f9577629"
+    },
+    {
+      "label": "original callback 08 on_click",
+      "equal": true,
+      "before_sha256": "a6d0c5aefaaa331a4f9ff8f3357707b3af785c1043d9941129f23116f119e398",
+      "after_sha256": "a6d0c5aefaaa331a4f9ff8f3357707b3af785c1043d9941129f23116f119e398"
+    },
+    {
+      "label": "original callback 09 on_click",
+      "equal": true,
+      "before_sha256": "53275b2e9d2a24d4962723dd11e83195538bb65c3ef077827c2890d4aa93a300",
+      "after_sha256": "53275b2e9d2a24d4962723dd11e83195538bb65c3ef077827c2890d4aa93a300"
+    },
+    {
+      "label": "original callback 10 on_click",
+      "equal": true,
+      "before_sha256": "499eb67db44aef67bdee0b72a1a61093c0c8dc72bf2f8fe0e40cc13826c07871",
+      "after_sha256": "499eb67db44aef67bdee0b72a1a61093c0c8dc72bf2f8fe0e40cc13826c07871"
+    },
+    {
+      "label": "original callback 11 capture_key_down",
+      "equal": true,
+      "before_sha256": "73b4f2859566b95badf8971edc39a560ff2e65211430a9187613c0ab92f107cd",
+      "after_sha256": "73b4f2859566b95badf8971edc39a560ff2e65211430a9187613c0ab92f107cd"
+    },
+    {
+      "label": "original callback 12 capture_key_up",
+      "equal": true,
+      "before_sha256": "ab2c43a3634b9f5d44459d26832f93a749f42f75c11a258edf0da092569654c2",
+      "after_sha256": "ab2c43a3634b9f5d44459d26832f93a749f42f75c11a258edf0da092569654c2"
+    },
+    {
+      "label": "original callback 13 on_change",
+      "equal": true,
+      "before_sha256": "3d9ef318348f004518103ff71e811a710b080999e2a2baa66fd9f8bd5d4266f3",
+      "after_sha256": "125d31c7e6b1adb8fcb3e2e67e0a393528cdd676d8efe96adb6580706c1b4e82"
+    },
+    {
+      "label": "original callback 14 on_click",
+      "equal": true,
+      "before_sha256": "4f61a1f4cf137dd8afa80fd230c18393f96090649e1e97dc92cfa911e20b3cd2",
+      "after_sha256": "4f61a1f4cf137dd8afa80fd230c18393f96090649e1e97dc92cfa911e20b3cd2"
+    },
+    {
+      "label": "original callback 15 on_click",
+      "equal": true,
+      "before_sha256": "94eb0b5083220f4de4caf89b23a0239c4cc285cb34e45a17d23da75fd1e4e4f9",
+      "after_sha256": "94eb0b5083220f4de4caf89b23a0239c4cc285cb34e45a17d23da75fd1e4e4f9"
+    },
+    {
+      "label": "original callback 16 on_click",
+      "equal": true,
+      "before_sha256": "3cdaa97044dd77702e4f766e726b2b26206e4b7a62166bc0526b27e581b0b116",
+      "after_sha256": "3cdaa97044dd77702e4f766e726b2b26206e4b7a62166bc0526b27e581b0b116"
+    },
+    {
+      "label": "original callback 17 on_click",
+      "equal": true,
+      "before_sha256": "c4cc320a78b362d169f955d99b58ed31531bc27f765d60b8f727e087fe3adb6f",
+      "after_sha256": "c4cc320a78b362d169f955d99b58ed31531bc27f765d60b8f727e087fe3adb6f"
+    }
+  ],
+  "callbacks": 18,
+  "protected_files": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+      "sha256": "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+      "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+      "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+      "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+      "sha256": "272bc26198986a050f53588c82cc8859a3e514cb286691cd541865054d4c4062"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+      "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/metrics.rs",
+      "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+      "sha256": "5de208e485ea894dfd6687a7d3c8c103603fe27c035a3c10d213a6e0da722c6f"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/popover.rs",
+      "sha256": "0a02df9078a1b6870209d4a53a4fe7cfaa8622328672721cdcde67555fd42325"
+    }
+  ],
+  "reference_prefix_equal": true,
+  "previous_evidence_count": 88,
+  "previous_manifest_sha256": "091cfbf96febcf32a2811de9ded60b407cf61f42964d24e09410659bc4976c68",
+  "frozen_history_count": 480
+}

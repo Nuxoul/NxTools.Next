@@ -1,0 +1,42 @@
+﻿[
+    {
+        "name":  "spec-contracts.py",
+        "exit":  0
+    },
+    {
+        "name":  "gpui-component-catalog.py",
+        "exit":  0
+    },
+    {
+        "name":  "gpui-release-contracts.py",
+        "exit":  0
+    },
+    {
+        "name":  "markdown-editor-contracts.py",
+        "exit":  0
+    },
+    {
+        "name":  "archive-cli.py",
+        "exit":  0
+    },
+    {
+        "name":  "archive-phase-f-shell.py",
+        "exit":  0
+    },
+    {
+        "name":  "archive-phase-f-spike.py",
+        "exit":  0
+    },
+    {
+        "name":  "download-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "clipboard-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "archive-release-chain.ps1 -SourceOnly",
+        "exit":  0
+    }
+]

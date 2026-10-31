@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/engineering.md","reason":"Pending-before-dispatch, deferred owner and durable section contracts"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official components and final parent adaptations"}
+{"file":"docs/reference-code/clipboard.md","reason":"Legacy popup/menu/preview lifecycle invariants"}
+{"file":"docs/reference-code/assistant.md","reason":"Floating picker and native lifecycle references"}
+{"file":"docs/reference-code/download.md","reason":"ABDM and old product download settings behavior"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Windows identity, STA and focus boundaries"}

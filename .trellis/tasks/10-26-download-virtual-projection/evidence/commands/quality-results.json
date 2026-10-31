@@ -1,0 +1,18 @@
+﻿[
+    {
+        "exit":  1,
+        "name":  "strict-tests"
+    },
+    {
+        "exit":  1,
+        "name":  "strict-production"
+    },
+    {
+        "exit":  0,
+        "name":  "workspace-check"
+    },
+    {
+        "exit":  1,
+        "name":  "workspace-fmt"
+    }
+]

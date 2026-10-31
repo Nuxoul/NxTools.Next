@@ -31,11 +31,11 @@ impl Render for RowFixture {
                 list_image: None,
                 source_icon_color: None,
                 text_character_count: None,
+                text_card_max_height: nxtools_core::default_clipboard_text_card_max_height(),
                 open_targets: None,
                 extension_actions: Vec::new(),
                 extension_feedback: None,
             },
-            true,
         )
     }
 }
@@ -84,6 +84,17 @@ fn queue08_history_mounts_real_listitem_and_styled_action_tier(cx: &mut TestAppC
             .any(|node| node.label() == Some("剪贴板记录 808")),
         "actual stateless ListItem"
     );
+    let row = surface
+        .debug_bounds("history-row-slot-0")
+        .expect("actual row");
+    surface.simulate_mouse_move(
+        point(row.left() + px(20.0), row.top() + px(12.0)),
+        None,
+        Default::default(),
+    );
+    surface
+        .refresh()
+        .expect("actual hover reveals management rail");
     let delete = surface
         .debug_bounds("clipboard-item-action-0-delete")
         .expect("delete");
@@ -128,6 +139,11 @@ fn queue08_history_actions_modifiers_and_variable_content_keep_one_owner(cx: &mu
             "rendered Markdown fits the content-driven row"
         );
     });
+    surface.update(|window, cx| window.focus_next(cx));
+    surface
+        .refresh()
+        .expect("actual row Tab focus reveals management rail");
+    surface.refresh().expect("paint focused action rail");
     for (key, expected) in [
         ("edit", ClipboardItemAction::Edit),
         ("pin", ClipboardItemAction::TogglePinned),
@@ -140,7 +156,9 @@ fn queue08_history_actions_modifiers_and_variable_content_keep_one_owner(cx: &mu
             "favorite" => "clipboard-item-action-0-favorite",
             _ => "clipboard-item-action-0-delete",
         };
-        let bounds = surface.debug_bounds(selector).expect("ordinary action");
+        let bounds = surface
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("ordinary {key} action after actual row focus"));
         assert!(
             bounds.left() >= row.left()
                 && bounds.right() <= row.right()

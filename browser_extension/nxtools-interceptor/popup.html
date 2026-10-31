@@ -11,7 +11,8 @@
   <a class="skip-nav" href="#mainContent">跳到主要内容</a>
   <div class="shell">
     <header class="masthead">
-      <div class="brand-lockup"><img class="brand-mark" src="icons/icon-32.png" alt="" width="28" height="28"><div><h1>NxTools</h1><p>浏览器下载工作台</p></div></div>
+      <img class="brand-mark" src="icons/icon-32.png" alt="" width="20" height="20">
+      <h1>NxTools</h1>
       <div class="connection" role="status" aria-live="polite"><span id="statusDot" class="dot"></span><span id="statusText">读取桌面状态…</span></div>
     </header>
     <section class="page-context" aria-label="当前网页">
@@ -27,18 +28,20 @@
     <main id="mainContent" class="workspace" tabindex="-1">
       <section id="tasksView" class="view active" role="tabpanel" aria-labelledby="tasksTab" aria-hidden="false">
         <label class="switch-row site-toggle" id="siteToggleRow"><span><strong>接管当前网站的下载</strong><small id="siteToggleHint">正在读取网站策略</small></span><input id="siteEnabledToggle" type="checkbox" aria-label="切换当前网站接管"></label>
-        <div class="section-head"><h2>桌面任务</h2><small id="taskCountText">0</small></div>
+        <div class="section-head"><h2>桌面任务 <small id="taskCountText" class="count">0</small></h2><small>最近 8 项 · 由桌面端管理</small></div>
         <div id="taskList" class="list task-list" aria-label="桌面下载任务"></div>
-        <p class="section-note">只展示最近 8 项。任务与文件仍由桌面端管理。</p>
       </section>
       <section id="resourcesView" class="view" role="tabpanel" aria-labelledby="resourcesTab" aria-hidden="true">
-        <div id="signalRail" class="capture-summary"><span id="captureSummaryText">正在读取捕获结果</span><small id="captureAgeText">—</small></div>
-        <div class="resource-toolbar"><div class="filter-row" role="group" aria-label="资源类型过滤">
-          <button class="pill active" data-resource-filter="all" aria-pressed="true">全部</button><button class="pill" data-resource-filter="streaming" aria-pressed="false">流媒体</button><button class="pill" data-resource-filter="video" aria-pressed="false">视频</button><button class="pill" data-resource-filter="audio" aria-pressed="false">音频</button><button class="pill" data-resource-filter="download" aria-pressed="false">文件</button>
-        </div><button id="clearResourcesButton" class="ghost">清空</button></div>
-        <div class="batch-toolbar"><span id="currentResourceCountText">0 个资源</span><button id="mergeResourcesButton" class="ghost unavailable" disabled title="音视频合并尚未接入，当前不可用">合并 · 后续</button><button id="batchResourcesButton" class="primary batch-action" disabled>批量加入队列</button></div>
-        <div class="section-head"><h2>当前页面</h2><small>勾选加入队列 · 预览不下载</small></div><div id="currentResourceList" class="list resource-list"></div>
-        <div class="section-head muted"><h2>其他页面</h2></div><div id="otherResourceList" class="list compact-list resource-list"></div>
+        <div class="resource-toolbar">
+          <div class="filter-row" role="group" aria-label="资源类型过滤">
+            <button class="pill active" data-resource-filter="all" aria-pressed="true">全部</button><button class="pill" data-resource-filter="streaming" aria-pressed="false">流媒体</button><button class="pill" data-resource-filter="video" aria-pressed="false">视频</button><button class="pill" data-resource-filter="audio" aria-pressed="false">音频</button><button class="pill" data-resource-filter="download" aria-pressed="false">文件</button>
+          </div>
+          <div id="signalRail" class="capture-summary"><span id="captureSummaryText">读取中</span><small id="captureAgeText"></small></div>
+          <button id="clearResourcesButton" class="ghost">清空</button>
+        </div>
+        <div class="batch-toolbar" hidden><span id="currentResourceCountText">已选 0 项</span><button id="clearSelectionButton" class="ghost">取消选择</button><button id="batchResourcesButton" class="primary batch-action" disabled>批量加入队列</button></div>
+        <div id="currentResourceList" class="list resource-list" aria-label="当前页面资源"></div>
+        <div class="section-head muted"><h2>其他页面</h2></div><div id="otherResourceList" class="list compact-list resource-list" aria-label="其他页面资源"></div>
       </section>
       <section id="advancedView" class="view" role="tabpanel" aria-labelledby="advancedTab" aria-hidden="true">
         <section class="panel tool-panel"><div class="section-head inline"><h2>当前媒体</h2><small id="mediaStateText">未检测到媒体</small></div>
@@ -56,8 +59,8 @@
         </section>
       </section>
       <section id="settingsView" class="view" role="tabpanel" aria-labelledby="settingsTab" aria-hidden="true">
-        <section class="settings-intro"><div><h2>本地连接</h2><small>Native Messaging · 不开放 HTTP 或 WebSocket 端口</small></div><button id="testButton">测试连接</button></section>
-        <p class="settings-policy">更改会自动保存。失败时保留当前选择，可用底部按钮重试。</p>
+        <section class="settings-intro"><div><h2>本地连接</h2><small>连接 NxTools 桌面端。打开面板不会自动启动桌面端。</small></div><button id="testButton">测试连接</button></section>
+        <p class="settings-policy">更改会自动保存。保存失败时保留当前选择，可用底部按钮重试。</p>
         <section class="settings-group"><h2 class="group-label">下载接管</h2>
           <label class="switch-row"><span><strong>拦截浏览器下载</strong><small>仅在 NxTools 明确接受后取消浏览器原下载</small></span><input id="interceptDownloads" type="checkbox"></label>
           <label class="switch-row"><span><strong>弹出下载确认窗口</strong><small>预填地址、文件名和请求上下文，确认后开始</small></span><input id="openDialog" type="checkbox"></label>
@@ -67,7 +70,7 @@
         <section class="settings-group"><h2 class="group-label">网页入口</h2>
           <label class="switch-row"><span><strong>媒体悬浮入口</strong><small>在当前媒体旁显示下载动作</small></span><input id="mediaOverlayEnabled" type="checkbox"></label>
           <label class="switch-row"><span><strong>拖放目标</strong><small>拖动网页链接时显示发送区域</small></span><input id="dropTargetEnabled" type="checkbox"></label>
-          <div class="drop-target-settings"><label class="field"><span>位置</span><select id="dropTargetPosition" class="select"><option value="left-top">左上</option><option value="left-bottom">左下</option><option value="right-top">右上</option><option value="right-bottom">右下</option><option value="center-top">中间顶部</option><option value="center-bottom">中间底部</option></select></label><label class="field"><span>宽度 · px</span><input id="dropTargetWidth" type="text" inputmode="numeric"></label><label class="field"><span>高度 · px</span><input id="dropTargetHeight" type="text" inputmode="numeric"></label></div>
+          <div class="drop-target-settings"><label class="field"><span>位置</span><select id="dropTargetPosition" class="select"><option value="left-top">左上</option><option value="left-bottom">左下</option><option value="right-top">右上</option><option value="right-bottom">右下</option><option value="center-top">中间顶部</option><option value="center-bottom">中间底部</option></select></label><label class="field"><span>宽度 px</span><input id="dropTargetWidth" type="text" inputmode="numeric"></label><label class="field"><span>高度 px</span><input id="dropTargetHeight" type="text" inputmode="numeric"></label></div>
         </section>
         <section class="settings-group"><h2 class="group-label">请求上下文</h2>
           <label class="switch-row"><span><strong>携带必要 Header</strong><small>仅保留下载所需的白名单字段</small></span><input id="includeRequestHeaders" type="checkbox"></label>
@@ -76,8 +79,12 @@
         <button id="saveButton" class="primary settings-save">保存设置</button>
       </section>
     </main>
-    <footer class="status-footer"><span class="footer-key" aria-hidden="true">本地交接</span><p id="messageText" class="message" role="status" aria-live="polite">就绪 · 打开面板不会自动启动桌面端</p></footer>
+    <footer class="status-footer" hidden><p id="messageText" class="message" role="status" aria-live="polite"></p><button id="dismissMessageButton" class="ghost dismiss" aria-label="关闭提示">关闭</button></footer>
   </div>
+  <script src="popup/format.js"></script>
+  <script src="popup/dom.js"></script>
+  <script src="popup/render.js"></script>
+  <script src="popup/actions.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

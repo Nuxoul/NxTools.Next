@@ -1364,10 +1364,39 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
         committed.date,
         "opening must snapshot the committed date back into the local draft"
     );
+    // The 124px calendar viewport can clip later weeks (date-dependent).
+    // A debug bound alone does not make a pointer target visible/hittable.
+    fn visible_next_schedule_day(
+        window: &mut VisualTestContext,
+    ) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+        for _ in 0..8 {
+            let day = window
+                .debug_bounds("download-new-schedule-next-day")
+                .expect("next schedule day");
+            let shell = window
+                .debug_bounds("download-new-schedule-popover-shell")
+                .expect("calendar shell");
+            let time = window
+                .debug_bounds("download-new-schedule-time-row")
+                .expect("time row");
+            if day.top() >= shell.top() + px(4.0) && day.bottom() <= time.top() - px(4.0) {
+                return day;
+            }
+            window.simulate_event(gpui_kit::ScrollWheelEvent {
+                position: gpui_kit::point(shell.center().x, time.top() - px(40.0)),
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -1.0)),
+                modifiers: Modifiers::default(),
+                touch_phase: gpui_kit::TouchPhase::Moved,
+            });
+            window.run_until_parked();
+            window
+                .refresh()
+                .expect("reveal date inside actual calendar scroll viewport");
+        }
+        panic!("next schedule date must be visibly reachable before pointer activation");
+    }
     let draft_date = committed.date + ChronoDuration::days(1);
-    let draft_day = window
-        .debug_bounds("download-new-schedule-next-day")
-        .expect("next production schedule day");
+    let draft_day = visible_next_schedule_day(&mut window);
     window.simulate_click(draft_day.center(), Modifiers::default());
     window.run_until_parked();
     window
@@ -1413,9 +1442,7 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
         committed.date,
         "reopening after trigger dismissal must restore the committed draft snapshot"
     );
-    let draft_day = window
-        .debug_bounds("download-new-schedule-next-day")
-        .expect("next production schedule day after reopening");
+    let draft_day = visible_next_schedule_day(&mut window);
     window.simulate_click(draft_day.center(), Modifiers::default());
     window.run_until_parked();
     window
@@ -1643,7 +1670,7 @@ fn browser_export_terminal_routing_keeps_invocations_separate_and_ignores_duplic
         download_application_for_window_test_with_platform(cx, "export-notification-identity");
     endpoint.set_connected_for_contract_test(true);
     let mut keys = Vec::new();
-    for format in ["chrome", "firefox"] {
+    for format in ["chrome", "firefox", "chrome_store"] {
         let id = uuid::Uuid::new_v4();
         application.update(cx, |app, _| {
             app.request_browser_extension_export(format, id)
@@ -1953,7 +1980,7 @@ fn production_probe_summary_uses_narrow_inspector_and_bounded_stage_geometry(
 }
 
 #[gpui_kit::test]
-fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &mut TestAppContext) {
+fn probe_validation_notifies_without_resizing_and_keeps_footer(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let (application, directory) =
         download_application_for_window_test(cx, "new-download-error-reserve");
@@ -1979,8 +2006,7 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
         .expect("production new-download view");
     new_download_window
         .update(cx, move |_, window, cx| {
-            // An invalid URL is the same begin_probe failure path the user
-            // hits; it sets the error and reserves the row.
+            // User submission errors use the original notification ingress.
             view.update(cx, |view, cx| {
                 view.url.update(cx, |input, cx| {
                     input.replace_all("not a valid url", window, cx);
@@ -1990,7 +2016,7 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
         })
         .expect("run failing probe");
     window.run_until_parked();
-    window.simulate_resize(new_download_error_window_size(false));
+    window.simulate_resize(new_download_window_size(false));
     window.refresh().expect("render error reserve");
 
     let base = new_download_window_size(false);
@@ -1998,9 +2024,8 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
         .update(cx, |_, native_window, _| native_window.bounds().size)
         .expect("read error reserve bounds");
     assert_eq!(
-        error_size,
-        size(base.width, base.height + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT),
-        "a probe error must grow the fixed-height dialog instead of squeezing the footer"
+        error_size, base,
+        "validation must not resize the draft window"
     );
     let footer_after = window
         .debug_bounds("download-new-footer")
@@ -2010,9 +2035,18 @@ fn probe_error_grows_the_unconfirmed_dialog_and_keeps_the_footer_position(cx: &m
         "footer geometry must not change when an error appears"
     );
     assert!(
-        window.debug_bounds("download-inline-error").is_some(),
-        "the inline error must render inside the grown dialog"
+        window.debug_bounds("download-inline-error").is_none(),
+        "validation does not duplicate the shared notification"
     );
+    application.read_with(&window, |app, cx| {
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.level == crate::notifications::NotificationLevel::Error)
+        )
+    });
 
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -2128,15 +2162,15 @@ fn confirmed_new_download_submit_error_keeps_the_footer_inside_the_window(cx: &m
     let error_window_size = window.update(|window, _| window.bounds().size);
     assert_eq!(
         error_window_size,
-        new_download_error_window_size(true),
-        "a submit error on the confirmed layout must grow the confirmed window, not the compact one"
+        new_download_window_size(true),
+        "submit validation keeps the confirmed window size"
     );
 
     // The test surface draws at its default size, so reproduce the real
     // fixed-size dialog at the applied error bounds and verify the
     // confirmed form and footer still fit inside instead of being
     // squeezed out of the window.
-    let error_bounds = new_download_error_window_size(true);
+    let error_bounds = new_download_window_size(true);
     window.simulate_resize(error_bounds);
     window
         .refresh()
@@ -2159,9 +2193,19 @@ fn confirmed_new_download_submit_error_keeps_the_footer_inside_the_window(cx: &m
         "the file-name row must stay visible instead of being clipped by the window"
     );
     assert!(
-        window.debug_bounds("download-inline-error").is_some(),
-        "the submit error renders inside the grown dialog"
+        window.debug_bounds("download-inline-error").is_none(),
+        "submit validation uses shared notification only"
     );
+    window.run_until_parked();
+    application.read_with(window, |app, cx| {
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.level == crate::notifications::NotificationLevel::Error)
+        )
+    });
 }
 
 #[test]
@@ -3169,10 +3213,7 @@ fn assert_shared_dialog_shell(
     let footer = window
         .debug_bounds(footer_selector)
         .expect("shared dialog footer");
-    assert_eq!(
-        titlebar.size.height,
-        px(crate::ui::metrics::TITLEBAR_HEIGHT)
-    );
+    assert_eq!(titlebar.size.height, px(34.));
     assert_eq!(
         footer.size.height,
         px(crate::ui::metrics::SETTINGS_FOOTER_HEIGHT)
@@ -3932,6 +3973,26 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     assert_eq!(drag_action.size.width, px(24.0));
     assert!(drag_action.right() <= reveal_action.left());
     assert!(reveal_action.right() <= open_action.left());
+    let open_with = window
+        .debug_bounds("download-complete-open-with-action")
+        .expect("Open With action");
+    assert_eq!(
+        open_with.size,
+        size(px(24.0), px(24.0)),
+        "Open With is icon-only, not a labelled button"
+    );
+    assert!(
+        open_action.right() <= open_with.left(),
+        "Open With belongs to the right of Open File"
+    );
+    assert!(
+        window
+            .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+            .iter()
+            .any(|node| node.role() == Some(gpui_kit::Role::Button)
+                && node.label() == Some("选择应用打开下载文件")),
+        "icon-only chooser retains an accessible purpose"
+    );
     assert!(
         window
             .debug_bounds("download-complete-delete-action")
@@ -4242,24 +4303,11 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
             reopened_generation
         );
     }
-    cx.update(|cx| {
-        application.update(cx, |application, cx| {
-            let entry = application
-                .task_windows
-                .get(&task_id)
-                .expect("current completed window");
-            let identity = TaskWindowIdentity {
-                native_window_handle: entry.native_window_handle,
-                generation: entry.generation,
-            };
-            application.open_task_artifact_from_task_window(
-                task_id,
-                ShellOpenAction::OpenWith,
-                identity,
-                cx,
-            );
-        });
-    });
+    let chooser_button = window
+        .debug_bounds("download-complete-open-with-action")
+        .expect("current icon-only chooser");
+    window.simulate_click(chooser_button.center(), Modifiers::default());
+    window.run_until_parked();
     let chooser = platform_endpoint
         .try_receive_command_for_contract_test()
         .expect("Open With command");
@@ -4434,14 +4482,36 @@ fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppCont
     assert!(cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)));
     task_window.update(|window, _| window.activate_window());
     task_window.run_until_parked();
-    task_window.update(|window, cx| {
-        for _ in 0..3 {
-            window.focus_next(cx);
+    for _ in 0..16 {
+        let focused = task_window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .any(|node| {
+                    node.role() == Some(gpui_kit::Role::CheckBox)
+                        && node.focused() == Some(true)
+                        && node
+                            .path()
+                            .contains(&gpui_kit::ElementId::from("download-task-window-toolbar"))
+                })
+        });
+        if focused {
+            break;
         }
-    });
-    task_window
-        .refresh()
-        .expect("Tab focuses real Toolbar Checkbox");
+        task_window.update(|window, cx| window.focus_next(cx));
+        task_window
+            .refresh()
+            .expect("actual caption-to-toolbar focus");
+    }
+    assert!(
+        task_window.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .any(|node| node.role() == Some(gpui_kit::Role::CheckBox)
+                && node.focused() == Some(true)
+                && node
+                    .path()
+                    .contains(&gpui_kit::ElementId::from("download-task-window-toolbar")))),
+        "shutdown Checkbox has actual focus before Space"
+    );
     assert!(
         task_window
             .update(|window, cx| window.focused(cx))
@@ -5113,10 +5183,7 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
         .expect("shared download settings titlebar");
     assert_eq!(shell.size.width, px(DOWNLOAD_SETTINGS_WINDOW_WIDTH));
     assert_eq!(shell.size.height, px(DOWNLOAD_SETTINGS_WINDOW_HEIGHT));
-    assert_eq!(
-        titlebar.size.height,
-        px(crate::ui::metrics::TITLEBAR_HEIGHT)
-    );
+    assert_eq!(titlebar.size.height, px(34.));
     assert_eq!(shell_footer.size.height, px(48.0));
     assert_eq!(shell_content.bottom(), shell_footer.top());
     assert_eq!(shell_footer.bottom(), shell.bottom());
@@ -6128,8 +6195,8 @@ fn category_settings_use_a_readable_list_and_a_labeled_full_width_directory_edit
             .expect("category enabled toggle")
             .size
             .height,
-        px(16.0),
-        "settings toggles keep the released Kit Small track tier"
+        px(20.0),
+        "settings toggles use the same official Medium tier"
     );
 
     select_official_download_page(&mut window, DownloadSettingsPage::Request);
@@ -6276,6 +6343,7 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     let engine = DownloadEngine::open_in_memory().expect("open settings engine");
     let engine_for_assertion = engine.clone();
     let (platform, _platform_endpoint) = nxtools_ipc::platform_bridge(16);
+    _platform_endpoint.set_connected_for_contract_test(true);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let application = cx.update(|cx| {
         cx.new(|cx| {
@@ -6380,11 +6448,19 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     let original_directory =
         window.read(|cx| settings.read(cx).directory.read(cx).value().to_string());
     window.update(|_, cx| {
-        application.update(cx, |_, cx| {
-            cx.emit(DownloadApplicationEvent::DirectoryPicked {
-                target: DownloadDirectoryTarget::NewTask,
-                path: directory.join("wrong-target"),
-            });
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: uuid::Uuid::new_v4(),
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some(directory.join("wrong-target").display().to_string()),
+                    },
+                },
+                cx,
+            );
         });
     });
     window.run_until_parked();
@@ -6393,12 +6469,33 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
         original_directory,
         "a new-task picker result must not mutate the settings draft"
     );
+    settings.update_in(window, |view, window, cx| {
+        view.request_directory(window, cx)
+    });
+    window.run_until_parked();
+    let command_id = window.read(|cx| {
+        application
+            .read(cx)
+            .pending_directory_picker
+            .as_ref()
+            .expect("registered original settings picker")
+            .request
+            .command_id
+    });
     window.update(|_, cx| {
-        application.update(cx, |_, cx| {
-            cx.emit(DownloadApplicationEvent::DirectoryPicked {
-                target: DownloadDirectoryTarget::Settings,
-                path: selected_directory.clone(),
-            });
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: command_id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some(selected_directory.display().to_string()),
+                    },
+                },
+                cx,
+            );
         });
     });
     window.run_until_parked();
@@ -6680,6 +6777,7 @@ fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext
             application.apply_settings(
                 DownloadSettingsDraft {
                     default_directory: directory.clone(),
+                    chrome_web_store_extension_id: String::new(),
                     automatic_categories_enabled: true,
                     categories: DownloadSettings::default().categories,
                     duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
@@ -7360,12 +7458,12 @@ fn withheld_confirmed_form_cannot_be_submitted_by_enter_or_any_button() {
         "submit is the single choke point for Enter, Download and Queue"
     );
     let enter = source
-        .split("let enter_listener = cx.listener(")
+        .split("    fn default_enter_key_down(")
         .nth(1)
-        .and_then(|body| body.split("let enter_subscription").next())
-        .expect("Enter listener body");
+        .and_then(|body| body.split("\n    pub(crate) fn category_choice_ids").next())
+        .expect("focused outer-input default Enter handler body");
     assert!(
-        enter.contains("!this.confirmed_window_pending(window)"),
+        enter.contains("self.confirmed_window_pending(window)"),
         "Enter must neither submit nor start another probe while the form is withheld"
     );
 }
@@ -7415,16 +7513,10 @@ fn confirmed_probe_keeps_destination_and_filename_editable() {
 #[test]
 fn download_titlebars_close_through_an_explicit_gpui_action() {
     let source = include_str!("../downloads/window_support.rs");
-    let helper_marker = ["fn download_window_", "close_button"].concat();
-    let close_button = source
-        .split(&helper_marker)
-        .nth(1)
-        .and_then(|body| body.split("\npub(crate) fn download_task_status").next())
-        .expect("shared download close button");
-
+    assert!(source.contains("titlebar::controlled_titlebar("));
     assert!(
-        close_button.contains(".on_click(|_, window, _| window.remove_window())"),
-        "custom client titlebars must close explicitly instead of relying only on native hit testing"
+        source.contains("|_, window, _| window.remove_window()"),
+        "shared caption preserves explicit original close owner"
     );
 }
 
@@ -7804,7 +7896,7 @@ fn confirmed_download_inspector_motion_is_generation_scoped_and_opacity_only() {
 }
 
 #[gpui_kit::test]
-fn invalid_probe_retires_confirmed_generation_and_keeps_compact_error_visible(
+fn invalid_probe_retires_confirmed_generation_and_notifies_without_inline_error(
     cx: &mut TestAppContext,
 ) {
     cx.update(gpui_kit::init);
@@ -7851,7 +7943,16 @@ fn invalid_probe_retires_confirmed_generation_and_keeps_compact_error_visible(
         error.bottom() <= footer.top(),
         "feedback fits before native error resize arrives"
     );
-    window.update(|_, cx| assert!(view.read(cx).error.is_some()));
+    window.update(|_, cx| assert!(view.read(cx).error.is_none()));
+    application.read_with(&window, |app, cx| {
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|item| item.level == crate::notifications::NotificationLevel::Error)
+        )
+    });
     let _ = std::fs::remove_dir_all(directory);
 }
 
@@ -7939,15 +8040,15 @@ fn media_submit_error_preserves_all_probe_rows_and_native_target(cx: &mut TestAp
             view.confirmed_target_height = Some(px(418.0));
             // Empty URL causes the same validation error before queue dispatch.
             view.submit(DownloadSubmitMode::StartNow, window, cx);
-            assert!(view.error.is_some());
+            assert!(view.error.is_none());
         });
         assert_eq!(
             window.bounds().size.height,
-            px(456.0),
-            "measured media base 418 plus error reserve 38"
+            px(424.0),
+            "media validation must not grow the existing window"
         );
     });
-    surface.simulate_resize(size(px(560.0), px(456.0)));
+    surface.simulate_resize(size(px(560.0), px(424.0)));
     surface.refresh().expect("media error layout");
     assert!(
         surface
@@ -7955,15 +8056,24 @@ fn media_submit_error_preserves_all_probe_rows_and_native_target(cx: &mut TestAp
             .is_some()
     );
     let footer = surface.debug_bounds("download-new-footer").expect("footer");
-    let error = surface
-        .debug_bounds("download-inline-error")
-        .expect("inline error");
+    assert!(surface.debug_bounds("download-inline-error").is_none());
+    let options = surface
+        .debug_bounds("download-hls-quality-options")
+        .expect("all media options retained");
     assert!(
-        error.bottom() <= footer.top(),
-        "media error={error:?}, footer={footer:?}, options={:?}, form={:?}",
-        surface.debug_bounds("download-hls-quality-options"),
-        surface.debug_bounds("download-new-confirmed-form")
+        options.bottom() <= footer.top(),
+        "media options={options:?} footer={footer:?}"
     );
+    surface.run_until_parked();
+    application.read_with(&surface, |app, cx| {
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|item| item.level == crate::notifications::NotificationLevel::Error)
+        )
+    });
     let _ = std::fs::remove_dir_all(directory);
 }
 
@@ -8194,5 +8304,516 @@ fn confirmed_extension_receipt_rejection_does_not_reparse_or_create_task(cx: &mu
         );
         assert!(view.read(cx).confirmed_request.is_some());
     });
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn chrome_store_published_identity_registers_without_manual_configuration(cx: &mut TestAppContext) {
+    let (application, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "chrome-store-default");
+    endpoint.set_connected_for_contract_test(true);
+    for legacy_value in [None, Some(""), Some("*")] {
+        while endpoint.try_receive_command_for_contract_test().is_ok() {}
+        application.update(cx, |app, cx| {
+            let mut json = serde_json::to_value(&app.config).expect("synthetic config");
+            if let Some(value) = legacy_value {
+                json["download"]["chrome_web_store_extension_id"] = serde_json::json!(value);
+            } else {
+                json["download"]
+                    .as_object_mut()
+                    .expect("download section")
+                    .remove("chrome_web_store_extension_id");
+            }
+            app.config = serde_json::from_value(json).expect("legacy config");
+            app.config.download.normalize();
+            app.handle_platform_notification(PlatformNotification::Connected, cx);
+        });
+        let registration =
+            std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+                .find_map(|envelope| match envelope.message {
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::EnsureBrowserNativeMessaging(command),
+                    ) => Some(command),
+                    _ => None,
+                })
+                .expect("automatic registration command");
+        assert_eq!(
+            registration.chromium_extension_id,
+            "eldfplghejhopcmgfkacimanhaojakph"
+        );
+        assert_eq!(
+            registration.firefox_extension_id,
+            "nxtools-download-interceptor@nxtools.local"
+        );
+    }
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn chrome_store_configured_identity_reaches_reconnect_registration(cx: &mut TestAppContext) {
+    let (application, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "chrome-store-registration");
+    endpoint.set_connected_for_contract_test(true);
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    application.update(cx, |app, cx| {
+        let mut json = serde_json::to_value(&app.config).expect("synthetic config");
+        json["download"]["chrome_web_store_extension_id"] =
+            serde_json::json!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        app.config = serde_json::from_value(json).expect("optional store identity config");
+        app.handle_platform_notification(PlatformNotification::Connected, cx);
+    });
+    let registration = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+        .find_map(|envelope| match envelope.message {
+            nxtools_protocol::Message::PlatformCommand(
+                PlatformCommand::EnsureBrowserNativeMessaging(command),
+            ) => Some(command),
+            _ => None,
+        })
+        .expect("original registration command");
+    assert_eq!(
+        registration.chromium_extension_id, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "configured store ID must reach the exact native allowlist instead of the fixed local ID"
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn chrome_store_settings_save_registration_and_failure_preserve_original_owners(
+    cx: &mut TestAppContext,
+) {
+    let (app, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "chrome-store-save");
+    endpoint.set_connected_for_contract_test(true);
+    let config_path = directory.join("config.json");
+    let mut disk = AppConfig::default();
+    disk.clipboard.max_items = 2468;
+    disk.save_to(&config_path).expect("synthetic config");
+    let mut draft = app.read_with(cx, |app, _| app.settings_draft());
+    draft.chrome_web_store_extension_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into();
+    app.update(cx, |app, cx| {
+        app.apply_settings(draft.clone(), uuid::Uuid::new_v4(), cx)
+    })
+    .expect("save store identity");
+    assert_eq!(
+        AppConfig::load_from(&config_path)
+            .expect("saved config")
+            .download
+            .chrome_web_store_extension_id,
+        draft.chrome_web_store_extension_id
+    );
+    assert_eq!(
+        AppConfig::load_from(&config_path)
+            .expect("other section")
+            .clipboard
+            .max_items,
+        2468
+    );
+    let first = app.read_with(cx, |app, _| {
+        app.pending_browser_registration
+            .expect("pending before result")
+            .0
+    });
+    app.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: first,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    assert!(app.read_with(cx, |app, _| app.pending_browser_registration.is_none()));
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    let before = std::fs::read(&config_path).expect("saved bytes");
+    let mut invalid = draft.clone();
+    invalid.chrome_web_store_extension_id = "*".into();
+    assert!(
+        app.update(cx, |app, cx| app.apply_settings(
+            invalid,
+            uuid::Uuid::new_v4(),
+            cx
+        ))
+        .is_err()
+    );
+    assert_eq!(
+        std::fs::read(&config_path).expect("unchanged bytes"),
+        before
+    );
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+    std::fs::remove_file(&config_path).expect("force persistence failure");
+    draft.chrome_web_store_extension_id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb".into();
+    assert!(
+        app.update(cx, |app, cx| app.apply_settings(
+            draft,
+            uuid::Uuid::new_v4(),
+            cx
+        ))
+        .is_err()
+    );
+    assert_eq!(
+        app.read_with(cx, |app, _| app
+            .config
+            .download
+            .chrome_web_store_extension_id
+            .clone()),
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    );
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "failed save must not register new identity"
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn chrome_store_registration_stale_failure_and_deadline_are_scoped(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (app, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "chrome-store-terminal");
+    endpoint.set_connected_for_contract_test(true);
+    app.update(cx, |app, cx| {
+        app.request_browser_registration(uuid::Uuid::new_v4(), cx)
+    });
+    let first = app.read_with(cx, |app, _| {
+        app.pending_browser_registration.expect("first").0
+    });
+    app.update(cx, |app, cx| {
+        app.request_browser_registration(uuid::Uuid::new_v4(), cx)
+    });
+    let second = app.read_with(cx, |app, _| {
+        app.pending_browser_registration.expect("replacement").0
+    });
+    app.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: first,
+                result: PlatformCommandResult {
+                    success: false,
+                    error: Some("synthetic".into()),
+                    native_error_code: Some(5),
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    assert_eq!(
+        app.read_with(cx, |app, _| app
+            .pending_browser_registration
+            .expect("still current")
+            .0),
+        second
+    );
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(16));
+    cx.run_until_parked();
+    assert!(app.read_with(cx, |app, _| app.pending_browser_registration.is_none()));
+    app.read_with(cx, |app, cx| {
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.id.as_ref() == "browser-native-registration")
+        )
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn chrome_store_settings_hide_identity_and_preserve_legacy_draft_cancel_and_save(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (app, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "chrome-store-ui");
+    endpoint.set_connected_for_contract_test(true);
+    let config_path = directory.join("config.json");
+    let legacy_id = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    let mut config = AppConfig::default();
+    config.download.chrome_web_store_extension_id = legacy_id.into();
+    config.save_to(&config_path).expect("synthetic config");
+    app.update(cx, |app, _| app.config = config);
+    app.update(cx, |app, cx| app.open_settings_window(cx));
+    cx.run_until_parked();
+    let handle = app.read_with(cx, |app, _| app.settings_window.expect("settings window"));
+    let view = app.read_with(cx, |app, _| {
+        app.settings_view.clone().expect("settings view")
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.refresh().expect("render settings");
+    assert!(
+        surface
+            .debug_bounds("download-settings-chrome-store-id")
+            .is_none(),
+        "ordinary settings must not expose an extension ID input"
+    );
+    let search = surface
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|snapshot| {
+            snapshot.role() == Some(gpui_kit::Role::TextInput)
+                && snapshot
+                    .path()
+                    .iter()
+                    .any(|id| id == &gpui_kit::ElementId::from("settings-sidebar"))
+        })
+        .expect("official settings search")
+        .bounds();
+    surface.simulate_click(search.center(), gpui_kit::Modifiers::default());
+    surface.simulate_input("Chrome 商店");
+    surface.run_until_parked();
+    surface.refresh().expect("filtered store row");
+    let snapshots = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    assert!(
+        !snapshots
+            .iter()
+            .any(|snapshot| snapshot.label() == Some("Chrome 商店扩展 ID"))
+    );
+    assert!(
+        snapshots
+            .iter()
+            .any(|snapshot| snapshot.label() == Some("打开 Chrome 扩展商店")),
+        "published extension has a normal store action instead of an ID field"
+    );
+    let chrome_button = snapshots
+        .iter()
+        .find(|snapshot| snapshot.label() == Some("打开 Chrome 扩展商店"))
+        .expect("visible Chrome store action")
+        .bounds();
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    surface.simulate_click(chrome_button.center(), gpui_kit::Modifiers::default());
+    surface.run_until_parked();
+    let shell = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+        .find(|envelope| {
+            matches!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(_))
+            )
+        })
+        .expect("original Button callback dispatches Shell command on the next turn");
+    assert!(matches!(shell.message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(target))
+            if target.target.ends_with("/eldfplghejhopcmgfkacimanhaojakph")));
+    app.update(&mut surface, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: shell.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        );
+    });
+    view.update_in(&mut surface, |view, _, cx| {
+        view.show_progress_window = !view.show_progress_window;
+        assert_eq!(
+            view.current_draft(cx)
+                .expect("valid draft")
+                .chrome_web_store_extension_id,
+            legacy_id
+        );
+    });
+    assert_eq!(
+        AppConfig::load_from(&config_path)
+            .expect("not yet saved")
+            .download
+            .chrome_web_store_extension_id,
+        legacy_id
+    );
+    surface.update(|window, _| window.remove_window());
+    cx.run_until_parked();
+    assert_eq!(
+        AppConfig::load_from(&config_path)
+            .expect("cancelled draft")
+            .download
+            .chrome_web_store_extension_id,
+        legacy_id
+    );
+    assert!(app.read_with(cx, |app, _| app.pending_browser_registration.is_none()));
+    let initial = app.read_with(cx, |app, _| app.settings_view_initial());
+    let retained = app.clone();
+    let (view, surface) = cx.add_window_view(move |window, cx| {
+        DownloadSettingsView::new(retained, initial, window, cx)
+    });
+    view.update_in(surface, |view, window, cx| {
+        assert_eq!(
+            view.current_draft(cx)
+                .expect("legacy draft")
+                .chrome_web_store_extension_id,
+            legacy_id
+        );
+        view.show_progress_window = !view.show_progress_window;
+        view.save(window, cx);
+    });
+    surface.run_until_parked();
+    assert_eq!(
+        AppConfig::load_from(&config_path)
+            .expect("durable save")
+            .download
+            .chrome_web_store_extension_id,
+        legacy_id
+    );
+    assert_eq!(
+        AppConfig::load_from(&config_path)
+            .expect("changed preference")
+            .download
+            .show_progress_window,
+        !AppConfig::default().download.show_progress_window
+    );
+    assert!(
+        app.read_with(surface, |app, _| app.pending_browser_registration.is_some()),
+        "saving a retained legacy identity keeps the original registration retry behavior"
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn chrome_store_navigation_shares_original_correlated_lifetime(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (app, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "chrome-store-navigation");
+    endpoint.set_connected_for_contract_test(true);
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    app.update(cx, |app, cx| app.open_chrome_store(cx));
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("Chrome store Shell command");
+    let current = command.id;
+    let nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(target)) =
+        command.message
+    else {
+        panic!("expected original Shell owner");
+    };
+    assert_eq!(
+        target.target,
+        "https://chromewebstore.google.com/detail/nxtools-download-intercep/eldfplghejhopcmgfkacimanhaojakph"
+    );
+    assert_eq!(target.action, ShellOpenAction::Open);
+    assert_eq!(
+        app.read_with(cx, |app, _| app
+            .pending_browser_store_page
+            .expect("pending")
+            .0),
+        current
+    );
+    app.update(cx, |app, cx| {
+        app.open_chrome_store(cx);
+        app.open_firefox_store(cx);
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: uuid::Uuid::new_v4(),
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        );
+    });
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+    assert_eq!(
+        app.read_with(cx, |app, _| app
+            .pending_browser_store_page
+            .expect("stale result ignored")
+            .0),
+        current
+    );
+    app.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: current,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    assert!(app.read_with(cx, |app, _| app.pending_browser_store_page.is_none()));
+    app.update(cx, |app, cx| app.open_firefox_store(cx));
+    let firefox = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("Firefox remains available");
+    assert!(matches!(firefox.message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(target))
+            if target.target == browser_handoff_impl::FIREFOX_STORE_URL));
+    app.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::Disconnected {
+                generation: 1,
+                pending_command_ids: vec![firefox.id],
+            },
+            cx,
+        )
+    });
+    assert!(app.read_with(cx, |app, _| app.pending_browser_store_page.is_none()));
+    app.update(cx, |app, cx| app.open_chrome_store(cx));
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(11));
+    cx.run_until_parked();
+    assert!(app.read_with(cx, |app, _| app.pending_browser_store_page.is_none()));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn ux_repair_invalid_new_download_notifies_once_without_banner_resize_or_probe(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (application, directory) = download_application_for_window_test(cx, "ux-validation");
+    application.update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (handle, view) = cx.read(|cx| {
+        let app = application.read(cx);
+        (
+            app.new_download_window.expect("window"),
+            app.new_download_view.clone().expect("view"),
+        )
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    let before = surface.update(|window, _| window.bounds().size);
+    let count = application.read_with(&surface, |app, cx| app.notifications.read(cx).items().len());
+    view.update_in(&mut surface, |view, window, cx| {
+        view.url
+            .update(cx, |input, cx| input.set_value("", window, cx));
+        view.begin_probe(window, cx);
+        assert!(!view.probing);
+        assert!(
+            view.error.is_none(),
+            "operation feedback uses existing notification, not an inline duplicate"
+        );
+        assert!(view.confirmed_request.is_none());
+    });
+    surface.run_until_parked();
+    surface.refresh().expect("unchanged draft surface");
+    assert_eq!(surface.update(|window, _| window.bounds().size), before);
+    assert!(surface.debug_bounds("download-inline-error").is_none());
+    application.read_with(&surface, |app, cx| {
+        let notices = app.notifications.read(cx).items();
+        assert_eq!(notices.len(), count + 1);
+        assert_eq!(
+            notices.last().expect("validation notice").level,
+            crate::notifications::NotificationLevel::Error
+        );
+    });
+    assert_eq!(
+        view.read_with(&surface, |view, cx| view.url.read(cx).value().to_string()),
+        ""
+    );
     let _ = std::fs::remove_dir_all(directory);
 }

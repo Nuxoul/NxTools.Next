@@ -1,0 +1,42 @@
+﻿[
+    {
+        "exit":  0,
+        "name":  "downloads-related"
+    },
+    {
+        "exit":  0,
+        "name":  "ui-related"
+    },
+    {
+        "exit":  1,
+        "name":  "main-window-related"
+    },
+    {
+        "exit":  0,
+        "name":  "audit04-protection"
+    },
+    {
+        "exit":  0,
+        "name":  "audit05-protection"
+    },
+    {
+        "exit":  0,
+        "name":  "audit06-protection"
+    },
+    {
+        "exit":  1,
+        "name":  "strict-tests"
+    },
+    {
+        "exit":  1,
+        "name":  "strict-production"
+    },
+    {
+        "exit":  0,
+        "name":  "workspace-check"
+    },
+    {
+        "exit":  1,
+        "name":  "workspace-fmt"
+    }
+]

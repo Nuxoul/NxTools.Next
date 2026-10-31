@@ -1,0 +1,55 @@
+{
+  "scope": "Read-only source observations, not native/visual acceptance or task-start hashes",
+  "files": [
+    {
+      "path": "D:\\Tool\\Bandizip\\langs\\SimpChinese.lang",
+      "sha256": "5653122228cfec8eeda9b8a46dd885a4a100bb189db44842d5c825d5a0f62845",
+      "bytes": 73149
+    },
+    {
+      "path": "D:\\Code\\Archiver-main\\gui\\ui\\app.slint",
+      "sha256": "2e8c0b3bf69778ca1ad80d239cbfded4d7bf04c4c5be14b561eb74e7c45161ee",
+      "bytes": 21180
+    },
+    {
+      "path": "D:\\Code\\Archiver-main\\gui\\src\\main.rs",
+      "sha256": "fb368181fcf522dc1530468dc5c6748c624bb7bb91fa68813bc20e1456719071",
+      "bytes": 36402
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\list\\list_item.rs",
+      "sha256": "658c486bc555f7f0720297e1a7cf886b615d45c69a88023a26fb99146e9dae07",
+      "bytes": 9876
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\form\\field.rs",
+      "sha256": "337e47537d1d79b1e85e5b42b497726bc78277ef9939e2123476a627b7d8d508",
+      "bytes": 10854
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\form\\form.rs",
+      "sha256": "30c64b21250b7157a11c30a101114d22e51b6af68bd1a81610f2faf8157791b8",
+      "bytes": 4479
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\input\\textarea.rs",
+      "sha256": "a11a869f6469d6bfc6e76ca3f1d0f2173dd8c6fbb3916c16a8e825033d46c963",
+      "bytes": 9252
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\dialog\\dialog.rs",
+      "sha256": "3cc994c06711c6102b9ed0f91681b889ff1ac15c9ac24a961da302dd555b49fe",
+      "bytes": 45779
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\switch.rs",
+      "sha256": "83094d9bdf632abc032457ea9f2bcdefc27decd69f9b5f34454eece8c558632a",
+      "bytes": 21471
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\progress\\progress.rs",
+      "sha256": "5ec8245e5836f34d11a1330f00b0104ab537ec6d492a3e40966daaf9bb08e76f",
+      "bytes": 6187
+    }
+  ]
+}

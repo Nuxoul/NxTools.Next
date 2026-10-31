@@ -1,0 +1,18 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+  "baseline_sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+  "after_sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4",
+  "operations": [
+    {
+      "kind": "delete",
+      "baseline_start": 1070,
+      "baseline_end": 1146,
+      "after_start": 1070,
+      "after_end": 1070,
+      "baseline_text": "fn audit04_create_keyboard_release_and_missing_object_cancel_are_once_only(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx)\n            .expect(\"original job admission\")\n    });\n    cx.run_until_parked();\n    let prompt = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\本次.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);\n    object_replies(&endpoint);\n    surface.update(|window, cx| window.focus_next(cx));\n    // Traverse the original Dialog focus scope, never call its reply/confirm helper.\n    for _ in 0..8 {\n        if object_node(&mut surface, \"确认覆盖\").focused() == Some(true) {\n            break;\n        }\n        surface.simulate_keystrokes(\"tab\");\n    }\n    assert_eq!(object_node(&mut surface, \"确认覆盖\").focused(), Some(true));\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"space press\"),\n        is_held: false,\n        prefer_character_input: false,\n    });\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"space release\"),\n    });\n    object_draw(&mut surface);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, prompt.ticket);\n    assert_eq!(\n        replies[0].decision,\n        Some(ArchiveJobConflictDecision::Overwrite)\n    );\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"duplicate release\"),\n    });\n    object_draw(&mut surface);\n    assert!(object_replies(&endpoint).is_empty());\n    let mut missing = object_prompt(\n        id,\n        \"conflict\",\n        Some(\"not-displayed.txt\"),\n        r\"C:\\not-displayed.txt\",\n    );\n    missing.display = None;\n    let ticket = missing.ticket.clone();\n    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);\n    let labels = object_labels(&mut surface);\n    assert_eq!(\n        labels\n            .iter()\n            .filter(|label| label.as_str() == \"本次提示未提供对象标识\")\n            .count(),\n        2\n    );\n    assert!(\n        !labels\n            .iter()\n            .any(|label| label.contains(\"本次.zip\") || label.contains(\"not-displayed\"))\n    );\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"missing metadata never auto-approves\"\n    );\n    surface.simulate_keystrokes(\"escape\");\n    object_draw(&mut surface);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, ticket);\n    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);\n}\n#[gpui_kit::test]\n",
+      "after_text": ""
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

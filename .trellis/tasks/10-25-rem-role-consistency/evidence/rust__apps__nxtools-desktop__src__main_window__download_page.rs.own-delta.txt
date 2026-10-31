@@ -1,0 +1,300 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/main_window/download_page.rs
++++ audit06/rust/apps/nxtools-desktop/src/main_window/download_page.rs
+@@ -1,6 +1,6 @@
+ use super::*;
+ use crate::ui::components::tooltip::bounded_text_tooltip;
+-use crate::ui::metrics::PROGRESS_TRACK_HEIGHT;
++use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, ordinary_rem};
+ use crate::ui::typography::{
+     LINE_HEIGHT_WORKBENCH_BODY, LINE_HEIGHT_WORKBENCH_SUPPORT, TEXT_WORKBENCH_BODY,
+     TEXT_WORKBENCH_SUPPORT,
+@@ -1280,6 +1280,7 @@
+                     } else {
+                         div()
+                             .id("download-task-list-scroll")
++                            .debug_selector(|| "download-task-list-viewport".into())
+                             .relative()
+                             .flex_1()
+                             .min_h_0()
+@@ -1372,7 +1373,7 @@
+     div()
+         .id(row_id.clone())
+         .debug_selector(move || row_id.to_string())
+-        .h(px(DOWNLOAD_TASK_ROW_HEIGHT))
++        .h(ordinary_rem(DOWNLOAD_TASK_ROW_HEIGHT))
+         .flex_none()
+         .border_l_2()
+         .border_color(if selected { theme.accent } else { theme.canvas })
+@@ -1477,8 +1478,8 @@
+         .child(
+             div()
+                 .size_full()
+-                .pl(px(SPACING_8))
+-                .pr(px(SPACING_8))
++                .pl_2()
++                .pr_2()
+                 .border_l_2()
+                 .border_color(if selected {
+                     theme.accent
+@@ -1487,10 +1488,10 @@
+                 })
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     div()
+-                        .size(px(26.0))
++                        .size(ordinary_rem(26.0))
+                         .flex()
+                         .items_center()
+                         .justify_center()
+@@ -1514,7 +1515,7 @@
+                                             "download-task-icon-fallback-selected".into()
+                                         })
+                                     })
+-                                    .size(px(15.0))
++                                    .size(ordinary_rem(15.0))
+                                     .child(
+                                         Icon::new(MaterialIcon::Download)
+                                             .size_full()
+@@ -1533,7 +1534,7 @@
+                         .overflow_hidden()
+                         .flex()
+                         .flex_col()
+-                        .gap(px(SPACING_4))
++                        .gap_1()
+                         .child(
+                             div()
+                                 .id(name_id.clone())
+@@ -1548,10 +1549,19 @@
+                                 ))
+                                 .overflow_hidden()
+                                 .whitespace_nowrap()
+-                                .text_size(px(TEXT_WORKBENCH_BODY))
+-                                .line_height(px(LINE_HEIGHT_WORKBENCH_BODY))
++                                .text_size(ordinary_rem(TEXT_WORKBENCH_BODY))
++                                .line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_BODY))
+                                 .text_color(theme.text)
+-                                .child(name),
++                                .child(name)
++                                .map(|text| {
++                                    #[cfg(test)]
++                                    let text = if selected {
++                                        text.child(kit_migration_tests::audit06_type_probe("name"))
++                                    } else {
++                                        text
++                                    };
++                                    text
++                                }),
+                         )
+                         .child(
+                             div()
+@@ -1566,10 +1576,19 @@
+                                 })
+                                 .overflow_hidden()
+                                 .whitespace_nowrap()
+-                                .text_size(px(TEXT_WORKBENCH_SUPPORT))
+-                                .line_height(px(LINE_HEIGHT_WORKBENCH_SUPPORT))
++                                .text_size(ordinary_rem(TEXT_WORKBENCH_SUPPORT))
++                                .line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))
+                                 .text_color(secondary_color)
+                                 .child(secondary_text)
++                                .map(|text| {
++                                    #[cfg(test)]
++                                    let text = if selected {
++                                        text.child(kit_migration_tests::audit06_type_probe("path"))
++                                    } else {
++                                        text
++                                    };
++                                    text
++                                })
+                                 .when_some(error_tooltip, |line, message| {
+                                     line.tooltip(move |window, cx| {
+                                         Tooltip::element({
+@@ -1611,9 +1630,9 @@
+                         .when(selected, |column| {
+                             column.debug_selector(|| "download-task-category-selected".into())
+                         })
+-                        .w(px(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
++                        .w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
+                         .flex_none()
+-                        .text_size(px(TEXT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
+                         .text_color(theme.text_secondary)
+                         .truncate()
+                         .id(gpui_kit::SharedString::from(format!(
+@@ -1634,18 +1653,18 @@
+                         .when(selected, |column| {
+                             column.debug_selector(|| "download-task-progress-selected".into())
+                         })
+-                        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
++                        .w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
+                         .flex_none()
+                         .flex()
+                         .flex_col()
+-                        .gap(px(4.0))
++                        .gap_1()
+                         .child(
+                             div()
+-                                .h(px(LINE_HEIGHT_WORKBENCH_SUPPORT))
++                                .h(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))
+                                 .flex()
+                                 .items_center()
+                                 .font_family(UI_MONO_FONT_FAMILY)
+-                                .text_size(px(TEXT_LABEL))
++                                .text_size(ordinary_rem(TEXT_LABEL))
+                                 .text_color(theme.text_secondary)
+                                 .child(
+                                     div()
+@@ -1654,7 +1673,7 @@
+                                                 "download-task-transferred-selected".into()
+                                             })
+                                         })
+-                                        .w(px(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
++                                        .w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
+                                         .flex_none()
+                                         .overflow_hidden()
+                                         .whitespace_nowrap()
+@@ -1667,7 +1686,7 @@
+                                                 "download-task-speed-selected".into()
+                                             })
+                                         })
+-                                        .w(px(DOWNLOAD_SPEED_COLUMN_WIDTH))
++                                        .w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))
+                                         .flex_none()
+                                         .overflow_hidden()
+                                         .whitespace_nowrap()
+@@ -1680,7 +1699,7 @@
+                                                 "download-task-remaining-selected".into()
+                                             })
+                                         })
+-                                        .w(px(DOWNLOAD_REMAINING_COLUMN_WIDTH))
++                                        .w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))
+                                         .flex_none()
+                                         .overflow_hidden()
+                                         .whitespace_nowrap()
+@@ -1707,10 +1726,10 @@
+                         .when(selected, |column| {
+                             column.debug_selector(|| "download-task-status-selected".into())
+                         })
+-                        .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
++                        .w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))
+                         .flex_none()
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(status_color)
+                         .child(status_label),
+                 )
+@@ -1720,13 +1739,13 @@
+                         .when(selected, |column| {
+                             column.debug_selector(|| "download-task-created-selected".into())
+                         })
+-                        .w(px(DOWNLOAD_CREATED_COLUMN_WIDTH))
++                        .w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))
+                         .flex_none()
+                         .overflow_hidden()
+                         .whitespace_nowrap()
+                         .font_family(UI_MONO_FONT_FAMILY)
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_secondary)
+                         .tooltip(move |window, cx| {
+                             Tooltip::new(format_download_timestamp(created_at_unix_ms))
+@@ -3276,10 +3295,10 @@
+     )
+     .min_w_0()
+     .flex_1()
+-    .pl(px(36.0));
++    .pl_9();
+     let progress_header = div()
+         .debug_selector(|| "download-transfer-header".into())
+-        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
++        .w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
+         .flex_none()
+         .flex()
+         .items_center()
+@@ -3291,20 +3310,20 @@
+                 sort,
+                 main_window.clone(),
+             )
+-            .w(px(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
++            .w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
+             .flex_none(),
+         )
+         .child(
+             div()
+                 .debug_selector(|| "download-speed-header".into())
+-                .w(px(DOWNLOAD_SPEED_COLUMN_WIDTH))
++                .w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))
+                 .flex_none()
+                 .child("速度"),
+         )
+         .child(
+             div()
+                 .debug_selector(|| "download-remaining-header".into())
+-                .w(px(DOWNLOAD_REMAINING_COLUMN_WIDTH))
++                .w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))
+                 .flex_none()
+                 .child("剩余"),
+         );
+@@ -3315,26 +3334,26 @@
+         sort,
+         main_window.clone(),
+     )
+-    .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
++    .w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))
+     .flex_none();
+     div()
+         .id("download-table-header")
+         .debug_selector(|| "download-table-header".into())
+-        .h(px(DOWNLOAD_TABLE_HEADER_HEIGHT))
+-        .px(px(SPACING_8))
++        .h(ordinary_rem(DOWNLOAD_TABLE_HEADER_HEIGHT))
++        .px_2()
+         .border_b_1()
+         .border_color(theme.border_subtle)
+         .bg(theme.surface)
+         .flex()
+         .items_center()
+-        .gap(px(SPACING_8))
+-        .text_size(px(TEXT_META))
++        .gap_2()
++        .text_size(ordinary_rem(TEXT_META))
+         .text_color(theme.text_muted)
+         .child(name_header)
+         .child(
+             div()
+                 .debug_selector(|| "download-category-header".into())
+-                .w(px(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
++                .w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
+                 .flex_none()
+                 .child("分类"),
+         )
+@@ -3348,7 +3367,7 @@
+                 sort,
+                 main_window,
+             )
+-            .w(px(DOWNLOAD_CREATED_COLUMN_WIDTH))
++            .w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))
+             .flex_none(),
+         )
+         .into_any_element()
+@@ -3395,7 +3414,12 @@
+                 } else {
+                     theme.text_muted
+                 })
+-                .child(div().w_full().text_size(px(TEXT_META)).child(label))
++                .child(
++                    div()
++                        .w_full()
++                        .text_size(ordinary_rem(TEXT_META))
++                        .child(label),
++                )
+                 .on_click(move |_event, _window, cx| {
+                     main_window.update(cx, |window, cx| {
+                         if set_download_sort(&mut window.download_sort, key, true) {

@@ -1,0 +1,30 @@
+--- baseline/docs/reference-code/download.md
++++ current/docs/reference-code/download.md
+@@ -3144,3 +3144,27 @@
+ and original full-object/gesture protections are in .trellis/tasks/10-26-command-naming.
+ No actual final-file deletion, external download/export, native/product/release operation;
+ strict/broad shared-tree failures and native/physical/reader/visual/user limits remain explicit.
++
++### Audit #11 projection review (2026-10-26)
++
++- Re-read ABDM first: desktop `pages/home/sections/DownloadList.kt::DownloadList`
++  passes task-ID keys and the original LazyListState to shared desktop
++  `ui/widget/table/customtable/Table.kt::Table`; its sortedList feeds LazyColumn
++  itemsIndexed. Shared `pages/home/BaseHomeComponent.kt::downloadList` combines
++  upstream status/category/search, distinctBy ID and original selection reconciliation.
++- Then re-read legacy `MainWindowViewModel::{FilterTasks,SortTasks,SortBy,
++  RebuildVisibleTasks}` and `MainWindow.axaml.cs` constructor/OnOpened/OnClosed,
++  TaskRow_ContextRequested -> SelectTaskForContextMenu -> BuildTaskContextMenu.
++  Native Avalonia/AWT implementation is not inferred from these application sources.
++- Next's original DownloadApplication replaces its entire task Vec at constructor /
++  refresh_snapshot, while progress/icon maps are updated independently by stable ID.
++  The list projection can share that immutable authoritative snapshot and sort source
++  indices, without deep-copying all task requests/progress/icon paths each repaint.
++  A retained index must only address its captured snapshot, never a later refreshed Vec.
++- Published gpui-pre0.3.9 `elements/uniform_list.rs::measure_item` requests one real
++  measurement row; prepaint additionally requests the visible range. Both are legitimate
++  construction work. Keep the existing scroll owner, rem row measurement, ID callbacks,
++  selection/context/OLE/detail lifecycle and deferred cross-entity effects. This is a
++  data-projection optimization, not a DataTable migration or detail-threading change.
++- Regression/evidence owner: `.trellis/tasks/10-26-download-virtual-projection/`.
++  Synthetic construction/access/identity evidence is not native, DPI or visual acceptance.

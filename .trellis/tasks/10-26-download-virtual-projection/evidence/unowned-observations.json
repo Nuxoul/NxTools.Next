@@ -1,0 +1,9 @@
+[
+  {
+    "path": "Cargo.lock",
+    "before_sha256": "0c95452c5e45bcb1011b3875c53309792259793c68bbb8465a66c4ccbd22ee4e",
+    "observed_sha256": "6c63823a32a7ca18fd89013aa1c3ee96ad6c383320b78857a5be9996e5d37b0f",
+    "snapshot": "evidence/unowned/Cargo.lock",
+    "attribution": "Toolchain/unowned lock reconciliation; existing manifest already declares flate2; initiating process unproven"
+  }
+]

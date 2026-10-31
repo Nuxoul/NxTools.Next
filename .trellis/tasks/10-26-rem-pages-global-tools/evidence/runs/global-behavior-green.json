@@ -1,0 +1,7 @@
+﻿{
+    "name":  "global-behavior-green",
+    "command":  "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit":  0,
+    "elapsed":  232.6402197,
+    "finished":  "2026-10-26T08:15:06.7627047+08:00"
+}

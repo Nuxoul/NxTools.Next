@@ -461,7 +461,10 @@ fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut T
             .debug_bounds("tool-link-detector-configure")
             .expect("configure action copy");
         assert_eq!(rail.size.width, px(176.0));
-        assert_eq!(header.top(), root.top() + px(36.0));
+        assert_eq!(
+            header.top(),
+            root.top() + px(crate::ui::metrics::TITLEBAR_HEIGHT)
+        );
         assert_eq!(header.size.height, px(48.0));
         assert_eq!(entry.left(), rail.right() + px(16.0));
         assert_eq!(
@@ -2990,7 +2993,7 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
     let titlebar_shell = window
         .debug_bounds("main-titlebar")
         .expect("main titlebar shell");
-    assert_eq!(titlebar_shell.size.height, px(36.0));
+    assert_eq!(titlebar_shell.size.height, px(34.0));
     let brand_icon = window
         .debug_bounds("main-brand-icon")
         .expect("real NxTools brand icon");
@@ -3045,6 +3048,28 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
         move_envelope.message,
         Message::PlatformCommand(PlatformCommand::BeginWindowMove(_))
     ));
+    window.simulate_event(gpui_kit::MouseDownEvent {
+        position: titlebar.center(),
+        button: MouseButton::Left,
+        click_count: 2,
+        ..Default::default()
+    });
+    let double_click = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("titlebar double-click command");
+    assert!(
+        matches!(
+            double_click.message,
+            Message::PlatformCommand(PlatformCommand::ToggleWindowMaximized(_))
+        ),
+        "title double-click must use original native maximize/restore, not start another move"
+    );
+    window.simulate_event(gpui_kit::MouseUpEvent {
+        position: titlebar.center(),
+        button: MouseButton::Left,
+        click_count: 2,
+        modifiers: Default::default(),
+    });
 
     let minimize = window
         .debug_bounds("window-control-minimize")
@@ -3056,8 +3081,8 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
         .debug_bounds("window-control-close")
         .expect("close control");
     for control in [minimize, maximize, close] {
-        assert_eq!(control.size.width, px(TITLEBAR_HEIGHT));
-        assert_eq!(control.size.height, titlebar_shell.size.height - px(1.0));
+        assert_eq!(control.size.width, px(34.));
+        assert_eq!(control.size.height, px(33.));
     }
     assert_eq!(minimize.right(), maximize.left());
     assert_eq!(maximize.right(), close.left());
@@ -3072,7 +3097,7 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
                 .debug_bounds(selector)
                 .unwrap_or_else(|| panic!("rendered caption asset {selector}"))
                 .size,
-            size(px(12.0), px(12.0))
+            size(px(16.0), px(16.0))
         );
     }
     window.simulate_mouse_move(minimize.center(), None, Modifiers::default());
@@ -3081,9 +3106,10 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
     window.refresh().expect("render caption tooltip");
     assert!(
         window
-            .debug_bounds("window-control-minimize-tooltip")
-            .is_some(),
-        "caption control exposes its visible tooltip"
+            .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+            .iter()
+            .any(|node| node.label() == Some("最小化")),
+        "shared official caption keeps the action's semantic name"
     );
 
     window.simulate_click(minimize.center(), Modifiers::default());
@@ -3201,7 +3227,7 @@ use super::{
     reconcile_download_selection, set_download_sort, toggle_indexed_volume_selection,
     update_download_selection,
 };
-use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SIDEBAR_WIDTH, SPACING_4, TITLEBAR_HEIGHT};
+use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SIDEBAR_WIDTH, SPACING_4};
 use crate::ui::typography::{LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE};
 
 #[gpui_kit::test]
@@ -3216,7 +3242,7 @@ fn consolidated_caption_controls_support_tab_and_one_key_release(cx: &mut TestAp
         ) -> impl IntoElement {
             let calls = self.0.clone();
             gpui_kit::div()
-                .h(px(TITLEBAR_HEIGHT))
+                .h(px(34.))
                 .w(px(108.0))
                 .flex()
                 .child(super::shell::window_control(
@@ -3243,9 +3269,9 @@ fn consolidated_caption_controls_support_tab_and_one_key_release(cx: &mut TestAp
     let (_, window) = cx.add_window_view(move |_, _| CaptionFixture(rendered_calls));
     window.refresh().expect("render actual caption controls");
     let target = window
-        .debug_bounds("window-control-minimize-keyboard-target")
+        .debug_bounds("window-control-minimize")
         .expect("keyboard caption target");
-    assert_eq!(target.size, size(px(TITLEBAR_HEIGHT), px(TITLEBAR_HEIGHT)));
+    assert_eq!(target.size, size(px(34.), px(34.)));
     window.update(|window, cx| window.focus_next(cx));
     window.refresh().expect("paint caption focus");
     for key in ["enter", "space"] {
@@ -3260,10 +3286,7 @@ fn consolidated_caption_controls_support_tab_and_one_key_release(cx: &mut TestAp
             "one caption gesture invokes exactly once"
         );
     }
-    assert_eq!(
-        window.debug_bounds("window-control-minimize-keyboard-target"),
-        Some(target)
-    );
+    assert_eq!(window.debug_bounds("window-control-minimize"), Some(target));
 }
 
 #[test]
@@ -3273,7 +3296,10 @@ fn maximize_state_selects_a_distinct_restore_caption_asset() {
 
     assert_eq!(maximize, MainWindowControl::Maximize);
     assert_eq!(restore, MainWindowControl::Restore);
-    assert_ne!(maximize.icon(), restore.icon());
+    assert_ne!(
+        gpui_kit::component::IconNamed::path(maximize.icon()),
+        gpui_kit::component::IconNamed::path(restore.icon())
+    );
     assert_ne!(maximize.id(), restore.id());
     assert_eq!(MainWindowControl::Minimize.tooltip(), "最小化");
     assert_eq!(maximize.tooltip(), "最大化");
@@ -3481,7 +3507,7 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
     assert_eq!(
         queue_order
             .iter()
-            .map(|task| task.task.id())
+            .map(|index| tasks[*index].task.id())
             .collect::<Vec<_>>(),
         vec![first, second]
     );
@@ -3492,7 +3518,7 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
         DownloadSortState::default(),
     );
     assert_eq!(search.len(), 1);
-    assert_eq!(search[0].task.id(), first);
+    assert_eq!(tasks[search[0]].task.id(), first);
     let name_order = download_tasks_for_view(
         &tasks,
         DownloadTaskFilter::All,
@@ -3505,7 +3531,7 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
     assert_eq!(
         name_order
             .iter()
-            .map(|task| task.task.id())
+            .map(|index| tasks[*index].task.id())
             .collect::<Vec<_>>(),
         vec![second, first]
     );
@@ -4309,7 +4335,7 @@ fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
     let shell_icon = window
         .debug_bounds("download-task-shell-icon-selected")
         .expect("selected download row must render its resolved Shell icon");
-    assert_eq!(shell_icon.size, size(px(20.0), px(20.0)));
+    assert_eq!(shell_icon.size, size(px(40.0), px(40.0)));
     let created_header = window
         .debug_bounds("download-sort-header-created")
         .expect("wide task list created header");
@@ -4516,6 +4542,12 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     let sort = window
         .debug_bounds("download-sort")
         .expect("download sort action bounds");
+    let actual_sort = kit_download_control_bounds(window, "download-sort");
+    assert_eq!(
+        actual_sort.center().y,
+        filter_segments.center().y,
+        "actual sort button must align with left status controls"
+    );
     assert!(page_header.contains(&search.origin));
     assert!(page_header.contains(&search.bottom_right()));
     assert_eq!(search.size.height.as_f32(), 32.0);
@@ -4620,6 +4652,11 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
         });
     });
     window.simulate_click(selected_row.center(), Modifiers::default());
+    main_window.update(window, |view, cx| {
+        view.open_download_detail(selected_task, cx)
+    });
+    window.run_until_parked();
+    window.refresh().expect("explicit detail inspector");
     assert_eq!(
         window.read(|cx| main_window.read(cx).selected_download_task),
         Some(selected_task)
@@ -4774,7 +4811,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
         .expect("selected file-name text bounds");
     let failure_text = window
         .debug_bounds("download-task-error-text")
-        .expect("failed task must replace the auxiliary path line");
+        .expect("failed task retains size line and error tooltip");
     assert_eq!(
         name_text.size.height,
         px(20.0),
@@ -4783,7 +4820,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     assert_eq!(
         failure_text.size.height,
         px(18.0),
-        "failure summary is not tiny metadata"
+        "supporting size line remains readable"
     );
     assert!(
         window
@@ -4867,14 +4904,18 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
     window.run_until_parked();
     window.refresh().expect("render selected success task");
     let success_path = window
-        .debug_bounds("download-task-path-text-selected")
-        .expect("selected success path text");
+        .debug_bounds("download-task-size-text-selected")
+        .expect("selected success file size");
     window.simulate_mouse_move(success_path.center(), None, Modifiers::default());
     executor.advance_clock(Duration::from_millis(600));
     window.run_until_parked();
     assert!(
-        window.debug_bounds("download-task-path-tooltip").is_some(),
-        "a long successful path must remain available through a bounded tooltip"
+        window.debug_bounds("download-task-path-tooltip").is_none(),
+        "save path is no longer duplicated under the filename"
+    );
+    assert!(
+        main_window.read_with(window, |view, _| view.download_detail_scope.is_none()),
+        "changing selection closes prior inspector"
     );
 }
 

@@ -1,0 +1,3117 @@
+use super::*;
+use crate::ui::components::popover::list_box;
+use crate::ui::components::tooltip::bounded_text_tooltip;
+use gpui_kit::component::Selectable as _;
+use gpui_kit::component::form::{Field, Form};
+use gpui_kit::component::list::ListItem;
+use gpui_kit::component::radio::{Radio, RadioGroup};
+use gpui_kit::component::spinner::Spinner;
+use gpui_kit::{Animation, AnimationExt, EntityInputHandler as _, ease_out_quint};
+use nxtools_protocol::SetWindowBoundsCenteredCommand;
+
+/// Translates raw engine failure text into guidance the user can act on.
+/// The engine strings stay canonical for logs; only the surfaced message is
+/// humanized.
+pub(crate) fn humanize_download_fault(message: &str) -> String {
+    if message.contains("status 404") {
+        "服务器返回 404:该地址不存在或已过期。链接可能需要登录后从页面重新获取。".into()
+    } else if message.contains("status 403") {
+        "服务器返回 403:拒绝程序的下载请求。这类地址通常要求登录会话或来自特定地区；请尝试在下载设置的请求 Header 中加入 Cookie，或从浏览器另存。".into()
+    } else if message.contains("status 401") {
+        "服务器返回 401:需要登录。请在下载设置的请求 Header 中加入 Cookie 后重试。".into()
+    } else if message.contains("status 4") || message.contains("status 5") {
+        format!("服务器返回错误({message})。地址可能需要登录或已限流，请在浏览器中打开确认。")
+    } else if message.to_lowercase().contains("timed out")
+        || message.to_lowercase().contains("timeout")
+    {
+        "连接超时。检查网络与代理设置后重试。".into()
+    } else if message.to_lowercase().contains("dns") {
+        "域名解析失败。检查链接拼写与网络连接。".into()
+    } else {
+        message.to_owned()
+    }
+}
+fn apply_new_download_window_resize_with_correlation(
+    platform: &PlatformBridge,
+    window: &mut Window,
+    window_size: gpui_kit::Size<gpui_kit::Pixels>,
+    correlation_id: uuid::Uuid,
+) -> bool {
+    if let Some(handle) = crate::ui::native_window_handle(window) {
+        // One native resize owner after HWND creation. GPUI's window.resize
+        // also schedules SetWindowPos, creating a competing size request.
+        // Real WM_SIZE from PlatformHost refreshes GPUI's viewport instead.
+        let width = (window_size.width.as_f32() * window.scale_factor()).round() as i32;
+        let height = (window_size.height.as_f32() * window.scale_factor()).round() as i32;
+        match platform.send_command_correlated(
+            PlatformCommand::SetWindowBoundsCentered(SetWindowBoundsCenteredCommand {
+                window_handle: handle,
+                width,
+                height,
+            }),
+            correlation_id,
+        ) {
+            Ok(command_id) => {
+                info!(
+                    event = "download.window_resize.accepted",
+                    %correlation_id,
+                    %command_id,
+                    window_handle = handle,
+                    requested_client_width = width,
+                    requested_client_height = height,
+                    "download window native resize accepted"
+                );
+                true
+            }
+            Err(error) => {
+                warn!(
+                    event = "download.window_resize.rejected",
+                    %correlation_id,
+                    window_handle = handle,
+                    requested_client_width = width,
+                    requested_client_height = height,
+                    error = %error,
+                    "download window native resize rejected"
+                );
+                false
+            }
+        }
+    } else {
+        window.resize(window_size);
+        false
+    }
+}
+
+impl NewDownloadView {
+    pub(crate) fn fixed_confirmation_draft(&self, cx: &App) -> FixedConfirmationDraft {
+        FixedConfirmationDraft {
+            init: NewDownloadViewInit {
+                application: self.application.clone(),
+                default_directory: PathBuf::from(self.directory.read(cx).value().as_str()),
+                default_connection_limit: self.default_connection_limit,
+                default_adaptive_segment_policy: self.default_adaptive_segment_policy,
+                categories: self.categories.clone(),
+                initial_source: self
+                    .external_request
+                    .clone()
+                    .map(NewDownloadInitialSource::Download),
+            },
+            theme: self.theme,
+            url: self.url.read(cx).value().to_string(),
+            directory: self.directory.read(cx).value().to_string(),
+            file_name: self.file_name.read(cx).value().to_string(),
+            save_directory_explicit: self.save_directory_explicit,
+            selected_category_id: self.selected_category_id.clone(),
+            scheduled_date: self.scheduled_date,
+            scheduled_month: self.scheduled_month,
+            hour: self.scheduled_hour.read(cx).selected_index(cx),
+            minute: self.scheduled_minute.read(cx).selected_index(cx),
+            committed_schedule: self.committed_schedule,
+            confirmed_request: self.confirmed_request.clone(),
+            submission_idempotency_key: self.submission_idempotency_key,
+            probe: self.probe.clone(),
+            hls: self.selected_hls_variant,
+            video: self.selected_dash_video_track,
+            audio: self.selected_dash_audio_track,
+            generation: self.probe_generation,
+        }
+    }
+    fn resize_window(
+        &self,
+        window: &mut Window,
+        window_size: gpui_kit::Size<gpui_kit::Pixels>,
+        cx: &Context<Self>,
+    ) {
+        self.resize_window_with_correlation(window, window_size, uuid::Uuid::new_v4(), cx);
+    }
+
+    fn resize_window_with_correlation(
+        &self,
+        window: &mut Window,
+        window_size: gpui_kit::Size<gpui_kit::Pixels>,
+        correlation_id: uuid::Uuid,
+        cx: &Context<Self>,
+    ) {
+        let platform = self.application.read(cx).platform_bridge();
+        let _ = apply_new_download_window_resize_with_correlation(
+            &platform,
+            window,
+            window_size,
+            correlation_id,
+        );
+    }
+
+    fn confirmed_window_pending(&self, window: &Window) -> bool {
+        self.handoff_staged
+            || confirmed_window_pending(
+                self.confirmed_target_height,
+                self.confirmed_gate_expired,
+                window.viewport_size().height,
+            )
+    }
+
+    fn error_window_size(&self) -> gpui_kit::Size<gpui_kit::Pixels> {
+        self.probe
+            .as_ref()
+            .map(|probe| {
+                let base = new_download_window_size_for_probe(probe);
+                size(base.width, base.height + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT)
+            })
+            .unwrap_or_else(|| new_download_error_window_size(false))
+    }
+}
+
+use crate::ui::metrics::ICON_GLYPH_SMALL;
+
+#[derive(Clone)]
+pub(crate) enum NewDownloadInitialSource {
+    Download(DownloadRequest),
+    Blob(BrowserBlobDialogContext),
+}
+
+pub(crate) struct NewDownloadViewInit {
+    pub(crate) application: Entity<DownloadApplication>,
+    pub(crate) default_directory: PathBuf,
+    pub(crate) default_connection_limit: u16,
+    pub(crate) default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
+    pub(crate) categories: Vec<DownloadCategorySettings>,
+    pub(crate) initial_source: Option<NewDownloadInitialSource>,
+}
+
+#[derive(Clone)]
+pub(crate) struct BrowserBlobDialogContext {
+    pub(crate) correlation_id: uuid::Uuid,
+    pub(crate) handoff_id: uuid::Uuid,
+    pub(crate) blob: BrowserBlob,
+    pub(crate) save_directory: PathBuf,
+}
+
+/// Owned stage data only: input/select entities remain bound to their original window.
+pub(crate) struct FixedConfirmationDraft {
+    init: NewDownloadViewInit,
+    theme: Theme,
+    url: String,
+    directory: String,
+    file_name: String,
+    save_directory_explicit: bool,
+    selected_category_id: Option<String>,
+    scheduled_date: NaiveDate,
+    scheduled_month: NaiveDate,
+    hour: Option<IndexPath>,
+    minute: Option<IndexPath>,
+    committed_schedule: Option<DelayedStartSelection>,
+    confirmed_request: Option<DownloadRequest>,
+    submission_idempotency_key: uuid::Uuid,
+    probe: Option<DownloadProbe>,
+    hls: Option<usize>,
+    video: Option<usize>,
+    audio: Option<usize>,
+    generation: u64,
+}
+
+impl FixedConfirmationDraft {
+    pub(crate) fn hydrate(
+        self,
+        window: &mut Window,
+        cx: &mut Context<NewDownloadView>,
+    ) -> NewDownloadView {
+        let mut view = NewDownloadView::new(self.init, window, cx);
+        view.hydrating_stage = true;
+        view.theme = self.theme;
+        view.url
+            .update(cx, |input, cx| input.set_value(self.url, window, cx));
+        view.directory
+            .update(cx, |input, cx| input.set_value(self.directory, window, cx));
+        view.file_name
+            .update(cx, |input, cx| input.set_value(self.file_name, window, cx));
+        view.save_directory_explicit = self.save_directory_explicit;
+        view.selected_category_id = self.selected_category_id;
+        view.scheduled_date = self.scheduled_date;
+        view.scheduled_month = self.scheduled_month;
+        view.scheduled_hour.update(cx, |select, cx| {
+            select.set_selected_index(self.hour, window, cx)
+        });
+        view.scheduled_minute.update(cx, |select, cx| {
+            select.set_selected_index(self.minute, window, cx)
+        });
+        view.committed_schedule = self.committed_schedule;
+        view.confirmed_request = self.confirmed_request;
+        view.submission_idempotency_key = self.submission_idempotency_key;
+        view.probe = self.probe;
+        view.selected_hls_variant = self.hls;
+        view.selected_dash_video_track = self.video;
+        view.selected_dash_audio_track = self.audio;
+        view.probe_generation = self.generation;
+        cx.defer_in(window, |view, _, cx| {
+            view.hydrating_stage = false;
+            cx.notify();
+        });
+        view
+    }
+}
+
+pub(crate) fn category_matches_query(category: &DownloadCategorySettings, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    category.name.to_lowercase().contains(query)
+        || category.save_directory.to_lowercase().contains(query)
+        || category
+            .extensions
+            .iter()
+            .any(|extension| extension.to_lowercase().contains(query))
+}
+
+pub(crate) fn category_choice_ids(
+    categories: &[DownloadCategorySettings],
+    query: &str,
+) -> Vec<Option<String>> {
+    let mut choices = Vec::with_capacity(categories.len() + usize::from(query.is_empty()));
+    if query.is_empty() {
+        choices.push(None);
+    }
+    choices.extend(
+        categories
+            .iter()
+            .filter(|category| category_matches_query(category, query))
+            .map(|category| Some(category.id.clone())),
+    );
+    choices
+}
+
+pub(crate) struct NewDownloadView {
+    pub(crate) handoff_staged: bool,
+    pub(crate) handoff_pending: bool,
+    hydrating_stage: bool,
+    pub(crate) theme: Theme,
+    pub(crate) application: Entity<DownloadApplication>,
+    pub(crate) url: Entity<InputState>,
+    pub(crate) directory: Entity<InputState>,
+    pub(super) directory_picker: DownloadDirectoryDraft,
+    pub(crate) save_directory_explicit: bool,
+    pub(crate) file_name: Entity<InputState>,
+    file_name_edit_generation: u64,
+    pub(crate) categories: Vec<DownloadCategorySettings>,
+    pub(crate) selected_category_id: Option<String>,
+    pub(crate) category_popover_open: bool,
+    pub(crate) category_search: Entity<InputState>,
+    pub(crate) category_highlighted_index: usize,
+    pub(crate) category_scroll: ScrollHandle,
+    pub(crate) scheduled_date: NaiveDate,
+    pub(crate) scheduled_month: NaiveDate,
+    pub(crate) scheduled_hour: Entity<SelectState<Vec<String>>>,
+    pub(crate) scheduled_minute: Entity<SelectState<Vec<String>>>,
+    pub(crate) schedule_popover_open: bool,
+    pub(crate) committed_schedule: Option<DelayedStartSelection>,
+    pub(crate) default_connection_limit: u16,
+    pub(crate) default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
+    pub(crate) external_request: Option<DownloadRequest>,
+    pub(crate) external_blob: Option<BrowserBlobDialogContext>,
+    pub(crate) confirmed_request: Option<DownloadRequest>,
+    pub(crate) submission_idempotency_key: uuid::Uuid,
+    pub(crate) probe: Option<DownloadProbe>,
+    pub(crate) selected_hls_variant: Option<usize>,
+    pub(crate) selected_dash_video_track: Option<usize>,
+    pub(crate) selected_dash_audio_track: Option<usize>,
+    pub(crate) probing: bool,
+    pub(crate) submitting: bool,
+    pub(crate) probe_generation: u64,
+    /// Height the confirmed form needs; `Some` while a native window may still
+    /// be catching up (see `confirmed_window_pending`).
+    pub(crate) confirmed_target_height: Option<gpui_kit::Pixels>,
+    pub(crate) confirmed_gate_expired: bool,
+    pub(crate) error: Option<String>,
+    pub(crate) _directory_subscription: Subscription,
+    _file_name_subscription: Subscription,
+    pub(crate) _category_search_subscription: Subscription,
+    pub(crate) _category_key_subscription: Subscription,
+    default_enter_held: bool,
+    _enter_activation_subscription: Subscription,
+    pub(crate) _bounds_subscription: Subscription,
+}
+
+impl NewDownloadView {
+    pub(crate) fn new(
+        init: NewDownloadViewInit,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let NewDownloadViewInit {
+            application,
+            default_directory,
+            default_connection_limit,
+            default_adaptive_segment_policy,
+            categories,
+            initial_source,
+        } = init;
+        let external_request = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::Download(request)) => Some(request.clone()),
+            _ => None,
+        };
+        let external_blob = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
+            _ => None,
+        };
+        let initial_url = external_request.as_ref().map_or_else(
+            || {
+                external_blob.as_ref().map_or_else(String::new, |context| {
+                    format!("Blob · 已安全接收 · {} 字节", context.blob.size)
+                })
+            },
+            |request| request.source_url.clone(),
+        );
+        let initial_directory = external_request.as_ref().map_or_else(
+            || {
+                external_blob.as_ref().map_or_else(
+                    || default_directory.to_string_lossy().into_owned(),
+                    |context| context.save_directory.to_string_lossy().into_owned(),
+                )
+            },
+            |request| request.save_directory.to_string_lossy().into_owned(),
+        );
+        let initial_file_name = external_request
+            .as_ref()
+            .and_then(|request| request.file_name.clone())
+            .or_else(|| {
+                external_blob
+                    .as_ref()
+                    .map(|context| context.blob.file_name.clone())
+            })
+            .unwrap_or_default();
+        let selected_category_id = external_request
+            .as_ref()
+            .and_then(|request| request.category_id.clone());
+        let url = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial_url)
+                .placeholder("https://example.com/file.zip")
+        });
+        let directory = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial_directory)
+                .placeholder("保存目录")
+        });
+        let file_name = cx.new(|cx| {
+            InputState::new(window, cx)
+                .default_value(initial_file_name)
+                .placeholder("可选；留空时使用服务器文件名")
+        });
+        let category_search =
+            cx.new(|cx| InputState::new(window, cx).placeholder("搜索分类名称、目录或扩展名"));
+        let file_name_subscription = cx.subscribe(&file_name, |this, _, event: &InputEvent, _| {
+            if matches!(event, InputEvent::Change) && !this.hydrating_stage {
+                this.file_name_edit_generation = this.file_name_edit_generation.wrapping_add(1);
+            }
+        });
+        let directory_subscription = cx.subscribe(&directory, |this, _, event: &InputEvent, cx| {
+            if matches!(event, InputEvent::Change) && !this.hydrating_stage {
+                this.save_directory_explicit = true;
+                this.directory_picker.edited();
+                let application = this.application.downgrade();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.cleanup_directory_picker(cx)
+                    });
+                });
+                cx.notify();
+            }
+        });
+        let category_search_subscription =
+            cx.subscribe(&category_search, |this, _, event: &InputEvent, cx| {
+                if matches!(event, InputEvent::Change) {
+                    this.category_highlighted_index = 0;
+                    this.category_scroll.scroll_to_item(0);
+                    cx.notify();
+                }
+            });
+        let category_key_listener =
+            cx.listener(|this, event: &gpui_kit::KeystrokeEvent, window, cx| {
+                if !this.category_popover_open || event.keystroke.modifiers.modified() {
+                    return;
+                }
+                let choices = this.category_choice_ids(cx);
+                let key = event.keystroke.key.as_str();
+                let handled = if key.eq_ignore_ascii_case("down") {
+                    if !choices.is_empty() {
+                        this.category_highlighted_index = (this.category_highlighted_index + 1)
+                            .min(choices.len().saturating_sub(1));
+                        this.category_scroll
+                            .scroll_to_item(this.category_highlighted_index);
+                    }
+                    true
+                } else if key.eq_ignore_ascii_case("up") {
+                    this.category_highlighted_index =
+                        this.category_highlighted_index.saturating_sub(1);
+                    this.category_scroll
+                        .scroll_to_item(this.category_highlighted_index);
+                    true
+                } else if key.eq_ignore_ascii_case("enter") {
+                    // This interceptor restores outer input focus before raw
+                    // key dispatch; the same Enter is already owned here.
+                    this.default_enter_held = true;
+                    if let Some(choice) = choices.get(this.category_highlighted_index).cloned() {
+                        this.select_category_choice(choice);
+                        this.file_name.focus_handle(cx).focus(window, cx);
+                    }
+                    true
+                } else if key.eq_ignore_ascii_case("escape") {
+                    this.category_popover_open = false;
+                    this.file_name.focus_handle(cx).focus(window, cx);
+                    true
+                } else {
+                    false
+                };
+                if handled {
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+            });
+        let category_key_subscription = cx.intercept_keystrokes(category_key_listener);
+        // A release may be lost while the window is inactive. Never retain an
+        // outer default-Enter gesture across activation changes.
+        let enter_activation_subscription =
+            cx.observe_window_activation(window, |this, _, _| this.default_enter_held = false);
+        // A native `WM_SIZE` updates GPUI's viewport without dirtying any view;
+        // re-render so a withheld confirmed form appears the moment the
+        // window reaches its target height. Only local view state is touched.
+        let bounds_subscription = cx.observe_window_bounds(window, |this, _window, cx| {
+            if this.confirmed_target_height.is_some() && !this.confirmed_gate_expired {
+                cx.notify();
+            }
+        });
+        let default_scheduled_at = Local::now() + ChronoDuration::minutes(10);
+        let scheduled_date = default_scheduled_at.date_naive();
+        let scheduled_month = calendar_month_start(scheduled_date);
+        let scheduled_hour = cx.new(|cx| {
+            SelectState::new(
+                (0..24).map(|hour| format!("{hour:02}")).collect(),
+                Some(IndexPath::default().row(default_scheduled_at.hour() as usize)),
+                window,
+                cx,
+            )
+        });
+        let scheduled_minute = cx.new(|cx| {
+            SelectState::new(
+                (0..60).map(|minute| format!("{minute:02}")).collect(),
+                Some(IndexPath::default().row(default_scheduled_at.minute() as usize)),
+                window,
+                cx,
+            )
+        });
+        Self {
+            handoff_staged: false,
+            handoff_pending: false,
+            hydrating_stage: false,
+            theme: Theme::zed_dark(),
+            application,
+            url,
+            directory,
+            directory_picker: DownloadDirectoryDraft::default(),
+            save_directory_explicit: external_request
+                .as_ref()
+                .is_some_and(|request| request.save_directory_explicit),
+            file_name,
+            file_name_edit_generation: 0,
+            categories,
+            selected_category_id,
+            category_popover_open: false,
+            category_search,
+            category_highlighted_index: 0,
+            category_scroll: ScrollHandle::new(),
+            scheduled_date,
+            scheduled_month,
+            scheduled_hour,
+            scheduled_minute,
+            schedule_popover_open: false,
+            committed_schedule: None,
+            default_connection_limit,
+            default_adaptive_segment_policy,
+            external_request,
+            external_blob: external_blob.clone(),
+            confirmed_request: None,
+            submission_idempotency_key: uuid::Uuid::new_v4(),
+            probe: external_blob.as_ref().map(|context| DownloadProbe {
+                resolution: None,
+                final_url: "browser-blob://staged".into(),
+                file_name: Some(context.blob.file_name.clone()),
+                total_bytes: Some(context.blob.size),
+                supports_ranges: false,
+                content_type: context.blob.media_type.clone(),
+                validator: nxtools_download::ResourceValidator::default(),
+                media: None,
+            }),
+            selected_hls_variant: None,
+            selected_dash_video_track: None,
+            selected_dash_audio_track: None,
+            probing: false,
+            submitting: false,
+            probe_generation: 0,
+            confirmed_target_height: None,
+            confirmed_gate_expired: false,
+            error: None,
+            _directory_subscription: directory_subscription,
+            _file_name_subscription: file_name_subscription,
+            _category_search_subscription: category_search_subscription,
+            _category_key_subscription: category_key_subscription,
+            default_enter_held: false,
+            _enter_activation_subscription: enter_activation_subscription,
+            _bounds_subscription: bounds_subscription,
+        }
+    }
+
+    pub(super) fn request_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.submitting || self.handoff_pending || self.handoff_staged {
+            return;
+        }
+        let Some((command_id, revision)) = self.directory_picker.begin() else {
+            return;
+        };
+        let request = DownloadDirectoryPickerRequest {
+            command_id,
+            revision,
+            window: window.window_handle(),
+            owner: DownloadDirectoryOwner::NewTask(cx.entity().downgrade()),
+            current_directory: self.directory.read(cx).value().to_string(),
+        };
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            application.update(cx, |application, cx| {
+                application.request_directory(request, cx)
+            })
+        });
+    }
+
+    fn default_enter_key_down(
+        &mut self,
+        event: &gpui_kit::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !event.keystroke.key.eq_ignore_ascii_case("enter") {
+            return;
+        }
+        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {
+            return;
+        }
+        // Focused actions get first refusal in GPUI's action dispatch. This
+        // fallback is only for the original outer single-line fields, never
+        // a Button, Select, child-layer input or an IME confirmation.
+        if event.keystroke.modifiers.modified()
+            || event.prefer_character_input
+            || self.category_popover_open
+            || self.schedule_popover_open
+            || self.submitting
+            || self.probing
+            || self.handoff_pending
+            || (self.confirmed_window_pending(window) && !self.handoff_staged)
+        {
+            return;
+        }
+        let input = [&self.url, &self.directory, &self.file_name]
+            .into_iter()
+            .find(|input| input.focus_handle(cx).is_focused(window))
+            .cloned();
+        let Some(input) = input else {
+            return;
+        };
+        if input.update(cx, |input, cx| {
+            input.marked_text_range(window, cx).is_some()
+        }) {
+            return;
+        }
+        cx.stop_propagation();
+        if !self.handoff_staged && self.probe.is_some() && self.confirmed_request.is_some() {
+            self.submit(DownloadSubmitMode::StartNow, window, cx);
+        } else {
+            self.begin_probe(window, cx);
+        }
+    }
+
+    pub(crate) fn category_choice_ids(&self, cx: &App) -> Vec<Option<String>> {
+        let query = self.category_search.read(cx).value().trim().to_lowercase();
+        category_choice_ids(&self.categories, &query)
+    }
+
+    pub(crate) fn select_category_choice(&mut self, choice: Option<String>) {
+        self.selected_category_id = choice;
+        self.category_popover_open = false;
+        self.error = None;
+    }
+
+    pub(crate) fn request(&self, cx: &App) -> Result<DownloadRequest, String> {
+        let url = self.url.read(cx).value().trim().to_owned();
+        let directory = self.directory.read(cx).value().trim().to_owned();
+        let file_name = self.file_name.read(cx).value().trim().to_owned();
+        if url.is_empty() || directory.is_empty() {
+            return Err("下载地址和保存目录不能为空".into());
+        }
+        let scheduled_at_unix_ms =
+            resolve_scheduled_start(self.committed_schedule, Local::now().timestamp_millis())?;
+        let mut request = self.external_request.clone().unwrap_or(DownloadRequest {
+            source_url: String::new(),
+            save_directory: PathBuf::new(),
+            save_directory_explicit: false,
+            file_name: None,
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(self.default_connection_limit),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: Some(self.default_adaptive_segment_policy),
+            media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+        });
+        request.source_url = url;
+        request.save_directory = PathBuf::from(directory);
+        request.save_directory_explicit = self.save_directory_explicit;
+        request.file_name = (!file_name.is_empty()).then_some(file_name);
+        request.category_id = self.selected_category_id.clone();
+        request.category_name = None;
+        request.connection_limit = Some(self.default_connection_limit);
+        request.adaptive_segment_policy = Some(self.default_adaptive_segment_policy);
+        request.scheduled_at_unix_ms = scheduled_at_unix_ms;
+        request.validate().map_err(|error| error.to_string())?;
+        Ok(request)
+    }
+
+    pub(crate) fn reset_schedule_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let default = Local::now() + ChronoDuration::minutes(10);
+        let selection = self.committed_schedule.unwrap_or(DelayedStartSelection {
+            date: default.date_naive(),
+            hour: default.hour(),
+            minute: default.minute(),
+        });
+        self.scheduled_date = selection.date;
+        self.scheduled_month = calendar_month_start(selection.date);
+        self.scheduled_hour.update(cx, |hour, cx| {
+            hour.set_selected_index(
+                Some(IndexPath::default().row(selection.hour as usize)),
+                window,
+                cx,
+            );
+        });
+        self.scheduled_minute.update(cx, |minute, cx| {
+            minute.set_selected_index(
+                Some(IndexPath::default().row(selection.minute as usize)),
+                window,
+                cx,
+            );
+        });
+    }
+
+    /// Focuses the URL input one frame after the dialog opens; focusing in the
+    /// constructor races the native window's first show, like every GPUI popup.
+    pub(crate) fn focus_url_input(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.url.focus_handle(cx).focus(window, cx);
+        cx.notify();
+    }
+
+    fn schedule_fixed_confirmation(
+        &mut self,
+        window: &Window,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        self.handoff_pending = true;
+        self.error = None;
+        let source = window.window_handle();
+        let generation = self.probe_generation;
+        let view = cx.entity().downgrade();
+        let application = self.application.downgrade();
+        cx.defer(move |cx| {
+            let _ = application.update(cx, |application, cx| {
+                application.create_fixed_confirmation(source, view, generation, correlation_id, cx);
+            });
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn begin_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.begin_probe_with_mode(
+            nxtools_download::DownloadResolutionMode::Resolve,
+            window,
+            cx,
+        );
+    }
+    fn begin_probe_with_mode(
+        &mut self,
+        resolution_mode: nxtools_download::DownloadResolutionMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.external_blob.is_some() {
+            return;
+        }
+        if self.handoff_staged
+            && self.probe.is_some()
+            && self
+                .confirmed_request
+                .as_ref()
+                .is_some_and(|request| request.source_url == self.url.read(cx).value().trim())
+        {
+            if !self.handoff_pending {
+                self.schedule_fixed_confirmation(window, uuid::Uuid::new_v4(), cx);
+            }
+            return;
+        }
+        self.handoff_staged = false;
+        self.handoff_pending = false;
+        let correlation_id = uuid::Uuid::new_v4();
+        // Validation failures also retire any old probe/handoff and layout.
+        self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
+        let owner = self.application.downgrade();
+        cx.defer(move |cx| {
+            let _ = owner.update(cx, |owner, cx| owner.cleanup_new_download_handoff(cx));
+        });
+        self.confirmed_target_height = None;
+        self.confirmed_gate_expired = false;
+        self.probing = false;
+        let leave_noncompact_stage = self.probe.is_some() || self.error.is_some();
+        let request = match self.request(cx) {
+            Ok(request) => request,
+            Err(error) => {
+                self.error = Some(humanize_download_fault(&error));
+                self.confirmed_request = None;
+                self.probe = None;
+                self.resize_window_with_correlation(
+                    window,
+                    new_download_error_window_size(false),
+                    correlation_id,
+                    cx,
+                );
+                cx.notify();
+                return;
+            }
+        };
+        // The generation was retired before validation, including error paths.
+        let generation = self.probe_generation;
+        let file_name_edit_generation = self.file_name_edit_generation;
+        self.probing = true;
+        self.error = None;
+        self.confirmed_request = None;
+        self.probe = None;
+        self.confirmed_target_height = None;
+        self.confirmed_gate_expired = false;
+        if leave_noncompact_stage {
+            self.resize_window_with_correlation(
+                window,
+                new_download_window_size(false),
+                correlation_id,
+                cx,
+            );
+        }
+        let engine = self.application.read(cx).engine.clone();
+        let background = cx.background_executor().clone();
+        let source_window = window.window_handle();
+        let application = self.application.downgrade();
+        let platform_for_resize = self.application.read(cx).platform_bridge();
+        cx.spawn(async move |this, cx| {
+            let request_for_probe = request.clone();
+            let outcome = background
+                .spawn(async move {
+                    engine
+                        .handle_command(DownloadCommandEnvelope {
+                            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+                            request_id: correlation_id,
+                            origin: RequestOrigin::Ui,
+                            command: DownloadCommand::ProbeResolved {
+                                request: request_for_probe,
+                                resolution: nxtools_download::DownloadResolutionOptions {
+                                    operation_id: correlation_id,
+                                    mode: resolution_mode,
+                                },
+                            },
+                        })
+                        .outcome
+                })
+                .await;
+            let applied = this.update(cx, |this, cx| {
+                if this.probe_generation != generation {
+                    return None;
+                }
+                this.probing = false;
+                let mut resolved_file_name = None;
+                let confirmed = match outcome {
+                    DownloadCommandOutcome::Probe(probe) => {
+                        let mut confirmed = request;
+                        let probe_file_name = resolved_probe_file_name(&probe);
+                        let current_name = this.file_name.read(cx).value().trim().to_owned();
+                        let current_name = (!current_name.is_empty()).then_some(current_name);
+                        if this.file_name_edit_generation != file_name_edit_generation
+                            || current_name != confirmed.file_name
+                        {
+                            // A newer draft must survive an older probe completion.
+                            confirmed.file_name = current_name;
+                            info!(event="download.filename.selected", %correlation_id, generation, source="current_user_edit");
+                        } else if confirmed.file_name.is_none()
+                            || should_replace_media_manifest_name(
+                                confirmed.file_name.as_deref(),
+                                &probe,
+                            )
+                            || should_replace_suggested_file_name(&confirmed, &probe)
+                        {
+                            confirmed.file_name = probe_file_name.clone();
+                            resolved_file_name = probe_file_name;
+                            info!(event="download.filename.selected", %correlation_id, generation, source="probe_suggestion");
+                        }
+                        this.selected_hls_variant =
+                            probe.media.as_ref().and_then(|media| match media {
+                                nxtools_download::DownloadMediaProbe::Hls(hls)
+                                    if hls.is_master && !hls.variants.is_empty() =>
+                                {
+                                    Some(0)
+                                }
+                                _ => None,
+                            });
+                        if let Some(nxtools_download::DownloadMediaProbe::Dash(dash)) =
+                            probe.media.as_ref()
+                        {
+                            this.selected_dash_video_track =
+                                (!dash.video_tracks.is_empty()).then_some(0);
+                            this.selected_dash_audio_track =
+                                (!dash.audio_tracks.is_empty()).then_some(0);
+                        } else {
+                            this.selected_dash_video_track = None;
+                            this.selected_dash_audio_track = None;
+                        }
+                        this.confirmed_request = Some(confirmed);
+                        this.probe = Some(probe);
+                        this.error = None;
+                        true
+                    }
+                    DownloadCommandOutcome::Rejected { fault } => {
+                        this.finish_probe_failure(humanize_download_fault(&fault.message), cx);
+                        false
+                    }
+                    _ => {
+                        warn!(
+                            event = "download.probe.presentation_failed",
+                            %correlation_id,
+                            reason = "unexpected_outcome",
+                            "download probe returned an unexpected outcome"
+                        );
+                        this.finish_probe_failure("下载引擎返回了无效的探测结果".into(), cx);
+                        false
+                    }
+                };
+                let window_size = this
+                    .probe
+                    .as_ref()
+                    .map(new_download_window_size_for_probe)
+                    .unwrap_or_else(|| new_download_window_size(false));
+                // Retain successful probe data on the compact owner until a NEW fixed window is ready.
+                this.handoff_staged = confirmed;
+                this.handoff_pending = confirmed;
+                this.confirmed_target_height = None;
+                this.confirmed_gate_expired = false;
+                Some((
+                    this.file_name.clone(),
+                    resolved_file_name,
+                    confirmed,
+                    window_size,
+                ))
+            });
+            if let Ok(Some((file_name, resolved_file_name, confirmed, window_size))) = applied {
+                let weak_view = this.clone();
+                let _ = source_window.update(cx, move |_, window, cx| {
+                    if let Some(resolved_file_name) = resolved_file_name {
+                        file_name.update(cx, |input, cx| {
+                            input.set_value(resolved_file_name, window, cx);
+                        });
+                    }
+                    if confirmed {
+                        cx.defer(move |cx| {
+                            let _ = application.update(cx, |application, cx| {
+                                application.create_fixed_confirmation(
+                                    source_window,
+                                    weak_view,
+                                    generation,
+                                    correlation_id,
+                                    cx,
+                                );
+                            });
+                        });
+                    } else {
+                        apply_new_download_window_resize_with_correlation(
+                            &platform_for_resize,
+                            window,
+                            window_size,
+                            correlation_id,
+                        );
+                    }
+                });
+                let _ = this.update(cx, |_, cx| cx.notify());
+            }
+        })
+        .detach();
+        cx.notify();
+    }
+
+    pub(super) fn finish_probe_failure(&mut self, message: String, cx: &mut Context<Self>) {
+        self.probing = false;
+        self.error = None;
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            let center = application.read(cx).notifications.clone();
+            center.update(cx, |center, cx| {
+                center.show_error(
+                    format!("download-probe-{}", uuid::Uuid::new_v4()),
+                    "链接探测失败",
+                    message,
+                    cx,
+                )
+            });
+        });
+        cx.notify();
+    }
+
+    pub(super) fn finish_submission_failure(&mut self, message: String, cx: &mut Context<Self>) {
+        self.submitting = false;
+        self.error = None;
+        let application = self.application.clone();
+        cx.defer(move |cx| {
+            let center = application.read(cx).notifications.clone();
+            let notice = crate::notifications::AppNotification::new(
+                format!("download-submit-{}", uuid::Uuid::new_v4()),
+                crate::notifications::NotificationLevel::Error,
+                "未能提交下载",
+                message,
+            );
+            center.update(cx, |center, cx| center.push(notice, cx));
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn submit(
+        &mut self,
+        mode: DownloadSubmitMode,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // A staged compact owner has not shown the confirmation/footer yet.
+        // Native placement failure retains the draft but never enables submission.
+        if self.submitting || self.confirmed_window_pending(window) {
+            return;
+        }
+        if let Some(blob) = self.external_blob.clone() {
+            let directory = self.directory.read(cx).value().trim().to_owned();
+            let file_name = self.file_name.read(cx).value().trim().to_owned();
+            if directory.is_empty() || file_name.is_empty() {
+                self.error = Some("保存目录和文件名不能为空".into());
+                cx.notify();
+                return;
+            }
+            self.submitting = true;
+            self.error = None;
+            cx.notify();
+            let application = self.application.clone();
+            let category_id = self.selected_category_id.clone();
+            let save_directory_explicit = self.save_directory_explicit;
+            let source_window = window.window_handle();
+            let source_native_handle = native_window_handle(window).unwrap_or_default();
+            let view = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                match application.update(cx, |application, cx| {
+                    application.import_browser_blob(
+                        blob,
+                        PathBuf::from(directory),
+                        file_name,
+                        category_id,
+                        save_directory_explicit,
+                        cx,
+                    )
+                }) {
+                    Ok(task_id) => {
+                        application.update(cx, |application, _cx| {
+                            application.stash_task_window_anchor(task_id, source_native_handle);
+                        });
+                        let application = application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                application.request_task_window(task_id, cx);
+                            });
+                            let _ = source_window.update(cx, |_, window, _| window.remove_window());
+                        });
+                    }
+                    Err(message) => {
+                        let _ = view.update(cx, |view, cx| {
+                            view.finish_submission_failure(humanize_download_fault(&message), cx)
+                        });
+                    }
+                }
+            });
+            return;
+        }
+        let current = match self.request(cx) {
+            Ok(request) => request,
+            Err(error) => {
+                self.error = Some(humanize_download_fault(&error));
+                self.resize_window(window, self.error_window_size(), cx);
+                cx.notify();
+                return;
+            }
+        };
+        let Some(confirmed) = self.confirmed_request.clone() else {
+            self.error = Some("请先探测链接并确认文件信息".into());
+            self.resize_window(window, self.error_window_size(), cx);
+            cx.notify();
+            return;
+        };
+        let media = match selected_download_request_media(
+            self.probe.as_ref(),
+            self.selected_hls_variant,
+            self.selected_dash_video_track,
+            self.selected_dash_audio_track,
+        ) {
+            Ok(media) => media,
+            Err(error) => {
+                self.error = Some(humanize_download_fault(&error));
+                self.resize_window(window, self.error_window_size(), cx);
+                cx.notify();
+                return;
+            }
+        };
+        let Some(mut request) = merge_confirmed_download_request(confirmed, current) else {
+            self.confirmed_request = None;
+            self.probe = None;
+            self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
+            self.confirmed_target_height = None;
+            self.confirmed_gate_expired = false;
+            self.error = Some("下载地址已变更，请重新探测".into());
+            self.resize_window(window, self.error_window_size(), cx);
+            cx.notify();
+            return;
+        };
+        request.media = media;
+        if let Err(error) = request.validate() {
+            self.error = Some(error.to_string());
+            self.resize_window(window, self.error_window_size(), cx);
+            cx.notify();
+            return;
+        }
+        if request.save_directory.exists() && !request.save_directory.is_dir() {
+            self.error = Some("保存位置不是文件夹，请重新选择".into());
+            self.resize_window(window, self.error_window_size(), cx);
+            cx.notify();
+            return;
+        }
+        self.submitting = true;
+        self.error = None;
+        cx.notify();
+        let application = self.application.clone();
+        let idempotency_key = self.submission_idempotency_key;
+        let resolution = self
+            .probe
+            .as_ref()
+            .and_then(|probe| probe.resolution.as_ref())
+            .map(|resolution| nxtools_download::DownloadResolutionOptions {
+                operation_id: resolution.provenance.operation_id,
+                mode: nxtools_download::DownloadResolutionMode::Receipt(resolution.receipt),
+            });
+        let source_window = window.window_handle();
+        let source_native_handle = native_window_handle(window).unwrap_or_default();
+        let view = cx.entity().downgrade();
+        info!(?mode, "scheduling download task submission");
+        cx.defer(move |cx| {
+            let delayed = request.scheduled_at_unix_ms.is_some();
+            let result = application.update(cx, |application, cx| {
+                if resolution.is_some() {
+                    application.submit_with_resolution_options(
+                        request,
+                        mode,
+                        Some(idempotency_key),
+                        resolution,
+                        cx,
+                    )
+                } else {
+                    application.submit_with_idempotency(request, mode, Some(idempotency_key), cx)
+                }
+            });
+            match result {
+                Ok(task_id) => {
+                    let show_progress_window = application.read(cx).show_progress_window;
+                    let plan =
+                        submit_presentation_plan(mode, task_id, delayed, show_progress_window);
+                    if plan.deferred_task_window.is_some() {
+                        // Preserve the dialog's real position for the progress
+                        // window before this window is destroyed.
+                        application.update(cx, |application, _cx| {
+                            application.stash_task_window_anchor(task_id, source_native_handle);
+                        });
+                    }
+                    if let Some(task_id) = plan.deferred_task_window {
+                        let application = application.clone();
+                        let close_source_window = plan.close_source_window;
+                        cx.defer(move |cx| {
+                            info!(
+                                task_id = %task_id.as_uuid(),
+                                "opening deferred download progress window"
+                            );
+                            application.update(cx, |application, cx| {
+                                application.request_task_window(task_id, cx);
+                            });
+                            if close_source_window {
+                                let _ =
+                                    source_window.update(cx, |_, window, _| window.remove_window());
+                            }
+                        });
+                    } else if plan.close_source_window {
+                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
+                    }
+                }
+                Err(message) => {
+                    error!(
+                        ?mode,
+                        reason = "engine_rejected",
+                        "download task submission rejected"
+                    );
+                    let _ = view.update(cx, |view, cx| view.finish_submission_failure(message, cx));
+                }
+            }
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NewDownloadFooterAction {
+    Schedule,
+    QueueOnly,
+    StartNow,
+    Cancel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum NewDownloadFooterEmphasis {
+    Primary,
+    Outline,
+    Ghost,
+}
+
+impl NewDownloadFooterAction {
+    pub(crate) fn button_id(self) -> &'static str {
+        match self {
+            Self::Schedule => "download-new-schedule-trigger",
+            Self::QueueOnly => "download-add-to-queue-button",
+            Self::StartNow => "download-start-now-button",
+            Self::Cancel => "download-new-cancel",
+        }
+    }
+
+    pub(crate) fn icon(self) -> Option<MaterialIcon> {
+        match self {
+            Self::Schedule => Some(MaterialIcon::CalendarMonth),
+            Self::StartNow => Some(MaterialIcon::Download),
+            Self::QueueOnly | Self::Cancel => None,
+        }
+    }
+
+    pub(crate) fn role_selector(self) -> &'static str {
+        match self {
+            Self::Schedule => "download-new-footer-secondary-schedule-action",
+            Self::QueueOnly => "download-new-footer-secondary-queue-action",
+            Self::StartNow => "download-new-footer-primary-action",
+            Self::Cancel => "download-new-footer-secondary-cancel-action",
+        }
+    }
+
+    pub(crate) fn emphasis(self) -> NewDownloadFooterEmphasis {
+        match self {
+            Self::StartNow => NewDownloadFooterEmphasis::Primary,
+            Self::Schedule | Self::QueueOnly => NewDownloadFooterEmphasis::Outline,
+            Self::Cancel => NewDownloadFooterEmphasis::Ghost,
+        }
+    }
+}
+
+pub(crate) fn new_download_footer_action(
+    action: NewDownloadFooterAction,
+    theme: Theme,
+    cx: &App,
+    label: impl Into<gpui_kit::SharedString>,
+    disabled: bool,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
+) -> Button {
+    let label = label.into();
+    let button = if action.emphasis() == NewDownloadFooterEmphasis::Primary {
+        crate::ui::components::action::primary_action_button(
+            action.button_id(),
+            "立即下载",
+            label,
+            theme,
+            disabled,
+            cx,
+        )
+    } else {
+        action_button(action.button_id(), label)
+    };
+    let button = if let Some(icon) = action.icon() {
+        button.icon(Icon::new(icon))
+    } else {
+        button
+    };
+    let button = button.disabled(disabled).on_click(on_click);
+    let button = match action.emphasis() {
+        NewDownloadFooterEmphasis::Primary => button,
+        NewDownloadFooterEmphasis::Outline => button.outline(),
+        NewDownloadFooterEmphasis::Ghost => button.ghost(),
+    };
+    button.debug_selector(move || action.role_selector().into())
+}
+
+impl Render for NewDownloadView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        crate::ui::motion::observe_motion(window, cx);
+        crate::theme::observe_theme(window, cx);
+        self.theme = Theme::active(cx);
+        let theme = self.theme;
+        // Successful probe state stays on the compact owner, but that owner
+        // never paints confirmation. Only the new fixed-size target owns the form.
+        // Legacy direct fixtures still guard their explicitly supplied viewport budget.
+        let confirmed_pending = self.confirmed_window_pending(window);
+        let probe = if confirmed_pending {
+            None
+        } else {
+            self.probe.clone()
+        };
+        let displayed_error = if confirmed_pending && !self.handoff_staged {
+            None
+        } else {
+            self.error.clone()
+        };
+        let probing =
+            self.probing || self.handoff_pending || (confirmed_pending && !self.handoff_staged);
+        let submitting = self.submitting;
+        let confirmed = probe.is_some();
+        let compact_error = !confirmed
+            && displayed_error.is_some()
+            && window.viewport_size().height < new_download_error_window_size(false).height;
+        // The unconfirmed dialog is a fixed-height window; an inline probe
+        // error adds one bounded error row. The window reserves that row via
+        // `set_error`/`clear_error` so the footer buttons keep their position
+        // instead of being squeezed off the dialog.
+        let schedule_label = if let Some(selection) = self.committed_schedule {
+            format!(
+                "{} {:02}:{:02}",
+                selection.date.format("%m-%d"),
+                selection.hour,
+                selection.minute
+            )
+        } else {
+            "稍后下载".into()
+        };
+        let schedule_view = cx.entity().downgrade();
+        let schedule_date = self.scheduled_date;
+        let schedule_month = self.scheduled_month;
+        let schedule_today = Local::now().date_naive();
+        let schedule_hour = self.scheduled_hour.clone();
+        let schedule_minute = self.scheduled_minute.clone();
+        let schedule_calendar_view = schedule_view.clone();
+        let schedule_clear_view = schedule_view.clone();
+        let schedule_confirm_view = schedule_view.clone();
+        let schedule_confirm_hour = schedule_hour.clone();
+        let schedule_confirm_minute = schedule_minute.clone();
+        let schedule_control = div()
+            .id("download-new-schedule-control")
+            .debug_selector(|| "download-new-schedule-control".into())
+            .flex()
+            .items_center()
+            .child(
+                Popover::new("download-new-schedule-popover")
+                    .anchor(Anchor::BottomLeft)
+                    .open(self.schedule_popover_open)
+                    .w(px(304.0)).h(px(200.0)).p_1()
+                    .overlay_closable(true)
+                    .on_open_change(move |open, window, cx| {
+                        let open = *open;
+                        let schedule_view = schedule_view.clone();
+                        window.defer(cx, move |window, cx| {
+                            let _ = schedule_view.update(cx, |view, cx| {
+                                view.schedule_popover_open = open;
+                                if open {
+                                    view.reset_schedule_draft(window, cx);
+                                }
+                                cx.notify();
+                            });
+                        });
+                    })
+                    .trigger(new_download_footer_action(
+                        NewDownloadFooterAction::Schedule,
+                        theme,
+                        cx,
+                        schedule_label,
+                        submitting,
+                        |_, _, _| {},
+                    ))
+                    .content(move |_, _, cx| {
+                        let theme = Theme::active(cx);
+                        let schedule_clear_view = schedule_clear_view.clone();
+                        let schedule_confirm_view = schedule_confirm_view.clone();
+                        let schedule_calendar_view = schedule_calendar_view.clone();
+                        let schedule_confirm_hour = schedule_confirm_hour.clone();
+                        let schedule_confirm_minute = schedule_confirm_minute.clone();
+                        div().debug_selector(|| "download-new-schedule-popover-shell".into())
+                            .size_full().child(div()
+                                .id("download-new-schedule-popover-content")
+                                .debug_selector(|| {
+                                    "download-new-schedule-popover-content".into()
+                                })
+                                .size_full()
+                                .flex()
+                                .flex_col()
+                                .gap(px(SPACING_4))
+                                .child(div().id("download-new-schedule-calendar-scroll").h(px(124.0)).flex_none().overflow_y_scroll().child(delayed_start_calendar(
+                                    theme,
+                                    schedule_month,
+                                    schedule_date,
+                                    schedule_today,
+                                    schedule_calendar_view,
+                                )))
+                                .child(
+                                    div()
+                                        .debug_selector(|| "download-new-schedule-time-row".into())
+                                        .flex_none()
+                                        .pt(px(SPACING_4))
+                                        .border_t_1()
+                                        .border_color(theme.border_subtle)
+                                        .flex()
+                                        .items_center()
+                                        .gap(px(SPACING_8))
+                                        .child(
+                                            div()
+                                                .mr(px(SPACING_4))
+                                                .text_size(px(TEXT_LABEL))
+                                                .line_height(px(LINE_HEIGHT_LABEL))
+                                                .text_color(theme.text_secondary)
+                                                .child("时间"),
+                                        )
+                                        .child(div().w(px(66.0)).child(
+                                            Select::new(&schedule_hour)
+                                                .menu_width(px(66.0))
+                                                .small(),
+                                        ))
+                                        .child(
+                                            div()
+                                                .text_size(px(TEXT_LABEL))
+                                                .text_color(theme.text_muted)
+                                                .child(":"),
+                                        )
+                                        .child(div().w(px(66.0)).child(
+                                            Select::new(&schedule_minute)
+                                                .menu_width(px(66.0))
+                                                .small(),
+                                        )),
+                                )
+                                .child(
+                                    div()
+                                        .debug_selector(|| "download-new-schedule-action-row".into())
+                                        .w_full()
+                                        .flex_none()
+                                        .px(px(SPACING_8))
+                                        .pt(px(SPACING_4))
+                                        .border_t_1()
+                                        .border_color(theme.border_subtle)
+                                        .flex()
+                                        .items_center()
+                                        .justify_between()
+                                        .child(
+                                            div()
+                                                .debug_selector(|| {
+                                                    "download-new-schedule-clear-action".into()
+                                                })
+                                                .child(
+                                                    action_button(
+                                                        "download-new-schedule-clear",
+                                                        "清除",
+                                                    )
+                                                    .debug_selector(|| {
+                                                        "download-new-schedule-clear-button".into()
+                                                    })
+                                                    .ghost()
+                                                    .on_click(move |_, window, cx| {
+                                                        let schedule_clear_view =
+                                                            schedule_clear_view.clone();
+                                                        window.defer(cx, move |_, cx| {
+                                                            info!(
+                                                                "download delayed-start selection cleared"
+                                                            );
+                                                            let _ = schedule_clear_view.update(
+                                                                cx,
+                                                                |view, cx| {
+                                                                    view.committed_schedule = None;
+                                                                    view.schedule_popover_open =
+                                                                        false;
+                                                                    view.error = None;
+                                                                    cx.notify();
+                                                                },
+                                                            );
+                                                        });
+                                                    }),
+                                                ),
+                                        )
+                                        .child(
+                                            div()
+                                                .debug_selector(|| {
+                                                    "download-new-schedule-confirm".into()
+                                                })
+                                                .child(
+                                                    crate::ui::components::action::primary_action_button(
+                                                        "download-new-schedule-confirm-button",
+                                                        "确定下载计划", "确定", theme, false, cx,
+                                                    )
+                                                    .debug_selector(|| {
+                                                        "download-new-schedule-confirm-button".into()
+                                                    })
+                                                    .on_click(move |_, window, cx| {
+                                                        let selection = read_delayed_start_draft(
+                                                            schedule_date,
+                                                            &schedule_confirm_hour,
+                                                            &schedule_confirm_minute,
+                                                            cx,
+                                                        );
+                                                        let schedule_confirm_view =
+                                                            schedule_confirm_view.clone();
+                                                        window.defer(cx, move |_, cx| {
+                                                            let _ = schedule_confirm_view.update(
+                                                                cx,
+                                                                |view, cx| {
+                                                                    let selection = match selection {
+                                                                        Ok(selection) => selection,
+                                                                        Err(error) => {
+                                                                            view.error =
+                                                                                Some(error);
+                                                                            cx.notify();
+                                                                            return;
+                                                                        }
+                                                                    };
+                                                                    info!(
+                                                                        "download delayed-start selection committed"
+                                                                    );
+                                                                    view.committed_schedule =
+                                                                        Some(selection);
+                                                                    view.schedule_popover_open =
+                                                                        false;
+                                                                    view.error = None;
+                                                                    cx.notify();
+                                                                },
+                                                            );
+                                                        });
+                                                    }),
+                                                ),
+                                        ),
+                                )
+                                .into_any_element())
+                    }),
+            );
+        let footer_actions = if confirmed {
+            div()
+                .debug_selector(|| "download-new-refresh-action".into())
+                .child(
+                    icon_action_button(
+                        "download-refresh-probe",
+                        MaterialIcon::ManageSearch,
+                        "重新探测下载链接",
+                    )
+                    .outline()
+                    .disabled(submitting)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.begin_probe(window, cx);
+                    })),
+                )
+                .into_any_element()
+        } else {
+            div()
+                .debug_selector(|| "download-new-probe-action".into())
+                .child(
+                    crate::ui::components::action::primary_action_button(
+                        "download-probe",
+                        if self.handoff_staged {
+                            "重试打开下载确认"
+                        } else {
+                            "探测下载链接"
+                        },
+                        if probing {
+                            "正在准备…"
+                        } else if self.handoff_staged {
+                            "重试打开确认"
+                        } else {
+                            "继续"
+                        },
+                        theme,
+                        probing || submitting,
+                        cx,
+                    )
+                    .icon(Icon::new(if probing {
+                        MaterialIcon::ProgressActivity
+                    } else {
+                        MaterialIcon::ManageSearch
+                    }))
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.begin_probe(window, cx);
+                    })),
+                )
+                .into_any_element()
+        };
+        let footer_actions = div()
+            .flex()
+            .items_center()
+            .gap_2()
+            .child(footer_actions)
+            .when(self.error.is_some() && !probing && !submitting, |row| {
+                row.child(
+                    Button::new("download-extension-bypass")
+                        .debug_selector(|| "download-extension-bypass".into())
+                        .label("跳过扩展")
+                        .small()
+                        .outline()
+                        .tooltip("明确跳过扩展并重新探测原始地址")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.handoff_staged = false;
+                            this.begin_probe_with_mode(
+                                nxtools_download::DownloadResolutionMode::Bypass,
+                                window,
+                                cx,
+                            );
+                        })),
+                )
+            })
+            .into_any_element();
+        let selected_category_label = self
+            .selected_category_id
+            .as_deref()
+            .and_then(|selected| {
+                self.categories
+                    .iter()
+                    .find(|category| category.id.eq_ignore_ascii_case(selected))
+            })
+            .map_or_else(|| "自动分类".to_owned(), |category| category.name.clone());
+        let category_view = cx.entity().downgrade();
+        let category_open_view = category_view.clone();
+        let category_menu_view = category_view.clone();
+        let categories = self.categories.clone();
+        let category_search = self.category_search.clone();
+        let category_search_focus = self.category_search.focus_handle(cx);
+        let category_return_focus = self.file_name.focus_handle(cx);
+        let category_close_focus = category_return_focus.clone();
+        let category_query = self.category_search.read(cx).value().trim().to_lowercase();
+        let category_highlighted_index = self.category_highlighted_index;
+        let category_scroll = self.category_scroll.clone();
+        let selected_category_id_for_menu = self.selected_category_id.clone();
+        let category_control = div()
+            .debug_selector(|| "download-new-category-control".into())
+            .w_full()
+            .child(
+                Popover::new("download-new-category-popover")
+                    .anchor(Anchor::BottomRight)
+                    .trigger_style(gpui_kit::StyleRefinement::default().w_full())
+                    .open(self.category_popover_open)
+                    .track_focus(&category_search_focus)
+                    .w(px(CATEGORY_POPOVER_WIDTH)).h(px(240.0))
+                    .overlay_closable(true)
+                    .on_open_change(move |open, window, cx| {
+                        let open = *open;
+                        let category_open_view = category_open_view.clone();
+                        let category_close_focus = category_close_focus.clone();
+                        window.defer(cx, move |window, cx| {
+                            let _ = category_open_view.update(cx, |view, cx| {
+                                view.category_popover_open = open;
+                                if open {
+                                    let choices = view.category_choice_ids(cx);
+                                    view.category_highlighted_index = view
+                                        .selected_category_id
+                                        .as_deref()
+                                        .and_then(|selected| {
+                                            choices.iter().position(|choice| {
+                                                choice.as_deref().is_some_and(|category| {
+                                                    category.eq_ignore_ascii_case(selected)
+                                                })
+                                            })
+                                        })
+                                        .unwrap_or(0);
+                                    view.category_scroll
+                                        .scroll_to_item(view.category_highlighted_index);
+                                }
+                                cx.notify();
+                            });
+                            if !open {
+                                category_close_focus.focus(window, cx);
+                            }
+                        });
+                    })
+                    .trigger(
+                        Button::new("download-new-category-trigger-button")
+                            .debug_selector(|| "download-new-category-trigger".into())
+                            .label(selected_category_label)
+                            .small()
+                            .outline()
+                            .w_full()
+                            .with_size(gpui_kit::component::Size::Medium),
+                    )
+                    .content(move |_, _, cx| {
+                        let theme = Theme::active(cx);
+                        let mut rows = Vec::with_capacity(categories.len() + 1);
+                        if category_query.is_empty() {
+                            let automatic_view = category_menu_view.clone();
+                            let automatic_return_focus = category_return_focus.clone();
+                            rows.push(
+                                ListItem::new("download-new-category-automatic")
+                                    .selected(category_highlighted_index == 0)
+                                    .secondary_selected(selected_category_id_for_menu.is_none())
+                                    .accessibility_label("自动匹配分类")
+                                    .w_full().h(px(CATEGORY_ROW_HEIGHT)).py_0()
+                                    .child(div().w(px(CATEGORY_ROW_CONTENT_WIDTH)).min_w_0().overflow_hidden().flex().flex_col()
+                                    .child(
+                                        div()
+                                            .w_full().min_w_0().truncate().text_size(px(TEXT_BODY))
+                                            .line_height(px(LINE_HEIGHT_BODY))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .text_color(theme.text)
+                                            .child("自动匹配"),
+                                    )
+                                    .child(
+                                        div()
+                                            .w_full().min_w_0().truncate().text_size(px(TEXT_LABEL))
+                                            .line_height(px(LINE_HEIGHT_LABEL))
+                                            .text_color(theme.text_muted)
+                                            .child("按文件名、扩展名和 URL 规则选择"),
+                                    ))
+                                    .on_click(move |_, window, cx| {
+                                        let automatic_view = automatic_view.clone();
+                                        let automatic_return_focus =
+                                            automatic_return_focus.clone();
+                                        window.defer(cx, move |window, cx| {
+                                            let _ = automatic_view.update(cx, |view, cx| {
+                                                view.select_category_choice(None);
+                                                cx.notify();
+                                            });
+                                            automatic_return_focus.focus(window, cx);
+                                        });
+                                    })
+                                    .into_any_element(),
+                            );
+                        }
+                        let category_offset = rows.len();
+                        rows.extend(
+                            categories
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, category)| {
+                                    category_matches_query(category, &category_query)
+                                })
+                                .enumerate()
+                                .map(|(visible_index, (index, category))| {
+                                let category_id = category.id.clone();
+                                let selected =
+                                    selected_category_id_for_menu.as_deref().is_some_and(
+                                        |selected| selected.eq_ignore_ascii_case(&category_id),
+                                    );
+                                let highlighted = category_highlighted_index
+                                    == category_offset + visible_index;
+                                let category_name = category.name.clone();
+                                let directory_label = if category.save_directory.is_empty() {
+                                    "使用默认保存目录".to_owned()
+                                } else {
+                                    category.save_directory.clone()
+                                };
+                                let directory_tooltip = format!("{category_name}\n{directory_label}");
+                                let view = category_menu_view.clone();
+                                let category_return_focus = category_return_focus.clone();
+                                ListItem::new(("download-new-category-option", index))
+                                        .debug_selector(move || format!("download-new-category-option-{index}"))
+                                        .selected(highlighted).secondary_selected(selected)
+                                        .accessibility_label(format!("{category_name} · {directory_label}"))
+                                        .w_full().h(px(CATEGORY_ROW_HEIGHT)).py_0()
+                                        .tooltip(bounded_text_tooltip(
+                                            format!("download-new-category-option-tooltip-{index}"),
+                                            directory_tooltip,
+                                            true,
+                                        ))
+                                        .cursor_pointer()
+                                        .child(div().w(px(CATEGORY_ROW_CONTENT_WIDTH)).min_w_0().overflow_hidden().flex().flex_col()
+                                        .child(
+                                            div()
+                                                .debug_selector(move || {
+                                                    format!(
+                                                        "download-new-category-option-title-{index}"
+                                                    )
+                                                })
+                                                .w_full()
+                                                .min_w_0()
+                                                .truncate()
+                                                .text_size(px(TEXT_BODY))
+                                                .line_height(px(LINE_HEIGHT_BODY))
+                                                .font_weight(FontWeight::MEDIUM)
+                                                .text_color(theme.text)
+                                                .child(category_name),
+                                        )
+                                        .child(
+                                            div()
+                                                .debug_selector(move || {
+                                                    format!(
+                                                        "download-new-category-option-directory-{index}"
+                                                    )
+                                                })
+                                                .w_full()
+                                                .min_w_0()
+                                                .truncate()
+                                                .text_size(px(TEXT_LABEL))
+                                                .line_height(px(LINE_HEIGHT_LABEL))
+                                                .text_color(theme.text_muted)
+                                                .child(directory_label),
+                                        ))
+                                        .on_click(move |_, window, cx| {
+                                            let category_id = category_id.clone();
+                                            let view = view.clone();
+                                            let category_return_focus =
+                                                category_return_focus.clone();
+                                            window.defer(cx, move |window, cx| {
+                                                let _ = view.update(cx, |view, cx| {
+                                                    view.select_category_choice(Some(category_id));
+                                                    cx.notify();
+                                                });
+                                                category_return_focus.focus(window, cx);
+                                            });
+                                        })
+                                        .into_any_element()
+                            }),
+                        );
+                        if rows.is_empty() {
+                            rows.push(
+                                div()
+                                    .w_full()
+                                    .h(px(42.0))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .text_size(px(TEXT_LABEL))
+                                    .text_color(theme.text_muted)
+                                    .child("没有匹配的分类")
+                                    .into_any_element(),
+                            );
+                        }
+                        div().debug_selector(|| "download-new-category-popover-content".into())
+                            .w_full().h_full().min_w_0().overflow_hidden().child(div()
+                                .w_full().h_full().min_w_0()
+                                .min_h_0()
+                                .flex()
+                                .flex_col()
+                                .gap(px(SPACING_4))
+                                .child(div().flex_none().w_full().child(field_shell(
+                                    theme,
+                                    "download-new-category-search",
+                                    Input::new(&category_search),
+                                )))
+                                .child(list_box("download-new-category-list", category_scroll.clone(), rows))
+                                .into_any_element())
+                    }),
+            )
+            .into_any_element();
+        let footer_leading_actions = if confirmed {
+            div()
+                .debug_selector(|| "download-new-footer-leading-actions".into())
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .child(schedule_control)
+                .child(footer_actions)
+                .into_any_element()
+        } else {
+            footer_actions
+        };
+        let footer_submission_actions = confirmed.then(|| {
+            div()
+                .debug_selector(|| "download-new-footer-submission-actions".into())
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .child(
+                    div()
+                        .debug_selector(|| "download-add-to-queue".into())
+                        .child(new_download_footer_action(
+                            NewDownloadFooterAction::QueueOnly,
+                            theme,
+                            cx,
+                            if submitting {
+                                "正在添加…"
+                            } else {
+                                "添加"
+                            },
+                            submitting,
+                            cx.listener(|this, _, window, cx| {
+                                this.submit(DownloadSubmitMode::QueueOnly, window, cx);
+                            }),
+                        )),
+                )
+                .child(div().debug_selector(|| "download-start-now".into()).child(
+                    new_download_footer_action(
+                        NewDownloadFooterAction::StartNow,
+                        theme,
+                        cx,
+                        if submitting {
+                            "正在添加…"
+                        } else {
+                            "下载"
+                        },
+                        submitting,
+                        cx.listener(|this, _, window, cx| {
+                            this.submit(DownloadSubmitMode::StartNow, window, cx);
+                        }),
+                    ),
+                ))
+                .into_any_element()
+        });
+        let body = if let Some(probe) = probe {
+            let is_blob = self.external_blob.is_some();
+            let media_options_panel = match probe.media.as_ref() {
+                Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
+                    Some(hls_quality_options(
+                        theme,
+                        &hls.variants,
+                        self.selected_hls_variant.unwrap_or(0),
+                        cx.entity().downgrade(),
+                    ))
+                }
+                Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => Some(dash_track_options(
+                    theme,
+                    dash,
+                    self.selected_dash_video_track,
+                    self.selected_dash_audio_track,
+                    cx.entity().downgrade(),
+                )),
+                _ => None,
+            };
+            let size = match probe.media.as_ref() {
+                Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
+                    format!("{} 个清晰度", hls.variants.len())
+                }
+                Some(nxtools_download::DownloadMediaProbe::Hls(_)) => "HLS 媒体列表".into(),
+                Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => format!(
+                    "{} 视频 · {} 音频",
+                    dash.video_tracks.len(),
+                    dash.audio_tracks.len()
+                ),
+                None => probe
+                    .total_bytes
+                    .map(format_download_size)
+                    .unwrap_or_else(|| "大小未知".into()),
+            };
+            div()
+                .id(("download-new-confirmed-form", self.probe_generation))
+                .debug_selector(|| "download-new-form-grid".into())
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
+                .px(px(16.0))
+                .py(px(SPACING_8))
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(Form::horizontal().small().label_width(px(72.0)).child(
+                    new_download_form_field(
+                        "download-new-url-field",
+                        "下载地址",
+                        new_download_url_control(&self.url, false),
+                    ),
+                ))
+                .child(
+                    div()
+                        .debug_selector(|| "download-new-confirmed-form".into())
+                        .flex()
+                        .items_start()
+                        .gap_2()
+                        .child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .flex()
+                                .flex_col()
+                                .gap_2()
+                                .child(
+                                    Form::horizontal().small().label_width(px(72.0)).child(
+                                        new_download_form_field(
+                                            "download-new-directory-field",
+                                            "保存目录",
+                                            path_picker_shell(
+                                                "download-new-directory-control",
+                                                div()
+                                                    .debug_selector(|| {
+                                                        "download-new-directory-input".into()
+                                                    })
+                                                    .child(
+                                                        Input::new(&self.directory)
+                                                            .aria_label("保存目录"),
+                                                    )
+                                                    .into_any_element(),
+                                                div()
+                                                    .debug_selector(|| {
+                                                        "download-new-directory-picker".into()
+                                                    })
+                                                    .child(
+                                                        Button::new("download-pick-directory")
+                                                            .icon(Icon::new(MaterialIcon::Folder))
+                                                            .outline()
+                                                            .tooltip("选择下载目录")
+                                                            .accessibility_label("选择下载目录")
+                                                            .on_click(cx.listener(
+                                                                |this, _, window, cx| {
+                                                                    this.request_directory(
+                                                                        window, cx,
+                                                                    );
+                                                                },
+                                                            )),
+                                                    )
+                                                    .into_any_element(),
+                                            ),
+                                        ),
+                                    ),
+                                )
+                                .child(
+                                    Form::new()
+                                        .small()
+                                        .columns(2)
+                                        .child(new_download_form_field(
+                                            "download-new-file-name-field",
+                                            "文件名",
+                                            div()
+                                                .debug_selector(|| {
+                                                    "download-new-file-name-control".into()
+                                                })
+                                                .child(
+                                                    Input::new(&self.file_name)
+                                                        .aria_label("文件名"),
+                                                )
+                                                .into_any_element(),
+                                        ))
+                                        .child(new_download_form_field(
+                                            "download-new-category-field",
+                                            "分类",
+                                            category_control,
+                                        )),
+                                ),
+                        )
+                        .child(new_download_probe_inspector(
+                            theme,
+                            &probe,
+                            is_blob,
+                            size,
+                            self.probe_generation,
+                            crate::ui::motion::motion_allowed(cx),
+                        )),
+                )
+                .when_some(media_options_panel, |body, panel| body.child(panel))
+                .when_some(self.error.clone(), |body, error| {
+                    body.child(download_inline_error(theme, error))
+                })
+                .into_any_element()
+        } else {
+            div()
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
+                .px(px(16.0))
+                .py(px(SPACING_8))
+                .flex()
+                .flex_col()
+                .gap(px(8.0))
+                .child(Form::horizontal().small().label_width(px(72.0)).child(
+                    new_download_form_field(
+                        "download-new-url-field",
+                        "下载地址",
+                        new_download_url_control(&self.url, self.handoff_pending),
+                    ),
+                ))
+                .child(
+                    div()
+                        .debug_selector(|| "download-new-probe-guidance".into())
+                        .h(px(LINE_HEIGHT_BODY))
+                        .min_w_0()
+                        .flex()
+                        .items_center()
+                        .gap(px(SPACING_8))
+                        .child(if self.probing && crate::ui::motion::motion_allowed(cx) {
+                            div()
+                                .debug_selector(|| "download-new-probe-spinner".into())
+                                .flex_none()
+                                .child(Spinner::new().xsmall().color(theme.accent.into()))
+                                .into_any_element()
+                        } else {
+                            Icon::new(if probing {
+                                MaterialIcon::ProgressActivity
+                            } else {
+                                MaterialIcon::Info
+                            })
+                            .size(px(ICON_GLYPH_SMALL))
+                            .text_color(if compact_error {
+                                theme.danger
+                            } else if probing {
+                                theme.accent
+                            } else {
+                                theme.icon_muted
+                            })
+                            .into_any_element()
+                        })
+                        .child(
+                            div()
+                                .min_w_0()
+                                .flex_1()
+                                .truncate()
+                                .text_size(px(TEXT_BODY))
+                                .line_height(px(LINE_HEIGHT_BODY))
+                                .text_color(if compact_error {
+                                    theme.danger
+                                } else {
+                                    theme.text_secondary
+                                })
+                                .child(if compact_error {
+                                    displayed_error.clone().unwrap_or_default()
+                                } else if probing {
+                                    "正在读取远端文件名、大小与续传能力…".into()
+                                } else {
+                                    "输入 HTTP/HTTPS 链接，继续后自动获取文件信息".into()
+                                }),
+                        ),
+                )
+                .when_some(
+                    displayed_error.clone().filter(|_| !compact_error),
+                    |body, error| body.child(download_inline_error(theme, error)),
+                )
+                .into_any_element()
+        };
+        div()
+            .id("download-new-root")
+            .debug_selector(|| "download-new-root".into())
+            .capture_key_down(cx.listener(Self::default_enter_key_down))
+            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {
+                if event.keystroke.key.eq_ignore_ascii_case("enter") {
+                    this.default_enter_held = false;
+                }
+            }))
+            .size_full()
+            .bg(theme.canvas)
+            .text_color(theme.text)
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .debug_selector(|| "download-new-titlebar".into())
+                    .h(px(34.0))
+                    .pl(px(SPACING_16))
+                    .border_b_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .window_control_area(WindowControlArea::Drag)
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_1()
+                            .flex()
+                            .items_center()
+                            .gap(px(SPACING_8))
+                            .text_size(px(TEXT_TITLE))
+                            .line_height(px(LINE_HEIGHT_TITLE))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(
+                                Icon::new(MaterialIcon::Download)
+                                    .size(px(15.0))
+                                    .text_color(theme.accent),
+                            )
+                            .child("新建下载"),
+                    )
+                    .child(download_window_close_button(theme)),
+            )
+            .child(body)
+            .child(
+                div()
+                    .id("download-new-footer")
+                    .debug_selector(|| "download-new-footer".into())
+                    .h(px(44.0))
+                    .px(px(16.0))
+                    .border_t_1()
+                    .border_color(theme.border_subtle)
+                    .bg(theme.surface)
+                    .flex()
+                    .items_center()
+                    .child(footer_leading_actions)
+                    .child(div().flex_1())
+                    .when_some(footer_submission_actions, |footer, actions| {
+                        footer.child(actions).child(div().w(px(SPACING_8)))
+                    })
+                    .child(
+                        div()
+                            .debug_selector(|| "download-new-cancel-action".into())
+                            .child(new_download_footer_action(
+                                NewDownloadFooterAction::Cancel,
+                                theme,
+                                cx,
+                                "取消",
+                                submitting,
+                                |_, window, _| window.remove_window(),
+                            )),
+                    ),
+            )
+            .into_any_element()
+    }
+}
+
+// Released Popover has 12px padding + 1px border per edge, and ListItem
+// owns 12px horizontal padding. Bound the public child slot, not its internals.
+const CATEGORY_POPOVER_WIDTH: f32 = 320.0;
+const CATEGORY_ROW_CONTENT_WIDTH: f32 = CATEGORY_POPOVER_WIDTH - 24.0 - 24.0;
+const CATEGORY_ROW_HEIGHT: f32 = LINE_HEIGHT_BODY + LINE_HEIGHT_LABEL;
+
+pub(crate) const NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH: f32 = 120.0;
+pub(crate) const NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT: f32 = 112.0;
+
+pub(crate) fn new_download_probe_inspector(
+    theme: Theme,
+    probe: &DownloadProbe,
+    is_blob: bool,
+    size_label: String,
+    generation: u64,
+    motion_allowed: bool,
+) -> AnyElement {
+    let status = if is_blob {
+        "Blob 已接收"
+    } else if probe.media.is_some() {
+        match probe.media.as_ref() {
+            Some(nxtools_download::DownloadMediaProbe::Dash(_)) => "DASH 已解析",
+            _ => "HLS 已解析",
+        }
+    } else {
+        "链接可用"
+    };
+    let capability = if is_blob {
+        probe
+            .content_type
+            .clone()
+            .unwrap_or_else(|| "类型未知".into())
+    } else if let Some(nxtools_download::DownloadMediaProbe::Hls(hls)) = probe.media.as_ref() {
+        if hls.is_master {
+            "请选择清晰度".into()
+        } else {
+            "媒体播放列表".into()
+        }
+    } else if matches!(
+        probe.media.as_ref(),
+        Some(nxtools_download::DownloadMediaProbe::Dash(_))
+    ) {
+        "请选择视频与音频轨".into()
+    } else if probe.supports_ranges {
+        "支持断点续传".into()
+    } else {
+        "单连接传输".into()
+    };
+
+    let inspector = div()
+        .debug_selector(|| "download-new-probe-inspector".into())
+        .w(px(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))
+        .h(px(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))
+        .flex_none()
+        .min_w_0()
+        .overflow_hidden()
+        .pl(px(SPACING_12))
+        .border_l_1()
+        .border_color(theme.border_subtle)
+        .flex()
+        .flex_col()
+        .justify_center()
+        .gap(px(SPACING_4))
+        .child(
+            div()
+                .debug_selector(|| "download-new-probe-status".into())
+                .w_full()
+                .h(px(LINE_HEIGHT_BODY))
+                .min_w_0()
+                .flex()
+                .items_center()
+                .gap(px(SPACING_8))
+                .child(
+                    Icon::new(MaterialIcon::Check)
+                        .size(px(14.0))
+                        .text_color(theme.success),
+                )
+                .child(
+                    div()
+                        .min_w_0()
+                        .flex_1()
+                        .truncate()
+                        .text_size(px(TEXT_BODY))
+                        .line_height(px(LINE_HEIGHT_BODY))
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(theme.success)
+                        .child(status),
+                ),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-new-probe-size".into())
+                .w_full()
+                .h(px(LINE_HEIGHT_BODY))
+                .truncate()
+                .text_size(px(TEXT_BODY))
+                .line_height(px(LINE_HEIGHT_BODY))
+                .font_weight(FontWeight::MEDIUM)
+                .child(size_label),
+        )
+        .child(
+            div()
+                .debug_selector(|| "download-new-probe-capability".into())
+                .w_full()
+                .h(px(LINE_HEIGHT_BODY))
+                .truncate()
+                .text_size(px(TEXT_BODY))
+                .line_height(px(LINE_HEIGHT_BODY))
+                .text_color(if is_blob || probe.supports_ranges {
+                    theme.success
+                } else {
+                    theme.text_muted
+                })
+                .child(capability),
+        );
+    let inspector = if let Some(resolution) = probe.resolution.as_ref() {
+        let original = resolution.provenance.original_request.source_url.clone();
+        let effective = resolution.effective_request.source_url.clone();
+        let stages = resolution
+            .provenance
+            .stages
+            .iter()
+            .map(|stage| format!("{} / {}", stage.package_id, stage.handler_id))
+            .collect::<Vec<_>>()
+            .join(" → ");
+        inspector.child(
+            Popover::new(("download-resolution-details", generation))
+                .trigger(
+                    Button::new("download-resolution-details-button")
+                        .label(if resolution.provenance.bypassed {
+                            "已跳过扩展"
+                        } else {
+                            "解析来源…"
+                        })
+                        .small()
+                        .ghost(),
+                )
+                .content(move |_, _, _| {
+                    div()
+                        .id("download-resolution-details-content")
+                        .w(px(320.0))
+                        .max_h(px(180.0))
+                        .overflow_y_scroll()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(format!("原始：{original}"))
+                        .child(format!("有效：{effective}"))
+                        .child(format!("处理器：{stages}"))
+                }),
+        )
+    } else {
+        inspector
+    };
+    if motion_allowed {
+        inspector
+            .with_animation(
+                ("download-new-probe-inspector", generation),
+                Animation::new(crate::ui::motion::ENTER_DURATION).with_easing(ease_out_quint()),
+                |surface, delta| surface.opacity(0.94 + 0.06 * delta),
+            )
+            .into_any_element()
+    } else {
+        inspector.into_any_element()
+    }
+}
+
+pub(crate) fn hls_quality_options(
+    theme: Theme,
+    variants: &[nxtools_download::HlsVariantProbe],
+    selected: usize,
+    view: gpui_kit::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let rows = variants.iter().enumerate().map(|(index, variant)| {
+        new_download_media_radio(
+            format!("download-hls-quality-{index}"),
+            hls_variant_primary_label(variant),
+            hls_variant_detail_label(variant),
+        )
+    });
+    div()
+        .debug_selector(|| "download-hls-quality-options".into())
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(SPACING_4))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_muted)
+                        .child("HLS 清晰度"),
+                )
+                .child(
+                    div()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_muted)
+                        .child("支持未加密点播分片传输"),
+                ),
+        )
+        .child(
+            div()
+                .max_h(px(SETTINGS_ROW_MIN_HEIGHT * 3.0))
+                .overflow_y_scrollbar()
+                .flex()
+                .flex_col()
+                .child(
+                    RadioGroup::new("download-hls-quality-group")
+                        .selected_index(Some(selected))
+                        .children(rows)
+                        .on_change(move |index, _, cx| {
+                            let index = *index;
+                            let view = view.clone();
+                            cx.defer(move |cx| {
+                                let _ = view.update(cx, |view, cx| {
+                                    view.selected_hls_variant = Some(index);
+                                    view.error = None;
+                                    cx.notify();
+                                });
+                            });
+                        }),
+                ),
+        )
+        .into_any_element()
+}
+
+pub(crate) fn hls_variant_detail_label(variant: &nxtools_download::HlsVariantProbe) -> String {
+    let bandwidth = variant.average_bandwidth.unwrap_or(variant.bandwidth);
+    let codec = if variant.codecs.is_empty() {
+        "编码未知"
+    } else {
+        variant.codecs.as_str()
+    };
+    let mut detail = format!("{codec} · {:.2} Mbps", bandwidth as f64 / 1_000_000.0);
+    if let Some(frame_rate_milli) = variant.frame_rate_milli {
+        detail.push_str(&format!(" · {:.2} fps", frame_rate_milli as f64 / 1000.0));
+    }
+    detail
+}
+
+pub(crate) fn hls_variant_primary_label(variant: &nxtools_download::HlsVariantProbe) -> String {
+    if let Some((width, height)) = variant.resolution {
+        return format!("{width}×{height}");
+    }
+
+    let codecs = variant.codecs.to_ascii_lowercase();
+    if ["avc1", "avc3", "hev1", "hvc1", "vp09", "av01"]
+        .iter()
+        .any(|codec| codecs.contains(codec))
+    {
+        "视频流".into()
+    } else if ["mp4a", "ac-3", "ec-3", "opus"]
+        .iter()
+        .any(|codec| codecs.contains(codec))
+    {
+        "音频流".into()
+    } else {
+        "未标注分辨率".into()
+    }
+}
+
+pub(crate) fn dash_track_options(
+    theme: Theme,
+    dash: &nxtools_download::DashProbe,
+    selected_video: Option<usize>,
+    selected_audio: Option<usize>,
+    view: gpui_kit::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let video_rows = dash.video_tracks.iter().enumerate().map(|(index, track)| {
+        dash_track_option_row(
+            theme,
+            DashTrackKind::Video,
+            index,
+            track,
+            selected_video == Some(index),
+            view.clone(),
+        )
+    });
+    let audio_rows = dash.audio_tracks.iter().enumerate().map(|(index, track)| {
+        dash_track_option_row(
+            theme,
+            DashTrackKind::Audio,
+            index,
+            track,
+            selected_audio == Some(index),
+            view.clone(),
+        )
+    });
+    let column = |label: &'static str, rows: Vec<Radio>, selected: Option<usize>| {
+        div()
+            .min_w_0()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .gap(px(SPACING_4))
+            .child(
+                div()
+                    .text_size(px(TEXT_LABEL))
+                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_color(theme.text_muted)
+                    .child(label),
+            )
+            .child(
+                div()
+                    .max_h(px(SETTINGS_ROW_MIN_HEIGHT * 3.0))
+                    .overflow_y_scrollbar()
+                    .flex()
+                    .flex_col()
+                    .child(
+                        RadioGroup::new(label)
+                            .selected_index(selected)
+                            .children(rows),
+                    ),
+            )
+    };
+    div()
+        .debug_selector(|| "download-dash-track-options".into())
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(SPACING_4))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_muted)
+                        .child("DASH 轨道"),
+                )
+                .child(
+                    div()
+                        .text_size(px(TEXT_LABEL))
+                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_color(theme.text_muted)
+                        .child("音频可再次点击取消 · 双轨用 FFmpeg 无损封装"),
+                ),
+        )
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .gap(px(8.0))
+                .child(column("视频", video_rows.collect(), selected_video))
+                .child(column("音频", audio_rows.collect(), selected_audio)),
+        )
+        .into_any_element()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum DashTrackKind {
+    Video,
+    Audio,
+}
+
+impl DashTrackKind {
+    pub(crate) fn selector_segment(self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::Audio => "audio",
+        }
+    }
+
+    pub(crate) fn primary_label(self, track: &nxtools_download::DashTrackProbe) -> String {
+        match self {
+            Self::Video => track.resolution.map_or_else(
+                || "视频轨".into(),
+                |(width, height)| format!("{width}×{height}"),
+            ),
+            Self::Audio => track.language.clone().unwrap_or_else(|| "默认音轨".into()),
+        }
+    }
+
+    pub(crate) fn select(self, view: &mut NewDownloadView, index: usize) {
+        match self {
+            Self::Video => view.selected_dash_video_track = Some(index),
+            Self::Audio => {
+                view.selected_dash_audio_track =
+                    (view.selected_dash_audio_track != Some(index)).then_some(index);
+            }
+        }
+    }
+}
+
+pub(crate) fn dash_track_option_row(
+    _theme: Theme,
+    kind: DashTrackKind,
+    index: usize,
+    track: &nxtools_download::DashTrackProbe,
+    _selected: bool,
+    view: gpui_kit::WeakEntity<NewDownloadView>,
+) -> Radio {
+    let label = kind.primary_label(track);
+    let detail = if track.codecs.is_empty() {
+        format!("{:.2} Mbps", track.bandwidth as f64 / 1_000_000.0)
+    } else {
+        format!(
+            "{} · {:.2} Mbps",
+            track.codecs,
+            track.bandwidth as f64 / 1_000_000.0
+        )
+    };
+    let radio = new_download_media_radio(
+        format!("download-dash-{}-track-{index}", kind.selector_segment()),
+        label,
+        detail,
+    );
+    gpui_kit::StatefulInteractiveElement::on_click(radio, move |_, _, cx| {
+        let view = view.clone();
+        cx.defer(move |cx| {
+            let _ = view.update(cx, |view, cx| {
+                kind.select(view, index);
+                view.error = None;
+                cx.notify();
+            });
+        });
+    })
+}
+
+pub(crate) fn delayed_start_calendar(
+    theme: Theme,
+    month: NaiveDate,
+    selected_date: NaiveDate,
+    today: NaiveDate,
+    view: gpui_kit::WeakEntity<NewDownloadView>,
+) -> AnyElement {
+    let previous_view = view.clone();
+    let next_view = view.clone();
+    let weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+    let days = delayed_start_calendar_days(month);
+    div()
+        .w_full()
+        .flex()
+        .flex_col()
+        .gap(px(0.0))
+        .child(
+            div()
+                .h(px(28.0))
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .debug_selector(|| "download-new-schedule-previous-month-action".into())
+                        .child(
+                            icon_action(
+                                "download-new-schedule-previous-month",
+                                MaterialIcon::ChevronLeft,
+                                "上个月",
+                            )
+                            .ghost()
+                            .on_click(move |_, window, cx| {
+                                let previous_view = previous_view.clone();
+                                window.defer(cx, move |_, cx| {
+                                    let _ = previous_view.update(cx, |view, cx| {
+                                        view.scheduled_month =
+                                            shift_calendar_month(view.scheduled_month, -1);
+                                        cx.notify();
+                                    });
+                                });
+                            }),
+                        ),
+                )
+                .child(
+                    div()
+                        .debug_selector(|| "download-new-schedule-month-title".into())
+                        .flex_1()
+                        .text_center()
+                        .text_size(px(TEXT_BODY))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(theme.text)
+                        .child(delayed_start_calendar_title(month)),
+                )
+                .child(
+                    div()
+                        .debug_selector(|| "download-new-schedule-next-month-action".into())
+                        .child(
+                            icon_action(
+                                "download-new-schedule-next-month",
+                                MaterialIcon::ChevronRight,
+                                "下个月",
+                            )
+                            .ghost()
+                            .on_click(move |_, window, cx| {
+                                let next_view = next_view.clone();
+                                window.defer(cx, move |_, cx| {
+                                    let _ = next_view.update(cx, |view, cx| {
+                                        view.scheduled_month =
+                                            shift_calendar_month(view.scheduled_month, 1);
+                                        cx.notify();
+                                    });
+                                });
+                            }),
+                        ),
+                ),
+        )
+        .child(
+            div()
+                .h(px(14.0))
+                .flex()
+                .children(weekdays.into_iter().map(|weekday| {
+                    div()
+                        .w(px(40.0))
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(TEXT_META))
+                        .text_color(theme.text_muted)
+                        .child(weekday)
+                })),
+        )
+        .children((0..6).map(|row| {
+            div()
+                .h(px(19.0))
+                .flex()
+                .children(days[row * 7..row * 7 + 7].iter().copied().map(|date| {
+                    let disabled = date < today;
+                    let selected = date == selected_date;
+                    let current_month = date.month() == month.month();
+                    let is_today = date == today;
+                    let day_view = view.clone();
+                    Button::new(("download-new-schedule-day", date.num_days_from_ce() as u64))
+                        .ghost()
+                        .small()
+                        .compact()
+                        .when(date == selected_date + ChronoDuration::days(1), |cell| {
+                            cell.debug_selector(|| "download-new-schedule-next-day".into())
+                        })
+                        .when(date == today - ChronoDuration::days(1), |cell| {
+                            cell.debug_selector(|| "download-new-schedule-past-day".into())
+                        })
+                        .when(date == today, |cell| {
+                            cell.debug_selector(|| "download-new-schedule-today".into())
+                        })
+                        .when(disabled, |cell| cell.opacity(0.32))
+                        .w(px(40.0))
+                        .h(px(19.0))
+                        .px(px(0.0))
+                        .rounded(px(RADIUS_CONTROL))
+                        .text_size(px(TEXT_LABEL))
+                        .text_color(if selected {
+                            theme.accent_text
+                        } else if current_month {
+                            theme.text_secondary
+                        } else {
+                            theme.text_muted
+                        })
+                        .when(is_today && !selected, |cell| {
+                            cell.border_1().border_color(theme.border_active)
+                        })
+                        .when(selected, |cell| cell.bg(theme.accent_soft))
+                        .disabled(disabled)
+                        .label(date.day().to_string())
+                        .on_click(move |_, window, cx| {
+                            let day_view = day_view.clone();
+                            window.defer(cx, move |_, cx| {
+                                let _ = day_view.update(cx, |view, cx| {
+                                    view.scheduled_date = date;
+                                    view.scheduled_month = calendar_month_start(date);
+                                    cx.notify();
+                                });
+                            });
+                        })
+                }))
+        }))
+        .into_any_element()
+}
+
+pub(crate) fn download_inline_error(theme: Theme, error: String) -> AnyElement {
+    inline_error(theme, "download-inline-error", error)
+}
+
+pub(crate) fn format_download_size(bytes: u64) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = KIB * 1024.0;
+    const GIB: f64 = MIB * 1024.0;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.2} GB", bytes / GIB)
+    } else if bytes >= MIB {
+        format!("{:.1} MB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.1} KB", bytes / KIB)
+    } else {
+        format!("{bytes:.0} B")
+    }
+}
+
+pub(crate) fn ffmpeg_install_phase_label(phase: FfmpegInstallPhase) -> &'static str {
+    match phase {
+        FfmpegInstallPhase::Connecting => "正在连接官方来源",
+        FfmpegInstallPhase::Downloading => "正在下载",
+        FfmpegInstallPhase::Verifying => "正在校验 SHA-256",
+        FfmpegInstallPhase::Extracting => "正在安全解压",
+        FfmpegInstallPhase::Validating => "正在验证 FFmpeg",
+        FfmpegInstallPhase::Publishing => "正在配置",
+    }
+}
+
+/// Ordinary confirmation is content-sized: native caption/footer, body insets,
+/// URL row, gap, and the measured inspector/form row. Media retains its own
+/// previously verified reserve rather than inheriting an arbitrary shrink.
+pub(crate) const NEW_DOWNLOAD_CONFIRMED_HEIGHT: f32 = 34.0
+    + 44.0
+    + SPACING_8 * 2.0
+    + CONTROL_HEIGHT_INPUT
+    + SPACING_8
+    + NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT;
+const NEW_DOWNLOAD_MEDIA_BASE_HEIGHT: f32 = 278.0;
+
+pub(crate) fn new_download_window_size(confirmed: bool) -> gpui_kit::Size<gpui_kit::Pixels> {
+    if confirmed {
+        size(px(560.0), px(NEW_DOWNLOAD_CONFIRMED_HEIGHT))
+    } else {
+        size(px(560.0), px(176.0))
+    }
+}
+
+/// Whether the confirmed form must still be withheld because GPUI's live
+/// viewport (which only follows real `WM_SIZE` messages) is shorter than the
+/// height the confirmed layout needs. While a user drags the window the Win32
+/// move loop rewrites the compact size on every mouse move, so this is derived
+/// from the live viewport on each render instead of being a one-way flag.
+pub(crate) fn confirmed_window_pending(
+    target_height: Option<gpui_kit::Pixels>,
+    _gate_expired: bool,
+    viewport_height: gpui_kit::Pixels,
+) -> bool {
+    match target_height {
+        Some(target) => viewport_height.as_f32() + 1.5 < target.as_f32(),
+        _ => false,
+    }
+}
+
+/// Height reserved for one bounded inline error row (two Chinese lines plus
+/// padding and the form gap) so the footer buttons never get squeezed off the
+/// fixed-height dialog when an error appears.
+pub(crate) const NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT: gpui_kit::Pixels = px(38.0);
+
+/// Window size while one bounded inline error row is visible. The reserve
+/// must stack onto the layout that is actually rendered: the confirmed
+/// (probe result) form is one full field row taller than the compact one,
+/// so reusing the compact error height for a confirmed dialog pushed the
+/// file-name/category row and the footer out of the fixed window.
+pub(crate) fn new_download_error_window_size(confirmed: bool) -> gpui_kit::Size<gpui_kit::Pixels> {
+    size(
+        px(560.0),
+        new_download_window_size(confirmed).height + NEW_DOWNLOAD_ERROR_RESERVE_HEIGHT,
+    )
+}
+
+pub(crate) fn new_download_window_size_for_probe(
+    probe: &DownloadProbe,
+) -> gpui_kit::Size<gpui_kit::Pixels> {
+    match probe.media.as_ref() {
+        Some(nxtools_download::DownloadMediaProbe::Hls(hls)) if hls.is_master => {
+            let rows_height = bounded_media_rows_height(
+                hls.variants.len(),
+                SETTINGS_ROW_MIN_HEIGHT,
+                0.0,
+                SETTINGS_ROW_MIN_HEIGHT * 3.0,
+            );
+            size(
+                px(560.0),
+                px(NEW_DOWNLOAD_MEDIA_BASE_HEIGHT + 16.0 + SPACING_4 + rows_height),
+            )
+        }
+        Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
+            let row_count = dash.video_tracks.len().max(dash.audio_tracks.len());
+            let rows_height = bounded_media_rows_height(
+                row_count,
+                SETTINGS_ROW_MIN_HEIGHT,
+                0.0,
+                SETTINGS_ROW_MIN_HEIGHT * 3.0,
+            );
+            size(
+                px(560.0),
+                px(NEW_DOWNLOAD_MEDIA_BASE_HEIGHT + 16.0 + SPACING_4 + 15.0 + rows_height),
+            )
+        }
+        _ => new_download_window_size(true),
+    }
+}
+
+pub(crate) fn bounded_media_rows_height(
+    row_count: usize,
+    row_height: f32,
+    row_gap: f32,
+    maximum_height: f32,
+) -> f32 {
+    if row_count == 0 {
+        return 0.0;
+    }
+    (row_count as f32 * row_height + row_count.saturating_sub(1) as f32 * row_gap)
+        .min(maximum_height)
+}
+
+pub(crate) fn selected_download_request_media(
+    probe: Option<&DownloadProbe>,
+    selected_hls_variant: Option<usize>,
+    selected_dash_video_track: Option<usize>,
+    selected_dash_audio_track: Option<usize>,
+) -> Result<Option<nxtools_download::DownloadRequestMedia>, String> {
+    match probe.and_then(|probe| probe.media.as_ref()) {
+        Some(nxtools_download::DownloadMediaProbe::Hls(hls)) => {
+            let playlist_url = if hls.is_master {
+                hls.variants
+                    .get(selected_hls_variant.ok_or("请选择 HLS 清晰度")?)
+                    .map(|variant| variant.playlist_url.clone())
+                    .ok_or("所选 HLS 清晰度已失效，请重新探测")?
+            } else {
+                probe
+                    .map(|probe| probe.final_url.clone())
+                    .ok_or("HLS 探测结果已失效，请重新探测")?
+            };
+            Ok(Some(nxtools_download::DownloadRequestMedia::Hls(
+                nxtools_download::HlsDownloadRequest { playlist_url },
+            )))
+        }
+        Some(nxtools_download::DownloadMediaProbe::Dash(dash)) => {
+            let video_representation_id = selected_dash_video_track
+                .map(|index| {
+                    dash.video_tracks
+                        .get(index)
+                        .map(|track| track.representation_id.clone())
+                        .ok_or("所选 DASH 视频轨已失效，请重新探测")
+                })
+                .transpose()?;
+            let audio_representation_id = selected_dash_audio_track
+                .map(|index| {
+                    dash.audio_tracks
+                        .get(index)
+                        .map(|track| track.representation_id.clone())
+                        .ok_or("所选 DASH 音频轨已失效，请重新探测")
+                })
+                .transpose()?;
+            if video_representation_id.is_none() && audio_representation_id.is_none() {
+                return Err("DASH 至少需要选择一条视频轨或音频轨".into());
+            }
+            Ok(Some(nxtools_download::DownloadRequestMedia::Dash(
+                nxtools_download::DashDownloadRequest {
+                    manifest_url: probe
+                        .map(|probe| probe.final_url.clone())
+                        .ok_or("DASH 探测结果已失效，请重新探测")?,
+                    video_representation_id,
+                    audio_representation_id,
+                },
+            )))
+        }
+        None => Ok(None),
+    }
+}
+
+/// Existing confirmation only: metadata replaces automatic suggestions, not custom names.
+fn should_replace_suggested_file_name(request: &DownloadRequest, probe: &DownloadProbe) -> bool {
+    fn real_extension(name: &str) -> bool {
+        Path::new(name)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|token| {
+                (1..=8).contains(&token.len())
+                    && token.bytes().all(|byte| byte.is_ascii_alphanumeric())
+                    && token.bytes().any(|byte| byte.is_ascii_alphabetic())
+            })
+    }
+    fn url_name(url: &str) -> Option<String> {
+        let url = reqwest::Url::parse(url).ok()?;
+        let name = url.path_segments()?.next_back()?;
+        let mut bytes = Vec::with_capacity(name.len());
+        let mut input = name.bytes();
+        while let Some(byte) = input.next() {
+            if byte == b'%' {
+                let high = char::from(input.next()?).to_digit(16)?;
+                let low = char::from(input.next()?).to_digit(16)?;
+                bytes.push((high * 16 + low) as u8);
+            } else {
+                bytes.push(byte);
+            }
+        }
+        String::from_utf8(bytes).ok()
+    }
+    let Some(requested) = request.file_name.as_deref() else {
+        return false;
+    };
+    let Some(probed) = resolved_probe_file_name(probe) else {
+        return false;
+    };
+    let stem = Path::new(&probed)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default();
+    if !real_extension(&probed)
+        || [
+            "download", "resource", "video", "audio", "media", "file", "x64", "x86",
+        ]
+        .iter()
+        .any(|generic| stem.eq_ignore_ascii_case(generic))
+    {
+        return false;
+    }
+    !real_extension(requested)
+        || url_name(&request.source_url).is_some_and(|name| requested.eq_ignore_ascii_case(&name))
+}
+
+pub(crate) fn resolved_probe_file_name(probe: &DownloadProbe) -> Option<String> {
+    let file_name = probe.file_name.as_deref()?;
+    if probe.media.is_none() {
+        return Some(file_name.to_owned());
+    }
+    let stem = Path::new(file_name).file_stem()?.to_string_lossy();
+    (!stem.is_empty()).then(|| match probe.media {
+        Some(nxtools_download::DownloadMediaProbe::Hls(_)) => format!("{stem}.ts"),
+        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => format!("{stem}.mp4"),
+        None => file_name.to_owned(),
+    })
+}
+
+pub(crate) fn should_replace_media_manifest_name(
+    current_file_name: Option<&str>,
+    probe: &DownloadProbe,
+) -> bool {
+    let expected_extension = match probe.media.as_ref() {
+        Some(nxtools_download::DownloadMediaProbe::Hls(_)) => "m3u8",
+        Some(nxtools_download::DownloadMediaProbe::Dash(_)) => "mpd",
+        None => return false,
+    };
+    probe.media.is_some()
+        && current_file_name == probe.file_name.as_deref()
+        && current_file_name.is_some_and(|file_name| {
+            Path::new(file_name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case(expected_extension))
+        })
+}
+
+pub(crate) fn initial_new_download_window_size(
+    initial_source: Option<&NewDownloadInitialSource>,
+) -> gpui_kit::Size<gpui_kit::Pixels> {
+    new_download_window_size(matches!(
+        initial_source,
+        Some(NewDownloadInitialSource::Blob(_))
+    ))
+}
+
+pub(crate) fn new_download_window_options(window_bounds: WindowBounds) -> WindowOptions {
+    WindowOptions {
+        window_bounds: Some(window_bounds),
+        titlebar: None,
+        focus: true,
+        show: true,
+        kind: WindowKind::Normal,
+        is_movable: true,
+        is_resizable: false,
+        is_minimizable: false,
+        display_id: None,
+        window_background: WindowBackgroundAppearance::Opaque,
+        app_id: Some("NxTools.NewDownload".into()),
+        window_min_size: Some(new_download_window_size(false)),
+        window_decorations: Some(WindowDecorations::Client),
+        tabbing_identifier: None,
+        ..Default::default()
+    }
+}
+
+fn new_download_form_field(
+    selector: &'static str,
+    label: &'static str,
+    control: AnyElement,
+) -> Field {
+    Field::new()
+        .min_w_0()
+        .gap_0()
+        .label_fn(move |_, _| {
+            div()
+                .debug_selector(move || format!("{selector}-label"))
+                .child(label)
+        })
+        .child(
+            div()
+                .debug_selector(move || selector.into())
+                .min_w_0()
+                .child(control),
+        )
+}
+
+fn new_download_url_control(input: &Entity<InputState>, disabled: bool) -> AnyElement {
+    let url = input.clone();
+    path_picker_shell(
+        "download-new-url-control",
+        div()
+            .debug_selector(|| "download-new-url-field-input".into())
+            .child(Input::new(input).aria_label("下载地址").disabled(disabled))
+            .into_any_element(),
+        div()
+            .debug_selector(|| "download-new-url-paste".into())
+            .child(
+                Button::new("download-paste-url")
+                    .icon(Icon::new(MaterialIcon::ContentPaste))
+                    .outline()
+                    .disabled(disabled)
+                    .tooltip("粘贴下载地址")
+                    .accessibility_label("粘贴下载地址")
+                    .on_click(move |_, window, cx| {
+                        let text = cx
+                            .read_from_clipboard()
+                            .and_then(|item| item.text())
+                            .unwrap_or_default();
+                        let text = text.trim().to_owned();
+                        if !text.is_empty() {
+                            url.update(cx, |state, cx| state.replace_all(text, window, cx));
+                        }
+                    }),
+            )
+            .into_any_element(),
+    )
+}
+
+fn new_download_media_radio(selector: String, title: String, detail: String) -> Radio {
+    let title_selector = format!("{selector}-title");
+    let detail_selector = format!("{selector}-detail");
+    Radio::new(gpui_kit::SharedString::from(selector.clone()))
+        .small()
+        .debug_selector(move || selector.clone())
+        .w_full()
+        .h(px(SETTINGS_ROW_MIN_HEIGHT))
+        .accessibility_label(format!("{title} · {detail}"))
+        .child(
+            div()
+                .debug_selector(move || title_selector.clone())
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .child(title),
+        )
+        .child(
+            div()
+                .debug_selector(move || detail_selector.clone())
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_xs()
+                .child(detail),
+        )
+}
+
+#[cfg(test)]
+#[path = "new_download_keyboard_tests.rs"]
+mod keyboard_tests;

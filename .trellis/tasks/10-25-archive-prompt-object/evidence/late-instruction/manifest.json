@@ -1,0 +1,49 @@
+{
+  "status": "read-only addendum; no new runtime checks; not accepted",
+  "original_manifest_sha256": "bea18e4b467792ba69e46cb825d96b405a63e684634c1638e92ea64d27371924",
+  "addendum_sha256": "2484b5d59e4df5a515975dba6ce5e6e90b3e01acf000f6e9c0b32a8bd0755e79",
+  "commands_preserved": {
+    "focused": "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+    "protocol_full": "cargo test -p nxtools-protocol --lib",
+    "environment": "CARGO_BUILD_JOBS=1 CARGO_INCREMENTAL=0 RUSTFLAGS=-C codegen-units=256"
+  },
+  "keyboard": "UNRESOLVED / NOT ACCEPTED; expected1 actual0 after focused=true assertion; original test remains enabled",
+  "protocol": "historical79/80; exact failing loop input absent from original log; current source changed; no rerun/no causal claim",
+  "evidence": [
+    {
+      "file": "create-keyboard-unresolved-probe.rs.txt",
+      "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c",
+      "bytes": 2834
+    },
+    {
+      "file": "focused-ui-original-failure.log",
+      "sha256": "1b56de7e35056abccce40776b4a5c4d6035b8f49402ee68b00745db460a02ea5",
+      "bytes": 5316
+    },
+    {
+      "file": "footer-compare.json",
+      "sha256": "c34a22c3815c273df14a7b9a40c870ee6cb15b5a803a533ab6fd58b304ab0bd8",
+      "bytes": 4357
+    },
+    {
+      "file": "job_tests.current-readonly.rs.txt",
+      "sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+      "bytes": 48182
+    },
+    {
+      "file": "protocol-full-original-failure.log",
+      "sha256": "d92fe0f012802cd3efe2e5f5bf97edeba342ad35f8dda8bc8acd33dd2b6f95c1",
+      "bytes": 16464
+    },
+    {
+      "file": "protocol-lib.current-readonly.rs.txt",
+      "sha256": "b19d21a17d720365839374ed51394be717b395d549ea04fc5263f128c24a6384",
+      "bytes": 85784
+    },
+    {
+      "file": "readonly-hashes.json",
+      "sha256": "f8a9691c3bbebcaa3f9480480d0e101f2c97a56ac265abcb473e0f945555d552",
+      "bytes": 858
+    }
+  ]
+}

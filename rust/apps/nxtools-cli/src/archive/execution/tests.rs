@@ -1,0 +1,236 @@
+use super::*;
+use nxtools_protocol::{Message, PlatformCommand, PlatformCommandResult};
+
+fn command(create: bool) -> ArchiveCommand {
+    ArchiveCommand {
+        action: ArchiveAction::Extract,
+        source: "C:\\owned\\tiny.zip".into(),
+        destination: Some("C:\\owned\\output".into()),
+        conflict: ArchiveJobConflict::Ask,
+        create_destination: create,
+        codepage: 0,
+        json: true,
+    }
+}
+fn event(request: &ArchiveJobCommand, kind: ArchiveJobEventKind) -> ArchiveJobEvent {
+    ArchiveJobEvent {
+        version: 1,
+        operation_id: request.operation_id,
+        session_id: request.session_id,
+        generation: 1,
+        kind,
+        state: None,
+        progress: None,
+        prompt: None,
+        terminal: None,
+    }
+}
+fn terminal(request: &ArchiveJobCommand, cleanup: bool, code: Option<&str>) -> ArchiveJobEvent {
+    ArchiveJobEvent {
+        terminal: Some(ArchiveJobTerminal {
+            outcome: if code.is_some() {
+                ArchiveJobOutcome::Cancelled
+            } else {
+                ArchiveJobOutcome::Succeeded
+            },
+            code: code.map(str::to_owned),
+            files_committed: 1,
+            bytes_committed: 5,
+            files_verified: 0,
+            bytes_verified: 0,
+            files_skipped: 0,
+            cleanup_complete: cleanup,
+            commit_state: Some("Committed".into()),
+            elapsed_ms: 12,
+            native_error_code: None,
+            journal: vec![],
+            output_shortfall: None,
+            result_location: None,
+            output_published: None,
+        }),
+        ..event(request, ArchiveJobEventKind::Terminal)
+    }
+}
+fn runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("test runtime")
+}
+
+#[test]
+fn original_job_route_waits_for_terminal_and_keeps_committed_facts() {
+    runtime().block_on(async {
+        let (bridge, endpoint) = platform_bridge(32);
+        let receiver = endpoint.open_connection_for_contract_test();
+        let bridge = Arc::new(bridge);
+        let notices = bridge.notification_receiver();
+        let running_bridge = bridge.clone();
+        let task = tokio::spawn(async move {
+            run_job(&command(false), Uuid::new_v4(), &running_bridge, &notices).await
+        });
+        let start = receiver.recv().await.expect("actual routed start");
+        let Message::PlatformCommand(PlatformCommand::ArchiveJob(request)) = start.message else {
+            panic!("archive job")
+        };
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::CommandResult {
+                correlation_id: start.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            })
+            .expect("receipt");
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::Event(
+                PlatformEvent::ArchiveJob(Box::new(event(&request, ArchiveJobEventKind::Accepted))),
+            ))
+            .expect("accepted");
+        tokio::task::yield_now().await;
+        assert!(
+            !task.is_finished(),
+            "receipt and accepted cannot complete extraction"
+        );
+        let mut stale = terminal(&request, true, None);
+        stale.session_id = Uuid::new_v4();
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::Event(
+                PlatformEvent::ArchiveJob(Box::new(stale)),
+            ))
+            .expect("stale");
+        tokio::task::yield_now().await;
+        assert!(
+            !task.is_finished(),
+            "stale terminal cannot complete extraction"
+        );
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::Event(
+                PlatformEvent::ArchiveJob(Box::new(terminal(&request, true, None))),
+            ))
+            .expect("actual terminal");
+        let report = task.await.expect("consumer");
+        assert!(report.success);
+        assert_eq!(report.request_id, request.operation_id);
+        assert_eq!(report.result["terminal"]["files_committed"], 1);
+        assert_eq!(report.result["terminal"]["bytes_committed"], 5);
+        assert_eq!(report.result["terminal"]["cleanup_complete"], true);
+    });
+}
+
+#[test]
+fn original_job_prompt_cancels_and_waits_for_actual_cleanup() {
+    runtime().block_on(async {
+        let (bridge, endpoint) = platform_bridge(32);
+        let receiver = endpoint.open_connection_for_contract_test();
+        let notices = bridge.notification_receiver();
+        let task = tokio::spawn(async move {
+            run_job(&command(false), Uuid::new_v4(), &bridge, &notices).await
+        });
+        let start = receiver.recv().await.expect("start");
+        let Message::PlatformCommand(PlatformCommand::ArchiveJob(request)) = start.message else {
+            panic!("archive job")
+        };
+        let prompt = ArchiveJobPrompt {
+            ticket: ArchiveJobTicket {
+                operation_id: request.operation_id,
+                prompt_id: Uuid::new_v4(),
+                generation: 2,
+            },
+            kind: ArchiveJobPromptKind::Conflict,
+            error_code: None,
+            attempt: 0,
+            existing_bytes: Some(5),
+            incoming_bytes: Some(6),
+            approved_limit: None,
+            display: None,
+        };
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::Event(
+                PlatformEvent::ArchiveJob(Box::new(ArchiveJobEvent {
+                    prompt: Some(prompt),
+                    ..event(&request, ArchiveJobEventKind::Prompt)
+                })),
+            ))
+            .expect("prompt");
+        let cancel = tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .expect("reserved cancel")
+            .expect("cancel");
+        let Message::PlatformCommand(PlatformCommand::ArchiveJob(cancel)) = cancel.message else {
+            panic!("cancel")
+        };
+        assert_eq!(cancel.action, ArchiveJobAction::Cancel);
+        assert_eq!(cancel.operation_id, request.operation_id);
+        assert!(!task.is_finished(), "cancel admission is not cleanup");
+        endpoint
+            .send_notification_for_contract_test(PlatformNotification::Event(
+                PlatformEvent::ArchiveJob(Box::new(terminal(&request, true, Some("cancelled")))),
+            ))
+            .expect("cancel terminal");
+        let report = task.await.expect("consumer");
+        assert!(!report.success);
+        assert_eq!(report.error.expect("fixed reason").code, "output_collision");
+        assert_eq!(
+            report.result["terminal"]["files_committed"], 1,
+            "cancellation cannot erase prior commits"
+        );
+        assert_eq!(report.result["terminal"]["cleanup_complete"], true);
+    });
+}
+
+#[test]
+fn cleanup_incomplete_is_never_success_and_destination_permission_is_narrow() {
+    let request = ArchiveJobCommand {
+        version: 1,
+        operation_id: Uuid::new_v4(),
+        session_id: Uuid::new_v4(),
+        generation: 1,
+        action: ArchiveJobAction::Start,
+        request: None,
+        reply: None,
+    };
+    let mut consumer = JobConsumer::new(request.clone(), true);
+    let prompt = |error_code: &str| ArchiveJobEvent {
+        prompt: Some(ArchiveJobPrompt {
+            ticket: ArchiveJobTicket {
+                operation_id: request.operation_id,
+                prompt_id: Uuid::new_v4(),
+                generation: 1,
+            },
+            kind: ArchiveJobPromptKind::Destination,
+            error_code: Some(error_code.into()),
+            attempt: 0,
+            existing_bytes: Some(0),
+            incoming_bytes: Some(8),
+            approved_limit: None,
+            display: None,
+        }),
+        ..event(&request, ArchiveJobEventKind::Prompt)
+    };
+    let JobStep::Control(reply) = consumer
+        .consume(prompt("create_destination"))
+        .expect("prompt")
+    else {
+        panic!("reply")
+    };
+    assert_eq!(reply.action, ArchiveJobAction::Reply);
+    assert!(reply.validate().is_ok());
+    let JobStep::Control(cancel) = consumer.consume(prompt("low_space")).expect("low space") else {
+        panic!("cancel")
+    };
+    assert_eq!(cancel.action, ArchiveJobAction::Cancel);
+    let JobStep::Complete(report) = consumer
+        .consume(terminal(&request, false, None))
+        .expect("terminal")
+    else {
+        panic!("terminal")
+    };
+    assert!(!report.success);
+    assert_eq!(
+        report.error.expect("cleanup error").code,
+        "cleanup_incomplete"
+    );
+}

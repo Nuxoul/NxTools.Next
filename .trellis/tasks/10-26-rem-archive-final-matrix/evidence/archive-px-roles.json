@@ -1,0 +1,1582 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 544,
+    "column": 58,
+    "expression": "px(960.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 544,
+    "column": 69,
+    "expression": "px(640.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 550,
+    "column": 37,
+    "expression": "px(geometry.x as f32)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 550,
+    "column": 60,
+    "expression": "px(geometry.y as f32)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 551,
+    "column": 26,
+    "expression": "px(geometry.width as f32)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 551,
+    "column": 53,
+    "expression": "px(geometry.height as f32)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 571,
+    "column": 44,
+    "expression": "px(720.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "line": 571,
+    "column": 55,
+    "expression": "px(480.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 650,
+    "column": 44,
+    "expression": "px(960.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 650,
+    "column": 54,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 675,
+    "column": 45,
+    "expression": "px(12.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 830,
+    "column": 44,
+    "expression": "px(960.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 830,
+    "column": 54,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 858,
+    "column": 45,
+    "expression": "px(12.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 909,
+    "column": 45,
+    "expression": "px(12.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 926,
+    "column": 45,
+    "expression": "px(14.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 968,
+    "column": 48,
+    "expression": "px(1100.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 968,
+    "column": 59,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 984,
+    "column": 57,
+    "expression": "px(64.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1017,
+    "column": 44,
+    "expression": "px(1100.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1017,
+    "column": 55,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1026,
+    "column": 36,
+    "expression": "px(64.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1041,
+    "column": 30,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1041,
+    "column": 58,
+    "expression": "px(1100.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1042,
+    "column": 29,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "line": 1042,
+    "column": 58,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1202,
+    "column": 9,
+    "expression": "px(self\n            .widths\n            .iter()\n            .zip(self.columns)\n            .filter_map(|(width, shown)| shown.then_some(*width))\n            .sum())",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1474,
+    "column": 24,
+    "expression": "px(self.widths[kind.index()])",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1503,
+    "column": 35,
+    "expression": "px(16.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1504,
+    "column": 46,
+    "expression": "px(16.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1552,
+    "column": 16,
+    "expression": "px(ROW_HEIGHT)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1556,
+    "column": 17,
+    "expression": "px(self.widths[0])",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1629,
+    "column": 20,
+    "expression": "px(ROW_HEIGHT)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1760,
+    "column": 16,
+    "expression": "px(64.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1761,
+    "column": 20,
+    "expression": "px(56.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1772,
+    "column": 35,
+    "expression": "px(24.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1773,
+    "column": 57,
+    "expression": "px(24.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1953,
+    "column": 27,
+    "expression": "px(sizes[kind.index()])",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_PERSISTED_GEOMETRY",
+    "reason": "Current column widths/header/cells share restored/resized pixel state. Preserve state identity; no exact approved font-scaling exemption located. Requires current-Root role decision and resize/horizontal-scroll test; NOT CLOSED.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1954,
+    "column": 33,
+    "expression": "px(64.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_REVIEW",
+    "reason": "Column64..640 or details160 minimum: no exact approved fixed exception established; do not relabel as native geometry merely because stored in Pixels.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 1954,
+    "column": 42,
+    "expression": "px(640.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_REVIEW",
+    "reason": "Column64..640 or details160 minimum: no exact approved fixed exception established; do not relabel as native geometry merely because stored in Pixels.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2135,
+    "column": 61,
+    "expression": "px(32.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2147,
+    "column": 28,
+    "expression": "px(80.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_VIEWPORT",
+    "reason": "Comment80 allocation is current implementation, not independently established approved fixed exception. Verify natural rich/plain text, bounded viewport/end within unchanged client before decision.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2210,
+    "column": 84,
+    "expression": "px(48.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2229,
+    "column": 84,
+    "expression": "px(48.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2234,
+    "column": 32,
+    "expression": "px(64.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2235,
+    "column": 36,
+    "expression": "px(56.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2244,
+    "column": 84,
+    "expression": "px(24.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2290,
+    "column": 24,
+    "expression": "px(ROW_HEIGHT)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2299,
+    "column": 33,
+    "expression": "px(entry.depth() as f32 * 16.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2300,
+    "column": 59,
+    "expression": "px(16.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2310,
+    "column": 51,
+    "expression": "px(16.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2318,
+    "column": 43,
+    "expression": "px(16.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2325,
+    "column": 47,
+    "expression": "px(16.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual production row/header/toolbar/vector/indent role. Requires effective Root16/14/18 red before change; original uniform_list, Tree, PageUp/Down, selection/drag and official controls unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2348,
+    "column": 31,
+    "expression": "px(200.)",
+    "test_only_lexical": false,
+    "classification": "APPROVED_FIXED_LAYOUT",
+    "reason": "Explicit tree200/clamp160..280: archive ui-spec.md:9. Public resizable owner unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2349,
+    "column": 37,
+    "expression": "px(160.)",
+    "test_only_lexical": false,
+    "classification": "APPROVED_FIXED_LAYOUT",
+    "reason": "Explicit tree200/clamp160..280: archive ui-spec.md:9. Public resizable owner unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2349,
+    "column": 47,
+    "expression": "px(280.)",
+    "test_only_lexical": false,
+    "classification": "APPROVED_FIXED_LAYOUT",
+    "reason": "Explicit tree200/clamp160..280: archive ui-spec.md:9. Public resizable owner unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "line": 2365,
+    "column": 37,
+    "expression": "px(160.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_REVIEW",
+    "reason": "Column64..640 or details160 minimum: no exact approved fixed exception established; do not relabel as native geometry merely because stored in Pixels.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "line": 48,
+    "column": 34,
+    "expression": "px(960.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "line": 48,
+    "column": 44,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "line": 97,
+    "column": 35,
+    "expression": "px(offset)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "line": 339,
+    "column": 55,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "line": 340,
+    "column": 56,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "line": 494,
+    "column": 39,
+    "expression": "px(12.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 50,
+    "column": 34,
+    "expression": "px(960.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 50,
+    "column": 44,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 196,
+    "column": 34,
+    "expression": "px(720.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 196,
+    "column": 44,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 215,
+    "column": 32,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 706,
+    "column": 45,
+    "expression": "px(476.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 777,
+    "column": 34,
+    "expression": "px(720.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 777,
+    "column": 44,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 784,
+    "column": 43,
+    "expression": "px(-64.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 784,
+    "column": 53,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 794,
+    "column": 43,
+    "expression": "px(80.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 794,
+    "column": 69,
+    "expression": "px(90.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 806,
+    "column": 44,
+    "expression": "px(80.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 806,
+    "column": 70,
+    "expression": "px(90.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 810,
+    "column": 47,
+    "expression": "px(-64.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 810,
+    "column": 57,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 831,
+    "column": 33,
+    "expression": "px(80.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 831,
+    "column": 59,
+    "expression": "px(12.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 832,
+    "column": 34,
+    "expression": "px(4.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 833,
+    "column": 56,
+    "expression": "px(4.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 880,
+    "column": 29,
+    "expression": "px(960.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 880,
+    "column": 39,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 880,
+    "column": 55,
+    "expression": "px(720.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 880,
+    "column": 65,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 889,
+    "column": 36,
+    "expression": "px(160.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 889,
+    "column": 67,
+    "expression": "px(280.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 898,
+    "column": 43,
+    "expression": "px(16.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1001,
+    "column": 37,
+    "expression": "px(v.widths[0])",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1026,
+    "column": 33,
+    "expression": "px(960.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1026,
+    "column": 43,
+    "expression": "px(640.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1026,
+    "column": 59,
+    "expression": "px(720.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1026,
+    "column": 69,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1040,
+    "column": 51,
+    "expression": "px(-80.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1040,
+    "column": 61,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1071,
+    "column": 51,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1071,
+    "column": 59,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1170,
+    "column": 39,
+    "expression": "px(distance)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1177,
+    "column": 35,
+    "expression": "px(56.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1187,
+    "column": 48,
+    "expression": "px(8.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1190,
+    "column": 14,
+    "expression": "px(160.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1190,
+    "column": 25,
+    "expression": "px(280.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1198,
+    "column": 34,
+    "expression": "px(720.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1198,
+    "column": 44,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1203,
+    "column": 41,
+    "expression": "px(24.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1203,
+    "column": 70,
+    "expression": "px(5.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1219,
+    "column": 35,
+    "expression": "px(100.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1224,
+    "column": 35,
+    "expression": "px(100.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "line": 1231,
+    "column": 74,
+    "expression": "px(-1.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "line": 1092,
+    "column": 36,
+    "expression": "px(48.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual Textarea48/160 allocation, not released vendor internal. No effective Root red yet; preserve InputState/draft/validation/default Enter/footer and original submit/cancel.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "line": 1406,
+    "column": 36,
+    "expression": "px(160.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual Textarea48/160 allocation, not released vendor internal. No effective Root red yet; preserve InputState/draft/validation/default Enter/footer and original submit/cancel.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "line": 1653,
+    "column": 44,
+    "expression": "px(80.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_VIEWPORT",
+    "reason": "Error80 cap currently bounds original footer. Preserve full errors/scroll/footer; no exact approved permanent px exception found. Root/long text verification pending.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 36,
+    "column": 34,
+    "expression": "px(680.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 36,
+    "column": 44,
+    "expression": "px(560.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 131,
+    "column": 34,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 131,
+    "column": 44,
+    "expression": "px(360.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 135,
+    "column": 40,
+    "expression": "px(32.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 136,
+    "column": 33,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 136,
+    "column": 62,
+    "expression": "px(360.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 137,
+    "column": 34,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 137,
+    "column": 62,
+    "expression": "px(480.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 321,
+    "column": 34,
+    "expression": "px(440.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 321,
+    "column": 44,
+    "expression": "px(360.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 330,
+    "column": 16,
+    "expression": "px(360.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 548,
+    "column": 54,
+    "expression": "px(510.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 553,
+    "column": 39,
+    "expression": "px(600.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 553,
+    "column": 49,
+    "expression": "px(450.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "line": 609,
+    "column": 58,
+    "expression": "px(12.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 475,
+    "column": 36,
+    "expression": "px(32.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 639,
+    "column": 34,
+    "expression": "px(560.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 639,
+    "column": 44,
+    "expression": "px(600.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1088,
+    "column": 48,
+    "expression": "px(dimensions.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1088,
+    "column": 66,
+    "expression": "px(dimensions.1)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1094,
+    "column": 36,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1094,
+    "column": 65,
+    "expression": "px(dimensions.1)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1095,
+    "column": 35,
+    "expression": "px(dimensions.0)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1095,
+    "column": 77,
+    "expression": "px(32.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1096,
+    "column": 35,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1104,
+    "column": 43,
+    "expression": "px(240.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1104,
+    "column": 53,
+    "expression": "px(90.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1105,
+    "column": 70,
+    "expression": "px(0.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "line": 1105,
+    "column": 78,
+    "expression": "px(-1000.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 947,
+    "column": 50,
+    "expression": "px(560.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 947,
+    "column": 61,
+    "expression": "px(300.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 951,
+    "column": 44,
+    "expression": "px(480.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 951,
+    "column": 55,
+    "expression": "px(260.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 1075,
+    "column": 50,
+    "expression": "px(width)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 1075,
+    "column": 61,
+    "expression": "px(600.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 1079,
+    "column": 44,
+    "expression": "px(480.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "line": 1079,
+    "column": 55,
+    "expression": "px(360.0)",
+    "test_only_lexical": false,
+    "classification": "PROTECTED_NATIVE_CLIENT",
+    "reason": "Current user explicitly requires fixed Archive clients/minimum/placement. application960x640/min720x480; jobs560x300/min480x260 and forms560/680x600/min480x360. Current source, archive ui-spec9 and matching reference765-770. No ordinary role exemption implied.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/virtual_drag_spike.rs",
+    "line": 124,
+    "column": 58,
+    "expression": "px(200.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/virtual_drag_spike.rs",
+    "line": 124,
+    "column": 78,
+    "expression": "px(80.)",
+    "test_only_lexical": true,
+    "classification": "TEST_ONLY",
+    "reason": "Not a production ordinary layout role; retained unchanged.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+    "line": 390,
+    "column": 44,
+    "expression": "px(48.)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_ORDINARY_CANDIDATE",
+    "reason": "Actual exclusion Textarea48 in official SettingField render. Needs production Root/long rules/save conflict/section merge tests, not helper-only source assertion.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+    "line": 1383,
+    "column": 44,
+    "expression": "px(160.0)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_REVIEW",
+    "reason": "Settings sidebar160/range160..208 is current source. No exact approved fixed #6 exemption located; official Settings owns resize/selection, current main client protected.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+    "line": 1384,
+    "column": 49,
+    "expression": "px(160.0)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_REVIEW",
+    "reason": "Settings sidebar160/range160..208 is current source. No exact approved fixed #6 exemption located; official Settings owns resize/selection, current main client protected.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+    "line": 1384,
+    "column": 60,
+    "expression": "px(208.0)",
+    "test_only_lexical": false,
+    "classification": "UNFINISHED_REVIEW",
+    "reason": "Settings sidebar160/range160..208 is current source. No exact approved fixed #6 exemption located; official Settings owns resize/selection, current main client protected.",
+    "evidence": "Task-start live snapshot; production/Root checks NOT RUN in Queue10"
+  }
+]

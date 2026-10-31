@@ -50,7 +50,7 @@ internal static class BrowserExtensionSigningTests
         using (var locked = new FileStream(fixture.KeyPath, FileMode.Open, FileAccess.Read, FileShare.None))
         {
             var origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath);
-            Require(origins.SequenceEqual(new[] { "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/" }), "Existing IOException fallback preserves command identity without writing PEM.");
+            Require(origins.SequenceEqual(new[] { "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/", "chrome-extension://eldfplghejhopcmgfkacimanhaojakph/" }), "Locked local PEM must not block the published store identity or create a key.");
             try { BrowserExtensionPackageService.ExportWithSigningKey("chrome", Path.Combine(fixture.Root, "locked.crx"), fixture.Source, fixture.KeyPath); throw new InvalidOperationException("Expected locked PEM IO failure"); }
             catch (IOException) { }
         }
@@ -66,23 +66,25 @@ internal static class BrowserExtensionSigningTests
         fixture.Manifest(PinnedKey);
         var exported = BrowserExtensionSigningIdentity.ChromiumId(rsa.ExportSubjectPublicKeyInfo());
         var origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath);
-        Require(origins.SequenceEqual(new[] { "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/", "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/", $"chrome-extension://{exported}/" }), "Command/pinned/exported union and ordering preserved.");
+        Require(origins.SequenceEqual(new[] { "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/", "chrome-extension://eldfplghejhopcmgfkacimanhaojakph/", "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/", $"chrome-extension://{exported}/" }), "Published store/legacy command/pinned/exported identities must coexist without manual configuration.");
+        var published = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("eldfplghejhopcmgfkacimanhaojakph", fixture.Source, fixture.KeyPath);
+        Require(published.SequenceEqual(new[] { "chrome-extension://eldfplghejhopcmgfkacimanhaojakph/", "chrome-extension://haohhnpjfggpdadhcbjakjpkmkljkpif/", $"chrome-extension://{exported}/" }), "Default store identity deduplicates while local installations remain allowed.");
         fixture.Manifest(Convert.ToBase64String(rsa.ExportSubjectPublicKeyInfo()));
         origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins(exported, fixture.Source, fixture.KeyPath);
-        Require(origins.Length == 1, "Duplicate command/manifest/exported identity deduplicates.");
+        Require(origins.Length == 2 && origins[1] == "chrome-extension://eldfplghejhopcmgfkacimanhaojakph/", "Duplicate local identities deduplicate without dropping the published store.");
         fixture.Manifest("not base64!");
         origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath);
-        Require(origins.Length == 2 && origins[1] == $"chrome-extension://{exported}/", "Malformed manifest key keeps command/exported fallback.");
+        Require(origins.Length == 3 && origins[2] == $"chrome-extension://{exported}/", "Malformed manifest key keeps command/store/exported fallback.");
         File.Delete(Path.Combine(fixture.Source, "manifest.json"));
         origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath);
-        Require(origins.Length == 2 && origins[1] == $"chrome-extension://{exported}/", "Missing manifest preserves command/exported union.");
+        Require(origins.Length == 3 && origins[2] == $"chrome-extension://{exported}/", "Missing manifest preserves command/store/exported union.");
         File.WriteAllText(Path.Combine(fixture.Source, "manifest.json"), "{");
         try { BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath); throw new InvalidOperationException("Expected malformed JSON failure"); }
         catch (JsonException) { }
         fixture.Manifest("not base64!");
         File.Delete(fixture.KeyPath);
         origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath);
-        Require(origins.Length == 1 && !File.Exists(fixture.KeyPath), "Registration never creates missing key.");
+        Require(origins.SequenceEqual(new[] { "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/", "chrome-extension://eldfplghejhopcmgfkacimanhaojakph/" }) && !File.Exists(fixture.KeyPath), "Missing local key never blocks store identity or creates a key.");
         return Task.CompletedTask;
     }
 
@@ -119,9 +121,38 @@ internal static class BrowserExtensionSigningTests
     {
         using var fixture = new SigningFixture();
         fixture.Manifest(PinnedKey);
+        var storeSourceManifest = File.ReadAllBytes(Path.Combine(fixture.Source, "manifest.json"));
+        var storeKey = Path.Combine(fixture.Root, "store-must-not-create", "key.pem");
+        var storeZip = BrowserExtensionPackageService.ExportWithSigningKey("chrome_store", Path.Combine(fixture.Root, "store.zip"), fixture.Source, storeKey);
+        Require(!Directory.Exists(Path.GetDirectoryName(storeKey)), "Chrome store ZIP must not create or read a signing key.");
+        Require(BrowserExtensionPackageService.NormalizeFormat("CHROME_STORE") == "chrome_store", "Adapter/dialog preserve the additive store format.");
+        using (var lockedKey = new FileStream(fixture.KeyPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+        {
+            var forcedZip = BrowserExtensionPackageService.ExportWithSigningKey("chrome_store", Path.Combine(fixture.Root, "store-wrong.crx"), fixture.Source, fixture.KeyPath);
+            Require(forcedZip.EndsWith(".zip", StringComparison.OrdinalIgnoreCase), "Store format cannot be mislabeled as a CRX.");
+        }
+        using (var store = System.IO.Compression.ZipFile.OpenRead(storeZip))
+        {
+            var manifestEntry = store.GetEntry("manifest.json") ?? throw new InvalidOperationException("Store ZIP manifest must be at root.");
+            using var manifestReader = new StreamReader(manifestEntry.Open());
+            var storeManifest = System.Text.Json.Nodes.JsonNode.Parse(manifestReader.ReadToEnd())!.AsObject();
+            Require(!storeManifest.ContainsKey("key"), "Chrome Web Store manifest must omit key.");
+            Require(storeManifest["permissions"]!.ToJsonString() == System.Text.Json.Nodes.JsonNode.Parse(Encoding.UTF8.GetString(storeSourceManifest))!["permissions"]!.ToJsonString(), "Store export must preserve permissions and behavior.");
+        }
+        Require(File.ReadAllBytes(Path.Combine(fixture.Source, "manifest.json")).SequenceEqual(storeSourceManifest), "Store export must not change local-load manifest identity.");
         var untouched = Path.Combine(fixture.Root, "not-created", "key.pem");
         var xpi = BrowserExtensionPackageService.ExportWithSigningKey("firefox", Path.Combine(fixture.Root, "firefox.xpi"), fixture.Source, untouched);
         Require(File.Exists(xpi) && !Directory.Exists(Path.GetDirectoryName(untouched)), "Firefox never reads/creates RSA key.");
+        using (var archive = System.IO.Compression.ZipFile.OpenRead(xpi))
+        {
+            var entry = archive.GetEntry("manifest.json") ?? throw new InvalidOperationException("XPI manifest missing.");
+            using var reader = new StreamReader(entry.Open());
+            var exported = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!.AsObject();
+            var background = exported["background"]!.AsObject();
+            var scripts = background["scripts"]!.AsArray().Select(node => node!.GetValue<string>()).ToArray();
+            Require(scripts.SequenceEqual(FixtureBackgroundScripts), "Firefox XPI keeps the complete ordered background script list.");
+            Require(!background.ContainsKey("service_worker"), "Firefox XPI does not declare an unsupported service worker.");
+        }
         File.WriteAllText(fixture.KeyPath, "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----");
         var corrupt = File.ReadAllBytes(fixture.KeyPath);
         RejectInvalidPem(() => BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath));
@@ -165,13 +196,30 @@ internal static class BrowserExtensionSigningTests
         catch (Exception error) when (error is CryptographicException or ArgumentException) { return; }
         throw new InvalidOperationException("Malformed key must preserve original failure category.");
     }
+    private static readonly string[] FixtureBackgroundScripts = { "handoff-policy.js", "batch-handoff-policy.js", "background.js" };
     private sealed class SigningFixture : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "nxtools-signing-fixture-" + Guid.NewGuid().ToString("N"));
         internal string Source => Path.Combine(Root, "source");
         internal string KeyPath => Path.Combine(Root, "isolated.pem");
         internal SigningFixture() { Directory.CreateDirectory(Source); File.WriteAllText(Path.Combine(Source, "background.js"), "// fixture"); }
-        internal void Manifest(string key) => File.WriteAllText(Path.Combine(Source, "manifest.json"), JsonSerializer.Serialize(new { manifest_version = 3, name = "fixture", version = "0.0.1", key, permissions = new[] { "declarativeNetRequest", "storage" } }));
+        internal void Manifest(string key)
+        {
+            var manifest = new System.Text.Json.Nodes.JsonObject
+            {
+                ["manifest_version"] = 3,
+                ["name"] = "fixture",
+                ["version"] = "0.0.1",
+                ["key"] = key,
+                ["permissions"] = new System.Text.Json.Nodes.JsonArray("declarativeNetRequest", "storage"),
+                ["background"] = new System.Text.Json.Nodes.JsonObject
+                {
+                    ["service_worker"] = "background.js",
+                    ["scripts"] = new System.Text.Json.Nodes.JsonArray(FixtureBackgroundScripts.Select(script => (System.Text.Json.Nodes.JsonNode?)script).ToArray())
+                }
+            };
+            File.WriteAllText(Path.Combine(Source, "manifest.json"), manifest.ToJsonString());
+        }
         public void Dispose() { if (Directory.Exists(Root)) Directory.Delete(Root, true); }
     }
 

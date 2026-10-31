@@ -1,0 +1,29 @@
+{
+  "id": "extensions-independent-search",
+  "name": "extensions-independent-search",
+  "title": "P6 — Independent full-source search",
+  "description": "R6/A6 scoped index queries and safe provider aggregation",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-25",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-25-extensions-capability-expansion",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "implementation_approved": "true",
+    "native_ui_authorized": "false"
+  }
+}

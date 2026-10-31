@@ -37,11 +37,11 @@ internal static class InstalledNativeActionTests
             Assert(fallback.Arguments.Single() == $"/select,\"{file}\"", "fallback must preserve file selection identity");
 
             var folder = new ExplorerFixture();
-            Assert(ExplorerShellActivation.LaunchAndActivate(directory, folder).Success, "native folder open");
-            Assert(folder.Calls[0] == "native_open" && folder.SelectedTarget == directory, "directories open natively, not file-select");
+            Assert(ExplorerShellActivation.LaunchAndActivate(directory, folder).Success, "native folder reveal");
+            Assert(folder.Calls[0] == "native_open" && folder.SelectedTarget == directory, "native boundary retains directory type and exact target");
             folder = new ExplorerFixture { NativeResult = unchecked((int)0x80004005) };
             Assert(ExplorerShellActivation.LaunchAndActivate(directory, folder).Success, "folder fallback");
-            Assert(folder.Arguments.Single() == $"\"{directory}\"", "directory fallback has no select flag");
+            Assert(folder.Arguments.Single() == $"/select,\"{directory}\"", "directory fallback selects the folder in its parent");
         });
         return Task.CompletedTask;
     }

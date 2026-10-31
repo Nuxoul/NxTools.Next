@@ -1,0 +1,200 @@
+[
+  {
+    "log": "audit05-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "audit06-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 16,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "audit06_overlay_-after-scroll.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 4,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "audit06_overlay_-bounded-viewport.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "audit06_overlay_-final.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 4,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "category-red.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "download-page-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "downloads-first.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 200,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "downloads__-bounded-viewport.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 201,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "five-interactions-first.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 4,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "media-focus-origin.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "media-scroll-diagnostic.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "media-scroll-independent-id.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "media_submit_error_preserves_all_probe_rows_and_native_target-bounded-viewport.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "overlay-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "overlay-theme-restoration-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "three-layout-first.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 1,
+        "failed": 2,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "three-layout-second.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  }
+]

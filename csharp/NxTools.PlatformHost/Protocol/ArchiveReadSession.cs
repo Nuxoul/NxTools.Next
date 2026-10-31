@@ -135,8 +135,8 @@ internal sealed class ArchiveReadSession : IAsyncDisposable
             }
             if (item.Kind != "exited") return;
             operation.Credit?.TrySetResult(false);
-            // Runner timeout is the cause; a worker Cancelled frame is only its cleanup consequence.
-            var code = !item.CleanupComplete ? "cleanup_incomplete" : item.Category == "timeout" ? "io_failure" : item.Category is "source_unavailable" or "source_changed" ? item.Category : operation.Failure ??
+            // Native admission/timeout is the cause; worker termination frames are cleanup consequences.
+            var code = !item.CleanupComplete ? "cleanup_incomplete" : item.Category == "timeout" ? "io_failure" : item.Category is "source_unavailable" or "source_changed" or "resource_limit" ? item.Category : operation.Failure ??
                 (item.Category == "success" ? operation.Complete && operation.Negotiated ? null : "protocol_violation" : Map(item.Category));
             var status = code is null ? "succeeded" : code == "cancelled" ? "cancelled" : code == "disconnected" ? "disconnected" : "failed";
             var terminal = new ArchiveReadTerminal(status, code, operation.Files, operation.Bytes,

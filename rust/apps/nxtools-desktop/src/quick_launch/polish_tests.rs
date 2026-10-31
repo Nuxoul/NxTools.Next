@@ -491,7 +491,7 @@ fn polished_file_dialog_row_keyboard_keeps_fixed_rails_and_search_navigation(
     let slot = Rc::new(RefCell::new(None));
     let panel_slot = slot.clone();
     let (_root, window) = cx.add_window_view(move |window, cx| {
-        window.resize(size(px(500.0), px(300.0)));
+        window.resize(size(px(500.0), px(302.0)));
         let panel = cx.new(|cx| super::file_dialog_search::polish_keyboard_fixture(window, cx));
         *panel_slot.borrow_mut() = Some(panel.clone());
         Root::new(panel, window, cx)
@@ -771,13 +771,13 @@ fn queue01_attached_search_uses_one_kit_group_and_original_input(cx: &mut TestAp
         *retained.borrow_mut() = Some(panel.clone());
         Root::new(panel, window, cx)
     });
-    window.simulate_resize(size(px(500.0), px(300.0)));
+    window.simulate_resize(size(px(500.0), px(302.0)));
     let panel = slot.borrow_mut().take().expect("production attached panel");
     let input = panel.read_with(window, |panel, _| panel.polish_search_input());
     let identity = input.entity_id();
     for width in [288.0, 500.0] {
         for (expanded, pending) in [(true, false), (true, true), (false, false)] {
-            window.simulate_resize(size(px(width), px(if expanded { 300.0 } else { 36.0 })));
+            window.simulate_resize(size(px(width), px(if expanded { 302.0 } else { 38.0 })));
             panel.update_in(window, |panel, _, cx| {
                 panel.polish_search_state(expanded, pending);
                 cx.notify();
@@ -800,7 +800,7 @@ fn queue01_attached_search_uses_one_kit_group_and_original_input(cx: &mut TestAp
             assert_eq!(group.size.height, px(32.0));
             assert!(group.top() >= header.top() && group.bottom() <= header.bottom());
             assert!(group.left() >= px(0.0) && group.right() <= px(width));
-            assert!(group.bottom() <= px(if expanded { 300.0 } else { 36.0 }));
+            assert!(group.bottom() <= px(if expanded { 302.0 } else { 38.0 }));
             assert_eq!(
                 snapshots.iter().any(|snapshot| snapshot.path().last()
                     == Some(&gpui_kit::ElementId::from("file-dialog-search-pending"))),

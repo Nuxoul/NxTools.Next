@@ -1,0 +1,34 @@
+[
+  {
+    "path": "vendor/gpui-component-080/src/setting/settings.rs",
+    "sha256": "632c9539c26bc57e0c625a228524a17cd1af438b299a526c204217d63f8cc6c3"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/setting/page.rs",
+    "sha256": "e91c44312ba78b8a8379571a726609815acd1917d4e77beed1d94d99e7ea06f7"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/setting/group.rs",
+    "sha256": "d2ce31b625efb454b2ed5dbf67f38c2203d1afaa127b3e0477a4614d2345add6"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/setting/item.rs",
+    "sha256": "bd88a5c1c8306e5818e7ce29724ce109201bbb3b4b9300c4840a23999d9af18a"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/input/input.rs",
+    "sha256": "72613fb076251978f5300919549170e0b8e3cbbfc489e468b2fdaa15f67d3fcf"
+  },
+  {
+    "path": ".trellis/tasks/10-16-archive-manager/README.md",
+    "sha256": "61fa03e551a82f2f8bd7626cf028274c8cf2e0673a37d1fdec50ff7c4a31f5a2"
+  },
+  {
+    "path": ".trellis/tasks/10-16-archive-manager/implement.md",
+    "sha256": "8d6aa9af1630fee9ce975a8e028fde953e66b3cffc8c8d87f87f9ad58f4cfc9f"
+  },
+  {
+    "path": ".trellis/tasks/10-16-archive-manager/phase-a-checkpoint.md",
+    "sha256": "0f85cceadf4176eacf13ecdd26d9829635b97d3d6f46b3d837d3be627983e37b"
+  }
+]

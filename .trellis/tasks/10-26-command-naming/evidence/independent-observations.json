@@ -1,0 +1,92 @@
+[
+  {
+    "path": ".trellis/spec/nxtools-desktop/backend/database-guidelines.md",
+    "baseline_sha256": "90a30ef62af3015a9da05e378a0c0940ec79e1ebeb9b7a6c626ba1990537039e",
+    "observed_sha256": "8059e8e01f1565a48d054f654af1ed4ce2bd8347cebb5522fe341b780920b218",
+    "final_observed_sha256": "8059e8e01f1565a48d054f654af1ed4ce2bd8347cebb5522fe341b780920b218",
+    "snapshot": "evidence/independent-observations/.trellis/spec/nxtools-desktop/backend/database-guidelines.md",
+    "observed_utc": "2026-10-26T04:18:39.151219+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service.rs",
+    "baseline_sha256": "ae259e03ae9c384a969441a2e1af14a1e5246c5e9cf7e59e0c9dec84b5da92e3",
+    "observed_sha256": "7ae9f618cf9061df3a90b0061cc6caf57be081524c7986af0c1609506234c3d3",
+    "final_observed_sha256": "7ae9f618cf9061df3a90b0061cc6caf57be081524c7986af0c1609506234c3d3",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/extensions/service.rs",
+    "observed_utc": "2026-10-26T04:18:39.152915+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs",
+    "baseline_sha256": "b13dacdb750d8ebbae8bda9d94f917d4d247d09d7b4319e21c482d57ef0e2d9e",
+    "observed_sha256": "1792cfcea4e44bcfacef3c5a4b798b972702927cc04af3f7ace4a30f0b30f722",
+    "final_observed_sha256": "1792cfcea4e44bcfacef3c5a4b798b972702927cc04af3f7ace4a30f0b30f722",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs",
+    "observed_utc": "2026-10-26T04:18:39.153949+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/storage_management.rs",
+    "baseline_sha256": "0826ca29765d6873534cc3923d0e7a73fb225c0c0ac8c84e268add589864e253",
+    "observed_sha256": "0b1e6bc7fcae535bc6ed3b8948c28837f485ddbf505936a6fe3035d1aee3a6fe",
+    "final_observed_sha256": "0b1e6bc7fcae535bc6ed3b8948c28837f485ddbf505936a6fe3035d1aee3a6fe",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/extensions/storage_management.rs",
+    "observed_utc": "2026-10-26T04:18:39.154742+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/ui_host.rs",
+    "baseline_sha256": "6c9899d7b9c01bb820d81270ba03fbbccb8522d28b1b4262e848dc03b68c9164",
+    "observed_sha256": "4ff9cc7b19602b86fe14ddd99e1490ec171794b5eda63b5e1cbb13d1bda46253",
+    "final_observed_sha256": "4ff9cc7b19602b86fe14ddd99e1490ec171794b5eda63b5e1cbb13d1bda46253",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/extensions/ui_host.rs",
+    "observed_utc": "2026-10-26T04:18:39.155438+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions.rs",
+    "baseline_sha256": "53dde88e1c29a5fee4062ac5385c1c85727ffd866001c86d3f40bf6b45a359fb",
+    "observed_sha256": "3ec87a353d95279e453cd4ab11d8c2f92335f14ab02f0ff894a5517053d3a13f",
+    "final_observed_sha256": "3ec87a353d95279e453cd4ab11d8c2f92335f14ab02f0ff894a5517053d3a13f",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/extensions.rs",
+    "observed_utc": "2026-10-26T04:18:39.156107+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs",
+    "baseline_sha256": "b77f4f81a0d94df296d1c5f92a990efbc15ee3ae1320fb4d7ea3919cbcd0fe7c",
+    "observed_sha256": "862146015a11ec57b9c8e797f8870a689eb7bc761e430151ed52ed33fe6fd688",
+    "final_observed_sha256": "862146015a11ec57b9c8e797f8870a689eb7bc761e430151ed52ed33fe6fd688",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs",
+    "observed_utc": "2026-10-26T04:18:39.157935+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs",
+    "baseline_sha256": "26949f26a7c7806ebbac35fe0f2c8f11b31bf25c26a220a9e8be292b9dc49afd",
+    "observed_sha256": "a98f000071c5cad25beb25d4e2a0cd3244d7c62323c84fce63ba07d705ad2292",
+    "final_observed_sha256": "a98f000071c5cad25beb25d4e2a0cd3244d7c62323c84fce63ba07d705ad2292",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs",
+    "observed_utc": "2026-10-26T04:18:39.158927+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs",
+    "baseline_sha256": "9bfcc3336902f92d922e7b87c3ad95b4bd9bd3dc9f5f4b13d5b929cf11c17f45",
+    "observed_sha256": "0debbb2a961a81c3c388064edfa956ec90f128fb3840fc00780745611f8b20ad",
+    "final_observed_sha256": "0debbb2a961a81c3c388064edfa956ec90f128fb3840fc00780745611f8b20ad",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs",
+    "observed_utc": "2026-10-26T04:18:39.159792+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+    "baseline_sha256": "db6e9b6cf27477455d05b3be0d13445deca273b0505f1479ffa7ec0804f4a0dd",
+    "observed_sha256": "da1fc0ab732a2770adffd89d37e83109587356b9fcf824128b2a93844a432b83",
+    "final_observed_sha256": "da1fc0ab732a2770adffd89d37e83109587356b9fcf824128b2a93844a432b83",
+    "snapshot": "evidence/independent-observations/rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+    "observed_utc": "2026-10-26T04:18:39.160599+00:00",
+    "ownership": "Independent, not edited or credited by audit08; observation only"
+  }
+]

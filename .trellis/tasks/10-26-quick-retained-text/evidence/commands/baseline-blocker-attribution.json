@@ -1,0 +1,39 @@
+{
+  "quick_launch_gate": {
+    "actual_first_failure_line": 458,
+    "missing_required_literals": [
+      "CONTROL_HEIGHT_INPUT"
+    ],
+    "custom_command_editor_baseline_identical": true,
+    "gate_baseline_identical": true,
+    "release_chain_line_1765_not_reached": true
+  },
+  "workspace_fmt_files": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs",
+      "baseline_identical": true
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+      "baseline_identical": true
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+      "baseline_identical": true
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs",
+      "baseline_identical": true
+    }
+  ],
+  "production_strict_owners": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+      "baseline_identical": true
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/media.rs",
+      "baseline_identical": true
+    }
+  ]
+}

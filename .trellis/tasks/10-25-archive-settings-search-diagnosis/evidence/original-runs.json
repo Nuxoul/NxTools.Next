@@ -1,0 +1,16 @@
+﻿[
+    {
+        "name":  "original-focused",
+        "command":  "cargo test -p nxtools-desktop main_window::archive_page_tests::archive_settings_official_search_never_saves -- --exact --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  2.2400208999999998,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\original-focused.log"
+    },
+    {
+        "name":  "original-archive-settings-group",
+        "command":  "cargo test -p nxtools-desktop main_window::archive_page_tests:: -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  24.0725014,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\original-archive-settings-group.log"
+    }
+]

@@ -1,0 +1,58 @@
+[
+  {
+    "path": "vendor/gpui-component-080/src/root.rs",
+    "sha256": "392cd7259b1ae87eb4ac7699dc54778bc98297ce3bc1f5db18dca857c663d997"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/sizing.rs",
+    "sha256": "379fa0e1ffd05c5a1711647f183ba3e5f1fb297887ea0929f229d22d32142251"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/form/form.rs",
+    "sha256": "30c64b21250b7157a11c30a101114d22e51b6af68bd1a81610f2faf8157791b8"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/form/field.rs",
+    "sha256": "337e47537d1d79b1e85e5b42b497726bc78277ef9939e2123476a627b7d8d508"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/switch.rs",
+    "sha256": "83094d9bdf632abc032457ea9f2bcdefc27decd69f9b5f34454eece8c558632a"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/time/time_field.rs",
+    "sha256": "edd07604da9a86813e5858e926e88673c64daefb5d6f03925937ea28a9847dc6"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/button/button.rs",
+    "sha256": "fdd2ed48d6ba0efe6945e7ea041b46738e3e266556d1adc91276d79ade158174"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/progress/progress.rs",
+    "sha256": "5ec8245e5836f34d11a1330f00b0104ab537ec6d492a3e40966daaf9bb08e76f"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/scroll/scrollable.rs",
+    "sha256": "87db9106bd50ebe85bea9058afe0cd3fe4c463a7b3f1610a94b41ed180097982"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+    "sha256": "b994f486276cb05f4561e7365b86c2afd5452acc04f7d8ab5dee2b9ec75dcaf2"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+    "sha256": "b5d4ffb0f541346f41b66b875c864d0c9d38eaf54b087d8293b7476a533865d8"
+  },
+  {
+    "path": "tests/architecture/ui-token-boundaries.ps1",
+    "sha256": "eee35a493f362e43f8045a6b2bf43a03f75c7f25dec443c093b22b6c85cd48b8"
+  },
+  {
+    "path": "tests/architecture/ui-consistency.ps1",
+    "sha256": "ee76c8e03dad7996f9b1e6c221d1e0a64858f718197afda551988768f97ef8de"
+  },
+  {
+    "path": "tests/architecture/download-ui-lifecycle.ps1",
+    "sha256": "dc6c0541e3319bfd3273ef1fb3e1cd961a8493e37ced01347f9a525688d8eea3"
+  }
+]

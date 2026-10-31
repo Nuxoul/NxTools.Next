@@ -35,6 +35,12 @@ pub enum ArchiveError {
     Busy,
     #[error("operation cancelled")]
     Cancelled,
+    #[error("reclamation requires a qualified ordinary Stored ZIP layout")]
+    ReclamationUnsupported,
+    #[error("reclamation recovery record or retained output is invalid")]
+    ReclamationRecoveryInvalid,
+    #[error("source has no complete allocation unit available for reclamation")]
+    ReclamationNoAllocation,
     #[error("archive I/O failed")]
     IoFailure,
 }

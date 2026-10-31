@@ -23,6 +23,10 @@ try {
     $production=Get-Content (Join-Path $root 'installer\nxtools-next.iss') -Raw -Encoding UTF8
     $callback=[regex]::Match($production,'(?s)var\s+UpgradeFilesCommitted.*?(?=function SameOwnedPath)').Value
     if(!$callback){throw 'Missing production callbacks'}
+    $callback = $callback.Replace('{localappdata}\NxTools\NxTools.Next\logs\installer\', $work + '\diagnostics\')
+    # Never let installed service discovery request real UAC in this isolated fixture.
+    $callback = $callback.Replace("RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxToolsIndexerV1')", 'False')
+    $callback = [regex]::Replace($callback, '(?s)function EnsureBootstrapMigration\(\): String;.*?(?=function PrepareToInstall)', "function EnsureBootstrapMigration(): String;`r`nbegin`r`n  BootstrapMigrationDirectory := ''; Result := '';`r`nend;`r`n`r`n")
     if($Scenario -eq 'rollback'){
         $anchor='  if CurStep = ssPostInstall then'
         if(!$callback.Contains($anchor)){throw 'Missing step seam'}
@@ -32,8 +36,13 @@ try {
     if(!$callback.Contains($extract)){throw 'Missing extraction seam'}
     $callback=$callback.Replace($extract,"  ExtractTemporaryFile('upgrade-library.ps1');`r`n"+$extract)
     Copy-Item $library (Join-Path $work 'upgrade-library.ps1')
+    # This retained scenario deliberately exercises the legacy single-host API.
+    # Supply extraction inputs, but keep rollback identity fixed BEFORE install.
+    [IO.File]::WriteAllText((Join-Path $work 'NxTools.release.json'), '{"files":[]}')
+    [IO.File]::WriteAllText((Join-Path $work 'NxTools.release.sig'), 'legacy scenario fake sidecar')
+    [IO.File]::WriteAllText((Join-Path $target 'expected-new-sha256.txt'), $expectedNewHash)
     $wrapper=@'
-param([string]$InstallDirectory,[string]$CorrelationId,[string]$StatePath,[switch]$Finalize,[switch]$Committed,[string]$RollbackNewSha256)
+param([string]$InstallDirectory,[string]$CorrelationId,[string]$StatePath,[switch]$Finalize,[switch]$Committed,[string]$RollbackNewSha256,[string]$NewManifestPath,[string]$NewSignaturePath,[string]$DiagnosticPath)
 $ErrorActionPreference='Stop'
 $fixtureDirectory=$InstallDirectory
 $fixtureState=$StatePath
@@ -41,6 +50,7 @@ $fixtureOperation=$CorrelationId
 $fixtureFinalize=[bool]$Finalize
 $fixtureCommitted=[bool]$Committed
 $fixtureRollbackHash=$RollbackNewSha256
+if (!$fixtureRollbackHash) { $fixtureRollbackHash = [IO.File]::ReadAllText((Join-Path $fixtureDirectory 'expected-new-sha256.txt')) }
 trap { $_ | Out-String | Set-Content (Join-Path $fixtureDirectory 'fixture-error.txt'); exit 1 }
 . (Join-Path $PSScriptRoot 'upgrade-library.ps1') -LibraryOnly
 function Get-CimInstance { param($ClassName,$Filter)
@@ -106,6 +116,8 @@ CloseApplications=no
 [Files]
 Source: "$work\close-owned-processes.ps1"; Flags: dontcopy
 Source: "$work\upgrade-library.ps1"; Flags: dontcopy
+Source: "$work\NxTools.release.json"; Flags: dontcopy
+Source: "$work\NxTools.release.sig"; Flags: dontcopy
 Source: "$newPath"; DestDir: "{app}"; DestName: "NxTools.BrowserHost.exe"; Flags: ignoreversion
 $failureFile
 [Code]

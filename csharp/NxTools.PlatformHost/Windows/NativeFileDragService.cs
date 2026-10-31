@@ -208,7 +208,7 @@ internal static class NativeFileDragService
         return true;
     }
 
-    private static bool TryAttachSourceInputQueue(
+    internal static bool TryAttachSourceInputQueue(
         IntPtr sourceWindow,
         NativeFileDragDiagnostic? reportDiagnostic,
         out IDisposable? lease,
@@ -492,7 +492,7 @@ internal static class NativeFileDragService
         _oleInitialized = false;
     }
 
-    private static bool TryReleaseSourcePointerCapture(
+    internal static bool TryReleaseSourcePointerCapture(
         IntPtr sourceWindow,
         out string? error)
     {

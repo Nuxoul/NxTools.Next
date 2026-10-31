@@ -35,7 +35,7 @@ fn actual_worker_preserves_old_schema2_native_actions_and_explicit_metadata_nego
             let mut request = WorkerRequest::open(id, path.to_string_lossy().into_owned());
             request.version = 2;
             request.operation = "extract".into();
-            request.extract_options = copy.map(|copy_motw| ExtractOptions { copy_motw });
+            request.extract_options = copy.map(|copy_motw| ExtractOptions { copy_motw, reclamation: None });
             write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("request");
             let mut active = HashSet::new();
             let mut staged = HashSet::new();

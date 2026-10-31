@@ -77,3 +77,9 @@
 {"file":".trellis/tasks/10-16-archive-manager/worker-cancel-evidence.md","reason":"Exact red-green/final6names77Rust/2filtered,privateworker credit and typedIPC evidence limits,source/partial/oldtarget/slot cleanup,smallboundedtargetnotallcodec200ms"}
 {"file":".trellis/tasks/10-16-archive-manager/worker-cancel-acceptance.md","reason":"Preserve independent cooperative cancellationPASS, originalfailureidentity and remaining fullENG09boundary"}
 {"file":".trellis/tasks/10-16-archive-manager/phase-a-exit-ledger.md","reason":"Check all canonicalAexitIDs have scoped PASS/evidence or exact finitegap; no unapproved stage/safety waiver,millionbenchmark/allcodec expansion,or premature PhaseB"}
+{"file":".trellis/tasks/10-16-archive-manager/continuation-plan.md","reason":"UX01–05/EDIT01–02/HZ2–HZ5 observable acceptance and V-* gates; planning not implementation authority"}
+{"file":"docs/reference-code/archive-editing.md","reason":"Verify per-format/state edit capabilities, metadata fidelity and no delete-old-first/unchecked commit adoption"}
+{"file":"docs/reference-code/hatchzip/progress.md","reason":"HZ2 truthful counters/ETA/sampling and actual GPUI verification"}
+{"file":"docs/reference-code/hatchzip/batch-summary.md","reason":"HZ3 logical-job/attempt distinction, original2active/32queue and exact outcomes"}
+{"file":"docs/reference-code/hatchzip/crash-recovery-tests.md","reason":"HZ4 checkpoint firing, fresh process/hash comparisons and Release-inert hooks"}
+{"file":"docs/reference-code/hatchzip/in-place-reclamation.md","reason":"HZ5 default-off consent/native identities/durable order/measured allocation and ordinary-source preservation"}

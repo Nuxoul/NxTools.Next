@@ -1,0 +1,7 @@
+﻿{
+    "name":  "pages-shell-tools-red",
+    "command":  "cargo test -p nxtools-desktop audit06_pages_ -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  191.5516414,
+    "finished":  "2026-10-26T07:51:25.2653248+08:00"
+}

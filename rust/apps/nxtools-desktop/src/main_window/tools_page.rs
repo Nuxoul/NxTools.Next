@@ -5,7 +5,7 @@ use super::*;
 use crate::ui::components::settings::{
     FeatureSettingsWindowIds, FeatureSettingsWindowSpec, feature_settings_window,
 };
-use crate::ui::metrics::{SPACING_12, SPACING_16};
+use crate::ui::metrics::{FEATURE_WINDOW_TITLE_LANE_HEIGHT, ordinary_rem};
 use gpui_kit::component::IndexPath;
 use gpui_kit::component::form::{Field, Form};
 use gpui_kit::component::input::{NumberInput, NumberInputEvent, StepAction};
@@ -17,6 +17,7 @@ use gpui_kit::{
 };
 use nxtools_core::LinkPanelPosition;
 mod currency_settings;
+pub(super) mod floating_assistant_settings;
 
 /// Stable tool identity and copy shared by the workspace and settings window.
 #[derive(Clone, Copy)]
@@ -54,6 +55,16 @@ struct ToolSettingInputs {
 /// One information/control grid; controls use the remaining width and their
 /// released geometry rather than a fixed 24px control box.
 const TOOL_SETTINGS_INFORMATION_WIDTH: f32 = 264.0;
+
+/// One Form label lane, yielding ordinary width to its controls inside the fixed client.
+fn tool_settings_label_width(window: &Window) -> gpui_kit::Pixels {
+    let rem = window.rem_size();
+    let label = ordinary_rem(TOOL_SETTINGS_INFORMATION_WIDTH).to_pixels(rem);
+    let controls = ordinary_rem(168.0).to_pixels(rem);
+    let insets = ordinary_rem(24.0).to_pixels(rem);
+    // Released Small Field has a 4px horizontal label/control gap.
+    label.min((window.viewport_size().width - insets - px(4.0) - controls).max(px(0.0)))
+}
 /// The original link panel dwell range and step.
 const DWELL_MIN_SECONDS: u64 = 2;
 const DWELL_MAX_SECONDS: u64 = 60;
@@ -66,18 +77,16 @@ fn compact_tool_field(
     help: &'static str,
     control: impl IntoElement,
 ) -> Field {
-    use crate::ui::metrics::FEATURE_WINDOW_TITLE_LANE_HEIGHT;
     Field::new()
         .items_center()
         .gap_0()
         .label_fn(move |_, _| {
             div()
-                .w(px(TOOL_SETTINGS_INFORMATION_WIDTH))
                 .min_w_0()
-                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
+                .min_h(ordinary_rem(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
                 .flex()
                 .items_center()
-                .gap(px(SPACING_4))
+                .gap_1()
                 .text_sm()
                 .child(div().debug_selector(move || title_id.into()).child(title))
                 .child(crate::ui::components::tooltip::description_help(
@@ -88,7 +97,7 @@ fn compact_tool_field(
             div()
                 .debug_selector(move || control_id.into())
                 .w_full()
-                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
+                .min_h(ordinary_rem(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
                 .flex()
                 .items_center()
                 .justify_end()
@@ -96,9 +105,37 @@ fn compact_tool_field(
         )
 }
 
+fn tool_status(theme: Theme, enabled: bool, selector: &'static str) -> AnyElement {
+    div()
+        .flex()
+        .items_center()
+        .gap_1()
+        .child(
+            div()
+                .debug_selector(move || selector.into())
+                .size(px(6.0))
+                .child(
+                    gpui_kit::component::badge::Badge::new()
+                        .dot()
+                        .color(if enabled {
+                            theme.success
+                        } else {
+                            theme.text_muted
+                        })
+                        .child(div().size(px(6.0))),
+                ),
+        )
+        .child(
+            Label::new(if enabled { "已启用" } else { "已停用" })
+                .text_xs()
+                .text_color(theme.text_secondary),
+        )
+        .into_any_element()
+}
+
 pub(crate) fn render_tools(
     this: &mut MainWindow,
-    window: &Window,
+    window: &mut Window,
     cx: &mut Context<MainWindow>,
 ) -> AnyElement {
     let theme = this.theme;
@@ -163,24 +200,16 @@ pub(crate) fn render_tools(
                         .child(
                             div()
                                 .debug_selector(|| "tool-link-detector-status".into())
-                                .flex()
-                                .items_center()
-                                .gap_1()
-                                .child(div().size(px(5.0)).rounded_full().bg(if enabled {
-                                    theme.success
-                                } else {
-                                    theme.text_muted
-                                }))
-                                .child(
-                                    Label::new(if enabled { "已启用" } else { "已停用" })
-                                        .text_xs()
-                                        .text_color(theme.text_secondary),
-                                ),
+                                .child(tool_status(
+                                    theme,
+                                    enabled,
+                                    "tool-link-detector-status-dot",
+                                )),
                         )
                         .child(
                             Button::new("tool-link-detector-configure")
                                 .debug_selector(|| "tool-link-detector-configure".into())
-                                .label("配置")
+                                .label("配置…")
                                 .small()
                                 .outline()
                                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -217,7 +246,7 @@ pub(crate) fn render_tools(
                 .min_h_0()
                 .overflow_y_scroll()
                 .track_scroll(&this.tools_scroll)
-                .p(px(SPACING_16))
+                .p_4()
                 .child(
                     div()
                         .debug_selector(|| "tools-grid".into())
@@ -225,9 +254,10 @@ pub(crate) fn render_tools(
                         .flex()
                         .flex_wrap()
                         .items_start()
-                        .gap(px(SPACING_12))
+                        .gap_3()
                         .child(entry)
-                        .child(currency_settings::render_card(this, window, cx)),
+                        .child(currency_settings::render_card(this, window, cx))
+                        .child(floating_assistant_settings::render_card(this, window, cx)),
                 ),
         )
         .into_any_element()
@@ -449,7 +479,7 @@ impl Render for ToolSettingsWindowBody {
                     .child(
                         Form::horizontal()
                             .small()
-                            .label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))
+                            .label_width(tool_settings_label_width(window))
                             .child(compact_tool_field(
                                 "tool-dwell-label",
                                 "tool-dwell-help",
@@ -540,6 +570,11 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
             if card.id == currency_settings::CARD.id {
                 let body = cx.new(|cx| {
                     currency_settings::CurrencySettingsBody::new(clipboard.clone(), window, cx)
+                });
+                cx.new(|cx| gpui_kit::base::Root::new(body, window, cx))
+            } else if card.id == floating_assistant_settings::CARD.id {
+                let body = cx.new(|cx| {
+                    floating_assistant_settings::FloatingAssistantSettingsBody::new(window, cx)
                 });
                 cx.new(|cx| gpui_kit::base::Root::new(body, window, cx))
             } else {

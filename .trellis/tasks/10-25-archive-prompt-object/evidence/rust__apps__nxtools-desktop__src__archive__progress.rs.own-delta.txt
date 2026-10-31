@@ -1,0 +1,103 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/archive/progress.rs
++++ delivery/rust/apps/nxtools-desktop/src/archive/progress.rs
+@@ -5,14 +5,16 @@
+     alert::Alert,
+     button::Button,
+     checkbox::Checkbox,
++    description_list::DescriptionList,
+     dialog::{DialogAction, DialogClose, DialogFooter},
+     form::{Field, Form},
+     input::{Input, InputState},
++    label::Label,
+     progress::Progress,
+ };
+ use gpui_kit::{
+     App, Context, FocusHandle, Focusable, IntoElement, ParentElement, Render, WeakEntity, Window,
+-    div, prelude::*,
++    base::TestSupportExt, div, prelude::*,
+ };
+ use nxtools_protocol::{
+     SetTaskbarProgressCommand, TaskbarProgressState, archive_job::*,
+@@ -123,10 +125,10 @@
+             let ok_owner=owner.clone();let cancel_owner=owner.clone();let ok_prompt=prompt.clone();let cancel_prompt=prompt.clone();let ok_input=input.clone();let cancel_input=input.clone();let ok_apply=apply.clone();
+             let body=match prompt.kind{
+                 ArchiveJobPromptKind::Password=>Form::vertical().child(Field::new().label(if prompt.error_code.as_deref()==Some("WrongPassword"){ "密码错误，请重试" }else{"当前归档密码"}).child(Input::new(&input).mask_toggle().aria_label("当前任务密码"))).into_any_element(),
+-                ArchiveJobPromptKind::Conflict=>div().flex().flex_col().gap_2().child(format!("目标已有同名文件。现有大小：{}；传入大小：{}。",number(prompt.existing_bytes),number(prompt.incoming_bytes))).child(Checkbox::new("archive-conflict-all").label("应用到此任务后续冲突").checked(apply.get()).on_click({let apply=apply.clone();move|checked,_,_|apply.set(*checked)})).into_any_element(),
++                ArchiveJobPromptKind::Conflict=>div().flex().flex_col().gap_2().child(format!("目标已有同名文件。现有大小：{}；传入大小：{}。",number(prompt.existing_bytes),number(prompt.incoming_bytes))).child(prompt_objects(&prompt)).into_any_element(),
+                 ArchiveJobPromptKind::Risk=>div().child("当前成员具有高膨胀率；继续仍遵守原先有限预算，不增加预算。取消将停止当前任务。").into_any_element(),
+                 ArchiveJobPromptKind::OutputBudget=>div().child(format!("前次尝试已确认零提交并完成清理。需要有限预算：单文件 {}，总输出 {}。继续只在新准入中增加这两个输出上限。",number(prompt.existing_bytes),number(prompt.incoming_bytes))).into_any_element(),
+-                ArchiveJobPromptKind::CreateOverwrite=>div().child("目标压缩包已存在。覆盖将保留原生确认的目标身份并在完整验证后一次发布；目标变化会拒绝覆盖。").into_any_element(),
++                ArchiveJobPromptKind::CreateOverwrite=>div().flex().flex_col().gap_2().child("目标压缩包已存在。覆盖将保留原生确认的目标身份并在完整验证后一次发布；目标变化会拒绝覆盖。").child(prompt_objects(&prompt)).into_any_element(),
+                 ArchiveJobPromptKind::Destination=>div().child(if prompt.error_code.as_deref()==Some("create_destination"){format!("目标目录尚不存在。是否在当前已验证的目标位置创建目录并继续？预计输出：{}；当前可用：{}。继续不会增加任务预算。",number(prompt.incoming_bytes),number(prompt.existing_bytes))}else{format!("目标卷可用空间少于预计输出。预计输出：{}；当前可用：{}。是否仍然继续？实际写入失败将停止任务，继续不会增加任务预算。",number(prompt.incoming_bytes),number(prompt.existing_bytes))}).into_any_element(),
+             };
+             let mut footer=DialogFooter::new().child(DialogClose::new().trigger(|b|b.label("取消任务")));
+@@ -136,6 +138,11 @@
+                     footer=footer.child(Button::new(label).label(label).outline().on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));
+                 }
+             }else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(DialogAction::new().child(Button::new("archive-job-prompt-ok").label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{"确认覆盖"}else{"继续"}).debug_selector(||"archive-job-prompt-ok".into())));}
++            let footer=if prompt.kind==ArchiveJobPromptKind::Conflict{
++                div().flex_none().flex().flex_col().gap_2()
++                    .child(Checkbox::new("archive-conflict-all").label("应用到此任务后续冲突").checked(apply.get()).on_click({let apply=apply.clone();move|checked,_,_|apply.set(*checked)}))
++                    .child(footer).into_any_element()
++            }else{footer.into_any_element()};
+             dialog.title(match prompt.kind{ArchiveJobPromptKind::Password=>"归档需要密码",ArchiveJobPromptKind::Conflict=>"处理同名文件",ArchiveJobPromptKind::Risk=>"确认高膨胀率",ArchiveJobPromptKind::Destination=>"确认目标目录与空间",_=>"归档操作确认"}).child(body).footer(footer)
+                 .on_ok(move|_,window,cx|{let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value("",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})
+                 .on_cancel(move|_,window,cx|{cancel_input.update(cx,|input,cx|input.set_value("",window,cx));let owner=cancel_owner.clone();let prompt=cancel_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:None,apply_to_all:false,approved_limit:None};cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})
+@@ -170,6 +177,57 @@
+         }
+     }
+ }
++// Complete plain text, not Markdown/Tooltip-only content; visual line breaks remove no characters.
++fn prompt_identifier(id: &'static str, value: &str) -> gpui_kit::AnyElement {
++    let mut lines = String::with_capacity(value.len() + value.chars().count() / 24);
++    for (index, character) in value.chars().enumerate() {
++        if index > 0 && index % 24 == 0 {
++            lines.push('\n');
++        }
++        lines.push(character);
++    }
++    div()
++        .id(id)
++        .role(gpui_kit::Role::Label)
++        .aria_label(value.to_owned())
++        .test_support()
++        .debug_selector(move || id.into())
++        .w_full()
++        .min_w_0()
++        .child(Label::new(lines).whitespace_normal())
++        .into_any_element()
++}
++fn prompt_objects(prompt: &ArchiveJobPrompt) -> gpui_kit::AnyElement {
++    const MISSING: &str = "本次提示未提供对象标识";
++    let display = prompt.display.as_ref();
++    let mut objects = DescriptionList::vertical().columns(1).bordered(false);
++    if prompt.kind == ArchiveJobPromptKind::Conflict {
++        objects = objects.item(
++            "传入成员",
++            prompt_identifier(
++                "archive-prompt-member",
++                display
++                    .and_then(|d| d.incoming_member.as_deref())
++                    .unwrap_or(MISSING),
++            ),
++            1,
++        );
++    }
++    objects
++        .item(
++            if prompt.kind == ArchiveJobPromptKind::Conflict {
++                "被覆盖目标"
++            } else {
++                "输出压缩包"
++            },
++            prompt_identifier(
++                "archive-prompt-target",
++                display.map_or(MISSING, |d| d.target.as_str()),
++            ),
++            1,
++        )
++        .into_any_element()
++}
+ fn number(value: Option<u64>) -> String {
+     value.map_or_else(|| "未知".into(), |n| format!("{n} 字节"))
+ }

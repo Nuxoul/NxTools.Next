@@ -21,7 +21,15 @@ pub(crate) struct ManualAction {
     pub(crate) handler_id: String,
     pub(crate) title: String,
 }
+#[cfg(test)]
 pub(crate) fn available(feature: &str, cx: &App) -> Vec<ManualAction> {
+    available_for(feature, None, cx)
+}
+pub(crate) fn available_for(
+    feature: &str,
+    selection: Option<nxtools_extensions::InputSelection>,
+    cx: &App,
+) -> Vec<ManualAction> {
     let Some(owner) = cx
         .try_global::<ExtensionApplicationGlobal>()
         .and_then(|global| global.0.upgrade())
@@ -39,7 +47,16 @@ pub(crate) fn available(feature: &str, cx: &App) -> Vec<ManualAction> {
                 .manifest
                 .handlers
                 .iter()
-                .filter(move |handler| handler.feature == feature && handler.entry == "action")
+                .filter(move |handler| {
+                    handler.feature == feature
+                        && handler.entry == "action"
+                        && selection.is_none_or(|selection| {
+                            handler
+                                .accepts
+                                .as_ref()
+                                .is_none_or(|accepts| accepts.accepts(selection))
+                        })
+                })
                 .map(move |handler| ManualAction {
                     package_id: package.manifest.id.clone(),
                     handler_id: handler.id.clone(),
@@ -647,63 +664,73 @@ mod tests {
         );
         // A pending run may already have host-confirmed writes. Keep every action
         // inside the original item even with a long action name and all64 results.
+        window.simulate_resize(size(px(300.0), px(800.0)));
         for state in [
             crate::extensions::manual_runs::ManualState::Running,
             crate::extensions::manual_runs::ManualState::Cancelling,
             crate::extensions::manual_runs::ManualState::Succeeded,
         ] {
-            owner.update(window, |app, cx| {
-                let run = app
-                    .manual_runs
-                    .iter_mut()
-                    .find(|run| run.id == id)
-                    .expect("source fixture run");
-                run.action_name = "很长的扩展处理动作名称，不得挤出条目中的操作按钮".repeat(8);
-                run.items = (1..=64).collect();
-                run.state = state.clone();
-                cx.notify();
-            });
-            window.run_until_parked();
-            window.update(|window, cx| window.draw(cx).clear(cx));
-            let item = window
-                .debug_bounds("clipboard-item-42")
-                .expect("source item");
-            assert_eq!(
-                item.size.height,
-                px(210.0),
-                "feedback stays inside text card maximum"
-            );
-            let feedback = window
-                .debug_bounds("clipboard-item-feedback-42")
-                .expect("item feedback");
-            let status = window
-                .debug_bounds("clipboard-item-status-42")
-                .expect("readable status");
-            assert!(
-                status.size.width >= px(200.0),
-                "status must not be squeezed by the action row: {status:?}"
-            );
-            for selector in [
-                "clipboard-item-result-42",
-                "clipboard-item-next-42",
-                "clipboard-item-details-42",
-                "clipboard-item-dismiss-42",
-            ]
-            .into_iter()
-            .chain(state.pending().then_some("clipboard-item-cancel-42"))
-            {
-                let control = window.debug_bounds(selector).expect("actual item control");
-                assert!(
-                    control.size.width > px(0.0)
-                        && control.left() >= feedback.left()
-                        && control.right() <= feedback.right()
-                        && control.top() >= feedback.top()
-                        && control.bottom() <= feedback.bottom()
-                        && control.bottom() <= item.bottom(),
-                    "{selector} must remain inside the source item: {control:?} vs {feedback:?}"
+            for height in [120, 160, 210, 320] {
+                panel.update_in(window, |panel, _, cx| {
+                    panel.set_text_card_max_height(height, cx)
+                });
+                owner.update(window, |app, cx| {
+                    let run = app
+                        .manual_runs
+                        .iter_mut()
+                        .find(|run| run.id == id)
+                        .expect("source fixture run");
+                    run.action_name = "很长的扩展处理动作名称，不得挤出条目中的操作按钮".repeat(8);
+                    run.items = (1..=64).collect();
+                    run.state = state.clone();
+                    cx.notify();
+                });
+                window.run_until_parked();
+                window.update(|window, cx| window.draw(cx).clear(cx));
+                let item = window
+                    .debug_bounds("clipboard-item-42")
+                    .expect("source item");
+                assert_eq!(
+                    item.size.height,
+                    px(height as f32),
+                    "feedback stays inside text card maximum"
                 );
+                let feedback = window
+                    .debug_bounds("clipboard-item-feedback-42")
+                    .expect("item feedback");
+                let status = window
+                    .debug_bounds("clipboard-item-status-42")
+                    .expect("readable status");
+                assert!(
+                    status.size.width >= px(200.0),
+                    "status must not be squeezed by the action row: {status:?}"
+                );
+                for selector in [
+                    "clipboard-item-result-42",
+                    "clipboard-item-next-42",
+                    "clipboard-item-details-42",
+                    "clipboard-item-dismiss-42",
+                ]
+                .into_iter()
+                .chain(state.pending().then_some("clipboard-item-cancel-42"))
+                {
+                    let control = window.debug_bounds(selector).expect("actual item control");
+                    assert!(
+                        control.size.width > px(0.0)
+                            && control.left() >= feedback.left()
+                            && control.right() <= feedback.right()
+                            && control.top() >= feedback.top()
+                            && control.bottom() <= feedback.bottom()
+                            && control.bottom() <= item.bottom(),
+                        "{selector} must remain inside the source item: {control:?} vs {feedback:?}"
+                    );
+                }
             }
         }
+        panel.update_in(window, |panel, _, cx| {
+            panel.set_text_card_max_height(160, cx)
+        });
+        window.simulate_resize(size(px(300.0), px(440.0)));
         // The cap-specific long-body check is complete. Restore the original short
         // three-row geometry before the existing reorder/filter/pointer lifecycle.
         panel.update_in(window, |panel, _, cx| {
@@ -1067,5 +1094,178 @@ mod tests {
         cx.update(gpui_kit::init);
         assert!(cx.update(|cx| available("downloads", cx).is_empty()));
         assert!(cx.update(|cx| available("clipboard", cx).is_empty()));
+    }
+    #[gpui_kit::test]
+    fn expansion_progress_actual_script_manual_projection_and_official_four_dip_track(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(|cx| {
+            gpui_kit::init(cx);
+            cx.set_reduce_motion(true);
+        });
+        let root = tempfile::tempdir().expect("owned progress fixture");
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).expect("source");
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.progress","name":"Progress","version":"1","runtime":{"program":"python","protocol_version":2},"files":["entry.py"],"handlers":[{"id":"run","title":"Report","feature":"tools","entry":"action","action":{"type":"script","entry_file":"entry.py"}}]});
+        std::fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("manifest"),
+        )
+        .expect("write manifest");
+        std::fs::write(source.join("entry.py"),r#"import json,sys,time,os
+i=json.loads(sys.stdin.readline()); s=i['session_id']
+print(json.dumps(dict(protocol_version=2,op='ready',session_id=s)),flush=True)
+f=json.loads(sys.stdin.readline()); r=f['run_id']; barrier=f['context']['owned_barrier']
+def emit(op,**fields): print(json.dumps(dict(protocol_version=2,op=op,session_id=s,run_id=r,**fields)),flush=True)
+emit('progress',sequence=1,completed=1,total=2,message='Known fixture')
+while not os.path.exists(barrier): time.sleep(0.01)
+emit('progress',sequence=2,message='Unknown fixture')
+while not os.path.exists(barrier+'-finish'): time.sleep(0.01)
+emit('complete',status='success',value={})
+emit('request_finished')
+"#).expect("owned script");
+        let preview = nxtools_extensions::ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&root.path().join("packages"))
+            .expect("stage");
+        let hash = preview.content_hash.clone();
+        let mut config = nxtools_core::AppConfig::default();
+        config
+            .extensions
+            .install(preview, "owned".into(), false)
+            .expect("install");
+        let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+            .map(|directory| directory.join("python.exe"))
+            .find(|path| path.is_file())
+            .expect("interpreter");
+        config
+            .extensions
+            .approve(
+                "fixture.progress",
+                &hash,
+                nxtools_extensions::RuntimeIdentity::inspect(&python).expect("identity"),
+            )
+            .expect("approve");
+        config
+            .extensions
+            .set_enabled("fixture.progress", true, &[])
+            .expect("enable");
+        let engine = nxtools_download::DownloadEngine::open(root.path().join("downloads.db"))
+            .expect("temporary engine");
+        let (service, _) = crate::extensions::service::ExtensionService::new(
+            &engine,
+            config.extensions.clone(),
+            None,
+            false,
+        )
+        .expect("service");
+        let broker=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).expect("workspace").join("csharp/NxTools.PlatformHost.Tests/bin/Debug/net8.0-windows/NxTools.PlatformHost.Tests.exe");
+        {
+            let executor = service.executor();
+            let _entered = executor.enter();
+            service
+                .runtime
+                .bind_owned_fixture_broker(&broker)
+                .expect("owned broker");
+        }
+        cx.executor().allow_parking();
+        let owner = cx.new(|_| {
+            let mut app = ExtensionApplication::new(
+                config,
+                root.path().join("unused.json"),
+                None,
+                WeakEntity::new_invalid(),
+            );
+            app.service = Some(service.clone());
+            app
+        });
+        let barrier = root.path().join("barrier");
+        let id = owner.update(cx, |app, cx| {
+            app.observe_runtime_progress(cx);
+            app.start_manual(
+                "fixture.progress".into(),
+                "run".into(),
+                "tools",
+                serde_json::json!({"owned_barrier":barrier}),
+                cx,
+            )
+            .expect("start")
+        });
+        let (_, window) = cx.add_window_view(|window, cx| {
+            let content = cx.new(|_| Fixture);
+            gpui_kit::base::Root::new(content, window, cx)
+        });
+        window.simulate_resize(size(px(300.0), px(440.0)));
+        window.update(|window, cx| show_run(owner.clone(), id, None, window, cx));
+        for sequence in [1, 2] {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+            loop {
+                window.run_until_parked();
+                let run = owner.read_with(window, |app, _| {
+                    app.manual_run(id).expect("manual projection")
+                });
+                if let Some(progress) = run
+                    .progress
+                    .filter(|progress| progress.sequence == sequence)
+                {
+                    assert_eq!(
+                        progress.percentage(),
+                        if sequence == 1 { Some(50.0) } else { None }
+                    );
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "actual script progress must reach current manual owner"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            window.update(|window, cx| window.draw(cx).clear(cx));
+            let track = window
+                .debug_bounds("extension-progress-track")
+                .expect("painted official Progress");
+            assert_eq!(track.size.height, px(4.0));
+            assert!(
+                track.size.width >= px(180.0)
+                    && track.left() >= px(0.0)
+                    && track.right() <= px(300.0)
+            );
+            let footer = window
+                .debug_bounds("extension-manual-footer")
+                .expect("retained footer");
+            assert!(track.bottom() <= footer.top() && footer.bottom() <= px(440.0));
+            if sequence == 1 {
+                std::fs::write(&barrier, []).expect("next synthetic stage");
+            }
+        }
+        // Current identity gate rejects a generation mismatch without changing the runtime.
+        owner.update(window, |app, _| {
+            let run = app
+                .manual_runs
+                .iter_mut()
+                .find(|run| run.id == id)
+                .expect("run");
+            run.generation = run.generation.wrapping_add(1);
+        });
+        assert!(owner.read_with(window, |app, _| {
+            app.manual_run(id).expect("run").progress.is_none()
+        }));
+        std::fs::write(barrier.with_file_name("barrier-finish"), [])
+            .expect("finish synthetic stage");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        while owner.read_with(window, |app, _| app.has_pending_manual()) {
+            window.run_until_parked();
+            assert!(
+                std::time::Instant::now() < deadline,
+                "native cleanup and terminal"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(
+            window.debug_bounds("extension-progress-track").is_none(),
+            "terminal clears progress"
+        );
+        service.runtime.shutdown();
     }
 }

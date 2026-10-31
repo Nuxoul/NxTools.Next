@@ -1,0 +1,108 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+  "baseline_sha256": "67ecddf97844dd1ff9ad19a1cc1fdf31583e4e7924fdf685f2618a869c421e0f",
+  "delivery_sha256": "a3bff6c673c1c93d414ea86632645fdb47dd40d762df0868c2527daa2913e176",
+  "operations": [
+    {
+      "tag": "replace",
+      "baseline_start": 857,
+      "baseline_end": 858,
+      "delivery_start": 857,
+      "delivery_end": 859,
+      "baseline_text": "    })).expect(\"current decision object must cross the real typed wire\")\n",
+      "delivery_text": "    }))\n    .expect(\"current decision object must cross the real typed wire\")\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 860,
+      "baseline_end": 862,
+      "delivery_start": 861,
+      "delivery_end": 866,
+      "baseline_text": "    owner: &Entity<ArchiveApplication>, endpoint: &nxtools_ipc::PlatformServerEndpoint,\n    id: Uuid, prompt: ArchiveJobPrompt, cx: &mut gpui_kit::TestAppContext,\n",
+      "delivery_text": "    owner: &Entity<ArchiveApplication>,\n    endpoint: &nxtools_ipc::PlatformServerEndpoint,\n    id: Uuid,\n    prompt: ArchiveJobPrompt,\n    cx: &mut gpui_kit::TestAppContext,\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 868,
+      "baseline_end": 869,
+      "delivery_start": 872,
+      "delivery_end": 874,
+      "baseline_text": "    let event: ArchiveJobEvent = serde_json::from_slice(&serde_json::to_vec(&event).unwrap()).unwrap();\n",
+      "delivery_text": "    let event: ArchiveJobEvent =\n        serde_json::from_slice(&serde_json::to_vec(&event).unwrap()).unwrap();\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 872,
+      "baseline_end": 873,
+      "delivery_start": 877,
+      "delivery_end": 880,
+      "baseline_text": "    let window = owner.read_with(cx, |app, _| app.jobs.records[&id].window.as_ref().unwrap().0);\n",
+      "delivery_text": "    let window = owner.read_with(cx, |app, _| {\n        app.jobs.records[&id].window.as_ref().unwrap().0\n    });\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 874,
+      "baseline_end": 875,
+      "delivery_start": 881,
+      "delivery_end": 885,
+      "baseline_text": "    surface.update(|window, cx| { window.activate_window(); window.draw(cx).clear(cx); });\n",
+      "delivery_text": "    surface.update(|window, cx| {\n        window.activate_window();\n        window.draw(cx).clear(cx);\n    });\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 878,
+      "baseline_end": 880,
+      "delivery_start": 888,
+      "delivery_end": 894,
+      "baseline_text": "    surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)\n        .into_iter().filter_map(|node| node.label().map(str::to_owned)).collect())\n",
+      "delivery_text": "    surface.update(|window, _| {\n        gpui_kit::base::test_support::snapshots(window)\n            .into_iter()\n            .filter_map(|node| node.label().map(str::to_owned))\n            .collect()\n    })\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 882,
+      "baseline_end": 883,
+      "delivery_start": 896,
+      "delivery_end": 899,
+      "baseline_text": "fn audit04_conflict_dialog_displays_ticket_member_and_full_target(cx: &mut gpui_kit::TestAppContext) {\n",
+      "delivery_text": "fn audit04_conflict_dialog_displays_ticket_member_and_full_target(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 884,
+      "baseline_end": 885,
+      "delivery_start": 900,
+      "delivery_end": 903,
+      "baseline_text": "    let id = owner.update(cx, |app, cx| app.submit_job(request(1), completion(), cx).unwrap());\n",
+      "delivery_text": "    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).unwrap()\n    });\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 891,
+      "baseline_end": 894,
+      "delivery_start": 909,
+      "delivery_end": 921,
+      "baseline_text": "    assert!(labels.iter().any(|label| label == member), \"actual Dialog incoming member missing\");\n    assert!(labels.iter().any(|label| label == target), \"actual Dialog current target missing\");\n    assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.as_ref() == Some(&prompt)));\n",
+      "delivery_text": "    assert!(\n        labels.iter().any(|label| label == member),\n        \"actual Dialog incoming member missing\"\n    );\n    assert!(\n        labels.iter().any(|label| label == target),\n        \"actual Dialog current target missing\"\n    );\n    assert!(\n        owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.as_ref()\n            == Some(&prompt))\n    );\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 898,
+      "baseline_end": 899,
+      "delivery_start": 925,
+      "delivery_end": 928,
+      "baseline_text": "    let id = owner.update(cx, |app, cx| app.submit_job(request(1), completion(), cx).unwrap());\n",
+      "delivery_text": "    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).unwrap()\n    });\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 903,
+      "baseline_end": 904,
+      "delivery_start": 932,
+      "delivery_end": 938,
+      "baseline_text": "    assert!(object_labels(&mut surface).iter().any(|label| label == target), \"actual Dialog output target missing\");\n",
+      "delivery_text": "    assert!(\n        object_labels(&mut surface)\n            .iter()\n            .any(|label| label == target),\n        \"actual Dialog output target missing\"\n    );\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

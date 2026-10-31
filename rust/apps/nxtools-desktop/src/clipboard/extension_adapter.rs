@@ -205,6 +205,69 @@ impl ClipboardExtensionAdapter {
         Ok(snapshots)
     }
 
+    pub(crate) async fn query_page(
+        &self,
+        query: &str,
+        limit: usize,
+        state: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value, &'static str> {
+        if query.len() > MAX_QUERY_BYTES || query.contains('\0') || !(1..=32).contains(&limit) {
+            return Err("invalid_params");
+        }
+        let (cursor, revision) = if let Some(state) = state {
+            let tuple: (bool, i64, i64, i64, String) =
+                serde_json::from_value(state).map_err(|_| "invalid_cursor")?;
+            (
+                Some(nxtools_clipboard::ClipboardPageCursor {
+                    is_pinned: tuple.0,
+                    last_used_at_unix_ms: tuple.1,
+                    captured_at_unix_ms: tuple.2,
+                    id: tuple.3,
+                }),
+                Some(tuple.4),
+            )
+        } else {
+            (None, None)
+        };
+        let (page, revision) = self
+            .worker
+            .extension_page_async(query.into(), cursor, revision, limit)
+            .await
+            .map_err(|_| "clipboard_unavailable")?
+            .ok_or("cursor_stale")?;
+        let next = page.items.last().map(|item| {
+            serde_json::json!([
+                item.is_pinned,
+                item.last_used_at_unix_ms,
+                item.captured_at_unix_ms,
+                item.id,
+                revision
+            ])
+        });
+        let snapshots = page
+            .items
+            .iter()
+            .map(ClipboardExtensionSnapshot::selected_item)
+            .collect::<Result<Vec<_>>>()
+            .map_err(|_| "content_too_large")?;
+        if snapshots
+            .iter()
+            .map(ClipboardExtensionSnapshot::payload_bytes)
+            .sum::<usize>()
+            > MAX_CONTENT_BYTES
+        {
+            return Err("content_too_large");
+        }
+        let items=snapshots.into_iter().map(|item| match item.content {
+            ClipboardExtensionSnapshotContent::Text(text)=>serde_json::json!({"item_id":item.item_id,"kind":"text","text":text}),
+            ClipboardExtensionSnapshotContent::Files(paths)=>serde_json::json!({"item_id":item.item_id,"kind":"files","paths":paths}),
+            ClipboardExtensionSnapshotContent::Image(image)=>serde_json::json!({"item_id":item.item_id,"kind":"image","width":image.width,"height":image.height,"image_read_available":false})
+        }).collect::<Vec<_>>();
+        Ok(
+            serde_json::json!({"items":items,"has_more":page.has_more,"state":if page.has_more {next}else{None},"consistency":"restart_on_history_change"}),
+        )
+    }
+
     /// Create/revive content through the sole worker. Source presence is revalidated on that
     /// worker before persistence; source payload is never edited, deleted or marked used.
     /// The supplied causality is host-owned, not copied unchecked from plugin JSON.

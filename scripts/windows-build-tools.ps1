@@ -55,6 +55,11 @@ function Initialize-LowMemoryRustBuildEnvironment {
     }
 }
 
+function Assert-CargoBuildLaneIdle {
+    $activeBuilds = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -match '^(cargo|rustc)\.exe$' })
+    if ($activeBuilds.Count -ne 0) { throw 'Shared Cargo/rustc lane is occupied; wait for its owner, never terminate or duplicate it.' }
+}
+
 function Get-ReleaseBuildCommitHeadroomGiB {
     $memory = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory -ErrorAction Stop
     $committedBytes = [double]$memory.CommittedBytes

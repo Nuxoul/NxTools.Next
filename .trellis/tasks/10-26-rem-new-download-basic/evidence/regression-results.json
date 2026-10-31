@@ -1,0 +1,58 @@
+[
+    {
+        "filter":  "new_download_view::rem_tests",
+        "exit":  0,
+        "started":  "2026-10-26T01:43:59.0287305+08:00",
+        "ended":  "2026-10-26T01:48:14.8593633+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\new_download_view__rem_tests-regression.log"
+    },
+    {
+        "filter":  "downloads::",
+        "exit":  0,
+        "started":  "2026-10-26T01:48:14.9539865+08:00",
+        "ended":  "2026-10-26T01:49:18.2098354+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\downloads__-regression.log"
+    },
+    {
+        "filter":  "audit05_",
+        "exit":  0,
+        "started":  "2026-10-26T01:49:18.2393491+08:00",
+        "ended":  "2026-10-26T01:49:23.6820399+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\audit05_-regression.log"
+    },
+    {
+        "filter":  "audit06_",
+        "exit":  0,
+        "started":  "2026-10-26T01:49:23.7120721+08:00",
+        "ended":  "2026-10-26T01:49:44.0495470+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\audit06_-regression.log"
+    },
+    {
+        "filter":  "history_identity_",
+        "exit":  0,
+        "started":  "2026-10-26T01:49:44.0851047+08:00",
+        "ended":  "2026-10-26T01:50:03.8874899+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\history_identity_-regression.log"
+    },
+    {
+        "filter":  "accessible_name_",
+        "exit":  0,
+        "started":  "2026-10-26T01:50:03.9204071+08:00",
+        "ended":  "2026-10-26T01:50:06.0736109+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\accessible_name_-regression.log"
+    },
+    {
+        "filter":  "sort_keyboard_",
+        "exit":  0,
+        "started":  "2026-10-26T01:50:06.1055715+08:00",
+        "ended":  "2026-10-26T01:50:21.9944242+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\sort_keyboard_-regression.log"
+    },
+    {
+        "filter":  "audit04_",
+        "exit":  0,
+        "started":  "2026-10-26T01:50:22.0352484+08:00",
+        "ended":  "2026-10-26T01:50:27.4634951+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\audit04_-regression.log"
+    }
+]

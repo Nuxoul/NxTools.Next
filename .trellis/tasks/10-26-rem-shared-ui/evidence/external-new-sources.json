@@ -1,0 +1,14 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service_storage.rs",
+    "sha256": "8a8fc2a4d8ab94b558831ebf8c2b6fcdc9fca5ea49c5c470425ff35bae3b3dd7",
+    "snapshot": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service_storage.rs.new-observed",
+    "attribution": "Independent new source, not a Queue07 edit."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs",
+    "sha256": "b13dacdb750d8ebbae8bda9d94f917d4d247d09d7b4319e21c482d57ef0e2d9e",
+    "snapshot": "evidence/external/final/rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs.new-observed",
+    "attribution": "Independent new source, not a Queue07 edit."
+  }
+]

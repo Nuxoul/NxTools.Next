@@ -44,9 +44,7 @@ struct FeedbackRow {
 
 impl Render for FeedbackRow {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        // Same public keyed handles as ClipboardPanel's production projection.
-        // Never seed a synthetic actions_focused flag or add an input owner.
-        let actions_focused = window.focused(cx).is_some();
+        // The actual row component derives action visibility from its own focus scope.
         self.row_focus = window.focused(cx);
         let actions = self.actions.clone();
         let management = self.management.clone();
@@ -69,11 +67,11 @@ impl Render for FeedbackRow {
                 list_image: None,
                 source_icon_color: None,
                 text_character_count: None,
+                text_card_max_height: nxtools_core::default_clipboard_text_card_max_height(),
                 open_targets: None,
                 extension_actions: Vec::new(),
                 extension_feedback: None,
             },
-            actions_focused,
         )
     }
 }
@@ -142,7 +140,7 @@ fn action_snapshot(
     key: &'static str,
 ) -> test_support::ElementSnapshot {
     let id = gpui_kit::ElementId::from(gpui_kit::SharedString::from(format!(
-        "clipboard-item-action-0-{key}"
+        "clipboard-item-action-1302-{key}"
     )));
     surface.update(|_, window, _| {
         test_support::snapshots(window)

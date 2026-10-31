@@ -1,0 +1,18 @@
+﻿{
+    "args":  [
+                 "main_window::download_page::",
+                 "--test-threads=1"
+             ],
+    "executable":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-5008a12526e9ebe3.exe",
+    "process_id":  101612,
+    "started_utc":  "2026-10-26T08:41:45.4718576Z",
+    "completed":  true,
+    "exit":  0,
+    "finished_utc":  "2026-10-26T08:42:11.8447814Z",
+    "watchdog_seconds":  300,
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    }
+}

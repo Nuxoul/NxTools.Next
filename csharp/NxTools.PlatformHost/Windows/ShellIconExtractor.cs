@@ -12,6 +12,9 @@ internal static class ShellIconExtractor
     private const uint ShgfiSmallIcon = 0x000000001;
     private const uint ShgfiUseFileAttributes = 0x000000010;
     private const uint FileAttributeNormal = 0x00000080;
+    private const uint FileAttributeDirectory = 0x00000010;
+    private const string FolderTypeTarget = "nxtools-folder-type:directory";
+    private const string FileTypePrefix = "nxtools-file-type:.";
 
     internal static WindowsCommandResult ExtractOnSta(
         ExtractShellIconCommand command,
@@ -57,7 +60,8 @@ internal static class ShellIconExtractor
 
     internal static WindowsCommandResult Extract(
         ExtractShellIconCommand command,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IconCache? cache = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (command.Size is < 16 or > 256)
@@ -72,9 +76,10 @@ internal static class ShellIconExtractor
         }
 
         var targetType = target.UseFileAttributes
-            ? "file-type"
+            ? (target.FileAttributes == FileAttributeDirectory ? "directory-type" : "file-type")
             : Directory.Exists(target.Path) ? "directory" : "file";
-        var lastWriteTicks = File.Exists(target.Path) || Directory.Exists(target.Path)
+        // Attribute-only targets must never probe a member/directory or a same-named local file.
+        var lastWriteTicks = !target.UseFileAttributes && (File.Exists(target.Path) || Directory.Exists(target.Path))
             ? File.GetLastWriteTimeUtc(target.Path).Ticks
             : 0;
         var key = IconCacheKey.Create(
@@ -84,7 +89,8 @@ internal static class ShellIconExtractor
             lastWriteTicks,
             targetType);
         string? extractionError = null;
-        var cacheHitOrCreated = IconCache.Shared.TryGetOrCreate(key, destination =>
+        int? nativeErrorCode = null;
+        var cacheHitOrCreated = (cache ?? IconCache.Shared).TryGetOrCreate(key, destination =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             var iconHandle = target.IconIndex is { } iconIndex
@@ -102,8 +108,8 @@ internal static class ShellIconExtractor
             }
             if (iconHandle == IntPtr.Zero)
             {
-                extractionError =
-                    $"Windows Shell did not return an icon (Win32={Marshal.GetLastWin32Error()}).";
+                nativeErrorCode = Marshal.GetLastWin32Error();
+                extractionError = "Windows Shell did not return an icon.";
                 return false;
             }
             try
@@ -123,6 +129,7 @@ internal static class ShellIconExtractor
             }
             catch (ExternalException error)
             {
+                nativeErrorCode = error.ErrorCode;
                 extractionError = error.Message;
                 return false;
             }
@@ -138,16 +145,16 @@ internal static class ShellIconExtractor
             return new WindowsCommandResult(true, Data: destinationPath);
         }
         return new WindowsCommandResult(false, extractionError ??
-            "The shell icon could not be cached.");
+            "The shell icon could not be cached.", NativeErrorCode: nativeErrorCode);
     }
+
+    internal static uint ShellIconFlags(ShellIconTarget target, uint size) =>
+        ShgfiIcon | (size <= 20 ? ShgfiSmallIcon : ShgfiLargeIcon)
+        | (target.UseFileAttributes ? ShgfiUseFileAttributes : 0);
 
     private static IntPtr ExtractShellIcon(ShellIconTarget target, uint size)
     {
-        var flags = ShgfiIcon | (size <= 20 ? ShgfiSmallIcon : ShgfiLargeIcon);
-        if (target.UseFileAttributes)
-        {
-            flags |= ShgfiUseFileAttributes;
-        }
+        var flags = ShellIconFlags(target, size);
         var result = SHGetFileInfo(
             target.Path,
             target.FileAttributes,
@@ -170,6 +177,25 @@ internal static class ShellIconExtractor
 
     internal static ShellIconTarget? ResolveIconTarget(string target)
     {
+        // Reserved type targets are parsed before environment expansion, filesystem probes,
+        // system-tool lookup or shortcut COM. Only fixed attributes reach SHGetFileInfo.
+        var synthetic = target.Trim();
+        if (synthetic == FolderTypeTarget)
+        {
+            return new ShellIconTarget("nxtools-folder", null, true, FileAttributeDirectory);
+        }
+        if (synthetic.StartsWith("nxtools-folder-type:", StringComparison.Ordinal))
+        {
+            return null;
+        }
+        if (synthetic.StartsWith("nxtools-file-type:", StringComparison.Ordinal))
+        {
+            if (!synthetic.StartsWith(FileTypePrefix, StringComparison.Ordinal)) return null;
+            var typeExtension = synthetic[FileTypePrefix.Length..];
+            return typeExtension.Length is >= 1 and <= 16 && typeExtension.All(char.IsAsciiLetterOrDigit)
+                ? new ShellIconTarget("." + typeExtension.ToLowerInvariant(), null, true, FileAttributeNormal)
+                : null;
+        }
         var value = Environment.ExpandEnvironmentVariables(target.Trim());
         if (value.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && File.Exists(value))
         {

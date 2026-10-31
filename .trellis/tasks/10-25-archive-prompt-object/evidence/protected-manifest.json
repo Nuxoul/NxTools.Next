@@ -1,0 +1,80 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+    "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+    "delivery_sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+    "sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+    "delivery_sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+    "delivery_sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads.rs",
+    "sha256": "badd97e84410b64e9b6b155ebce6d94615fd0b29eb2ee7d8bc2408a168a7499f",
+    "delivery_sha256": "badd97e84410b64e9b6b155ebce6d94615fd0b29eb2ee7d8bc2408a168a7499f",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+    "delivery_sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+    "delivery_sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+    "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+    "delivery_sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+    "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+    "delivery_sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "sha256": "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d",
+    "delivery_sha256": "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+    "sha256": "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+    "delivery_sha256": "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "sha256": "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+    "delivery_sha256": "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+    "sha256": "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+    "delivery_sha256": "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+    "delivery_sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+    "unchanged": true
+  }
+]

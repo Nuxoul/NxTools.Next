@@ -1,0 +1,27 @@
+{
+  "path": "rust/apps/nxtools-cli/src/archive/execution/tests.rs",
+  "baseline_sha256": "12c2e242e5e2a2bf8f26f92bfa613ad6d2dee1f408173e235c7913501abd16c8",
+  "delivery_sha256": "813016f6f592a4c0017548b9e18fa39422da4bfa501b9a721667ab4892465375",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 145,
+      "baseline_end": 145,
+      "delivery_start": 145,
+      "delivery_end": 146,
+      "baseline_text": "",
+      "delivery_text": "            display: None,\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 205,
+      "baseline_end": 205,
+      "delivery_start": 206,
+      "delivery_end": 207,
+      "baseline_text": "",
+      "delivery_text": "            display: None,\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

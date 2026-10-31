@@ -1,0 +1,30 @@
+[
+  {
+    "path": ".trellis/tasks/10-26-rem-new-download-basic/evidence/manifest.json",
+    "sha256": "091cfbf96febcf32a2811de9ded60b407cf61f42964d24e09410659bc4976c68"
+  },
+  {
+    "path": ".trellis/tasks/10-26-rem-new-download-basic/outcomes.md",
+    "sha256": "981b87989b8ed51bea88a823984ada70f66aa25588cdab2b77d14497a4c53abd"
+  },
+  {
+    "path": ".trellis/tasks/10-26-rem-new-download-overlays/evidence/manifest.json",
+    "sha256": "53b16bf699f382cfdb0c93890f2c0aa3cff49fd081ead55badcbd923d720b4a9"
+  },
+  {
+    "path": ".trellis/tasks/10-26-rem-new-download-overlays/outcomes.md",
+    "sha256": "0ad54c2efb4192b2be46aa77e14450089e6f05c964325616d71420b1452ac526"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/checkpoint-01/checkpoint-manifest.json",
+    "sha256": "a46aa37c0ccc83d3d303e2c7a374501c6fffa3b52654ab23265011b1942cf2bd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/preparation-02/manifest.json",
+    "sha256": "c8dcb05dd3e3361b8d7e9b55311566ea28254efee5cf6204502d8530e9284167"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+    "sha256": "7753e62dcaa29bb39f7ea683db082ceb6cc97485e48220b24d486cc7551d8c48"
+  }
+]

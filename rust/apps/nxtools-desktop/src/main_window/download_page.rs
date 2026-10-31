@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
-use crate::ui::metrics::PROGRESS_TRACK_HEIGHT;
+use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, ordinary_rem};
 use crate::ui::typography::{
     LINE_HEIGHT_WORKBENCH_BODY, LINE_HEIGHT_WORKBENCH_SUPPORT, TEXT_WORKBENCH_BODY,
     TEXT_WORKBENCH_SUPPORT,
@@ -324,17 +324,20 @@ pub(crate) fn download_tasks_for_view(
     filter: DownloadTaskFilter,
     query: &str,
     sort: DownloadSortState,
-) -> Vec<DownloadEngineTask> {
+) -> Vec<usize> {
     let mut visible = tasks
         .iter()
-        .filter(|task| filter.matches(task.task.status()))
-        .filter(|task| download_task_matches_search(task, query))
-        .cloned()
+        .enumerate()
+        .filter(|(_, task)| filter.matches(task.task.status()))
+        .filter(|(_, task)| download_task_matches_search(task, query))
+        .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if sort.key == DownloadSortKey::Queue {
         return visible;
     }
     visible.sort_by(|left, right| {
+        let left = &tasks[*left];
+        let right = &tasks[*right];
         let ordering = match sort.key {
             DownloadSortKey::Queue => std::cmp::Ordering::Equal,
             DownloadSortKey::Name => download_task_name(left)
@@ -792,6 +795,50 @@ pub(crate) fn download_context_menu_plan(
 }
 
 impl MainWindow {
+    pub(crate) fn retire_download_detail_scope(&mut self, cx: &mut Context<Self>) {
+        if let Some(scope) = self.download_detail_scope.take() {
+            scope.retire();
+            let application = self.downloads.clone();
+            cx.defer(move |cx| {
+                let _ = application.update(cx, |app, _| app.retire_task_detail_scope(&scope));
+            });
+        }
+        self.requested_download_detail = None;
+    }
+
+    fn sync_download_detail_scope(
+        &mut self,
+        task_id: Option<DownloadTaskId>,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .download_detail_scope
+            .as_ref()
+            .is_some_and(|scope| Some(scope.task_id()) != task_id || !scope.is_live())
+        {
+            self.retire_download_detail_scope(cx);
+        }
+    }
+
+    pub(super) fn open_download_detail(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        if self.shell.active_module() != MainModule::Downloads
+            || self.selected_download_task != Some(task_id)
+            || self.selected_download_tasks.len() != 1
+            || !self.downloads.upgrade().is_some_and(|app| {
+                app.read(cx)
+                    .tasks()
+                    .iter()
+                    .any(|task| task.task.id() == task_id)
+            })
+        {
+            return;
+        }
+        self.retire_download_detail_scope(cx);
+        self.download_detail_scope = Some(crate::downloads::DownloadDetailScope::new(task_id));
+        info!(event="download.detail.opened",task_id=%task_id.as_uuid(),"download inspector explicitly opened");
+        cx.notify();
+    }
+
     pub(crate) fn render_downloads(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
         let search_query = self
@@ -800,55 +847,41 @@ impl MainWindow {
             .value()
             .trim()
             .to_owned();
-        let (total_count, counts, visible_tasks, visible_progress, visible_icons, snapshot_error) =
-            self.downloads
-                .upgrade()
-                .map(|application| {
-                    let application = application.read(cx);
-                    let tasks = application.tasks();
-                    let visible_tasks = download_tasks_for_view(
-                        tasks,
-                        self.download_filter,
-                        &search_query,
-                        self.download_sort,
-                    );
-                    let visible_progress = visible_tasks
-                        .iter()
-                        .filter_map(|task| {
-                            application
-                                .progress(task.task.id())
-                                .cloned()
-                                .map(|progress| (task.task.id(), progress))
-                        })
-                        .collect::<HashMap<_, _>>();
-                    let visible_icons = visible_tasks
-                        .iter()
-                        .filter_map(|task| {
-                            application
-                                .task_icon_path(task.task.id())
-                                .map(|path| (task.task.id(), path.to_path_buf()))
-                        })
-                        .collect::<HashMap<_, _>>();
-                    (
-                        tasks.len(),
-                        download_filter_counts(tasks.iter().map(|task| task.task.status())),
-                        visible_tasks,
-                        visible_progress,
-                        visible_icons,
-                        application.snapshot_error().map(str::to_owned),
-                    )
-                })
-                .unwrap_or_default();
+        let (tasks, snapshot_error) = self
+            .downloads
+            .upgrade()
+            .map(|application| {
+                let application = application.read(cx);
+                (
+                    application.task_snapshot(),
+                    application.snapshot_error().map(str::to_owned),
+                )
+            })
+            .unwrap_or_default();
+        let total_count = tasks.len();
+        let counts = download_filter_counts(tasks.iter().map(|task| task.task.status()));
+        let visible_tasks = download_tasks_for_view(
+            &tasks,
+            self.download_filter,
+            &search_query,
+            self.download_sort,
+        );
         let selected_task_id = reconcile_download_selection(
             self.selected_download_task,
             &mut self.selected_download_tasks,
             &visible_tasks,
-            |task| task.task.id(),
+            |index| tasks[*index].task.id(),
         );
         self.selected_download_task = selected_task_id;
+        self.sync_download_detail_scope(selected_task_id, cx);
+        let detail_task_id = selected_task_id.filter(|task_id| {
+            self.download_detail_scope
+                .as_ref()
+                .is_some_and(|scope| scope.is_live() && scope.task_id() == *task_id)
+        });
         let visible_task_ids = visible_tasks
             .iter()
-            .map(|task| task.task.id())
+            .map(|index| tasks[*index].task.id())
             .collect::<Vec<_>>();
         let selected_task_ids = visible_task_ids
             .iter()
@@ -859,10 +892,10 @@ impl MainWindow {
             .download_selection_anchor
             .filter(|task_id| self.selected_download_tasks.contains(task_id))
             .or(selected_task_id);
-        let selected_task = selected_task_id
-            .and_then(|task_id| visible_tasks.iter().find(|task| task.task.id() == task_id))
+        let selected_task = detail_task_id
+            .and_then(|task_id| tasks.iter().find(|task| task.task.id() == task_id))
             .cloned();
-        let (detail_snapshot, detail_error) = selected_task_id
+        let (detail_snapshot, detail_error) = detail_task_id
             .and_then(|task_id| {
                 self.downloads.upgrade().map(|application| {
                     let application = application.read(cx);
@@ -873,13 +906,14 @@ impl MainWindow {
                 })
             })
             .unwrap_or_default();
-        let selected_progress = selected_task_id
-            .and_then(|task_id| visible_progress.get(&task_id))
-            .cloned();
+        let selected_progress = detail_task_id.and_then(|task_id| {
+            self.downloads
+                .upgrade()
+                .and_then(|application| application.read(cx).progress(task_id).cloned())
+        });
         let main_window = cx.entity();
         let batch_toolbar = (selected_task_ids.len() > 1).then(|| {
-            let mut capabilities =
-                download_context_capabilities(&visible_tasks, &selected_task_ids);
+            let mut capabilities = download_context_capabilities(&tasks, &selected_task_ids);
             if capabilities.can_move_queue
                 && let Some(application) = self.downloads.upgrade()
             {
@@ -900,22 +934,25 @@ impl MainWindow {
                 capabilities,
             )
         });
-        if let Some(task_id) = selected_task_id {
-            if detail_snapshot.is_some() {
-                self.requested_download_detail = Some(task_id);
-            } else if self.requested_download_detail != Some(task_id) {
+        if let Some(task_id) = detail_task_id {
+            if self.requested_download_detail != Some(task_id) {
                 self.requested_download_detail = Some(task_id);
                 self.download_detail_scroll
                     .set_offset(point(px(0.0), px(0.0)));
                 let application = self.downloads.clone();
+                let scope = self.download_detail_scope.clone();
                 cx.defer(move |cx| {
+                    let Some(scope) = scope.filter(|scope| scope.is_live()) else {
+                        return;
+                    };
                     let _ = application.update(cx, |application, cx| {
+                        application.bind_task_detail_scope(scope);
                         application.request_task_detail(task_id, cx);
                     });
                 });
             }
         } else {
-            self.requested_download_detail = None;
+            self.retire_download_detail_scope(cx);
         }
         let detail_tab = self.download_detail_tab;
         let detail_scroll = self.download_detail_scroll.clone();
@@ -937,32 +974,42 @@ impl MainWindow {
             .into_any_element()
         });
         let visible_count = visible_tasks.len();
-        let virtual_tasks = Arc::new(visible_tasks);
+        // Indices only address this captured immutable owner snapshot, never a refreshed Vec.
+        let virtual_tasks = tasks;
+        let virtual_indices = visible_tasks;
         let virtual_task_ids = Arc::new(visible_task_ids);
-        let virtual_progress = Arc::new(visible_progress);
-        let virtual_icons = Arc::new(visible_icons);
         let virtual_main_window = main_window.clone();
+        #[cfg(test)]
+        projection_tests::after_projection(cx);
         let task_list = uniform_list(
             "download-task-list",
             visible_count,
-            cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
+            cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                #[cfg(test)]
+                projection_tests::observe_range(range.clone());
+                let application = this.downloads.upgrade();
+                let application = application.as_ref().map(|application| application.read(cx));
                 range
-                    .filter_map(|index| virtual_tasks.get(index).cloned())
-                    .map(|task| {
-                        let progress = virtual_progress.get(&task.task.id()).cloned();
-                        let icon_path = virtual_icons.get(&task.task.id()).cloned();
-                        download_task_row(
-                            theme,
-                            this.downloads.clone(),
-                            virtual_main_window.clone(),
-                            DownloadRowSelection {
-                                selected: this.selected_download_tasks.contains(&task.task.id()),
-                                visible_task_ids: virtual_task_ids.clone(),
-                            },
-                            task,
-                            progress,
-                            icon_path,
-                        )
+                    .filter_map(|index| {
+                        let task = virtual_tasks.get(*virtual_indices.get(index)?)?;
+                        let task_id = *virtual_task_ids.get(index)?;
+                        // Never resolve an old index against the current owner's replacement Vec.
+                        (task.task.id() == task_id).then(|| {
+                            download_task_row(
+                                theme,
+                                this.downloads.clone(),
+                                virtual_main_window.clone(),
+                                DownloadRowSelection {
+                                    selected: this.selected_download_tasks.contains(&task_id),
+                                    visible_task_ids: virtual_task_ids.clone(),
+                                },
+                                task,
+                                application.and_then(|application| application.progress(task_id)),
+                                application
+                                    .and_then(|application| application.task_icon_path(task_id))
+                                    .map(|path| path.to_path_buf()),
+                            )
+                        })
                     })
                     .collect::<Vec<_>>()
             }),
@@ -1008,6 +1055,16 @@ impl MainWindow {
                                 filter_count,
                                 total_count,
                             ) {
+                                let selected_visible =
+                                    this.downloads.upgrade().is_some_and(|app| {
+                                        app.read(cx).tasks().iter().any(|task| {
+                                            Some(task.task.id()) == this.selected_download_task
+                                                && filter.matches(task.task.status())
+                                        })
+                                    });
+                                if !selected_visible {
+                                    this.retire_download_detail_scope(cx);
+                                }
                                 this.download_list_scroll
                                     .scroll_to_item(0, ScrollStrategy::Top);
                                 cx.notify();
@@ -1077,7 +1134,7 @@ impl MainWindow {
                     ToolbarGroup::new("download-header-command-group")
                         .label("下载操作")
                         .child(
-                            icon_action("download-settings", MaterialIcon::Settings, "下载设置")
+                            icon_action("download-settings", MaterialIcon::Settings, "下载设置…")
                                 .ghost()
                                 .on_click(move |_, _, cx| {
                                     let application = settings_download_application.clone();
@@ -1089,7 +1146,7 @@ impl MainWindow {
                                 }),
                         )
                         .child(
-                            icon_action("download-schedule", MaterialIcon::History, "下载计划")
+                            icon_action("download-schedule", MaterialIcon::History, "下载计划…")
                                 .ghost()
                                 .on_click(move |_, _, cx| {
                                     let application = schedule_download_application.clone();
@@ -1104,7 +1161,7 @@ impl MainWindow {
                             labelled_icon_action(
                                 "download-new-task",
                                 MaterialIcon::Add,
-                                "新建下载",
+                                "新建下载…",
                             )
                             .custom(crate::ui::components::action::primary_button_variant(
                                 theme, cx,
@@ -1161,6 +1218,8 @@ impl MainWindow {
                             .debug_selector(|| "download-sort".into())
                             .h(px(CONTROL_HEIGHT_ACTION))
                             .flex_none()
+                            .flex()
+                            .items_center()
                             .child(
                                 action_button("download-sort", sort_label)
                                     .dropdown_menu_with_anchor(
@@ -1278,6 +1337,7 @@ impl MainWindow {
                     } else {
                         div()
                             .id("download-task-list-scroll")
+                            .debug_selector(|| "download-task-list-viewport".into())
                             .relative()
                             .flex_1()
                             .min_h_0()
@@ -1305,10 +1365,12 @@ pub(crate) fn download_task_row(
     application: gpui_kit::WeakEntity<DownloadApplication>,
     main_window: Entity<MainWindow>,
     selection: DownloadRowSelection,
-    task: DownloadEngineTask,
-    live_progress: Option<DownloadProgress>,
+    task: &DownloadEngineTask,
+    live_progress: Option<&DownloadProgress>,
     icon_path: Option<PathBuf>,
 ) -> AnyElement {
+    #[cfg(test)]
+    projection_tests::observe_row(task, live_progress);
     let DownloadRowSelection {
         selected,
         visible_task_ids,
@@ -1322,23 +1384,22 @@ pub(crate) fn download_task_row(
     let name_id = gpui_kit::SharedString::from(format!("download-task-name-text-{element_id}"));
     let status = task.task.status();
     let created_at_unix_ms = task.task.created_at_unix_ms();
-    let name = download_task_name(&task).to_owned();
+    let name = download_task_name(task).to_owned();
     let category = task
         .task
         .request()
         .category_name
         .clone()
         .unwrap_or_else(|| "—".into());
-    let path = task.final_path.as_ref().map_or_else(
-        || task.task.request().source_url.clone(),
-        |path| path.display().to_string(),
-    );
+    let total_bytes = live_progress
+        .and_then(|progress| progress.total_bytes)
+        .or(task.total_bytes);
     let (status_label, status_color) = download_status_presentation(theme, status);
     let mut transfer = download_row_transfer_presentation(
         status,
         task.downloaded_bytes,
         task.total_bytes,
-        live_progress.as_ref(),
+        live_progress,
     );
     if status == DownloadStatus::Completed {
         transfer.speed = task
@@ -1351,12 +1412,9 @@ pub(crate) fn download_task_row(
     #[cfg(test)]
     download_average_tests::observe_row_rate(task_id, &transfer.speed);
     let failed = task.error.is_some();
-    let (secondary_text, secondary_color) = task.error.as_ref().map_or_else(
-        || (path, theme.text_secondary),
-        |error| (download_failure_summary(error).to_owned(), theme.danger),
-    );
+    let secondary_text = total_bytes.map_or_else(|| "大小未知".into(), format_download_bytes);
+    let secondary_color = theme.text_secondary;
     let error_tooltip = task.error.as_ref().map(|error| error.message.clone());
-    let path_tooltip = (!failed).then(|| secondary_text.clone());
     let has_icon_path = icon_path.is_some();
     let row_open_application = application.clone();
     let context_application = application;
@@ -1370,7 +1428,7 @@ pub(crate) fn download_task_row(
     div()
         .id(row_id.clone())
         .debug_selector(move || row_id.to_string())
-        .h(px(DOWNLOAD_TASK_ROW_HEIGHT))
+        .h(ordinary_rem(DOWNLOAD_TASK_ROW_HEIGHT))
         .flex_none()
         .border_l_2()
         .border_color(if selected { theme.accent } else { theme.canvas })
@@ -1394,6 +1452,13 @@ pub(crate) fn download_task_row(
                     modifiers.control,
                     modifiers.shift,
                 );
+                if window
+                    .download_detail_scope
+                    .as_ref()
+                    .is_some_and(|scope| Some(scope.task_id()) != window.selected_download_task)
+                {
+                    window.retire_download_detail_scope(cx);
+                }
                 cx.notify();
             });
             if event.click_count() >= 2 {
@@ -1428,6 +1493,13 @@ pub(crate) fn download_task_row(
                     right_click_visible_task_ids.as_ref(),
                     task_id,
                 );
+                if window
+                    .download_detail_scope
+                    .as_ref()
+                    .is_some_and(|scope| Some(scope.task_id()) != window.selected_download_task)
+                {
+                    window.retire_download_detail_scope(cx);
+                }
                 info!(
                     event = "download.list.context_menu_requested",
                     selected_count = targets.len(),
@@ -1462,7 +1534,8 @@ pub(crate) fn download_task_row(
                     capabilities
                 })
                 .unwrap_or_default();
-            download_task_context_menu(
+            let detail_task = (ordered_task_ids.len() == 1).then(|| ordered_task_ids[0]);
+            let menu = download_task_context_menu(
                 theme,
                 menu.action_context(context_main_window.read(cx).hotkey_focus.clone()),
                 context_application.clone(),
@@ -1470,13 +1543,34 @@ pub(crate) fn download_task_row(
                 capabilities,
                 window,
                 cx,
-            )
+            );
+            if let Some(task_id) = detail_task {
+                let owner = context_main_window.downgrade();
+                menu.separator().item(
+                    download_popup_item(
+                        theme,
+                        "download-menu-view-details",
+                        "查看详情",
+                        MaterialIcon::Info,
+                        MenuTone::Normal,
+                    )
+                    .on_click(move |_, _, cx| {
+                        let owner = owner.clone();
+                        cx.defer(move |cx| {
+                            let _ =
+                                owner.update(cx, |view, cx| view.open_download_detail(task_id, cx));
+                        });
+                    }),
+                )
+            } else {
+                menu
+            }
         })
         .child(
             div()
                 .size_full()
-                .pl(px(SPACING_8))
-                .pr(px(SPACING_8))
+                .pl_2()
+                .pr_2()
                 .border_l_2()
                 .border_color(if selected {
                     theme.accent
@@ -1485,10 +1579,10 @@ pub(crate) fn download_task_row(
                 })
                 .flex()
                 .items_center()
-                .gap(px(SPACING_8))
+                .gap_2()
                 .child(
                     div()
-                        .size(px(26.0))
+                        .size(px(40.0))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -1500,7 +1594,7 @@ pub(crate) fn download_task_row(
                                             "download-task-shell-icon-selected".into()
                                         })
                                     })
-                                    .size(px(20.0))
+                                    .size(px(40.0))
                                     .child(img(path).size_full().object_fit(ObjectFit::Contain)),
                             )
                         })
@@ -1512,7 +1606,7 @@ pub(crate) fn download_task_row(
                                             "download-task-icon-fallback-selected".into()
                                         })
                                     })
-                                    .size(px(15.0))
+                                    .size(ordinary_rem(30.0))
                                     .child(
                                         Icon::new(MaterialIcon::Download)
                                             .size_full()
@@ -1531,7 +1625,7 @@ pub(crate) fn download_task_row(
                         .overflow_hidden()
                         .flex()
                         .flex_col()
-                        .gap(px(SPACING_4))
+                        .gap_1()
                         .child(
                             div()
                                 .id(name_id.clone())
@@ -1546,17 +1640,26 @@ pub(crate) fn download_task_row(
                                 ))
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(TEXT_WORKBENCH_BODY))
-                                .line_height(px(LINE_HEIGHT_WORKBENCH_BODY))
+                                .text_size(ordinary_rem(TEXT_WORKBENCH_BODY))
+                                .line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_BODY))
                                 .text_color(theme.text)
-                                .child(name),
+                                .child(name)
+                                .map(|text| {
+                                    #[cfg(test)]
+                                    let text = if selected {
+                                        text.child(kit_migration_tests::audit06_type_probe("name"))
+                                    } else {
+                                        text
+                                    };
+                                    text
+                                }),
                         )
                         .child(
                             div()
                                 .id(secondary_id.clone())
                                 .when(selected, |text| {
                                     text.debug_selector(|| {
-                                        "download-task-path-text-selected".into()
+                                        "download-task-size-text-selected".into()
                                     })
                                 })
                                 .when(failed, |text| {
@@ -1564,10 +1667,19 @@ pub(crate) fn download_task_row(
                                 })
                                 .overflow_hidden()
                                 .whitespace_nowrap()
-                                .text_size(px(TEXT_WORKBENCH_SUPPORT))
-                                .line_height(px(LINE_HEIGHT_WORKBENCH_SUPPORT))
+                                .text_size(ordinary_rem(TEXT_WORKBENCH_SUPPORT))
+                                .line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))
                                 .text_color(secondary_color)
                                 .child(secondary_text)
+                                .map(|text| {
+                                    #[cfg(test)]
+                                    let text = if selected {
+                                        text.child(kit_migration_tests::audit06_type_probe("path"))
+                                    } else {
+                                        text
+                                    };
+                                    text
+                                })
                                 .when_some(error_tooltip, |line, message| {
                                     line.tooltip(move |window, cx| {
                                         Tooltip::element({
@@ -1595,12 +1707,6 @@ pub(crate) fn download_task_row(
                                         .max_h(px(DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_HEIGHT))
                                         .build(window, cx)
                                     })
-                                })
-                                .when_some(path_tooltip, |line, message| {
-                                    line.tooltip(download_bounded_tooltip(
-                                        "download-task-path-tooltip",
-                                        message,
-                                    ))
                                 }),
                         ),
                 )
@@ -1609,9 +1715,9 @@ pub(crate) fn download_task_row(
                         .when(selected, |column| {
                             column.debug_selector(|| "download-task-category-selected".into())
                         })
-                        .w(px(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
+                        .w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
                         .flex_none()
-                        .text_size(px(TEXT_LABEL))
+                        .text_size(ordinary_rem(TEXT_LABEL))
                         .text_color(theme.text_secondary)
                         .truncate()
                         .id(gpui_kit::SharedString::from(format!(
@@ -1632,18 +1738,18 @@ pub(crate) fn download_task_row(
                         .when(selected, |column| {
                             column.debug_selector(|| "download-task-progress-selected".into())
                         })
-                        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
+                        .w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
                         .flex_none()
                         .flex()
                         .flex_col()
-                        .gap(px(4.0))
+                        .gap_1()
                         .child(
                             div()
-                                .h(px(LINE_HEIGHT_WORKBENCH_SUPPORT))
+                                .h(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))
                                 .flex()
                                 .items_center()
                                 .font_family(UI_MONO_FONT_FAMILY)
-                                .text_size(px(TEXT_LABEL))
+                                .text_size(ordinary_rem(TEXT_LABEL))
                                 .text_color(theme.text_secondary)
                                 .child(
                                     div()
@@ -1652,7 +1758,7 @@ pub(crate) fn download_task_row(
                                                 "download-task-transferred-selected".into()
                                             })
                                         })
-                                        .w(px(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
+                                        .w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
                                         .flex_none()
                                         .overflow_hidden()
                                         .whitespace_nowrap()
@@ -1665,7 +1771,7 @@ pub(crate) fn download_task_row(
                                                 "download-task-speed-selected".into()
                                             })
                                         })
-                                        .w(px(DOWNLOAD_SPEED_COLUMN_WIDTH))
+                                        .w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))
                                         .flex_none()
                                         .overflow_hidden()
                                         .whitespace_nowrap()
@@ -1678,7 +1784,7 @@ pub(crate) fn download_task_row(
                                                 "download-task-remaining-selected".into()
                                             })
                                         })
-                                        .w(px(DOWNLOAD_REMAINING_COLUMN_WIDTH))
+                                        .w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))
                                         .flex_none()
                                         .overflow_hidden()
                                         .whitespace_nowrap()
@@ -1705,11 +1811,26 @@ pub(crate) fn download_task_row(
                         .when(selected, |column| {
                             column.debug_selector(|| "download-task-status-selected".into())
                         })
-                        .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
+                        .w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))
                         .flex_none()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_size(ordinary_rem(TEXT_LABEL))
+                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                         .text_color(status_color)
+                        .id(gpui_kit::SharedString::from(format!(
+                            "download-task-status-{}",
+                            task_id.as_uuid()
+                        )))
+                        .when_some(
+                            task.error.as_ref().map(|error| {
+                                format!("{}：{}", download_failure_summary(error), error.message)
+                            }),
+                            |status, message| {
+                                status.tooltip(download_bounded_tooltip(
+                                    "download-task-status-error-tooltip",
+                                    message,
+                                ))
+                            },
+                        )
                         .child(status_label),
                 )
                 .child(
@@ -1718,13 +1839,13 @@ pub(crate) fn download_task_row(
                         .when(selected, |column| {
                             column.debug_selector(|| "download-task-created-selected".into())
                         })
-                        .w(px(DOWNLOAD_CREATED_COLUMN_WIDTH))
+                        .w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))
                         .flex_none()
                         .overflow_hidden()
                         .whitespace_nowrap()
                         .font_family(UI_MONO_FONT_FAMILY)
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_size(ordinary_rem(TEXT_LABEL))
+                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_secondary)
                         .tooltip(move |window, cx| {
                             Tooltip::new(format_download_timestamp(created_at_unix_ms))
@@ -1770,6 +1891,14 @@ pub(crate) fn download_task_context_menu(
 ) -> PopupMenu {
     let plan = download_context_menu_plan(&capabilities, task_ids.len());
     let artifact_task = capabilities.single_artifact;
+    let delete_file_label = if application
+        .read_with(cx, |application, _| application.task_removal_deletes_file())
+        .unwrap_or(false)
+    {
+        "删除文件…"
+    } else {
+        "从列表移除"
+    };
     let batch_item = |selector: &'static str,
                       label: &'static str,
                       action: DownloadBatchAction,
@@ -1884,7 +2013,7 @@ pub(crate) fn download_task_context_menu(
             download_popup_item(
                 theme,
                 "download-menu-task-window",
-                "任务窗口",
+                "任务窗口…",
                 MaterialIcon::Info,
                 MenuTone::Normal,
             )
@@ -1942,7 +2071,7 @@ pub(crate) fn download_task_context_menu(
         if plan.cancel {
             menu = menu.item(batch_item(
                 "download-menu-cancel",
-                "取消",
+                "取消任务",
                 DownloadBatchAction::Cancel,
                 MaterialIcon::Cancel,
                 capabilities.cancel_targets.clone(),
@@ -1988,7 +2117,15 @@ pub(crate) fn download_task_context_menu(
         }
         has_visible_items = true;
     }
-    let extension_actions = crate::extensions::manual_actions::available("downloads", cx);
+    let extension_actions = crate::extensions::manual_actions::available_for(
+        "downloads",
+        Some(nxtools_extensions::InputSelection {
+            kind: nxtools_extensions::InputKind::Download,
+            count: task_ids.len(),
+            bytes: 0,
+        }),
+        cx,
+    );
     if !extension_actions.is_empty() {
         if has_visible_items {
             menu = menu.separator();
@@ -2028,7 +2165,7 @@ pub(crate) fn download_task_context_menu(
             download_popup_item(
                 theme,
                 "download-menu-delete-file",
-                "删除文件",
+                delete_file_label,
                 MaterialIcon::Delete,
                 MenuTone::Danger,
             )
@@ -2204,7 +2341,7 @@ pub(crate) fn download_batch_toolbar(
             toolbar.content(batch_action(
                 "download-batch-cancel",
                 MaterialIcon::Cancel,
-                "取消可取消任务",
+                "取消所选可取消任务",
                 DownloadBatchAction::Cancel,
                 capabilities.cancel_targets.clone(),
                 false,
@@ -2349,6 +2486,24 @@ pub(crate) fn download_task_detail(theme: Theme, view: DownloadDetailView<'_>) -
                     }
                 });
             }));
+    let close_owner = main_window.downgrade();
+    let tabs = div()
+        .flex()
+        .items_center()
+        .child(div().flex_1().min_w_0().child(tabs))
+        .child(
+            icon_action("download-detail-close", MaterialIcon::Close, "关闭详情")
+                .small()
+                .on_click(move |_, _, cx| {
+                    let owner = close_owner.clone();
+                    cx.defer(move |cx| {
+                        let _ = owner.update(cx, |view, cx| {
+                            view.retire_download_detail_scope(cx);
+                            cx.notify();
+                        });
+                    });
+                }),
+        );
     let content = match active_tab {
         DownloadDetailTab::Overview => download_overview_detail(theme, task, detail, progress),
         DownloadDetailTab::Segments => download_segment_detail(theme, detail, detail_error),
@@ -3266,10 +3421,10 @@ pub(crate) fn download_table_header(
     )
     .min_w_0()
     .flex_1()
-    .pl(px(36.0));
+    .pl_9();
     let progress_header = div()
         .debug_selector(|| "download-transfer-header".into())
-        .w(px(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
+        .w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))
         .flex_none()
         .flex()
         .items_center()
@@ -3281,20 +3436,20 @@ pub(crate) fn download_table_header(
                 sort,
                 main_window.clone(),
             )
-            .w(px(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
+            .w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))
             .flex_none(),
         )
         .child(
             div()
                 .debug_selector(|| "download-speed-header".into())
-                .w(px(DOWNLOAD_SPEED_COLUMN_WIDTH))
+                .w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))
                 .flex_none()
                 .child("速度"),
         )
         .child(
             div()
                 .debug_selector(|| "download-remaining-header".into())
-                .w(px(DOWNLOAD_REMAINING_COLUMN_WIDTH))
+                .w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))
                 .flex_none()
                 .child("剩余"),
         );
@@ -3305,26 +3460,26 @@ pub(crate) fn download_table_header(
         sort,
         main_window.clone(),
     )
-    .w(px(DOWNLOAD_STATUS_COLUMN_WIDTH))
+    .w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))
     .flex_none();
     div()
         .id("download-table-header")
         .debug_selector(|| "download-table-header".into())
-        .h(px(DOWNLOAD_TABLE_HEADER_HEIGHT))
-        .px(px(SPACING_8))
+        .h(ordinary_rem(DOWNLOAD_TABLE_HEADER_HEIGHT))
+        .px_2()
         .border_b_1()
         .border_color(theme.border_subtle)
         .bg(theme.surface)
         .flex()
         .items_center()
-        .gap(px(SPACING_8))
-        .text_size(px(TEXT_META))
+        .gap_2()
+        .text_size(ordinary_rem(TEXT_META))
         .text_color(theme.text_muted)
         .child(name_header)
         .child(
             div()
                 .debug_selector(|| "download-category-header".into())
-                .w(px(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
+                .w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))
                 .flex_none()
                 .child("分类"),
         )
@@ -3338,7 +3493,7 @@ pub(crate) fn download_table_header(
                 sort,
                 main_window,
             )
-            .w(px(DOWNLOAD_CREATED_COLUMN_WIDTH))
+            .w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))
             .flex_none(),
         )
         .into_any_element()
@@ -3352,6 +3507,14 @@ pub(crate) fn download_sort_header_cell(
     main_window: Entity<MainWindow>,
 ) -> gpui_kit::Stateful<gpui_kit::Div> {
     let active = sort.key == key;
+    let accessible_name = if active {
+        format!(
+            "按{label}排序，当前{}",
+            if sort.descending { "降序" } else { "升序" }
+        )
+    } else {
+        format!("按{label}排序")
+    };
     let label = if active {
         format!("{label} {}", if sort.descending { "↓" } else { "↑" })
     } else {
@@ -3361,27 +3524,40 @@ pub(crate) fn download_sort_header_cell(
         .id(("download-sort-header", key as usize))
         .debug_selector(move || format!("download-sort-header-{}", key.diagnostic_name()))
         .h_full()
-        .cursor_pointer()
         .flex()
         .items_center()
-        .text_color(if active {
-            theme.accent_text
-        } else {
-            theme.text_muted
-        })
-        .hover(move |style| style.text_color(theme.text_secondary))
-        .child(label)
-        .on_click(move |_event, _window, cx| {
-            main_window.update(cx, |window, cx| {
-                if set_download_sort(&mut window.download_sort, key, true) {
-                    window
-                        .download_list_scroll
-                        .scroll_to_item(0, ScrollStrategy::Top);
-                    persist_download_sort(window, cx);
-                    cx.notify();
-                }
-            });
-        })
+        .child(
+            Button::new(("download-sort-header-button", key as usize))
+                .ghost()
+                .xsmall()
+                .compact()
+                .accessibility_label(accessible_name)
+                .w_full()
+                .h_full()
+                .p_0()
+                .text_color(if active {
+                    theme.accent_text
+                } else {
+                    theme.text_muted
+                })
+                .child(
+                    div()
+                        .w_full()
+                        .text_size(ordinary_rem(TEXT_META))
+                        .child(label),
+                )
+                .on_click(move |_event, _window, cx| {
+                    main_window.update(cx, |window, cx| {
+                        if set_download_sort(&mut window.download_sort, key, true) {
+                            window
+                                .download_list_scroll
+                                .scroll_to_item(0, ScrollStrategy::Top);
+                            persist_download_sort(window, cx);
+                            cx.notify();
+                        }
+                    });
+                }),
+        )
 }
 
 /// Persists the current task-list sort so the next launch restores it. Both
@@ -3405,3 +3581,9 @@ mod kit_migration_tests;
 #[cfg(test)]
 #[path = "download_average_tests.rs"]
 mod download_average_tests;
+
+#[cfg(test)]
+pub(crate) mod projection_tests;
+
+#[cfg(test)]
+mod detail_async_tests;

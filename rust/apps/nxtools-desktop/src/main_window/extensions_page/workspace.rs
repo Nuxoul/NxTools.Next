@@ -70,6 +70,13 @@ impl ExtensionManagerView {
             .flex()
             .flex_col()
             .gap_3();
+        body = body.child(extensions_settings::view_button(
+            "extension-storage-open",
+            "保留的扩展数据",
+            busy,
+            view.clone(),
+            |view, _, cx| view.open_storage(None, cx),
+        ));
         let has_preview = preview;
         if self.import_open && !preview {
             let path = self.path.clone();

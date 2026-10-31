@@ -8,13 +8,37 @@ Follow [workflow](README.md); source inspection is not runtime acceptance.
 
 | Source | Location | What was inspected | Boundary |
 | --- | --- | --- | --- |
-| Bandizip 7.32.0.1 (x64) | `D:\Tool\Bandizip` | `langs\SimpChinese.lang` (all1201 lines: menus/dialogs/settings/error copy), `bz.exe` help, versions, config, icon names, extension strings, EULA | EULA§3 restricts reverse engineering except where applicable law permits. No Bandizip decompilation/disassembly was performed; no proprietary code reuse is proposed. Resources inventory commands, not proof that every feature works in every edition. |
+| Bandizip 7.32.0.1 (x64) | `D:\Tool\Bandizip` | Initial Phase A: `langs\SimpChinese.lang` (all1201 lines), `bz.exe` help, versions, config, icons, extension strings and EULA. Selected-entry follow-up: exact-member ZIP extraction plus bounded REA/Ghidra12.1.4 native drag, extraction-coordinator, directory-picker and factory-loader dossiers (§1.1). | EULA§3 restricts reverse engineering except where applicable law permits. Native pseudocode is reconstructed artifact evidence, not original source; no proprietary code reuse is proposed. Resource inventory does not verify every feature or edition. |
 | Archiver (MIT, Ke Sheng Da) | `D:\Code\Archiver-main` | `core/src/lib.rs`, `gui/src/{main,view,shell,args}.rs`, `gui/ui/app.slint`, `installer/archiver.iss`, `bench/` | MIT: code may be adapted with attribution. Its `unrar` dependency carries the UnRAR license (extract only). GUI is Slint, not reusable. |
 | SupaZip (MIT OR Apache-2.0) | `D:\Code\supazip-master` | `supazip-core/src/{traits,error}.rs`, `formats/*.rs`, GUI and CLI sources, ROADMAP/DESIGN/plan | Its docs claim more than the code does; only source is evidence. GUI is egui, not reusable. |
 | User screenshot | [retained layout reference](../../.trellis/tasks/10-16-archive-manager/assets/bandizip-layout-reference.png) | Bandizip Professional title, `main (5).zip` open, tree/list/comment/status | User-supplied shape reference, not an app-running or license-state check. Original image SHA256 `da5f63eacb75b9ce508d39671e2d4d4180d33d5fd40958b740634545d5ab9488`. |
 
 Legacy follow-up: `git -C D:\Code\NxTools grep -n -I -E 'ZipArchive|SevenZip|SharpCompress|压缩|解压' -- '*.cs' '*.xaml' '*.csproj'` found package/FFmpeg ZIP and image/video compression, not a general archive browser. This covers tracked matching sources only, not all untracked/generated files. `Services/BrowserExtensionPackageService.cs` and `Services/FfmpegInstallerService.cs` are unrelated packaging/install owners; image/video compression is not archive behavior. No old archive-window/native lifecycle was identified to migrate.
+
+2026-10-28 feedback seam verification: `ArchiveOutputSession.BeginFile/Partial/CommitJournal` retains native committed transaction parent handles, and `TrackDirectory/CreateExclusiveDirectory` retains actual Name/Smart collision-directory handles. `ArchiveWorkerRunner.RunAsync` disposes resources before freezing terminal journal; result-location facts must therefore be captured before that disposal, without changing cleanup/publication semantics. `ArchiveJobSession.OnRunnerEvent` is the typed terminal bridge. Desktop `jobs.rs::job_terminal` currently opens request.destination (base only) and discards Shell completion; `ClipboardShellTarget.LaunchCore` ordinary open is Process.Start, whereas `ExplorerShellActivation` owns bounded target/foreground readback. No legacy NxTools general archive owner was found (see original search above). A missing result location is unknown, not authority to guess the base/cache/external drop directory.
+Preview default-on integration additionally verified `browser_preview.rs::sync_preview_selection` -> `entry.rs::start_preview` used generic current-connection command enqueue although browser drag already retained original read connection. New passive requests validate that same origin atomically under the original IPC router lock; no new queue/reservation. `browser.rs::suspend_tab` only suspended gestures/marquee and did not invalidate preview tokens/content. Hide retires the local token immediately and defers original cancel; next visible render reseeds the remembered preview preference. Explicit-open lease tests match exact Release amid legitimate passive-preview control messages, not assume an otherwise empty queue.
+
+Contextual HZ5 continuation: `application.rs::consume` retires each read after its terminal and owns the top-level source/generation; `jobs.rs::JobRecord` retains original request paths/destination plus attempt and actual cleanup terminal. `launch_entry.rs` previously opened an empty continuation form from the home page. The object-scoped flow uses the same `OperationForm`, `ArchiveBrowser` and `JobProgressView`, with correlated read-only recovery inspection owned by `ArchiveApplication`; fresh Continue still enters the original Job Start queue. Native header stores target identity, not a target path, so unidentified targets require selecting and identity-checking the original folder. Browser refresh/close/cancel/disconnect retire pending discovery; view callbacks defer cross-entity writes. No legacy general archive owner or independent native show/hide boundary is introduced.
 Bandizip is the **interaction reference**, not a pixel or copy source.
+
+### 1.1 Selected-entry runtime and native follow-up
+
+The [research record](../../.trellis/tasks/10-31-archive-research/research.md) retains the supplied ZIP facts, production-boundary reproductions, timings, REA Evidence IDs and repair boundaries. REA uses `D:\Tool\ghidra_12.1.4_PUBLIC`; this follow-up is distinct from the initial resource inventory.
+
+| Boundary | Verified entries / invariant |
+| --- | --- |
+| Drag | `FUN_1401130a0` / `FUN_140147200` → `FUN_140053460` → `DoDragDrop` at `0x1400535bc`; data object uses `CF_HDROP`/`TYMED_HGLOBAL` and balances data/drop-source references. The main path retains selected items and separates ordinary/fast drag. Static evidence does not select the sample's GUI branch. |
+| Selected extraction | Successful fast-drop branch → `FUN_1401481d0` → `FUN_14013ce80`; selection indices and destination enter the common operation coordinator. Engine metadata calls remain indirect; the proprietary payload engine's implementation is not recovered by this chain. |
+| Directory Browse | `FUN_1400fa3d0` (`TEXT_SELECT_DEST_FOLDER`) → `FUN_140024f10` → `SHBrowseForFolderW` at `0x140024ff0`. Owner HWND and current directory are passed; callback `FUN_140024ee0` seeds initial selection; only a nonempty result updates the destination. |
+| Engine factory | `FUN_1400ee3e0` loads the module and resolves `CreateArk`/`CreateArkCompressor`, with explicit module/export/factory failure results. |
+| Dual progress | `CExtractDlg` constructor `FUN_1401170c0` → initialization `FUN_140117a10` retains two HWNDs (`0x3ee`/`0x3f5`) and sets each range to1000. Timer100ms → `FUN_140118c90` → `FUN_140119a40` samples two distinct percentage fields under the existing critical section, updates both with `PBM_SETPOS`, and resets member elapsed when the displayed filename changes. Aggregate percentage also feeds taskbar/tray. REA pseudocode evidence `ev_f99bf996bcb344013f46d9ae578d82f75db6d5dfc4de4d8c0564e5f8a4cc5a1d`; static artifact evidence, not a live GUI measurement. |
+
+For `companion\dist\bcprov-jdk18on-1.78.1.jar` in the supplied 137,737,166-byte ZIP, `bz.exe x` selected-member extraction took110.731ms including startup. A separate NxTools owned-test-package/Debug run measured browser10,195.0772ms, materialize24,536.2446ms, and ordinary selected extraction30,130.4285ms ending `timeout` after publishing one8,324,412-byte file. Both extracted outputs compare byte-for-byte with the decoded member. These are separate operations, not a reproduction of one production UI operation exceeding60s.
+
+Next source findings: metadata preserves literal ZIP backslashes while Desktop tree/drag split only on `/`; ordinary extraction accepts both. Contextual Extract captures source/selection but always renders the source chooser. Picker submission uses an uncorrelated envelope that the C# parser rejects before the native dialog, and Desktop does not settle picker pending state on the rejection's `CommandResult`. Whole-archive revision scans, including a per-selected-file scan, and synchronous JSON chunk output are confirmed costs; their individual runtime shares remain unmeasured. Preserve ordinal/source/output binding, native ownership, CRC and actual cleanup while repairing these boundaries.
+Drag feedback correction: `browser_drag.rs::drag_move/drag_result` writes `DragState.message`, and `browser.rs::render` appends `archive-drag-feedback` as a banner above the list. Transient gesture errors must instead use the existing deferred NotificationCenter ingress; persistent archive read/stale/recovery state remains in the page. Current progress wire carries aggregate bytes and a member name but omits member bytes/size. The existing shared output boundary has both facts; preserve100ms snapshot coalescing and original generation/terminal authority when adding current-file plus overall Progress controls.
+
+Bandizip native facts above are static artifact observations; real directory-dialog focus/cancellation, external OLE behavior and proprietary engine virtual-call targets remain unverified. No legacy NxTools general archive-window lifecycle has been identified.
 
 ## 2. Bandizip feature inventory (from public resources)
 
@@ -24,7 +48,7 @@ Approved required/optional/excluded delivery and exact capability gates live in 
 ### 2.1 Formats
 
 - Format strings found in `ark.x64.dll`: 7z ace alz apk arj br bz2 cab deb dmg egg gz img ipa iso jar lha lz lz4 lzh lzma msi nsis rar rar5 sit tar tbz tbz2 tgz txz tzst udf war wim xar xpi xz z zip zipx zpaq zst zstd.
-- **Evidence limitation:** extension strings and icon names are candidates, not verified list/extract/create support. No real-format fixture or interactive Bandizip operation was exercised in this research; edition-specific availability also remains unverified.
+- **Evidence limitation:** extension strings and icon names are candidates, not verified list/extract/create support. The initial inventory did not exercise format fixtures. The §1.1 follow-up verifies one exact ZIP member through `bz.exe`; other formats, GUI paths and edition-specific availability remain unverified.
 - File-association icon set (`icons\default`): 001 7z alz bz2 cab egg gz iso lha lzh rar tar tbz
   tbz2 tgz xz zip zipx zpaq.
 - `bz.exe -fmt:` create formats: zip, zipx, exe(SFX), tar, tgz, lzh, iso, 7z, gz, xz.
@@ -174,7 +198,7 @@ shows destination, free space and expanded size (`TEXT_ASK_DEST_FOLDER_SPACE_NOT
 **Delete source after compress:** if "test" is off, Bandizip asks to turn it on, because deleting
 the source without verification can lose data (`TEXT_ASK_DELSRC_TURN_ON_TEST_ARCHIVE`).
 
-**Opening an entry:** resource text exposes temp extraction and a modified-file write-back prompt (`TEXT_ASK_APPLY_MODIFIED_FILE`), plus an executable warning. This is resource-level evidence only; actual temp lifetime, watcher behavior and native show/focus/cancellation call chains were not inspected in Bandizip.
+**Opening an entry:** resource text exposes temp extraction and a modified-file write-back prompt (`TEXT_ASK_APPLY_MODIFIED_FILE`), plus an executable warning. This remains resource-level evidence for opening/editing. The selected-entry follow-up in §1.1 inspects native drag/extraction coordination; executable-open temp lifetime and modification-watcher behavior remain unverified.
 
 **Volumes:** the user is told to open the first volume, or offered to jump to it
 (`TEXT_ASK_OPENERR_FIRST_VOLUME`). Missing `.z01` volumes are reported.
@@ -597,3 +621,467 @@ uuencoded originals/manifests retained; RAR4three volumes20111bytes and RAR5soli
 These fixture sources are independent data/oracles, not a replacement product backend. Final current
 results live in phase-e-delivery-outcomes and sole checkpoint. Physical GUI/DPI/UIA/user acceptance
 remains NOT RUN; no F,source recycle,release/system mutation or first-release completion claim.
+
+## Noninteractive CLI reference follow-up (2026-10-24)
+
+Verified nested SupaZip `supazip/supazip-cli/src/main.rs`: Clap22-118 -> main/run136-215 ->
+resolve_backend259-290 -> cmd_list296/cmd_extract323/cmd_test404 -> core traits::ArchiveFormat.
+`output.rs5-34` serializes list/test success only; extract ignores output mode and errors staystderr.
+`StderrProgress496-523` cancellation AtomicBool is never set; Ctrl-C is a TODO comment, not implemented.
+Password argv Option<String>, extension-only backend selection (compound tar suffix gap), ignored
+--all, direct truncating File::create and inconsistent missing-selection/unsafe-name success are not
+copied. Exact extraction/test paths: core formats/zip.rs205-446,564-625; sevenz.rs238-460,539-612;
+tar.rs41-149,209-258. Core traits.rs334-410 is contract only, not evidence of safe native publication.
+Tracked legacy NxTools Program.cs17-27/72-112 exposes only browser extension export/package options;
+BrowserExtensionPackageService220-235/FfmpegInstallerService87-103 ZIP owners are unrelated.
+Next CLI must reuse product ArchiveReadClient/ArchiveReadSession and ArchiveJobSession/original
+worker/Job/source/output. Exact approved shape, prompt/secret/cancel/cleanup/output requirements:
+[CLI contract](../../.trellis/tasks/10-16-archive-manager/archive-cli-contract.md). No native drag substitute.
+
+## 7z risk/readmission exact metadata follow-up (2026-10-24)
+
+Locked sevenz-rust2 0.23.0 archive.rs45-123/459-487 and reader.rs661-825/831-1028:
+file_block_index maps streamed members; first_pack indices count referenced packed inputs.
+ArchiveEntry.compressed_size is only FIRST file/FIRST packed stream, not a universal member size.
+Current supported single-input chains admit a denominator only for a single-member independent
+block with exactly one uniquely attributed packed stream (checked sum of that one stream). Shared
+solid members and ambiguous/orphan/multi-input spans stay unknown, not zero/divided. Global
+archive.is_solid is anyshared, so inspect each block; this slice adds no multi-input support.
+reader.rs955-978 derives finalsubstream size from declaredblockoutput minus previoussizes; declared
+max/sum can be computed without payloaddecode, not integrityproof. Fullcontent/CRC/source checks
+remain required before originalstagedpublication. For finalblock, pack_sizes.len can include orphan
+declaredstreams, so must prove actualreferencedcount before a denominator is known. No newbackend.
+SupaZip sevenz.rs64-101/308-452 copies misleadingpackedfield and compares operationcumulativebytes
+with memberratio; traits.rs273-297 ratio assumptions/unrestricted values are not copied. Original
+legacy packageZIP owner remains unrelated. New finite7z scope/invariants:
+[7z slice contract](../../.trellis/tasks/10-16-archive-manager/sevenz-risk-readmission-contract.md).
+
+## RAR risk/readmission source-admission follow-up (2026-10-24)
+
+Original run_rar -> SourceSet::open -> metadata rar::execute -> validate_metadata/browser/codec_plan
+-> extraction_preflight already exists; no missing-hook rewrite. Actual upstream RAR4 VERSION11bytes
+and RAR5 Unicode7bytes at total1 both failed before output_budget_shortfall in original worker
+rar_readmission_contract (02-red), not a decoder-only simulation. Original ResourceLimits::default
+model.rs196-212 and C#ArchiveWorkerBudget.Capture52-54 agree on finite100GiB default; metadata/work/
+Job remain separate. RAR-only extract+readmission may use max(original,that finite default) for
+encoded source acquisition to reach original declaration preflight, never for actual output.
+Native signature classification must occur under original held source lease; RAR4/5 signatures and
+original RarNext/ordered family/sourceidentity checks stay distinct from 7z. No non-opt-in/open/TEST/
+otherformat expansion. Original worker_password keeps finite no-output preparation and Required/
+explicitWrongPassword policy; Risk only confirms original current ceiling. Exact bounded scope:
+[RAR slice contract](../../.trellis/tasks/10-16-archive-manager/rar-risk-readmission-contract.md).
+
+Locked UnRAR7.1 RARHeaderDataEx.md88-124/143-145 and RAROpenArchiveDataEx.md70-79 distinguish
+member split-part packed bytes from full member unpacked size/last-part CRC. DLL PackSize is not a
+volume-aggregated denominator. ROADF_SOLID is archive-level; RHDF_SOLID means current member uses
+previous data, so even first member may have RHDF_SOLIDfalse in a solid archive. Existing rar.rs
+gate requires neither archive/member solid nor member split; no metadata-policy repair indicated.
+INT64NDF remains0x7fffffff7fffffff (arcread.cpp315-335/803-809),notzero. Archiver corelib.rs535-550
+listsRAR compressedNone and642-660 uses nativeextract_with_base; SupaZip formats/mod.rs19-45/
+153/184 has noRARbackend. Neither is a source for replacing current callback-budget/native chain.
+Fresh fixed libarchive79c571f845dbdd250d69bff9d93ae034f674135e uuencoded testdata follow source
+test_read_format_rar.c450-550 and test_read_format_rar5.c188-284: compress_normalRAR4(14617bytes,
+SHA7d32e2ef511d0ade372345440838165df828197eff4d7816880dafde690cce03), compressedRAR5(436bytes,
+SHA68f9d7e2662cd5bc5607ba9c6bf1edbf121cf3b08011a7d8643091791750a7c8), multiple_files_solidRAR5
+(677bytes,SHA0aa2c652c06304dedd93019663c1d52d5e85055d5fdb8045bfcc4345b90b4a0f). Originaluu,
+BSDnotice,stock7Zip26 l/t/memberx-so and literal/hash evidence retained in RAR round scratch; no
+RARcreation/compressorcopy. RAR4regular20111/7091 andRAR5regular1200/361 provide actual tiny
+positive ratio at lowered DEBUG(1,1); production64MiB/1000x unchanged. Solid/shared ratios stayunknown.
+
+## TAR / stream declaration follow-up (2026-10-24)
+
+Exact source check: TAR fixed/PAX regular payload size known,memberpackedNone; outer compressed
+length has no member attribution. Gzip ISIZE is per-member modulo2^32 (lockedflate2crc.rs84-93),
+BZ2 BZh is block/work selector,notoutputlength. Existing XZ scan checks allIndexrecords/headerCRC/
+blockextents/LZMA2chunkcounts and accumulates expanded_total without payloaddecode; ZstdFCS requires
+ALLstandardframes known,skippable contributeszero,anyunknown meanswholeunknown. FCS canlie,full
+decoderstillchecksframeend/actualsize/applicablechecksums. Exact lzma-rust2Index API is private;
+zstd-safe7.2.4 get_frame_content_size is perframe,find_decompressed_size experimental notenabled.
+Actualworker tar_stream_readmission_contract03RED: knownXZ/knownZstd/twoknownZstd rejected before
+originalshortfall; unknownstreamguardPASS. Minimalprivateextract-readmission open may reuse original
+scans' declarations,notpublicverifiedsize or newfulldecode/index. Publicopen/TEST remainunknown,
+allstructure/work/dictionary/metadatachecks and actualoutputlimits remain original. SupaZipcompound
+compressed_size=size and wholememoryTXZ are not copied; Archiverstandalonelistfullinflate notcopied.
+Scope/invariants:[TAR/stream contract](../../.trellis/tasks/10-16-archive-manager/tar-stream-risk-readmission-contract.md).
+
+## Directed settings/browser correction reference verification (2026-10-24)
+
+Re-read the current component-selection rules,0.8.0 release delta, catalog/API index and task
+PRD/design§5/ui-spec/Phase B–C execution sections before edits. Tracked legacy NxTools search
+again found packaging/FFmpeg and image/video compression, not a general archive-window owner.
+Bandizip public UTF-8 language resources IDD_SETTING_GENERAL/ASSOC/SHELL/EXTRACT/ARCHIVE/ETC
+verify the named options, not runtime implementation or permission to copy proprietary assets.
+Seven newly supplied PNGs are the user's authority, but the screenshot viewer failed; loaded
+image dimensions and native Paint AX tree are NOT visual inspection. No new visual match claimed.
+
+Current production call chains reviewed: ArchiveSettingsView::save -> Core owned atomic archive
+section -> deferred settings_updated; ArchiveApplication::open -> Kit independent activating
+window -> ArchiveBrowser -> native close snapshot/deferred retirement. Browser Tree observes ID
+and defers navigation; projection_changed defers original tree/vertical scroll writes. Preserve
+source/snapshot/selection/password/native-drag generation guards, last-good/error/retry, existing
+focus and close/cancel behavior. No new native show/hide owner is needed for presentation edits.
+
+Exact locked public sources: Component0.8.0 tree.rs::Tree::new/ListItem slot delegates behavior
+to Base0.8.0 tree.rs (public depth/is_folder/is_expanded; outer TreeItem owns click+toggle).
+Component button/button.rs public child,accessibility_label,tooltip and Toolbar.content preserve
+official outline/Medium; Toolbar.child still forces ghost/compact. GPUI pre0.3.9 div.rs remaps
+orthogonal wheel input on single-axis overflow unless restrict_scroll_to_axis is set (Base's
+public lock_scroll_axis helper delegates to it). The production vertical-wheel regression was
+observed red (-64->0 horizontal offset) before fixing the original containers; same regression
+then passed. UniformList uses its public style property, horizontal Div the public method before
+test-support wrapping. Official Toolbar Medium is48DIP, so icon-over-label64DIP content needs the
+public h_auto parent adaptation; real menu-overlap red/green protects this, not child sizing alone.
+
+Safety option review: zip_edit.rs::execute flushes then verify before returning a candidate to
+worker_zip_edit.rs native commit; the reference's optional test switch cannot disable this owner.
+ClipboardShellTarget.cs::TryCreate/IsSafeOpenTarget accepts HTTP(S) or existing filesystem paths,
+not ms-settings URIs; no default-app Button is falsely wired through this rejecting command and
+no allowlist/Registry/COM changes were made. Current integration payload only classic_cascade,
+open_with,extensions/revision; double-click/individual-verb presentation requires a separate
+native contract, not empty settings. Temp-root/lease/source cleanup owners remain unchanged.
+
+## Archive settings stale-draft/publication repair (2026-10-25)
+
+UI-AC01 original production Settings repro: form-owned exclude_patterns save -> old Settings
+ordinary-switch save merges new rules -> unchanged textarea rows Save silently overwrote them.
+Keep a separate editor baseline; only explicit changed rules submit. Compare baseline/latest/draft
+under original Core config lock; conflict retains disk+draft and explicit official reload is the
+only discard action. Clean editor refresh is deferred and rechecks content before replacement.
+
+UI-AC02 original remember_accepted -> background Core update -> old merged snapshot callback could
+publish after newer foreground save. Both archive save routes now return process-local ordered
+SavedArchiveSettings, allocated inside existing update_section lock and delivered only on success.
+ArchiveApplication rejects older results before app/browser publication; no config schema/Core API
+or native lifecycle change. The regression pauses actual remember completion via cfg(test) async
+barrier after save, publishes later foreground save, then releases older callback; disk/app/browser
+must retain newer values. No arbitrary external-process config watching or general framework claim.
+Evidence/limits: [bounded repair outcomes](../../.trellis/tasks/10-16-archive-manager/ui-ac-settings-repair-outcomes.md).
+Original negative UI acceptance remains historical; missing settings/reference/physical gates remain.
+
+## 2026-10-25 — audit #4 decision-object display (bounded implementation index)
+
+This is stabilization within `Phase A — Engine contracts and safety foundation`, not phase/UI
+acceptance. Re-read allowed Bandizip `langs/SimpChinese.lang:579`–588: existing/incoming labels,
+Skip/Overwrite/Rename/apply-all are resource evidence only, not live layout/native behavior.
+Re-read licensed Archiver `core/src/lib.rs:230` decoder and `:665` single-file final `File::create`;
+that truncating output/progress-name callback is NOT a safe confirmation or publication source.
+No old general NxTools archive UI was identified in the existing tracked-source investigation.
+
+Verified current producer chain: formats ZIP/TAR/standalone Gzip/BZip2/XZ/Zstd and isolated
+7z/RAR `begin_extracted_file` -> `worker_output.rs::PrivateOutput` (ordinary format receives
+plan-prefixed target; isolated codec maps the current member through `planned_unique`) ->
+`worker_conflict.rs::ExtractionConflict::begin` -> original InteractionPort pending ticket ->
+private conflict frame -> `ArchiveJobSession.OnFrame/Prompt` -> `ArchiveJobEvent` -> original
+Desktop job record/`refresh_job` -> `ProgressSnapshot` -> `JobProgressView::show_prompt`.
+CreateOverwrite uses `ArchiveWorkerRunner.ExecuteAsync` original native observation and
+`ArchiveJobSession.ConfirmCreateOverwrite`, bound to the immutable operation Command's
+Destination/Create.Name, not progress/selection. `ArchiveJobSession.Reply`, Desktop `reply_job`
+and original InteractionPort retain single reply/ticket/generation/cancel authority.
+
+Display strings are UI-only snapshots, never an output path grant or native token. Preserve
+source revision/ordinal, plan/path validation, native observed identity/signature, budgets,
+temporary verified output/publication, password clearing and original cleanup-bound lifetime.
+New optional display is omitted when absent; new receivers accept old payloads with explicit
+unavailable-object fallback. Old strict receivers reject new populated fields: no mixed-version
+compatibility claim, unknown-field relaxation or version change. New payload Debug/ToString
+must redact the names; fixed correlated production diagnostics remain unchanged.
+
+Exact released Component0.8.0 `dialog/dialog.rs:735` limits the Dialog to viewport, `:769`–786
+scrolls body separately from footer. `description_list.rs::vertical/columns/item` provides read-only
+metadata slots. Keep original official Button/Checkbox and Dialog close/confirm/deferred reply
+owners and 560x300/default,480x260/min native client. Task evidence belongs to
+`.trellis/tasks/10-25-archive-prompt-object/`; source/compiled/synthetic is not physical/native,
+reader/DPI/visual or user acceptance.
+
+## 2026-10-25 — audit #5 confirmation/default-submit source boundary
+
+Rechecked the allowed Bandizip IDD_ARCHIVE480–494 and IDD_ASK_DUPEFILE579–588 text resources;
+these identify the decision fields/actions, not verified native default-key behavior. Licensed
+Archiver gui/ui/app.slint401–408 uses LineEdit plus a primary create-ok Button;430/442 explicitly
+route LineEdit accepted to find/password actions. gui/src/main.rs::start_create485–508 snapshots
+and validates options, clears/closes the draft then calls the original background spawn;
+::do_extract718–748 snapshots selected source/destination; AppWindow::new115 -> callbacks ->
+ui.run158 is the Slint lifecycle boundary. Framework native internals were not inspected. The old
+NxTools tracked-source investigation did not identify a general archive operation UI.
+
+Exact current Component0.8.0 dialog/footer.rs::DialogAction122–132 has only an outer div click
+dispatcher and a private anchor; it exposes no public Button trigger. Component button/button.rs
+857–865 forwards activation only when Button.on_click exists, while Base Button/div own the real
+keyboard-release boundary. A local composition may use official Button public child/on_click and
+public FocusHandle::dispatch_action with exported dialog::Confirm, exactly one activation source
+feeding the original Dialog on_ok/deferred reply. A zero-size non-Tab child focus node keeps
+pointer activation routed to its own Dialog even when pointer press intentionally preserves focus.
+Do not use an empty click callback, private anchor API, vendor change or second reply controller.
+Base Dialog installs a root Enter Confirm keybinding; CreateOverwrite must additionally require
+this prompt's explicit button activation, not blindly approve when only root/body has focus.
+
+Original OperationForm::submit/capture, busy/pending_format/retirement and deferred submit_form
+remain the admission owner. Default submission is confined to explicitly allowed focused editing
+controls, after child component handling, with IME/modifier/held/busy/layer guards. Existing masked
+password, Textarea, Select and format-discard Dialog keep their local semantics. The original
+form client/scroll/fixed-footer budgets, source/draft/ticket/native identity and diagnostic privacy
+remain unchanged. New task evidence: `.trellis/tasks/10-25-default-submit-keyboard/`; previous
+audit #4's unresolved diagnostic/history stays immutable and is closed only by new #5 evidence.
+
+## Directed remaining reference UI continuation (2026-10-25)
+
+Re-read public Bandizip SimpChinese.lang314/407–408/791–799: Recent/Clear/empty history and
+temp-folder/browse/child-process-exit vocabulary only; no proprietary process lifetime is inferred.
+Tracked legacy `git grep ZipArchive|SevenZip|SharpCompress` still finds packaging, not a general
+archive history/window owner. Archiver gui/src/main.rs AppWindow115 -> ui.run158 -> recursive
+temp_view_dir cleanup159 and view_item697–715 -> selected extraction -> open_path967 are reference
+behavior only; shared PID temp/global recursive deletion are not safe ownership to copy.
+Current history must extend original ArchiveApplication -> successful generation-scoped read ->
+UiStateStore bounded writer; browser geometry saves must not overwrite newer recent data/clear.
+Nested temp archives do not enter top-level history. Configuration remains Core section locked
+changed-field save and original ordered/deferred publication. Existing closed UIAC/Shell slices
+are not reopened. Original PNGs are not reliably visually inspectable in this environment; no
+new image/physical GUI claim. Temp lifecycle changes require the original cache/lease/native
+open boundary, never arbitrary recursive cleanup or launch-return-as-child-exit.
+Current Kit0.8.0 public Settings/Page/Normal Group/Item/Field, number_input/dropdown/render slots,
+ListItem and Small/Medium outlined Button/DropdownButton compose actual history choices/list/menu;
+parent layout arranges controls, no custom painted substitutes or Toolbar.child variant changes.
+
+Temp owner trace verified before implementation: `entry.rs::materialize` -> strict
+`ArchiveEntryContract/ArchiveEntrySession` -> `ArchiveEntryCache.Create` -> original runner output
+and exited/cleanup_complete -> Seal -> Desktop current identity -> existing native Shell boundary
+`ClipboardShellTarget.Launch/Process.Start`. The latter previously discarded Process; worker exit
+is NOT external viewer exit. Existing Cache manifestv2/full fileID/hash/MOTW/directory identity,
+fixed-parent retire record/exact-file+empty ancestry deletion and bounded8+8startup/admission sweep
+remain deletion authority. Settings affect new leases only; old bases need bounded retained discovery
+inside the same cache owner, never user-directory recursion or scan. New typed materialize policy
+and lease-only open resolve owned path natively, not an arbitrary output/executable. Safe UI labels
+disclose tracked-process-only exit attempts, null-process fallback, edited/locked retention and
+expiry-as-eligibility. Exact source chain from read-only exploration is preserved in session scratch.
+Original named browser cells need full-label Tooltip when ellipsized; official public slot only.
+Recent-clear failure must not turn a ready archive into a stale snapshot. Production handle/scrollbar
+press-move-release regressions will determine concrete layout defects, not direct offset injection.
+
+## User-rejected installed browser rendering (2026-10-26)
+
+The supplied TrafficMonitor ZIP screenshot is explicitly rejected, not visual approval. Online
+GPUI Kit Design Guides and component/Toolbar were read at0.8.1; runtime remains pinned0.8.0.
+Guides require platform UI font, stable icon/name/metadata lanes, comparable numbers right-aligned,
+shared header/row geometry and real task/resize/focus validation, not component-count acceptance.
+Sources: https://gpui-kit.com/zh-CN/docs/design-guides/ and /zh-CN/component/toolbar/ (GPUI Kit,
+CC BY4.0 document concepts paraphrased here; implementation APIs verified against locked source).
+
+Verified reuse: Downloads request_icons -> ExtractShellIcon; QuickLaunch request_icons same command;
+WindowsPlatformAdapter.ExtractShellIcon -> bounded STA ShellIconExtractor -> IconCache.Shared, also
+used by Clipboard ForegroundContextProvider. Archive browser instead hardcodes IconName::File and
+never requests type resources. Use extension-only synthetic target, not archive member filesystem
+path, materialization, shortcut resolution or executable parsing. Existing PNG validation retained;
+bounded pending/results and snapshot/retirement/deferred cross-entity guards required.
+
+Locked Component0.8.0 DropdownButton::render constructs its own menu Button at semantic32px; main
+custom64px child height does not propagate. Actual red top74/main versus90/caret. Size::Size64
+equalizes heights but makes a64px-wide menu trigger; final composition uses original official
+action Button plus narrow24x64 Button.dropdown_caret/DropdownMenu with public slots, no vendor edit.
+Base resizable distribution was investigated, but actual header AND row geometry matched at
+720/960/1200; no independent-column-width defect confirmed. Browser explicitly adopts shared
+UI_FONT_FAMILY, keeps original selection/virtual-list/Tree/native/drag/consent owners.
+
+The two original PNGs were successfully read as image attachments, not OCR/dimensions. They show
+a single name-list main surface with recognizable folder/type icons, not five equally promoted
+metadata columns. Default name-list mode remains unimplemented in this partial repair. Mode
+field/test draft was reverted because browser.rs editing was stopped after repeated
+EDIT_LINES_UNSEEN (unseen anchors149/175/297/517/536); do not report mode switching or reference
+layout completion. UiState schema/file remains unchanged; no user layout reset. Current actual
+post-repair screenshot/native/physical/user visual acceptance not performed.
+
+## Reference name-list continuation (2026-10-27)
+
+User explicitly resumes the incomplete default name-list slice. Original BrowserModel selection,
+ListItem/uniform_list32px rows, Tree/resizable, public PopupMenu checked entries and UiStateStore
+remain owners. Add serde-defaultfalse details_view independently from existing visible/widths;
+legacy missing mode opens name-list, explicit details persists; no config reset or metadata loss.
+Name-only content uses actual viewport prepaint bounds followed by deferred local view update,
+not synchronous leased-entity mutation or guessed window-minus-sidebar widths. Public Base
+ElementExt::on_prepaint and Window::defer are already used by notification/feedback surfaces.
+Header, row, hit region and scroll content share one mode-aware width. Switching retains immutable
+selection/focus/sort and detailed column preferences; clears only obsolete horizontal offset.
+Retain original UI font/Shell type icon changes and native read/open/drag/consent boundaries.
+Continuation implemented: actual default pane geometry720/960/1200 and segmented splitter
+gesture, original checked View menu pointer switch/selection/width preservation, legacy/null
+and both modes durable reopen regressions now pass. Final related67 and --tests strict ClippyPASS;
+see browser-name-view-outcomes for raw failures and measured interval. This closes the prior
+unimplemented name-mode source gap only, not real HWND/reference visual/user acceptance.
+
+## Later user correction: detailed default / directory type / marquee (2026-10-27)
+
+The latest approved task explicitly supersedes the preceding name-list DEFAULT only; optional
+name mode stays. Requested order Name/Packed/Original/Type/Modified uses existing semantic column
+indexes and original header/row/horizontal owner. UiStatev2 migrates validv1 absent/false mode to
+Details+fivecolumns, preserving widths/sort/geometry/recent/panels;v1true/customvisibility andv2
+explicitfalse remain. Invalid original JSON/preferences are preserved, never reset/repaired.
+
+Reference follow-up reconfirms legacy BrowserExtensionPackageService and FfmpegInstallerService
+only package/install ZIPs; Archiver view.rs107-147 separates folders/type/parent; AppWindow
+constructor115->callbacks->run158->sharedtempcleanup159 is not a safe lease model to copy.
+Next TypeIcons->ExtractShellIcon->ShellIconExtractor originalboundedSTA->IconCache.Shared now has
+fixed nxtools-folder-type:directory -> SHGFI_USEFILEATTRIBUTES/FILE_ATTRIBUTE_DIRECTORY before
+filesystem/shortcut resolution. No archive-member path/materialization/shortcut/executable probe.
+
+Current marquee uses officialListItem actualdown (retains originalnativecandidate), emptybody
+down/move/up, publicuniformlist/scrollhandles/on_prepaint and originalBrowserModel selection.
+Ctrl XORs fixedbaseline, navigationparent excluded, Escape/focusloss restores; projection/source/
+refresh/close retires. Original stillpressed4DIP/OLE/sourceHWND boundary remains unchanged.
+Locked0.8.0 list/list_item.rs,tree.rs,resizable.rs were rechecked; no dependency/vendorchange.
+
+This round is PARTIAL: Tree folderPNG/24DIP/recognizablefallback not integrated; internal readonly
+preview NOTDELIVERED after required browserEditstop. Unsafe/untested unwired draft removed from
+production. FullDesktop1345+10 and archive157/strictTests/checkPASS are not fourfeature/visual
+completion;fmtFAIL and physical/native/user gaps retained in owning browser correction outcomes.
+
+## Browser preview and folder completion (2026-10-27 continuation)
+
+The prior partial paragraph is historical. Current user resumes the blocked source integration.
+Original officialTree/ListItem32rows now consume one sharedtypePNG at24DIP, archivefilledMaterial
+fallback and statusTooltip. Original boundedIconCache/STA/syntheticdirectoryattributes stay; no
+member filesystem/shortcut/executable/extraction probe. Same detailmigration/selection/nativeOLE.
+View->readonlypreview uses officialResizable/SmalloutlineButtons, unified passiveMarkdownDocument
+and owned staticdecodedimage, not externalShell or ClipboardItem fiction. Rust/C# Preview/PreviewText
+purposes narrow originalactualoutput8MiB/64KiB; originalworker/source/password/cache/lease preserved.
+Actualread/decode finishes beforelease release; UI token/row/source/snapshot protects latest/ABA/
+retirement; maskedpreviewdialog cancels onlyitsown scope. ExplicitOpen cancels preview then retains
+original consent/materialize/Shell boundary; previewlease cannotnativeOpen. Readimage02510 limits
+beforedecode: allocationnon-strict requires boundedWebPadmission/staticonly and conservativeJPEG/
+WebPcanvas; no vendoredit/globalRSSclaim. Exactbudget/sourcechains in browser-preview-contract.
+Current archive181/protocol82/Desktop1369+10 and23ownednativefixturesPASS are source/isolated evidence,
+not physicalGUI/Registry/visual/release acceptance. Productionstrict/globalfmt unrelatedblockers
+and complete failures retained in browser-completion-outcomes; currentinstallationerror1staysOPEN.
+
+## Approved single-host tabs continuation (2026-10-27)
+
+The user explicitly supersedes the historical independent-window presentation with one browser
+host and official TabBar/Tab. Re-read Archiver main.rs AppWindow115 -> run158, activate669 ->
+view_item697, SupaZip nested GUI run_native682 and legacy tracked archive grep; no general legacy
+browser/native lifecycle or reusable tab controller identified. Shared recursive temp cleanup is
+not copied. Current launch_entry background canonicalize -> ArchiveApplication.open_canonical ->
+original ReadClient/consume deferred install remains the request seam. Original per-browser session,
+generation/depth/parentlease/preview/entry cleanup remain, only HWND presentation is shared.
+Exact Component0.8.0 TabBar selected_index/track_scroll/menu/max_width and Tab suffix accept an
+official close Button; no Tab close builder or private API is inferred. One caption per host;
+tab close retires one source, native X retires all, last tab closes host. Inactive result installs
+must not change active tab/focus. Existing C# ActivateWindow owns foreground; no new Rust WinAPI.
+Contract, component selection, diagnostics and acceptance limits:
+[continuation boundary](../../.trellis/tasks/10-16-archive-manager/window-tabs-icons-drag-contract.md).
+
+## HatchZip five-capability research (2026-10-27)
+
+Read [HatchZip index](hatchzip.md) and [future-task handoff](../../.trellis/tasks/10-16-archive-manager/hatchzip-research-handoff.md) for verified space-plan/progress/batch/crash-test/destructive-reclamation source maps. The supplied local0.1.3directory has noGitmetadata; source hashes and symbol coordinates are retained. This is research only: no runtime/test/benchmark/installation or archive mutation. In-place truncation/punching is a separate destructive capability, not existing post-success recycling; strict native source/output ownership, bounded recovery and ordinary extraction protection cannot be relaxed. No current UI/native acceptance or canonical phase ordering changes.
+
+## Caption, progress and submitted preferences source follow-up (2026-10-27)
+
+Current constructor chain verified: ArchiveApplication::open_form/show_job -> original
+WindowOptions -> OperationForm/JobProgressView -> one shared controlled_titlebar; browser host
+owns one caption above official TabBar and original browser contents omit their own caption.
+caption_window_options selects transparent native titlebar+Client decoration; duplicate server/
+client caption is removed at window creation, not by hiding text. Shared34DIP officialButton/
+WindowControlArea composition retains each old close/cancel/background/tray owner; passive
+previews/menus/notifications/editor overlays are not ordinary independent caption windows.
+Exact inventory/officialAPI/narrowprivateTitleBarclose limitation and tests:
+[window outcomes](../../.trellis/tasks/10-16-archive-manager/window-progress-preferences-outcomes.md).
+
+Statistical source verified before UI repair: worker_job.rs::ProgressWriter::flush publishes
+OperationControl processed bytes/files at>=100ms, nullabletotal/files_totalNone; C# original
+ArchiveJobSession.Run/Finish derives committed/skipped from runner/native journal and verified
+counts separately. Do not equate processed and committed or invent terminaltotals. Submitted
+form preferences use original save_settings -> AppConfig update_section locked reread/changed
+field merge/background publication; only explicit progress checkbox saves its ownkeep field.
+No password/source/grant/ordinal/requestselection/runstate persistence. Original cancel retains
+committed outputs and nativecleanup-owned slot. Nativecaption/DPI/physical/useracceptance unrun.
+
+## Approved two-role icon consumption follow-up (2026-10-27)
+
+Legacy NxTools.csproj ApplicationIcon/embeddedIcon and MainWindow TrayIcon load were rechecked;
+current GPUI Windows platform load group1 -> WNDCLASS icon and original DesktopExecutableIcon ->
+NotifyIcon remain owners. New Desktop resourcegroup1=approvedblueapp,group2=approvedorangearchive;
+ProgID DefaultIcon/classiccascade use explicitnegativeID-2. No new loose runtime file, cache reset,
+UserChoice or realregistration. Original Desktop/extension hashes carry assets through release
+approvals; installerSetupIcon uses approvedblue. All9frames independently decoded. Exact map,
+reference coordinates and rebuild/installed limits in
+[icon outcomes](../../.trellis/tasks/10-16-archive-manager/icons-integration-outcomes.md).
+Main-session browser root/Tab prefix additionally consume brand/archive.png; windows/taskbar/tray
+remain softwareblue, not a new per-HWND orange requirement. Original PNGs immutable. Offline
+Light/Dark size sheet actually inspected by main session, not realShell/DPI/uservisualacceptance.
+
+## WAC01–03 password / tab focus lifecycle follow-up (2026-10-27)
+
+Verified locked source entries: Component0.8.0 `src/root.rs::open_dialog` captures previous focus,
+`close_dialog` restores it synchronously; `defer_close_dialog` removes the top Dialog and restores
+previous focus after original animation only if the dialog count still matches. `dialog/dialog.rs`
+uses that original deferred-close boundary for official actions. WindowState/ActiveDialog remain
+private. gpui-pre0.3.9 `src/window.rs::on_focus_out` is a public retained Subscription (activated
+next app turn), suitable for event-driven current-modal focus completion; no vendor patch needed.
+
+Current chain: original handle_drop/ArchivePassword notification -> original passwords ticket ->
+per-original-host coalesced application defer -> precise retired Dialog scopes -> public focus-out
+event -> revalidate current host/active session/generation/operation/ticket -> original prompt or
+current browser focus only if no modal. Ordinary entry_result now calls original retirement as
+read terminal already does; its lease/source/cleanup/failure-notice semantics are unchanged.
+Covered retired scope cannot close a newer modal. No second password queue, polling, animation
+timer, Root-before-construction query or leased-entity synchronous writeback. Reference evidence
+does not imply proprietary Bandizip/native window lifecycle inspection. Exact RED/GREEN commands,
+12-case GPUI boundary coverage, related253+window8PASS and remaining native/user limits:
+[WAC repair](../../.trellis/tasks/10-16-archive-manager/wac-password-focus-fix.md).
+
+## Browser image-slot / HZ1 follow-up (2026-10-28)
+
+Exact Component0.8.0 Tab puts12DIP label padding inside public prefix/suffix: symmetric public-slot
+adaptation gives12DIP outer inset/8DIP content gaps,16DIP orange canvas; officialTab/labelellipsis/
+menu/wheel/close owners remain. Tree20DIP root/directory slot keeps original32DIP row,16DIP arrow/
+indent,4DIP gaps and held-native drag. Additive caption prefix supplies blue20DIP image within
+original34DIP caption, not a second titlebar. Existing32/40px image aliases preserve whole aspect/
+alpha; no source/derived asset bytes changed. Exact alpha/pixel/96synthetic matrix/8behavior checks:
+[icon layout outcomes](../../.trellis/tasks/10-16-archive-manager/icon-layout-repair-outcomes.md).
+
+HZ1 extends original held-directory observation and form/job result owners, not the execution
+worker/queue/output budget. Read-only capacity/nativeIDs/allocation -> bounded Rust original
+snapshot estimate -> officialForm/DescriptionList/refresh; reserve0 and original start-time
+continue/cancel confirmation retained. Current result is PARTIAL with closed-form pending cleanup
+and one strictlint still OPEN; native12PASS/core11PASS/related273PASS1FAIL are distinct evidence.
+[HZ1 outcome](../../.trellis/tasks/10-16-archive-manager/hz1-space-preflight-outcomes.md) records
+limitations, source-reference provenance and exact RED/GREEN; no physical/user/release acceptance.
+
+## Multi-format edit reference follow-up (2026-10-28)
+
+User-requested local-source review of five pinned clean Git checkouts is recorded in
+[archive editing](archive-editing.md) with [source hashes](archive-editing-manifest.json).
+It confirms ordinary single-volume7z add/delete/rename UpdateItems paths, Ark TAR/filter
+streaming rewrite and PeaZip external backend orchestration; it also records source-level
+delete-old-before-move/unchecked-commit and capability limits rather than copying them.
+Archiver delete763-825 includes a non-ZIP extract-kept/recreate branch; previous ZIP-only
+raw-copy discussion is not a claim that its entire delete API is ZIP-only. No product edits,
+new dependencies/backend, reference builds/runtime tests, package/install or phase advancement.
+
+## 2026-10-29 HZ4-TERM01 — owning native failure versus cleanup cancellation
+
+Before the bounded repair, the recorded legacy NxTools tracked archive search was rerun: package/FFmpeg ZIP and image/video owners, no general archive Job. Existing indexed NanaZip `CWorkDirTempFile::MoveToOriginal`, `WorkDir.cpp:85–92`, was read again: failed native replacement returns its HRESULT, not user cancellation. No third-party source/build/dependency change.
+
+Newly verified Next chain: `ArchiveWorkerOutputBridge.Execute` produces operation/call-bound `ArchiveNativeOutputFailure` -> `ArchiveWorkerRunner.Run.FailNative` first-failure CAS stores `ArchiveFault.OutputFailure` -> `ResolveTerminal` emits the owning category/native/state -> `ArchiveJobSession.OnRunnerEvent`. Independent `OnFrame(failure/Cancelled)` may arrive before exit because failed native output requests worker stop; that frame is a cleanup consequence, not a new user cancellation cause. The deterministic original-boundary regression calls real FailNative/ResolveTerminal and real OnFrame before OnRunnerEvent, reproducing failed/native5 -> cancelled at Job before repair. Preserve genuine/native cancellation, timeout/cleanup/unknown/postpublication/source-change facts; no native-code-nonnull blanket mapping or new wire authority.
+
+## Selected preview password-preparation boundary (2026-10-30)
+Actual retained native logs show preview_text -> password.running -> attempt_finished(ResourceLimit)
+before selected output. Current Rust start_preview sets PasswordInteraction=true. Native fixture
+previously left that false. With the same real 80 B ZIP member and larger peers, turning only this
+flag on reproduces resource_limit. ArchiveEntrySession.Start -> original runner -> worker_password::
+execute makes a no-output TEST preparation request by copying the member's 64 KiB final output
+limits but omitting browser selection. Whole-archive validation is not selected output and must use
+the existing finite decode-work allowances, then restore the original selected extraction limits.
+Keep password attempts, CRC/integrity, source lease, cleanup and no-output password validation.
+For browser-only formats with no password codec, allow-password intent routes directly to the
+original attempt rather than rejecting TAR/streams as UnsupportedOperation. No new codec/runtime.
+Preview layout is automatic but initially absent: only a supported single-file selection reveals
+the existing resizable pane; empty/multiple/directory/unsupported selections release its width and
+clear prior content. Keep original selection generations, passive focus and cancellation owners.
+
+### On-demand preview split composition (2026-10-30)
+Locked Base0.8.0 `resizable/panel.rs::ResizablePanel::render` returns an empty div for
+`visible(false)` before updating its slot bounds. Group synchronization still counts that child;
+`resizable/mod.rs::resize_panel_at_handle` sums all stored slot sizes, including the hidden slot.
+The browser therefore conditionally adds the existing official preview panel as the last child
+of the original `h_resizable` group. With no supported single-file selection there is no preview
+slot, handle or reserved width. Original Tree/details slots, official dragging, preview controller
+and focus owner remain. Both existing real splitter regressions cover the initially absent pane;
+the on-demand preview regression covers supported/unsupported selection transitions.

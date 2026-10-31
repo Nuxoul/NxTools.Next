@@ -1,0 +1,52 @@
+//! Host-neutral, versioned method names. Availability belongs to each host adapter.
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RequiredMethod {
+    pub method: String,
+    pub version: u16,
+}
+
+pub const METHODS: &[(&str, &str, &str)] = &[
+    ("host.describe", "host", "capabilities"),
+    ("credentials.get", "credentials", "credential"),
+    ("downloads.list", "downloads", "legacy_array"),
+    ("downloads.list_page", "downloads", "page"),
+    ("downloads.get", "downloads", "task"),
+    ("downloads.probe", "downloads", "probe"),
+    ("downloads.submit", "downloads", "submission"),
+    ("downloads.enqueue", "downloads", "submission"),
+    ("downloads.pause", "downloads", "command"),
+    ("downloads.resume", "downloads", "command"),
+    ("downloads.cancel", "downloads", "command"),
+    ("clipboard.get", "clipboard", "clipboard_item"),
+    ("clipboard.query", "clipboard", "legacy_array"),
+    ("clipboard.query_page", "clipboard", "page"),
+    ("clipboard.create_derived", "clipboard", "item_id"),
+    ("clipboard.copy", "ui", "native_completion"),
+    ("common.open", "ui", "native_completion"),
+    ("common.program", "ui", "native_completion"),
+    ("common.copy", "ui", "native_completion"),
+    ("common.notify", "ui", "empty"),
+    ("quick_launch.query", "ui", "empty"),
+    ("quick_launch.search", "ui", "legacy_array"),
+    ("quick_launch.search_catalog", "ui", "scoped_search"),
+];
+
+pub fn supports_method(method: &str, version: u16) -> bool {
+    version == 1 && METHODS.iter().any(|(name, _, _)| *name == method)
+}
+pub fn method_minimum_transport(method: &str, version: u16) -> Option<u16> {
+    supports_method(method, version).then_some(1)
+}
+pub fn method_catalog(ui: bool, clipboard: bool, resolver: bool) -> Value {
+    Value::Array(METHODS.iter().map(|(name, owner, result)| {
+        let available = match *name { "clipboard.copy" | "common.copy" => ui && clipboard, _ => match *owner { "ui" => ui, "clipboard" => clipboard, _ => true } };
+        let restricted = resolver && matches!(*name, "downloads.probe" | "downloads.submit" | "downloads.enqueue");
+        json!({"method":name,"version":1,"minimum_transport":1,"available":available && !restricted,
+            "unavailable_code":if restricted { Some("resolver_reentry") } else if !available {Some("ui_unavailable")} else {None},
+            "result":result,"schema":format!("methods.schema.json#/$defs/{name}")})
+    }).collect())
+}

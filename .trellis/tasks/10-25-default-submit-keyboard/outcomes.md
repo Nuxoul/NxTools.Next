@@ -1,0 +1,108 @@
+# Audit #5 — Default submit and focused confirmation keyboard delivery
+
+## Outcome and authorization
+
+Seventh individually authorized item, original audit #5 only. The reviewed implementation targets three original owners: archive operation forms, the daily download schedule, and archive job confirmation. No item eight/backlog work, dependency/vendor/theme/framework rewrite, protocol/worker/C#/engine policy change, packaging/install or live product/native/user-state operation is included. This delivery is **pending parent independent review**, not self-acceptance.
+
+The current archive checkpoint was re-read as `Current checkpoint — 文件关联与上下文菜单设置补齐，等待独立验收`; its canonical phase section still contains `Phase A — Engine contracts and safety foundation`. This is bounded interaction stabilization, not phase renumbering/advancement or A–F completion. Earlier items #1/#9/#10/#3/#2/#4 retain their independent limited acceptance. Their historical failed runs and unresolved-at-that-time diagnostic evidence are not rewritten.
+
+## Exact reference and released API decisions
+
+- Download reference was inspected ABDM first: desktop `QueueInfoComponent.kt::createConfigurableList`148–155/247–301 owns independent start/end flags and nonempty weekdays; app-utils `OptionsDialog.kt::BaseOptionDialog` delegates visible/modeless/close/focus-loss disposal to Compose DialogWindow. Then old NxTools `SettingsWindow.axaml::SchedulerSection`, constructor -> WindowAnimationService.Attach -> OnOpened/ConfigureForCurrentScope -> SaveButton_Click/ApplySettingsCommand -> Close and OnClosed/cancel were followed. WindowAnimationService's guarded deferred Close was read. AWT/Compose/Avalonia native base internals were unavailable, not claimed as inspected HWND behavior. The reference does not prove a window-wide default Enter implementation.
+- Archive reference was limited to allowed Bandizip `SimpChinese.lang` IDD_ARCHIVE480–494 and IDD_ASK_DUPEFILE579–588 resources, plus licensed Archiver `gui/ui/app.slint` LineEdit/primary create-ok and accepted find/password callbacks, `gui/src/main.rs::start_create`485–508/`do_extract`718–748 and AppWindow::new115 -> callbacks -> ui.run158. No proprietary decompilation/disassembly/resource dependency extraction or reference GUI execution occurred. No old general NxTools archive implementation is invented.
+- Exact Component0.8.0 `DialogAction` is an outer div pointer dispatcher with a private anchor and no public Button trigger. Component Button forwards keyboard/pointer activation only when its actual `on_click` exists; Base Button/GPUI div own release activation and focus-generation cancellation. The original combination `DialogAction.child(Button)` had no actual Button callback, explaining the real Space failure.
+- Public `Button::child/on_click`, `FocusHandle::dispatch_action` and exported `dialog::Confirm` permit a local official Button composition. A zero-size non-Tab child focus anchor routes pointer confirmation into its own original Dialog even when Component Button deliberately preserves focus on mouse down. No private API, empty click callback, pointer-bubbling compensation or second reply dispatcher is used.
+- Base Dialog's root Enter binding consumes Enter before raw Button handling. A single binding to official `NoAction` in the local `ArchivePromptButton` context removes only that ancestor binding on these prompt Buttons; it does not submit anything or change other application dialogs. Official Button then owns actual Enter/Space release-click. Original Dialog Confirm/Cancel/on_ok/on_cancel own the business action and close/deferred reply.
+- Exact Input single-line Enter Action propagates after its own input processing; `capture_key_down` receives the unconsumed actual KeyDownEvent with held/character-preference flags. TimeField's current production model is segmented `TimeFieldState`, not the historically recorded raw HH:MM Input. Base TimeField owns digits/arrows/segment/Tab and has no Enter action; an otherwise unconsumed plain Enter can therefore call original Apply from its enabled focused editor only.
+
+Verified entries/invariants were appended to the existing reference notes before implementation. The archive note later received an independent external append; that path is frozen after detection and its two owners' changes are separated in evidence, not overwritten or claimed together.
+
+## Three production entry points
+
+### A — OperationForm create/extract/modify
+
+A private `default_enter_held` flag and original-window activation observer suppress repeated physical presses, including after synchronous validation/admission failure. The root's raw capture fallback acts only for plain Enter on the original name/destination/volume InputState's actual focus, with no active Dialog, busy/retired/submitted/enumerating/picker/format-pending state, modifiers, preferred-character input or marked IME text. Root/unfocused, masked password/confirmation, Textarea and Select do not become default submission sources. KeyUp clears local held state but never submits. Window activation changes clear that state; a new/retired form has its own state.
+
+The handler calls original `submit`; it does not duplicate capture/validation/admission. The original submit method, immutable request/generation/epoch, deferred `submit_form` and busy/error/retirement paths are preserved. Default submission is a KeyDown fallback after focused component Action handling; it does not add a Button KeyUp callback or change Button release timing. Original primary/outline controls, names, native/default/minimum budgets, scroll/fixed-footer and InputState identities remain.
+
+### B — DownloadScheduleView
+
+A private held flag/activation subscription and a transparent full-size event-layout wrapper receive unconsumed plain Enter only when the start or stop TimeField is enabled and actually focused. Modifiers/preferred-character/held, saving and active Dialog block outer Apply. Digits/arrows/segment/Tab remain TimeField-owned; ordinary Buttons keep their own activation, and root/unfocused Enter is not Apply. The original `save` body and deferred application update are unchanged.
+
+Source tracing established that daily schedule persistence is **original DownloadQueueAction::SetSchedule -> original engine SQLite store**, not an AppConfig section rewrite. Tests preserve that behavior rather than inventing a config write: a temporary persistent queue is reopened and queried through the public Snapshot command; a seeded temporary AppConfig remains byte-identical. Invalid weekdays/saving/repeat/compound/preferred-character input do not save. Cancel closes through the original owner without changing the queue/config; a reopened window ignores old KeyUp.
+
+### C — JobProgressView prompt confirmation
+
+The actual official confirmation Button has one `on_click` that marks explicit activation and dispatches public Confirm from its own child anchor. Original Dialog `on_ok` remains the sole password/reply construction and deferred `reply_job` owner. CreateOverwrite additionally requires that explicit activation marker, so root/body Enter cannot authorize destructive overwrite. The marker is not filesystem/native authority; all original ticket/equality/once-only/identity/budget checks remain.
+
+The minimal common construction affects the same existing Password/Risk/OutputBudget/CreateOverwrite/Destination confirmation branch; each kind is covered through original result paths. Cancel remains official DialogClose. Conflict Buttons retain their original decision callback and apply-all, with the same local context to keep their own Enter release from being swallowed by root Confirm. Confirm and Conflict Button IDs now include the current immutable prompt ID, preventing retained armed click state from crossing prompt replacement. No second dialog or global keyboard framework is added.
+
+Per-prompt/per-button `PromptButtonInput` only filters eligibility: it accepts a clean initial activation down, blocks modifiers/preferred-character/orphan held, cancels a previously eligible release after input intent changes, and rejects duplicate release. It never emits click/Confirm/reply. Official Button still owns normal release timing, focus-generation ABA cancellation, pointer handling and the single activation callback. Current prompt filter references are retained on original JobProgressView only so its activation observer can clear them; terminal/no-prompt/new-prompt retires them. This fixes the separately reproduced window-deactivation old-release defect without changing native focus/show/hide policy.
+
+Original #4 object text, semantic complete identifiers/scroll/footer, reply/ticket/defer authority and native client sizes are preserved. Password remains redacted and cleared through original handlers. No new diagnostic payload, tick/per-frame log or temporary DEBUG probe was introduced; existing original correlated lifecycle events remain the sink.
+
+## Red/green and intermediate failures — retained evidence
+
+| Stage | Actual result and meaning |
+| --- | --- |
+| Restore historical diagnostic | Complete saved 76-line function restored to the original private test context, with only `audit04_` -> `audit05_` test name changed. All focus/Space/once/ticket/fallback assertions retained; original evidence SHA256 `d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c` is immutable. |
+| C original Space red | `create-confirm-red.log`: compiled runtime **0/1**, actual focused confirmation Space0 replies vs expected1. |
+| C first green / #4 preservation | `create-confirm-first-green.log` **1/1**; `display-six-after-confirm.log` **6/6**. The previously unresolved source/compiled/synthetic defect is closed only by new #5 evidence, not by editing #4 history. |
+| A focused Input red | `archive-form-enter-red.log` **0/1**, actual name Enter did not reach original submit. |
+| A compile adaptation | First green attempt failed compilation because EntityInputHandler trait was not imported for the public marked_text_range method. Required import only was added; not counted as behavioral red. |
+| A first green | `archive-form-green.log` **15/15** original form suite plus first keyboard regression. |
+| B fixture compile adaptation | First expanded compile failed E0502 because the fixture read TimeFieldState then borrowed context mutably to focus. Changed only to obtain public FocusHandle first; assertions retained. Not counted as behavioral red. |
+| B and C Enter reds | `audit05-expanded-behavior.log` **2/4**: TimeField Enter did not save; C Enter was consumed by ancestor Dialog Confirm and yielded no release reply. Local TimeField fallback/local Button NoAction context produced `audit05-first-four-green.log` **4/4**. |
+| Character-preferred safety red | `audit05-safety-expanded.log` **7/9**: preferred Space wrongly approved; an effective local filter fixed it. The other failure was a fixture sending KeyUp to a form already correctly closed by accepted KeyDown submission; removed that invalid closed-window delivery, retaining actual typed-start and original-close assertions. `audit05-safety-green.log` **9/9**. |
+| Shared-tree compile blockers | `audit05-lifecycle-matrix.log` and `audit05-final-matrix-first.log` failed before running new tests in independent application.rs/browser.rs/archive_page.rs edits (`open`, menu arguments/borrow and Tooltip). Stopped Cargo attempts, reported parent, did not edit owners or request peers to pause/reserve/reorder. Only resumed after explicit source changes; those independent repairs are not attributed to #5. |
+| Select fixture correction | `audit05-final-matrix.log` **12/13**: after the second Select Enter had already closed its layer, the fixture sent Escape, correctly closing the whole form, then tried to draw it. Preserved both no-outer-submit assertions and replaced that extra Escape with a Select-closed assertion. The child-layer test subsequently **1/1PASS**. |
+| Input-intent-change safety red | A clean activation down followed by preferred-character down still left upstream release armed. One attempted Cargo command was blocked by a new independent application.rs constructor edit; the following form command compiled the test artifact. Using that same artifact with recorded hash, `prompt-input-intent-actual.log` **0/1** caught the exact changed-input-intent failure. Per-button eligibility state cancels that release; final tests retain the assertion. No live product binary was executed. |
+| Window-deactivation safety red | `last-boundaries.log` **14/15**: old armed Space survived deactivate/reactivate. Current-view activation observer now clears only local prompt filters; final **15/15** includes the unchanged failure assertion and a subsequent new valid activation. |
+| Final focused green | `focused-final.log` **15/15**, all original restored and new assertions enabled, no ignored tests. |
+
+Some intermediate successful broad logs were superseded by the final run at the same named paths; their counts are reported only where separately captured in earlier command history. All unique failing/red logs above remain raw-byte evidence. A script log filename containing “green” is historical naming, not a claim that a failed attempt passed.
+
+The repeated long compiles were filtered tests, not complete Desktop runs. Only the final complete run below was performed. All recoverable failures were addressed within this item's actual boundary or fixture; no unrelated owner was repaired.
+
+## Final performed verification
+
+| Check | Actual final result |
+| --- | --- |
+| `cargo test -p nxtools-desktop audit05_ -- --test-threads=1` | **15/15PASS**,4.09s test time; zero ignored. |
+| Related Archive production tests | **134/134PASS**,29.95s; includes original form/job safety/retirement plus #4 display6. |
+| Related Downloads production tests | **188/188PASS**,43.46s; includes schedule and accepted #1 keyboard8 / #9 picker14. |
+| Accepted #10 history identity | **11/11PASS**. |
+| Accepted #3 accessible names | **7/7PASS**. |
+| Accepted #2 sort keyboard | **3/3PASS**. |
+| Strict Desktop Clippy | `--tests -- -D warnings` **PASS**. |
+| Workspace check | `cargo check --workspace --tests` **PASS**. |
+| Workspace and scoped fmt / diff | `cargo fmt --all -- --check`, six-file scoped rustfmt check and scoped git diff --check **PASS**. Only task files were formatted with skip_children; no whole-tree formatter write. |
+| Sole complete Desktop run | **1232/1232PASS,0failed,0ignored**,258.96s test time, `desktop-full-once.log`. No second complete run. Other independent shared-tree additions contribute to this current count; no claim that #5 fixed their previous failures. |
+| Related static gates | Ten **PASS**: spec114docs/14owners, GPUI catalog/release/Markdown provenance, ClipboardUI/DownloadUI, Archive CLI/PhaseF shell/spike/release-chain SourceOnly. These checks do not certify native or visual behavior. |
+| Extra Quick Launch gate | Still **FAIL at1765** in the pre-existing elevated-navigation compound. Retained separately; no build/security/gate edit or full-green claim. The PowerShell catch appended a mixed-encoding error to its original log; preserve raw bytes and use captured exit1/known boundary, not garbled text as a new diagnosis. |
+
+All Rust shells, including direct test artifacts, set `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, `RUSTFLAGS=-C codegen-units=256`; commands run serially after natural idle with sufficient timeout. No cargo/rustc was killed/paused, no duplicate build or requested peer reservation/reordering occurred. Temporary test artifacts/config/SQLite/in-memory bridges only; no real archive, download/network, clipboard/picker, service/product/PlatformHost/HWND/Shell/registry interaction. No C#/worker tests were required or run for this UI-only implementation.
+
+## Acceptance mapping and exact limits
+
+- **C original missing Space**: restored complete probe now standard1PASS; real Tab and focused Button Space yields original deferred reply once with original ticket; duplicate release and legacy missing-display cancel remain asserted. Root Enter cannot overwrite; focused Enter waits for release even with held repeat; Cancel Enter cancels, Escape and next-ticket/focus ABA do not leak old armed release. Preferred-character/orphan-held/modifier/changed-input-intent and window activation are protected by real-event regressions.
+- **A create/extract/edit**: actual single-line Enter enters original submit; create additionally crosses real typed bridge with one immutable synthetic Create request and closes through original owner. Extract/rename use original constructors, stable name entity/draft and original rejection observable state. IME marked text, character preference, modifiers, held/repeated physical press after synchronous failure, pending picker and masked/multiline/Select/format-discard Dialog stay non-submitting. Local positive fallback operates on KeyDown; no old KeyUp can submit another form. Retire/cancel/native/picker/format lifecycle remains guarded by original tests.
+- **B daily schedule**: actual TimeField right/up editing precedes Enter Apply; original queue command persists schedule, duplicate release cannot repeat saving. Invalid weekday selection/saving/modifiers/preferred-character/orphan-held/same physical retry do not write. A persistent temporary queue reopened through public Snapshot matches; seeded AppConfig is unchanged. Pointer Cancel, actual focused Cancel Enter, reopen/old KeyUp preserve original storage and no tasks/network. No schedule default Enter is claimed from root or disabled editors.
+- **Shared confirmation kinds**: actual Password/Risk/Destination Button Space preserves typed reply shape, private password Debug redaction and no extra authority. Actual OutputBudget Button Enter resumes one fresh original attempt with entry/output3 and original source binding after zero-commit cleanup; duplicate release does not readmit again. Existing original budget/password/cancel/terminal tests remain.
+- **Geometry and names**: no product size/theme/variant/copy/name change; original form/default/minimum/footer and schedule geometry tests, #4 long Unicode scrolling/footer and #3 actual names pass. Headless semantic/bounds/focus evidence is not native accessibility reader or visual/user acceptance. No new screenshot, physical IME, multi-DPI or installed acceptance is performed.
+
+## Dirty baselines, frozen earlier work and concurrent reference append
+
+Each existing path was copied at its current task-start dirty baseline, not HEAD. Eight existing files changed: three production views, three directly related test files, and the two reference notes. `downloads/tests.rs` was baselined but unchanged. New English PRD/outcomes and task evidence are the only new task files. No test assertion was weakened/ignored or deleted from an old regression. The complete earlier diagnostic is restored only under a new audit05 name; original evidence remains unchanged.
+
+Thirteen protected production files remain byte-identical at the final check: original #1 new-download handler, #9 picker/window support, #10 Clipboard history/root, shared action/path helpers, #2 download header and #4 Protocol/worker/C# display producers. The entire prior #4 task directory's124 pre-existing files, including both parent reviews/manifests/failed logs/diagnostic, remains hash-identical. Those records describe their historical versions; no previous hash is silently updated to this delivery.
+
+No concurrent write was observed on the six task source/test paths. The independent application/browser/settings work caused the compile blockers described above, then changed separately. The archive reference note also received an external appended34-line section after this item's30-line section. On detection, writing to that reference path stopped immediately and the parent was notified. The original770-line prefix is byte-identical; own append occupies771–800 and the independent section801–834. Evidence reconstructs baseline -> this item's exact append (tagCC78) -> observed external append, with current whole-file hash `d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4`. The external append is preserved and explicitly not counted as this item's work. No peer was asked to pause/yield/reserve or change order.
+
+Original submit/save bodies and #4 prompt identifier/object helpers are whitespace-normalized identical to their task-start baseline. Scoped rustfmt changed wrapping only outside those guarded business owners. `owner-invariants.json` records the exact comparison boundaries/hashes. Exact forward/reverse dirty deltas, own/external reference separation, source/log/artifact hashes, baseline/protection manifests and per-acceptance test results are published under `evidence/`; the parent need not access this session's scratch.
+
+## Remaining blockers and stop condition
+
+No remaining confirmed in-scope source/compiled/synthetic blocker is known after the final checks. The extra Quick Launch architecture failure remains an explicitly separate unresolved verification boundary. Earlier Desktop1207/1, Protocol79/80, initial lint/format failures and #4's then-unresolved keyboard record remain immutable history, not erased by this new current-tree success.
+
+No physical input/Windows IME, real native focus/activation, DPI/reader/UIA, screenshot/visual comparison, live product/native lifecycle, Release/package/install or user acceptance is claimed. Parent must independently review/retest this single item. Stop now; no self-acceptance, new broad review, recursive delegation or item eight work.

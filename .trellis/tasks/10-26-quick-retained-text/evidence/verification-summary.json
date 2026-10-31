@@ -1,0 +1,20 @@
+{
+  "status": "IMPLEMENTED_BOUNDED_VERIFICATION_WITH_BASELINE_QUALITY_BLOCKERS",
+  "final_tests": 137,
+  "results": {
+    "audit13-retained-text-red-02": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1317 filtered out; finished in 0.10s",
+    "audit13-final-formatted": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1317 filtered out; finished in 0.27s",
+    "quick-original-final": "test result: ok. 121 passed; 0 failed; 0 ignored; 0 measured; 1201 filtered out; finished in 1.30s",
+    "quick-polish-final": "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1311 filtered out; finished in 0.42s"
+  },
+  "protected_files": 379,
+  "historical_files": 4293,
+  "owner_checks": 67,
+  "test_strict": "PASS",
+  "workspace_check": "PASS with baseline warnings",
+  "production_strict": "FAIL baseline SPACING_12 / DecodedMedia.animated",
+  "scoped_fmt_diff": "PASS/PASS",
+  "workspace_fmt": "FAIL four baseline-identical files",
+  "source_gates": "9 PASS / QuickLaunch FAIL baseline QL-11 literal CONTROL_HEIGHT_INPUT at line458; line1765 not reached",
+  "full_desktop_native_release": "NOT RUN"
+}

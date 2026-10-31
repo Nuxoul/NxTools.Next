@@ -18,11 +18,19 @@ internal static class ExplorerNativeFolder
     {
         using var apartment = ExplorerShellApartment.Enter();
         if (apartment.Result < 0) return apartment.Result;
-        if (!isDirectory) return Select(target, new NativePidlPlatform());
+        if (!isDirectory || Path.GetDirectoryName(ExplorerShellActivation.NormalizeDirectory(target)) is not null)
+            return Select(target, new NativePidlPlatform());
         var result = ShellExecute(IntPtr.Zero, "explore", target, null, null, 1).ToInt64();
         return result > 32 ? 0 : unchecked((int)(0x80070000u | (uint)(result == 0 ? 31 : result)));
     }
 
+    internal static int Enter(string target)
+    {
+        using var apartment=ExplorerShellApartment.Enter();
+        if(apartment.Result<0)return apartment.Result;
+        var result=ShellExecute(IntPtr.Zero,"explore",target,null,null,1).ToInt64();
+        return result>32?0:unchecked((int)(0x80070000u|(uint)(result==0?31:result)));
+    }
     // The child is a borrowed final SHITEMID inside the live absolute list, NOT
     // another absolute PIDL and NOT an allocation to free. Clone+remove yields
     // the exact parent Shell identity, including namespace/UNC paths.

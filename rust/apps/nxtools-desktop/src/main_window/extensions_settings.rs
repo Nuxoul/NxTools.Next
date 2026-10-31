@@ -5,11 +5,11 @@ use super::*;
 use gpui_kit::component::description_list::DescriptionList;
 use gpui_kit::component::input::NumberInput;
 use gpui_kit::component::list::ListItem;
-use gpui_kit::component::select::{Select, SelectState};
+use gpui_kit::component::select::{Select, SelectItem, SelectState};
 use gpui_kit::component::setting::SettingField;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{Disableable, IndexPath};
-use gpui_kit::{AnyElement, App, WeakEntity};
+use gpui_kit::{AnyElement, App, SharedString, WeakEntity};
 use nxtools_extensions::{
     HandlerReference, InstalledPackage, PackageRegistry, Setting, SettingType,
 };
@@ -20,12 +20,34 @@ type SettingsPayload = (
     BTreeMap<String, Option<String>>,
 );
 
+#[path = "extensions_page/setting_paths.rs"]
+mod setting_paths;
+
+#[derive(Clone)]
+struct SettingChoice {
+    value: String,
+    label: String,
+}
+impl SelectItem for SettingChoice {
+    type Value = String;
+    fn title(&self) -> SharedString {
+        self.label.clone().into()
+    }
+    fn value(&self) -> &String {
+        &self.value
+    }
+}
+
 pub(super) struct PackageSettingsDraft {
+    draft_id: uuid::Uuid,
+    path_pending: BTreeMap<String, uuid::Uuid>,
+    path_revisions: BTreeMap<String, Rc<std::cell::Cell<u64>>>,
+    _path_subscriptions: Vec<Subscription>,
     id: String,
     content_hash: String,
     fields: Vec<Setting>,
     inputs: BTreeMap<String, Entity<InputState>>,
-    choices: BTreeMap<String, Entity<SelectState<Vec<String>>>>,
+    choices: BTreeMap<String, Entity<SelectState<Vec<SettingChoice>>>>,
     bools: BTreeMap<String, bool>,
     submitted: bool,
     clear_secrets: HashSet<String>,
@@ -35,12 +57,16 @@ impl PackageSettingsDraft {
     pub(super) fn package_id(&self) -> &str {
         &self.id
     }
-    fn new(
+    pub(super) fn new(
         package: &InstalledPackage,
         window: &mut Window,
         cx: &mut Context<ExtensionManagerView>,
     ) -> Self {
         let mut draft = Self {
+            draft_id: uuid::Uuid::new_v4(),
+            path_pending: BTreeMap::new(),
+            path_revisions: BTreeMap::new(),
+            _path_subscriptions: Vec::new(),
             id: package.manifest.id.clone(),
             content_hash: package.content_hash.clone(),
             fields: package.manifest.settings.clone(),
@@ -78,9 +104,15 @@ impl PackageSettingsDraft {
                         .unwrap_or(default);
                     let index = options
                         .iter()
-                        .position(|option| option == selected)
+                        .position(|option| option.value() == selected)
                         .map(|row| IndexPath::default().row(row));
-                    let options = options.clone();
+                    let options = options
+                        .iter()
+                        .map(|option| SettingChoice {
+                            value: option.value().into(),
+                            label: option.label().into(),
+                        })
+                        .collect::<Vec<_>>();
                     draft.choices.insert(
                         setting.key.clone(),
                         cx.new(|cx| SelectState::new(options, index, window, cx)),
@@ -99,6 +131,23 @@ impl PackageSettingsDraft {
                         input.set_value(text, window, cx);
                         input
                     });
+                    if matches!(field, SettingType::File { .. } | SettingType::Folder { .. }) {
+                        let revision = Rc::new(std::cell::Cell::new(0u64));
+                        let observed = revision.clone();
+                        // Count every user edit, even A-B-A within one application turn.
+                        // Silent set_value hydration does not emit Change; the final text
+                        // comparison still rejects a different programmatically set value.
+                        draft._path_subscriptions.push(cx.subscribe(
+                            &input,
+                            move |_, _, event: &gpui_kit::component::input::InputEvent, cx| {
+                                if matches!(event, gpui_kit::component::input::InputEvent::Change) {
+                                    observed.set(observed.get().wrapping_add(1));
+                                    cx.notify();
+                                }
+                            },
+                        ));
+                        draft.path_revisions.insert(setting.key.clone(), revision);
+                    }
                     draft.inputs.insert(setting.key.clone(), input);
                 }
             }
@@ -156,6 +205,7 @@ pub(super) struct ChainDraft {
     route: Vec<HandlerReference>,
     candidates: Vec<HandlerReference>,
     choice: Entity<SelectState<Vec<String>>>,
+    saved_hosts: Entity<SelectState<Vec<String>>>,
 }
 
 pub(super) fn current_trust(package: &InstalledPackage) -> bool {
@@ -349,6 +399,7 @@ impl ExtensionManagerView {
         {
             settings.push(self.settings_form(&package, busy, cx));
         }
+        settings.push(self.storage_entry_group(&package, cx));
         let header = gpui_kit::component::toolbar::Toolbar::new("extension-detail-header")
             .with_size(gpui_kit::component::Size::Medium)
             .h_auto()
@@ -390,37 +441,40 @@ impl ExtensionManagerView {
                     .min_h_0()
                     .w_full()
                     .child(
-                        Settings::new(format!("extension-package-detail-{id}"))
-                            .default_selected_index(gpui_kit::component::setting::SelectIndex {
-                                page_ix: self.detail_initial_page,
-                                group_ix: None,
-                            })
-                            .header_style(&gpui_kit::StyleRefinement {
-                                display: Some(gpui_kit::Display::None),
-                                ..Default::default()
-                            })
-                            .sidebar_width(px(160.0))
-                            .sidebar_size_range(px(160.0)..px(208.0))
-                            .pages([
-                                SettingPage::new("用途与启用")
-                                    .resettable(false)
-                                    .groups(access),
-                                SettingPage::new("命令与工具")
-                                    .resettable(false)
-                                    .group(self.package_commands(&package, busy, cx)),
-                                SettingPage::new("插件设置")
-                                    .resettable(false)
-                                    .groups(settings),
-                                SettingPage::new("自动化")
-                                    .resettable(false)
-                                    .group(self.handler_controls(&package, busy, cx)),
-                                SettingPage::new("来源与能力")
-                                    .resettable(false)
-                                    .group(package_metadata(&package)),
-                                SettingPage::new("运行环境")
-                                    .resettable(false)
-                                    .group(self.package_environment(&package, cx)),
-                            ]),
+                        Settings::new(format!(
+                            "extension-package-detail-{id}-{}",
+                            self.detail_navigation_revision
+                        ))
+                        .default_selected_index(gpui_kit::component::setting::SelectIndex {
+                            page_ix: self.detail_initial_page,
+                            group_ix: None,
+                        })
+                        .header_style(&gpui_kit::StyleRefinement {
+                            display: Some(gpui_kit::Display::None),
+                            ..Default::default()
+                        })
+                        .sidebar_width(px(160.0))
+                        .sidebar_size_range(px(160.0)..px(208.0))
+                        .pages([
+                            SettingPage::new("用途与启用")
+                                .resettable(false)
+                                .groups(access),
+                            SettingPage::new("命令与工具")
+                                .resettable(false)
+                                .group(self.package_commands(&package, busy, cx)),
+                            SettingPage::new("插件设置")
+                                .resettable(false)
+                                .groups(settings),
+                            SettingPage::new("自动化")
+                                .resettable(false)
+                                .group(self.handler_controls(&package, busy, cx)),
+                            SettingPage::new("来源与能力")
+                                .resettable(false)
+                                .group(package_metadata(&package)),
+                            SettingPage::new("运行环境")
+                                .resettable(false)
+                                .group(self.package_environment(&package, cx)),
+                        ]),
                     ),
             );
         if let Some(message) = self.draft_error.clone() {
@@ -482,12 +536,12 @@ impl ExtensionManagerView {
                 move |app, cx| app.set_enabled(toggle_id.clone(), !enabled, cx),
             ));
             let remove_id = package.manifest.id.clone();
-            actions = actions.child(app_button(
+            actions = actions.child(view_button(
                 format!("extension-remove-{remove_id}"),
                 "移除扩展",
                 busy,
-                owner.clone(),
-                move |app, cx| app.remove(remove_id.clone(), cx),
+                view.clone(),
+                move |view, window, cx| view.confirm_removal(remove_id.clone(), window, cx),
             ));
             div()
                 .w_full()
@@ -560,6 +614,7 @@ impl ExtensionManagerView {
                     SettingField::render(move |_, _, _| {
                         Select::new(&choice)
                             .accessibility_label(label.clone())
+                            .placeholder("当前值无效，请重新选择")
                             .disabled(busy)
                     })
                 }
@@ -624,6 +679,40 @@ impl ExtensionManagerView {
                             )
                     })
                 }
+                SettingType::File { .. } | SettingType::Folder { .. } => {
+                    let input = draft.inputs[&key].clone();
+                    let pending = draft.path_pending.contains_key(&key);
+                    let key = key.clone();
+                    let view = view.clone();
+                    let kind = if matches!(setting.field, SettingType::Folder { .. }) {
+                        "folder"
+                    } else {
+                        "file"
+                    };
+                    SettingField::render(move |_, _, _| {
+                        let key = key.clone();
+                        div()
+                            .w_full()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                div().flex_1().min_w_0().child(
+                                    Input::new(&input).aria_label(label.clone()).disabled(busy),
+                                ),
+                            )
+                            .child(view_button(
+                                format!("extension-setting-browse-{key}"),
+                                if pending { "选择中…" } else { "浏览" },
+                                busy || pending,
+                                view.clone(),
+                                move |view, window, cx| {
+                                    view.pick_setting_path(key.clone(), kind, window, cx)
+                                },
+                            ))
+                    })
+                }
                 _ => {
                     let input = draft.inputs[&key].clone();
                     SettingField::render(move |_, _, _| {
@@ -633,16 +722,52 @@ impl ExtensionManagerView {
             };
             let mut item = SettingItem::new(setting.title.clone(), field)
                 .keywords([setting.key.clone(), "设置".into()]);
+            // Custom fields do not inherit the built-in field widths. Give the
+            // original controls the full row instead of collapsing them beside
+            // the title in the constrained detail pane; switches stay compact.
+            if !matches!(setting.field, SettingType::Bool { .. }) {
+                item = item.layout(gpui_kit::Axis::Vertical);
+            }
             if !description.is_empty() {
-                item = item.description(description);
+                item = item.description(description.clone());
             }
             if matches!(
                 setting.field,
                 SettingType::File { .. } | SettingType::Folder { .. }
-            ) {
-                item = item.description("手动输入文件 / 文件夹路径（此字段没有原生选择器）");
+            ) && description.is_empty()
+            {
+                item = item.description("浏览选择现有路径；也可手动输入，保存后生效。");
             }
             items.push(item);
+            let invalid_choice = matches!(setting.field, SettingType::Choice { .. })
+                && draft.choices[&setting.key]
+                    .read(cx)
+                    .selected_value()
+                    .is_none();
+            let invalid_text = self.draft_error.is_some()
+                && setting.validation.is_some()
+                && draft.inputs.get(&setting.key).is_some_and(|input| {
+                    !setting.accepts(&serde_json::Value::String(
+                        input.read(cx).value().to_string(),
+                    ))
+                });
+            if invalid_choice || invalid_text {
+                let selector = format!("extension-setting-error-{}", setting.key);
+                let message = if invalid_choice {
+                    "当前选项已不可用，请明确重新选择"
+                } else {
+                    "请填写非空值，并满足声明的长度和完整匹配规则"
+                };
+                items.push(SettingItem::render(move |_, _, _| {
+                    div()
+                        .w_full()
+                        .debug_selector({
+                            let selector = selector.clone();
+                            move || selector.clone()
+                        })
+                        .child(Alert::error(selector.clone(), message).small())
+                }));
+            }
         }
         let _ = package;
         SettingGroup::new().title("插件设置草稿").items(items)
@@ -751,9 +876,12 @@ impl ExtensionManagerView {
             let label = usage::handler_heading(handler);
             let scopes = self.control_scopes.clone();
             let paused = event && self.application.read(cx).event_paused(&id, &handler_id);
+            let latest = self.application.read(cx).latest_event(&id, &handler_id);
             let retry_owner = owner.clone();
             let retry_id = id.clone();
             let retry_handler = handler_id.clone();
+            let recovery_view = cx.entity().downgrade();
+            let recovery_id = id.clone();
             items.push(
                 SettingItem::new(
                     label.clone(),
@@ -771,6 +899,7 @@ impl ExtensionManagerView {
                         scopes.borrow_mut().insert(selector.clone(), scope.clone());
                         div()
                             .id(format!("scope-root-{selector}"))
+                            .w_full().min_w_0().flex().flex_col().items_start().gap_2()
                             .track_focus(&scope)
                             .tab_index(0)
                             .tab_stop(false)
@@ -804,6 +933,11 @@ impl ExtensionManagerView {
                                         });
                                     }),
                             )
+                            .when_some(latest.as_ref(), |row, latest| row.child(div().text_sm().child(latest.summary())))
+                            .when(latest.as_ref().is_some_and(|item| !item.outcome.success()), |row| {
+                                let id = recovery_id.clone();
+                                row.child(view_button(format!("extension-event-environment-{retry_id}-{retry_handler}"), "检查运行环境", busy, recovery_view.clone(), move |view, window, cx| view.open_environment(Some(id.clone()), window, cx)))
+                            })
                             .when(paused, |row| {
                                 row.child(
                                     div()
@@ -815,7 +949,7 @@ impl ExtensionManagerView {
                                             format!(
                                                 "extension-event-retry-{retry_id}-{retry_handler}"
                                             ),
-                                            "重试自动事件",
+                                            "恢复自动触发",
                                             busy,
                                             retry_owner.clone(),
                                             {
@@ -856,10 +990,20 @@ impl ExtensionManagerView {
                 let candidates = candidates(&registry);
                 let labels = candidates.iter().map(reference_label).collect::<Vec<_>>();
                 let choice = cx.new(|cx| SelectState::new(labels, None, window, cx));
+                let hosts = registry
+                    .resolver_chains
+                    .keys()
+                    .chain(registry.resolver_preferences.keys())
+                    .cloned()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                let saved_hosts = cx.new(|cx| SelectState::new(hosts, None, window, cx));
                 view.chain_draft = Some(ChainDraft {
                     route: Vec::new(),
                     candidates,
                     choice,
+                    saved_hosts,
                 });
                 view.draft_error = None;
                 view.chain_host.update(cx, |input, cx| {
@@ -877,6 +1021,7 @@ impl ExtensionManagerView {
         let view = cx.entity().downgrade();
         let host = self.chain_host.clone();
         let choice = draft.choice.clone();
+        let saved_hosts = draft.saved_hosts.clone();
         let route = draft.route.clone();
         let available = candidates(&registry);
         let error = self.draft_error.clone();
@@ -957,7 +1102,54 @@ impl ExtensionManagerView {
                 stages =
                     stages.child("未配置阶段：保存空链将移除该域名的显式链，恢复默认单一选择。");
             }
+            let saved_choice = saved_hosts.clone();
             let form = Form::new()
+                .child(
+                    Field::new().label("已保存的域名").child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(
+                                Select::new(&saved_hosts)
+                                    .accessibility_label("已保存的解析链域名")
+                                    .disabled(busy),
+                            )
+                            .child(view_button(
+                                "extension-chain-open-saved",
+                                "打开所选配置",
+                                busy,
+                                view.clone(),
+                                move |view, window, cx| {
+                                    let Some(host) =
+                                        saved_choice.read(cx).selected_value().cloned()
+                                    else {
+                                        view.draft_error = Some("请选择一个已保存的域名".into());
+                                        return;
+                                    };
+                                    let registry = &view.application.read(cx).packages;
+                                    let route = registry
+                                        .resolver_chains
+                                        .get(&host)
+                                        .cloned()
+                                        .or_else(|| {
+                                            registry
+                                                .resolver_preferences
+                                                .get(&host)
+                                                .cloned()
+                                                .map(|item| vec![item])
+                                        })
+                                        .unwrap_or_default();
+                                    if let Some(draft) = &mut view.chain_draft {
+                                        draft.route = route;
+                                    }
+                                    view.chain_host
+                                        .update(cx, |input, cx| input.set_value(host, window, cx));
+                                    view.draft_error = None;
+                                },
+                            )),
+                    ),
+                )
                 .child(
                     Field::new()
                         .label("明确的域名")
@@ -1246,6 +1438,305 @@ pub(super) mod tests {
     use gpui_kit::Focusable;
     use gpui_kit::component::WindowExt;
     use gpui_kit::{KeyUpEvent, Keystroke, Modifiers, TestAppContext, VisualTestContext, size};
+    #[gpui_kit::test]
+    fn remediation_usage_settings_opens_editable_settings_directly(cx: &mut TestAppContext) {
+        let temp = tempfile::tempdir().expect("owned settings navigation");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("owned config");
+        let before = std::fs::read(&path).expect("config before navigation");
+        let (_, view, window) = mount(config, path.clone(), cx);
+        view.update_in(window, |view, window, cx| {
+            view.open_usage("fixture.manager".into(), window, cx)
+        });
+        window.run_until_parked();
+        click(window, "extension-usage-settings");
+        window.update(|window, cx| {
+            window.activate_window();
+            window.draw(cx).clear(cx);
+        });
+        let input = window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| {
+                    node.role() == Some(gpui_kit::Role::TextInput) && node.label() == Some("Name")
+                })
+                .expect("actual named settings Input shown without another Edit click")
+        });
+        let viewport = window
+            .debug_bounds("extension-detail-settings-viewport")
+            .expect("settings viewport");
+        assert!(input.visible());
+        assert!(
+            input.bounds().size.width >= px(200.0),
+            "editable Input needs usable width, got {:?}",
+            input.bounds()
+        );
+        assert_ne!(
+            input.disabled(),
+            Some(true),
+            "direct settings stays editable"
+        );
+        assert!(window.update(|window, cx| !window.has_active_dialog(cx)));
+        assert!(
+            input.bounds().top() >= viewport.top() && input.bounds().bottom() <= viewport.bottom()
+        );
+        window.simulate_click(input.bounds().center(), Modifiers::default());
+        view.update_in(window, |view, window, cx| {
+            use gpui_kit::Focusable as _;
+            assert!(
+                view.settings_draft.as_ref().expect("draft").inputs["name"]
+                    .read(cx)
+                    .focus_handle(cx)
+                    .is_focused(window),
+                "pointer must focus the original draft Input after closing usage"
+            );
+        });
+        // The focused Input installs its platform text handler during paint.
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        window.simulate_keystrokes("ctrl-a");
+        window.simulate_input("edited through direct settings");
+        window.run_until_parked();
+        assert_eq!(
+            view.read_with(window, |view, cx| view
+                .settings_draft
+                .as_ref()
+                .expect("editable draft")
+                .inputs["name"]
+                .read(cx)
+                .value()
+                .to_string()),
+            "edited through direct settings"
+        );
+        assert_eq!(
+            std::fs::read(path).expect("navigation and editing do not save"),
+            before
+        );
+    }
+    #[gpui_kit::test]
+    fn remediation_setting_path_same_turn_aba_edit_rejects_late_selection(cx: &mut TestAppContext) {
+        use gpui_kit::EntityInputHandler as _;
+        let temp = tempfile::tempdir().expect("owned ABA path fixture");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("owned config");
+        let before = std::fs::read(&path).expect("config before picker");
+        let (bridge, endpoint) = nxtools_ipc::platform_bridge(8);
+        endpoint.set_connected_for_contract_test(true);
+        let (owner, view, window) =
+            mount_with_platform(config, path.clone(), Some(Rc::new(bridge)), cx);
+        let original = "C:\\Synthetic\\original.txt";
+        let edited = "C:\\Synthetic\\edited.txt";
+        view.update_in(window, |view, window, cx| {
+            view.open_settings("fixture.manager".into(), window, cx);
+            view.settings_draft.as_ref().expect("draft").inputs["file"]
+                .update(cx, |input, cx| input.set_value(original, window, cx));
+        });
+        window.run_until_parked();
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        view.update_in(window, |view, window, cx| {
+            view.begin_setting_path("file".into(), "file", 123, window, cx)
+        });
+        window.run_until_parked();
+        let request = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("actual pending picker request");
+        view.update_in(window, |view, window, cx| {
+            view.settings_draft.as_ref().expect("current draft").inputs["file"].update(
+                cx,
+                |input, cx| {
+                    input.replace_text_in_range(
+                        Some(0..original.encode_utf16().count()),
+                        edited,
+                        window,
+                        cx,
+                    );
+                    input.replace_text_in_range(
+                        Some(0..edited.encode_utf16().count()),
+                        original,
+                        window,
+                        cx,
+                    );
+                },
+            );
+        });
+        window.run_until_parked();
+        assert_eq!(
+            view.read_with(window, |view, cx| view
+                .settings_draft
+                .as_ref()
+                .expect("draft")
+                .inputs["file"]
+                .read(cx)
+                .value()
+                .to_string()),
+            original
+        );
+        owner.update_in(window, |app, _, cx| {
+            app.handle_platform_notification(
+                nxtools_ipc::PlatformNotification::CommandResult {
+                    correlation_id: request.id,
+                    result: nxtools_protocol::PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some("C:\\Synthetic\\late.txt".into()),
+                    },
+                },
+                cx,
+            )
+        });
+        window.run_until_parked();
+        assert_eq!(
+            view.read_with(window, |view, cx| view
+                .settings_draft
+                .as_ref()
+                .expect("draft")
+                .inputs["file"]
+                .read(cx)
+                .value()
+                .to_string()),
+            original,
+            "A-B-A editing must invalidate the older picker even when the text matches again"
+        );
+        assert!(view.read_with(window, |view, _| {
+            view.settings_draft
+                .as_ref()
+                .expect("draft")
+                .path_pending
+                .is_empty()
+        }));
+        assert_eq!(std::fs::read(path).expect("picker never saves"), before);
+    }
+    #[gpui_kit::test]
+    fn remediation_setting_path_current_draft_edit_and_cancel_guards(cx: &mut TestAppContext) {
+        let temp = tempfile::tempdir().expect("owned path draft");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("save");
+        let before = std::fs::read(&path).expect("bytes");
+        let (bridge, endpoint) = nxtools_ipc::platform_bridge(8);
+        endpoint.set_connected_for_contract_test(true);
+        let (owner, view, window) =
+            mount_with_platform(config, path.clone(), Some(Rc::new(bridge)), cx);
+        view.update_in(window, |view, window, cx| {
+            view.open_settings("fixture.manager".into(), window, cx);
+        });
+        for scenario in 0..3 {
+            view.update_in(window, |view, window, cx| {
+                view.begin_setting_path("file".into(), "file", 123, window, cx)
+            });
+            window.run_until_parked();
+            let request = endpoint
+                .try_receive_command_for_contract_test()
+                .expect("pending before dispatch");
+            assert!(matches!(
+                request.message,
+                nxtools_protocol::Message::PlatformCommand(
+                    nxtools_protocol::PlatformCommand::PickExtensionSettingPath(_)
+                )
+            ));
+            if scenario == 1 {
+                view.update_in(window, |view, window, cx| {
+                    view.settings_draft.as_ref().expect("draft").inputs["file"]
+                        .update(cx, |input, cx| {
+                            input.set_value("C:\\Synthetic\\typed.txt", window, cx)
+                        })
+                });
+                window.run_until_parked();
+            }
+            if scenario == 2 {
+                view.update_in(window, |view, _, _| view.settings_draft = None);
+            }
+            owner.update_in(window, |app, _, cx| {
+                app.handle_platform_notification(
+                    nxtools_ipc::PlatformNotification::CommandResult {
+                        correlation_id: request.id,
+                        result: nxtools_protocol::PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: Some("C:\\Synthetic\\picked.txt".into()),
+                        },
+                    },
+                    cx,
+                )
+            });
+            window.run_until_parked();
+            if scenario < 2 {
+                assert_eq!(
+                    view.read_with(window, |view, cx| view
+                        .settings_draft
+                        .as_ref()
+                        .expect("draft")
+                        .inputs["file"]
+                        .read(cx)
+                        .value()
+                        .to_string()),
+                    if scenario == 0 {
+                        "C:\\Synthetic\\picked.txt"
+                    } else {
+                        "C:\\Synthetic\\typed.txt"
+                    }
+                );
+            } else {
+                assert!(view.read_with(window, |view, _| view.settings_draft.is_none()));
+            }
+        }
+        assert_eq!(std::fs::read(&path).expect("picker never saves"), before);
+    }
+    #[gpui_kit::test]
+    fn remediation_remove_requires_confirmation_and_cancel_preserves_config(
+        cx: &mut TestAppContext,
+    ) {
+        let temp = tempfile::tempdir().expect("owned removal fixture");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("save");
+        let before = std::fs::read(&path).expect("before");
+        let (owner, _, window) = mount(config, path.clone(), cx);
+        click(window, "extension-manage-fixture.manager");
+        click(window, "extension-remove-fixture.manager");
+        idle(&owner, window);
+        assert_eq!(
+            std::fs::read(&path).expect("review does not remove"),
+            before
+        );
+        assert!(window.update(|window, cx| window.has_active_dialog(cx)));
+        click(window, "extension-remove-cancel");
+        assert_eq!(std::fs::read(&path).expect("cancel writes nothing"), before);
+        click(window, "extension-remove-fixture.manager");
+        click(window, "extension-remove-confirm");
+        idle(&owner, window);
+        assert!(
+            nxtools_core::AppConfig::load_from(&path)
+                .expect("removed")
+                .extensions
+                .packages
+                .is_empty()
+        );
+    }
+    #[gpui_kit::test]
+    fn remediation_stale_removal_confirmation_cannot_remove_newer_package(cx: &mut TestAppContext) {
+        let temp = tempfile::tempdir().expect("owned stale removal");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("save");
+        let (owner, _, window) = mount(config, path.clone(), cx);
+        click(window, "extension-manage-fixture.manager");
+        click(window, "extension-remove-fixture.manager");
+        owner.update(window, |app, cx| {
+            app.packages.packages[0].manifest.description = "changed after review".into();
+            cx.notify();
+        });
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        let before = std::fs::read(&path).expect("before");
+        window.simulate_keystrokes("enter");
+        window.run_until_parked();
+        assert_eq!(std::fs::read(&path).expect("stale review no write"), before);
+        assert!(!owner.read_with(window, |app, _| app.busy));
+        click(window, "extension-remove-cancel");
+    }
     #[gpui_kit::test]
     fn component_followup_empty_activity_retains_message_close_and_no_execution(
         cx: &mut TestAppContext,
@@ -1851,6 +2342,124 @@ pub(super) mod tests {
         click(window, "extension-settings-cancel");
     }
 
+    #[gpui_kit::test]
+    fn expansion_settings_official_label_value_and_inline_validation_keep_draft_and_config(
+        cx: &mut TestAppContext,
+    ) {
+        let temp = tempfile::tempdir().expect("owned validated settings UI");
+        let path = temp.path().join("config.json");
+        let mut config = nxtools_core::AppConfig::default();
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.manager","name":"Validation fixture","version":"1",
+            "settings":[{"key":"name","title":"Name","type":"text","default":"ok","validation":{"required":true,"min_length":2,"max_length":4}},
+                {"key":"mode","title":"Mode","type":"choice","default":"raw","options":[{"value":"raw","label":"Readable label"},{"value":"next","label":"Next label"}]}],
+            "handlers":[{"id":"web","title":"Web","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://fixture.test"}}]});
+        config
+            .extensions
+            .install(
+                nxtools_extensions::ImportPreview::from_json(
+                    &serde_json::to_vec(&manifest).expect("manifest"),
+                )
+                .expect("formal preview"),
+                "owned".into(),
+                false,
+            )
+            .expect("install");
+        config.save_to(&path).expect("seed");
+        let before = std::fs::read(&path).expect("before");
+        let (application, view, window) = mount(config, path.clone(), cx);
+        click(window, "extension-manage-fixture.manager");
+        select_page(window, "插件设置");
+        click(window, "extension-settings-edit");
+        let input_id = view.update_in(window, |view, window, cx| {
+            let draft = view.settings_draft.as_ref().expect("draft");
+            assert_eq!(
+                draft.choices["mode"]
+                    .read(cx)
+                    .selected_value()
+                    .map(String::as_str),
+                Some("raw")
+            );
+            assert_eq!(draft.payload(cx).expect("valid defaults").0["mode"], "raw");
+            let id = draft.inputs["name"].entity_id();
+            draft.inputs["name"].update(cx, |input, cx| input.set_value(" ", window, cx));
+            id
+        });
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        let choice_node = window.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| node.label() == Some("Mode") && node.value() == Some("Readable label"))
+                .expect("official Select name is field title; selected display label is its value")
+        });
+        assert!(choice_node.bounds().size.width >= px(100.0));
+        assert!(choice_node.bounds().size.height >= px(32.0));
+        click(window, "extension-settings-save");
+        assert_eq!(std::fs::read(&path).expect("invalid save no write"), before);
+        assert_eq!(
+            view.read_with(window, |view, _| view
+                .settings_draft
+                .as_ref()
+                .expect("retained")
+                .inputs["name"]
+                .entity_id()),
+            input_id
+        );
+        assert!(
+            window
+                .debug_bounds("extension-setting-error-name")
+                .is_some(),
+            "field-level official Alert must be present after invalid Save"
+        );
+        view.update_in(window, |view, window, cx| {
+            let draft = view.settings_draft.as_ref().expect("draft");
+            draft.inputs["name"].update(cx, |input, cx| input.set_value("good", window, cx));
+            draft.choices["mode"].update(cx, |select, cx| {
+                select.set_selected_value(&"next".to_owned(), window, cx)
+            });
+        });
+        click(window, "extension-settings-save");
+        idle(&application, window);
+        let saved = nxtools_core::AppConfig::load_from(&path).expect("saved");
+        assert_eq!(saved.extensions.packages[0].settings["name"], "good");
+        assert_eq!(saved.extensions.packages[0].settings["mode"], "next");
+        assert!(view.read_with(window, |view, _| view.settings_draft.is_none()));
+    }
+
+    #[gpui_kit::test]
+    fn expansion_settings_unknown_selection_is_explicit_without_first_option_or_cancel_write(
+        cx: &mut TestAppContext,
+    ) {
+        let temp = tempfile::tempdir().expect("owned stale choice");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("seed");
+        let before = std::fs::read(&path).expect("before");
+        let (application, view, window) = mount(config, path.clone(), cx);
+        // Model an already-open owner receiving an unavailable value; never seed corrupt user config.
+        application.update(window, |app, cx| {
+            app.packages.packages[0]
+                .settings
+                .insert("mode".into(), serde_json::json!("removed-option"));
+            cx.notify();
+        });
+        click(window, "extension-manage-fixture.manager");
+        select_page(window, "插件设置");
+        click(window, "extension-settings-edit");
+        view.read_with(window, |view, cx| {
+            let draft = view.settings_draft.as_ref().expect("draft");
+            assert!(draft.choices["mode"].read(cx).selected_value().is_none());
+            assert!(draft.payload(cx).is_err());
+        });
+        assert!(
+            window
+                .debug_bounds("extension-setting-error-mode")
+                .is_some(),
+            "unknown value is an explicit error, never first option"
+        );
+        click(window, "extension-settings-cancel");
+        assert_eq!(std::fs::read(&path).expect("cancel unchanged"), before);
+    }
+
     fn fixture(temp: &tempfile::TempDir) -> nxtools_core::AppConfig {
         let source = temp.path().join("source");
         std::fs::create_dir(&source).expect("owned source");
@@ -2383,10 +2992,23 @@ pub(super) mod tests {
         let (application, view, window) = mount(config, path.clone(), cx);
         click(window, "extension-chain-edit");
         view.update_in(window, |view, window, cx| {
-            view.chain_host
-                .update(cx, |input, cx| input.set_value("EXAMPLE.TEST", window, cx))
+            view.chain_draft
+                .as_ref()
+                .expect("chain draft")
+                .saved_hosts
+                .update(cx, |select, cx| {
+                    select.set_selected_value(&"example.test".to_owned(), window, cx)
+                });
         });
-        click(window, "extension-chain-load");
+        click(window, "extension-chain-open-saved");
+        assert_eq!(
+            view.read_with(window, |view, cx| view
+                .chain_host
+                .read(cx)
+                .value()
+                .to_string()),
+            "example.test"
+        );
         click(window, "extension-chain-up-1");
         assert_eq!(
             window.read(
@@ -2507,5 +3129,85 @@ pub(super) mod tests {
                 .iter()
                 .any(|notice| notice.message.contains("不重放旧事件"))
         }));
+    }
+
+    #[gpui_kit::test]
+    fn expansion_storage_ui_package_data_navigation_keeps_original_settings_draft_and_cancel(
+        cx: &mut TestAppContext,
+    ) {
+        let temp = tempfile::tempdir().expect("owned data settings navigation");
+        let path = temp.path().join("config.json");
+        let config = fixture(&temp);
+        config.save_to(&path).expect("config");
+        let before = std::fs::read(&path).expect("before");
+        let engine = nxtools_download::DownloadEngine::open(temp.path().join("downloads.db"))
+            .expect("engine");
+        let (service, _) = crate::extensions::service::ExtensionService::new_with_storage(
+            &engine,
+            config.extensions.clone(),
+            None,
+            false,
+            path.clone(),
+            temp.path().join("data"),
+        )
+        .expect("formal service");
+        cx.update(|cx| {
+            cx.set_global(crate::extensions::ui_host::ExtensionServiceGlobal(
+                service.clone(),
+            ))
+        });
+        let (application, view, window) = mount(config, path.clone(), cx);
+        view.update_in(window, |view, window, cx| {
+            view.open_settings("fixture.manager".into(), window, cx)
+        });
+        let input = view.read_with(window, |view, _| {
+            view.settings_draft.as_ref().expect("draft").inputs["name"].clone()
+        });
+        input.update_in(window, |input, window, cx| {
+            input.set_value("unsaved data-navigation draft", window, cx)
+        });
+        click(window, "extension-package-storage-open");
+        idle(&application, window);
+        assert!(view.read_with(window, |view, _| view.storage_open));
+        assert!(application.read_with(window, |app, _| app.storage_management.reviewed.is_some()));
+        click(window, "extension-storage-back");
+        assert!(!view.read_with(window, |view, _| view.storage_open));
+        view.read_with(window, |view, cx| {
+            let current = &view.settings_draft.as_ref().expect("original draft").inputs["name"];
+            assert_eq!(current.entity_id(), input.entity_id());
+            assert_eq!(
+                current.read(cx).value().as_ref(),
+                "unsaved data-navigation draft"
+            );
+        });
+        for selector in ["extension-settings-save", "extension-settings-cancel"] {
+            window.update(|window, cx| window.draw(cx).clear(cx));
+            let bounds = window
+                .debug_bounds(selector)
+                .expect("original pinned draft action");
+            assert!(bounds.top() >= px(0.0) && bounds.bottom() <= px(430.0));
+        }
+        click(window, "extension-settings-cancel");
+        assert!(view.read_with(window, |view, _| view.settings_draft.is_none()));
+        assert_eq!(
+            std::fs::read(&path).expect("navigation and cancel never write"),
+            before
+        );
+        service.runtime.shutdown();
+        let released = service.storage_release_probe_for_test();
+        application.update(window, |app, _| app.unbind_service_for_test());
+        window.update(|_, cx| {
+            drop(cx.remove_global::<crate::extensions::ui_host::ExtensionServiceGlobal>())
+        });
+        drop(service);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        while !released() {
+            window.run_until_parked();
+            assert!(
+                std::time::Instant::now() < deadline,
+                "settings fixture actual service cleanup"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 }

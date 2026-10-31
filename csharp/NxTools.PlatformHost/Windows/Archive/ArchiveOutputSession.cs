@@ -21,7 +21,7 @@ internal sealed record ArchiveOutputResult(string Category, int? NativeCode = nu
 
 // Worker-thread-only. Parents and temporary are held throughout publication. Only the
 // target recheck handle closes before the single rename; this accepted TOCTOU is not ID-CAS.
-internal sealed class ArchiveOutputSession : IDisposable
+internal sealed partial class ArchiveOutputSession : IDisposable
 {
     private readonly SafeFileHandle drive;
     private SafeFileHandle? root;
@@ -29,9 +29,19 @@ internal sealed class ArchiveOutputSession : IDisposable
     private string[] pendingRootParts = [];
     private readonly Dictionary<Guid, Partial> entries = [];
     private readonly List<Partial> transactions = [];
-    private sealed record OutputDirectory(SafeFileHandle Handle, bool Owned) { internal bool Finalized; }
+    private sealed record OutputDirectory(SafeFileHandle Handle, bool Owned) { internal bool Finalized; internal bool Completed; }
     private readonly Dictionary<string, OutputDirectory> outputDirectories = new(StringComparer.OrdinalIgnoreCase);
     private bool directoryMetadataStarted;
+    private bool directoryPublished, directoryPublicationUnknown;
+    // Read-only history after real cleanup; never authorizes commit/rollback or replaces the file journal.
+    internal bool? OutputPublished() => directoryPublished || transactions.Any(entry => entry.Journaled && entry.Committed) ? true
+        : !disposed || directoryPublicationUnknown || transactions.Any(entry => entry.Journaled && entry.State is ArchiveCommitState.CommitInFlight or ArchiveCommitState.CommitOutcomeUnknown) ? null : false;
+    private void MarkDirectoryPublished() => directoryPublished = true;
+    private SafeFileHandle OpenOutputDirectory(SafeFileHandle parent, string name, out bool created)
+    {
+        try { return OutputNative.OpenDirectory(parent, name, out created, MarkDirectoryPublished); }
+        catch { directoryPublicationUnknown = true; throw; }
+    }
     private ReadOnlyMemory<byte>? zoneIdentifier;
     private readonly Guid operationId;
     internal Guid OperationId => operationId;
@@ -45,7 +55,11 @@ internal sealed class ArchiveOutputSession : IDisposable
     {
         internal readonly SafeFileHandle Parent = parent;
         internal readonly string Name = name;
+        internal string Relative = "";
         internal SafeFileHandle? File = file;
+        internal SafeFileHandle? Retained;
+        internal string PartialName = "";
+        internal bool ReclamationReady;
         internal FileStream? Stream;
         internal long Count;
         internal bool Committed;
@@ -111,7 +125,7 @@ internal sealed class ArchiveOutputSession : IDisposable
         Check();
         checkpoint?.Invoke();
         foreach (var part in pendingRootParts) {
-            directories.Add(OutputNative.OpenDirectory(directories.LastOrDefault() ?? drive, part));
+            directories.Add(OpenOutputDirectory(directories.LastOrDefault() ?? drive, part, out _));
             checkpoint?.Invoke();
         }
         pendingRootParts = [];
@@ -126,6 +140,22 @@ internal sealed class ArchiveOutputSession : IDisposable
         Check();var parent=directories.LastOrDefault()??drive;
         OutputNative.RequireDirectoryWritable(parent);
         return (pendingRootParts.Length!=0,OutputNative.AvailableSpace(parent));
+    }
+    internal (bool Missing, ulong Available, ulong Allocation, string TargetIdentity, string VolumeIdentity, uint MissingDirectories) ObserveSpace()
+    {
+        Check(); var parent=directories.LastOrDefault()??drive;
+        OutputNative.RequireDirectoryWritable(parent);
+        var before=OutputNative.Identity(parent);
+        var available=OutputNative.AvailableSpace(parent);
+        var (allocation,volume)=OutputNative.AllocationSpace(parent);
+        var after=OutputNative.Identity(parent);
+        if(before.Volume!=after.Volume || before.IdLow!=after.IdLow || before.IdHigh!=after.IdHigh)
+            throw new ArchiveOutputException("target_changed");
+        // Bind the exact validated missing suffix, not merely its depth; no plaintext path
+        // enters the opaque wire identity. Full held ancestor ID remains authoritative.
+        var suffix=Convert.ToHexString(SHA256.HashData(Encoding.Unicode.GetBytes(string.Join('\\',pendingRootParts))));
+        return (pendingRootParts.Length!=0,available,allocation,
+            $"v1:{before.Volume:X}:{before.IdHigh:X16}{before.IdLow:X16}:{suffix}",volume,checked((uint)pendingRootParts.Length));
     }
     private void Check() { if (disposed) throw new ArchiveOutputException("session_closed"); }
     internal void RequireNewVolumeFamily(string name, bool sevenz)
@@ -183,19 +213,26 @@ internal sealed class ArchiveOutputSession : IDisposable
             prefix = prefix.Length == 0 ? part : prefix + "/" + part;
             parent = TrackDirectory(parent, part, prefix);
         }
+        // Only a completed worker directory request is output. Prepared roots/wrappers and
+        // ancestry opened for an uncommitted file are not evidence of archive results.
+        OutputNative.VerifyDirectory(parent);
+        outputDirectories[relative].Completed = true;
+        directoryPublished = true; // Completed directory output is real even without a file transaction.
     }
     internal void CreateExclusiveDirectory(string name)
     {
         Check(); Validate(name);
         if (outputDirectories.Count >= 16384) throw new ArchiveOutputException("session_entry_limit");
-        var handle=OutputNative.Open(Root,name,directory:true,create:true,exclusive:true);
+        SafeFileHandle handle;
+        try { handle=OutputNative.Open(Root,name,directory:true,create:true,exclusive:true,createdCheckpoint:MarkDirectoryPublished); }
+        catch { directoryPublicationUnknown=true; throw; }
         directories.Add(handle);outputDirectories.Add(name,new(handle,true));
     }
     private SafeFileHandle TrackDirectory(SafeFileHandle parent, string component, string relative)
     {
         if (outputDirectories.TryGetValue(relative, out var existing)) return existing.Handle;
         if (outputDirectories.Count >= 16384) throw new ArchiveOutputException("session_entry_limit");
-        var next = OutputNative.OpenDirectory(parent, component, out var created);
+        var next = OpenOutputDirectory(parent, component, out var created);
         directories.Add(next); outputDirectories.Add(relative, new(next, created)); return next;
     }
     internal void FinalizeDirectoryMetadata(string relative, ArchiveOutputMetadata metadata, CancellationToken cancellationToken)
@@ -266,6 +303,7 @@ internal sealed class ArchiveOutputSession : IDisposable
     internal Guid BeginFile(string relative, string? expectedTargetIdentity = null, bool overwrite = false)
     {
         Check();
+        Reclamation?.ValidateBegin(relative, overwrite);
         if (overwrite != (expectedTargetIdentity is not null)) throw new ArchiveOutputException("expected_identity_required");
         if (string.IsNullOrEmpty(relative)) throw new ArchiveOutputException("invalid_component");
         var parts = relative.Split('/');
@@ -278,20 +316,23 @@ internal sealed class ArchiveOutputSession : IDisposable
         {
             parent = TrackDirectory(parent, parts[i], string.Join('/', parts.Take(i + 1)));
         }
+        if (Reclamation is not null && ObserveOrdinaryTarget(relative) is not null) throw new ArchiveOutputException("reclamation_target_exists");
         if (overwrite) RecheckTarget(parent, parts[^1], expectedTargetIdentity!);
         var token = Guid.NewGuid();
         SafeFileHandle? partial = null;
+        string partialName = "";
         for (var i = 0; i < 4 && partial is null; i++)
         {
-            try { partial = OutputNative.Open(parent, ".nxpart-" + operationId.ToString("N") + "-" + Guid.NewGuid().ToString("N"),
-                directory: false, exclusive: true); }
+            try { partialName = ".nxpart-" + operationId.ToString("N") + "-" + Guid.NewGuid().ToString("N");
+                partial = OutputNative.Open(parent, partialName, directory: false, exclusive: true); }
             catch (ArchiveOutputException e) when (e.NativeCode is 80 or 183) { }
         }
         if (partial is null) throw new ArchiveOutputException("partial_collision");
-        var entry = new Partial(parent, parts[^1], partial) {Expected=expectedTargetIdentity};
+        var entry = new Partial(parent, parts[^1], partial) {Expected=expectedTargetIdentity, Relative=relative, PartialName=partialName};
         entries.Add(token, entry); transactions.Add(entry); // Cleanup ownership precedes fallible identity query.
         var stamp = OutputNative.Identity(partial);
         entry.NativeIdentity=$"v1:{stamp.Volume:X}:{stamp.IdHigh:X16}{stamp.IdLow:X16}";
+        Reclamation?.PartialCreated(relative, partialName, parent, partial);
         Diagnostic("started", "started", null);
         return token;
     }
@@ -302,6 +343,7 @@ internal sealed class ArchiveOutputSession : IDisposable
         if (entry.Committed || entry.File is null || entry.State != ArchiveCommitState.Preparing || entry.CandidateVerified ||
             chunk.Length is < 1 or > 65536 || entry.Count > 34359738368L - chunk.Length)
             throw new ArchiveOutputException("write_limit");
+        Reclamation?.ValidateWrite(entry.Relative, entry.Count, chunk.Length);
         try
         {
             entry.Stream ??= new FileStream(entry.File, FileAccess.ReadWrite, 65536, false);
@@ -407,7 +449,9 @@ internal sealed class ArchiveOutputSession : IDisposable
             CommitCheckpointProbe?.Invoke("before_flush");
             entry.Stream?.Flush();
             var file = entry.Stream?.SafeFileHandle ?? entry.File;
-            if (zoneIdentifier is { } mark) {
+            if (Reclamation is not null && entry.Metadata?.Modified is null)
+                ArchiveMetadataNative.Apply(file, new(OutputNative.Identity(file).Modified));
+            if (!entry.ReclamationReady && zoneIdentifier is { } mark) {
                 CommitCheckpointProbe?.Invoke("before_motw");
                 ArchiveMotw.EnsureSupported(file, writing: true, NamedStreamsFlagsProbe);
                 cancellationToken.ThrowIfCancellationRequested();
@@ -427,6 +471,11 @@ internal sealed class ArchiveOutputSession : IDisposable
             var stamp = OutputNative.Identity(file);
             var fingerprint = Fingerprint(entry);
             var attributes = ArchiveMetadataNative.Attributes(file);
+            var motwHash = zoneIdentifier is { } readyMark ? SHA256.HashData(readyMark.Span) : null;
+            if (Reclamation is not null) {
+                if (!ArchiveMotw.Matches(file, motwHash)) throw new ArchiveOutputException("reclamation_motw_mismatch");
+                Reclamation.Ready(entry.Relative, file, entry.Metadata, fingerprint, attributes, motwHash, cancellationToken);
+            }
             entry.State = ArchiveCommitState.Verified;
             CommitCheckpointProbe?.Invoke("before_recheck");
             if (entry.Expected is not null) RecheckTarget(entry.Parent, entry.Name, entry.Expected);
@@ -447,6 +496,7 @@ internal sealed class ArchiveOutputSession : IDisposable
             entry.Attributes = attributes;
             entry.ZoneIdentifierHash = zoneIdentifier is { } committedMark ? SHA256.HashData(committedMark.Span) : null;
             CommitCheckpointProbe?.Invoke("native_published"); // Native fact precedes close/hash.
+            if (Reclamation is not null) OutputNative.Flush(file);
             CloseOutput(entry);
             CommitCheckpointProbe?.Invoke("native_committed");
             using var observed = OutputNative.Open(entry.Parent, entry.Name, directory: false, readOnly: true, anyKind: true);
@@ -459,6 +509,12 @@ internal sealed class ArchiveOutputSession : IDisposable
                 return new("target_changed_after_commit", State: entry.State);
             }
             entry.Modified = current.Modified; // Last-write time settles when the writer closes.
+            if (Reclamation is not null) {
+                if (current.Modified != stamp.Modified || ArchiveMetadataNative.Attributes(observed) != attributes || !ArchiveMotw.Matches(observed, entry.ZoneIdentifierHash))
+                    throw new ArchiveOutputException("reclamation_output_metadata_mismatch");
+                entry.Retained = OutputNative.Open(entry.Parent, entry.Name, directory: false, readOnly: true);
+                Reclamation.Published(entry.Relative);
+            }
             Diagnostic("completed", "committed", null);
             return new("committed", State: entry.State);
         }
@@ -509,6 +565,7 @@ internal sealed class ArchiveOutputSession : IDisposable
             entry.Cleanup = category;
             return new(category, native, entry.State);
         }
+        if (Reclamation is not null) return Finish("reclamation_retained");
         if (entry.State is ArchiveCommitState.CommitOutcomeUnknown or ArchiveCommitState.CommitInFlight)
             return Finish("retained_uncertain");
         if (entry.State is ArchiveCommitState.CommittedButVerificationFailed or ArchiveCommitState.TargetChangedAfterCommit)
@@ -548,6 +605,24 @@ internal sealed class ArchiveOutputSession : IDisposable
         catch (ArchiveOutputException e) { Diagnostic("failed", e.Stage, e.NativeCode); return Finish("changed_retained", e.NativeCode); }
         catch (IOException) { return Finish("changed_retained"); }
     }
+    // Called before disposal, after worker drainage. Never reconstruct Name/Smart from the request.
+    internal Protocol.ArchiveJobResultLocation? ResultLocation()
+    {
+        Check();
+        var committed = transactions.Where(entry=>entry.Journaled && entry.Committed).ToArray();
+        if (root is null) return null;
+        var completedDirectories = outputDirectories.Where(pair=>pair.Value.Completed).ToArray();
+        if (committed.Length == 0 && completedDirectories.Length == 0) return null;
+        foreach (var pair in completedDirectories) OutputNative.VerifyDirectory(pair.Value.Handle);
+        var roots = committed.Select(entry=>entry.Relative.Split('/')[0])
+            .Concat(completedDirectories.Select(pair=>pair.Key.Split('/')[0]))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Take(2).ToArray();
+        if (roots.Length == 1 && outputDirectories.TryGetValue(roots[0], out var directory))
+            return new(OutputNative.DisplayDirectoryPath(directory.Handle), "open");
+        if (committed.Length == 1 && roots.Length == 1)
+            return new(Path.Combine(OutputNative.DisplayDirectoryPath(committed[0].Parent),committed[0].Name), "select_in_explorer");
+        return new(OutputNative.DisplayDirectoryPath(root), "open");
+    }
     public void Dispose()
     {
         if (disposed) return;
@@ -557,7 +632,7 @@ internal sealed class ArchiveOutputSession : IDisposable
             try { Cancel(token); }
             catch (Exception) { entries[token].Cleanup = "cleanup_failed"; /* Never delete by path. */ }
         }
-        foreach(var entry in entries.Values){entry.Stream?.Dispose();entry.File?.Dispose();}
+        foreach(var entry in entries.Values){entry.Stream?.Dispose();entry.File?.Dispose();entry.Retained?.Dispose();}
         disposed = true;
         foreach (var item in directories) item.Dispose();
         drive.Dispose();
@@ -574,7 +649,7 @@ internal sealed class ArchiveOutputSession : IDisposable
 // SDK NT ABI: UNICODE_STRING (Length/MaximumLength in bytes), OBJECT_ATTRIBUTES (48 bytes
 // x64), IO_STATUS_BLOCK (16 bytes x64). The unmanaged Unicode storage lives through each call.
 // NtCreateFile with RootDirectory and one component is the filesystem security boundary.
-internal static class OutputNative
+internal static partial class OutputNative
 {
     [StructLayout(LayoutKind.Sequential)] private struct UnicodeString
     { internal ushort Length, MaximumLength; internal IntPtr Buffer; }
@@ -635,18 +710,33 @@ internal static class OutputNative
         if(!DiskSpace(StableDirectoryPath(directory).TrimEnd('\\')+"\\",out var available,out _,out _))throw new ArchiveOutputException("target_denied",Marshal.GetLastWin32Error());
         return available;
     }
+    [DllImport("kernel32.dll",EntryPoint="GetDiskFreeSpaceW",SetLastError=true,CharSet=CharSet.Unicode)]
+    [return:MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DiskAllocation(string root,out uint sectors,out uint bytes,out uint free,out uint total);
+    internal static (ulong Allocation,string Volume) AllocationSpace(SafeFileHandle directory)
+    {
+        var stable=StableDirectoryPath(directory); var end=stable.IndexOf('}');
+        if(end<0)throw new ArchiveOutputException("invalid_commit_parent");
+        var root=stable[..(end+1)]+"\\";
+        if(!DiskAllocation(root,out var sectors,out var bytes,out _,out _))
+            throw new ArchiveOutputException("space_allocation_failed",Marshal.GetLastWin32Error());
+        var allocation=checked((ulong)sectors*bytes);
+        if(allocation==0 || allocation>16777216 || (allocation&(allocation-1))!=0)
+            throw new ArchiveOutputException("space_allocation_unknown");
+        return (allocation,$"v1:{OutputNative.Identity(directory).Volume:X}:{stable[11..end]}");
+    }
     internal static SafeFileHandle OpenDirectory(SafeFileHandle parent, string name) => OpenDirectory(parent, name, out _);
-    internal static SafeFileHandle OpenDirectory(SafeFileHandle parent, string name, out bool created)
+    internal static SafeFileHandle OpenDirectory(SafeFileHandle parent, string name, out bool created, Action? createdCheckpoint = null)
     {
         created = false;
         try { return Open(parent, name, directory: true); }
         catch (ArchiveOutputException e) when (e.NativeCode is 2 or 3) {
-            try { var handle = Open(parent, name, directory: true, create: true, exclusive: true); created = true; return handle; }
+            try { var handle = Open(parent, name, directory: true, create: true, exclusive: true, createdCheckpoint: createdCheckpoint); created = true; return handle; }
             catch (ArchiveOutputException race) when (race.NativeCode is 80 or 183) { return Open(parent, name, directory: true); }
         }
     }
     internal static SafeFileHandle Open(SafeFileHandle? parent, string name, bool directory, bool create = false,
-        bool exclusive = false, bool readOnly = false, bool anyKind = false, bool metadataCleanup = false, bool zoneStream = false, bool retireDirectory = false,bool requireWrite=false)
+        bool exclusive = false, bool readOnly = false, bool anyKind = false, bool metadataCleanup = false, bool zoneStream = false, bool retireDirectory = false,bool requireWrite=false, Action? createdCheckpoint=null, bool reclamationWrite=false)
     {
         var bytes = Encoding.Unicode.GetBytes(name);
         if (bytes.Length > ushort.MaxValue - 2) throw new ArchiveOutputException("invalid_component");
@@ -664,9 +754,9 @@ internal static class OutputNative
             const uint options = 0x00200000 | 0x00000020; // OPEN_REPARSE_POINT | SYNCHRONOUS_IO_NONALERT
             // Directory: SYNCHRONIZE | READ_ATTRIBUTES | LIST_DIRECTORY plus FILE_WRITE_DATA when creating;
             // file: SYNCHRONIZE | DELETE | READ_ATTRIBUTES | READ_DATA | WRITE_DATA | APPEND_DATA.
-            var access = zoneStream ? readOnly ? 0x100081u : 0x100183u : directory ? 0x100081u | (create ? 0x102u : 0u) | (requireWrite ? 0x6u : 0u) | (retireDirectory ? 0x10000u : 0u) : readOnly ? 0x100081u : metadataCleanup ? 0x110181u : 0x110183u;
+            var access = reclamationWrite ? 0x100183u : zoneStream ? readOnly ? 0x100081u : 0x100183u : directory ? 0x100081u | (create ? 0x102u : 0u) | (requireWrite ? 0x6u : 0u) | (retireDirectory ? 0x10000u : 0u) : readOnly ? 0x100081u : metadataCleanup ? 0x110181u : 0x110183u;
             var status = NtCreateFile(out var handle, access, ref attrs,
-                out _, IntPtr.Zero, 0x80, zoneStream ? readOnly && !metadataCleanup ? 1u : 7u : directory ? 3u : readOnly ? 1u : 0u,
+                out _, IntPtr.Zero, 0x80, reclamationWrite ? 1u : zoneStream ? readOnly && !metadataCleanup ? 1u : 7u : directory ? 3u : readOnly ? 1u : 0u,
                 exclusive ? 2u : create ? 3u : 1u, options | (directory ? 0x1u : anyKind ? 0u : 0x40u),
                 IntPtr.Zero, 0);
             if (status < 0)
@@ -677,6 +767,7 @@ internal static class OutputNative
             }
             try
             {
+                if (directory && create && exclusive) createdCheckpoint?.Invoke(); // Native success precedes fallible inspection.
                 Inspect(handle, directory);
                 return handle;
             }
@@ -734,6 +825,17 @@ internal static class OutputNative
             }
         }
         finally { Marshal.FreeHGlobal(block); }
+    }
+    internal static string DisplayDirectoryPath(SafeFileHandle directory)
+    {
+        VerifyDirectory(directory);
+        var buffer = new StringBuilder(32768);
+        var length = FinalPath(directory,buffer,(uint)buffer.Capacity,0); // VOLUME_NAME_DOS; display fact only.
+        if (length == 0 || length >= buffer.Capacity) throw new ArchiveOutputException("resolve_result_location",Marshal.GetLastWin32Error());
+        var value=buffer.ToString();
+        if (value.StartsWith(@"\\?\",StringComparison.Ordinal)) value=value[4..];
+        if (!Protocol.ArchiveJobWire.PathValid(value)) throw new ArchiveOutputException("invalid_result_location");
+        return value;
     }
     internal static string StableDirectoryPath(SafeFileHandle parent)
     {

@@ -1,0 +1,2194 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+    "kind": "existing",
+    "after_sha256": "36961f88fb2518c985d1c436bdc924d7330122f4020a7a7932f1c1c176969361",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window.rs.baseline",
+    "baseline_sha256": "641fe48ca573be4c126060f21441836a4b6ec1a789f795487b0f5ae2d771f1e4",
+    "operations": [
+      {
+        "before_start": 513,
+        "before_end": 513,
+        "after_start": 513,
+        "after_end": 516,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[cfg(test)]\n",
+          "mod shared_rem_tests;\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "kind": "existing",
+    "after_sha256": "5cc7930408a3854ab73217cec4c05b89ebb963f9c6d96be43e668e4b3cd9bd82",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/network_settings.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/network_settings.rs.baseline",
+    "baseline_sha256": "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+    "operations": [
+      {
+        "before_start": 1193,
+        "before_end": 1194,
+        "after_start": 1193,
+        "after_end": 1194,
+        "before_lines": [
+          "                    332.0,\n"
+        ],
+        "after_lines": [
+          "                    crate::ui::metrics::ordinary_rem(332.0),\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "kind": "existing",
+    "after_sha256": "2879b065d0c558ca7dd3498f3ce0aa6dd0acb308185aedbbd652d386e36f1170",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/downloads/settings_view.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/downloads/settings_view.rs.baseline",
+    "baseline_sha256": "fa113dfa10cdacd2e257bc9f938263c81199409d2e38418a10f780ee1a97f3d7",
+    "operations": [
+      {
+        "before_start": 2317,
+        "before_end": 2318,
+        "after_start": 2317,
+        "after_end": 2318,
+        "before_lines": [
+          "                        ordinary_rem(440.0).to_pixels(window.rem_size()).as_f32(),\n"
+        ],
+        "after_lines": [
+          "                        ordinary_rem(440.0),\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+    "kind": "existing",
+    "after_sha256": "8a11213b56cc121917825198f54f73d42eb542a0c6efe59fea961020ea151b45",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs.baseline",
+    "baseline_sha256": "09facb4ebe9fef25b992999e7543eb7f87020093fc260a161543f55e410b3839",
+    "operations": [
+      {
+        "before_start": 543,
+        "before_end": 544,
+        "after_start": 543,
+        "after_end": 544,
+        "before_lines": [
+          "                                300.0,\n"
+        ],
+        "after_lines": [
+          "                                crate::ui::metrics::ordinary_rem(300.0),\n"
+        ]
+      },
+      {
+        "before_start": 970,
+        "before_end": 971,
+        "after_start": 970,
+        "after_end": 971,
+        "before_lines": [
+          "                    300.0,\n"
+        ],
+        "after_lines": [
+          "                    crate::ui::metrics::ordinary_rem(300.0),\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs",
+    "kind": "existing",
+    "after_sha256": "a8e3ee75a776b23ce04e359c5d2fc1756ccf5a947464b6d627b575db9ea830f1",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs.baseline",
+    "baseline_sha256": "22053a3fbd70a8d8d20b15a7f42c44c2da662fff93da3cb8693c9dfdf029f9f7",
+    "operations": [
+      {
+        "before_start": 364,
+        "before_end": 365,
+        "after_start": 364,
+        "after_end": 365,
+        "before_lines": [
+          "                        280.0,\n"
+        ],
+        "after_lines": [
+          "                        crate::ui::metrics::ordinary_rem(280.0),\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+    "kind": "existing",
+    "after_sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs.baseline",
+    "baseline_sha256": "c23e7f6dd605026b6d646bd8621d45ed8033c3693c98f70cb4c23eb56952d0c6",
+    "operations": [
+      {
+        "before_start": 964,
+        "before_end": 964,
+        "after_start": 964,
+        "after_end": 1011,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[gpui_kit::test]\n",
+          "fn audit06_shared_global_settings_minimum_keeps_actual_footer_and_cancel_owner(\n",
+          "    cx: &mut TestAppContext,\n",
+          ") {\n",
+          "    let (application, view, mut surface, directory) = fixture(cx);\n",
+          "    let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());\n",
+          "    let path = directory.join(\"config.json\");\n",
+          "    let before = std::fs::read(&path).expect(\"owned original config\");\n",
+          "    for base in [16.0, 14.0, 18.0] {\n",
+          "        surface.update(|_, cx| {\n",
+          "            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))\n",
+          "        });\n",
+          "        view.update(&mut surface, |_, cx| cx.notify());\n",
+          "        surface.update(|window, cx| {\n",
+          "            window.refresh();\n",
+          "            window.draw(cx).clear(cx);\n",
+          "        });\n",
+          "        assert_eq!(surface.update(|window, _| window.rem_size()), px(base));\n",
+          "        let footer = surface\n",
+          "            .debug_bounds(\"network-settings-footer\")\n",
+          "            .expect(\"fixed original footer\");\n",
+          "        assert_eq!(footer.size.height, px(48.0));\n",
+          "        assert_eq!(footer.bottom(), px(480.0));\n",
+          "        for id in [\n",
+          "            \"network-settings-cancel-button\",\n",
+          "            \"network-settings-save-button\",\n",
+          "        ] {\n",
+          "            let action = control_bounds(&mut surface, id);\n",
+          "            assert!(\n",
+          "                action.left() >= footer.left()\n",
+          "                    && action.right() <= footer.right()\n",
+          "                    && action.top() >= footer.top()\n",
+          "                    && action.bottom() <= footer.bottom()\n",
+          "            );\n",
+          "            assert!((action.size.height - px(24.0 * base / 16.0)).abs() <= px(0.5));\n",
+          "        }\n",
+          "        assert_eq!(std::fs::read(&path).expect(\"layout cannot save\"), before);\n",
+          "    }\n",
+          "    let cancel = control_bounds(&mut surface, \"network-settings-cancel-button\");\n",
+          "    surface.simulate_click(cancel.center(), Default::default());\n",
+          "    surface.run_until_parked();\n",
+          "    assert!(application.read_with(&surface, |application, _| application.window.is_none()));\n",
+          "    assert_eq!(std::fs::read(&path).expect(\"Cancel retains config\"), before);\n",
+          "    cx.update(|cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));\n",
+          "    std::fs::remove_dir_all(directory).expect(\"remove isolated fixture\");\n",
+          "}\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs",
+    "kind": "existing",
+    "after_sha256": "512db11d2fe9178766c0e72f32556b953af80e6a5fde554e57d76ca23aba977f",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs.baseline",
+    "baseline_sha256": "54b48385099120aa9b700bdd03ca91fd7405367e7d5dba822d319d3fb654eddf",
+    "operations": [
+      {
+        "before_start": 2581,
+        "before_end": 2581,
+        "after_start": 2581,
+        "after_end": 2658,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[gpui_kit::test]\n",
+          "fn audit06_shared_clipboard_fixed_card_caps_gap_and_feather_do_not_scale(cx: &mut TestAppContext) {\n",
+          "    let f = fixture(cx);\n",
+          "    let mut surface = VisualTestContext::from_window(f.window, cx);\n",
+          "    let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());\n",
+          "    let first_id = f\n",
+          "        .panel\n",
+          "        .read_with(&surface, |panel, _| panel.entries.borrow()[0].id);\n",
+          "    for base in [16.0, 14.0, 18.0] {\n",
+          "        surface.update(|_, cx| {\n",
+          "            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))\n",
+          "        });\n",
+          "        for (kind, expected) in [\n",
+          "            (ClipboardKind::Text, 160.0),\n",
+          "            (ClipboardKind::Image, 190.0),\n",
+          "            (ClipboardKind::Files, 62.0),\n",
+          "        ] {\n",
+          "            f.panel.update_in(&mut surface, |panel, _, cx| {\n",
+          "                let mut items = panel.entries.borrow_mut();\n",
+          "                items.truncate(1);\n",
+          "                items[0].kind = kind;\n",
+          "                items[0].text = \"合成正文段落\\n\\n\".repeat(60);\n",
+          "                items[0].image_width = 1000;\n",
+          "                items[0].image_height = 2000;\n",
+          "                items[0].file_paths = vec![\"synthetic-file.txt\".into()];\n",
+          "                drop(items);\n",
+          "                panel.list_scroll.reset(1);\n",
+          "                cx.notify();\n",
+          "            });\n",
+          "            surface.update(|window, cx| {\n",
+          "                window.refresh();\n",
+          "                window.draw(cx).clear(cx);\n",
+          "            });\n",
+          "            assert_eq!(surface.update(|window, _| window.rem_size()), px(base));\n",
+          "            let card = surface.update(|window, _| {\n",
+          "                gpui_kit::base::test_support::snapshots(window)\n",
+          "                    .into_iter()\n",
+          "                    .find(|node| node.label() == Some(format!(\"剪贴板记录 {first_id}\").as_str()))\n",
+          "                    .expect(\"original ListItem\")\n",
+          "                    .bounds()\n",
+          "            });\n",
+          "            if kind == ClipboardKind::Text {\n",
+          "                assert!(\n",
+          "                    card.size.height <= px(expected) && card.size.height >= px(expected - 2.0),\n",
+          "                    \"fixed text cap (not a forced natural height) at base {base}: {card:?}\"\n",
+          "                );\n",
+          "            } else {\n",
+          "                assert_eq!(\n",
+          "                    card.size.height,\n",
+          "                    px(expected),\n",
+          "                    \"fixed {kind:?} card at base {base}\"\n",
+          "                );\n",
+          "            }\n",
+          "            let slot = surface\n",
+          "                .debug_bounds(\"history-row-slot-0\")\n",
+          "                .expect(\"original paging slot\");\n",
+          "            assert!((slot.bottom() - card.bottom() - px(8.0)).abs() < px(0.1));\n",
+          "            assert_eq!(\n",
+          "                surface\n",
+          "                    .debug_bounds(\"clipboard-source-0\")\n",
+          "                    .expect(\"fixed source rail\")\n",
+          "                    .size\n",
+          "                    .height,\n",
+          "                px(24.0)\n",
+          "            );\n",
+          "            if kind == ClipboardKind::Text {\n",
+          "                assert_eq!(\n",
+          "                    body_feather_quads(&mut surface).len(),\n",
+          "                    1,\n",
+          "                    \"original14DIPbody feather remains fixed\"\n",
+          "                );\n",
+          "            }\n",
+          "        }\n",
+          "    }\n",
+          "    surface.update(|_, cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));\n",
+          "}\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "kind": "existing",
+    "after_sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/action.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/action.rs.baseline",
+    "baseline_sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+    "operations": [
+      {
+        "before_start": 217,
+        "before_end": 218,
+        "after_start": 217,
+        "after_end": 218,
+        "before_lines": [
+          "    action_button(id, label).icon(Icon::new(icon).size(px(14.0)))\n"
+        ],
+        "after_lines": [
+          "    action_button(id, label).icon(Icon::new(icon).small())\n"
+        ]
+      },
+      {
+        "before_start": 238,
+        "before_end": 239,
+        "after_start": 238,
+        "after_end": 239,
+        "before_lines": [
+          "        .icon(Icon::new(icon).size(px(14.0)))\n"
+        ],
+        "after_lines": [
+          "        .icon(Icon::new(icon).small())\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+    "kind": "existing",
+    "after_sha256": "535236eca6630d5aaf0e38e75986988d7b2e07b33c48337c3227ede6e5047fda",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs.baseline",
+    "baseline_sha256": "8b374ffd17ca31429b472c3d4acf60f0689d1cde668be40aff3ec58ac646b0f2",
+    "operations": [
+      {
+        "before_start": 7,
+        "before_end": 7,
+        "after_start": 7,
+        "after_end": 8,
+        "before_lines": [],
+        "after_lines": [
+          "use gpui_kit::component::scroll::ScrollableElement;\n"
+        ]
+      },
+      {
+        "before_start": 17,
+        "before_end": 18,
+        "after_start": 18,
+        "after_end": 19,
+        "before_lines": [
+          "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};\n"
+        ]
+      },
+      {
+        "before_start": 97,
+        "before_end": 99,
+        "after_start": 98,
+        "after_end": 100,
+        "before_lines": [
+          "                .h(px(COMMAND_MASTER_ROW_HEIGHT))\n",
+          "                .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .h(ordinary_rem(COMMAND_MASTER_ROW_HEIGHT))\n",
+          "                .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 101,
+        "before_end": 103,
+        "after_start": 102,
+        "after_end": 104,
+        "before_lines": [
+          "                .text_size(px(TEXT_LABEL))\n",
+          "                .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 116,
+        "before_end": 117,
+        "after_start": 117,
+        "after_end": 118,
+        "before_lines": [
+          "        .w(px(COMMAND_MASTER_WIDTH))\n"
+        ],
+        "after_lines": [
+          "        .w(ordinary_rem(COMMAND_MASTER_WIDTH))\n"
+        ]
+      },
+      {
+        "before_start": 126,
+        "before_end": 128,
+        "after_start": 127,
+        "after_end": 129,
+        "before_lines": [
+          "                .h(px(COMMAND_MASTER_HEADER_HEIGHT))\n",
+          "                .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .h(ordinary_rem(COMMAND_MASTER_HEADER_HEIGHT))\n",
+          "                .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 133,
+        "before_end": 134,
+        "after_start": 134,
+        "after_end": 135,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 138,
+        "before_end": 140,
+        "after_start": 139,
+        "after_end": 141,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 169,
+        "before_end": 171,
+        "after_start": 170,
+        "after_end": 172,
+        "before_lines": [
+          "            .text_size(px(TEXT_LABEL))\n",
+          "            .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "            .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 224,
+        "before_end": 225,
+        "after_start": 225,
+        "after_end": 226,
+        "before_lines": [
+          "        .h(px(COMMAND_MASTER_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(COMMAND_MASTER_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 240,
+        "before_end": 241,
+        "after_start": 241,
+        "after_end": 242,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 242,
+        "before_end": 244,
+        "after_start": 243,
+        "after_end": 245,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 254,
+        "before_end": 255,
+        "after_start": 255,
+        "after_end": 256,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 257,
+        "before_end": 259,
+        "after_start": 258,
+        "after_end": 260,
+        "before_lines": [
+          "                        .text_size(px(TEXT_LABEL))\n",
+          "                        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 332,
+        "before_end": 334,
+        "after_start": 333,
+        "after_end": 335,
+        "before_lines": [
+          "                .h(px(COMMAND_DETAIL_HEADER_HEIGHT))\n",
+          "                .px(px(SPACING_16))\n"
+        ],
+        "after_lines": [
+          "                .h(ordinary_rem(COMMAND_DETAIL_HEADER_HEIGHT))\n",
+          "                .px_4()\n"
+        ]
+      },
+      {
+        "before_start": 339,
+        "before_end": 340,
+        "after_start": 340,
+        "after_end": 341,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 344,
+        "before_end": 346,
+        "after_start": 345,
+        "after_end": 347,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 360,
+        "before_end": 362,
+        "after_start": 361,
+        "after_end": 362,
+        "before_lines": [
+          "                .overflow_y_scroll()\n",
+          "                .p(px(SPACING_16))\n"
+        ],
+        "after_lines": [
+          "                .overflow_hidden()\n"
+        ]
+      },
+      {
+        "before_start": 364,
+        "before_end": 366,
+        "after_start": 364,
+        "after_end": 366,
+        "before_lines": [
+          "                        .debug_selector(|| \"quick-launch-command-form\".into())\n",
+          "                        .w_full()\n"
+        ],
+        "after_lines": [
+          "                        .size_full()\n",
+          "                        .p_4()\n"
+        ]
+      },
+      {
+        "before_start": 367,
+        "before_end": 381,
+        "after_start": 367,
+        "after_end": 370,
+        "before_lines": [
+          "                            Form::new()\n",
+          "                                .columns(2)\n",
+          "                                .child(command_input_field(\n",
+          "                                    theme,\n",
+          "                                    \"quick-launch-command-field-keyword\",\n",
+          "                                    \"关键词\",\n",
+          "                                    &inputs.keyword,\n",
+          "                                ))\n",
+          "                                .child(command_input_field(\n",
+          "                                    theme,\n",
+          "                                    \"quick-launch-command-field-title\",\n",
+          "                                    \"显示名称\",\n",
+          "                                    &inputs.title,\n",
+          "                                ))\n"
+        ],
+        "after_lines": [
+          "                            div()\n",
+          "                                .debug_selector(|| \"quick-launch-command-form\".into())\n",
+          "                                .w_full()\n"
+        ]
+      },
+      {
+        "before_start": 382,
+        "before_end": 389,
+        "after_start": 371,
+        "after_end": 387,
+        "before_lines": [
+          "                                    Field::new().label(\"程序\").col_span(2).child(\n",
+          "                                        div()\n",
+          "                                            .w_full()\n",
+          "                                            .flex()\n",
+          "                                            .items_center()\n",
+          "                                            .gap_2()\n",
+          "                                            .child(\n"
+        ],
+        "after_lines": [
+          "                                    Form::new()\n",
+          "                                        .columns(2)\n",
+          "                                        .child(command_input_field(\n",
+          "                                            theme,\n",
+          "                                            \"quick-launch-command-field-keyword\",\n",
+          "                                            \"关键词\",\n",
+          "                                            &inputs.keyword,\n",
+          "                                        ))\n",
+          "                                        .child(command_input_field(\n",
+          "                                            theme,\n",
+          "                                            \"quick-launch-command-field-title\",\n",
+          "                                            \"显示名称\",\n",
+          "                                            &inputs.title,\n",
+          "                                        ))\n",
+          "                                        .child(\n",
+          "                                            Field::new().label(\"程序\").col_span(2).child(\n"
+        ]
+      },
+      {
+        "before_start": 390,
+        "before_end": 395,
+        "after_start": 388,
+        "after_end": 392,
+        "before_lines": [
+          "                                                    .debug_selector(|| {\n",
+          "                                                        \"quick-launch-command-field-program\".into()\n",
+          "                                                    })\n",
+          "                                                    .flex_1()\n",
+          "                                                    .min_w_0()\n"
+        ],
+        "after_lines": [
+          "                                                    .w_full()\n",
+          "                                                    .flex()\n",
+          "                                                    .items_center()\n",
+          "                                                    .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 396,
+        "before_end": 433,
+        "after_start": 393,
+        "after_end": 441,
+        "before_lines": [
+          "                                                        Input::new(&inputs.program)\n",
+          "                                                            .aria_label(\"程序\"),\n",
+          "                                                    ),\n",
+          "                                            )\n",
+          "                                            .child(bounded_action_slot(\n",
+          "                                                \"quick-launch-pick-command-program\",\n",
+          "                                                picker_action.into_any_element(),\n",
+          "                                            )),\n",
+          "                                    ),\n",
+          "                                )\n",
+          "                                .child(command_input_field(\n",
+          "                                    theme,\n",
+          "                                    \"quick-launch-command-field-arguments\",\n",
+          "                                    \"参数模板\",\n",
+          "                                    &inputs.arguments,\n",
+          "                                ))\n",
+          "                                .child(command_input_field(\n",
+          "                                    theme,\n",
+          "                                    \"quick-launch-command-field-working-directory\",\n",
+          "                                    \"工作目录\",\n",
+          "                                    &inputs.working_directory,\n",
+          "                                ))\n",
+          "                                .child(\n",
+          "                                    Field::new().col_span(2).child(\n",
+          "                                        div()\n",
+          "                                            .flex()\n",
+          "                                            .items_center()\n",
+          "                                            .gap_4()\n",
+          "                                            .child(admin)\n",
+          "                                            .child(silent),\n",
+          "                                    ),\n",
+          "                                )\n",
+          "                                .footer(bounded_action_slot(\n",
+          "                                    \"quick-launch-save-custom-command\",\n",
+          "                                    save_action.into_any_element(),\n",
+          "                                )),\n",
+          "                        ),\n"
+        ],
+        "after_lines": [
+          "                                                        div()\n",
+          "                                                            .debug_selector(|| {\n",
+          "                                                                \"quick-launch-command-field-program\"\n",
+          "                                                                    .into()\n",
+          "                                                            })\n",
+          "                                                            .flex_1()\n",
+          "                                                            .min_w_0()\n",
+          "                                                            .child(\n",
+          "                                                                Input::new(&inputs.program)\n",
+          "                                                                    .aria_label(\"程序\"),\n",
+          "                                                            ),\n",
+          "                                                    )\n",
+          "                                                    .child(bounded_action_slot(\n",
+          "                                                        \"quick-launch-pick-command-program\",\n",
+          "                                                        picker_action.into_any_element(),\n",
+          "                                                    )),\n",
+          "                                            ),\n",
+          "                                        )\n",
+          "                                        .child(command_input_field(\n",
+          "                                            theme,\n",
+          "                                            \"quick-launch-command-field-arguments\",\n",
+          "                                            \"参数模板\",\n",
+          "                                            &inputs.arguments,\n",
+          "                                        ))\n",
+          "                                        .child(command_input_field(\n",
+          "                                            theme,\n",
+          "                                            \"quick-launch-command-field-working-directory\",\n",
+          "                                            \"工作目录\",\n",
+          "                                            &inputs.working_directory,\n",
+          "                                        ))\n",
+          "                                        .child(\n",
+          "                                            Field::new().col_span(2).child(\n",
+          "                                                div()\n",
+          "                                                    .flex()\n",
+          "                                                    .items_center()\n",
+          "                                                    .gap_4()\n",
+          "                                                    .child(admin)\n",
+          "                                                    .child(silent),\n",
+          "                                            ),\n",
+          "                                        )\n",
+          "                                        .footer(bounded_action_slot(\n",
+          "                                            \"quick-launch-save-custom-command\",\n",
+          "                                            save_action.into_any_element(),\n",
+          "                                        )),\n",
+          "                                ),\n",
+          "                        )\n",
+          "                        .overflow_y_scrollbar()\n",
+          "                        .id(\"quick-launch-command-detail-scroll\"),\n"
+        ]
+      },
+      {
+        "before_start": 461,
+        "before_end": 462,
+        "after_start": 469,
+        "after_end": 470,
+        "before_lines": [
+          "        .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "        .h_8()\n"
+        ]
+      },
+      {
+        "before_start": 477,
+        "before_end": 478,
+        "after_start": 485,
+        "after_end": 486,
+        "before_lines": [
+          "        .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "        .h_8()\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+    "kind": "existing",
+    "after_sha256": "0d6d712991d10eccccbc377e6e387a4b62dc3741453cb1bb506191d59387841e",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/field.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/field.rs.baseline",
+    "baseline_sha256": "5de208e485ea894dfd6687a7d3c8c103603fe27c035a3c10d213a6e0da722c6f",
+    "operations": [
+      {
+        "before_start": 2,
+        "before_end": 3,
+        "after_start": 2,
+        "after_end": 3,
+        "before_lines": [
+          "use gpui_kit::{AnyElement, IntoElement, div, prelude::*, px};\n"
+        ],
+        "after_lines": [
+          "use gpui_kit::{AnyElement, IntoElement, div, prelude::*};\n"
+        ]
+      },
+      {
+        "before_start": 5,
+        "before_end": 6,
+        "after_start": 5,
+        "after_end": 5,
+        "before_lines": [
+          "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_8};\n"
+        ],
+        "after_lines": []
+      },
+      {
+        "before_start": 30,
+        "before_end": 31,
+        "after_start": 29,
+        "after_end": 30,
+        "before_lines": [
+          "        .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "        .h_8()\n"
+        ]
+      },
+      {
+        "before_start": 35,
+        "before_end": 36,
+        "after_start": 34,
+        "after_end": 35,
+        "before_lines": [
+          "        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "        .gap_2()\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/hotkey.rs",
+    "kind": "existing",
+    "after_sha256": "7ed87d7f8b6bcd632485adf4385e6718310780fff9d9e51dcbad58cc3134511f",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs.baseline",
+    "baseline_sha256": "4df68d7648e2035df5ff4846c99b1a8f3fa27e37b37f2cee8c220e189dae1c51",
+    "operations": [
+      {
+        "before_start": 1,
+        "before_end": 2,
+        "after_start": 1,
+        "after_end": 2,
+        "before_lines": [
+          "use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};\n"
+        ],
+        "after_lines": [
+          "use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*};\n"
+        ]
+      },
+      {
+        "before_start": 4,
+        "before_end": 5,
+        "after_start": 4,
+        "after_end": 5,
+        "before_lines": [
+          "use crate::ui::metrics::{SPACING_4, SPACING_8};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 79,
+        "before_end": 81,
+        "after_start": 79,
+        "after_end": 82,
+        "before_lines": [
+          "        .w(px(HOTKEY_FIELD_WIDTH))\n",
+          "        .min_w(px(HOTKEY_FIELD_WIDTH))\n"
+        ],
+        "after_lines": [
+          "        .w(ordinary_rem(HOTKEY_FIELD_WIDTH))\n",
+          "        .max_w_full()\n",
+          "        .min_w_0()\n"
+        ]
+      },
+      {
+        "before_start": 83,
+        "before_end": 84,
+        "after_start": 84,
+        "after_end": 85,
+        "before_lines": [
+          "        .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "        .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 90,
+        "before_end": 91,
+        "after_start": 91,
+        "after_end": 92,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 94,
+        "before_end": 95,
+        "after_start": 95,
+        "after_end": 96,
+        "before_lines": [
+          "                        .size(px(HOTKEY_STATE_MARKER_SIZE))\n"
+        ],
+        "after_lines": [
+          "                        .size(ordinary_rem(HOTKEY_STATE_MARKER_SIZE))\n"
+        ]
+      },
+      {
+        "before_start": 96,
+        "before_end": 97,
+        "after_start": 97,
+        "after_end": 98,
+        "before_lines": [
+          "                        .rounded(px(HOTKEY_STATE_MARKER_SIZE / 2.0))\n"
+        ],
+        "after_lines": [
+          "                        .rounded_full()\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/menu.rs",
+    "kind": "existing",
+    "after_sha256": "47fd5db7f4b5b9450439f1da4700e1e37ee53169d38b2dc95612333bc78ce56f",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/menu.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/menu.rs.baseline",
+    "baseline_sha256": "8891d340630d2da74acd0d6c9b2cf4d7478672c54a2083bf3ae08caac05a5c20",
+    "operations": [
+      {
+        "before_start": 6,
+        "before_end": 6,
+        "after_start": 6,
+        "after_end": 7,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 43,
+        "before_end": 44,
+        "after_start": 44,
+        "after_end": 45,
+        "before_lines": [
+          "            .min_w(px(MENU_CONTENT_MIN_WIDTH))\n"
+        ],
+        "after_lines": [
+          "            .min_w(ordinary_rem(MENU_CONTENT_MIN_WIDTH))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/mod.rs",
+    "kind": "existing",
+    "after_sha256": "a22684b6c84965f7ae484d13e28fe9670b55a7f52f1acebdf74f3a5ca91a5d1c",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/mod.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/mod.rs.baseline",
+    "baseline_sha256": "13bd9ea814e30fe679bd3c17e68a4a9959229efb2024137b527ccadbac114b7b",
+    "operations": [
+      {
+        "before_start": 25,
+        "before_end": 25,
+        "after_start": 25,
+        "after_end": 28,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[cfg(test)]\n",
+          "mod ordinary_rem_tests;\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+    "kind": "existing",
+    "after_sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/path_list.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/path_list.rs.baseline",
+    "baseline_sha256": "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+    "operations": [
+      {
+        "before_start": 11,
+        "before_end": 12,
+        "after_start": 11,
+        "after_end": 12,
+        "before_lines": [
+          "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};\n"
+        ]
+      },
+      {
+        "before_start": 75,
+        "before_end": 76,
+        "after_start": 75,
+        "after_end": 76,
+        "before_lines": [
+          "        .py(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .py_3()\n"
+        ]
+      },
+      {
+        "before_start": 80,
+        "before_end": 81,
+        "after_start": 80,
+        "after_end": 81,
+        "before_lines": [
+          "        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "        .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 86,
+        "before_end": 87,
+        "after_start": 86,
+        "after_end": 87,
+        "before_lines": [
+          "                .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .gap_3()\n"
+        ]
+      },
+      {
+        "before_start": 92,
+        "before_end": 93,
+        "after_start": 92,
+        "after_end": 93,
+        "before_lines": [
+          "                        .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                        .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 95,
+        "before_end": 98,
+        "after_start": 95,
+        "after_end": 98,
+        "before_lines": [
+          "                                .h(px(LINE_HEIGHT_BODY))\n",
+          "                                .text_size(px(TEXT_BODY))\n",
+          "                                .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                                .h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                                .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 109,
+        "before_end": 110,
+        "after_start": 109,
+        "after_end": 110,
+        "before_lines": [
+          "                        .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "                        .h_8()\n"
+        ]
+      },
+      {
+        "before_start": 157,
+        "before_end": 158,
+        "after_start": 157,
+        "after_end": 158,
+        "before_lines": [
+          "        .h(px(PATH_LIST_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .min_h(px(PATH_LIST_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 181,
+        "before_end": 182,
+        "after_start": 181,
+        "after_end": 182,
+        "before_lines": [
+          "                        .w(px(PATH_LIST_ICON_RAIL_WIDTH))\n"
+        ],
+        "after_lines": [
+          "                        .w(ordinary_rem(PATH_LIST_ICON_RAIL_WIDTH))\n"
+        ]
+      },
+      {
+        "before_start": 187,
+        "before_end": 188,
+        "after_start": 187,
+        "after_end": 188,
+        "before_lines": [
+          "                                .size(px(14.0))\n"
+        ],
+        "after_lines": [
+          "                                .small()\n"
+        ]
+      },
+      {
+        "before_start": 196,
+        "before_end": 197,
+        "after_start": 196,
+        "after_end": 197,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 198,
+        "before_end": 199,
+        "after_start": 198,
+        "after_end": 199,
+        "before_lines": [
+          "                        .ml(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                        .ml_2()\n"
+        ]
+      },
+      {
+        "before_start": 200,
+        "before_end": 202,
+        "after_start": 200,
+        "after_end": 202,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 224,
+        "before_end": 225,
+        "after_start": 224,
+        "after_end": 225,
+        "before_lines": [
+          "                                .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))\n"
+        ],
+        "after_lines": [
+          "                                .icon(Icon::new(MaterialIcon::Delete).small())\n"
+        ]
+      },
+      {
+        "before_start": 243,
+        "before_end": 245,
+        "after_start": 243,
+        "after_end": 245,
+        "before_lines": [
+          "        .h(px(PATH_LIST_ROW_HEIGHT))\n",
+          "        .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .min_h(px(PATH_LIST_ROW_HEIGHT))\n",
+          "        .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 247,
+        "before_end": 249,
+        "after_start": 247,
+        "after_end": 249,
+        "before_lines": [
+          "        .text_size(px(TEXT_LABEL))\n",
+          "        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "        .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs",
+    "kind": "existing",
+    "after_sha256": "1deca08ac288f5a26c5cb64b3d31dbb3220fc2e100439f7d7c4d9e746149ec44",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs.baseline",
+    "baseline_sha256": "4139d6e5c54cfccfaab1a8bef9de6b1d2a643aa45f77783e3422ffcb3ea1665d",
+    "operations": [
+      {
+        "before_start": 6,
+        "before_end": 7,
+        "after_start": 6,
+        "after_end": 9,
+        "before_lines": [
+          "use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};\n"
+        ],
+        "after_lines": [
+          "#[cfg(test)]\n",
+          "use gpui_kit::px;\n",
+          "use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*};\n"
+        ]
+      },
+      {
+        "before_start": 13,
+        "before_end": 14,
+        "after_start": 15,
+        "after_end": 16,
+        "before_lines": [
+          "use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_4, SPACING_12};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 74,
+        "before_end": 75,
+        "after_start": 76,
+        "after_end": 77,
+        "before_lines": [
+          "                    .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "                    .h_8()\n"
+        ]
+      },
+      {
+        "before_start": 93,
+        "before_end": 94,
+        "after_start": 95,
+        "after_end": 96,
+        "before_lines": [
+          "                .h(px(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "                .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 143,
+        "before_end": 144,
+        "after_start": 145,
+        "after_end": 146,
+        "before_lines": [
+          "                .h(px(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "                .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 170,
+        "before_end": 171,
+        "after_start": 172,
+        "after_end": 173,
+        "before_lines": [
+          "                .h(px(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "                .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 172,
+        "before_end": 173,
+        "after_start": 174,
+        "after_end": 175,
+        "before_lines": [
+          "                .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 175,
+        "before_end": 176,
+        "after_start": 177,
+        "after_end": 178,
+        "before_lines": [
+          "                .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .gap_3()\n"
+        ]
+      },
+      {
+        "before_start": 182,
+        "before_end": 183,
+        "after_start": 184,
+        "after_end": 185,
+        "before_lines": [
+          "                        .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                        .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 185,
+        "before_end": 188,
+        "after_start": 187,
+        "after_end": 190,
+        "before_lines": [
+          "                                .h(px(LINE_HEIGHT_BODY))\n",
+          "                                .text_size(px(TEXT_BODY))\n",
+          "                                .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                                .h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                                .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 195,
+        "before_end": 196,
+        "after_start": 197,
+        "after_end": 198,
+        "before_lines": [
+          "                                .h(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                .h(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 198,
+        "before_end": 200,
+        "after_start": 200,
+        "after_end": 202,
+        "before_lines": [
+          "                                .text_size(px(TEXT_LABEL))\n",
+          "                                .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 218,
+        "before_end": 219,
+        "after_start": 220,
+        "after_end": 221,
+        "before_lines": [
+          "                        .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "                        .h_8()\n"
+        ]
+      },
+      {
+        "before_start": 248,
+        "before_end": 249,
+        "after_start": 250,
+        "after_end": 251,
+        "before_lines": [
+          "        .h(px(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 250,
+        "before_end": 251,
+        "after_start": 252,
+        "after_end": 253,
+        "before_lines": [
+          "        .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 255,
+        "before_end": 256,
+        "after_start": 257,
+        "after_end": 258,
+        "before_lines": [
+          "        .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .gap_3()\n"
+        ]
+      },
+      {
+        "before_start": 262,
+        "before_end": 263,
+        "after_start": 264,
+        "after_end": 265,
+        "before_lines": [
+          "                .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 265,
+        "before_end": 268,
+        "after_start": 267,
+        "after_end": 270,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_BODY))\n",
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 296,
+        "before_end": 297,
+        "after_start": 298,
+        "after_end": 299,
+        "before_lines": [
+          "        .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 309,
+        "before_end": 310,
+        "after_start": 311,
+        "after_end": 312,
+        "before_lines": [
+          "                    .min_h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                    .min_h(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+    "kind": "existing",
+    "after_sha256": "e19bba4be4acb11da7dab5213401aebccad224440b0ba88c518d6be3bc1f152e",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/settings.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/settings.rs.baseline",
+    "baseline_sha256": "292a9cb577521aa6c5b36ba19f205a4d30b28c7117fc1e8c5e466f1f66e34f71",
+    "operations": [
+      {
+        "before_start": 2,
+        "before_end": 5,
+        "after_start": 2,
+        "after_end": 3,
+        "before_lines": [
+          "use crate::ui::metrics::{\n",
+          "    FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,\n",
+          "};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::SETTINGS_FOOTER_HEIGHT;\n"
+        ]
+      },
+      {
+        "before_start": 10,
+        "before_end": 12,
+        "after_start": 8,
+        "after_end": 10,
+        "before_lines": [
+          "    AnyElement, FontWeight, IntoElement, MouseButton, SharedString, Window, WindowControlArea, div,\n",
+          "    prelude::*, px,\n"
+        ],
+        "after_lines": [
+          "    AnyElement, FontWeight, IntoElement, Length, MouseButton, SharedString, Window,\n",
+          "    WindowControlArea, div, prelude::*, px,\n"
+        ]
+      },
+      {
+        "before_start": 21,
+        "before_end": 22,
+        "after_start": 19,
+        "after_end": 20,
+        "before_lines": [
+          "    control_width: f32,\n"
+        ],
+        "after_lines": [
+          "    control_width: impl Into<Length>,\n"
+        ]
+      },
+      {
+        "before_start": 24,
+        "before_end": 24,
+        "after_start": 22,
+        "after_end": 23,
+        "before_lines": [],
+        "after_lines": [
+          "    let control_width: Length = control_width.into();\n"
+        ]
+      },
+      {
+        "before_start": 30,
+        "before_end": 31,
+        "after_start": 29,
+        "after_end": 30,
+        "before_lines": [
+          "        .min_h(px(32.0))\n"
+        ],
+        "after_lines": [
+          "        .min_h_8()\n"
+        ]
+      },
+      {
+        "before_start": 53,
+        "before_end": 54,
+        "after_start": 52,
+        "after_end": 53,
+        "before_lines": [
+          "                .w(px(control_width))\n"
+        ],
+        "after_lines": [
+          "                .w(control_width)\n"
+        ]
+      },
+      {
+        "before_start": 156,
+        "before_end": 157,
+        "after_start": 155,
+        "after_end": 156,
+        "before_lines": [
+          "                .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 197,
+        "before_end": 198,
+        "after_start": 196,
+        "after_end": 197,
+        "before_lines": [
+          "                .p(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                .p_3()\n"
+        ]
+      },
+      {
+        "before_start": 203,
+        "before_end": 204,
+        "after_start": 202,
+        "after_end": 203,
+        "before_lines": [
+          "                        .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                        .gap_3()\n"
+        ]
+      },
+      {
+        "before_start": 212,
+        "before_end": 213,
+        "after_start": 211,
+        "after_end": 212,
+        "before_lines": [
+          "                                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "                                .min_h_8()\n"
+        ]
+      },
+      {
+        "before_start": 216,
+        "before_end": 217,
+        "after_start": 215,
+        "after_end": 216,
+        "before_lines": [
+          "                                .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                                .gap_3()\n"
+        ]
+      },
+      {
+        "before_start": 226,
+        "before_end": 227,
+        "after_start": 225,
+        "after_end": 226,
+        "before_lines": [
+          "                                        .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                                        .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 240,
+        "before_end": 241,
+        "after_start": 239,
+        "after_end": 240,
+        "before_lines": [
+          "                                        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                                        .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 293,
+        "before_end": 294,
+        "after_start": 292,
+        "after_end": 293,
+        "before_lines": [
+          "        .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 297,
+        "before_end": 298,
+        "after_start": 296,
+        "after_end": 297,
+        "before_lines": [
+          "        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "        .gap_2()\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/state.rs",
+    "kind": "existing",
+    "after_sha256": "4b2bd86123cdaf7bb9d4e6fe7aaf0ecd0e4ae66de7ee1691d2b5903fe2fcd4c2",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/state.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/state.rs.baseline",
+    "baseline_sha256": "3fc4a610343c09c3e60dd2e0998e6d73c7cc7cbe16963c5535ac2699b87eff12",
+    "operations": [
+      {
+        "before_start": 5,
+        "before_end": 6,
+        "after_start": 5,
+        "after_end": 8,
+        "before_lines": [
+          "use gpui_kit::{App, ClickEvent, Div, SharedString, Window, div, prelude::*, px};\n"
+        ],
+        "after_lines": [
+          "#[cfg(test)]\n",
+          "use gpui_kit::px;\n",
+          "use gpui_kit::{App, ClickEvent, Div, SharedString, Window, div, prelude::*};\n"
+        ]
+      },
+      {
+        "before_start": 9,
+        "before_end": 9,
+        "after_start": 11,
+        "after_end": 12,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 27,
+        "before_end": 28,
+        "after_start": 30,
+        "after_end": 31,
+        "before_lines": [
+          "        .min_h(px(WORK_STATE_MIN_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 52,
+        "before_end": 53,
+        "after_start": 55,
+        "after_end": 59,
+        "before_lines": [
+          "                                        .child(Icon::new(icon).size(px(WORK_STATE_ICON_SIZE))),\n"
+        ],
+        "after_lines": [
+          "                                        .child(\n",
+          "                                            Icon::new(icon)\n",
+          "                                                .size(ordinary_rem(WORK_STATE_ICON_SIZE)),\n",
+          "                                        ),\n"
+        ]
+      },
+      {
+        "before_start": 93,
+        "before_end": 94,
+        "after_start": 99,
+        "after_end": 100,
+        "before_lines": [
+          "        .min_h(px(WORK_STATE_MIN_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 149,
+        "before_end": 150,
+        "after_start": 155,
+        "after_end": 156,
+        "before_lines": [
+          "        .min_h(px(WORK_STATE_MIN_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 209,
+        "before_end": 210,
+        "after_start": 215,
+        "after_end": 216,
+        "before_lines": [
+          "        .min_h(px(WORK_STATE_MIN_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/titlebar.rs",
+    "kind": "existing",
+    "after_sha256": "e15e7221897038988dd8c88f40dd5fdb970e06e02896eeb6d3b3903b4f54209f",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/titlebar.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/titlebar.rs.baseline",
+    "baseline_sha256": "bc66ba9b138fd51cecab0073fe8813613692c242d80aa219753343365c76d0b7",
+    "operations": [
+      {
+        "before_start": 8,
+        "before_end": 9,
+        "after_start": 8,
+        "after_end": 9,
+        "before_lines": [
+          "use crate::ui::metrics::{MODULE_HEADER_HEIGHT, SPACING_8, SPACING_12, TITLEBAR_HEIGHT};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::{MODULE_HEADER_HEIGHT, TITLEBAR_HEIGHT, ordinary_rem};\n"
+        ]
+      },
+      {
+        "before_start": 66,
+        "before_end": 67,
+        "after_start": 66,
+        "after_end": 67,
+        "before_lines": [
+          "            .h(px(MODULE_HEADER_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "            .h(ordinary_rem(MODULE_HEADER_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 69,
+        "before_end": 70,
+        "after_start": 69,
+        "after_end": 70,
+        "before_lines": [
+          "            .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "            .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 76,
+        "before_end": 77,
+        "after_start": 76,
+        "after_end": 77,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 82,
+        "before_end": 85,
+        "after_start": 82,
+        "after_end": 85,
+        "before_lines": [
+          "                    .h(px(LINE_HEIGHT_PAGE_TITLE))\n",
+          "                    .text_size(px(TEXT_PAGE_TITLE))\n",
+          "                    .line_height(px(LINE_HEIGHT_PAGE_TITLE))\n"
+        ],
+        "after_lines": [
+          "                    .h(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))\n",
+          "                    .text_size(ordinary_rem(TEXT_PAGE_TITLE))\n",
+          "                    .line_height(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))\n"
+        ]
+      },
+      {
+        "before_start": 95,
+        "before_end": 98,
+        "after_start": 95,
+        "after_end": 98,
+        "before_lines": [
+          "                    .h(px(LINE_HEIGHT_LABEL))\n",
+          "                    .text_size(px(TEXT_LABEL))\n",
+          "                    .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                    .h(ordinary_rem(LINE_HEIGHT_LABEL))\n",
+          "                    .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 122,
+        "before_end": 123,
+        "after_start": 122,
+        "after_end": 123,
+        "before_lines": [
+          "        .pl(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .pl_3()\n"
+        ]
+      },
+      {
+        "before_start": 133,
+        "before_end": 134,
+        "after_start": 133,
+        "after_end": 134,
+        "before_lines": [
+          "                .text_size(px(TEXT_BODY))\n"
+        ],
+        "after_lines": [
+          "                .text_size(ordinary_rem(TEXT_BODY))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/tooltip.rs",
+    "kind": "existing",
+    "after_sha256": "6d60db37be16092d76e1f38904580a49884f82e0f1a214b4568c414bd870ff9c",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/tooltip.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/tooltip.rs.baseline",
+    "baseline_sha256": "39eb663131fb3b60224138d8dcf2d192fe0068617b168199ba6f8f842ee6dd5f",
+    "operations": [
+      {
+        "before_start": 4,
+        "before_end": 4,
+        "after_start": 4,
+        "after_end": 5,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 33,
+        "before_end": 35,
+        "after_start": 34,
+        "after_end": 36,
+        "before_lines": [
+          "                .text_size(px(TEXT_LABEL))\n",
+          "                .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+    "kind": "existing",
+    "after_sha256": "b2108299ed569d7d0c31db779e32f5f348ba4adddecf041ad72025948ee546a6",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs.baseline",
+    "baseline_sha256": "1481ece158fb7766c04edbb4110bbcf692898559e5f189b591ff5c3654bb88a7",
+    "operations": [
+      {
+        "before_start": 10,
+        "before_end": 11,
+        "after_start": 10,
+        "after_end": 11,
+        "before_lines": [
+          "use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};\n"
+        ]
+      },
+      {
+        "before_start": 28,
+        "before_end": 29,
+        "after_start": 28,
+        "after_end": 29,
+        "before_lines": [
+          "        .py(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .py_3()\n"
+        ]
+      },
+      {
+        "before_start": 33,
+        "before_end": 34,
+        "after_start": 33,
+        "after_end": 34,
+        "before_lines": [
+          "        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "        .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 38,
+        "before_end": 39,
+        "after_start": 38,
+        "after_end": 39,
+        "before_lines": [
+          "                .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 41,
+        "before_end": 44,
+        "after_start": 41,
+        "after_end": 44,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_BODY))\n",
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 82,
+        "before_end": 83,
+        "after_start": 82,
+        "after_end": 83,
+        "before_lines": [
+          "        .h(px(VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 94,
+        "before_end": 95,
+        "after_start": 94,
+        "after_end": 95,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 107,
+        "before_end": 108,
+        "after_start": 107,
+        "after_end": 108,
+        "before_lines": [
+          "                        .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                        .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 110,
+        "before_end": 112,
+        "after_start": 110,
+        "after_end": 112,
+        "before_lines": [
+          "                                .h(px(LINE_HEIGHT_BODY))\n",
+          "                                .text_size(px(TEXT_BODY))\n"
+        ],
+        "after_lines": [
+          "                                .h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                                .text_size(ordinary_rem(TEXT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 113,
+        "before_end": 114,
+        "after_start": 113,
+        "after_end": 114,
+        "before_lines": [
+          "                                .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 156,
+        "before_end": 157,
+        "after_start": 156,
+        "after_end": 157,
+        "before_lines": [
+          "        .h(px(VOLUME_SCOPE_ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(VOLUME_SCOPE_ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 168,
+        "before_end": 169,
+        "after_start": 168,
+        "after_end": 169,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 178,
+        "before_end": 179,
+        "after_start": 178,
+        "after_end": 179,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 182,
+        "before_end": 184,
+        "after_start": 182,
+        "after_end": 184,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "before_start": 191,
+        "before_end": 193,
+        "after_start": 191,
+        "after_end": 193,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_LABEL))\n",
+          "                        .w(px(196.0))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(LINE_HEIGHT_LABEL))\n",
+          "                        .w(ordinary_rem(196.0))\n"
+        ]
+      },
+      {
+        "before_start": 196,
+        "before_end": 198,
+        "after_start": 196,
+        "after_end": 198,
+        "before_lines": [
+          "                        .text_size(px(TEXT_LABEL))\n",
+          "                        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 215,
+        "before_end": 217,
+        "after_start": 215,
+        "after_end": 217,
+        "before_lines": [
+          "        .h(px(VOLUME_SCOPE_ROW_HEIGHT))\n",
+          "        .px(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(VOLUME_SCOPE_ROW_HEIGHT))\n",
+          "        .px_3()\n"
+        ]
+      },
+      {
+        "before_start": 219,
+        "before_end": 221,
+        "after_start": 219,
+        "after_end": 221,
+        "before_lines": [
+          "        .text_size(px(TEXT_LABEL))\n",
+          "        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "        .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs",
+    "kind": "new",
+    "after_sha256": "204df982153115bb296535339bea7b0c96f1160948a58a52ee8689139ea15c32",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs.current"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs",
+    "kind": "new",
+    "after_sha256": "5b892c83db1ed8941d39df20fe3482b1252fe51464e32270cc2d377088921ccc",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs.current"
+  },
+  {
+    "path": "docs/reference-code/gpui.md",
+    "kind": "existing",
+    "after_sha256": "25c240ad9bbe004b816aae991d55dffd04b7f7a6769e307b9cd6a3820df263f2",
+    "snapshot": "evidence/current/docs/reference-code/gpui.md.current",
+    "baseline": "evidence/baselines/docs/reference-code/gpui.md.baseline",
+    "baseline_sha256": "fff8ce57799a4cda72adc905d87f9ce8158a9bcb2bee440afae55f0024ba84df",
+    "operations": [
+      {
+        "before_start": 265,
+        "before_end": 265,
+        "after_start": 265,
+        "after_end": 293,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "## Queue07 ordinary shared roles and nested Form scrolling (2026-10-26)\n",
+          "Read current0.8.0 authority before historical numbers. Shared unit/consumer inventory and fixed\n",
+          "exceptions are in `.trellis/tasks/10-26-rem-shared-ui/prd.md`; typography/metrics values, palette,\n",
+          "basefont and vendor remain unchanged. `ordinary_rem` consumes design-base16 roles; official\n",
+          "Small/Medium/scale builders remain the first choice. Native caption/footer/client/readback,\n",
+          "Tools180x160, Clipboard configured text cap/image190/file62/gap8/source24/feather14/shadow remain\n",
+          "separate physical/bounded roles. Tooltip/menu maxima and command editor360 are viewport budgets.\n",
+          "\n",
+          "Reference recheck: ABDM LocationTextField.kt field/picker callback and bounded suggestions plus\n",
+          "SettingsPage.kt original page owner; legacy SettingsWindow.axaml.cs constructor ->\n",
+          "WindowAnimationService.Attach -> OnOpened/ConfigureForCurrentScope -> Apply/Cancel/Close ->\n",
+          "OnClosed and animation Closing cancellation/final Close; MainWindow constructor/Open/close-to-tray/\n",
+          "final close. Avalonia/AWT native internals are unavailable, not inferred. Zed ButtonLike/ListItem\n",
+          "one-action presentation and SwiftList Plugins/Templates master-detail remain references only.\n",
+          "\n",
+          "Newly verified exact released call chain: Component setting/page.rs::render wraps its original\n",
+          "ListState list in Base ScrollBounce; Base0.8.0 scroll_bounce.rs claims nested wheel ownership in\n",
+          "capture and handles the winning owner before bubbling. A naked GPUI overflow_y_scroll div does\n",
+          "not join that arbitration. Actual MainWindow920x480/Root18 reproduced Save bottom475 while its\n",
+          "detail viewport ended461; the input entity/value was correct and pointer Save did not persist.\n",
+          "Changing flex/nonshrinking content did not repair it and was removed. The existing detail viewport\n",
+          "now composes public Component ScrollableElement::overflow_y_scrollbar with explicit stable ID;\n",
+          "its original Form/inputs/Save callbacks and360 allocation remain. Real wheel -> current Button\n",
+          "inside detail clip -> original temporary-config persistence is the regression, not cached bounds\n",
+          "inside the window alone. No custom capture dispatcher, new business/scroll controller, source\n",
+          "payload/native/placement/focus policy changes or vendor edits. Controlled Root16/14/18 compiled\n",
+          "evidence is not Windows DPI, screenshot/user, physical/native/provider or release acceptance.\n"
+        ]
+      }
+    ]
+  }
+]

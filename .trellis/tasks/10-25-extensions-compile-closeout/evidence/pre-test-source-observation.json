@@ -1,0 +1,42 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+        "baseline_sha256":  "b49943302b7e8c258496613c3c95640ca901fce134c553f853b8f746e8cc9866",
+        "current_sha256":  "e41353f5020308c72bd10d6e0761aa12c8133b4b3b1b243db30ecce5383b6b19"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+        "baseline_sha256":  "0b73805bc60130de2c5b949da72d4ec000948ba6c401d3de3ca49eec2f241b84",
+        "current_sha256":  "0b73805bc60130de2c5b949da72d4ec000948ba6c401d3de3ca49eec2f241b84"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/api.rs",
+        "baseline_sha256":  "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+        "current_sha256":  "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/lib.rs",
+        "baseline_sha256":  "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+        "current_sha256":  "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/runtime.rs",
+        "baseline_sha256":  "a48ca2946023789995005bc31678cc2182c12c43634078b3a3d29ac9b1f6a062",
+        "current_sha256":  "a48ca2946023789995005bc31678cc2182c12c43634078b3a3d29ac9b1f6a062"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/tests/api_contracts.rs",
+        "baseline_sha256":  "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+        "current_sha256":  "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/tests/transport_declarations.rs",
+        "baseline_sha256":  "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+        "current_sha256":  "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/tests/transport_runtime.rs",
+        "baseline_sha256":  "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+        "current_sha256":  "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0"
+    }
+]

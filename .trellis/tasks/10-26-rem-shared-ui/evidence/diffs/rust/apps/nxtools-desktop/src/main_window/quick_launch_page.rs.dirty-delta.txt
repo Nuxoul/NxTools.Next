@@ -1,0 +1,11 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs
++++ queue07/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs
+@@ -362,7 +362,7 @@
+                         title,
+                         help,
+                         format!("quick-settings-{title}-help"),
+-                        280.0,
++                        crate::ui::metrics::ordinary_rem(280.0),
+                         div()
+                             .w_full()
+                             .flex()

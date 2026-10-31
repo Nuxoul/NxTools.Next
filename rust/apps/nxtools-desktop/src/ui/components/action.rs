@@ -129,8 +129,10 @@ pub(crate) fn primary_button_variant(_theme: Theme, cx: &App) -> ButtonCustomVar
         .active(colors.button_primary_active)
 }
 
+/// Custom visual content does not provide a Button name; callers must supply its action meaning.
 pub(crate) fn primary_action_button(
     id: &'static str,
+    accessible_name: impl Into<SharedString>,
     label: impl IntoElement,
     theme: Theme,
     disabled: bool,
@@ -139,6 +141,7 @@ pub(crate) fn primary_action_button(
     use gpui_kit::component::Disableable;
     Button::new(id)
         .debug_selector(move || id.to_string())
+        .accessibility_label(accessible_name)
         .small()
         .primary()
         .disabled(disabled)
@@ -212,7 +215,7 @@ pub(crate) fn labelled_icon_action(
     icon: MaterialIcon,
     label: &'static str,
 ) -> Button {
-    action_button(id, label).icon(Icon::new(icon).size(px(14.0)))
+    action_button(id, label).icon(Icon::new(icon).small())
 }
 
 pub(crate) fn icon_action(
@@ -220,16 +223,20 @@ pub(crate) fn icon_action(
     icon: MaterialIcon,
     tooltip_label: &'static str,
 ) -> Button {
-    icon_action_button(id, icon)
-        .accessibility_label(tooltip_label)
-        .tooltip(tooltip_label)
+    icon_action_button(id, icon, tooltip_label).tooltip(tooltip_label)
 }
 
-pub(crate) fn icon_action_button(id: &'static str, icon: MaterialIcon) -> Button {
+/// Low-level icon Button: the semantic name is required even when an outer Tooltip owns hover.
+pub(crate) fn icon_action_button(
+    id: &'static str,
+    icon: MaterialIcon,
+    accessible_name: impl Into<SharedString>,
+) -> Button {
     Button::new(id)
         .secondary()
         .debug_selector(move || id.to_string())
-        .icon(Icon::new(icon).size(px(14.0)))
+        .accessibility_label(accessible_name)
+        .icon(Icon::new(icon).small())
         .small()
 }
 
@@ -522,6 +529,7 @@ mod tests {
             div().text_color(Theme::zed_dark().text).child(
                 primary_action_button(
                     "upgrade-apply",
+                    "应用升级设置",
                     gpui_kit::canvas(
                         |_, _, _| (),
                         move |_, (), window, _| colors.borrow_mut().push(window.text_style().color),
@@ -557,8 +565,10 @@ mod tests {
         let normal = *colors.borrow().last().expect("painted foreground");
         assert_eq!(
             normal,
-            gpui_kit::Hsla::from(Theme::zed_dark().image_well),
-            "normal Apply text must be dark on light neutral background"
+            window.read(|cx| gpui_kit::component::Theme::global(cx)
+                .colors
+                .button_primary_foreground),
+            "normal Apply text must use the exact official primary foreground"
         );
         let bounds = window
             .debug_bounds("upgrade-apply")
@@ -610,3 +620,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "action_name_tests.rs"]
+mod name_tests;

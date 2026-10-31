@@ -1,0 +1,18 @@
+﻿[
+    {
+        "name":  "clipboard-ui-lifecycle.ps1",
+        "exit_code":  0
+    },
+    {
+        "name":  "download-ui-lifecycle.ps1",
+        "exit_code":  0
+    },
+    {
+        "name":  "archive-release-chain.ps1",
+        "exit_code":  0
+    },
+    {
+        "name":  "quick-launch-lifecycle.ps1",
+        "exit_code":  1
+    }
+]

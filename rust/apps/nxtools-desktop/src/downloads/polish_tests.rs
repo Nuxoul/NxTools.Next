@@ -480,13 +480,26 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
             .debug_bounds("download-window-progress-path")
             .is_none()
     );
-    surface.update(|window, cx| {
-        window.focus_next(cx);
-        window.focus_next(cx);
-    });
-    surface
-        .refresh()
-        .expect("Tab after caption close reaches actual disclosure");
+    for _ in 0..16 {
+        let focused = surface.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .any(|node| node.label() == Some("展开分段详情") && node.focused() == Some(true))
+        });
+        if focused {
+            break;
+        }
+        surface.update(|window, cx| window.focus_next(cx));
+        surface
+            .refresh()
+            .expect("actual next caption/content focus");
+    }
+    assert!(
+        surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .any(|node| node.label() == Some("展开分段详情") && node.focused() == Some(true))),
+        "original disclosure reached through actual Tab order"
+    );
     surface.simulate_event(gpui_kit::KeyDownEvent {
         keystroke: gpui_kit::Keystroke::parse("enter").expect("disclosure Enter"),
         is_held: false,
@@ -1556,6 +1569,7 @@ fn browser_export_completion_uses_center_not_settings_description(cx: &mut TestA
     for (index, button) in [
         "download-settings-extension-export-chrome-button",
         "download-settings-extension-export-firefox-button",
+        "download-settings-extension-export-store-button",
     ]
     .into_iter()
     .enumerate()
@@ -1598,6 +1612,12 @@ fn browser_export_completion_uses_center_not_settings_description(cx: &mut TestA
                 )
             })
             .expect("export dispatched");
+        if index == 2 {
+            assert!(
+                matches!(&command.message, nxtools_protocol::Message::PlatformCommand(
+                PlatformCommand::ExportBrowserExtension(export)) if export.format == "chrome_store")
+            );
+        }
         let key = format!("download-browser-export-{}", command.id);
         application.read_with(&surface, |app, cx| {
             let notices = app.notifications.read(cx).items();
@@ -1651,8 +1671,13 @@ fn browser_export_completion_uses_center_not_settings_description(cx: &mut TestA
     );
     application.read_with(&surface, |app, cx| {
         let notices = app.notifications.read(cx).items();
-        assert_eq!(notices.len(), 2);
-        assert_ne!(notices[0].id, notices[1].id);
+        assert_eq!(notices.len(), 3);
+        assert!(
+            notices
+                .iter()
+                .enumerate()
+                .all(|(index, notice)| notices[..index].iter().all(|other| other.id != notice.id))
+        );
     });
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -2342,11 +2367,36 @@ fn queue05_task_uses_official_xsmall_aggregate_progress(cx: &mut TestAppContext)
     );
     surface.update(|window, _| window.activate_window());
     surface.run_until_parked();
-    surface.update(|window, cx| {
-        for _ in 0..3 {
-            window.focus_next(cx);
+    for _ in 0..16 {
+        let toolbar_focused = surface.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .any(|node| {
+                    node.role() == Some(gpui_kit::Role::CheckBox)
+                        && node.focused() == Some(true)
+                        && node
+                            .path()
+                            .contains(&gpui_kit::ElementId::from("download-task-window-toolbar"))
+                })
+        });
+        if toolbar_focused {
+            break;
         }
-    });
+        surface.update(|window, cx| window.focus_next(cx));
+        surface
+            .refresh()
+            .expect("actual caption-to-toolbar Tab order");
+    }
+    assert!(
+        surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .any(|node| node.role() == Some(gpui_kit::Role::CheckBox)
+                && node.focused() == Some(true)
+                && node
+                    .path()
+                    .contains(&gpui_kit::ElementId::from("download-task-window-toolbar")))),
+        "original Toolbar checkbox has real focus"
+    );
     let first = surface
         .update(|window, cx| window.focused(cx))
         .expect("task Toolbar Checkbox focus");
@@ -2991,4 +3041,1091 @@ fn followup_ffmpeg_progress_paints_existing_percent_only_for_known_download_tota
         "rendering progress cannot save a path draft"
     );
     let _ = std::fs::remove_dir_all(directory);
+}
+
+fn naming_probe_case(
+    cx: &mut TestAppContext,
+    initial: Option<&str>,
+    late: Option<&str>,
+    expected: &str,
+) {
+    naming_probe_resource_case(cx, initial, late, expected, "url.bin", "server-package.zip");
+}
+
+fn naming_probe_resource_case(
+    cx: &mut TestAppContext,
+    initial: Option<&str>,
+    late: Option<&str>,
+    expected: &str,
+    url_tail: &str,
+    server_name: &'static str,
+) {
+    use std::io::{Read as _, Write as _};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    cx.update(gpui_kit::init);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("loopback name probe");
+    listener.set_nonblocking(true).expect("bounded accept");
+    let address = listener.local_addr().expect("address");
+    let release = Arc::new(AtomicBool::new(false));
+    let server_release = release.clone();
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        for _ in 0..2 {
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error)
+                        if error.kind() == std::io::ErrorKind::WouldBlock
+                            && Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(Duration::from_millis(2))
+                    }
+                    other => panic!("bounded name fixture: {other:?}"),
+                }
+            };
+            stream.set_nonblocking(false).expect("blocking accepted IO");
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("bounded read");
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .expect("bounded write");
+            let mut request = Vec::new();
+            let mut byte = [0u8; 1];
+            while request.len() < 8192 && !request.ends_with(b"\r\n\r\n") {
+                if stream.read(&mut byte).expect("request") == 0 {
+                    break;
+                }
+                request.push(byte[0]);
+            }
+            while !server_release.load(Ordering::Acquire) && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert!(server_release.load(Ordering::Acquire), "probe release");
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nContent-Disposition: attachment; filename={server_name}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\nfixture!").expect("response");
+        }
+    });
+    let (application, directory, _) = window_fixture(cx);
+    application.update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (source, view) = application.read_with(cx, |app, _| {
+        (
+            app.new_download_window.expect("source"),
+            app.new_download_view.clone().expect("view"),
+        )
+    });
+    source
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.url.update(cx, |input, cx| {
+                    input.replace_all(format!("http://{address}/{url_tail}"), window, cx)
+                });
+                view.file_name.update(cx, |input, cx| {
+                    input.set_value(initial.unwrap_or(""), window, cx)
+                });
+                view.external_request = Some(view.request(cx).expect("initial request"));
+                view.begin_probe(window, cx);
+                if let Some(late) = late {
+                    view.file_name.update(cx, |input, cx| {
+                        input.replace_all("intermediate-user-edit.zip", window, cx);
+                        input.replace_all(late, window, cx);
+                    });
+                }
+            })
+        })
+        .expect("actual production probe");
+    release.store(true, Ordering::Release);
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while view.read_with(cx, |view, _| view.probing) {
+        cx.run_until_parked();
+        assert!(Instant::now() < deadline, "probe finishes");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    cx.run_until_parked();
+    server.join().expect("server joined");
+    let target = application.read_with(cx, |app, _| {
+        app.new_download_view.clone().expect("confirmation view")
+    });
+    target.read_with(cx, |view, cx| {
+        assert_eq!(
+            view.file_name.read(cx).value().as_str(),
+            expected,
+            "actual confirmation name"
+        );
+        assert_eq!(
+            view.confirmed_request
+                .as_ref()
+                .expect("confirmed request")
+                .file_name
+                .as_deref(),
+            Some(expected)
+        );
+    });
+    if let Some(handle) = application.read_with(cx, |app, _| app.new_download_window) {
+        let _ = handle.update(cx, |_, window, _| window.remove_window());
+        cx.run_until_parked();
+    }
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn naming_probe_replaces_url_auto_suggestion(cx: &mut TestAppContext) {
+    naming_probe_case(cx, Some("url.bin"), None, "server-package.zip");
+}
+#[gpui_kit::test]
+fn naming_probe_replaces_non_filename_label(cx: &mut TestAppContext) {
+    naming_probe_case(cx, Some("Paint.NET 5.1.12"), None, "server-package.zip");
+}
+#[gpui_kit::test]
+fn naming_probe_preserves_genuine_custom_name(cx: &mut TestAppContext) {
+    naming_probe_case(cx, Some("my-custom.zip"), None, "my-custom.zip");
+}
+#[gpui_kit::test]
+fn naming_probe_preserves_name_edited_while_pending(cx: &mut TestAppContext) {
+    naming_probe_case(cx, None, Some("late-custom.zip"), "late-custom.zip");
+}
+
+#[gpui_kit::test]
+fn naming_probe_preserves_user_edit_returned_to_initial_suggestion(cx: &mut TestAppContext) {
+    naming_probe_case(cx, Some("url.bin"), Some("url.bin"), "url.bin");
+}
+
+#[gpui_kit::test]
+fn naming_probe_encoded_url_auto_name_uses_once_decoded_identity(cx: &mut TestAppContext) {
+    naming_probe_resource_case(
+        cx,
+        Some("报告.bin"),
+        None,
+        "server-package.zip",
+        "%E6%8A%A5%E5%91%8A.bin",
+        "server-package.zip",
+    );
+}
+
+#[gpui_kit::test]
+fn naming_probe_generic_server_suggestion_keeps_useful_current_name(cx: &mut TestAppContext) {
+    naming_probe_resource_case(
+        cx,
+        Some("url.bin"),
+        None,
+        "url.bin",
+        "url.bin",
+        "download.zip",
+    );
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_firefox_store_button_dispatches_exact_url_and_keeps_settings(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let (application, directory, endpoint) = window_fixture(cx);
+    endpoint.set_connected_for_contract_test(true);
+    application.update(cx, |app, cx| app.open_settings_window(cx));
+    cx.run_until_parked();
+    let handle = application.read_with(cx, |app, _| app.settings_window.expect("settings"));
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(984.0), px(650.0)));
+    let mut target = None;
+    for _ in 0..60 {
+        surface.refresh().expect("store action frame");
+        target = surface
+            .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+            .into_iter()
+            .find(|node| {
+                node.path().last() == Some(&"download-settings-firefox-store".into())
+                    && node.bounds().top() >= px(110.0)
+                    && node.bounds().bottom() <= px(590.0)
+            })
+            .map(|node| node.bounds());
+        if target.is_some() {
+            break;
+        }
+        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: gpui_kit::point(px(900.0), px(320.0)),
+            delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
+            modifiers: Modifiers::default(),
+            touch_phase: gpui_kit::TouchPhase::Moved,
+        });
+        surface.run_until_parked();
+    }
+    surface.simulate_click(
+        target.expect("reachable official store button").center(),
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("Shell command");
+    assert!(
+        matches!(command.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(ref open)) if open.target == browser_handoff_impl::FIREFOX_STORE_URL && open.action == ShellOpenAction::Open)
+    );
+    application.update(&mut surface, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: command.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    application.read_with(&surface, |app, _| {
+        assert!(app.pending_browser_store_page.is_none());
+        assert_eq!(app.settings_window, Some(handle));
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+fn accessible_actual_button(
+    surface: &mut VisualTestContext,
+    id: &'static str,
+    expected: &str,
+) -> gpui_kit::base::test_support::ElementSnapshot {
+    let button = surface
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| node.path().last() == Some(&gpui_kit::ElementId::from(id)))
+        .unwrap_or_else(|| panic!("actual production Button {id}"));
+    assert_eq!(
+        button.role(),
+        Some(gpui_kit::Role::Button),
+        "{id} must name the Button rather than its wrapper"
+    );
+    assert_eq!(
+        button.label(),
+        Some(expected),
+        "actual production Button {id} name"
+    );
+    button
+}
+
+#[gpui_kit::test]
+fn accessible_name_download_settings_apply_and_default_directory(cx: &mut TestAppContext) {
+    let (application, directory, mut surface) = queue02_settings_window(cx);
+    let view = application.read_with(&surface, |app, _| {
+        app.settings_view.clone().expect("actual settings")
+    });
+    accessible_actual_button(
+        &mut surface,
+        "download-settings-pick-directory",
+        "选择默认保存目录…",
+    );
+    let apply = accessible_actual_button(
+        &mut surface,
+        "download-settings-apply-button",
+        "应用下载设置",
+    );
+    view.update_in(&mut surface, |view, _, cx| {
+        view.saving = true;
+        cx.notify();
+    });
+    surface.refresh().expect("actual saving Apply");
+    let busy = accessible_actual_button(
+        &mut surface,
+        "download-settings-apply-button",
+        "应用下载设置",
+    );
+    // Existing status copy has natural width; semantic naming must not replace it.
+    assert_eq!(busy.bounds().size.height, apply.bounds().size.height);
+    assert_eq!(busy.bounds().right(), apply.bounds().right());
+    assert_eq!(busy.bounds().top(), apply.bounds().top());
+    let footer = surface
+        .debug_bounds("download-settings-shell-footer")
+        .expect("original footer");
+    assert!(busy.bounds().top() >= footer.top() && busy.bounds().bottom() <= footer.bottom());
+    surface.simulate_click(busy.bounds().center(), Default::default());
+    surface.run_until_parked();
+    assert!(view.read_with(&surface, |view, _| view.saving));
+    assert!(
+        !directory.join("config.json").exists(),
+        "busy observation never persists config"
+    );
+    surface.update(|window, _| window.remove_window());
+    std::fs::remove_dir_all(directory).expect("remove isolated settings fixture");
+}
+
+#[gpui_kit::test]
+fn accessible_name_download_settings_ffmpeg_and_diagnostic_objects(cx: &mut TestAppContext) {
+    let (_application, directory, mut surface) = queue02_settings_window(cx);
+    select_official_download_page(&mut surface, DownloadSettingsPage::Transfer);
+    surface.refresh().expect("real transfer page");
+    accessible_actual_button(
+        &mut surface,
+        "download-settings-pick-ffmpeg-button",
+        "选择 FFmpeg 可执行文件…",
+    );
+    accessible_actual_button(
+        &mut surface,
+        "download-settings-ffmpeg-install-button",
+        "自动下载 FFmpeg",
+    );
+    select_official_download_page(&mut surface, DownloadSettingsPage::Diagnostics);
+    surface.refresh().expect("real diagnostic paths");
+    for kind in [
+        DownloadSettingsPathKind::Config,
+        DownloadSettingsPathKind::Logs,
+        DownloadSettingsPathKind::Database,
+    ] {
+        let spec = kind.presentation();
+        accessible_actual_button(&mut surface, spec.copy_button_id, spec.copy_tooltip);
+        accessible_actual_button(&mut surface, spec.open_button_id, spec.open_tooltip);
+    }
+    surface.update(|window, _| window.remove_window());
+    std::fs::remove_dir_all(directory).expect("remove isolated diagnostic fixture");
+}
+
+#[gpui_kit::test]
+fn accessible_name_new_download_probe_and_refresh_are_actual_buttons(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, _endpoint) = window_fixture(cx);
+    application.update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (handle, view) = application.read_with(cx, |app, _| {
+        (
+            app.new_download_window.expect("window"),
+            app.new_download_view.clone().expect("actual view"),
+        )
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.refresh().expect("actual compact form");
+    accessible_actual_button(&mut surface, "download-probe", "探测下载链接");
+    view.update_in(&mut surface, |view, window, cx| {
+        view.url.update(cx, |input, cx| {
+            input.set_value("https://synthetic.invalid/file.bin", window, cx)
+        });
+        view.probe = Some(DownloadProbe {
+            resolution: None,
+            final_url: "https://synthetic.invalid/file.bin".into(),
+            file_name: Some("file.bin".into()),
+            total_bytes: Some(8),
+            supports_ranges: false,
+            content_type: None,
+            validator: Default::default(),
+            media: None,
+        });
+        cx.notify();
+    });
+    surface.simulate_resize(new_download_window_size(true));
+    surface
+        .refresh()
+        .expect("actual confirmed form without network");
+    accessible_actual_button(&mut surface, "download-refresh-probe", "重新探测下载链接");
+    accessible_actual_button(&mut surface, "download-start-now-button", "立即下载");
+    surface.update(|window, _| window.remove_window());
+    std::fs::remove_dir_all(directory).expect("remove isolated probe fixture");
+}
+
+#[gpui_kit::test]
+fn audit05_schedule_timefield_enter_saves_original_queue_once(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, _endpoint) = window_fixture(cx);
+    let owned_application = application.clone();
+    let slot = Rc::new(std::cell::RefCell::new(None));
+    let opened = slot.clone();
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| DownloadScheduleView::new(owned_application, None, window, cx));
+        *opened.borrow_mut() = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let handle = surface.update(|window, _| window.window_handle());
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(430.), px(326.)));
+    surface.refresh().expect("production schedule");
+    let view = slot.borrow().clone().expect("schedule view");
+    let toggle = surface
+        .debug_bounds("download-schedule-start-toggle")
+        .expect("start switch");
+    surface.simulate_click(toggle.center(), Modifiers::default());
+    view.update_in(&mut surface, |view, window, cx| {
+        let focus = view.start_time.focus_handle(cx);
+        focus.focus(window, cx);
+    });
+    surface.simulate_keystrokes("right up");
+    surface.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("schedule Enter"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("schedule release"),
+    });
+    surface.run_until_parked();
+    let saved = application.read_with(&surface, |application, _| {
+        application
+            .default_queue()
+            .and_then(|queue| queue.schedule.clone())
+    });
+    let saved =
+        saved.expect("actual focused TimeField Enter must save through original queue command");
+    assert!(saved.daily.enabled_start && !saved.daily.enabled_stop);
+    assert_eq!(
+        saved.daily.start_minute, 151,
+        "TimeField local minute editing precedes default Apply"
+    );
+    assert!(view.read_with(&surface, |view, _| view.saving));
+    surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("enter").expect("duplicate release"),
+    });
+    surface.run_until_parked();
+    assert_eq!(
+        application.read_with(&surface, |application, _| application
+            .default_queue()
+            .and_then(|queue| queue.schedule.clone())),
+        Some(saved)
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+fn audit05_schedule_key(
+    surface: &mut VisualTestContext,
+    key: &str,
+    down: bool,
+    held: bool,
+    character: bool,
+) {
+    let keystroke = gpui_kit::Keystroke::parse(key).expect("schedule key");
+    if down {
+        surface.simulate_event(gpui_kit::KeyDownEvent {
+            keystroke,
+            is_held: held,
+            prefer_character_input: character,
+        });
+    } else {
+        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });
+    }
+    surface.run_until_parked();
+}
+fn audit05_schedule_fixture(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<DownloadApplication>,
+    Entity<DownloadScheduleView>,
+    VisualTestContext,
+    tempfile::TempDir,
+    DownloadEngine,
+) {
+    cx.update(gpui_kit::init);
+    let temp = tempfile::tempdir().expect("owned schedule storage");
+    let directory = temp.path().to_path_buf();
+    let config = AppConfig::default();
+    config
+        .save_to(&directory.join("config.json"))
+        .expect("owned config");
+    let engine =
+        DownloadEngine::open(directory.join("downloads.sqlite3")).expect("owned persistent queue");
+    let observed = engine.clone();
+    let (platform, _endpoint) = nxtools_ipc::platform_bridge(16);
+    let app = cx.new(|cx| {
+        let notifications = cx.new(|_| NotificationCenter::default());
+        DownloadApplication::new(
+            engine,
+            Rc::new(platform),
+            notifications,
+            DownloadRuntimeContext {
+                fallback_default_directory: directory.clone(),
+                config,
+                config_path: directory.join("config.json"),
+                log_directory: directory.clone(),
+                database_path: directory.join("downloads.sqlite3"),
+                ffmpeg_install_directory: directory.join("tools"),
+            },
+            cx,
+        )
+    });
+    let owned_app = app.clone();
+    let slot = Rc::new(std::cell::RefCell::new(None));
+    let opened = slot.clone();
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| DownloadScheduleView::new(owned_app, None, window, cx));
+        *opened.borrow_mut() = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let handle = surface.update(|window, _| window.window_handle());
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(430.), px(326.)));
+    surface.refresh().expect("fixed schedule");
+    let view = slot.borrow().clone().expect("real schedule view");
+    (app, view, surface, temp, observed)
+}
+fn audit05_queue_schedule(engine: &DownloadEngine) -> Option<DownloadSchedule> {
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Internal,
+        command: DownloadCommand::Snapshot {
+            query: DownloadQuery::default(),
+        },
+    });
+    let DownloadCommandOutcome::Snapshot(snapshot) = result.outcome else {
+        panic!("original queue snapshot")
+    };
+    snapshot
+        .queues
+        .into_iter()
+        .find(|queue| queue.id == "default")
+        .and_then(|queue| queue.schedule)
+}
+#[gpui_kit::test]
+fn audit05_schedule_guards_and_persistent_queue_leave_config_unchanged(cx: &mut TestAppContext) {
+    let (app, view, mut surface, temp, engine) = audit05_schedule_fixture(cx);
+    let config = std::fs::read(temp.path().join("config.json")).expect("config before");
+    let toggle = surface
+        .debug_bounds("download-schedule-start-toggle")
+        .expect("start toggle");
+    surface.simulate_click(toggle.center(), Modifiers::default());
+    view.update_in(&mut surface, |view, window, cx| {
+        view.start_time.focus_handle(cx).focus(window, cx)
+    });
+    surface.refresh().expect("time focus");
+    for key in ["ctrl-enter", "alt-enter", "shift-enter"] {
+        audit05_schedule_key(&mut surface, key, true, false, false);
+        audit05_schedule_key(&mut surface, key, false, false, false);
+    }
+    for (held, character) in [(true, false), (false, true)] {
+        audit05_schedule_key(&mut surface, "enter", true, held, character);
+        audit05_schedule_key(&mut surface, "enter", false, false, false);
+    }
+    assert!(audit05_queue_schedule(&engine).is_none());
+    view.update_in(&mut surface, |view, _, _| view.saving = true);
+    audit05_schedule_key(&mut surface, "enter", true, false, false);
+    audit05_schedule_key(&mut surface, "enter", false, false, false);
+    assert!(audit05_queue_schedule(&engine).is_none());
+    view.update_in(&mut surface, |view, _, _| {
+        view.saving = false;
+        view.days.clear();
+    });
+    audit05_schedule_key(&mut surface, "enter", true, false, false);
+    assert!(view.read_with(&surface, |view, _| view.error.is_some()));
+    assert!(audit05_queue_schedule(&engine).is_none());
+    view.update_in(&mut surface, |view, _, _| {
+        view.error = None;
+        view.days.insert(DownloadWeekday::ALL[0]);
+    });
+    audit05_schedule_key(&mut surface, "enter", true, false, false);
+    audit05_schedule_key(&mut surface, "enter", true, true, false);
+    assert!(
+        audit05_queue_schedule(&engine).is_none(),
+        "invalid initial press cannot retry after draft changes before release"
+    );
+    audit05_schedule_key(&mut surface, "enter", false, false, false);
+    audit05_schedule_key(&mut surface, "enter", true, false, false);
+    audit05_schedule_key(&mut surface, "enter", false, false, false);
+    let saved = audit05_queue_schedule(&engine).expect("normal Enter persisted original queue");
+    assert_eq!(saved.daily.days, vec![DownloadWeekday::ALL[0]]);
+    assert!(saved.daily.enabled_start);
+    assert!(view.read_with(&surface, |view, _| view.saving));
+    let reopened =
+        DownloadEngine::open(temp.path().join("downloads.sqlite3")).expect("reopen own queue");
+    assert_eq!(audit05_queue_schedule(&reopened), Some(saved));
+    assert_eq!(
+        std::fs::read(temp.path().join("config.json")).expect("config after"),
+        config,
+        "schedule does not rewrite AppConfig"
+    );
+    assert!(
+        app.read_with(&surface, |app, _| app.tasks.is_empty()),
+        "no network task is created"
+    );
+}
+#[gpui_kit::test]
+fn audit05_schedule_cancel_and_reopened_window_do_not_apply_old_release(cx: &mut TestAppContext) {
+    let (app, view, mut surface, temp, engine) = audit05_schedule_fixture(cx);
+    let config = std::fs::read(temp.path().join("config.json")).expect("config before cancel");
+    let handle = surface.update(|window, _| window.window_handle());
+    app.update(&mut surface, |app, _| app.schedule_window = Some(handle));
+    let toggle = surface
+        .debug_bounds("download-schedule-start-toggle")
+        .expect("toggle");
+    surface.simulate_click(toggle.center(), Modifiers::default());
+    let cancel = surface
+        .debug_bounds("download-schedule-secondary-cancel-action")
+        .expect("Cancel");
+    surface.simulate_click(cancel.center(), Modifiers::default());
+    surface.run_until_parked();
+    assert!(audit05_queue_schedule(&engine).is_none());
+    assert!(!view.read_with(&surface, |view, _| view.saving));
+    app.update(&mut surface, |app, cx| app.open_schedule_window(cx));
+    surface.run_until_parked();
+    let next = app.read_with(&surface, |app, _| {
+        app.schedule_window.expect("new schedule")
+    });
+    assert_ne!(next, handle);
+    let mut reopened = VisualTestContext::from_window(next, &surface);
+    reopened.refresh().expect("reopened schedule");
+    audit05_schedule_key(&mut reopened, "enter", false, false, false);
+    assert!(audit05_queue_schedule(&engine).is_none());
+    // Actual Tab to the original Cancel Button: Enter must close, not save.
+    reopened.update(|window, cx| window.focus_next(cx));
+    for _ in 0..24 {
+        let focused = reopened.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .any(|node| node.label() == Some("取消") && node.focused() == Some(true))
+        });
+        if focused {
+            break;
+        }
+        reopened.simulate_keystrokes("tab");
+        reopened.refresh().expect("Cancel focus");
+    }
+    assert!(
+        reopened.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .any(|node| node.label() == Some("取消") && node.focused() == Some(true))),
+        "actual Cancel Button must own Enter"
+    );
+    audit05_schedule_key(&mut reopened, "enter", true, false, false);
+    audit05_schedule_key(&mut reopened, "enter", false, false, false);
+    assert!(
+        app.read_with(&reopened, |app, _| app.schedule_window.is_none()),
+        "keyboard Cancel closes only its original schedule window"
+    );
+    assert!(audit05_queue_schedule(&engine).is_none());
+    assert_eq!(
+        std::fs::read(temp.path().join("config.json")).expect("config unchanged"),
+        config
+    );
+}
+
+#[gpui_kit::test]
+fn audit06_schedule_ordinary_roles_follow_production_root_rem(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme as ComponentTheme;
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let original = cx.read(|cx| ComponentTheme::global(cx).clone());
+    let (application, directory, _endpoint) = window_fixture(cx);
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| DownloadScheduleView::new(application, None, window, cx));
+        view.update(cx, |view, _| {
+            view.enabled_start = true;
+            view.enabled_stop = true;
+        });
+        Root::new(view, window, cx)
+    });
+    surface.simulate_resize(size(px(430.0), px(326.0)));
+    surface.refresh().expect("actual product theme and Root");
+    let default_rem = surface.update(|window, _| window.rem_size());
+    let mut measured = Vec::new();
+    for base in [16.0, 14.0, 18.0] {
+        surface.update(|window, cx| {
+            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+            window.refresh();
+        });
+        surface
+            .refresh()
+            .expect("production Root applies base font");
+        let day = surface
+            .debug_bounds("download-schedule-day-0")
+            .expect("first Toggle");
+        let next = surface
+            .debug_bounds("download-schedule-day-1")
+            .expect("second Toggle");
+        let toggle = surface
+            .debug_bounds("download-schedule-start-toggle")
+            .expect("Switch rail");
+        let input = surface
+            .debug_bounds("download-schedule-start-toggle-input")
+            .expect("TimeField rail");
+        let title = surface
+            .debug_bounds("download-schedule-start-toggle-title")
+            .expect("actual Form label");
+        let footer = surface
+            .debug_bounds("download-schedule-dialog-footer")
+            .expect("fixed footer");
+        let apply = surface
+            .debug_bounds("download-schedule-primary-apply-action")
+            .expect("actual Apply hit bounds");
+        measured.push((
+            base,
+            surface.update(|window, _| window.rem_size()),
+            day,
+            next,
+            toggle,
+            input,
+            title,
+            footer,
+            apply,
+        ));
+    }
+    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    let _ = std::fs::remove_dir_all(directory);
+    assert_eq!(
+        default_rem,
+        px(16.0),
+        "runtime product Root design baseline"
+    );
+    for (base, rem, day, next, toggle, input, title, footer, apply) in measured {
+        assert_eq!(
+            rem,
+            px(base),
+            "variation reaches the actual production Root"
+        );
+        let ratio = base / 16.0;
+        assert!(
+            (next.left() - day.right() - px(4.0 * ratio)).abs() <= px(0.02),
+            "ordinary weekday gap scales at base={base}: day={day:?}, next={next:?}"
+        );
+        assert_eq!(day.size.height, px(24.0 * ratio), "official Small Toggle");
+        assert_eq!(
+            toggle.size.height,
+            px(32.0 * ratio),
+            "ordinary control rail"
+        );
+        assert_eq!(
+            input.size.height,
+            px(32.0 * ratio),
+            "official TimeField height"
+        );
+        assert!(
+            (input.size.width - px(114.0 * ratio)).abs() <= px(0.5),
+            "time content width follows type with GPUI pixel alignment"
+        );
+        assert!(
+            (title.size.height - px(22.5 * ratio)).abs() <= px(0.5),
+            "actual label line layout"
+        );
+        assert_eq!(
+            footer.size.height,
+            px(48.0),
+            "fixed client footer is not a zoom role"
+        );
+        assert!(apply.top() >= footer.top() && apply.bottom() <= footer.bottom());
+    }
+}
+
+#[gpui_kit::test]
+fn audit06_schedule_long_validation_scrolls_inside_fixed_surface(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme as ComponentTheme;
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let original = cx.read(|cx| ComponentTheme::global(cx).clone());
+    let (application, directory, _endpoint) = window_fixture(cx);
+    cx.update(|cx| application.update(cx, |app, cx| app.open_schedule_window(cx)));
+    cx.run_until_parked();
+    let handle = cx
+        .read(|cx| application.read(cx).schedule_window)
+        .expect("production fixed window");
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    let view = surface.update(|window, cx| {
+        window
+            .root::<Root>()
+            .expect("read production Root")
+            .expect("production Root present")
+            .read(cx)
+            .view()
+            .clone()
+            .downcast::<DownloadScheduleView>()
+            .expect("production schedule")
+    });
+    let mut measured = Vec::new();
+    for base in [16.0, 14.0, 18.0] {
+        surface.update(|window, cx| {
+            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+            view.update(cx, |view, cx| {
+                view.enabled_start = true;
+                view.enabled_stop = true;
+                view.error = Some(
+                    ("请检查计划与路径 D:\\合成目录\\很长的中文文件名\\验证对象.txt\n".repeat(30))
+                        + "验证全文末尾",
+                );
+                cx.notify();
+            });
+            window.refresh();
+        });
+        surface.refresh().expect("long validation in fixed client");
+        let viewport = surface
+            .debug_bounds("download-schedule-validation")
+            .expect("two-line viewport");
+        for _ in 0..60 {
+            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                position: viewport.center(),
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 5.0)),
+                ..Default::default()
+            });
+            surface
+                .refresh()
+                .expect("reset actual retained scroll to start");
+        }
+        let before = surface
+            .debug_bounds("download-schedule-validation-text")
+            .expect("actual full error layout");
+        for _ in 0..60 {
+            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                position: viewport.center(),
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -5.0)),
+                ..Default::default()
+            });
+            surface.refresh().expect("real error wheel scroll");
+        }
+        let after = surface
+            .debug_bounds("download-schedule-validation-text")
+            .expect("current text layout");
+        let footer = surface
+            .debug_bounds("download-schedule-dialog-footer")
+            .expect("fixed footer");
+        let apply = surface
+            .debug_bounds("download-schedule-primary-apply-action")
+            .expect("Apply hit target");
+        let root = surface
+            .debug_bounds("download-schedule-dialog-shell")
+            .expect("fixed shell");
+        measured.push((base, viewport, before, after, footer, apply, root));
+    }
+    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    let cancel = surface
+        .debug_bounds("download-schedule-secondary-cancel-action")
+        .expect("original Cancel");
+    surface.simulate_click(cancel.center(), Modifiers::default());
+    surface.run_until_parked();
+    let closed = surface.read(|cx| application.read(cx).schedule_window.is_none());
+    let _ = std::fs::remove_dir_all(directory);
+    for (base, viewport, before, after, footer, apply, root) in measured {
+        assert!(
+            before.size.height > viewport.size.height,
+            "full error must remain available at base={base}"
+        );
+        assert!(
+            after.top() < before.top(),
+            "actual wheel must scroll the full error at base={base}: before={before:?}, after={after:?}"
+        );
+        assert!(
+            after.bottom() <= viewport.bottom() + px(0.5) && after.bottom() > viewport.top(),
+            "real full-text end reachable at base={base}: text={after:?}, viewport={viewport:?}"
+        );
+        assert!(
+            viewport.bottom() <= footer.top(),
+            "error never pushes fixed footer away"
+        );
+        assert!(apply.top() >= footer.top() && apply.bottom() <= footer.bottom());
+        assert_eq!(root.size, size(px(430.0), px(326.0)));
+    }
+    assert!(
+        closed,
+        "original Cancel remains pointer-reachable after zoom and scrolling"
+    );
+}
+
+#[gpui_kit::test]
+fn audit06_schedule_zoom_keeps_real_tab_space_and_pointer_owner(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme as ComponentTheme;
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let original = cx.read(|cx| ComponentTheme::global(cx).clone());
+    let (application, directory, _endpoint) = window_fixture(cx);
+    let retained = Rc::new(RefCell::new(None));
+    let slot = retained.clone();
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| DownloadScheduleView::new(application, None, window, cx));
+        *slot.borrow_mut() = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    surface.simulate_resize(size(px(430.0), px(326.0)));
+    let view = retained.borrow().clone().expect("original schedule entity");
+    let mut results = Vec::new();
+    for base in [14.0, 18.0] {
+        surface.update(|window, cx| {
+            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+            window.activate_window();
+            window.refresh();
+        });
+        surface.refresh().expect("zoomed actual schedule");
+        let mut focused = false;
+        for _ in 0..24 {
+            surface.update(|window, cx| window.focus_next(cx));
+            surface.refresh().expect("actual Root Tab traversal");
+            focused = surface.update(|window, _| {
+                gpui_kit::base::test_support::snapshots(window)
+                    .iter()
+                    .any(|node| {
+                        node.focused() == Some(true)
+                            && node.path().contains(&gpui_kit::ElementId::from((
+                                "download-schedule-day",
+                                0usize,
+                            )))
+                    })
+            });
+            if focused {
+                break;
+            }
+        }
+        let day = DownloadWeekday::ALL[0];
+        let before = view.read_with(surface, |view, _| view.days.contains(&day));
+        audit05_schedule_key(surface, "space", true, false, false);
+        let down = view.read_with(surface, |view, _| view.days.contains(&day));
+        audit05_schedule_key(surface, "space", false, false, false);
+        let release = view.read_with(surface, |view, _| view.days.contains(&day));
+        surface.refresh().expect("same Toggle after release");
+        let hit = surface
+            .debug_bounds("download-schedule-day-0")
+            .expect("actual weekday hit");
+        surface.simulate_click(hit.center(), Modifiers::default());
+        let pointer = view.read_with(surface, |view, _| view.days.contains(&day));
+        let saving = view.read_with(surface, |view, _| view.saving);
+        results.push((base, focused, before, down, release, pointer, saving));
+    }
+    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    let _ = std::fs::remove_dir_all(directory);
+    for (base, focused, before, down, release, pointer, saving) in results {
+        assert!(focused, "real Tab reaches weekday at base={base}");
+        assert_eq!(down, before, "official Toggle remains release-owned");
+        assert_ne!(
+            release, before,
+            "one real Space release changes current day"
+        );
+        assert_eq!(
+            pointer, before,
+            "pointer uses same original requested-value owner"
+        );
+        assert!(!saving, "weekday activation never invokes Apply");
+    }
+}
+
+#[gpui_kit::test]
+fn audit08_settings_picker_and_export_labels_keep_objects_and_cancel(cx: &mut TestAppContext) {
+    let (application, directory, mut surface) = queue02_settings_window(cx);
+    accessible_actual_button(
+        &mut surface,
+        "download-settings-pick-directory",
+        "选择默认保存目录…",
+    );
+    for (id, label) in [
+        (
+            "download-settings-extension-export-chrome-button",
+            "导出 Chrome / Edge (.crx)…",
+        ),
+        (
+            "download-settings-extension-export-firefox-button",
+            "导出 Firefox (.xpi)…",
+        ),
+        (
+            "download-settings-extension-export-store-button",
+            "导出 Chrome 商店 (.zip)…",
+        ),
+    ] {
+        let hit = reveal_download_setting(&mut surface, id);
+        accessible_actual_button(&mut surface, id, label);
+        assert!(hit.right() <= px(984.) && hit.bottom() <= px(590.));
+    }
+    select_official_download_page(&mut surface, DownloadSettingsPage::Transfer);
+    accessible_actual_button(
+        &mut surface,
+        "download-settings-pick-ffmpeg-button",
+        "选择 FFmpeg 可执行文件…",
+    );
+    surface.update(|window, _| window.remove_window());
+    assert!(
+        !directory.join("config.json").exists(),
+        "reading labels never saves settings"
+    );
+    drop(application);
+    std::fs::remove_dir_all(directory).expect("owned settings fixture");
+}
+
+#[gpui_kit::test]
+fn audit08_new_download_directory_label_keeps_picker_object(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, _endpoint) = window_fixture(cx);
+    application.update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (handle, view) = application.read_with(cx, |app, _| {
+        (
+            app.new_download_window.expect("window"),
+            app.new_download_view.clone().expect("view"),
+        )
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    view.update_in(&mut surface, |view, _, cx| {
+        view.probe = Some(DownloadProbe {
+            resolution: None,
+            final_url: "https://synthetic.invalid/no-request".into(),
+            file_name: Some("合成文件.bin".into()),
+            total_bytes: Some(8),
+            supports_ranges: false,
+            content_type: None,
+            validator: Default::default(),
+            media: None,
+        });
+        cx.notify();
+    });
+    surface.simulate_resize(new_download_window_size(true));
+    surface.refresh().expect("confirmed synthetic form");
+    accessible_actual_button(&mut surface, "download-pick-directory", "选择下载目录…");
+    surface.update(|window, _| window.remove_window());
+    std::fs::remove_dir_all(directory).expect("owned form fixture");
+}
+
+#[gpui_kit::test]
+fn audit08_browser_export_pointer_once_and_picker_cancel_keep_data(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, endpoint) = window_fixture(cx);
+    endpoint.set_connected_for_contract_test(true);
+    application.update(cx, |app, cx| app.open_settings_window(cx));
+    cx.run_until_parked();
+    let handle = application.read_with(cx, |app, _| app.settings_window.expect("settings"));
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(984.), px(650.)));
+    surface.refresh().expect("original settings");
+    for (id, format) in [
+        ("download-settings-extension-export-chrome-button", "chrome"),
+        (
+            "download-settings-extension-export-firefox-button",
+            "firefox",
+        ),
+        (
+            "download-settings-extension-export-store-button",
+            "chrome_store",
+        ),
+    ] {
+        let hit = reveal_download_setting(&mut surface, id);
+        surface.simulate_click(hit.center(), Modifiers::default());
+        surface.run_until_parked();
+        let commands = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .filter(|command| {
+                matches!(
+                    command.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::ExportBrowserExtension(_)
+                    )
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            commands.len(),
+            1,
+            "one original export request per pointer gesture"
+        );
+        let command = &commands[0];
+        assert!(
+            matches!(&command.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExportBrowserExtension(export)) if export.format == format && export.destination.is_empty())
+        );
+        application.update(&mut surface, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: command.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some(String::new()),
+                    },
+                },
+                cx,
+            )
+        });
+        surface.run_until_parked();
+        assert!(application.read_with(&surface, |app, _| app.pending_extension_export.is_none()));
+        assert!(!directory.join("config.json").exists());
+    }
+    assert!(application.read_with(&surface, |app, _| app.tasks.is_empty()));
+    surface.update(|window, _| window.remove_window());
+    std::fs::remove_dir_all(directory).expect("owned export fixture");
 }

@@ -1,6 +1,7 @@
 //! One header icon; runtime status remains a snapshot of the native capture owner.
 use super::*;
 use gpui_kit::assets::IconName;
+use gpui_kit::component::button::Toggle;
 use gpui_kit::component::{Disableable as _, label::Label};
 
 impl ClipboardPanel {
@@ -67,9 +68,29 @@ impl ClipboardPanel {
         div()
             .id("clipboard-capture-control-slot")
             .flex_none()
+            .flex()
+            .items_center()
+            .gap_1()
             .on_mouse_down(gpui_kit::MouseButton::Left, |_, _, cx| {
                 cx.stop_propagation()
             })
+            .child(
+                div()
+                    .debug_selector(|| "clipboard-fixed-display".into())
+                    .child(
+                        Toggle::new("clipboard-fixed-display-toggle")
+                            .small()
+                            .checked(self.fixed_display)
+                            .icon(MaterialIcon::Keep)
+                            .tooltip(if self.fixed_display { "取消固定显示（仅本次）" } else { "固定显示（仅本次）" })
+                            .on_click(cx.listener(|panel, checked, _, cx| {
+                                panel.fixed_display = *checked;
+                                panel.dismiss_preview_for_input("fixed_display_toggle", cx);
+                                info!(event = "clipboard.panel.fixed_changed", session_id = %panel.session_id, enabled = *checked);
+                                cx.notify();
+                            })),
+                    ),
+            )
             .child(
                 Button::new("clipboard-capture-pause")
                     .debug_selector(|| "clipboard-capture-pause".into())

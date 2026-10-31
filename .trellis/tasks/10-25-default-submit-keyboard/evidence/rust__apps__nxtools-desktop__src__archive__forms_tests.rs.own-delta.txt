@@ -1,0 +1,282 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/archive/forms_tests.rs
++++ own-after/rust/apps/nxtools-desktop/src/archive/forms_tests.rs
+@@ -624,3 +624,279 @@
+         2
+     );
+ }
++
++fn audit05_form_key(surface: &mut VisualTestContext, key: &str, down: bool, held: bool) {
++    let keystroke = gpui_kit::Keystroke::parse(key).expect("form key");
++    if down {
++        surface.simulate_event(gpui_kit::KeyDownEvent {
++            keystroke,
++            is_held: held,
++            prefer_character_input: false,
++        });
++    } else {
++        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });
++    }
++}
++#[gpui_kit::test]
++fn audit05_create_single_line_enter_reaches_original_submit_once(cx: &mut TestAppContext) {
++    let (view, mut surface) = mount(cx, ArchiveSettings::default());
++    view.update_in(&mut surface, |form, window, cx| {
++        form.name.read(cx).focus_handle(cx).focus(window, cx)
++    });
++    draw(&mut surface);
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(
++        view.read_with(&surface, |form, _| form.submit_count),
++        1,
++        "actual focused single-line Enter must use original submit"
++    );
++    assert!(
++        view.read_with(&surface, |form, _| form.error.is_some()),
++        "original disconnected-owner admission failure remains observable"
++    );
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(
++        view.read_with(&surface, |form, _| form.submit_count),
++        1,
++        "duplicate release is not another submit"
++    );
++}
++
++#[gpui_kit::test]
++fn audit05_form_ime_modifiers_repeat_and_busy_keep_original_validation(cx: &mut TestAppContext) {
++    let (view, mut surface) = mount(cx, ArchiveSettings::default());
++    view.update_in(&mut surface, |form, window, cx| {
++        form.name.read(cx).focus_handle(cx).focus(window, cx);
++    });
++    draw(&mut surface);
++    for key in ["ctrl-enter", "alt-enter", "shift-enter"] {
++        audit05_form_key(&mut surface, key, true, false);
++        audit05_form_key(&mut surface, key, false, false);
++    }
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("enter").expect("character Enter"),
++        is_held: false,
++        prefer_character_input: true,
++    });
++    audit05_form_key(&mut surface, "enter", false, false);
++    audit05_form_key(&mut surface, "enter", true, true);
++    audit05_form_key(&mut surface, "enter", false, false);
++    view.update_in(&mut surface, |form, window, cx| {
++        form.name.update(cx, |input, cx| {
++            input.replace_and_mark_text_in_range(None, "中", Some(1..1), window, cx)
++        });
++    });
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);
++    view.update_in(&mut surface, |form, window, cx| {
++        form.name.update(cx, |input, cx| {
++            input.unmark_text(window, cx);
++            input.set_value("valid.zip", window, cx);
++        });
++        form.pending_picker = Some(PendingPicker {
++            operation: None,
++            purpose: ArchivePickerPurpose::Files,
++        });
++    });
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);
++    view.update_in(&mut surface, |form, _, _| form.pending_picker = None);
++    audit05_form_key(&mut surface, "enter", true, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);
++    // Synchronous admission rejection clears busy; the same physical press still cannot retry.
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", true, true);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);
++    audit05_form_key(&mut surface, "enter", false, false);
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 2);
++}
++#[gpui_kit::test]
++fn audit05_form_masked_multiline_select_and_format_dialog_do_not_submit_outer(
++    cx: &mut TestAppContext,
++) {
++    let (view, mut surface) = mount(cx, ArchiveSettings::default());
++    for password in [true, false] {
++        view.update_in(&mut surface, |form, window, cx| {
++            let input = if password {
++                form.password.clone()
++            } else {
++                form.confirm.clone()
++            };
++            input.focus_handle(cx).focus(window, cx);
++        });
++        draw(&mut surface);
++        audit05_form_key(&mut surface, "enter", true, false);
++        audit05_form_key(&mut surface, "enter", false, false);
++    }
++    view.update_in(&mut surface, |form, window, cx| {
++        form.exclusions.focus_handle(cx).focus(window, cx);
++    });
++    // Mount a real comment editor using the original production modify constructor.
++    view.update_in(&mut surface, |form, window, cx| {
++        *form = OperationForm::modify(
++            ArchiveSettings::default(),
++            audit05_modify_draft(ArchiveJobModifyAction::Comment),
++            WeakEntity::new_invalid(),
++            window,
++            cx,
++        );
++        form.exclusions.focus_handle(cx).focus(window, cx);
++    });
++    draw(&mut surface);
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);
++    assert!(view.read_with(&surface, |form, cx| {
++        form.exclusions.read(cx).value().contains('\n')
++    }));
++    view.update_in(&mut surface, |form, window, cx| {
++        *form = OperationForm::create(
++            ArchiveSettings::default(),
++            vec![source()],
++            WeakEntity::new_invalid(),
++            window,
++            cx,
++        );
++        form.format.focus_handle(cx).focus(window, cx);
++    });
++    draw(&mut surface);
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(
++        view.read_with(&surface, |form, _| form.submit_count),
++        0,
++        "Select confirmation cannot fall through to outer submit"
++    );
++    assert!(
++        surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)
++            .into_iter()
++            .filter(|node| node.role() == Some(gpui_kit::Role::ComboBox))
++            .all(|node| node.expanded() != Some(true))),
++        "Select confirmation closes only its own layer"
++    );
++    view.update_in(&mut surface, |form, window, cx| {
++        form.password.update(cx, |input, cx| {
++            input.set_value("synthetic-private", window, cx)
++        });
++        form.confirm.update(cx, |input, cx| {
++            input.set_value("synthetic-private", window, cx)
++        });
++        form.change_format(ArchiveCreateFormat::Tar, window, cx);
++    });
++    draw(&mut surface);
++    assert!(surface.update(|window, cx| window.has_active_dialog(cx)));
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(
++        view.read_with(&surface, |form, _| form.submit_count),
++        0,
++        "child format decision cannot submit outer form"
++    );
++}
++fn audit05_modify_draft(action: ArchiveJobModifyAction) -> ModifyDraft {
++    use nxtools_protocol::archive_browser::{ArchiveBrowserContext, ArchiveSourceBinding};
++    ModifyDraft {
++        source: r"C:\synthetic\fixture.zip".into(),
++        browser: ArchiveBrowserContext {
++            snapshot_id: Uuid::new_v4(),
++            format: "Zip".into(),
++            comment: String::new(),
++            source: ArchiveSourceBinding {
++                native: "v1:fixture".into(),
++                digest: [1; 32],
++                size: 1,
++                modified_unix_ns: 1,
++            },
++        },
++        action,
++        ordinals: vec![1],
++        value: Some("new.txt".into()),
++        added: vec![],
++        codepage: 0,
++    }
++}
++#[gpui_kit::test]
++fn audit05_extract_and_edit_single_line_enter_keep_original_draft_and_cancel_key(
++    cx: &mut TestAppContext,
++) {
++    let (view, mut surface) = mount(cx, ArchiveSettings::default());
++    view.update_in(&mut surface, |form, window, cx| {
++        *form = OperationForm::extract(
++            ArchiveSettings::default(),
++            r"C:\synthetic\fixture.zip".into(),
++            None,
++            WeakEntity::new_invalid(),
++            window,
++            cx,
++        );
++        form.destination.focus_handle(cx).focus(window, cx);
++    });
++    draw(&mut surface);
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);
++    view.update_in(&mut surface, |form, window, cx| {
++        *form = OperationForm::modify(
++            ArchiveSettings::default(),
++            audit05_modify_draft(ArchiveJobModifyAction::Rename),
++            WeakEntity::new_invalid(),
++            window,
++            cx,
++        );
++        form.name.focus_handle(cx).focus(window, cx);
++    });
++    draw(&mut surface);
++    let original = view.read_with(&surface, |form, _| form.name.entity_id());
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    draw(&mut surface);
++    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);
++    assert_eq!(
++        view.read_with(&surface, |form, _| form.name.entity_id()),
++        original
++    );
++    assert_eq!(
++        view.read_with(&surface, |form, cx| form.name.read(cx).value().to_string()),
++        "new.txt"
++    );
++    for _ in 0..30 {
++        let focused = surface.update(|window, _| {
++            gpui_kit::base::test_support::snapshots(window)
++                .into_iter()
++                .any(|node| node.label() == Some("取消") && node.focused() == Some(true))
++        });
++        if focused {
++            break;
++        }
++        surface.simulate_keystrokes("tab");
++        draw(&mut surface);
++    }
++    audit05_form_key(&mut surface, "enter", true, false);
++    audit05_form_key(&mut surface, "enter", false, false);
++    surface.run_until_parked();
++    assert!(view.read_with(&surface, |form, _| form.retired));
++    assert_eq!(
++        view.read_with(&surface, |form, _| form.submit_count),
++        1,
++        "focused Cancel is not default submit"
++    );
++}

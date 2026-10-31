@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::metrics::ordinary_rem;
 use gpui_kit::component::button::Button;
 use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::label::Label;
@@ -23,7 +24,7 @@ fn scope_checkbox(
     };
     div()
         .debug_selector(move || selector.clone())
-        .h(px(32.0))
+        .h_8()
         .w_full()
         .flex()
         .items_center()
@@ -41,9 +42,9 @@ fn scope_checkbox(
 fn centered_column(selector: &'static str, width: f32, label: &'static str) -> AnyElement {
     div()
         .debug_selector(move || selector.into())
-        .w(px(width))
+        .w(ordinary_rem(width))
         .flex_none()
-        .h(px(ROW_HEIGHT))
+        .h(ordinary_rem(ROW_HEIGHT))
         .flex()
         .items_center()
         .justify_center()
@@ -93,12 +94,23 @@ impl NetworkSettingsView {
         info!(event = "global.blacklist.draft_completed", %correlation_id, rule_count = self.rules.len(), elapsed_ms = started_at.elapsed().as_millis(), "application rule draft updated");
         cx.notify();
     }
-    pub(super) fn render_blacklist_table(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_blacklist_table(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let theme = self.theme;
         let pending = self.saving;
+        let rows_height = ordinary_rem(if self.rules.is_empty() {
+            80.0
+        } else {
+            ROW_HEIGHT * self.rules.len() as f32
+        })
+        .to_pixels(window.rem_size())
+        .min(px(120.0));
         let header = div()
             .w_full()
-            .h(px(ROW_HEIGHT))
+            .h(ordinary_rem(ROW_HEIGHT))
             .flex_none()
             .px_3()
             .flex()
@@ -127,8 +139,7 @@ impl NetworkSettingsView {
             ));
         let mut rows = div()
             .id("global-blacklist-scroll")
-            .max_h(px(160.0))
-            .overflow_y_scrollbar()
+            .w_full()
             .flex()
             .flex_col();
         for (index, rule) in self.rules.iter().enumerate() {
@@ -166,11 +177,11 @@ impl NetworkSettingsView {
                         cx.notify();
                     }));
             rows = rows.child(div().debug_selector(move || format!("global-blacklist-row-{index}"))
-                .w_full().h(px(ROW_HEIGHT)).flex_none().px_3().flex().items_center()
+                .w_full().h(ordinary_rem(ROW_HEIGHT)).flex_none().px_3().flex().items_center()
                 .when(selected, |row| row.bg(theme.element_selected))
                 .child(div().flex_1().min_w_0().overflow_hidden().child(app_action))
                 .child(div().debug_selector(move || format!("global-blacklist-clipboard-cell-{index}"))
-                    .w(px(CLIPBOARD_COLUMN)).flex_none().child(scope_checkbox(
+                    .w(ordinary_rem(CLIPBOARD_COLUMN)).flex_none().child(scope_checkbox(
                         format!("global-blacklist-clipboard-{index}").into(), clipboard, pending,
                         cx.listener(move |this, requested: &bool, _, cx| {
                             if !this.saving {
@@ -179,7 +190,7 @@ impl NetworkSettingsView {
                             }
                         }))))
                 .child(div().debug_selector(move || format!("global-blacklist-quick-cell-{index}"))
-                    .w(px(QUICK_COLUMN)).flex_none().child(scope_checkbox(
+                    .w(ordinary_rem(QUICK_COLUMN)).flex_none().child(scope_checkbox(
                         format!("global-blacklist-quick-{index}").into(), quick, pending,
                         cx.listener(move |this, requested: &bool, _, cx| {
                             if !this.saving {
@@ -188,7 +199,7 @@ impl NetworkSettingsView {
                             }
                         }))))
                 .child(div().debug_selector(move || format!("global-blacklist-remove-cell-{index}"))
-                    .w(px(ACTION_COLUMN)).flex_none().child(Button::new(SharedString::from(format!("global-blacklist-remove-{index}")))
+                    .w(ordinary_rem(ACTION_COLUMN)).flex_none().child(Button::new(SharedString::from(format!("global-blacklist-remove-{index}")))
                         .ghost().small().label("移除").disabled(pending)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if this.saving { return; }
@@ -200,7 +211,7 @@ impl NetworkSettingsView {
         if self.rules.is_empty() {
             rows = rows.child(
                 div()
-                    .h(px(80.0))
+                    .h_20()
                     .px_3()
                     .flex()
                     .items_center()
@@ -222,7 +233,17 @@ impl NetworkSettingsView {
                     .border_color(theme.border_subtle)
                     .overflow_hidden()
                     .child(header)
-                    .child(rows),
+                    .child(
+                        div()
+                            .debug_selector(|| "global-blacklist-viewport".into())
+                            .h(rows_height)
+                            .w_full()
+                            .flex_none()
+                            .child(
+                                rows.overflow_y_scrollbar()
+                                    .id("global-blacklist-scroll-area"),
+                            ),
+                    ),
             )
             .into_any_element()
     }
@@ -246,7 +267,7 @@ impl NetworkSettingsView {
                             .disabled(pending),
                     ),
             )
-            .child(div().w(px(64.0)).flex_none().child(scope_checkbox(
+            .child(div().w_16().flex_none().child(scope_checkbox(
                 "global-blacklist-new-clipboard".into(),
                 self.new_disable_clipboard,
                 pending,
@@ -257,7 +278,7 @@ impl NetworkSettingsView {
                     }
                 }),
             )))
-            .child(div().w(px(64.0)).flex_none().child(scope_checkbox(
+            .child(div().w_16().flex_none().child(scope_checkbox(
                 "global-blacklist-new-quick".into(),
                 self.new_disable_quick_launch,
                 pending,

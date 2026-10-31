@@ -1,0 +1,85 @@
+{
+  "new-download-keyboard": [
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_category_confirm_does_not_fall_through",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_compact_input_enter_keeps_probe_validation",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_focused_cancel_does_not_probe",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_ime_busy_and_native_gate_do_not_submit",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_outer_enter_submits_one_committed_future_task",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_outer_inputs_keep_default_and_guard_repeats",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_schedule_confirm_clear_and_dismiss_keep_owners",
+    "downloads::new_download_view::keyboard_tests::new_download_keyboard_schedule_layer_and_select_keep_enter"
+  ],
+  "picker": [
+    "downloads::directory_picker_tests::directory_picker_cancel_failure_disconnect_retry_and_old_ids_are_isolated",
+    "downloads::directory_picker_tests::directory_picker_closed_settings_result_cannot_write_reopened_draft",
+    "downloads::directory_picker_tests::directory_picker_dispatch_rejection_releases_original_token_and_can_retry",
+    "downloads::directory_picker_tests::directory_picker_failure_claim_then_closed_origin_has_no_current_notice",
+    "downloads::directory_picker_tests::directory_picker_fixed_confirmation_replacement_retires_original_view_request",
+    "downloads::directory_picker_tests::directory_picker_new_task_aba_edit_close_reopen_and_silent_hydration",
+    "downloads::directory_picker_tests::directory_picker_new_task_settings_isolation_explicit_draft_and_apply_policy",
+    "downloads::directory_picker_tests::directory_picker_normal_result_changes_only_original_draft_and_cancel_keeps_disk",
+    "downloads::directory_picker_tests::directory_picker_old_settings_close_callback_preserves_current_window_and_request",
+    "downloads::directory_picker_tests::directory_picker_result_claim_then_close_reopen_cannot_apply_or_fail_replacement",
+    "downloads::directory_picker_tests::directory_picker_result_claim_then_same_turn_aba_is_not_applied",
+    "downloads::directory_picker_tests::directory_picker_result_then_edit_before_deferred_apply_keeps_new_draft",
+    "downloads::directory_picker_tests::directory_picker_same_turn_aba_user_edit_rejects_old_result",
+    "downloads::directory_picker_tests::directory_picker_same_type_views_do_not_share_a_result"
+  ],
+  "identity": [
+    "ui::history_identity_tests::history_identity_armed_row_prepend_release_still_activates_original_item_once",
+    "ui::history_identity_tests::history_identity_deleted_armed_row_does_not_activate_old_index_occupant",
+    "ui::history_identity_tests::history_identity_equal_domain_ids_in_distinct_panels_have_distinct_focus",
+    "ui::history_identity_tests::history_identity_prepend_keeps_favorite_button_and_space_does_not_paste",
+    "ui::history_identity_tests::history_identity_prepend_keeps_focused_record_and_enter_full_by_id",
+    "ui::history_identity_tests::history_identity_real_append_front_trim_keeps_row_and_space_on_domain_id",
+    "ui::history_identity_tests::history_identity_real_front_trim_keeps_management_button_without_paste",
+    "ui::history_identity_tests::history_identity_real_front_trim_removed_armed_row_retires_to_search",
+    "ui::history_identity_tests::history_identity_removed_armed_management_release_does_not_mutate_or_paste",
+    "ui::history_identity_tests::history_identity_reorder_same_mounted_records_preserves_action_and_search_entity",
+    "ui::history_identity_tests::history_identity_unmount_and_new_session_do_not_reuse_focus_or_armed_release"
+  ],
+  "button-names": [
+    "ui::components::action::name_tests::accessible_name_icon_is_on_button_not_outer_tooltip",
+    "ui::components::action::name_tests::accessible_name_primary_custom_content_states_keep_original_dispatch_and_bounds",
+    "ui::components::path_list::queue01_tests::accessible_name_excluded_path_delete_buttons_identify_each_object",
+    "downloads::polish_tests::accessible_name_download_settings_apply_and_default_directory",
+    "downloads::polish_tests::accessible_name_download_settings_ffmpeg_and_diagnostic_objects",
+    "downloads::polish_tests::accessible_name_new_download_probe_and_refresh_are_actual_buttons",
+    "network_settings::kit_migration_tests::accessible_name_global_apply_is_actual_button_and_stable_while_saving",
+    "network_settings::kit_migration_tests::feedback_global_switch_has_one_visible_label_and_complete_accessible_name"
+  ],
+  "sort-keyboard": [
+    "main_window::download_page::kit_migration_tests::sort_keyboard_actual_headers_have_names_tab_focus_and_original_column_bounds",
+    "main_window::download_page::kit_migration_tests::sort_keyboard_enter_space_match_pointer_reverse_once_and_preserve_task_identity",
+    "main_window::download_page::kit_migration_tests::sort_keyboard_persists_both_fields_and_reopened_main_restores_direction"
+  ],
+  "download-page-module": [
+    "main_window::download_page::kit_migration_tests::audit06_bitmap_and_physical_selection_edges_remain_fixed",
+    "main_window::download_page::kit_migration_tests::audit06_download_rows_and_header_follow_root_rem",
+    "main_window::download_page::kit_migration_tests::audit06_virtual_scroll_remeasures_and_selects_current_stable_id",
+    "main_window::download_page::kit_migration_tests::followup_download_metadata_uses_released_description_slots_and_wraps",
+    "main_window::download_page::kit_migration_tests::followup_download_timeline_markers_keep_order_content_and_original_scroll",
+    "main_window::download_page::kit_migration_tests::installed_feedback_download_filters_and_sort_menu_keep_readable_width",
+    "main_window::download_page::kit_migration_tests::queue03_batch_toolbar_buttons_fit_original_rail_at_minimum",
+    "main_window::download_page::kit_migration_tests::queue03_datatable_ctrl_click_exposes_single_index_selection",
+    "main_window::download_page::kit_migration_tests::queue03_datatable_public_sort_and_context_hooks_are_callable",
+    "main_window::download_page::kit_migration_tests::queue03_metadata_uses_natural_description_list_layout",
+    "main_window::download_page::kit_migration_tests::queue03_production_progress_paints_clamped_percentage",
+    "main_window::download_page::kit_migration_tests::queue03_public_row_override_keeps_external_set_but_overwrites_selection_semantics",
+    "main_window::download_page::kit_migration_tests::queue03_toolbar_roves_focus_and_five_tabs_keep_original_scroll_owner",
+    "main_window::download_page::kit_migration_tests::queue03_workspace_mounts_real_compounds_at_default_and_minimum",
+    "main_window::download_page::kit_migration_tests::sort_keyboard_actual_headers_have_names_tab_focus_and_original_column_bounds",
+    "main_window::download_page::kit_migration_tests::sort_keyboard_enter_space_match_pointer_reverse_once_and_preserve_task_identity",
+    "main_window::download_page::kit_migration_tests::sort_keyboard_persists_both_fields_and_reopened_main_restores_direction",
+    "main_window::download_page::kit_migration_tests::ux_download_extensions_follow_normal_actions_and_expand_direct_submenu"
+  ],
+  "original-button-names": [
+    "ui::components::action::name_tests::accessible_name_icon_is_on_button_not_outer_tooltip",
+    "ui::components::action::name_tests::accessible_name_primary_custom_content_states_keep_original_dispatch_and_bounds",
+    "ui::components::path_list::queue01_tests::accessible_name_excluded_path_delete_buttons_identify_each_object",
+    "downloads::polish_tests::accessible_name_download_settings_apply_and_default_directory",
+    "downloads::polish_tests::accessible_name_download_settings_ffmpeg_and_diagnostic_objects",
+    "downloads::polish_tests::accessible_name_new_download_probe_and_refresh_are_actual_buttons",
+    "network_settings::kit_migration_tests::accessible_name_global_apply_is_actual_button_and_stable_while_saving"
+  ]
+}

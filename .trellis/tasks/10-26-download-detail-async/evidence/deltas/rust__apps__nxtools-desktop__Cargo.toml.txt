@@ -1,0 +1,10 @@
+--- live-dirty-baseline/rust/apps/nxtools-desktop/Cargo.toml
++++ own-current/rust/apps/nxtools-desktop/Cargo.toml
+@@ -47,6 +47,7 @@
+ tempfile = "3.20.0"
+ nxtools-extensions = { path = "../../crates/nxtools-extensions", features = ["test-support"] }
+ zip.workspace = true
++nxtools-download = { path = "../../crates/nxtools-download", features = ["test-support"] }
+ 
+ [build-dependencies]
+ embed-resource = "3.0.11"

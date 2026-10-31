@@ -31,6 +31,7 @@ internal sealed class ArchiveSourceLease : IDisposable
         return zoneIdentifier is null ? (ReadOnlyMemory<byte>?)null : new ReadOnlyMemory<byte>(zoneIdentifier);
     }
     private readonly List<SafeFileHandle> handles = [];
+    private IDisposable? activity;
     private object? recycleVersion;
     private object? editSourceVersion;
     private byte[]? editSourceHash;
@@ -54,7 +55,19 @@ internal sealed class ArchiveSourceLease : IDisposable
     private ArchiveSourceLease() { }
     internal static ArchiveSourceLease Open(string path) => OpenCore(path,false);
     internal static ArchiveSourceLease OpenForEdit(string path) => OpenCore(path,true);
-    private static ArchiveSourceLease OpenCore(string path,bool editing)
+    // Inspector-only: same held read-only namespace; ordinary Open still refuses marked files.
+    internal static ArchiveSourceLease OpenForRecoveryInspection(string path) => OpenCore(path, false, allowRecovery: true);
+    internal SafeFileHandle InspectionSource => handles[^1];
+    internal SafeFileHandle InspectionParent => handles[^2];
+    internal string InspectionSourceIdentity => ArchiveReclamationNative.Identity(handles[^1], true);
+    internal string InspectionParentIdentity => ArchiveReclamationNative.Identity(handles[^2]);
+    internal string ActivityIdentity => ArchiveReclamationNative.Identity(handles[^1]);
+    internal static ArchiveSourceActivity.Reservation ReserveActivity(string path, bool reclaim, Guid operation, bool continuing = false)
+    {
+        using var probe = OpenCore(path, false, register: false, allowRecovery: continuing);
+        return ArchiveSourceActivity.Acquire(probe.ActivityIdentity, reclaim, operation);
+    }
+    private static ArchiveSourceLease OpenCore(string path,bool editing, bool register = true, bool allowRecovery = false)
     {
         if (string.IsNullOrEmpty(path) || path.Length is < 4 or > 32767 || !char.IsAsciiLetter(path[0]) ||
             path[1] != ':' || path[2] != '\\' || path.IndexOfAny(['/', '\0']) >= 0)
@@ -69,6 +82,8 @@ internal sealed class ArchiveSourceLease : IDisposable
             lease.handles.Add(OutputNative.Open(null, "\\??\\" + char.ToUpperInvariant(path[0]) + ":\\", directory: true));
             for (var index = 0; index < parts.Length; index++)
                 lease.handles.Add(OutputNative.Open(lease.handles[^1], parts[index], directory: index != parts.Length - 1, readOnly: true));
+            if (!allowRecovery) ArchiveReclamationNative.RefuseRecoverySource(lease.handles[^1]);
+            if (register) lease.activity = ArchiveSourceActivity.Acquire(ArchiveReclamationNative.Identity(lease.handles[^1]), false);
             lease.sourceName = parts[^1];
             lease.recycleVersion = ArchiveRecycleVersion.Capture(lease.handles[^1]);
             lease.readmissionIdentity = lease.CaptureReadmissionIdentity();
@@ -154,5 +169,6 @@ internal sealed class ArchiveSourceLease : IDisposable
         pendingEditReadCompletion = Guid.Empty;
         for (var index = handles.Count - 1; index >= 0; index--) handles[index].Dispose();
         handles.Clear();
+        activity?.Dispose(); activity = null;
     }
 }

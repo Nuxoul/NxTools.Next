@@ -177,6 +177,22 @@ internal static class TrustedReleaseManifestTests
         return Task.CompletedTask;
     }
 
+    internal static Task ArchiveMembersRequiredBeforeSigning()
+    {
+        // Exercise the existing signer, not a parallel package-completeness predicate.
+        using var fixture = new ReleaseFixture(includeArchive: false);
+        foreach (var name in ArchiveMembers) {
+            Reject<InvalidDataException>(() => fixture.Sign());
+            File.WriteAllText(Path.Combine(fixture.Package, name), "synthetic " + name);
+        }
+        fixture.Sign();
+        using var verified = fixture.Verify();
+        Require(verified.Files.Count == 14, "All five archive deployment members must be authenticated.");
+        return Task.CompletedTask;
+    }
+
+    internal static readonly string[] ArchiveMembers = ["NxTools.ArchiveWorker.exe", "NxTools.ShellSelectionHelper.exe",
+        "NxTools.ShellSelectionHelper.dll", "NxTools.ShellSelectionHelper.deps.json", "NxTools.ShellSelectionHelper.runtimeconfig.json"];
     private static void Require(bool condition, string message)
     { if (!condition) throw new InvalidOperationException(message); }
     private static void Reject<T>(Action action) where T : Exception
@@ -196,12 +212,14 @@ internal static class TrustedReleaseManifestTests
         internal Guid Id { get; } = Guid.NewGuid();
         private readonly RSA rsa = RSA.Create(2048);
         internal byte[] Spki => rsa.ExportSubjectPublicKeyInfo();
-        internal ReleaseFixture()
+        internal ReleaseFixture(bool includeArchive = true)
         {
             Directory.CreateDirectory(Path.Combine(Package, "browser_extension", "nxtools-interceptor"));
             File.WriteAllText(Key, rsa.ExportPkcs8PrivateKeyPem());
             foreach (var name in new[] { "NxTools.exe", "NxTools.PlatformHost.exe", "NxTools.Indexer.exe", "NxTools.BrowserHost.exe", "NxTools.Cli.exe", "LICENSE-MIT", "LICENSE-APACHE", "THIRD_PARTY_NOTICES.md", "browser_extension/nxtools-interceptor/manifest.json" })
                 File.WriteAllBytes(Path.Combine(Package, name), Encoding.UTF8.GetBytes("synthetic release artifact: " + name));
+            if (includeArchive) foreach (var name in ArchiveMembers)
+                File.WriteAllText(Path.Combine(Package, name), "synthetic " + name);
         }
         internal void Sign() => TrustedReleaseManifest.SignPackage(Package, Key, 10, Id);
         internal VerifiedRelease Verify(long minimum = 9) => TrustedReleaseManifest.VerifyPackage(Package, Spki, minimum);

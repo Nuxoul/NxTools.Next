@@ -1,0 +1,13 @@
+{
+  "command": "python <session-scratch>/rem-quick-clipboard/publish.py",
+  "exit": 1,
+  "stage": "task whitespace result interpretation",
+  "error": "AssertionError: expected every git diff --no-index --check NUL <new-file> exit to be zero",
+  "observed": [
+    {"file": "prd.md", "raw_exit": 1, "stdout": "", "stderr": ""},
+    {"file": "inventory.md", "raw_exit": 1, "stdout": "", "stderr": ""},
+    {"file": "outcomes.md", "raw_exit": 1, "stdout": "", "stderr": ""},
+    {"file": "evidence/verify.py", "raw_exit": 1, "stdout": "", "stderr": ""}
+  ],
+  "classification": "Publication tooling error: no-index reports file differences, not an effective layout red or product failure. No whitespace diagnostics were emitted. Existing copied evidence retained unchanged; finalization appends a separate explicit whitespace scan and manifest."
+}

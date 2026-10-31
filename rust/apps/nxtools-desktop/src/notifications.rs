@@ -2,6 +2,7 @@
 use gpui_kit::{AnyWindowHandle, App, Context, Entity, Global, SharedString, WeakEntity, Window};
 pub(crate) use nxtools_core::NotificationPosition;
 use std::{rc::Rc, time::Duration};
+pub(crate) mod copy;
 pub(crate) mod presentation;
 pub(crate) mod screen;
 
@@ -129,6 +130,7 @@ pub(crate) struct NotificationCenter {
     next_generation: u64,
     position: NotificationPosition,
     duration_seconds: u32,
+    copy: copy::CopyRuntime,
 }
 impl Default for NotificationCenter {
     fn default() -> Self {
@@ -137,6 +139,7 @@ impl Default for NotificationCenter {
             next_generation: 0,
             position: NotificationPosition::default(),
             duration_seconds: nxtools_core::default_notification_duration(),
+            copy: copy::CopyRuntime::default(),
         }
     }
 }
@@ -204,6 +207,7 @@ impl NotificationCenter {
     pub(crate) fn dismiss_window(&mut self, window: AnyWindowHandle, cx: &mut Context<Self>) {
         let before = self.items.len();
         self.items.retain(|item| item.target != Some(window));
+        self.copy.retain(&self.items);
         if before != self.items.len() {
             cx.notify();
         }
@@ -291,12 +295,14 @@ impl NotificationCenter {
         self.items.retain(|item| item.id != notification.id);
         self.items.insert(0, notification);
         self.items.truncate(MAX_VISIBLE_NOTIFICATIONS);
+        self.copy.retain(&self.items);
         self.next_generation
     }
     fn remove_generation(&mut self, id: &str, generation: u64) -> bool {
         let before = self.items.len();
         self.items
             .retain(|item| item.id.as_ref() != id || item.generation != generation);
+        self.copy.retain(&self.items);
         before != self.items.len()
     }
     fn begin_dismiss_generation(&mut self, id: &str, generation: u64) -> bool {
@@ -391,6 +397,8 @@ mod tests {
         });
     }
 }
+#[cfg(test)]
+mod copy_tests;
 #[cfg(test)]
 mod expiry_tests;
 #[cfg(test)]

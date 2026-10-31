@@ -290,11 +290,9 @@ mod tests {
             }],
         };
         assert!(trigger(&package, &handler).contains("命令与工具 → 选择命名动作：查看说明"));
-        package.manifest.runtime = Some(nxtools_extensions::ScriptRuntime {
-            program: nxtools_extensions::ScriptProgram::Python,
-            arguments: vec![],
-            timeout_ms: None,
-        });
+        package.manifest.runtime = Some(nxtools_extensions::ScriptRuntime::once(
+            nxtools_extensions::ScriptProgram::Python,
+        ));
         assert!(readiness(&package).contains("需确认信任"));
         assert!(!readiness(&package).contains("已验证"));
     }

@@ -43,6 +43,7 @@ impl Render for HistoryMenuFixture {
                 list_image: None,
                 source_icon_color: None,
                 text_character_count: None,
+                text_card_max_height: nxtools_core::default_clipboard_text_card_max_height(),
                 open_targets: None,
                 extension_feedback: None,
                 extension_actions: vec![crate::extensions::manual_actions::ManualAction {
@@ -51,7 +52,6 @@ impl Render for HistoryMenuFixture {
                     title: "按行去重".into(),
                 }],
             },
-            true,
         )
     }
 }

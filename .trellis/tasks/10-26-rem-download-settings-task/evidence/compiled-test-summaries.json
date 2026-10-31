@@ -1,0 +1,178 @@
+[
+  {
+    "log": "audit05-settled.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 15,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "audit06-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 22,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "audit06_aux_-second.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "aux-final-resume.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "aux-lint-clean-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "display-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "download-page-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 18,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "downloads-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 207,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "downloads__-second.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 203,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "identity-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "initial-red.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 0,
+        "failed": 2,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "names-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 7,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "six-fourth.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 6,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "six-second.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 3,
+        "failed": 3,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "six-third.log",
+    "summaries": [
+      {
+        "status": "FAILED",
+        "passed": 4,
+        "failed": 2,
+        "ignored": 0
+      }
+    ]
+  },
+  {
+    "log": "sort-final.log",
+    "summaries": [
+      {
+        "status": "ok",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0
+      }
+    ]
+  }
+]

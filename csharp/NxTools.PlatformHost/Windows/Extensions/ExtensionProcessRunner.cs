@@ -16,6 +16,7 @@ internal sealed class ExtensionProcessRunner : IDisposable
     private readonly Action<ExtensionKernelHandle>? admissionProbe;
     private readonly int outputLimit;
     private readonly bool closeInitialInput;
+    private readonly Func<ExtensionProcessEvent, Task>? publishData;
     private bool stopped;
     private readonly HashSet<Guid> retired = [];
     private readonly Queue<Guid> retiredOrder = new(); // Prevent bounded recent run-ID ABA reuse.
@@ -23,11 +24,12 @@ internal sealed class ExtensionProcessRunner : IDisposable
 
     internal ExtensionProcessRunner(Action<ExtensionProcessEvent> publish, IPlatformLog? log = null,
         Action<ExtensionKernelHandle>? admissionProbe = null, int outputLimit = ExtensionProcessProtocol.StdoutLimit,
-        bool closeInitialInput = false)
+        bool closeInitialInput = false, Func<ExtensionProcessEvent, Task>? publishData = null)
     {
         if (outputLimit is < 1 or > ExtensionProcessProtocol.StdoutLimit) throw new ArgumentOutOfRangeException(nameof(outputLimit));
         this.publish = publish; this.log = log; this.admissionProbe = admissionProbe;
         this.outputLimit = outputLimit; this.closeInitialInput = closeInitialInput;
+        this.publishData = publishData;
     }
 
     internal bool Start(ExtensionStartRequest request)
@@ -65,7 +67,7 @@ internal sealed class ExtensionProcessRunner : IDisposable
         {
             if (!active.TryGetValue(id, out var run)) reason = "unknown_run";
             else if (run.Failure is not null) reason = "run_stopping";
-            else if (run.InputBytes + bytes.Length > ExtensionProcessProtocol.InputLimit)
+            else if (run.InputBytes + bytes.Length > ExtensionProcessProtocol.InputBudget(run.Request))
             { reason = "input_total_limit"; run.Fail(reason); }
             else if (!run.Input.Writer.TryWrite(bytes)) { reason = "input_queue_limit"; run.Fail(reason); }
             else run.InputBytes += bytes.Length;
@@ -162,7 +164,9 @@ internal sealed class ExtensionProcessRunner : IDisposable
             childInput.Dispose(); childOutput.Dispose(); childError.Dispose();
             Emit(new("started", run.Request.RunId, ProcessId: child.Pid, ElapsedMs: run.Clock.ElapsedMilliseconds));
             Diagnostic("started", run);
-            outPump = Task.Run(() => ReadAsync(run, output, "stdout", outputLimit));
+            outPump = Task.Run(() => ReadAsync(run, output, "stdout",
+                outputLimit == ExtensionProcessProtocol.StdoutLimit && !closeInitialInput
+                    ? ExtensionProcessProtocol.StdoutBudget(run.Request) : outputLimit));
             errPump = Task.Run(() => ReadAsync(run, error, "stderr", Math.Min(outputLimit, ExtensionProcessProtocol.StderrLimit)));
             inPump = Task.Run(() => WriteAsync(run, input));
             if (closeInitialInput) run.Input.Writer.TryComplete();
@@ -242,7 +246,9 @@ internal sealed class ExtensionProcessRunner : IDisposable
             while (await reader.ReadAsync() is { } line)
             {
                 if (Volatile.Read(ref run.Terminal) != 0) break;
-                Emit(new(op, run.Request.RunId, Data: line));
+                var value = new ExtensionProcessEvent(op, run.Request.RunId, Data: line);
+                if (op == "stdout" && run.Request.DataPlane == 2 && publishData is not null) await publishData(value);
+                else Emit(value);
             }
         }
         catch (ExtensionFailure e) { run.Fail(e.Reason, e.NativeCode); }

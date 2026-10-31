@@ -1,0 +1,5 @@
+{
+  "initial_generation": "Stopped after copying raw logs: UTF-16 PowerShell output was incorrectly decoded as UTF-8. Empty summary retained as compiled-test-summaries.failed-utf16-generation.json. No product source or prior evidence overwritten.",
+  "second_generation": "BOM-aware summary generated, then exact keyboard/picker parser stopped on CRLF end anchors. Final parser normalizes CRLF in memory only.",
+  "corrected": "BOM-aware decoding and in-memory newline normalization for summaries only; original log bytes unchanged."
+}

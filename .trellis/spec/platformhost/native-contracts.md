@@ -86,7 +86,7 @@ EnsureIndexerService sees a healthy newer package tuple; installer finalization 
 ### 2. Signatures
 `repo:csharp/NxTools.PlatformHost/Windows/TrustedReleaseManifest.cs#VerifyPackage` takes root, pinned SPKI and minimum sequence, returns disposable VerifiedRelease with locked source handles and CopyTo(empty protected staging). `repo:csharp/NxTools.PlatformHost/Windows/TrustedUpdateTransaction.cs#ApplyVerifiedAsync` owns prepared/deploy/commit/recovery. `repo:csharp/NxTools.PlatformHost/Windows/TrustedUpdateBroker.cs#RequestAsync` carries local package root and Guid correlation to the fixed NxToolsUpdateV1 bootstrap; existing EnsureIndexerService wire remains unchanged.
 ### 3. Contracts
-RSA-PSS/SHA256 authenticates raw bounded NxTools.release.json before JSON parsing; detached NxTools.release.sig. Schema1/product/nontemporary Guid/positive Int64 sequence/pinned-key hash, exact complete5executable+licenses+extension paths, max1MiB manifest/4096files/2GiB artifacts; stable-handle reparse/path traversal rejection. Publisher PEM is explicit/off-client; generated UpdateTrust contains public SPKI only. Release package requires signing key+sequence before Cargo, legacy unsigned is an explicit non-trusted exception. Resident bootstrap is separate from replaceable tuple; trust rotation/bootstrap repair is not a silent update. Caller-identity source opens, fixed protected staging/deployment, serial bounded requests, correlation and low-noise terminal diagnostics. Once prepared, finish/rollback independent of client loss. Sequence commits after actual tuple/all-file validation; signed last-good recovery and cross-process deployment gate precede retry.
+RSA-PSS/SHA256 authenticates raw bounded NxTools.release.json before JSON parsing; detached NxTools.release.sig. Schema1/product/nontemporary Guid/positive Int64 sequence/pinned-key hash; complete seven executables plus helper DLL/deps/runtimeconfig, licenses and extension paths; max1MiB manifest/4096files/2GiB artifacts; stable-handle reparse/path traversal rejection. Publisher PEM is explicit/off-client; generated UpdateTrust contains public SPKI only. Release package requires signing key+sequence before Cargo, legacy unsigned is an explicit non-trusted exception. Resident bootstrap is separate from replaceable tuple; old-bootstrap allowlist migration, trust rotation/bootstrap repair remain explicit maintenance, not proven by staging. Caller-identity source opens, fixed protected staging/deployment, serial bounded requests, correlation and low-noise terminal diagnostics. Once prepared, finish/rollback independent of client loss. Sequence commits after actual tuple/all-file validation; signed last-good recovery and cross-process deployment gate precede retry.
 ### 4. Validation & Error Matrix
 No broker + configured trust -> one enrollment authorization, even same release. Enrolled newer valid release -> broker, no runas. Same signed identity -> idempotent. Invalid/missing signature, wrong key, partial package, reparse, duplicate, replay/downgrade -> reject without UAC fallback. Deployment failure -> signed prior release recovery; failed recovery retains journal and reports failure, never claims successful rollback. Missing publisher key -> package preflight error, no unsigned automatic fallback.
 ### 5. Good/Base/Bad Cases
@@ -106,6 +106,53 @@ Cargo; repeated/lower values fail against ledger and previous output. Installer 
 BrowserHost backup until trusted preparation succeeds; `repo:tests/architecture/installer-exact-file-rollback.ps1`
 proves wrong hash retains file, correct hash deletion uses the same inspected handle.
 The trusted-failure replacement fixture proves exact old-host restoration before exit9.
+
+Phase F release-chain source amendment (2026-10-23): actual Rust Desktop output -> generated helper
+DesktopSHA -> framework-dependent helper publish -> generated five-member archive approval ->
+PlatformHost publish -> original signed full manifest. No reverse embedded hash edge. Original
+ArchiveReadHelper fixed sibling/retained source lease verifies the approved worker before suspended
+Job admission. Protected deploy validates all five archive members before service mutation and after
+copy; health/approval and Desktop redirect reject partial/mixed current releases. Installer original
+suspend/finalize owns twelve root binaries/runtime/sidecar files, predeclares new hashes from extracted
+sidecars, records attempted before mutation, compensates every attempted member in reverse and only
+deletes exact hash-verified files. Foreign/mismatched files and incomplete recovery retain the journal.
+After durable `committing`, the complete verified new set is retained: cleanup errors never run Undo;
+explicit commit retry validates new bytes and durable per-backup cleanup evidence before continuing.
+GUID library-only regression is not actual installer/crash acceptance. In that historical amendment
+`ProductApplyAuthorized=false` and production P208 rows stayed unchanged; file deployment never
+applies Shell registration. Explicit product enablement below supersedes only the permanent source gate.
+
+## Scenario: Staging-key cleanup and installer preparation reentry (F-RC01/F-RC02)
+### 1. Scope / Trigger
+Failure after isolated TEST-key creation, or a new installer preparation finding an old journal.
+### 2. Signatures
+`scripts/package.ps1 -IsolatedStaging` owns `$ownedTestKeyPath` inside its main try/finally.
+`Prepare-UpgradeBrowserHost(InstallRoot, StateFile, OperationId, NewManifestPath, NewSignaturePath)`
+is the default helper call reached from Inno PrepareToInstall; original Suspend/Undo/Complete remain owners.
+### 3. Contracts
+Claim the exact fresh test-key path before creation; create/trust/label/preflight failures all unwind
+through its finally. Never infer cleanup from a directory scan or production SigningKeyPath.
+Preparation validates fixed sibling journal path, root/schema2/operation/phase/entries and plain paths.
+Old journal + actual file facts alone authorize recovery; new manifest is used only after recovery.
+committing/committed -> original Complete with committed=true (validate new set, cleanup only).
+Precommit -> original reverse Undo, then verify complete old set/no backups before journal retirement.
+Inno marks UpgradePreparationReady only on helper success; failed preparation cannot Finalize an old journal.
+### 4. Validation & Error Matrix
+Unknown/malformed/mismatched/oversized journal or unproved .pending -> refuse, retain, no new transaction.
+One precommit restore fails -> attempt all other reverse restores, retain journal and refuse fresh Suspend.
+Successful old recovery -> remove only original journal, then original fresh Suspend creates next transaction.
+### 5. Good/Base/Bad Cases
+Good: second preparation resumes failed committed cleanup before new backup. Base: no journal -> Suspend.
+Bad: fresh Suspend forever rejects retry, cleanup before try leaks key, or new hashes authorize old deletion.
+### 6. Tests Required
+`tests/architecture/staging-key-cleanup.ps1`: unchanged wrapper copy + external tool stubs, key/trust/label/
+preflight failures, exact key absent, foreign file intact, no Cargo. `installer-preparation-recovery.ps1`:
+two actual preparation calls for committed/committing, precommit aggregate recovery, foreign/malformed reject.
+Original owned-set632 assertions and installer-update-lifecycle source wiring remain relevant, not live acceptance.
+### 7. Wrong vs Correct
+Wrong: CreateTestKey; WriteTrust; try Build finally DeleteKey. Correct: try CreateTestKey; WriteTrust; Build finally DeleteExactOwnedKey.
+Wrong: new Prepare -> fresh Suspend(old journal) -> reject. Correct: Prepare -> validate/recover OLD facts -> verify -> fresh Suspend.
+
 
 Explorer observation topology refinement (2026-10-14): IWebBrowser2.HWND may be a tab
 child, so resolve native GetAncestor(GA_ROOT) before CabinetWClass/ExploreWClass
@@ -189,3 +236,116 @@ Good: bounded accepted -> owner gate -> correlated applied ACK; paused content n
 Six exact ClipboardPauseTests fixtures use production WndProc/read/retry/application with injected OS operations: no real clipboard/HWND/hooks. Assert gate-before-ACK/no sequence read while paused, retry cleanup/no-backfill/idempotent resume, bounds/post cleanup, cancellation/disposal, native failure/privacy/throwing log and application-cancel race. Desktop capture_pause regressions assert pending/applied/failure/reconnect/deadline/generation/staging plus actual official controls. Live Windows listener/physical gesture/DPI/user acceptance stays separate.
 ### 7. Wrong vs Correct
 Wrong: ConfigureClipboard success -> claim privacy pause; resume -> capture existing content. Correct: independent correlated owner command -> gate ACK -> value snapshot; resume records sequence and waits for a fresh change.
+
+## Directory Reveal semantic correction (2026-10-22)
+Approved follow-up corrects the preceding file-only selection wording: `ExplorerNativeFolder.Open` PIDL-selects ordinary directories as well as files; `ExplorerShellActivation.ObserveTarget` requires the parent activeview AND exact selected targetpath for both. Entering the requested directory is ordinaryOpen, not Reveal. A parentless drive root is the explicitexception: openitself/confirmitsownactiveview; fallbackordinarydirectory uses `/select,"<exacttarget>"`. Existing8attempts/75ms/onefallback, activeview COM/Folder2 ABI, borrowedrelativePIDL lifetime, nativeHRESULT and foreground-independent success remain. Actualentry syntheticred accepted directoryitself;9exactreviewedfixtures nowpass/skip0. No liveExplorer operation or proof that this completely explains the user's installedtimeout. Rustsuccess-onlyclose/stale/disconnect owners unchanged. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/ExplorerNativeFolder.cs`, `repo:csharp/NxTools.PlatformHost/Windows/ExplorerShellActivation.cs`, `repo:csharp/NxTools.PlatformHost.Tests/ExplorerRevealFeedbackTests.cs`.
+
+## Scenario: Successful Explorer readback and filesystem path aliases
+### 1. Scope / Trigger
+Both completed-download Reveal and main-list Reveal reported failure after Explorer opened. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/ExplorerShellActivation.cs`, `repo:csharp/NxTools.PlatformHost.Tests/ExplorerObservationTests.cs`, `repo:csharp/NxTools.PlatformHost.Tests/ExplorerRevealFeedbackTests.cs`.
+### 2. Signatures
+`NativeTargetObservationPlatform(Action<int> nativeFailure, Func<object>? createWindows, Action<string>? observationStage)` always reads selected paths. `NormalizeDirectory(string)` is shared by requested target, observed folder and selected paths. Wire/result schema unchanged.
+### 3. Contracts
+Ordinary directory Reveal requires parent plus exact selected directory, so native reader must not return an empty selection merely because target is a directory. Files and directories share the successful active-view/Folder2/SelectedItems chain. Comparison maps only explicit extended DOS drive and extended UNC prefixes to their ordinary filesystem aliases, on both sides; preserve other device/volume namespaces and exact case-insensitive full identity. No basename/LocationURL-only success. Keep8attempts/75ms/onefallback, detachedSTA, balanced COM, hidden/wrongroot/wrongtab/missing/selection guards and best-effort foreground. Original Rust correlated currentHWND+generation success-only close remains; list actions carry no window identity. Existing diagnostics remain fixed/correlated, no payload/new polling.
+### 4. Validation & Error Matrix
+Selected directory in parent -> reader retains selection and matcher succeeds. Directory entered itself/wrong selection/hidden or wrong-root view -> reject. ExtendedDOS/UNC versus ordinary samepath -> equal; wrongfilename/server/share -> reject. Native/API acceptance alone -> insufficient. Confirmed result -> close only originating current completed window; failure/timeout/cancel/stale -> retain/discard under original owner.
+### 5. Good/Base/Bad Cases
+Good: `\\?\C:\Downloads\file.bin` and Shell `C:\Downloads\file.bin` with exact selection confirm. Base: ordinary file paths unchanged. Bad: matcher requires directory selection but reader skips it; failure-only COM fixture falsely treated as successful observation coverage.
+### 6. Tests Required
+Owned native reader-success through actual HWND/QueryService/QueryActiveShellView/GetItemObject/Folder2 and synthetic selected path for both target kinds; preserve refcounts/HRESULT/hidden/wrongroot. Exact matcher DOS/UNC aliases and wrongname/server negative cases. Existing10reviewedfixture subset includes chooser cancel/nativePIDL/fallback/readback; actualGPUI buttonclick/result/currentwindow close and main-list isolation. These synthetic tests do not establish installed Explorer or networkshare acceptance.
+### 7. Wrong vs Correct
+Wrong: `if (isDirectory) return viewWithEmptySelection;`. Correct: always read actual selected items, then let the original exact-target matcher decide. Wrong: compare raw extended/ordinary path strings. Correct: explicit filesystem-alias normalization, never strip arbitrary namespace prefixes.
+
+## Reveal through the observed replacement host (2026-10-24)
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/DirectoryOpusTargetObservation.cs`, `repo:csharp/NxTools.PlatformHost.Tests/DirectoryOpusTargetObservationTests.cs`; [reference](../../../docs/reference-code/quick-launch-research.md). Windows Shell acceptance may open Directory Opus instead of Explorer. Shared NativeExplorerShellPlatform preserves Explorer-first observation, then an on-demand bounded DOpus observer; Rust Quick Launch/Downloads retain their original pending/result owners and no protocol changes. Exact parent plus selected target is mandatory for files and nonroot directories; drive roots confirm their own view.
+Official DOpusRT `/info` `paths` and `listsel,<exacttab>` are read-only evidence, never `open/select/Go`. Resolve only dopusrt.exe sibling of the observed running same-session dopus.exe, not PATH. Require visible dopus.lister and visible same-PID child dopus.filedisplaycontainer, retained process starttime, XML active_tab=1/tab_state=1, exact filesystem path (not localized display_path), matching exported lister/tab and exact selected item. Re-export paths and native identity before accepting; inactive same-root/same-directory tabs cannot succeed. One command-local platform budget1500ms, each helper/output250ms; no new retry worker or change to existing8attempts/75ms/onefallback. Bound XML2MiB,256tabs/4096selected and4matching candidates; prohibit DTD/external resolver. Unique fresh temporary result and cleanup, fixed diagnostic stage/nativecode only. Missing helper/bad XML/wrong selection/stale/hidden/foreign/budget failure stays unconfirmed; helper exit or lister appearance alone never authorizes success.
+Three synthetic fixtures cover production shared Reveal red→green, wrong/inactive/stale/identity/path/selection and XML/selection budgets/diagnostic sink behavior. Separately authorized owned target passed actual product native entry and exact-selection positive/unselected-file negative on DOpus13.22. That is not broad third-party/mixed-DPI/release acceptance. Service-only Explorer COM candidates are independently guarded by actual IShellBrowser.GetWindow/root/view proof; initial QI probe alone did not establish the installed cause.
+
+Chrome store addition uses original exporter/registrar owners: additiveformat chrome_store producesZIPmanifestcopywithoutkey, noPEMaccess,localCRX/XPIunchanged. Existing EnsureBrowserNativeMessaging command carries an optional configuredstoreID ascommandidentity; command/pinnedsource/existingexportedexactoriginunion preserveslocalcompatibility; no wildcard/newprotocol. Registrar remainsread-onlyforPEM; actualregistrytransactionunchanged. Existing7signingfixturecallgraphsre-reviewedwithstore ZIP tempfiles/lockedtempPEM only; no newTestEffects symbols/nativeeffects. Contract: [key-free upload and optional identity](../browser-extension/contracts.md#scenario-key-free-chrome-store-upload-and-optional-exact-identity).
+
+## Hidden main-window startup preparation (2026-10-24)
+`MainWindowPreparation` / `WindowsPlatformAdapter.MainWindow.cs` owns authenticated `prepare_main_window`: DIPwidth920..4096/height480..4096, hiddenpeerroot/samesession, detachedfixedboundedSTA5s. Primaryworkarea stagewithNOZORDER|NOACTIVATE, targetGetDpiForWindow48..960, scaleonce/roundAwayFromZero, liveouter/clientinsetcompensation, exactscreenclient/hidden/DPIreadback beforeData success. NoSHOW/activation/topmost/framepolicychange, noframeworkpatch. Pipepeer validatesPID independently ofDTO. Cancellationrechecks beforefinalapply/readback; nativeerrorcode retained; accepted/start/terminal fixedmetadata and onecorrelation, neverpayload. OriginalRustdispatcher deferspublication ofHWND/entrypoints untilACK; prepare isstartup-only, laterrestoremustnotresetusergeometry. TestEffects MainWindowStartupTests usesonlyownedSTATICHWND/fakenative/pureDTO/detachedsignals, no registry/tray/input/userwindow. Source/debugnativefixture acceptance isnotinstalledrebootacceptance.
+
+## Extension settings path picker (2026-10-24)
+`repo:csharp/NxTools.PlatformHost/Windows/ExtensionSettingPathPicker.cs` uses additive strict sourceHWND/sourcePID/kind/currentPath DTO. Original authenticated pipe peer must match sourcePID; native owner checks HWND/process before presentation and before accepting selection. Detached reader path, one bounded STA reservation retained until real modal exit, no human-wait deadline or replacement workers. Existing-file/folder only, successful empty dismissal, logical session cancellation drops late selection; no config/trust/write/execution in picker. Rust applies only matching current draft/request/package/input revision and final text, never saves automatically. Revision counts each official InputEvent::Change rather than coalesced observed values, so same-turn A-B-A user edits retire an older reply; silent set_value hydration emits no Change. Actual fakeIPC/GPUI regression and source acceptance limits are in the owning task. Diagnostics accepted/start/terminal fixedreason/elapsed/nativecode only, never paths/exception output. `repo:csharp/NxTools.PlatformHost.Tests/ExtensionSettingPathTests.cs` is an exact TestEffects fixture with injected owner/existence/presentation, not a real dialog or user-state acceptance.
+
+## Scenario: Archive association and classic-menu settings (2026-10-25)
+
+### 1. Scope / Trigger
+Rust owns persisted desired state/UI, C# owns fixed Windows Settings launch and the original native
+integration planning/transaction. The 2026-10-26 explicit product enablement supersedes the historical
+`ProductApplyAuthorized=false` constraint for source (`true` now); it grants no workstation execution.
+Source and injected fixtures are not live Explorer/Registry/visual acceptance.
+
+### 2. Signatures
+`PlatformCommand::OpenDefaultAppsSettings(OpenDefaultAppsSettingsCommand {})` serializes exactly
+`{"command":"open_default_apps_settings","data":{}}`. C#
+`PlatformCommandParser.ParseOpenDefaultAppsSettings` -> detached sequence dispatcher/pipe ->
+`WindowsPlatformAdapter.OpenDefaultAppsSettings` ->
+`DefaultAppsSettingsOpener.Open(command, correlationId, cancellation)` uses an injected no-argument
+`Action` or the fixed `ms-settings:defaultapps` Shell target; never a caller-supplied URI/path.
+`ArchiveShellIntegrationCommand` adds `double_click_action`, `menu_layout`, `menu_commands` to
+the existing version1/revision/action/extension contract; original Apply/Revert owns mutation.
+
+### 3. Contracts
+Double-click values: `open|smart|name`; layouts: `cascade|flat`; commands: `open`,
+`extract_smart`, `extract_here`, `extract_name`, `extract_dialog`, `test`, `create` (unique, max7).
+Missing fields retain legacy open/cascade/five commands; explicit empty commands remain empty.
+`classic_cascade` retains its legacy menu-enabled meaning; layout is a separate field.
+Smart/name ProgID commands use `--archive-extract smart-dialog|name-dialog "%1"`; the original
+Desktop intent/form preselects a strategy but does not submit a job or approve risk/output budget.
+Flat means separately owned classic HKCU verbs, not Windows11 top-level `IExplorerCommand` support.
+Create uses the existing Compress helper identity and whole selection; ExtractDialog has one stable
+new identity. Other CLSIDs and `IObjectWithSelection`/`IExecuteCommand` grouping remain unchanged.
+Default-app result success requires `success=true,data="opened"` (Shell accepted only). Rust keeps
+original pending/correlation/timeout/disconnect and deferred publication; native diagnostics record
+accepted/start/terminal, elapsed/native code, never request payloads. Saving/revision/request
+acceptance is not applied state; only validated native facts may report applied, with revision.
+Only explicit Apply/Revert mutates HKCU Software\Classes. Product composition always retains the
+original approved Desktop resolver and `OpenArchiveRelease` helper lease; missing/null/unapproved
+helper refuses without capture/write or grouped-to-per-file fallback. Original transaction owns all
+pre-capture/attempt-before-write/reverse compensation/exact compare-before-restore. Detached reader
+dispatch calls the original bounded STA runner (one active operation, 15s reply bound; actual cleanup
+retains its slot after timeout). Pipe cancellation propagates before admission and mutation; Apply
+observes cancellation between captures/writes and compensates attempted writes. Revert, once admitted,
+finishes exact owned cleanup and durable ledger retirement. Save/status/UI close is not Apply.
+
+### 4. Validation & Error Matrix
+Fixed-command null/array/extra field/URI/path -> strict parse failure, no native operation.
+Unknown/null/duplicate/over-limit menu settings -> reject, never broaden/default silently.
+OpenWith or selected archive verbs without extensions -> invalid intent; create-only menus need no
+archive extension. Native cancellation/failure/invalid response/timeout/disconnect is not success.
+Explicitly disabled injected policy -> `disabled/apply_not_authorized` before capture/write/helper lease.
+Product's authorized policy -> identity verification then original transaction. Unknown identity ->
+typed failure, zero Registry capture/write; bounded cancellation/timeout/occupied slot -> failed reply
+(`cancelled` or `native_operation_unconfirmed`), never applied or an assertion that Windows is unchanged.
+Existing transaction pre-capture, reverse compensation and compare-before-restore remain required;
+no UserChoice writes, shared-tree deletion or grouped-selection fallback to per-file `%1`.
+
+### 5. Good / Base / Bad Cases
+Good: smart+flat+[test,create] reaches the native plan; double-click smart opens the original
+confirmation form with no started jobs. Base: legacy config yields open/cascade/old five commands.
+Bad: a default-app URI parameter, repeated command or forged applied result without revision.
+
+### 6. Tests Required
+Core save/reopen/default/invalid tests; Protocol empty-object-only fixed command and menu bounds;
+IPC original router timeout; real production Settings controls/all/none/dropdown keyboard, minimum
+Light/Dark reachability, failed save/changed-field merge; original request wire assertion and pending
+terminal cleanup; original form route asserts strategy and zero jobs. Native exact fixture
+`ArchiveAssociationSettingsTests` plus original Phase F plan/service fixtures assert selected-only
+flat/cascade values, whole Create selection, strict parse, compensation and zero disabled-policy effects.
+`ArchiveIntegrationServiceTests` additionally exercises real product composition with injected effects:
+explicit Apply/Revert, desired/observed revisions, current/wrong/empty Desktop identities and retained
+helper approval, responsive original dispatcher, STA admission, cancellation/timeout/actual cleanup,
+one-slot retention and payload-free correlated logs. No native store/default ledger is used in fixtures.
+Evidence/outcomes: `repo:.trellis/tasks/10-16-archive-manager/shell-settings-outcomes.md` (historical),
+`repo:.trellis/tasks/10-16-archive-manager/integration-enable-outcomes.md` (current source enablement).
+
+### 7. Wrong vs Correct
+Wrong: relax OpenShellTarget to arbitrary URI, mark saved settings applied, or auto-submit extraction.
+Correct: fixed empty-data command, original desired/observed owner, and confirming launch modes.
+Wrong: classic layout change bypasses grouped helper or deletes shared registry roots.
+Correct: public menu layout only changes owned plan values; identity lease and transaction stay owners.
+
+## Extension v2 data outer budgets and backpressure (2026-10-26)
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionProcessProtocol.cs`, `repo:csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionProcessRunner.cs`, `repo:csharp/NxTools.PlatformHost/ExtensionHost/ExtensionHostBroker.cs`. Original authenticated demandStart optional data_plane=2 opts into finite combined25MiBstdin/28MiBstdout; omittedlegacy1MiB/4MiB,256KiBframe/stderr64KiB/token/Job-before-resume/global4+perpackage1/actualcleanup unchanged. Rust alone classifies exactcontrol/data/session semantics. Native v2stdout awaits originalbounded32slot outgoingchannel with2seconddeadline; controls and nativecleanup remain independent, no second receiver/unboundedbuffer. Rust reader has finite250msbackpressure, cancels only exactslowrun and retainscleanupslots. Real256progressburst reproduced NativeUnavailable beforeboundedpumpfix; lateractualscriptregression passes. Native fixture10group covers explicitv2input and28MiBoutputceiling pluslegacy/UTF8/Job/cancel/parentdeath. DrainAsync proves physicalslotdrain,not diagnosticcallbackcompletion: tests must await actualexited/terminaldiagnostic counts beforeprivacyassertions. Fixtures own currenttestapphost/temporaryfiles only,not ordinaryproduct/nativeUI/installedacceptance.

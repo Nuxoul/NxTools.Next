@@ -177,7 +177,7 @@ impl QuickLaunchApplication {
         for owner in owners.iter().chain(std::iter::once(&identity)) {
             merge.register(owner.clone());
         }
-        if !self.extension_providers.keyword {
+        if !self.extension_providers.keyword && !pending {
             merge.set_normal(
                 existing
                     .iter()
@@ -255,10 +255,13 @@ impl QuickLaunchApplication {
                 id.replace("extension:", "extension-script:")
             }
         });
+        if pending && results.is_empty() {
+            return;
+        }
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
         let _ = popup.panel.update(cx, |panel, cx| {
             panel.replace_results(results, cx);
-            panel.search_pending = pending;
+            panel.search_pending = false;
             if let Some(id) = selected_id
                 && let Some(index) = panel.results.iter().position(|row| row.entry.id == id)
             {
@@ -419,6 +422,32 @@ mod tests {
         )
     }
     #[gpui_kit::test]
+    fn expansion_storage_metadata_projection_keeps_current_provider_generation_and_rows(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        let (_root, application, _endpoint) =
+            super::super::tests::quick_launch_application_fixture(cx);
+        let (cancel, cancellation) = tokio::sync::watch::channel(false);
+        application.update(cx, |app, cx| {
+            let manifest = br#"{"schema_version":1,"id":"fixture.metadata","name":"Metadata","version":"1","handlers":[{"id":"run","title":"Run","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://fixture.test/"}}]}"#;
+            app.config.extensions.install(nxtools_extensions::ImportPreview::from_json(manifest).expect("preview"), "owned".into(), false).expect("install");
+            app.extension_providers.generation = 31;
+            app.extension_providers.query = "unchanged".into();
+            app.extension_providers.cancels.push(cancel);
+            app.extension_providers.order.push("existing".into());
+            let mut bound = app.config.extensions.clone();
+            bound.packages[0].data_uuid = Some(uuid::Uuid::new_v4());
+            app.refresh_extension_storage_metadata(&bound, cx);
+            assert_eq!(app.config.extensions, bound);
+            assert_eq!(app.extension_providers.generation, 31);
+            assert_eq!(app.extension_providers.query, "unchanged");
+            assert_eq!(app.extension_providers.order, vec!["existing".to_owned()]);
+            assert_eq!(app.extension_providers.cancels.len(), 1);
+            assert!(!*cancellation.borrow(), "metadata must not cancel a running provider");
+        });
+    }
+    #[gpui_kit::test]
     fn real_panel_late_batches_keep_identity_and_current_input_retires_actions(
         cx: &mut TestAppContext,
     ) {
@@ -496,7 +525,7 @@ mod tests {
             })
         });
         panel.update_in(window, |panel, _, _| {
-            panel.results = vec![normal()];
+            panel.results = vec![normal()].into();
             panel.selected = 0;
             panel.search_pending = false;
         });
@@ -566,6 +595,47 @@ mod tests {
             })
         });
         panel.update_in(window, |panel, _, _| assert_eq!(panel.results.len(), 3));
+        panel.update_in(window, |panel, _, _| {
+            panel.results = vec![normal()].into();
+            panel.selected = 0;
+            panel.search_pending = true;
+        });
+        window.update(|_, cx| {
+            application.update(cx, |app, cx| {
+                app.extension_providers.rows.clear();
+                app.extension_providers.order.clear();
+                app.apply_extension_batch("query", 17, identity.clone(), false, Vec::new(), cx);
+            })
+        });
+        panel.read_with(window, |panel, _| {
+            assert!(panel.search_pending);
+            assert_eq!(panel.results.len(), 1);
+            assert_eq!(panel.results[0].entry.id, "normal");
+        });
+        window.update(|_, cx| {
+            application.update(cx, |app, cx| {
+                app.apply_extension_batch(
+                    "query",
+                    17,
+                    identity.clone(),
+                    false,
+                    vec![item.clone()],
+                    cx,
+                );
+            })
+        });
+        panel.read_with(window, |panel, _| {
+            assert!(
+                !panel.search_pending,
+                "current extension results cannot wait for the indexer terminal"
+            );
+            assert_eq!(
+                panel.results.len(),
+                1,
+                "old ordinary rows must not become actionable with fresh extension rows"
+            );
+            assert!(panel.results[0].entry.id.starts_with("extension-script:"));
+        });
         panel.update_in(window, |panel, window, cx| {
             panel
                 .search_input

@@ -36,6 +36,14 @@ executable, so icons remain available offline and do not depend on a font instal
 
 Downloads, Finder/Listary behavior and the floating assistant remain later vertical slices.
 
+## Packaging / 本机打包
+
+Start with [PACKAGING.md](PACKAGING.md): existing local PEM and sequence-ledger locations,
+toolchain requirements, reproducible commands, output/log locations and failure handling.
+For this workstation, run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.ps1 -CheckOnly`
+before packaging; omit `-CheckOnly` to package with the original verification pipeline.
+Private keys stay outside the repository; do not create a replacement key or reset the ledger.
+
 ## Quick start
 
 Requirements: Windows 10/11, Rust 1.96 and .NET SDK 8.0.421 or a compatible patch.

@@ -1,0 +1,48 @@
+# Latest Chrome store two-item checkpoint
+
+Read `chrome-store-outcomes.md` FIRST; this supersedes current-state assertions below. User authorized ONLY key-freeZIP and storeIDmatching, no otherauditfix. No ID exists before failedfirstupload: never askforit/blockexport. Completed additivechrome_store exporter/dialog/officialSettingsButton; optionalvalidated32a–p Core/SettingsIDemptydefault; originaldurableSaveCancel -> existingEnsurecommand -> unchangedC#command/pinned/exportedexactunion -> unchangedBrowserHostregistraroriginvalidation. No wildcard/newprotocol/sourcekeychange. NativependingbeforecallerIDdispatch,currentresult/15sdeadline/disconnect/failureguidance; no claim actualnativecallcancelled. Sourcefiles/baseline/scope inoutcomes. InitialredexportcreatedPEM, registrationignoredconfiguredID. FinaltargetedID4/export2/signing7/Core83/BrowserHost31pass; strictCoreDesktopClippy/workspacePASS. OnefullDesktop1106PASS/1unchangednextdaydatepickerFAIL (tests.rs1376,expected2026-10-25actual2026-10-24); no rerun/datefix, NOTGREEN. Static10/11PASS; browser-native-messaging.ps1 requiresliteral focus:launch_mode.main_window_focus() inunmodifiedmainstartupsource, failure retained/no gaterepair.
+
+Uploaddeliverable **artifacts/browser-store/NxTools-Chrome-Web-Store-0.7.0.zip**,206089bytes/64entries, SHA256 **AAC79CF98E6F30028E8CBEE882ACB2CD9365623F013676F574C7AD6FDB8D4633**. Actualproductionexporter/copystripsONLYkey; independentvalidatorprovesrootmanifestnokey/restmanifestidentical/other63filesidentical/sourcekeybyteunchanged/noPEM. ScratchrunnerWindowsBasebuildwarning only, productionC#0warnings/errors. SourceiterationDONE: no moreCargo/broadreviewunlessnewconcreteinscopedefect. CanuploadZIPNOW; afterChromecreatesID, enterit innewdesktopDownloadSettingsGeneralBrowserExtensionStoreIDandSave; emptyvalid/localcompatible. DesktopinstalledbinariesNOTupdated. No delegation/contact, commit/push/archive, desktopreleasepackage/install/service/livebrowser/registry/realclipboard/history/config. PreservecurrentArchive/floatingassistant/notification/releaseconcurrency. HistoricalnotificationCtrlCcancelbelowdoesnotoverrideotherseparatelyauthorizedsessions; don'ttouchpeers. Currenttaskscope6recordsactualfailingintegrated/staticchecks. Finalscopedfmt/whitespace/JSON/docs/ZIPchecks closework.
+
+---
+
+# Current continuation — download chooser/Reveal source repair completed
+
+## Latest checkpoint supersedes the historical stationary-preview checkpoint below
+Read `download-openwith-reveal-outcomes.md` first. Latest user requested icon-only OpenWith right of OpenFile and reports completion/list Reveal errors. task_window.rs now uses official Small24x24outlined ExpandMore icon, no visibletext, original Tooltip/accessibility/deferredchooser/currentwindowidentity retained. Shared ExplorerShellActivation.cs now alwaysreads selectedpaths for directories too and matches explicit extendedDOS/UNC aliases on both requested/observed sides; previous directoryreader returnedemptyselection while matcherrequiredexactselecteddirectory. Native reader-success and matcher tests were run red; actualUI60x24versus24x24 red precededlayoutrepair. Existing artifact_actions.rs/window_support.rs hashes unchanged; original matching-success/currentHWND+generation close is verified, not bypassed. No package/install/liveExplorer/realclipboard/delegation/commit/push/archive.
+
+Latest verification: C#build0warnings/errors; exactreviewedLIST10/RUN10/PASS10/SKIP0/FAIL0. GPUI actualiconclick/cancel/close/failure/stale/main-listisolation regression1/1; downloads153/153; main-listcontextmenu1/1; strictDesktopClippy incldeps/workspace--tests PASS. **Fresh fullDesktop1042/1042PASS,0ignored,125.69s**, separatefromhistorical1040PASS/1ArchiveFAIL below; noArchivefixbythisslice. Relevantstatic9/10PASS, existingQuickLaunchreleasegateFAIL remains. TemporarypeerIPC serde_jsoncompilefailurewasrecordedandresolvedbyconcurrentownercode, notmodifiedhere. Scope5/taskJSON/outcomes/specs updated. Two productfiles +threeexistingtestfiles only; baseline download-openwith-reveal-baseline/ retainsoriginals. Sourceiterationdone; no moreCargo/peerrepair/deploymentneededunlessnewauthorizeddefect. Installed/userphysical/visual/Exploreracceptance remainsseparate; don'tblanketclaimexactinstalledrecurrenceprovenresolved.
+
+## Historical stationary-preview checkpoint (retained evidence, not current whole-tree status)
+
+## Latest authority and scope
+User screenshot/report: Clipboard summon opens a preview without moving. Fixed the reproduced source trigger, not a delay workaround. Read clipboard-idle-preview-outcomes.md first; previous finish/input work is recorded in clipboard-finish-input-outcomes.md. Workspace D:\Code\NxTools.Next-main, branch refactor/ui-gpui-kit. No delegation/contact, package/install/service/formal product launch, real clipboard/history/config mutation, commit/push/archive. Preserve concurrent Archive/editor/browser/release changes; no resets/restores/peer fixes.
+
+## Root cause and source changes
+Executed real-panel red before production edits: empty list -> pointer parked(45,155) -> restore rows -> three paints/no new move -> original preview candidate armed. Exact pre0.3.9 on_hover is paint/hit presence, not solely mouse movement; old NxTools ClipboardHistoryListView.cs PointerMoved434–460 establishes preview identity.
+- ui/history.rs: existing styled ListItem public on_mouse_enter for actual unpressed/non-drag motion; on_hover(true) ignored, false retains leave cancellation. No layout/style changes.
+- ui/mod.rs: one retained screen-position Cell seeded on panel creation, updated by bounds observation and normal parent move; same-coordinate events rejected across redraw. Deferred callback rechecks captured session/query/current row ID and current original readiness guards.
+- clipboard.rs: same hovered item is idempotent at original PreviewSession so motion does not reset800ms. Test-only generation/item observer.
+- ui/efficiency_tests.rs:5 new real GPUI regressions. No native presentation/C#/protocol/vendor/editor/browser/Archive changes by this repair. clipboard_preview_presentation.rs SHA256 equals idle-preview baseline. One passive HWND, original800ms/full-ID hydration/scroll/generation/native ACK/draw/reveal remain.
+
+## Tests actually executed
+All Rust jobs1/incremental0/RUSTFLAGS=-C codegen-units=256; preflight busy exit75 launches nothing, no process killed/contacted. Scratch logs all prefix clipboard-idle-preview-:
+- red.log:0PASS/1FAIL before fix, stationary paint wrongly arms candidate.
+- focused.log/focused2.log:2PASS/2FAIL; active controls had unsettled initial window callbacks. probe.log confirmed actual entry/currenttrue followed by leave; draining fixture initialization resolves controls. Temporary test-only DEBUG-idle-preview stage/boolean logs removed.
+- settled.log:4/4PASS (before fifth image test).
+- idle_preview_-verified.log:5/5PASS,0ignored (text/image stationary, same-position/pressed, actual motion/leave/reentry/same generation, old query/session).
+- input_followup_-verified.log4/4; input_repair_-verified.log8/8.
+- wrong clipboard_preview_presentation_tests filter:0tests, NOT validation.
+- final-presentation.log:actual clipboard::preview_presentation14/14PASS incl800ms/cancel/native staging.
+- final-clippy.log:strict Desktop --tests -Dwarnings including dependencies PASS.
+- final-workspace.log:check --workspace --tests PASS.
+- final-desktop.log:**1040PASS/1FAIL/0ignored**,1041total,133.56s. All current Clipboard tests pass. Only failure archive::application::tests::production_row_drag_read_hydration_and_result_route_share_original_snapshot, archive/application_tests.rs689 `cross-entity result writeback is deferred`. Read-only inspected immediate notification->drag_matches assertion; concurrent Archive code/test outside task. No isolation/full rerun or unrelated repair. Integrated result stays NOT GREEN.
+- static-results.json:15/16PASS; existing quick-launch-lifecycle.ps1 broad elevated-navigation condition fails at1765. Known1762 literal expects write-release-binary-manifest.ps1 in scripts/build.ps1, now delegates publish-release-hosts.ps1. Do not claim sole clause without full enumeration; do not alter peer build/gate files. Other15gates actually ran/passed.
+- Scoped rustfmt4files/whitespace and native-presentation baseline hash PASS. Final docs/JSON/source checks recorded at closeout.
+
+## Historical work preserved
+Height120..320/default160, exactLatte/Frappe/System visual chooser, HTTP filename/async-edit ABA, parent+select directory Reveal,14DIP body feather and static shadow, primary nativeactivation and originalinputrepair remain implemented. Prior1029/1029 full suite is historical, NOT final evidence of current shared tree. Notification hovered Ctrl+C explicitly cancelled; never resume it or request framework patch. Framework stays Kit/Base/Component/Assets0.8.0/pre0.3.9 with only approved patches.
+
+## Completion and limits
+This source iteration is complete and task remains in_progress only for acceptance/integration findings. No more Cargo/full-suite green hunting is needed for this Clipboard change unless new in-scope defects are supplied. Unrelated Archive test/QuickLaunch release gate remain recorded blockers to whole-tree all-green, not permission to repair peers.
+No installed binary was replaced, no user clipboard/history was touched. Need separate authorized deployment and physical stationary summon/normal hover/native keyboard/IME/paste/mixedDPI/reader/user visual acceptance. Do not claim screenshot/current-installed symptom has already been verified fixed. Original idle-preview baseline in session scratch remains preserved.

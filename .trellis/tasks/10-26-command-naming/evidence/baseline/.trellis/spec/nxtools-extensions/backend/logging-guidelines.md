@@ -1,0 +1,7 @@
+# Extensions diagnostics
+
+Evidence: `repo:rust/apps/nxtools-desktop/src/extensions.rs`, `repo:rust/apps/nxtools-desktop/src/quick_launch.rs#execute`.
+
+Pure manifest/registry parser has no per-field logs. UI composition logs extension.management.accepted/completed/failed and extension.action.accepted/completed/failed with same command/root correlation, fixed action/reason/count/elapsed/native code. Never log package content, source path, actual URL/query/argv/Clipboard/settings/secret or raw Error/Debug. Keyword conflict can be shown intentionally in UI but not copied into logs. Preview/native picker/script lifecycle stages require own low-noise events when source added, not arbitrary DEBUG probes. Keep nonblocking bounded sink; no per-item/frame/byte/pointer/event polling.
+
+W7–W9 source uses extension.run.queued/terminal, extension.native.transition, extension.host_call.accepted/terminal and metadata-only credential/resolve-stage/event-terminal events. Carry root/run IDs across Rust/private IPC/C#, fixed native code/elapsed; never log plugin-controlled call IDs/method/params/output. Protocol error completion is not run success or cleanup success. Event pause emits only on paused transition, UI watches bounded revisions rather than polling; retry never replays. Actual fixtures assert fake secret/output privacy; parent outcomes distinguishes source from unperformed live acceptance.

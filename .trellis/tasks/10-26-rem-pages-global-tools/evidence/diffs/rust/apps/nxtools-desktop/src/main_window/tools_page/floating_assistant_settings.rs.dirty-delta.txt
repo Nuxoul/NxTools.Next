@@ -1,0 +1,11 @@
+--- live-task-start-dirty/rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs
++++ queue08-blocked-checkpoint/rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs
+@@ -580,7 +580,7 @@
+             );
+         let mut form = Form::horizontal()
+             .small()
+-            .label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH));
++            .label_width(tool_settings_label_width(window));
+         form = form.child(compact_tool_field(
+             "floating-image-label",
+             "floating-image-help",

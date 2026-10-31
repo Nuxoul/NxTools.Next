@@ -1,0 +1,527 @@
+use super::{
+    download_resolver::{ExtensionDownloadResolver, HandlerFuture, ResolverInvoker},
+    feature_adapters::{FeatureAdapters, UiHostCall},
+};
+use crate::{
+    clipboard::extension_adapter::ClipboardExtensionAdapter,
+    clipboard_worker::ClipboardCaptureWorkerHandle,
+};
+use nxtools_download::{DownloadEngine, NoopDownloadRequestResolver, WeakDownloadEngine};
+use nxtools_extensions::{ExtensionRuntime, InvokeRequest, PackageRegistry, RuntimeError};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
+
+struct ExecutionLease {
+    shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    events: Mutex<Vec<tokio::task::AbortHandle>>,
+}
+impl Drop for ExecutionLease {
+    fn drop(&mut self) {
+        if let Ok(mut events) = self.events.lock() {
+            for event in events.drain(..) {
+                event.abort();
+            }
+        }
+        if let Ok(mut shutdown) = self.shutdown.lock()
+            && let Some(shutdown) = shutdown.take()
+        {
+            let _ = shutdown.send(());
+        }
+    }
+}
+#[derive(Clone)]
+pub(crate) struct ExtensionService {
+    pub(crate) runtime: ExtensionRuntime,
+    executor: tokio::runtime::Handle,
+    engine: WeakDownloadEngine,
+    _lease: Arc<ExecutionLease>,
+    publication: Arc<Mutex<()>>,
+    pub(crate) events: super::committed_events::EventControl,
+    pub(crate) manual_effects: super::manual_runs::ManualEffects,
+}
+impl ExtensionService {
+    pub(crate) fn new(
+        engine: &DownloadEngine,
+        registry: PackageRegistry,
+        worker: Option<ClipboardCaptureWorkerHandle>,
+        ui: bool,
+    ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
+        registry.validate()?;
+        let (sender, receiver) = async_channel::bounded(32);
+        let clipboard = worker.map(ClipboardExtensionAdapter::new);
+        let subscription = clipboard
+            .as_ref()
+            .map(ClipboardExtensionAdapter::subscribe_committed)
+            .transpose()?;
+        let adapter = Arc::new(FeatureAdapters::new(
+            engine.clone(),
+            clipboard,
+            ui.then_some(sender),
+        ));
+        let broker_path = std::env::current_exe()?
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("desktop executable directory unavailable"))?
+            .join("NxTools.PlatformHost.exe");
+        let (service, receiver) = Self::with_adapter(
+            engine,
+            registry,
+            broker_path,
+            adapter,
+            ui.then_some(receiver),
+        )?;
+        let events = super::committed_events::attach(&service, engine, subscription)?;
+        *service
+            ._lease
+            .events
+            .lock()
+            .map_err(|_| anyhow::anyhow!("extension event state unavailable"))? = events;
+        Ok((service, receiver))
+    }
+    fn with_adapter(
+        engine: &DownloadEngine,
+        registry: PackageRegistry,
+        broker_path: PathBuf,
+        adapter: Arc<FeatureAdapters>,
+        receiver: Option<async_channel::Receiver<UiHostCall>>,
+    ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
+        let executor = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .max_blocking_threads(4)
+            .build()?;
+        let handle = executor.handle().clone();
+        let (shutdown, stop) = tokio::sync::oneshot::channel();
+        let manual_effects = adapter.manual_effects.clone();
+        let runtime = ExtensionRuntime::new(registry.clone(), broker_path, adapter);
+        let runtime_shutdown = runtime.clone();
+        std::thread::Builder::new()
+            .name("extension-runtime".into())
+            .spawn(move || {
+                executor.block_on(async {
+                    let _ = stop.await;
+                    runtime_shutdown.shutdown();
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                });
+                executor.shutdown_timeout(std::time::Duration::from_secs(5));
+            })?;
+        let service = Self {
+            runtime,
+            executor: handle,
+            engine: engine.downgrade(),
+            _lease: Arc::new(ExecutionLease {
+                shutdown: Mutex::new(Some(shutdown)),
+                events: Mutex::new(Vec::new()),
+            }),
+            publication: Arc::new(Mutex::new(())),
+            events: Default::default(),
+            manual_effects,
+        };
+        service.install_resolver(registry)?;
+        Ok((service, receiver))
+    }
+    pub(crate) fn publish_registry(&self, registry: PackageRegistry) -> anyhow::Result<()> {
+        registry.validate()?;
+        self.publish_registry_with(registry, || {})
+    }
+    fn publish_registry_with(
+        &self,
+        registry: PackageRegistry,
+        after_install: impl FnOnce(),
+    ) -> anyhow::Result<()> {
+        let _publication = self
+            .publication
+            .lock()
+            .map_err(|_| anyhow::anyhow!("extension publication unavailable"))?;
+        let engine = self
+            .engine
+            .upgrade()
+            .ok_or_else(|| anyhow::anyhow!("download owner unavailable"))?;
+        // Fail closed during publication: neither skip resolution nor mix new routing with old settings.
+        engine.set_request_resolver(Arc::new(PublishingResolver))?;
+        after_install();
+        self.runtime.publish_registry(registry.clone())?;
+        self.install_resolver(registry)?;
+        Ok(())
+    }
+    fn install_resolver(&self, registry: PackageRegistry) -> anyhow::Result<()> {
+        let engine = self
+            .engine
+            .upgrade()
+            .ok_or_else(|| anyhow::anyhow!("download owner unavailable"))?;
+        if registry.packages.iter().any(|package| {
+            package.enabled
+                && package.trust.is_some()
+                && package
+                    .manifest
+                    .handlers
+                    .iter()
+                    .any(|handler| handler.feature == "downloads" && handler.entry == "resolve")
+        }) {
+            engine.set_request_resolver(Arc::new(ExtensionDownloadResolver::new(
+                registry,
+                Arc::new(self.clone()),
+            )))?;
+        } else {
+            engine.set_request_resolver(Arc::new(NoopDownloadRequestResolver))?;
+        }
+        Ok(())
+    }
+    pub(crate) fn invoke(
+        &self,
+        request: InvokeRequest,
+    ) -> tokio::task::JoinHandle<Result<nxtools_extensions::InvokeOutcome, RuntimeError>> {
+        let runtime = self.runtime.clone();
+        self.executor
+            .spawn(async move { runtime.invoke(request).await })
+    }
+    pub(crate) fn executor(&self) -> tokio::runtime::Handle {
+        self.executor.clone()
+    }
+}
+impl ResolverInvoker for ExtensionService {
+    fn invoke<'a>(&'a self, request: InvokeRequest) -> HandlerFuture<'a> {
+        Box::pin(async move {
+            let task = self.invoke(request);
+            let abort = AbortOnDrop(task.abort_handle());
+            let outcome = task.await.map_err(|_| RuntimeError::NativeUnavailable)?;
+            drop(abort);
+            outcome
+        })
+    }
+}
+struct AbortOnDrop(tokio::task::AbortHandle);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+struct PublishingResolver;
+impl nxtools_download::DownloadRequestResolver for PublishingResolver {
+    fn identity(&self) -> nxtools_download::DownloadResolverIdentity {
+        nxtools_download::DownloadResolverIdentity {
+            content_version: "configuration-publication".into(),
+            settings_version: "pending".into(),
+        }
+    }
+    fn resolve<'a>(
+        &'a self,
+        _: &'a nxtools_download::DownloadRequest,
+        _: &'a nxtools_download::DownloadResolutionOperation,
+    ) -> nxtools_download::DownloadResolutionFuture<'a> {
+        Box::pin(async { Err(nxtools_download::DownloadResolutionError::IdentityChanged) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn shared_gui_and_headless_composition_defaults_to_noop_and_does_not_retain_engine() {
+        for ui in [false, true] {
+            let root = tempfile::tempdir().expect("fixture");
+            let engine = DownloadEngine::open(root.path().join("downloads.db")).expect("engine");
+            let weak = engine.downgrade();
+            let (service, receiver) =
+                ExtensionService::new(&engine, PackageRegistry::default(), None, ui)
+                    .expect("shared composition");
+            assert_eq!(receiver.is_some(), ui);
+            assert!(
+                service
+                    .runtime
+                    .snapshot()
+                    .expect("catalog")
+                    .packages
+                    .is_empty()
+            );
+            drop(engine);
+            assert!(
+                weak.upgrade().is_none(),
+                "runtime adapter cannot own engine through resolver cycle"
+            );
+            drop(service);
+        }
+    }
+    #[test]
+    fn actual_staged_script_resolves_through_shared_executor_and_revoke_preserves_accepted_task() {
+        let root = tempfile::tempdir().expect("owned end to end");
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).expect("source");
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.resolve","name":"Resolver","version":"1","runtime":{"program":"python","timeout_ms":10000},"files":["resolve.py"],"handlers":[{"id":"resolve","title":"Resolve","feature":"downloads","entry":"resolve","url_matches":[{"host":"original.test","path":"*"}],"action":{"type":"script","entry_file":"resolve.py"}}]});
+        std::fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("manifest"),
+        )
+        .expect("declaration");
+        std::fs::write(source.join("resolve.py"),"import sys,json\ni=json.loads(sys.stdin.readline())\nprint(json.dumps({'protocol_version':1,'op':'complete','run_id':i['run_id'],'status':'handled','value':{'url':'https://effective.test/file'}}),flush=True)\n").expect("own script");
+        let preview = nxtools_extensions::ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&root.path().join("packages"))
+            .expect("stage");
+        let hash = preview.content_hash.clone();
+        let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+            .map(|dir| dir.join("python.exe"))
+            .find(|path| path.is_file())
+            .expect("installed python");
+        let mut registry = PackageRegistry::default();
+        registry
+            .install(preview, "owned".into(), false)
+            .expect("install");
+        registry
+            .approve(
+                "fixture.resolve",
+                &hash,
+                nxtools_extensions::RuntimeIdentity::inspect(&python).expect("identity"),
+            )
+            .expect("approval");
+        registry
+            .set_enabled("fixture.resolve", true, &[])
+            .expect("explicit enable");
+        let engine = DownloadEngine::open(root.path().join("downloads.db")).expect("engine");
+        let adapter = Arc::new(FeatureAdapters::new(engine.clone(), None, None));
+        let (service, _) = ExtensionService::with_adapter(
+            &engine,
+            registry.clone(),
+            PathBuf::new(),
+            adapter,
+            None,
+        )
+        .expect("shared thread");
+        let fixture=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).expect("workspace").join("csharp/NxTools.PlatformHost.Tests/bin/Debug/net8.0-windows/NxTools.PlatformHost.Tests.exe");
+        let runtime = service.runtime.clone();
+        service
+            .executor()
+            .block_on(async move { runtime.bind_owned_fixture_broker(&fixture) })
+            .expect("private fixture broker");
+        let request = nxtools_download::DownloadRequest {
+            source_url: "https://original.test/page".into(),
+            save_directory: root.path().to_owned(),
+            save_directory_explicit: true,
+            file_name: Some("chosen.bin".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(1),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+            media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: Default::default(),
+        };
+        let (id, _) = engine
+            .submit_with_resolution(
+                request.clone(),
+                nxtools_download::RequestOrigin::Ui,
+                nxtools_download::DownloadSubmitMode::QueueOnly,
+                None,
+                nxtools_download::DownloadResolutionOptions::default(),
+                nxtools_download::DownloadResolutionControl::default(),
+            )
+            .expect("script common acceptance");
+        let accepted = engine.task(id).expect("task").expect("exists");
+        assert_eq!(
+            accepted.task.request().source_url,
+            "https://effective.test/file"
+        );
+        assert_eq!(
+            accepted
+                .task
+                .resolution()
+                .expect("provenance")
+                .original_request,
+            request
+        );
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let publishing = service.clone();
+        let next = registry.clone();
+        let publication_barrier = barrier.clone();
+        let publication = std::thread::spawn(move || {
+            publishing.publish_registry_with(next, || {
+                publication_barrier.wait();
+                publication_barrier.wait();
+            })
+        });
+        barrier.wait();
+        let mut concurrent = request.clone();
+        concurrent.file_name = Some("during-publication.bin".into());
+        let result = engine.submit_with_resolution(
+            concurrent,
+            nxtools_download::RequestOrigin::Ui,
+            nxtools_download::DownloadSubmitMode::QueueOnly,
+            None,
+            nxtools_download::DownloadResolutionOptions::default(),
+            nxtools_download::DownloadResolutionControl::default(),
+        );
+        barrier.wait();
+        publication
+            .join()
+            .expect("publisher")
+            .expect("published trusted configuration");
+        assert!(
+            matches!(
+                result,
+                Err(nxtools_download::DownloadEngineError::Resolution(
+                    nxtools_download::DownloadResolutionError::IdentityChanged
+                ))
+            ),
+            "publication must reject rather than silently skip resolution"
+        );
+        assert_eq!(
+            engine.tasks().expect("tasks").len(),
+            1,
+            "no task accepted during publication"
+        );
+        registry.revoke("fixture.resolve").expect("revoke");
+        service
+            .publish_registry(registry)
+            .expect("retire composition");
+        let accepted = engine
+            .task(id)
+            .expect("accepted after revoke")
+            .expect("task retained");
+        assert_eq!(
+            accepted.task.request().source_url,
+            "https://effective.test/file",
+            "accepted tasks never reparse on revoke"
+        );
+        service.runtime.shutdown();
+    }
+    #[test]
+    fn committed_download_event_runs_real_script_once_and_own_host_enqueue_does_not_loop() {
+        let root = tempfile::tempdir().expect("owned event fixture");
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).expect("source");
+        let marker = root.path().join("invocations.txt");
+        let request = nxtools_download::DownloadRequest {
+            source_url: "https://fixture.test/derived".into(),
+            save_directory: root.path().to_owned(),
+            save_directory_explicit: true,
+            file_name: Some("derived.bin".into()),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(1),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes: None,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: None,
+            media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::AddNumbered,
+        };
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.events","name":"Events","version":"1",
+            "runtime":{"program":"python","arguments":[marker,serde_json::to_string(&request).expect("request JSON")]},
+            "files":["event.py"],"handlers":[{"id":"created","title":"Created","feature":"downloads","entry":"created",
+            "action":{"type":"script","entry_file":"event.py"}}]});
+        std::fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("manifest"),
+        )
+        .expect("declaration");
+        std::fs::write(source.join("event.py"), r#"import sys,json
+i=json.loads(sys.stdin.readline())
+with open(sys.argv[1],'a',encoding='utf-8') as marker: marker.write(str(i['context']['task_id'])+'\n')
+print(json.dumps({'protocol_version':1,'op':'host_call','run_id':i['run_id'],'call_id':'enqueue','method':'downloads.enqueue','params':{'request':json.loads(sys.argv[2])}}),flush=True)
+r=json.loads(sys.stdin.readline())
+print(json.dumps({'protocol_version':1,'op':'complete','run_id':i['run_id'],'status':'success' if r['success'] else 'error','value':{}}),flush=True)
+"#).expect("event script");
+        let preview = nxtools_extensions::ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&root.path().join("packages"))
+            .expect("stage");
+        let hash = preview.content_hash.clone();
+        let python = std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+            .map(|directory| directory.join("python.exe"))
+            .find(|path| path.is_file())
+            .expect("installed Python");
+        let mut registry = PackageRegistry::default();
+        registry
+            .install(preview, "owned".into(), false)
+            .expect("install");
+        registry
+            .approve(
+                "fixture.events",
+                &hash,
+                nxtools_extensions::RuntimeIdentity::inspect(&python).expect("identity"),
+            )
+            .expect("approve");
+        assert!(
+            registry.packages[0].enabled_events.is_empty(),
+            "automatic handlers default off"
+        );
+        registry
+            .set_enabled("fixture.events", true, &[])
+            .expect("explicit enable");
+        registry.packages[0].enabled_events.insert("created".into());
+        let engine = DownloadEngine::open(root.path().join("downloads.db")).expect("engine");
+        let adapter = Arc::new(FeatureAdapters::new(engine.clone(), None, None));
+        let (service, _) =
+            ExtensionService::with_adapter(&engine, registry, PathBuf::new(), adapter, None)
+                .expect("shared runtime");
+        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).expect("workspace")
+            .join("csharp/NxTools.PlatformHost.Tests/bin/Debug/net8.0-windows/NxTools.PlatformHost.Tests.exe");
+        let runtime = service.runtime.clone();
+        service
+            .executor()
+            .block_on(async move { runtime.bind_owned_fixture_broker(&fixture) })
+            .expect("broker");
+        let events = super::super::committed_events::attach(&service, &engine, None)
+            .expect("event subscription");
+        *service._lease.events.lock().expect("lease") = events;
+        let mut original = request;
+        original.source_url = "https://fixture.test/original".into();
+        original.file_name = Some("original.bin".into());
+        let id = engine
+            .enqueue(original, nxtools_download::RequestOrigin::Ui)
+            .expect("commit original");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while engine.tasks().expect("tasks").len() != 2 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "committed event must reach real script and host owner"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert_eq!(
+            std::fs::read_to_string(&marker)
+                .expect("script marker")
+                .lines()
+                .count(),
+            1,
+            "own host event cannot invoke same handler twice"
+        );
+        let tasks = engine.tasks().expect("tasks");
+        assert_eq!(tasks.len(), 2, "no recursive task creation");
+        let derived = tasks
+            .iter()
+            .find(|task| task.task.id() != id)
+            .expect("derived task");
+        assert_eq!(
+            derived
+                .task
+                .resolution()
+                .expect("causal provenance")
+                .extension_causality
+                .as_ref()
+                .expect("origin")
+                .handlers,
+            vec!["fixture.events/created".to_owned()]
+        );
+        assert!(
+            engine.task(id).expect("original").is_some(),
+            "event side effects do not replace original"
+        );
+        service.runtime.shutdown();
+    }
+}
+
+#[cfg(test)]
+#[path = "service_storage_tests.rs"]
+mod storage_tests;

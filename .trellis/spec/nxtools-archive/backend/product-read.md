@@ -21,6 +21,9 @@ checks original connection under the existing router lock before pending-before-
 C# `ArchiveReadSession.Dispatch(ProtocolEnvelope)` returns fast typed receipt; Events carries
 independent accepted/negotiated/batch/terminal. Existing runner's actual exited cleanup owns the
 native terminal, not a private complete frame or command receipt.
+`ArchiveReadOperation::connection_generation()` exposes its immutable ORIGINAL admission connection,
+retained after terminal removes Pending. Formal drag consumers carry that value through deferred
+installation; never sample the shared bridge's current generation as the completed source origin.
 
 ## 3. Contracts
 Outer envelope v1; archive subprotocol1(default) or explicit2(finite large read) required. Read actions only open/test/ack/cancel;
@@ -205,13 +208,15 @@ is charged to the existing cumulative receipt budget. Do not synthesize a missin
 
 Materialize/cancel/release retain one operation correlation while ordinary receipt ID is distinct
 and installed before send. Materialize selects one immutable ordinal after source digest/native
-revision comparison and ordinary-file safety checks. Keep512MiB temporary output separate from
-finite solid decode work, and preserve original Job/working-memory/time/cancel/cleanup owners.
-The native materialization result never Shell-opens. Only current Rust window/session/generation/
-snapshot plus successful outer and typed result and actualcleanup authorize a Shell command.
-Late success releases its original operation-owned lease; release must not invent a new owner ID.
-Failed materialization after actualcleanup retires its cache admission, not an unreleasable32-slot
-leak. Sealed output cleanup checks identity/hash/metadata/MOTW; edited/locked files remain. Directory
+revision comparison and ordinary-file safety checks. Materialize uses existing general32GiB-entry/
+100GiB-output allowances, not a separate512MiB cap. Preview retains8MiB/text64KiB selected output;
+finite source/decode/spool work and Job/memory/time/cancel/cleanup owners remain independent.
+The native result never Shell-opens. Only current Rust window/session/generation/snapshot plus
+successful outer and typed result and actualcleanup authorize a Shell command. Late success
+releases its original operation-owned lease; release cannot invent another owner ID. Failed
+materialization after actualcleanup retires its cache admission. Independent live leases have no
+32-item business gate; active workers remain2. Sealed cleanup checks identity/hash/metadata/MOTW;
+edited/locked files remain. Directory
 retirement opens DELETE only after active use ends, rechecks exact identity and deletes only empty
 owned ancestry. No recursive arbitrary-path deletion or inference from Shell process receipt.
 
@@ -230,3 +235,63 @@ unknown/edited/locked/active/malformed/legacy/no-record data is retained. Expiry
 eligibility and never bypasses original identity/hash/metadata/MOTW checks. Native GUI/Shell/UIA/DPI/
 user acceptance and independent Phase C acceptance remain NOT RUN/pending; scoped counts do not
 close those rows or concurrent workspace gate failures.
+
+## Scenario: Browser-member identity and independent preview budgets
+### 1. Scope / Trigger
+Browser preview and virtual-file demand materialize one original member into a fresh owned lease.
+Evidence: `repo:rust/crates/nxtools-archive/src/worker_browser.rs`,
+`repo:rust/crates/nxtools-archive/src/worker_job.rs`, `repo:rust/crates/nxtools-archive/src/planning.rs`,
+`repo:rust/crates/nxtools-archive/src/worker_codecs.rs`, `repo:rust/crates/nxtools-archive/src/worker.rs`,
+`repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerRunner.cs`,
+`repo:rust/crates/nxtools-archive/src/worker_password.rs`.
+### 2. Signatures
+Private `ExtractionPlan::browser_entry(snapshot, entry)` marks only isolated browser reads;
+ordinary `ExtractionPlan::build` retains whole-archive output safety. `worker_browser::selected`
+selects the immutable original ordinal. Original `worker_job::spool_limits` supplies finite
+intermediate compound-stream allowance; selected entry/output limits remain request-owned.
+### 3. Contracts
+Optional size/encryption facts and OutputCollision are not source identity. A single fresh lease
+can read a colliding regular member by original ordinal without relaxing general extraction.
+Validate original path, kind, source revision, record extent and integrity before publication.
+7z callback metadata follows the locked reader's block ranges followed by no-block file indices;
+identical names never identify members. Preserve first decode failure, full-stream verification,
+source recheck and delayed commit. Unknown size is charged by actual bytes, not zero authority.
+
+Encoded source admission, no-output password TEST preparation, intermediate TAR spool, selected
+expanded bytes and preview decoder budgets are independent. Browser preparation uses existing
+general decode-work entry/output allowances, then restores the original selected extraction limits.
+Product preview sets PasswordInteraction=true; browser TAR/non-password codecs route through the
+original attempt instead of rejecting that intent. General non-browser password policy is unchanged.
+Compound reads use existing metadata/spool reservation for outer expansion, then restore selected
+constraints for inner extraction. Do not TEST the whole archive or expand a whole TAR under a text
+member's64KiB output quota, or raise that quota to accommodate the container. Native resource errors
+retain resource_limit/read_limit/session_entry_limit through runner/session cleanup; consequential
+cleanup I/O cannot overwrite the original cause.
+Existing correlation/start/terminal/elapsed/native-code diagnostics and owned cleanup remain;
+never log member names, contents or credentials.
+### 4. Validation & Error Matrix
+| Input / stage | Required result |
+| --- | --- |
+| Same-name ordinary members in separate leases | Each original ordinal yields its own bytes |
+| General extraction with unsafe/colliding outputs | Original rejection; no isolated-plan authority |
+| 80 B ZIP/TAR member with product PasswordInteraction=true | Independent preparation/spool; exact80B output |
+| Selected output exceeds request limit | resource_limit, no published path |
+| Encoded source or intermediate spool reaches allowance | Read-stage resource failure, not selected-file-size claim |
+| Source/path/kind/integrity failure or cancellation | Typed terminal and original unpublished cleanup |
+### 5. Good/Base/Bad Cases
+Good: reordered OLE descriptors read two same-name 7z blocks and empty entries by original ordinal.
+Base: an 80 B UTF-8 member previews while a 128 KiB member is refused by the original text quota.
+Bad: a filename HashMap overwrites metadata, missing estimates reject a whole selection, or the
+container's expanded TAR length is reported as the selected text file's size.
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/ArchiveVirtualTreeTests.cs` exercises actual worker/source/
+lease/native IStream identities, duplicate ZIP/7z members, empty directories and remaining budget.
+`repo:csharp/NxTools.PlatformHost.Tests/ArchivePreviewTests.cs` exercises real80BZIP/TAR preview with
+product PasswordInteraction=true, oversized selected output, no published path on failure, encoded-
+source error preservation and lease release. Retain general engine/extraction-plan path/collision
+regressions. Controlled native consumers are not physical
+Explorer, foreign-target or installed-product acceptance.
+### 7. Wrong vs Correct
+Wrong: `metadata_by_name[entry.name]`, whole-archive collision policy for a fresh single-member
+lease, or one output budget applied to source/spool/member/decode. Correct: source-bound ordinal
+-> isolated validated plan -> stage-owned finite budgets -> full integrity -> actual cleanup.

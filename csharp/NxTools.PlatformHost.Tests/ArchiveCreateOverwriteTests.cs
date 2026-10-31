@@ -24,7 +24,10 @@ internal static class ArchiveCreateOverwriteTests {
             var item=await Next(session);Check(item.Terminal is null,"expected create overwrite prompt, got terminal "+item.Terminal?.Code);
             Check(item.Kind!="started","worker started before create approval");
             if(item.Prompt is not {} prompt)continue;
-            Check(item.OperationId==command.OperationId && item.SessionId==command.SessionId && item.Generation==command.Generation && prompt.Kind=="create_overwrite" && prompt.Ticket.OperationId==command.OperationId && prompt.Ticket.Generation==command.Generation && prompt.Ticket.PromptId!=Guid.Empty && prompt.ExistingBytes==8,"typed current native observation");return prompt;
+            Check(item.OperationId==command.OperationId && item.SessionId==command.SessionId && item.Generation==command.Generation && prompt.Kind=="create_overwrite" && prompt.Ticket.OperationId==command.OperationId && prompt.Ticket.Generation==command.Generation && prompt.Ticket.PromptId!=Guid.Empty && prompt.ExistingBytes==8,"typed current native observation");
+            var target=Path.Combine(command.Request!.Destination!,command.Request.Create!.Name);
+            Check(prompt.Display is {IncomingMember:null} && prompt.Display.Target==target,"current immutable create target");
+            Check(!prompt.ToString().Contains(target) && !prompt.Display!.ToString().Contains(target),"create prompt diagnostic redaction");return prompt;
         }
     }
     private static async Task<ArchiveJobTerminal> Finish(ArchiveJobSession session,bool mayStart=true) {

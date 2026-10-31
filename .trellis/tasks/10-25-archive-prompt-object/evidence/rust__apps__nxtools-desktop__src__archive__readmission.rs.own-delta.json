@@ -1,0 +1,18 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/archive/readmission.rs",
+  "baseline_sha256": "cc1585ef9d800d84654f522293edcf0728af7dffd4b3679f32f0ee7fb54d83ed",
+  "delivery_sha256": "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 147,
+      "baseline_end": 147,
+      "delivery_start": 147,
+      "delivery_end": 148,
+      "baseline_text": "",
+      "delivery_text": "            display: None,\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

@@ -21,7 +21,7 @@ public static class ExplorerObservationTests
                     fixture.Reset(childBrowser);
                     var failures = new List<int>();
                     var stages = new List<string>();
-                    var reader = new ExplorerShellActivation.NativeTargetObservationPlatform(false, failures.Add,
+                    var reader = new ExplorerShellActivation.NativeTargetObservationPlatform(failures.Add,
                         () => new OwnedCollection(fixture), stages.Add);
                     Assert(!reader.ReadActiveViews().Any(), "failed background object cannot manufacture target evidence");
                     Assert(fixture.HwndCalls == 1 && fixture.ServiceCalls == 1 && fixture.ActiveViewCalls == 1 &&
@@ -33,17 +33,42 @@ public static class ExplorerObservationTests
                         "reader reports payload-free child and failing COM seam stages");
                     Assert(fixture.References == 1 && fixture.WrongCalls == 0, "native COM slots and references remain exact");
                 }
+                foreach (var directoryTarget in new[] { false, true })
+                {
+                    fixture.Reset(true);
+                    fixture.PublishBackground = true;
+                    var failures = new List<int>();
+                    var reader = new ExplorerShellActivation.NativeTargetObservationPlatform(failures.Add,
+                        () => new OwnedCollection(fixture));
+                    var observed = reader.ReadActiveViews().Single();
+                    Assert(observed.Directory == fixture.Directory && observed.SelectedPaths.SequenceEqual(new[] { fixture.SelectedPath }),
+                        "successful native reader must retain exact selected paths for files AND directory Reveal");
+                    Assert(ExplorerShellActivation.ObserveTarget(fixture.SelectedPath, directoryTarget, reader) != IntPtr.Zero,
+                        "the complete native reader must confirm the selected target in its parent");
+                    Assert(failures.Count == 0 && fixture.WrongCalls == 0 && fixture.References == 1,
+                        "successful folder and selection reads preserve native references and slots");
+                }
+                fixture.Reset(true);
+                fixture.PublishBackground = true;
+                fixture.BrowserInterfaceAvailable = false;
+                var providerOnlyStages = new List<string>();
+                var providerOnlyReader = new ExplorerShellActivation.NativeTargetObservationPlatform(_ => { },
+                    () => new OwnedCollection(fixture), providerOnlyStages.Add);
+                Assert(ExplorerShellActivation.ObserveTarget(fixture.SelectedPath, false, providerOnlyReader) != IntPtr.Zero,
+                    "service-provider-only Explorer candidate must confirm its active selected item without IWebBrowser2");
+                Assert(fixture.ServiceCalls > 0 && fixture.BrowserWindowCalls > 0 && fixture.References == 1,
+                    "provider fallback traverses native IShellBrowser.GetWindow and balances COM references");
                 foreach (var rejection in new[] { "hidden", "other_root" })
                 {
                     fixture.Reset(true);
                     fixture.Rejection = rejection;
                     var failures = new List<int>();
-                    var reader = new ExplorerShellActivation.NativeTargetObservationPlatform(false, failures.Add,
+                    var reader = new ExplorerShellActivation.NativeTargetObservationPlatform(failures.Add,
                         () => new OwnedCollection(fixture));
                     Assert(!reader.ReadActiveViews().Any() && fixture.BackgroundCalls == 0 && failures.Count == 0,
                         "hidden active view or view belonging to another root must be rejected before reading background");
                     Assert(fixture.References == 1, "rejected view references are balanced");
-                    reader = new ExplorerShellActivation.NativeTargetObservationPlatform(false, failures.Add,
+                    reader = new ExplorerShellActivation.NativeTargetObservationPlatform(failures.Add,
                         () => new OwnedCollection(fixture), _ => throw new InvalidOperationException("owned diagnostic failure"));
                     Assert(!reader.ReadActiveViews().Any() && fixture.References == 1,
                         "diagnostic callback exceptions cannot alter reader behavior or reference cleanup");
@@ -66,6 +91,25 @@ public static class ExplorerObservationTests
         internal OwnedCollection(ChainFixture fixture) => _fixture = fixture;
         public int Count => 1;
         public object Item(int index) => Marshal.GetObjectForIUnknown(_fixture.Candidate);
+    }
+
+    public sealed class OwnedPath(string path)
+    {
+        public string Path => path;
+    }
+
+    public sealed class OwnedSelection(string path)
+    {
+        public int Count => 1;
+        public object Item(int index) => new OwnedPath(path);
+    }
+
+    public sealed class OwnedBackground
+    {
+        private readonly ChainFixture _fixture;
+        internal OwnedBackground(ChainFixture fixture) => _fixture = fixture;
+        public object Folder => Marshal.GetObjectForIUnknown(_fixture.Folder);
+        public object SelectedItems() => new OwnedSelection(_fixture.SelectedPath);
     }
 
     internal sealed class ChainFixture : IDisposable
@@ -100,6 +144,13 @@ public static class ExplorerObservationTests
         private readonly IntPtr _provider;
         private readonly IntPtr _browser;
         private readonly IntPtr _shellView;
+        private readonly IntPtr _folder2;
+        internal IntPtr Folder { get; }
+        internal string Directory { get; } = Path.Combine(Path.GetTempPath(), $"nxtools-observation-{Guid.NewGuid():N}");
+        internal string SelectedPath => Path.Combine(Directory, "selected-target");
+        internal bool PublishBackground;
+        internal bool BrowserInterfaceAvailable = true;
+        internal int BrowserWindowCalls;
         private bool _childBrowser;
         internal string? Rejection;
         internal IntPtr Candidate { get; }
@@ -136,6 +187,7 @@ public static class ExplorerObservationTests
                 if (sid != new Guid("4C96BE40-915C-11CF-99D3-00AA004AE837") || iid != ShellBrowserId) { WrongCalls++; return NotImplemented; }
                 References++; value = _browser; return 0;
             };
+            Output browserWindow = (IntPtr _, out IntPtr value) => { BrowserWindowCalls++; value = _tab; return 0; };
             Output active = (IntPtr _, out IntPtr value) => { ActiveViewCalls++; References++; value = _shellView; return 0; };
             Output window = (IntPtr _, out IntPtr value) =>
             {
@@ -145,26 +197,44 @@ public static class ExplorerObservationTests
             {
                 BackgroundCalls++; value = IntPtr.Zero;
                 if (flags != 0 || iid != DispatchId) { WrongCalls++; return NotImplemented; }
+                if (PublishBackground)
+                {
+                    value = Marshal.GetIUnknownForObject(new OwnedBackground(this));
+                    return 0;
+                }
                 return AccessDenied; // deliberate boundary failure, never target evidence
             };
             Candidate = Allocate([query, add, release, count, info, names, invoke]);
             _provider = Allocate([query, add, release, service]);
-            _browser = Allocate([query, add, release, .. Enumerable.Repeat<Delegate>(unused, 12), active]);
+            _browser = Allocate([query, add, release, browserWindow, .. Enumerable.Repeat<Delegate>(unused, 11), active]);
             _shellView = Allocate([query, add, release, window, .. Enumerable.Repeat<Delegate>(unused, 11), background]);
+            Output self = (IntPtr _, out IntPtr value) =>
+            {
+                value = Marshal.GetIUnknownForObject(new OwnedPath(Directory));
+                return 0;
+            };
+            Folder = Allocate([query, add, release, count, info, names, invoke]);
+            _folder2 = Allocate([query, add, release, count, info, names, invoke,
+                .. Enumerable.Repeat<Delegate>(unused, 10), self]);
         }
 
         internal void Reset(bool childBrowser)
-        { _childBrowser = childBrowser; Rejection = null; HwndCalls = ServiceCalls = ActiveViewCalls = WindowCalls = BackgroundCalls = WrongCalls = 0; }
+        { _childBrowser = childBrowser; PublishBackground = false; BrowserInterfaceAvailable = true; Rejection = null; BrowserWindowCalls = HwndCalls = ServiceCalls = ActiveViewCalls = WindowCalls = BackgroundCalls = WrongCalls = 0; }
         private int QueryInterface(IntPtr instance, ref Guid iid, out IntPtr value)
         {
             value = IntPtr.Zero;
             if (instance == Candidate || instance == _provider)
             {
-                if (iid == UnknownId || iid == DispatchId || iid == BrowserId) value = Candidate;
+                if (iid == UnknownId || iid == DispatchId || (iid == BrowserId && BrowserInterfaceAvailable)) value = Candidate;
                 else if (iid == ProviderId) value = _provider;
             }
             else if (instance == _browser && (iid == UnknownId || iid == ShellBrowserId)) value = _browser;
             else if (instance == _shellView && (iid == UnknownId || iid == ShellViewId)) value = _shellView;
+            else if (instance == Folder || instance == _folder2)
+            {
+                if (iid == UnknownId || iid == DispatchId) value = Folder;
+                else if (iid == typeof(ExplorerShellActivation.IExplorerFolder2).GUID) value = _folder2;
+            }
             if (value == IntPtr.Zero) return unchecked((int)0x80004002);
             References++; return 0;
         }

@@ -11,6 +11,9 @@ Copyright Google LLC.
 Licensed under the Apache License, Version 2.0. A copy of that license is included in
 `LICENSE-APACHE`.
 
+`folder-filled.svg` is an NxTools adaptation of the existing Material folder silhouette,
+removing the inner outline cutout for the archive browser's recognizable fallback. Same license.
+
 ## rust-embed-resource
 
 The Windows desktop build uses

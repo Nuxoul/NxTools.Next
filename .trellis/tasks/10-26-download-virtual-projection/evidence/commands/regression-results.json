@@ -1,0 +1,18 @@
+﻿[
+    {
+        "exit":  0,
+        "name":  "download-page-related"
+    },
+    {
+        "exit":  0,
+        "name":  "download-main-related"
+    },
+    {
+        "exit":  0,
+        "name":  "downloads-related"
+    },
+    {
+        "exit":  0,
+        "name":  "protected-related"
+    }
+]

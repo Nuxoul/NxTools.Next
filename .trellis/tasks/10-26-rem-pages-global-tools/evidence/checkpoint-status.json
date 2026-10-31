@@ -1,0 +1,23 @@
+{
+  "status": "INCOMPLETE: blocked by unavailable natural Cargo/rustc idle",
+  "own_existing_dirty_deltas": 8,
+  "new_test_snapshots": 2,
+  "protected_sources": 230,
+  "history_records": 1019,
+  "external_modified": 6,
+  "external_new": 3,
+  "remaining_checks": [
+    "currency/floating actual consumer preparation",
+    "Extensions icon28/import80/trust88 effective red/green",
+    "relatedMainWindow/settings/UI/protectedaccepted tests",
+    "strictproduction/testClippy",
+    "workspacecheck",
+    "scoped/workspacefmt"
+  ],
+  "not_performed": [
+    "fullDesktop",
+    "native/system/registry/Host/service/userdata",
+    "package/install/commit",
+    "delegation"
+  ]
+}

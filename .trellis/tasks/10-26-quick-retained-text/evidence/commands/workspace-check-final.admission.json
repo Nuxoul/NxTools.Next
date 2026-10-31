@@ -1,0 +1,42 @@
+﻿[
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  106852,
+                              "ParentProcessId":  110200,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test --locked -p nx-core -p nx-engine -p nx-cli -p nxproxy"
+                          },
+                          {
+                              "ProcessId":  111592,
+                              "ParentProcessId":  106852,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name nxproxy --edition=2024 crates\\app\\src\\main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=69 --emit=dep-info,link -C embed-bitcode=no -C debuginfo=1 --deny=unsafe_op_in_unsafe_fn --warn=clippy::all --test --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values())\" -C metadata=eb577a620609d784 -C extra-filename=-a1759d1ccbb856c3 --out-dir D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps -L dependency=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps --extern anyhow=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libanyhow-e2ca33f6cdbcea50.rlib --extern gpui_kit=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libgpui_kit-32e9043cd4078ce9.rlib --extern nx_engine=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_engine-619fa2e7468a2f61.rlib --extern nx_platform=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_platform-6ebc0b9e6656d500.rlib --extern nx_store=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_store-3b21efc14803e9ce.rlib --extern raw_window_handle=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libraw_window_handle-f517da58d5c5301a.rlib --extern serde_json=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libserde_json-00477bb6a0772411.rlib --extern tempfile=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtempfile-008be7bb368fcf01.rlib --extern tokio=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtokio-c0f229904418db65.rlib --extern tray_icon=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtray_icon-dfba5b1f1be355d1.rlib --extern windows_sys=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libwindows_sys-8059c7f18c43e59b.rlib -L native=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\build\\gpui-pre-fa5e03fc4b90dc6f\\out -L native=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\build\\libsqlite3-sys-665038d5df1257f2\\out -L native=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\build\\aws-lc-sys-747cd61b96758ee8\\out -L native=C:\\Users\\Administrator\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib"
+                          }
+                      ],
+        "utc":  "2026-10-26T10:08:58.2847428Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  109460,
+                              "ParentProcessId":  110920,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" build --locked -p nxproxy"
+                          },
+                          {
+                              "ProcessId":  111144,
+                              "ParentProcessId":  109460,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name nxproxy --edition=2024 crates\\app\\src\\main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --diagnostic-width=69 --crate-type bin --emit=dep-info,link -C embed-bitcode=no -C debuginfo=1 --deny=unsafe_op_in_unsafe_fn --warn=clippy::all --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values())\" -C metadata=3942e4ccefd4691f --out-dir D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps -L dependency=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps --extern anyhow=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libanyhow-e2ca33f6cdbcea50.rlib --extern gpui_kit=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libgpui_kit-32e9043cd4078ce9.rlib --extern nx_engine=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_engine-3e5db1e3a4928261.rlib --extern nx_platform=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_platform-6ebc0b9e6656d500.rlib --extern nx_store=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libnx_store-3b21efc14803e9ce.rlib --extern raw_window_handle=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libraw_window_handle-f517da58d5c5301a.rlib --extern serde_json=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libserde_json-00477bb6a0772411.rlib --extern tempfile=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtempfile-008be7bb368fcf01.rlib --extern tokio=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtokio-0f5899473070d63f.rlib --extern tray_icon=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libtray_icon-dfba5b1f1be355d1.rlib --extern windows_sys=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\deps\\libwindows_sys-8059c7f18c43e59b.rlib -L native=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\build\\gpui-pre-fa5e03fc4b90dc6f\\out -L native=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\build\\libsqlite3-sys-665038d5df1257f2\\out -L native=D:\\Code\\NxProxy\\.delta\\worktrees\\ynbvyvdcb6n8\\NxProxy\\target\\debug\\build\\aws-lc-sys-747cd61b96758ee8\\out -L native=C:\\Users\\Administrator\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib"
+                          }
+                      ],
+        "utc":  "2026-10-26T10:09:13.9546468Z"
+    },
+    {
+        "processes":  [
+
+                      ],
+        "utc":  "2026-10-26T10:09:29.5069168Z"
+    }
+]

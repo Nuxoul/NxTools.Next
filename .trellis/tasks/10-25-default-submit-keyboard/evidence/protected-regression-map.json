@@ -1,0 +1,66 @@
+{
+  "new_download_keyboard_": {
+    "log": "downloads-related.log",
+    "count": 8,
+    "passing_lines": [
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_category_confirm_does_not_fall_through ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_compact_input_enter_keeps_probe_validation ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_focused_cancel_does_not_probe ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_ime_busy_and_native_gate_do_not_submit ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_outer_enter_submits_one_committed_future_task ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_outer_inputs_keep_default_and_guard_repeats ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_schedule_confirm_clear_and_dismiss_keep_owners ... ok",
+      "test downloads::new_download_view::keyboard_tests::new_download_keyboard_schedule_layer_and_select_keep_enter ... ok"
+    ]
+  },
+  "directory_picker_": {
+    "log": "downloads-related.log",
+    "count": 14,
+    "passing_lines": [
+      "test downloads::directory_picker_tests::directory_picker_cancel_failure_disconnect_retry_and_old_ids_are_isolated ... ok",
+      "test downloads::directory_picker_tests::directory_picker_closed_settings_result_cannot_write_reopened_draft ... ok",
+      "test downloads::directory_picker_tests::directory_picker_dispatch_rejection_releases_original_token_and_can_retry ... ok",
+      "test downloads::directory_picker_tests::directory_picker_failure_claim_then_closed_origin_has_no_current_notice ... ok",
+      "test downloads::directory_picker_tests::directory_picker_fixed_confirmation_replacement_retires_original_view_request ... ok",
+      "test downloads::directory_picker_tests::directory_picker_new_task_aba_edit_close_reopen_and_silent_hydration ... ok",
+      "test downloads::directory_picker_tests::directory_picker_new_task_settings_isolation_explicit_draft_and_apply_policy ... ok",
+      "test downloads::directory_picker_tests::directory_picker_normal_result_changes_only_original_draft_and_cancel_keeps_disk ... ok",
+      "test downloads::directory_picker_tests::directory_picker_old_settings_close_callback_preserves_current_window_and_request ... ok",
+      "test downloads::directory_picker_tests::directory_picker_result_claim_then_close_reopen_cannot_apply_or_fail_replacement ... ok",
+      "test downloads::directory_picker_tests::directory_picker_result_claim_then_same_turn_aba_is_not_applied ... ok",
+      "test downloads::directory_picker_tests::directory_picker_result_then_edit_before_deferred_apply_keeps_new_draft ... ok",
+      "test downloads::directory_picker_tests::directory_picker_same_turn_aba_user_edit_rejects_old_result ... ok",
+      "test downloads::directory_picker_tests::directory_picker_same_type_views_do_not_share_a_result ... ok"
+    ]
+  },
+  "audit04_": {
+    "log": "archive-related.log",
+    "count": 6,
+    "passing_lines": [
+      "test archive::application::jobs::tests::audit04_conflict_dialog_displays_ticket_member_and_full_target ... ok",
+      "test archive::application::jobs::tests::audit04_conflict_tab_space_keeps_original_button_and_deferred_reply ... ok",
+      "test archive::application::jobs::tests::audit04_create_dialog_displays_current_output_target ... ok",
+      "test archive::application::jobs::tests::audit04_create_pointer_then_missing_object_cancel_preserves_original_ticket ... ok",
+      "test archive::application::jobs::tests::audit04_long_unicode_body_scroll_keeps_fixed_footer_and_complete_identifier ... ok",
+      "test archive::application::jobs::tests::audit04_two_jobs_consecutive_tickets_keep_objects_and_once_decision ... ok"
+    ]
+  },
+  "test archive": {
+    "log": "focused-final.log",
+    "count": 12,
+    "passing_lines": [
+      "test archive::application::jobs::tests::audit05_create_enter_only_confirms_focused_button_on_release_and_cancel_keeps_owner ... ok",
+      "test archive::application::jobs::tests::audit05_create_form_enter_dispatches_original_typed_admission ... ok",
+      "test archive::application::jobs::tests::audit05_create_keyboard_release_and_missing_object_cancel_are_once_only ... ok",
+      "test archive::application::jobs::tests::audit05_output_budget_official_button_resumes_one_bound_attempt ... ok",
+      "test archive::application::jobs::tests::audit05_prompt_character_held_and_conflict_enter_respect_current_decision ... ok",
+      "test archive::application::jobs::tests::audit05_prompt_focus_transfer_escape_and_new_ticket_cancel_old_release ... ok",
+      "test archive::application::jobs::tests::audit05_prompt_window_deactivation_cancels_armed_release ... ok",
+      "test archive::application::jobs::tests::audit05_shared_prompt_buttons_preserve_password_risk_and_destination_reply_shapes ... ok",
+      "test archive::forms::tests::audit05_create_single_line_enter_reaches_original_submit_once ... ok",
+      "test archive::forms::tests::audit05_extract_and_edit_single_line_enter_keep_original_draft_and_cancel_key ... ok",
+      "test archive::forms::tests::audit05_form_ime_modifiers_repeat_and_busy_keep_original_validation ... ok",
+      "test archive::forms::tests::audit05_form_masked_multiline_select_and_format_dialog_do_not_submit_outer ... ok"
+    ]
+  }
+}

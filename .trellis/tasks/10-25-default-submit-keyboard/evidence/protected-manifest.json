@@ -1,0 +1,54 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+        "sha256":  "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+        "sha256":  "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+        "sha256":  "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/history.rs",
+        "sha256":  "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/mod.rs",
+        "sha256":  "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+        "sha256":  "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+        "sha256":  "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+        "sha256":  "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949"
+    },
+    {
+        "path":  "rust/crates/nxtools-protocol/src/archive_job.rs",
+        "sha256":  "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/src/worker_conflict.rs",
+        "sha256":  "c7157a04b08de8b7f41df9851071611db87cdd630e46b81e09a74be6a33199de"
+    },
+    {
+        "path":  "rust/crates/nxtools-archive/src/worker_output.rs",
+        "sha256":  "dc8cf790186065fc9557215c50a9bdd953c7b11501fc260462c6ae2fa7725912"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs",
+        "sha256":  "20e6dfb7d4329467d1495169d26af5a1360e56133c583468288e3237360df2e3"
+    },
+    {
+        "path":  "csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs",
+        "sha256":  "caa2b3dbdffa3d2d7409bb644fac28410cc7533889be06796c807ba614d4a187"
+    }
+]

@@ -1,0 +1,50 @@
+--- live dirty task baseline/docs/reference-code/download.md
++++ own final/docs/reference-code/download.md
+@@ -3068,3 +3068,47 @@
+ acceptance. Exact reds,intermediate failures,dirty deltas and protection evidence live in
+ `.trellis/tasks/10-26-rem-new-download-overlays/`; Queue04 and earlier full-suite failure
+ remain immutable. Original audit#6 overall remains open for later ordinary-role consumers.
++
++## Audit #6 Queue06: Settings/task ordinary-role boundary (2026-10-26)
++
++Reference order rechecked: ABDM DesktopSettingsComponent.kt/SettingsPage selected groups,
++ShowDownloadDialogs keyed task/phase windows and CommonContent/close,ProgressDownloadPage
++bounded tab/detail scrollers,CompletedDownloadPage name/icon/footer actions; then legacy
++SettingsWindow constructor->WindowAnimationService.Attach->OnOpened/ConfigureForCurrentScope,
++SaveButton_Click ApplySettingsCommand and close-only cancellation. DownloadProgressWindow
++constructor subscribes task/completion options,OnOpened syncs,OnClosed detaches; completion
++switches content/footer and calls ResizePreservingCenter. WindowAnimationService guards
++delayed Close. AWT/Avalonia native bases remain unavailable,not inferred or operated.
++
++Current ordinary Settings input/label/control rails,category row minimum/heading,spacing and
++workbench type use accepted ordinary_rem plus public semantic control tiers. Local
++download_settings_input accepts Length,retaining original Input entity and field_shell.
++The original Settings/Page/Group/Item search/navigation/scroll owns the page; category editor
++may scroll inside its existing310px area. Header Textarea120px,error96px,984x650 native
++options/minimum,title/footer,taskbar preview/native/device/hit geometry remain fixed.
++Actual constrained720x480 tests do not change native minimum. Original draft parsing,picker
++identity,Apply/Cancel,deferred section update/rollback/error Notification owner are unchanged.
++
++Task ordinary content insets,gaps,vector badge/icons,identity/name/metric/capability lines and
++DescriptionList label rail follow rem. Original official Progress XSmall owns its tier;
++semantic Table rows follow the same ordinary role while columns retain original40/88/140/140
++proportions inside actual available width. No task data/virtualization/IO/copy ownership
++change. Width440,collapsedprogress/completed184,failed196,expanded280,title34/footer44 and
++phase/retry/reset/close/native handoff functions remain fixed. Content scrolls within those
++clients; failure's original36..40px Alert viewport remains; complete failure text and long
++path/name remain reachable through original scrolling or bounded Tooltip. Required footer
++actions stay outside content scroll. Added path Tooltip/semantic labels retain full values,
++not a new Shell or native action owner. Task snapshot/display-sampler/segment-state semantics
++and every original pointer/key/deferred callback remain unchanged.
++
++Queue06 evidence is `.trellis/tasks/10-26-rem-download-settings-task/`: effective Root14 red
++showed88px input rail beside28px control and fixed16px metric line; new Root16/14/18 fixtures
++exercise long category/error/default+constrained Settings,actual category pointer/Tab/Space,
++original Apply/Cancel with temp config section merge,and task details last segment/phase
++long text/close/cancel. Official Scrollable debug selectors can describe content rather than
++its clipping viewport; real hit assertions use existing outer budget/action bounds. A
++pointer click on released Button may not initialize keyboard focus; fixture initializes the
++public focus sequence before testing actual Tab/KeyUp,not a production focus workaround.
++Core's existing Clipboard normalize forces enabled=true; section-merge evidence uses a
++valid unrelated max_items value,not a forbidden legacy flag. Native/DPI/physical/WindowsIME/
++reader/visual/user/release acceptance is separate; earlier failures/acceptances are immutable.

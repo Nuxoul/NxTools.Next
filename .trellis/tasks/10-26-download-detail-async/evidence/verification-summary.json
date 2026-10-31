@@ -1,0 +1,23 @@
+{
+  "status": "IMPLEMENTED_BOUNDED_VERIFICATION_WITH_BASELINE_QUALITY_BLOCKERS",
+  "results": {
+    "audit12-store-lock-red-no-pdb": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1308 filtered out; finished in 3.05s",
+    "audit12-refresh-cache-red": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1315 filtered out; finished in 0.07s",
+    "audit12-final-formatted": "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1308 filtered out; finished in 1.22s",
+    "final-download-page": "test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 27.65s",
+    "download-main-related-01": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 1290 filtered out; finished in 3.32s",
+    "downloads-lifecycle-no-network": "test result: ok. 48 passed; 0 failed; 0 ignored; 0 measured; 1269 filtered out; finished in 11.57s",
+    "final-names-identity": "test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 1299 filtered out; finished in 21.99s",
+    "engine-task-detail-contract": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 116 filtered out; finished in 0.01s"
+  },
+  "protected_files": 389,
+  "historical_files": 3750,
+  "owner_checks": 19,
+  "test_strict": "PASS",
+  "download_strict_tests_production": "PASS/PASS",
+  "workspace_check": "PASS",
+  "production_desktop_strict": "FAIL baseline SPACING_12 / DecodedMedia.animated",
+  "workspace_fmt": "FAIL four baseline-identical files",
+  "source_gates": "10 PASS",
+  "network_full_desktop_native_release": "NOT RUN"
+}

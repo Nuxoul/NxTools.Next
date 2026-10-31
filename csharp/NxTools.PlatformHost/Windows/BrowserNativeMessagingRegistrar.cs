@@ -13,6 +13,7 @@ namespace NxTools.PlatformHost.Windows;
 internal static partial class BrowserNativeMessagingRegistrar
 {
     private const string HostName = "com.nxtools.next.browser";
+    internal const string ChromeWebStoreExtensionId = "eldfplghejhopcmgfkacimanhaojakph";
     private static readonly object RegistrationGate = new();
     private static readonly string[] BrowserKeys = [
         @"Software\Google\Chrome\NativeMessagingHosts\",
@@ -21,9 +22,9 @@ internal static partial class BrowserNativeMessagingRegistrar
 
 
     /// <summary>
-    /// Builds the allowed-origins list from the packaged extension's pinned
-    /// key (its stable extension id) merged with the command-provided id, so
-    /// unpacked loads whose manifest predates the key still connect.
+    /// Builds an exact union of the published store, legacy command, pinned
+    /// source and locally exported identities. Store installs need no manual
+    /// configuration even when an older custom identity is still saved.
     /// </summary>
     private static string[] ChromiumAllowedOrigins(string commandExtensionId) =>
         ChromiumAllowedOrigins(commandExtensionId, ResolveExtensionSourceDirectory(),
@@ -33,6 +34,8 @@ internal static partial class BrowserNativeMessagingRegistrar
         string commandExtensionId, string sourceDirectory, string signingKeyPath)
     {
         var origins = new List<string> { $"chrome-extension://{commandExtensionId}/" };
+        var storeOrigin = $"chrome-extension://{ChromeWebStoreExtensionId}/";
+        if (!origins.Contains(storeOrigin)) origins.Add(storeOrigin);
         try
         {
             var manifestPath = Path.Combine(sourceDirectory, "manifest.json");

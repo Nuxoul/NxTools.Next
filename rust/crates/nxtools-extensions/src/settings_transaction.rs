@@ -49,14 +49,7 @@ where
     F: FnOnce(BTreeMap<String, Value>) -> Fut,
     Fut: Future<Output = Result<T, PackageError>>,
 {
-    if draft.values.len() > package.manifest.settings.len()
-        || draft.values.iter().any(|(key, value)| {
-            !package
-                .manifest
-                .settings
-                .iter()
-                .any(|setting| setting.key == *key && setting.accepts(value))
-        })
+    if !package.manifest.settings_ready(&draft.values)
         || draft.secrets.len() > package.manifest.settings.len()
         || draft.secrets.iter().any(|(key, value)| {
             !package.manifest.settings.iter().any(|setting| {

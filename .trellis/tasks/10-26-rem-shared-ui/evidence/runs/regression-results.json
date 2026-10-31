@@ -1,0 +1,26 @@
+﻿[
+    {
+        "name":  "ui-related",
+        "exit":  101
+    },
+    {
+        "name":  "downloads-related",
+        "exit":  101
+    },
+    {
+        "name":  "main-related",
+        "exit":  0
+    },
+    {
+        "name":  "global-related",
+        "exit":  0
+    },
+    {
+        "name":  "audit05-protected",
+        "exit":  0
+    },
+    {
+        "name":  "audit04-protected",
+        "exit":  0
+    }
+]

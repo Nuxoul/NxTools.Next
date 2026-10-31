@@ -27,6 +27,9 @@ pub struct InstalledPackage {
     pub enabled_events: HashSet<String>,
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
     pub enabled_providers: HashSet<String>,
+    /// Host-owned installation data identity; never part of manifest/code authorization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_uuid: Option<uuid::Uuid>,
 }
 
 impl InstalledPackage {
@@ -150,8 +153,9 @@ impl PackageRegistry {
         Ok(())
     }
 
-    /// Filesystem identity verification belongs to enable/execute, never rendering or Save.
-    pub(crate) fn verify_runtime_selection(&self, id: &str) -> Result<(), PackageError> {
+    /// Filesystem identity verification for background enable/execute/admission owners,
+    /// never rendering or ordinary settings Save.
+    pub fn verify_runtime_selection(&self, id: &str) -> Result<(), PackageError> {
         let package = self
             .packages
             .iter()
@@ -242,6 +246,9 @@ impl PackageRegistry {
             .iter_mut()
             .find(|package| package.manifest.id == id)
             .ok_or(PackageError::NotInstalled)?;
+        if !package.manifest.settings_ready(&settings) {
+            return Err(PackageError::InvalidManifest);
+        }
         package.settings = settings;
         candidate.validate()?;
         *self = candidate;
@@ -404,6 +411,7 @@ impl PackageRegistry {
             settings,
             enabled_events: HashSet::new(),
             enabled_providers: HashSet::new(),
+            data_uuid: existing.and_then(|index| self.packages[index].data_uuid),
         };
         let mut candidate = self.clone();
         if let Some(index) = existing {
@@ -519,8 +527,15 @@ impl PackageRegistry {
         }
         let mut ids = HashSet::new();
         let mut enabled_keywords = HashSet::new();
+        let mut data_ids = HashSet::new();
         for package in &self.packages {
             package.manifest.validate()?;
+            if package
+                .data_uuid
+                .is_some_and(|id| id.is_nil() || !data_ids.insert(id))
+            {
+                return Err(PackageError::InvalidManifest);
+            }
             if let Some(executable) = &package.runtime_override {
                 if !package
                     .manifest
@@ -584,7 +599,7 @@ impl PackageRegistry {
                         .manifest
                         .settings
                         .iter()
-                        .any(|setting| &setting.key == key && setting.accepts(value))
+                        .any(|setting| &setting.key == key && setting.accepts_stored(value))
                 })
             {
                 return Err(PackageError::InvalidManifest);

@@ -218,6 +218,7 @@ fn workspace(
         main.selected_download_task = Some(task_id);
         main.selected_download_tasks.insert(task_id);
         main.requested_download_detail = Some(task_id);
+        main.download_detail_scope = Some(crate::downloads::DownloadDetailScope::new(task_id));
         main
     });
     let handle = window.update(|window, _| window.window_handle());
@@ -920,5 +921,785 @@ fn followup_download_timeline_markers_keep_order_content_and_original_scroll(
         window.update(|window, cx| window.simulate_next_frame(cx)),
         0,
         "static timeline has no timer"
+    );
+}
+
+fn sort_keyboard_workspace(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<MainWindow>,
+    gpui_kit::AnyWindowHandle,
+    tempfile::TempDir,
+    Entity<DownloadApplication>,
+) {
+    let (main, handle, temp, downloads) = workspace(cx);
+    nxtools_core::AppConfig::default()
+        .save_to(&temp.path().join("config.json"))
+        .expect("seed isolated sort config");
+    handle
+        .update(cx, |_, window, cx| {
+            let content = main.clone();
+            window.replace_root(cx, |window, cx| {
+                gpui_kit::base::Root::new(content, window, cx)
+            });
+            window.activate_window();
+        })
+        .expect("original MainWindow under official Root");
+    (main, handle, temp, downloads)
+}
+
+fn sort_header_button(
+    surface: &mut VisualTestContext,
+    key: DownloadSortKey,
+) -> gpui_kit::base::test_support::ElementSnapshot {
+    surface
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| {
+            node.role() == Some(gpui_kit::Role::Button)
+                && node.path().last()
+                    == Some(&gpui_kit::ElementId::from((
+                        "download-sort-header-button",
+                        key as usize,
+                    )))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "actual semantic sortable header Button {}",
+                key.diagnostic_name()
+            )
+        })
+}
+
+fn tab_to_sort_header(
+    surface: &mut VisualTestContext,
+    main: &Entity<MainWindow>,
+    key: DownloadSortKey,
+) {
+    let path = sort_header_button(surface, key).path().to_vec();
+    let search = main.read_with(surface, |main, _| main.download_search_input.clone());
+    surface.update(|window, cx| search.focus_handle(cx).focus(window, cx));
+    for _ in 0..60 {
+        surface.simulate_keystrokes("tab");
+        surface.refresh().expect("actual header Tab frame");
+        if surface
+            .update(|window, _| gpui_kit::base::test_support::has_observed_focus(window, &path))
+        {
+            return;
+        }
+    }
+    panic!(
+        "sort header {} not reachable through original Tab order",
+        key.diagnostic_name()
+    );
+}
+
+fn sort_key_event(surface: &mut VisualTestContext, key: &str, down: bool, held: bool) {
+    let keystroke = gpui_kit::Keystroke::parse(key).expect("sort activation key");
+    if down {
+        surface.simulate_event(gpui_kit::KeyDownEvent {
+            keystroke,
+            is_held: held,
+            prefer_character_input: false,
+        });
+    } else {
+        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });
+    }
+}
+
+#[gpui_kit::test]
+fn sort_keyboard_actual_headers_have_names_tab_focus_and_original_column_bounds(
+    cx: &mut TestAppContext,
+) {
+    let (main, handle, _temp, _downloads) = sort_keyboard_workspace(cx);
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    for dimensions in [(1060.0, 650.0), (920.0, 480.0)] {
+        surface.simulate_resize(size(px(dimensions.0), px(dimensions.1)));
+        surface
+            .refresh()
+            .expect("actual default/minimum sortable table");
+        let header = surface
+            .debug_bounds("download-table-header")
+            .expect("original header");
+        assert_eq!(header.size.height, px(DOWNLOAD_TABLE_HEADER_HEIGHT));
+        for (key, selector) in [
+            (DownloadSortKey::Name, "download-sort-header-name"),
+            (DownloadSortKey::Progress, "download-sort-header-progress"),
+            (DownloadSortKey::Status, "download-sort-header-status"),
+            (DownloadSortKey::Created, "download-sort-header-created"),
+        ] {
+            let slot = surface
+                .debug_bounds(selector)
+                .expect("original column slot");
+            let button = sort_header_button(&mut surface, key);
+            assert!(
+                button
+                    .label()
+                    .is_some_and(|name| name.contains(key.label()) && name.contains("排序"))
+            );
+            assert!(
+                button.bounds().left() >= slot.left() && button.bounds().right() <= slot.right()
+            );
+            assert!(
+                button.bounds().top() >= header.top()
+                    && button.bounds().bottom() <= header.bottom()
+            );
+            if key == DownloadSortKey::Created {
+                assert_eq!(slot.size.width, px(DOWNLOAD_CREATED_COLUMN_WIDTH));
+            }
+            tab_to_sort_header(&mut surface, &main, key);
+            let focus =
+                surface.update(|window, cx| window.focused(cx).expect("actual focused header"));
+            assert!(surface.update(|window, cx| focus.is_focused(window)
+                && window.last_input_was_keyboard()
+                && window.focused(cx).is_some()));
+            surface.update(|window, cx| window.draw(cx).clear(cx));
+            surface.update(|window, cx| {
+                let scale = window.scale_factor();
+                let expected = gpui_kit::component::Theme::global(cx).colors.ring;
+                assert!(
+                    window.painted_quads().iter().any(|quad| {
+                        (quad.bounds.origin.x.0 / scale - button.bounds().left().as_f32()).abs()
+                            < 1.0
+                            && (quad.bounds.origin.y.0 / scale - button.bounds().top().as_f32())
+                                .abs()
+                                < 1.0
+                            && (quad.bounds.size.width.0 / scale
+                                - button.bounds().size.width.as_f32())
+                            .abs()
+                                < 1.0
+                            && (quad.bounds.size.height.0 / scale
+                                - button.bounds().size.height.as_f32())
+                            .abs()
+                                < 1.0
+                            && quad.border_widths.top.0 > 0.0
+                            && quad.border_color == expected
+                    }),
+                    "official focused Button paints its own visible edge inside original column"
+                );
+            });
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn sort_keyboard_enter_space_match_pointer_reverse_once_and_preserve_task_identity(
+    cx: &mut TestAppContext,
+) {
+    let (main, handle, _temp, downloads) = sort_keyboard_workspace(cx);
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(920.0), px(480.0)));
+    surface.refresh().expect("original sort workspace");
+    let tasks = downloads.read_with(&surface, |app, _| app.tasks().to_vec());
+    let row_selectors = tasks
+        .iter()
+        .map(|task| {
+            let selector: &'static str = Box::leak(
+                format!("download-task-row-{}", task.task.id().as_uuid()).into_boxed_str(),
+            );
+            (task.task.id(), selector)
+        })
+        .collect::<Vec<_>>();
+    main.update_in(&mut surface, |main, _, cx| {
+        main.selected_download_tasks
+            .extend(tasks.iter().map(|task| task.task.id()));
+        main.download_selection_anchor = main.selected_download_task;
+        cx.notify();
+    });
+    let selection = main.read_with(&surface, |main, _| {
+        (
+            main.selected_download_task,
+            main.selected_download_tasks.clone(),
+            main.download_selection_anchor,
+        )
+    });
+    for key in [
+        DownloadSortKey::Name,
+        DownloadSortKey::Progress,
+        DownloadSortKey::Status,
+        DownloadSortKey::Created,
+    ] {
+        tab_to_sort_header(&mut surface, &main, key);
+        let before = main.read_with(&surface, |main, _| main.download_sort);
+        sort_key_event(&mut surface, "enter", true, false);
+        sort_key_event(&mut surface, "enter", true, true);
+        assert_eq!(
+            main.read_with(&surface, |main, _| main.download_sort),
+            before,
+            "one activation waits for release"
+        );
+        sort_key_event(&mut surface, "enter", false, false);
+        let expected = DownloadSortState {
+            key,
+            descending: key.default_descending(),
+        };
+        assert_eq!(
+            main.read_with(&surface, |main, _| main.download_sort),
+            expected
+        );
+        sort_key_event(&mut surface, "enter", false, false);
+        assert_eq!(
+            main.read_with(&surface, |main, _| main.download_sort),
+            expected,
+            "duplicate release cannot reverse again"
+        );
+        surface.refresh().expect("actual new-key state");
+        let name = sort_header_button(&mut surface, key)
+            .label()
+            .expect("readable direction")
+            .to_owned();
+        assert!(name.contains(if expected.descending {
+            "降序"
+        } else {
+            "升序"
+        }));
+        sort_key_event(&mut surface, "space", true, false);
+        sort_key_event(&mut surface, "space", false, false);
+        let reversed = DownloadSortState {
+            key,
+            descending: !expected.descending,
+        };
+        assert_eq!(
+            main.read_with(&surface, |main, _| main.download_sort),
+            reversed
+        );
+        surface.refresh().expect("actual reversed state");
+        let button = sort_header_button(&mut surface, key);
+        surface.simulate_click(button.bounds().center(), Modifiers::default());
+        assert_eq!(
+            main.read_with(&surface, |main, _| main.download_sort),
+            expected,
+            "pointer shares original toggle owner"
+        );
+        surface.run_until_parked();
+        surface.refresh().expect("actual sorted virtual rows");
+        let mut mounted = row_selectors
+            .iter()
+            .map(|(id, selector)| {
+                let row = surface
+                    .debug_bounds(selector)
+                    .expect("actual sorted production row bounds");
+                (row.top(), *id)
+            })
+            .collect::<Vec<_>>();
+        mounted.sort_by(|left, right| left.0.as_f32().total_cmp(&right.0.as_f32()));
+        let expected_ids = download_tasks_for_view(&tasks, DownloadTaskFilter::All, "", expected)
+            .iter()
+            .map(|index| tasks[*index].task.id())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            mounted.into_iter().map(|(_, id)| id).collect::<Vec<_>>(),
+            expected_ids
+        );
+        assert_eq!(
+            main.read_with(&surface, |main, _| (
+                main.selected_download_task,
+                main.selected_download_tasks.clone(),
+                main.download_selection_anchor
+            )),
+            selection
+        );
+        assert_eq!(
+            downloads.read_with(&surface, |app, _| app.tasks().to_vec()),
+            tasks,
+            "sort never mutates authoritative task or queue ordering"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn sort_keyboard_persists_both_fields_and_reopened_main_restores_direction(
+    cx: &mut TestAppContext,
+) {
+    let (main, handle, temp, _downloads) = sort_keyboard_workspace(cx);
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(920.0), px(480.0)));
+    surface.refresh().expect("actual persisted sort workspace");
+    tab_to_sort_header(&mut surface, &main, DownloadSortKey::Created);
+    for key in ["enter", "space"] {
+        sort_key_event(&mut surface, key, true, false);
+        sort_key_event(&mut surface, key, false, false);
+    }
+    surface.run_until_parked();
+    let saved = nxtools_core::AppConfig::load_from(&temp.path().join("config.json"))
+        .expect("original config section persisted");
+    assert_eq!(saved.download.task_list_sort.as_deref(), Some("created"));
+    assert_eq!(saved.download.task_list_sort_descending, Some(false));
+    let expected = main.read_with(&surface, |main, _| main.download_sort);
+    // Focus transfer retires the original Button's armed release.
+    sort_key_event(&mut surface, "enter", true, false);
+    let search = main.read_with(&surface, |main, _| main.download_search_input.clone());
+    surface.update(|window, cx| search.focus_handle(cx).focus(window, cx));
+    sort_key_event(&mut surface, "enter", false, false);
+    assert_eq!(
+        main.read_with(&surface, |main, _| main.download_sort),
+        expected
+    );
+    let notifications = surface.read(|cx| main.read(cx).notifications.clone());
+    let restored_notifications = notifications.clone();
+    let paths = temp.path().to_path_buf();
+    let restored_downloads = surface.update(|_, cx| {
+        let (platform, _) = nxtools_ipc::platform_bridge(16);
+        cx.new(|cx| {
+            DownloadApplication::new(
+                nxtools_download::DownloadEngine::open_in_memory()
+                    .expect("fresh in-memory reopened engine"),
+                Rc::new(platform),
+                restored_notifications,
+                crate::downloads::DownloadRuntimeContext {
+                    fallback_default_directory: paths.clone(),
+                    config: saved,
+                    config_path: paths.join("config.json"),
+                    log_directory: paths.clone(),
+                    database_path: paths.join("downloads.sqlite3"),
+                    ffmpeg_install_directory: paths.join("ffmpeg"),
+                },
+                cx,
+            )
+        })
+    });
+    let app = restored_downloads.downgrade();
+    let (reopened, second) = surface.add_window_view(move |window, cx| {
+        let mut main = MainWindow::new(
+            gpui_kit::WeakEntity::new_invalid(),
+            gpui_kit::WeakEntity::new_invalid(),
+            app,
+            MainWindowShellContext {
+                settings: None,
+                platform: None,
+                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+            },
+            notifications,
+            window,
+            cx,
+        );
+        main.shell.activate(MainModule::Downloads);
+        main
+    });
+    second
+        .refresh()
+        .expect("new production MainWindow restores preference");
+    assert_eq!(
+        reopened.read_with(second, |main, _| main.download_sort),
+        expected
+    );
+}
+
+#[gpui_kit::test]
+fn audit06_download_rows_and_header_follow_root_rem(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme as ComponentTheme;
+    let (main, handle, _temp, downloads) = sort_keyboard_workspace(cx);
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+    let tasks = downloads.read_with(&surface, |app, _| app.tasks().to_vec());
+    let selectors = tasks
+        .iter()
+        .map(|task| {
+            let selector: &'static str = Box::leak(
+                format!("download-task-row-{}", task.task.id().as_uuid()).into_boxed_str(),
+            );
+            (task.task.id(), selector)
+        })
+        .collect::<Vec<_>>();
+    let mut measured = Vec::new();
+    for dimensions in [(1060.0, 650.0), (920.0, 480.0)] {
+        surface.simulate_resize(size(px(dimensions.0), px(dimensions.1)));
+        for base in [16.0, 14.0, 18.0] {
+            surface.update(|window, cx| {
+                ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+                window.refresh();
+            });
+            AUDIT06_TYPE_PAINT.with(|paint| paint.borrow_mut().clear());
+            surface
+                .refresh()
+                .expect("actual MainWindow under production Root");
+            let rows = selectors
+                .iter()
+                .map(|(_, selector)| surface.debug_bounds(selector).expect("actual retained row"))
+                .collect::<Vec<_>>();
+            let name = surface
+                .debug_bounds("download-task-name-text-selected")
+                .expect("actual primary line");
+            let path = surface
+                .debug_bounds("download-task-size-text-selected")
+                .expect("actual secondary line");
+            let category = surface
+                .debug_bounds("download-task-category-selected")
+                .expect("category cell");
+            let category_header = surface
+                .debug_bounds("download-category-header")
+                .expect("matching header cell");
+            let header = surface
+                .debug_bounds("download-table-header")
+                .expect("header");
+            let vector = surface
+                .debug_bounds("download-task-icon-fallback-selected")
+                .expect("actual vector fallback");
+            let rem = surface.update(|window, _| window.rem_size());
+            let painted = surface.update(|window, _| {
+                let selected = crate::theme::Theme::zed_dark().element_selected;
+                window.painted_quads().iter().any(|quad| {
+                    (quad.bounds.size.height.as_f32() / window.scale_factor()
+                        - rows[0].size.height.as_f32())
+                    .abs()
+                        <= 0.1
+                        && quad.bounds.size.width.as_f32() / window.scale_factor() > 300.0
+                        && quad.background == gpui_kit::Background::from(selected)
+                })
+            });
+            let types = AUDIT06_TYPE_PAINT.with(|paint| paint.borrow().clone());
+            measured.push((
+                dimensions,
+                base,
+                rem,
+                rows,
+                name,
+                path,
+                category,
+                category_header,
+                header,
+                vector,
+                painted,
+                types,
+            ));
+        }
+    }
+    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    assert_eq!(selectors.len(), 2);
+    for (
+        dimensions,
+        base,
+        rem,
+        rows,
+        name,
+        path,
+        category,
+        category_header,
+        header,
+        vector,
+        painted,
+        types,
+    ) in measured
+    {
+        let ratio = base / 16.0;
+        assert_eq!(rem, px(base));
+        assert_eq!(
+            rows[0].size.height,
+            px(48.0 * ratio),
+            "real virtual row height at base={base}"
+        );
+        assert_eq!(
+            (rows[1].top() - rows[0].top()).abs(),
+            px(48.0 * ratio),
+            "uniform_list measurement uses actual row role"
+        );
+        assert!((name.size.height - px(20.0 * ratio)).abs() <= px(0.5));
+        assert!((path.size.height - px(18.0 * ratio)).abs() <= px(0.5));
+        assert!((path.top() - name.bottom() - px(4.0 * ratio)).abs() <= px(0.5));
+        assert_eq!(category.size.width, px(64.0 * ratio));
+        assert_eq!(category_header.size.width, category.size.width);
+        assert!(
+            (category.left() - category_header.left()).abs() <= px(4.0),
+            "existing fixed selection edges remain"
+        );
+        assert_eq!(header.size.height, px(28.0 * ratio));
+        assert!((vector.size.height - px(30.0 * ratio)).abs() <= px(0.5));
+        assert!(rows.iter().all(|row| row.right() <= px(dimensions.0)));
+        assert!(
+            painted,
+            "actual selected row quad must retain scaled row height"
+        );
+        assert_eq!(
+            types.get("name"),
+            Some(&(px(13.0 * ratio), px(20.0 * ratio))),
+            "actual primary text paint style"
+        );
+        assert_eq!(
+            types.get("path"),
+            Some(&(px(12.0 * ratio), px(18.0 * ratio))),
+            "actual supporting text paint style"
+        );
+    }
+    assert_eq!(
+        main.read_with(&surface, |main, _| main.selected_download_tasks.len()),
+        1
+    );
+}
+
+thread_local! {
+    static AUDIT06_TYPE_PAINT: RefCell<HashMap<&'static str, (gpui_kit::Pixels, gpui_kit::Pixels)>> = RefCell::new(HashMap::new());
+}
+
+pub(super) fn audit06_type_probe(role: &'static str) -> AnyElement {
+    gpui_kit::canvas(
+        |_, _, _| (),
+        move |_, (), window, _| {
+            let style = window.text_style();
+            let font = style.font_size.to_pixels(window.rem_size());
+            let line = style
+                .line_height
+                .to_pixels(style.font_size, window.rem_size());
+            AUDIT06_TYPE_PAINT.with(|paint| paint.borrow_mut().insert(role, (font, line)));
+        },
+    )
+    .absolute()
+    .size_full()
+    .into_any_element()
+}
+
+#[gpui_kit::test]
+fn audit06_virtual_scroll_remeasures_and_selects_current_stable_id(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme as ComponentTheme;
+    let (main, handle, _temp, downloads) = sort_keyboard_workspace(cx);
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+    downloads.update(&mut surface, |app, cx| {
+        let request = app.tasks()[0].task.request().clone();
+        for index in 0..28 {
+            let mut request = request.clone();
+            request.source_url = format!("https://synthetic.invalid/queued-{index}");
+            request.file_name = Some(format!("合成任务-{index:02}.bin"));
+            app.submit_with_idempotency(
+                request,
+                nxtools_download::DownloadSubmitMode::QueueOnly,
+                None,
+                cx,
+            )
+            .expect("queue only, never execute transfer");
+        }
+    });
+    let ordered = surface.read(|cx| {
+        let view = main.read(cx);
+        download_tasks_for_view(
+            downloads.read(cx).tasks(),
+            view.download_filter,
+            "",
+            view.download_sort,
+        )
+        .into_iter()
+        .map(|index| downloads.read(cx).tasks()[index].task.id())
+        .collect::<Vec<_>>()
+    });
+    let last_id = *ordered.last().expect("last immutable task");
+    let selector: &'static str =
+        Box::leak(format!("download-task-row-{}", last_id.as_uuid()).into_boxed_str());
+    let mut measured = Vec::new();
+    for dimensions in [(1060.0, 650.0), (920.0, 480.0)] {
+        surface.simulate_resize(size(px(dimensions.0), px(dimensions.1)));
+        for base in [16.0, 14.0, 18.0] {
+            surface.update(|window, cx| {
+                ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+                main.update(cx, |view, cx| {
+                    view.download_list_scroll
+                        .scroll_to_item(0, ScrollStrategy::Top);
+                    cx.notify();
+                });
+                window.refresh();
+            });
+            surface.refresh().expect("new rem remeasures actual rows");
+            main.update(&mut surface, |view, cx| {
+                view.download_list_scroll.scroll_to_bottom();
+                cx.notify();
+            });
+            surface.refresh().expect("actual uniform-list end");
+            let row = surface
+                .debug_bounds(selector)
+                .expect("last actual virtual row");
+            let viewport = surface
+                .debug_bounds("download-task-list-viewport")
+                .expect("actual list viewport");
+            surface.simulate_click(row.center(), Modifiers::default());
+            surface.run_until_parked();
+            surface
+                .refresh()
+                .expect("current stable-ID pointer selection");
+            let selected = main.read_with(&surface, |view, _| view.selected_download_task);
+            let end = main.read_with(&surface, |view, _| {
+                view.download_list_scroll.is_scrolled_to_end()
+            });
+            measured.push((base, row, viewport, selected, end));
+        }
+    }
+    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    assert_eq!(ordered.len(), 30);
+    for (base, row, viewport, selected, end) in measured {
+        assert_eq!(
+            row.size.height,
+            px(3.0 * base),
+            "actual end-row measurement follows current rem"
+        );
+        assert!(
+            row.top() >= viewport.top() && row.bottom() <= viewport.bottom() + px(0.5),
+            "last row fully reachable: row={row:?}, viewport={viewport:?}"
+        );
+        assert_eq!(end, Some(true));
+        assert_eq!(
+            selected,
+            Some(last_id),
+            "pointer after remeasure retains immutable identity"
+        );
+    }
+}
+
+struct Audit06BitmapRow {
+    task: nxtools_download::DownloadEngineTask,
+    main: Entity<MainWindow>,
+    downloads: gpui_kit::WeakEntity<DownloadApplication>,
+    icon: std::path::PathBuf,
+}
+impl Render for Audit06BitmapRow {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().size_full().flex().flex_col().child(download_task_row(
+            Theme::zed_dark(),
+            self.downloads.clone(),
+            self.main.clone(),
+            DownloadRowSelection {
+                selected: true,
+                visible_task_ids: Arc::new(vec![self.task.task.id()]),
+            },
+            &self.task,
+            None,
+            Some(self.icon.clone()),
+        ))
+    }
+}
+
+#[gpui_kit::test]
+fn audit06_bitmap_and_physical_selection_edges_remain_fixed(cx: &mut TestAppContext) {
+    use gpui_kit::component::Theme as ComponentTheme;
+    let (main, handle, temp, downloads) = sort_keyboard_workspace(cx);
+    let original = handle
+        .update(cx, |_, _, cx| ComponentTheme::global(cx).clone())
+        .expect("theme");
+    let task = cx.read(|cx| downloads.read(cx).tasks()[0].clone());
+    let icon = temp.path().join("synthetic-icon.png");
+    image::RgbaImage::from_pixel(20, 20, image::Rgba([12, 34, 56, 255]))
+        .save(&icon)
+        .expect("temporary synthetic bitmap");
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|_| Audit06BitmapRow {
+            task,
+            main,
+            downloads: downloads.downgrade(),
+            icon,
+        });
+        gpui_kit::base::Root::new(view, window, cx)
+    });
+    surface.simulate_resize(size(px(740.0), px(180.0)));
+    let mut measured = Vec::new();
+    for base in [16.0, 14.0, 18.0] {
+        surface.update(|window, cx| {
+            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+            window.refresh();
+        });
+        surface.refresh().expect("production bitmap row");
+        let bitmap = surface
+            .debug_bounds("download-task-shell-icon-selected")
+            .expect("actual bitmap bounds");
+        let edges = surface.update(|window, _| {
+            window.painted_quads().iter().any(|quad| {
+                (quad.bounds.size.height.as_f32() / window.scale_factor() - 3.0 * base).abs() <= 0.1
+                    && (quad.border_widths.left.as_f32() / window.scale_factor() - 2.0).abs() <= 0.1
+            })
+        });
+        measured.push((bitmap, edges));
+    }
+    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    for (bitmap, edges) in measured {
+        assert_eq!(
+            bitmap.size,
+            size(px(40.0), px(40.0)),
+            "file image doubles without following text rem"
+        );
+        assert!(edges, "physical selection edge remains two logical pixels");
+    }
+}
+
+#[gpui_kit::test]
+fn ux_repair_download_single_click_selects_and_menu_explicitly_opens_details(
+    cx: &mut TestAppContext,
+) {
+    let (main, handle, _temp, downloads) = workspace(cx);
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(1060.0), px(650.0)));
+    main.update(&mut surface, |main, cx| {
+        main.retire_download_detail_scope(cx);
+        main.selected_download_task = None;
+        main.selected_download_tasks.clear();
+    });
+    surface.refresh().expect("production downloads");
+    let task = downloads.read_with(&surface, |app, _| app.tasks()[0].task.id());
+    let selector: &'static str =
+        Box::leak(format!("download-task-row-{}", task.as_uuid()).into_boxed_str());
+    let row = surface.debug_bounds(selector).expect("actual task row");
+    surface.simulate_click(row.center(), Modifiers::default());
+    surface.run_until_parked();
+    surface.refresh().expect("selection");
+    assert_eq!(
+        main.read_with(&surface, |main, _| main.selected_download_task),
+        Some(task)
+    );
+    assert!(
+        main.read_with(&surface, |main, _| main.download_detail_scope.is_none()),
+        "selection must not admit detail IO"
+    );
+    assert!(surface.debug_bounds("download-task-detail").is_none());
+    surface.simulate_mouse_down(
+        row.center(),
+        gpui_kit::MouseButton::Right,
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    surface.refresh().expect("original context menu");
+    let action = surface
+        .debug_bounds("download-menu-view-details")
+        .expect("explicit View Details action");
+    let remove = surface
+        .debug_bounds("download-menu-remove")
+        .expect("original remove action");
+    assert!(
+        action.top() > remove.bottom(),
+        "View Details must follow all original actions"
+    );
+    surface.simulate_click(action.center(), Modifiers::default());
+    surface.run_until_parked();
+    surface.refresh().expect("explicit inspector");
+    assert!(surface.debug_bounds("download-task-detail").is_some());
+    assert_eq!(
+        main.read_with(&surface, |main, _| main
+            .download_detail_scope
+            .as_ref()
+            .map(|scope| scope.task_id())),
+        Some(task)
+    );
+    let scope = main.read_with(&surface, |main, _| {
+        main.download_detail_scope.clone().expect("explicit scope")
+    });
+    let task_states = downloads.read_with(&surface, |app, _| {
+        app.tasks()
+            .iter()
+            .map(|entry| (entry.task.id(), entry.task.status()))
+            .collect::<Vec<_>>()
+    });
+    let close = surface
+        .debug_bounds("download-detail-close")
+        .expect("original inspector close action");
+    surface.simulate_click(close.center(), Modifiers::default());
+    surface.run_until_parked();
+    assert!(!scope.is_live(), "close retires the original detail scope");
+    assert!(main.read_with(&surface, |main, _| main.download_detail_scope.is_none()));
+    assert_eq!(
+        main.read_with(&surface, |main, _| main.selected_download_task),
+        Some(task),
+        "close preserves selection"
+    );
+    assert_eq!(
+        downloads.read_with(&surface, |app, _| app
+            .tasks()
+            .iter()
+            .map(|entry| (entry.task.id(), entry.task.status()))
+            .collect::<Vec<_>>()),
+        task_states,
+        "inspector close must not change task state"
     );
 }

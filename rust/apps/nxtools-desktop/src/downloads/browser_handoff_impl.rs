@@ -7,6 +7,8 @@ use super::*;
 
 const FIXED_CONFIRMATION_IPC_TIMEOUT: Duration = Duration::from_secs(10);
 
+pub(super) const CHROME_STORE_EXTENSION_ID: &str = "eldfplghejhopcmgfkacimanhaojakph";
+
 pub(super) struct PendingNewDownloadHandoff {
     pub(super) command_id: uuid::Uuid,
     started_at: Instant,
@@ -695,6 +697,185 @@ impl DownloadApplication {
     pub(crate) fn handle_native_schedule_window_close(&mut self, closing_window: AnyWindowHandle) {
         if self.schedule_window == Some(closing_window) {
             self.schedule_window = None;
+        }
+    }
+}
+
+impl DownloadApplication {
+    pub(super) fn request_browser_registration(
+        &mut self,
+        correlation_id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) {
+        let configured = &self.config.download.chrome_web_store_extension_id;
+        let chromium_extension_id = if configured.is_empty() {
+            CHROME_STORE_EXTENSION_ID.to_owned()
+        } else {
+            configured.clone()
+        };
+        let command_id = correlation_id;
+        if let Some((retired_id, started)) = self.pending_browser_registration.take() {
+            info!(event = "download.browser_native_messaging.registration_retired", command_id = %retired_id,
+                reason = "superseded", elapsed_ms = started.elapsed().as_millis(), "old registration ownership retired");
+        }
+        self.pending_browser_registration = Some((command_id, Instant::now()));
+        match self.platform.send_command_with_id(
+            PlatformCommand::EnsureBrowserNativeMessaging(EnsureBrowserNativeMessagingCommand {
+                enabled: true,
+                chromium_extension_id,
+                firefox_extension_id: "nxtools-download-interceptor@nxtools.local".into(),
+            }),
+            command_id,
+        ) {
+            Ok(_) => {
+                info!(event = "download.browser_native_messaging.registration_requested",
+                    %correlation_id, %command_id, "exact browser registration queued");
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(Duration::from_secs(15))
+                        .await;
+                    let _ = this.update(cx, |this, cx| {
+                        if this
+                            .pending_browser_registration
+                            .is_some_and(|(id, _)| id == command_id)
+                        {
+                            this.finish_browser_registration(false, None, "timeout", cx);
+                        }
+                    });
+                })
+                .detach();
+            }
+            Err(_) => self.finish_browser_registration(false, None, "queue_rejected", cx),
+        }
+    }
+
+    pub(super) fn finish_browser_registration(
+        &mut self,
+        success: bool,
+        native_error_code: Option<i32>,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((command_id, started)) = self.pending_browser_registration.take() else {
+            return;
+        };
+        info!(event = "download.browser_native_messaging.registration_completed", %command_id,
+            success, reason, ?native_error_code, elapsed_ms = started.elapsed().as_millis(),
+            "browser registration terminal result");
+        if !success {
+            let center = self.notifications.clone();
+            cx.defer(move |cx| {
+                center.update(cx, |center, cx| {
+                    center.show_error(
+                        "browser-native-registration",
+                        "浏览器扩展连接配置未应用",
+                        "已保存的设置仍保留。请重新保存下载设置或重启 NxTools 后重试连接。",
+                        cx,
+                    );
+                })
+            });
+        }
+    }
+}
+
+pub(super) const FIREFOX_STORE_URL: &str =
+    "https://addons.mozilla.org/zh-CN/firefox/addon/nxtools-download-interceptor/";
+impl DownloadApplication {
+    pub(super) fn open_chrome_store(&mut self, cx: &mut Context<Self>) {
+        self.open_browser_store(
+            "chrome",
+            format!("https://chromewebstore.google.com/detail/nxtools-download-intercep/{CHROME_STORE_EXTENSION_ID}"),
+            cx,
+        );
+    }
+
+    pub(super) fn open_firefox_store(&mut self, cx: &mut Context<Self>) {
+        self.open_browser_store("firefox", FIREFOX_STORE_URL.into(), cx);
+    }
+
+    fn open_browser_store(&mut self, store: &'static str, target: String, cx: &mut Context<Self>) {
+        if self.pending_browser_store_page.is_some() {
+            return;
+        }
+        let id = uuid::Uuid::new_v4();
+        self.pending_browser_store_page = Some((id, Instant::now()));
+        info!(event="download.browser_store.open_started", correlation_id=%id, store);
+        if self
+            .platform
+            .send_command_with_id(
+                PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                    target,
+                    action: ShellOpenAction::Open,
+                }),
+                id,
+            )
+            .is_err()
+        {
+            self.finish_browser_store_page(false, None, cx);
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_secs(10))
+                .await;
+            let _ = this.update(cx, |owner, cx| {
+                if owner
+                    .pending_browser_store_page
+                    .is_some_and(|(current, _)| current == id)
+                {
+                    owner.finish_browser_store_page(false, None, cx);
+                }
+            });
+        })
+        .detach();
+    }
+    pub(super) fn handle_browser_store_page(
+        &mut self,
+        notification: &PlatformNotification,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        match notification {
+            PlatformNotification::CommandResult {
+                correlation_id,
+                result,
+            } if self
+                .pending_browser_store_page
+                .is_some_and(|(id, _)| id == *correlation_id) =>
+            {
+                self.finish_browser_store_page(result.success, result.native_error_code, cx);
+                true
+            }
+            PlatformNotification::Disconnected { .. } => {
+                if self.pending_browser_store_page.is_some() {
+                    self.finish_browser_store_page(false, None, cx);
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+    fn finish_browser_store_page(
+        &mut self,
+        success: bool,
+        native_error_code: Option<i32>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((id, started)) = self.pending_browser_store_page.take() else {
+            return;
+        };
+        info!(event="download.browser_store.open_terminal", correlation_id=%id, success, ?native_error_code, elapsed_ms=started.elapsed().as_millis());
+        if !success {
+            let center = self.notifications.clone();
+            cx.defer(move |cx| {
+                center.update(cx, |center, cx| {
+                    center.show_error(
+                        format!("browser-store-{id}"),
+                        "浏览器扩展",
+                        "无法打开扩展商店页面，请检查默认浏览器后重试。",
+                        cx,
+                    )
+                })
+            });
         }
     }
 }

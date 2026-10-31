@@ -69,10 +69,9 @@ impl ClipboardPanel {
         drop(entries);
         self.move_selection(direction * count.max(1) as isize, cx)
     }
-    fn number_shortcut_index(&self, key: &gpui_kit::Keystroke, cx: &App) -> Option<usize> {
+    fn number_shortcut_index(key: &gpui_kit::Keystroke) -> Option<usize> {
         let modifiers = key.modifiers;
-        let legacy = !modifiers.modified() && self.search_input.read(cx).value().is_empty();
-        if !(modifiers.control || legacy)
+        if !modifiers.control
             || modifiers.alt
             || modifiers.shift
             || modifiers.platform
@@ -120,7 +119,7 @@ impl ClipboardPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(index) = self.number_shortcut_index(key, cx)
+        if let Some(index) = Self::number_shortcut_index(key)
             && let Some(reason) = self.shortcut_block_reason(window, cx)
         {
             self.reject_number_shortcut(index, reason);
@@ -142,7 +141,7 @@ impl ClipboardPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(index) = self.number_shortcut_index(&event.keystroke, cx) else {
+        let Some(index) = Self::number_shortcut_index(&event.keystroke) else {
             self.armed_number_key = None;
             return;
         };

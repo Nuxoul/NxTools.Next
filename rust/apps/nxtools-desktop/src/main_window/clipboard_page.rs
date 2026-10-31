@@ -541,7 +541,7 @@ impl MainWindow {
                                 title,
                                 if visible { "" } else { help },
                                 format!("clipboard-setting-{slot}-help"),
-                                300.0,
+                                crate::ui::metrics::ordinary_rem(300.0),
                                 div()
                                     .w_full()
                                     .flex()
@@ -559,6 +559,33 @@ impl MainWindow {
                     .keywords([title, help])
                 }
             };
+        let height_owner = self.clipboard.clone();
+        let height_reader = self.clipboard.clone();
+        let height_setting = SettingItem::new(
+            "文本卡最大高度",
+            gpui_kit::component::setting::SettingField::number_input(
+                gpui_kit::component::setting::NumberFieldOptions {
+                    min: f64::from(nxtools_core::CLIPBOARD_TEXT_CARD_MIN_HEIGHT),
+                    max: f64::from(nxtools_core::CLIPBOARD_TEXT_CARD_MAX_HEIGHT),
+                    step: 1.0,
+                },
+                move |cx| {
+                    height_reader.upgrade().map(|owner| f64::from(owner.read(cx).clipboard_settings().text_card_max_height))
+                        .unwrap_or(f64::from(nxtools_core::default_clipboard_text_card_max_height()))
+                },
+                move |value, cx| {
+                    if value.is_finite() && value.fract() == 0.0
+                        && (f64::from(nxtools_core::CLIPBOARD_TEXT_CARD_MIN_HEIGHT)..=f64::from(nxtools_core::CLIPBOARD_TEXT_CARD_MAX_HEIGHT)).contains(&value)
+                    {
+                        let owner = height_owner.clone();
+                        let height = value as u32;
+                        cx.defer(move |cx| {
+                            let _ = owner.update(cx, |owner, cx| owner.set_text_card_max_height(height, cx));
+                        });
+                    }
+                },
+            ),
+        ).description("整张文本卡片的最大高度，120–320 DIP，默认 160；短文本按内容自然收缩，不影响完整原文。卡片间距另计。");
         let image_owner = self.clipboard.clone();
         let image_mode = settings.image_view_mode;
         let image_choices = nxtools_core::ClipboardImageViewMode::ALL
@@ -676,6 +703,9 @@ impl MainWindow {
                     item(12, "存储位置", "迁移", false, true),
                 ]),
             ),
+            SettingPage::new("历史显示")
+                .resettable(false)
+                .group(SettingGroup::new().title("文本密度").item(height_setting)),
             SettingPage::new("图片预览")
                 .resettable(false)
                 .group(SettingGroup::new().title("大图浮窗").item(image_setting)),
@@ -772,7 +802,18 @@ impl MainWindow {
         } else {
             settings.hotkey.display.clone()
         };
-        let hotkey_control = Button::new("record-clipboard-hotkey")
+        let (custom_hotkey, reset_ready) = self
+            .clipboard
+            .upgrade()
+            .map(|app| {
+                let app = app.read(cx);
+                (
+                    app.clipboard_hotkey_is_custom(),
+                    app.can_reset_clipboard_hotkey(),
+                )
+            })
+            .unwrap_or_default();
+        let recorder = Button::new("record-clipboard-hotkey")
             .debug_selector(|| "record-clipboard-hotkey".into())
             .disabled(hotkey_update_pending)
             .outline()
@@ -790,7 +831,31 @@ impl MainWindow {
                     }
                     cx.notify();
                 }
-            }))
+            }));
+        let hotkey_control = div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .gap_2()
+            .when(custom_hotkey, |row| {
+                row.child(
+                    Button::new("clipboard-hotkey-reset")
+                        .label("重置")
+                        .outline()
+                        .tooltip("恢复默认快捷键 Alt+C")
+                        .disabled(!reset_ready)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let application = this.clipboard.clone();
+                            cx.defer(move |cx| {
+                                let _ = application.update(cx, |app, cx| {
+                                    app.reset_clipboard_hotkey();
+                                    cx.notify();
+                                });
+                            });
+                        })),
+                )
+            })
+            .child(recorder)
             .into_any_element();
         let max_items_control = self.render_retention_stepper(
             "clipboard-max-items",
@@ -843,7 +908,7 @@ impl MainWindow {
                 Button::new("clipboard-export-archive")
                     .small()
                     .outline()
-                    .label("导出")
+                    .label("导出…")
                     .debug_selector(|| "clipboard-export-archive".into())
                     .disabled(management_busy)
                     .on_click(move |_event, _window, cx| {
@@ -859,7 +924,7 @@ impl MainWindow {
                 Button::new("clipboard-import-archive")
                     .small()
                     .outline()
-                    .label("导入")
+                    .label("导入…")
                     .debug_selector(|| "clipboard-import-archive".into())
                     .disabled(management_busy)
                     .on_click(move |_event, _window, cx| {
@@ -915,7 +980,7 @@ impl MainWindow {
         let storage_controls = Button::new("clipboard-storage-migrate")
             .small()
             .outline()
-            .label("迁移")
+            .label("迁移…")
             .debug_selector(|| "clipboard-storage-migrate".into())
             .disabled(management_busy)
             .on_click(move |_event, _window, cx| {
@@ -938,7 +1003,7 @@ impl MainWindow {
                     "全局呼出热键",
                     "点击字段开始录制；Esc 或失焦取消",
                     "clipboard-hotkey-help",
-                    300.0,
+                    crate::ui::metrics::ordinary_rem(300.0),
                     hotkey_control,
                 ))
                 .child(

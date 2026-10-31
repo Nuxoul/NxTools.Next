@@ -1,0 +1,144 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+  "baseline_sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+  "after_sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+  "operations": [
+    {
+      "kind": "replace",
+      "baseline_start": 8,
+      "baseline_end": 9,
+      "after_start": 8,
+      "after_end": 9,
+      "baseline_text": "    dialog::{DialogAction, DialogClose, DialogFooter},\n",
+      "after_text": "    dialog::{Confirm, DialogClose, DialogFooter},\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 23,
+      "baseline_end": 23,
+      "after_start": 23,
+      "after_end": 58,
+      "baseline_text": "",
+      "after_text": "\nstruct PromptButtonKeys;\nimpl gpui_kit::Global for PromptButtonKeys {}\n\n#[derive(Clone, Default)]\nstruct PromptButtonInput(std::rc::Rc<std::cell::Cell<bool>>);\nimpl PromptButtonInput {\n    fn guard(&self, button: Button) -> Button {\n        let down = self.0.clone();\n        let up = self.0.clone();\n        button\n            .key_context(\"ArchivePromptButton\")\n            .capture_key_down(move |event, window, cx| {\n                let activation = matches!(event.keystroke.key.as_str(), \"enter\" | \"space\");\n                if !activation {\n                    down.set(false);\n                    return;\n                }\n                if event.prefer_character_input || event.keystroke.modifiers.modified() {\n                    down.set(false);\n                } else if !event.is_held {\n                    down.set(true);\n                    return;\n                }\n                window.prevent_default();\n                cx.stop_propagation();\n            })\n            .capture_key_up(move |event, window, cx| {\n                if matches!(event.keystroke.key.as_str(), \"enter\" | \"space\") && !up.replace(false) {\n                    window.prevent_default();\n                    cx.stop_propagation();\n                }\n            })\n    }\n}\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 42,
+      "baseline_end": 42,
+      "after_start": 77,
+      "after_end": 79,
+      "baseline_text": "",
+      "after_text": "    prompt_inputs: Vec<PromptButtonInput>,\n    activation: Option<gpui_kit::Subscription>,\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 61,
+      "baseline_end": 61,
+      "after_start": 98,
+      "after_end": 100,
+      "baseline_text": "",
+      "after_text": "            prompt_inputs: Vec::new(),\n            activation: None,\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 69,
+      "baseline_end": 69,
+      "after_start": 108,
+      "after_end": 115,
+      "baseline_text": "",
+      "after_text": "        if self.activation.is_none() {\n            self.activation = Some(cx.observe_window_activation(window, |this, _, _| {\n                for input in &this.prompt_inputs {\n                    input.0.set(false);\n                }\n            }));\n        }\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 82,
+      "baseline_end": 82,
+      "after_start": 128,
+      "after_end": 131,
+      "baseline_text": "",
+      "after_text": "            for input in self.prompt_inputs.drain(..) {\n                input.0.set(false);\n            }\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 118,
+      "baseline_end": 119,
+      "after_start": 167,
+      "after_end": 173,
+      "baseline_text": "    fn show_prompt(&self, prompt: ArchiveJobPrompt, window: &mut Window, cx: &mut Context<Self>) {\n",
+      "after_text": "    fn show_prompt(\n        &mut self,\n        prompt: ArchiveJobPrompt,\n        window: &mut Window,\n        cx: &mut Context<Self>,\n    ) {\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 121,
+      "baseline_end": 121,
+      "after_start": 175,
+      "after_end": 183,
+      "baseline_text": "",
+      "after_text": "        if !cx.has_global::<PromptButtonKeys>() {\n            cx.bind_keys([gpui_kit::KeyBinding::new(\n                \"enter\",\n                gpui_kit::NoAction,\n                Some(\"ArchivePromptButton\"),\n            )]);\n            cx.set_global(PromptButtonKeys);\n        }\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 123,
+      "baseline_end": 123,
+      "after_start": 185,
+      "after_end": 196,
+      "baseline_text": "",
+      "after_text": "        let confirm_anchor = cx.focus_handle();\n        let explicit_confirm = std::rc::Rc::new(std::cell::Cell::new(false));\n        let confirm_input = PromptButtonInput::default();\n        let cancel_input_guard = PromptButtonInput::default();\n        let conflict_inputs: [PromptButtonInput; 3] =\n            std::array::from_fn(|_| PromptButtonInput::default());\n        for input in self.prompt_inputs.drain(..) {\n            input.0.set(false);\n        }\n        self.prompt_inputs = vec![confirm_input.clone(), cancel_input_guard.clone()];\n        self.prompt_inputs.extend(conflict_inputs.iter().cloned());\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 125,
+      "baseline_end": 125,
+      "after_start": 198,
+      "after_end": 199,
+      "baseline_text": "",
+      "after_text": "            let button_confirm=explicit_confirm.clone();let ok_explicit=explicit_confirm.clone();let action_anchor=confirm_anchor.clone();\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 133,
+      "baseline_end": 134,
+      "after_start": 207,
+      "after_end": 208,
+      "baseline_text": "            let mut footer=DialogFooter::new().child(DialogClose::new().trigger(|b|b.label(\"取消任务\")));\n",
+      "after_text": "            let mut footer=DialogFooter::new().child(DialogClose::new().trigger(|b|cancel_input_guard.guard(b.label(\"取消任务\"))));\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 135,
+      "baseline_end": 136,
+      "after_start": 209,
+      "after_end": 210,
+      "baseline_text": "                for (label,decision) in [(\"覆盖\",ArchiveJobConflictDecision::Overwrite),(\"跳过\",ArchiveJobConflictDecision::Skip),(\"自动重命名\",ArchiveJobConflictDecision::AutoRename)]{\n",
+      "after_text": "                for (index,(label,decision)) in [(\"覆盖\",ArchiveJobConflictDecision::Overwrite),(\"跳过\",ArchiveJobConflictDecision::Skip),(\"自动重命名\",ArchiveJobConflictDecision::AutoRename)].into_iter().enumerate(){\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 137,
+      "baseline_end": 138,
+      "after_start": 211,
+      "after_end": 212,
+      "baseline_text": "                    footer=footer.child(Button::new(label).label(label).outline().on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));\n",
+      "after_text": "                    footer=footer.child(conflict_inputs[index].guard(Button::new(gpui_kit::SharedString::from(format!(\"archive-conflict-{}-{label}\",prompt.ticket.prompt_id))).label(label).outline()).on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 139,
+      "baseline_end": 140,
+      "after_start": 213,
+      "after_end": 214,
+      "baseline_text": "            }else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(DialogAction::new().child(Button::new(\"archive-job-prompt-ok\").label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{\"确认覆盖\"}else{\"继续\"}).debug_selector(||\"archive-job-prompt-ok\".into())));}\n",
+      "after_text": "            }else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(confirm_input.guard(Button::new(gpui_kit::SharedString::from(format!(\"archive-job-prompt-ok-{}\",prompt.ticket.prompt_id))).label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{\"确认覆盖\"}else{\"继续\"})).debug_selector(||\"archive-job-prompt-ok\".into()).child(div().absolute().size_0().track_focus(&confirm_anchor)).on_click(move|_,window,cx|{button_confirm.set(true);action_anchor.dispatch_action(&Confirm{secondary:false},window,cx);}));}\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 146,
+      "baseline_end": 147,
+      "after_start": 220,
+      "after_end": 221,
+      "baseline_text": "                .on_ok(move|_,window,cx|{let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})\n",
+      "after_text": "                .on_ok(move|_,window,cx|{if ok_prompt.kind==ArchiveJobPromptKind::CreateOverwrite && !ok_explicit.replace(false){return false;}let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

@@ -1,0 +1,50 @@
+﻿[
+    {
+        "name":  "ui-token-boundaries.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "ui-consistency.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "ui-state-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "ui-preview-isolation.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "download-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "clipboard-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "clipboard-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "name":  "archive-release-chain.ps1 -SourceOnly",
+        "exit":  0
+    },
+    {
+        "name":  "gpui-component-catalog.py",
+        "exit":  0
+    },
+    {
+        "name":  "gpui-release-contracts.py",
+        "exit":  0
+    },
+    {
+        "name":  "markdown-editor-contracts.py",
+        "exit":  0
+    },
+    {
+        "name":  "spec-contracts.py",
+        "exit":  0
+    }
+]

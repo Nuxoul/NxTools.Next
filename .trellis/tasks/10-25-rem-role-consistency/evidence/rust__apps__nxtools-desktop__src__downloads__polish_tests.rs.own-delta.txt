@@ -1,0 +1,299 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
++++ audit06/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
+@@ -3657,3 +3657,296 @@
+         config
+     );
+ }
++
++#[gpui_kit::test]
++fn audit06_schedule_ordinary_roles_follow_production_root_rem(cx: &mut TestAppContext) {
++    use gpui_kit::component::Theme as ComponentTheme;
++    cx.update(gpui_kit::init);
++    cx.update(crate::theme::apply_component_theme);
++    let original = cx.read(|cx| ComponentTheme::global(cx).clone());
++    let (application, directory, _endpoint) = window_fixture(cx);
++    let (_, surface) = cx.add_window_view(move |window, cx| {
++        let view = cx.new(|cx| DownloadScheduleView::new(application, None, window, cx));
++        view.update(cx, |view, _| {
++            view.enabled_start = true;
++            view.enabled_stop = true;
++        });
++        Root::new(view, window, cx)
++    });
++    surface.simulate_resize(size(px(430.0), px(326.0)));
++    surface.refresh().expect("actual product theme and Root");
++    let default_rem = surface.update(|window, _| window.rem_size());
++    let mut measured = Vec::new();
++    for base in [16.0, 14.0, 18.0] {
++        surface.update(|window, cx| {
++            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
++            window.refresh();
++        });
++        surface
++            .refresh()
++            .expect("production Root applies base font");
++        let day = surface
++            .debug_bounds("download-schedule-day-0")
++            .expect("first Toggle");
++        let next = surface
++            .debug_bounds("download-schedule-day-1")
++            .expect("second Toggle");
++        let toggle = surface
++            .debug_bounds("download-schedule-start-toggle")
++            .expect("Switch rail");
++        let input = surface
++            .debug_bounds("download-schedule-start-toggle-input")
++            .expect("TimeField rail");
++        let title = surface
++            .debug_bounds("download-schedule-start-toggle-title")
++            .expect("actual Form label");
++        let footer = surface
++            .debug_bounds("download-schedule-dialog-footer")
++            .expect("fixed footer");
++        let apply = surface
++            .debug_bounds("download-schedule-primary-apply-action")
++            .expect("actual Apply hit bounds");
++        measured.push((
++            base,
++            surface.update(|window, _| window.rem_size()),
++            day,
++            next,
++            toggle,
++            input,
++            title,
++            footer,
++            apply,
++        ));
++    }
++    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
++    let _ = std::fs::remove_dir_all(directory);
++    assert_eq!(
++        default_rem,
++        px(16.0),
++        "runtime product Root design baseline"
++    );
++    for (base, rem, day, next, toggle, input, title, footer, apply) in measured {
++        assert_eq!(
++            rem,
++            px(base),
++            "variation reaches the actual production Root"
++        );
++        let ratio = base / 16.0;
++        assert!(
++            (next.left() - day.right() - px(4.0 * ratio)).abs() <= px(0.02),
++            "ordinary weekday gap scales at base={base}: day={day:?}, next={next:?}"
++        );
++        assert_eq!(day.size.height, px(24.0 * ratio), "official Small Toggle");
++        assert_eq!(
++            toggle.size.height,
++            px(32.0 * ratio),
++            "ordinary control rail"
++        );
++        assert_eq!(
++            input.size.height,
++            px(32.0 * ratio),
++            "official TimeField height"
++        );
++        assert!(
++            (input.size.width - px(114.0 * ratio)).abs() <= px(0.5),
++            "time content width follows type with GPUI pixel alignment"
++        );
++        assert!(
++            (title.size.height - px(22.5 * ratio)).abs() <= px(0.5),
++            "actual label line layout"
++        );
++        assert_eq!(
++            footer.size.height,
++            px(48.0),
++            "fixed client footer is not a zoom role"
++        );
++        assert!(apply.top() >= footer.top() && apply.bottom() <= footer.bottom());
++    }
++}
++
++#[gpui_kit::test]
++fn audit06_schedule_long_validation_scrolls_inside_fixed_surface(cx: &mut TestAppContext) {
++    use gpui_kit::component::Theme as ComponentTheme;
++    cx.update(gpui_kit::init);
++    cx.update(crate::theme::apply_component_theme);
++    let original = cx.read(|cx| ComponentTheme::global(cx).clone());
++    let (application, directory, _endpoint) = window_fixture(cx);
++    cx.update(|cx| application.update(cx, |app, cx| app.open_schedule_window(cx)));
++    cx.run_until_parked();
++    let handle = cx
++        .read(|cx| application.read(cx).schedule_window)
++        .expect("production fixed window");
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    let view = surface.update(|window, cx| {
++        window
++            .root::<Root>()
++            .expect("read production Root")
++            .expect("production Root present")
++            .read(cx)
++            .view()
++            .clone()
++            .downcast::<DownloadScheduleView>()
++            .expect("production schedule")
++    });
++    let mut measured = Vec::new();
++    for base in [16.0, 14.0, 18.0] {
++        surface.update(|window, cx| {
++            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
++            view.update(cx, |view, cx| {
++                view.enabled_start = true;
++                view.enabled_stop = true;
++                view.error = Some(
++                    ("请检查计划与路径 D:\\合成目录\\很长的中文文件名\\验证对象.txt\n".repeat(30))
++                        + "验证全文末尾",
++                );
++                cx.notify();
++            });
++            window.refresh();
++        });
++        surface.refresh().expect("long validation in fixed client");
++        let viewport = surface
++            .debug_bounds("download-schedule-validation")
++            .expect("two-line viewport");
++        for _ in 0..60 {
++            surface.simulate_event(gpui_kit::ScrollWheelEvent {
++                position: viewport.center(),
++                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 5.0)),
++                ..Default::default()
++            });
++            surface
++                .refresh()
++                .expect("reset actual retained scroll to start");
++        }
++        let before = surface
++            .debug_bounds("download-schedule-validation-text")
++            .expect("actual full error layout");
++        for _ in 0..60 {
++            surface.simulate_event(gpui_kit::ScrollWheelEvent {
++                position: viewport.center(),
++                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -5.0)),
++                ..Default::default()
++            });
++            surface.refresh().expect("real error wheel scroll");
++        }
++        let after = surface
++            .debug_bounds("download-schedule-validation-text")
++            .expect("current text layout");
++        let footer = surface
++            .debug_bounds("download-schedule-dialog-footer")
++            .expect("fixed footer");
++        let apply = surface
++            .debug_bounds("download-schedule-primary-apply-action")
++            .expect("Apply hit target");
++        let root = surface
++            .debug_bounds("download-schedule-dialog-shell")
++            .expect("fixed shell");
++        measured.push((base, viewport, before, after, footer, apply, root));
++    }
++    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
++    let cancel = surface
++        .debug_bounds("download-schedule-secondary-cancel-action")
++        .expect("original Cancel");
++    surface.simulate_click(cancel.center(), Modifiers::default());
++    surface.run_until_parked();
++    let closed = surface.read(|cx| application.read(cx).schedule_window.is_none());
++    let _ = std::fs::remove_dir_all(directory);
++    for (base, viewport, before, after, footer, apply, root) in measured {
++        assert!(
++            before.size.height > viewport.size.height,
++            "full error must remain available at base={base}"
++        );
++        assert!(
++            after.top() < before.top(),
++            "actual wheel must scroll the full error at base={base}: before={before:?}, after={after:?}"
++        );
++        assert!(
++            after.bottom() <= viewport.bottom() + px(0.5) && after.bottom() > viewport.top(),
++            "real full-text end reachable at base={base}: text={after:?}, viewport={viewport:?}"
++        );
++        assert!(
++            viewport.bottom() <= footer.top(),
++            "error never pushes fixed footer away"
++        );
++        assert!(apply.top() >= footer.top() && apply.bottom() <= footer.bottom());
++        assert_eq!(root.size, size(px(430.0), px(326.0)));
++    }
++    assert!(
++        closed,
++        "original Cancel remains pointer-reachable after zoom and scrolling"
++    );
++}
++
++#[gpui_kit::test]
++fn audit06_schedule_zoom_keeps_real_tab_space_and_pointer_owner(cx: &mut TestAppContext) {
++    use gpui_kit::component::Theme as ComponentTheme;
++    cx.update(gpui_kit::init);
++    cx.update(crate::theme::apply_component_theme);
++    let original = cx.read(|cx| ComponentTheme::global(cx).clone());
++    let (application, directory, _endpoint) = window_fixture(cx);
++    let retained = Rc::new(RefCell::new(None));
++    let slot = retained.clone();
++    let (_, surface) = cx.add_window_view(move |window, cx| {
++        let view = cx.new(|cx| DownloadScheduleView::new(application, None, window, cx));
++        *slot.borrow_mut() = Some(view.clone());
++        Root::new(view, window, cx)
++    });
++    surface.simulate_resize(size(px(430.0), px(326.0)));
++    let view = retained.borrow().clone().expect("original schedule entity");
++    let mut results = Vec::new();
++    for base in [14.0, 18.0] {
++        surface.update(|window, cx| {
++            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
++            window.activate_window();
++            window.refresh();
++        });
++        surface.refresh().expect("zoomed actual schedule");
++        let mut focused = false;
++        for _ in 0..24 {
++            surface.update(|window, cx| window.focus_next(cx));
++            surface.refresh().expect("actual Root Tab traversal");
++            focused = surface.update(|window, _| {
++                gpui_kit::base::test_support::snapshots(window)
++                    .iter()
++                    .any(|node| {
++                        node.focused() == Some(true)
++                            && node.path().contains(&gpui_kit::ElementId::from((
++                                "download-schedule-day",
++                                0usize,
++                            )))
++                    })
++            });
++            if focused {
++                break;
++            }
++        }
++        let day = DownloadWeekday::ALL[0];
++        let before = view.read_with(surface, |view, _| view.days.contains(&day));
++        audit05_schedule_key(surface, "space", true, false, false);
++        let down = view.read_with(surface, |view, _| view.days.contains(&day));
++        audit05_schedule_key(surface, "space", false, false, false);
++        let release = view.read_with(surface, |view, _| view.days.contains(&day));
++        surface.refresh().expect("same Toggle after release");
++        let hit = surface
++            .debug_bounds("download-schedule-day-0")
++            .expect("actual weekday hit");
++        surface.simulate_click(hit.center(), Modifiers::default());
++        let pointer = view.read_with(surface, |view, _| view.days.contains(&day));
++        let saving = view.read_with(surface, |view, _| view.saving);
++        results.push((base, focused, before, down, release, pointer, saving));
++    }
++    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
++    let _ = std::fs::remove_dir_all(directory);
++    for (base, focused, before, down, release, pointer, saving) in results {
++        assert!(focused, "real Tab reaches weekday at base={base}");
++        assert_eq!(down, before, "official Toggle remains release-owned");
++        assert_ne!(
++            release, before,
++            "one real Space release changes current day"
++        );
++        assert_eq!(
++            pointer, before,
++            "pointer uses same original requested-value owner"
++        );
++        assert!(!saving, "weekday activation never invokes Apply");
++    }
++}

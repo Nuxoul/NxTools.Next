@@ -1,0 +1,101 @@
+[
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/download-ui-lifecycle.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:12:58.2214916Z",
+    "finished_utc": "2026-10-26T01:12:58.6678756Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\download-ui-lifecycle.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/download-ui-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/desktop-shell-lifecycle.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:12:58.6862369Z",
+    "finished_utc": "2026-10-26T01:12:59.4692737Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\desktop-shell-lifecycle.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/desktop-shell-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/clipboard-ui-lifecycle.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:12:59.4715252Z",
+    "finished_utc": "2026-10-26T01:12:59.7984228Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\clipboard-ui-lifecycle.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/clipboard-ui-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-token-boundaries.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:12:59.8004573Z",
+    "finished_utc": "2026-10-26T01:13:04.9211533Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\ui-token-boundaries.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/ui-token-boundaries.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-consistency.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:04.9236725Z",
+    "finished_utc": "2026-10-26T01:13:06.5856906Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\ui-consistency.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/ui-consistency.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-state-lifecycle.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:06.5867731Z",
+    "finished_utc": "2026-10-26T01:13:06.9441988Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\ui-state-lifecycle.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/ui-state-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-motion-policy.ps1",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:06.9457440Z",
+    "finished_utc": "2026-10-26T01:13:07.2099468Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\ui-motion-policy.log",
+    "level": "Source/static only",
+    "evidence_log": "evidence/logs/ui-motion-policy.log"
+  },
+  {
+    "command": "python tests/architecture/gpui-component-catalog.py",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:07.2119824Z",
+    "finished_utc": "2026-10-26T01:13:07.3007985Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\gpui-component-catalog.log",
+    "level": "Source/document only",
+    "evidence_log": "evidence/logs/gpui-component-catalog.log"
+  },
+  {
+    "command": "python tests/architecture/gpui-release-contracts.py",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:07.3018286Z",
+    "finished_utc": "2026-10-26T01:13:07.5637076Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\gpui-release-contracts.log",
+    "level": "Source/document only",
+    "evidence_log": "evidence/logs/gpui-release-contracts.log"
+  },
+  {
+    "command": "python tests/architecture/markdown-editor-contracts.py",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:07.5647416Z",
+    "finished_utc": "2026-10-26T01:13:07.6664197Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\markdown-editor-contracts.log",
+    "level": "Source/document only",
+    "evidence_log": "evidence/logs/markdown-editor-contracts.log"
+  },
+  {
+    "command": "python tests/architecture/spec-contracts.py",
+    "exit": 0,
+    "started_utc": "2026-10-26T01:13:07.6679283Z",
+    "finished_utc": "2026-10-26T01:13:08.3177086Z",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-quick-clipboard\\spec-contracts.log",
+    "level": "Source/document only",
+    "evidence_log": "evidence/logs/spec-contracts.log"
+  }
+]

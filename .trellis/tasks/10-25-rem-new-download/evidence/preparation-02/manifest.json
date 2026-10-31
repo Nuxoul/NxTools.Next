@@ -1,0 +1,30 @@
+{
+  "status": "BLOCKED, preparatory static checks only",
+  "evidence": [
+    {
+      "path": "evidence/preparation-02/download-source-precheck.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "path": "evidence/preparation-02/inspect-protected.py",
+      "sha256": "6cd4d933d7b9682aa1145e35826673b73a7152a342e2157da45e150c5fd8fc89",
+      "bytes": 3174
+    },
+    {
+      "path": "evidence/preparation-02/new_download_rem_tests.rs.snapshot",
+      "sha256": "c7998ae2f4a5280249ae6b2acc51980676c1ac5441c08b075859326d06699f45",
+      "bytes": 6917
+    },
+    {
+      "path": "evidence/preparation-02/owner-invariants.json",
+      "sha256": "ee4524219efbbcac310930f13d69ad4a6c5661548744f9918e0958dc33b4343e",
+      "bytes": 9395
+    },
+    {
+      "path": "evidence/preparation-02/README.md",
+      "sha256": "ae7eb39c80330476cea1c8784dcd8cf19bd02df54f35c3e7bea5a492f4bd5649",
+      "bytes": 2100
+    }
+  ]
+}

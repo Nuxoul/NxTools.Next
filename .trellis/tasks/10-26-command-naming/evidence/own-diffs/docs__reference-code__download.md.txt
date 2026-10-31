@@ -1,0 +1,38 @@
+--- live-task-start/docs/reference-code/download.md
++++ own-delivery/docs/reference-code/download.md
+@@ -3112,3 +3112,35 @@
+ Core's existing Clipboard normalize forces enabled=true; section-merge evidence uses a
+ valid unrelated max_items value,not a forbidden legacy flag. Native/DPI/physical/WindowsIME/
+ reader/visual/user/release acceptance is separate; earlier failures/acceptances are immutable.
++
++## Audit #8 command-result naming follow-up (2026-10-26)
++Actual MainWindow header Buttons defer to open_settings_window/open_schedule_window/
++open_new_download_window; task-menu request_task_window opens its original keyed surface.
++These follow-up commands now use one U+2026, with icon Tooltip/a11y sharing the same full purpose.
++Settings directory/FFmpeg and NewDownload directory Buttons retain their original picker/ID/
++focus/deferred owners and complete object names, synchronizing only the ellipsis. Settings
++browser export Buttons -> request_browser_extension_export -> ExportBrowserExtension with
++empty destination -> WindowsPlatformAdapter.ExportBrowserExtension ->
++BrowserExtensionExportDialog.PickDestination -> StaDialogRunner -> SaveFileDialog.ShowDialog.
++Only native cancellation returns success+empty data before package export. The original
++Rust pending/result owner and C# export/signing/picker code are unchanged; no native dialog ran.
++
++Deletion wording follows the real existing policy, not the old static label:
++request_delete_confirmation checks task_removal_deletes_file. False calls remove(task,false)
++directly; true opens original380x178 DeleteDownloadView. Confirm calls remove(task,true),
++Cancel/close only retire that presentation. DownloadEngine::remove_correlated always cleans
++task-owned temporary artifacts and removes the record; it removes final_path only when
++delete_artifact is true. Original Batch Remove passes false; Cancel retains the task record
++and changes task state, not list removal. A read-only application getter projects the SAME
++setting for the menu label (Delete file ellipsis versus Remove from list); no policy or
++capability change. Final confirmation remains the immediate Delete file label without ellipsis.
++Source UI menu content keeps the official ElementItem/Label layout and original handler while
++exposing the same current text as a semantic Label; no second menu or key dispatcher.
++
++ABDM remove/dialog vocabulary and legacy MainWindow BuildTaskContextMenu/SettingsWindow
++constructor->WindowAnimationService.Attach->OnOpened/ApplyCancel/OnClosed were reread.
++Unavailable Compose/Avalonia native internals are not inferred. Actual production label reds,
++pointer/official-menu Enter/Tab+Space cancellation, synthetic record removal retaining a sentinel,
++and original full-object/gesture protections are in .trellis/tasks/10-26-command-naming.
++No actual final-file deletion, external download/export, native/product/release operation;
++strict/broad shared-tree failures and native/physical/reader/visual/user limits remain explicit.

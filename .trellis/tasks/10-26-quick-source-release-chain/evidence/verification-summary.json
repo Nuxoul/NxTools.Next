@@ -1,0 +1,93 @@
+{
+  "status": "TARGET_SOURCE_GATE_REPAIRED_WHOLE_GATE_BLOCKED_BY_PREEXISTING_QL11",
+  "original_compound_predicates": 74,
+  "original_violations": 1,
+  "retained_security_predicates": 73,
+  "source_only_assertions": 100,
+  "chain_mutations_rejected": 26,
+  "protected_files": 629,
+  "historical_files": 4778,
+  "existing_deltas": 1,
+  "new_test_files": 2,
+  "related_checks": [
+    {
+      "finished_utc": "2026-10-26T10:36:45.6203869Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\quick-launch-release-chain-tests.ps1 -SourceOnly",
+      "name": "release-chain-final",
+      "started_utc": "2026-10-26T10:36:43.8451504Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:45.9408513Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\archive-release-chain.ps1 -SourceOnly",
+      "name": "archive-release-source",
+      "started_utc": "2026-10-26T10:36:45.6436857Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:46.4852415Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\indexer-lifecycle.ps1",
+      "name": "indexer-source",
+      "started_utc": "2026-10-26T10:36:45.9413604Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:46.7595904Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\platformhost-test-selection.ps1",
+      "name": "platformhost-test-selection",
+      "started_utc": "2026-10-26T10:36:46.4867458Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:47.1500071Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\browser-signing-isolation.ps1",
+      "name": "browser-signing-isolation",
+      "started_utc": "2026-10-26T10:36:46.7610979Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:47.5746558Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\package-memory-policy.ps1",
+      "name": "package-memory-policy",
+      "started_utc": "2026-10-26T10:36:47.1510048Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:48.0283907Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\trusted-release-sequence.ps1",
+      "name": "trusted-release-sequence",
+      "started_utc": "2026-10-26T10:36:47.5756652Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:48.8398769Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\desktop-shell-lifecycle.ps1",
+      "name": "desktop-shell-source",
+      "started_utc": "2026-10-26T10:36:48.0298970Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:49.2854438Z",
+      "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests\\architecture\\quick-launch-lifecycle.ps1",
+      "name": "quick-full-source-final",
+      "started_utc": "2026-10-26T10:36:48.8408790Z",
+      "exit": 1
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:49.9509409Z",
+      "command": "python tests/architecture/spec-contracts.py",
+      "name": "spec-contracts",
+      "started_utc": "2026-10-26T10:36:49.2854438Z",
+      "exit": 0
+    },
+    {
+      "finished_utc": "2026-10-26T10:36:50.5840141Z",
+      "command": "git diff --check",
+      "name": "diff-check",
+      "started_utc": "2026-10-26T10:36:49.9519415Z",
+      "exit": 0
+    }
+  ],
+  "PSScriptAnalyzer": "NOT INSTALLED",
+  "Rust_CSharp_full_desktop_native_package": "NOT RUN"
+}

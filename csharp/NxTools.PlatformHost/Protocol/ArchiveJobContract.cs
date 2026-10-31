@@ -37,14 +37,21 @@ internal sealed record ArchiveJobRequest {
     public ArchiveJobReadmission? Readmission {get;init;}
 }
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveReclamationOptions(string Mode, Guid RecoveryId) {
+    internal bool Valid => Mode is "start" or "continue" && RecoveryId != Guid.Empty;
+}
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveJobExtract {
     public required string Strategy {get;init;}
     public required bool SingleFileFolder {get;init;}
     public required string Conflict {get;init;}
     public required bool CopyMotw {get;init;}
     public ArchiveJobSelection? Selection {get;init;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public ArchiveReclamationOptions? Reclamation {get;init;}
     internal bool Valid => Strategy is "here" or "name" or "smart" && Conflict is "ask" or "overwrite" or "skip" or "auto_rename" &&
-        (Selection is null || Selection.Browser.Valid && Selection.Ordinals.Length is >0 and <=4096 && Selection.Ordinals.Distinct().Count()==Selection.Ordinals.Length);
+        (Selection is null || Selection.Browser.Valid && Selection.Ordinals.Length is >0 and <=4096 && Selection.Ordinals.Distinct().Count()==Selection.Ordinals.Length) &&
+        (Reclamation is null || Reclamation.Valid && Strategy == "here" && Conflict == "ask" && Selection is null);
 }
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveJobSelection(ArchiveBrowserContext Browser, ulong[] Ordinals);
@@ -66,7 +73,8 @@ internal sealed record ArchiveJobCreate {
 }
 // Immutable browser revision is checked again by the owning runner, never trusted as a path grant.
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record ArchiveJobModify(ArchiveBrowserContext Browser,string Action,ulong[] Ordinals,string? Value);
+internal sealed record ArchiveJobModify(ArchiveBrowserContext Browser,string Action,ulong[] Ordinals,string? Value,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? SourcePrefix=null);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveJobTicket(Guid OperationId,Guid PromptId,ulong Generation);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -88,16 +96,39 @@ internal sealed record ArchiveJobOutputSource(string Native,uint[] Digest);
 internal sealed record ArchiveJobReadmission(Guid LogicalId,ArchiveJobOutputSource? ExpectedSource);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveJobOutputShortfall(ArchiveJobOutputBudget Current,ArchiveJobOutputBudget Required,ArchiveJobOutputSource Source);
-internal sealed record ArchiveJobProgress(string Phase,ulong BytesDone,ulong? BytesTotal,ulong FilesDone,ulong? FilesTotal);
-internal sealed record ArchiveJobPrompt(ArchiveJobTicket Ticket,string Kind,string? ErrorCode=null,uint Attempt=0,ulong? ExistingBytes=null,ulong? IncomingBytes=null,ulong? ApprovedLimit=null);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveJobProgress(string Phase,ulong BytesDone,ulong? BytesTotal,ulong FilesDone,ulong? FilesTotal,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? CurrentMember=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesDone=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesTotal=null) {
+    internal bool Valid=>CurrentMember is null
+        ? CurrentBytesDone is null && CurrentBytesTotal is null
+        : CurrentMember.Length>0 && Encoding.UTF8.GetByteCount(CurrentMember)<=32767 && !CurrentMember.Any(char.IsControl)
+            && (CurrentBytesTotal is null || CurrentBytesDone is {} done && done<=CurrentBytesTotal);
+}
+// UI-only values; never pass these strings into native output or authorization APIs.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveJobPromptDisplay(string? IncomingMember,string Target) {
+    private static bool Text(string? value,int limit)=>!string.IsNullOrEmpty(value) && Encoding.UTF8.GetByteCount(value)<=limit && !value.Any(char.IsControl);
+    internal bool Valid(string kind)=>Text(Target,65535) && (kind=="conflict"?Text(IncomingMember,32767):kind=="create_overwrite" && IncomingMember is null);
+    public override string ToString()=>"ArchiveJobPromptDisplay([PRIVATE])";
+}
+internal sealed record ArchiveJobPrompt(ArchiveJobTicket Ticket,string Kind,string? ErrorCode=null,uint Attempt=0,ulong? ExistingBytes=null,ulong? IncomingBytes=null,ulong? ApprovedLimit=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobPromptDisplay? Display=null);
 internal sealed record ArchiveJobCommit(ulong Ordinal,string State,bool Replaced,ulong Bytes,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? NativeIdentity=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] bool? Published=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? Cleanup=null);
+internal sealed record ArchiveJobResultLocation(string Target,string Action) {
+    public override string ToString()=>"ArchiveJobResultLocation([PRIVATE])";
+}
 internal sealed record ArchiveJobTerminal(string Outcome,string? Code=null,ulong FilesCommitted=0,ulong BytesCommitted=0,
     ulong FilesVerified=0,ulong BytesVerified=0,ulong FilesSkipped=0,bool CleanupComplete=true,string? CommitState=null,
     ulong ElapsedMs=0,int? NativeErrorCode=null,IReadOnlyList<ArchiveJobCommit>? Journal=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobOutputShortfall? OutputShortfall=null);
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobOutputShortfall? OutputShortfall=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobResultLocation? ResultLocation=null,
+    // Native observation only: false is affirmative zero-output evidence; omitted/null is unknown.
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] bool? OutputPublished=null);
 internal sealed record ArchiveJobEvent(uint Version,Guid OperationId,Guid SessionId,ulong Generation,string Kind,
     string? State=null,ArchiveJobProgress? Progress=null,ArchiveJobPrompt? Prompt=null,ArchiveJobTerminal? Terminal=null) {
     internal ProtocolEnvelope Envelope()=>ProtocolEnvelope.Create("platform_event",new{@event="archive_job",data=this},OperationId);
@@ -105,7 +136,7 @@ internal sealed record ArchiveJobEvent(uint Version,Guid OperationId,Guid Sessio
 }
 internal static class ArchiveJobWire {
     internal static readonly JsonSerializerOptions Strict=new(JsonDefaults.Options){PropertyNameCaseInsensitive=false,NumberHandling=JsonNumberHandling.Strict};
-    internal static bool PathValid(string? path)=>path is {Length:>=4 and <=32767} && Encoding.UTF8.GetByteCount(path)<=32767 && char.IsAsciiLetter(path[0]) && path[1..3]==":\\" && !path.Contains('/') && !path.Any(char.IsControl);
+    internal static bool PathValid(string? path)=>path is {Length:>=3 and <=32767} && Encoding.UTF8.GetByteCount(path)<=32767 && char.IsAsciiLetter(path[0]) && path[1..3]==":\\" && !path.Contains('/') && !path.Any(char.IsControl);
     internal static bool NameValid(string? name) {
         if(string.IsNullOrEmpty(name) || Encoding.UTF8.GetByteCount(name)>255 || name.EndsWith('.') || name.EndsWith(' ') || name.Any(c=>char.IsControl(c) || "\\/:*?\"<>|".Contains(c))) return false;
         var stem=name.Split('.')[0].ToUpperInvariant();
@@ -121,14 +152,16 @@ internal static class ArchiveJobWire {
         var path=directory ? value[..^1] : value;
         return path.Length>0 && path.Split('/').All(NameValid);
     }
-    private static bool ValidModify(ArchiveJobModify? edit,int paths) {
-        if(edit?.Browser.Valid!=true || edit.Browser.Format!="Zip" || edit.Ordinals is null || edit.Ordinals.Length>4096 || edit.Ordinals.Distinct().Count()!=edit.Ordinals.Length)return false;
+    internal static bool ValidModify(ArchiveJobModify? edit,int paths) {
+        if(paths is <1 or >32 || edit?.Browser.Valid!=true || edit.Browser.Format is not ("Zip" or "SevenZ" or "Tar" or "TarGz" or "TarXz") || edit.Ordinals is null || edit.Ordinals.Length>4096 || edit.Ordinals.Distinct().Count()!=edit.Ordinals.Length)return false;
+        if(edit.SourcePrefix is {} prefix && (edit.Browser.Format is not ("SevenZ" or "Tar" or "TarGz" or "TarXz") || edit.Action!="rename" || edit.Ordinals.Length!=1 || edit.Value?.EndsWith('/')!=true || !ModifyTargetValid(prefix,true)))return false;
         return edit.Action switch {
             "add"=>edit.Ordinals.Length==0 && paths>1 && (edit.Value is null || ModifyTargetValid(edit.Value,true)),
+            "replace_content"=>edit.Browser.Format is ("SevenZ" or "Tar" or "TarGz" or "TarXz") && paths==2 && edit.Ordinals.Length==1 && edit.Value is null,
             "delete"=>paths==1 && edit.Ordinals.Length>0 && edit.Value is null,
             "rename"=>paths==1 && edit.Ordinals.Length==1 && edit.Value is not null && ModifyTargetValid(edit.Value,edit.Value.EndsWith('/')),
             "new_directory"=>paths==1 && edit.Ordinals.Length==0 && ModifyTargetValid(edit.Value,true),
-            "comment"=>paths==1 && edit.Ordinals.Length==0 && edit.Value is not null && Encoding.UTF8.GetByteCount(edit.Value)<=65535 && !edit.Value.Contains('\0'),
+            "comment"=>edit.Browser.Format=="Zip" && paths==1 && edit.Ordinals.Length==0 && edit.Value is not null && Encoding.UTF8.GetByteCount(edit.Value)<=65535 && !edit.Value.Contains('\0'),
             _=>false};
     }
     internal static ArchiveJobCommand Parse(ProtocolEnvelope envelope) {
@@ -164,7 +197,7 @@ internal static class ArchiveJobWire {
         if(r.Kind=="test")return r.Paths.Length==1 && r.Destination is null && r.Extract is null && r.Create is null && r.Modify is null;
         if(r.Kind=="modify")return r.Destination is null && r.Extract is null && r.Create is null && r.Readmission is null && ValidModify(r.Modify,r.Paths.Length);
         if(!PathValid(r.Destination) || r.Modify is not null)return false;
-        if(r.Kind=="extract")return r.Paths.Length==1 && r.Create is null && r.Extract?.Valid==true;
+        if(r.Kind=="extract")return r.Paths.Length==1 && r.Create is null && r.Extract?.Valid==true && (r.Extract.Reclamation is null || r.Readmission is null);
         if(r.Kind!="create" || r.Extract is not null || r.Create is not {} c)return false;
         var zip=c.Format=="zip";var seven=c.Format=="seven_z";
         if(c.VolumeBytes is {} volume && (!zip && !seven || volume<65536 || volume>r.Limits.MaxOutputBytes))return false;

@@ -1,0 +1,7 @@
+﻿{
+    "name":  "shared-green-initial",
+    "command":  "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit":  0,
+    "elapsed":  200.69691799999998,
+    "finished":  "2026-10-26T05:41:54.2399618+08:00"
+}

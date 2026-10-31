@@ -27,7 +27,7 @@ impl ExtensionManagerView {
                 window.open_dialog(cx, move |dialog, window, _| {
                     let view = view.clone();
                     dialog
-                        .title("最近手动调用")
+                        .title("最近扩展活动")
                         .margin_top(px(8.0))
                         .w((window.viewport_size().width - px(24.0)).min(px(480.0)))
                         .content(move |content, _, _| content.min_h_0().child(view.clone()))
@@ -47,6 +47,7 @@ struct ActivityView {
 impl Render for ActivityView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let runs = self.owner.read(cx).recent_manual_runs();
+        let events = self.owner.read(cx).recent_events();
         let mut body = div()
             .id("extension-session-activity")
             .debug_selector(|| "extension-session-activity".into())
@@ -61,9 +62,9 @@ impl Render for ActivityView {
                 div()
                     .flex_shrink_0()
                     .text_color(cx.theme().muted_foreground)
-                    .child("仅本次会话的近期手动调用，关闭程序后清空。"),
+                    .child("仅本次会话：近期手动调用与最多 64 条自动事件结果，关闭程序后清空。"),
             );
-        if runs.is_empty() {
+        if runs.is_empty() && events.is_empty() {
             body = body.child(
                 div()
                     .debug_selector(|| "extension-activity-empty".into())
@@ -76,6 +77,41 @@ impl Render for ActivityView {
                                 ),
                         ),
                     ),
+            );
+        }
+        for event in events {
+            let owner = self.owner.read(cx);
+            let package = owner
+                .packages
+                .packages
+                .iter()
+                .find(|package| package.manifest.id == event.package_id);
+            let name = package.map_or("已移除扩展", |package| package.manifest.name.as_str());
+            let action = package
+                .and_then(|package| {
+                    package
+                        .manifest
+                        .handlers
+                        .iter()
+                        .find(|handler| handler.id == event.handler_id)
+                })
+                .map_or("自动事件", |handler| handler.title.as_str());
+            body = body.child(
+                ListItem::new(format!(
+                    "extension-event-activity-{}-{}-{}",
+                    event.event_id, event.package_id, event.handler_id
+                ))
+                .w_full()
+                .min_w_0()
+                .flex_shrink_0()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(format!("自动事件 · {name} · {action}"))
+                        .child(event.summary()),
+                ),
             );
         }
         for run in runs {
@@ -160,6 +196,12 @@ impl Render for ActivityView {
                                     .child(status.small())
                                     .child(format!("已保存 {} 个 · {elapsed}", run.items.len())),
                             )
+                            .children(run.progress.as_ref().map(|progress| {
+                                crate::extensions::manual_runs::progress_view(
+                                    progress,
+                                    format!("extension-activity-progress-{id}"),
+                                )
+                            }))
                             .child(actions),
                     ),
             );

@@ -11,6 +11,22 @@ pub struct ArchiveProgress {
     pub files: u64,
     pub total_bytes: Option<u64>,
 }
+#[derive(Clone, Copy)]
+struct ExtractionProgress {
+    total_bytes: Option<u64>,
+    files_total: u64,
+    member_done: Option<u64>,
+    member_total: Option<u64>,
+}
+
+pub(crate) struct ProgressSnapshot {
+    pub progress: ArchiveProgress,
+    pub phase: &'static str,
+    pub current_member: Option<String>,
+    pub files_total: Option<u64>,
+    pub current_bytes_done: Option<u64>,
+    pub current_bytes_total: Option<u64>,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -32,6 +48,9 @@ struct State {
     paused: bool,
     latest: Option<ArchiveProgress>,
     last_publish: Option<Instant>,
+    progress_phase: &'static str,
+    current_member: Option<String>,
+    extraction: Option<ExtractionProgress>,
     cancel_hooks: Vec<std::sync::Weak<dyn Fn() + Send + Sync>>,
     source_deletion: crate::source_deletion::Evidence,
     cancellation: CancellationObservation,
@@ -64,7 +83,10 @@ impl OperationControl {
                     cancelled: false,
                     paused: false,
                     latest: None,
+                    current_member: None,
+                    extraction: None,
                     last_publish: None,
+                    progress_phase: "running",
                     cancel_hooks: Vec::new(),
                     source_deletion: Default::default(),
                     cancellation: CancellationObservation {
@@ -231,8 +253,99 @@ impl OperationControl {
         Ok(hook)
     }
 
+    pub(crate) fn set_current_member(&self, value: &str) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.current_member =
+                (!value.is_empty() && value.len() <= 32767 && !value.chars().any(char::is_control))
+                    .then(|| value.to_owned());
+        }
+    }
+    pub(crate) fn configure_extraction_progress(&self, total_bytes: Option<u64>, files_total: u64) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.extraction = Some(ExtractionProgress {
+                total_bytes,
+                files_total,
+                member_done: None,
+                member_total: None,
+            });
+            state.current_member = None;
+            state.latest = Some(ArchiveProgress {
+                bytes: 0,
+                files: 0,
+                total_bytes,
+            });
+        }
+    }
+    pub(crate) fn begin_extracted_member(&self, member: &str, total: Option<u64>) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.current_member = (!member.is_empty()
+                && member.len() <= 32767
+                && !member.chars().any(char::is_control))
+            .then(|| member.to_owned());
+            let has_member = state.current_member.is_some();
+            if let Some(extraction) = &mut state.extraction {
+                extraction.member_done = has_member.then_some(0);
+                extraction.member_total = if has_member { total } else { None };
+            }
+        }
+    }
+    pub(crate) fn clear_extracted_member(&self) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.current_member = None;
+            if let Some(extraction) = &mut state.extraction {
+                extraction.member_done = None;
+                extraction.member_total = None;
+            }
+        }
+    }
+    pub(crate) fn publish_extraction_progress(
+        &self,
+        mut progress: ArchiveProgress,
+        member_done: u64,
+    ) {
+        if let Ok(mut state) = self.shared.state.lock()
+            && let Some(extraction) = &mut state.extraction
+        {
+            progress.total_bytes = extraction.total_bytes;
+            if extraction.member_done.is_some() {
+                extraction.member_done = Some(member_done);
+                if extraction
+                    .member_total
+                    .is_some_and(|total| member_done > total)
+                {
+                    extraction.member_total = None;
+                }
+            }
+            state.latest = Some(progress);
+            return;
+        }
+        // Creation, modification and reclamation still use the original coalesced counter.
+        self.publish(progress);
+    }
+    pub(crate) fn progress_snapshot(&self) -> Option<ProgressSnapshot> {
+        let state = self.shared.state.lock().ok()?;
+        let progress = state.latest?;
+        let extraction = state.extraction;
+        Some(ProgressSnapshot {
+            progress,
+            phase: state.progress_phase,
+            current_member: state.current_member.clone(),
+            files_total: extraction.map(|value| value.files_total),
+            current_bytes_done: extraction.and_then(|value| value.member_done),
+            current_bytes_total: extraction.and_then(|value| value.member_total),
+        })
+    }
     pub fn latest_progress(&self) -> Option<ArchiveProgress> {
         self.shared.state.lock().ok()?.latest
+    }
+    pub(crate) fn set_progress_phase(&self, phase: &'static str) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.progress_phase = phase;
+            state.latest = None;
+            state.extraction = None;
+            state.current_member = None;
+            state.last_publish = None;
+        }
     }
     pub(crate) fn publish(&self, progress: ArchiveProgress) {
         if let Ok(mut state) = self.shared.state.lock() {

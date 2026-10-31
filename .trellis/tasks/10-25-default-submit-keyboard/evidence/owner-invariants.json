@@ -1,0 +1,26 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "begin": "    fn submit(",
+    "end": "    pub(super) fn fail_submit(",
+    "whitespace_normalized_equal": true,
+    "baseline_sha256": "ed58722de14802b50f4b7c0a947f24fb374c351e068df04caf042c62a4993bbd",
+    "current_sha256": "ed58722de14802b50f4b7c0a947f24fb374c351e068df04caf042c62a4993bbd"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "begin": "    pub(crate) fn save(",
+    "end": "\n}\n\nimpl Render",
+    "whitespace_normalized_equal": true,
+    "baseline_sha256": "1f52f259f6ce2d126f50538e81556b6708d8e91ba4bea742c7e04eb15db8b48b",
+    "current_sha256": "1f52f259f6ce2d126f50538e81556b6708d8e91ba4bea742c7e04eb15db8b48b"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+    "begin": "fn prompt_identifier(",
+    "end": "fn number(",
+    "whitespace_normalized_equal": true,
+    "baseline_sha256": "670927d78fc0bd628279ddd23afc444a7d546fb998ff5c7764c62b674e62085b",
+    "current_sha256": "670927d78fc0bd628279ddd23afc444a7d546fb998ff5c7764c62b674e62085b"
+  }
+]

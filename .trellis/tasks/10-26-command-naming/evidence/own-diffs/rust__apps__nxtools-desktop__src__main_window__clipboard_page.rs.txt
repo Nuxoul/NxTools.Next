@@ -1,0 +1,29 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs
+@@ -873,7 +873,7 @@
+                 Button::new("clipboard-export-archive")
+                     .small()
+                     .outline()
+-                    .label("导出")
++                    .label("导出…")
+                     .debug_selector(|| "clipboard-export-archive".into())
+                     .disabled(management_busy)
+                     .on_click(move |_event, _window, cx| {
+@@ -889,7 +889,7 @@
+                 Button::new("clipboard-import-archive")
+                     .small()
+                     .outline()
+-                    .label("导入")
++                    .label("导入…")
+                     .debug_selector(|| "clipboard-import-archive".into())
+                     .disabled(management_busy)
+                     .on_click(move |_event, _window, cx| {
+@@ -945,7 +945,7 @@
+         let storage_controls = Button::new("clipboard-storage-migrate")
+             .small()
+             .outline()
+-            .label("迁移")
++            .label("迁移…")
+             .debug_selector(|| "clipboard-storage-migrate".into())
+             .disabled(management_busy)
+             .on_click(move |_event, _window, cx| {

@@ -1,0 +1,27 @@
+﻿[
+    {
+        "filter":  "main_window::archive_page_tests::archive_settings_official_search_never_saves",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\archive_settings_official_search_never_saves.log"
+    },
+    {
+        "filter":  "main_window::extensions_page::tests::w6_manager_pointer_preview_confirm_and_toggle_commit_real_config",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\w6_manager_pointer_preview_confirm_and_toggle_commit_real_config.log"
+    },
+    {
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\clippy.log"
+    },
+    {
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\workspace-check.log"
+    },
+    {
+        "command":  "cargo fmt --all -- --check",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\fmt.log"
+    }
+]

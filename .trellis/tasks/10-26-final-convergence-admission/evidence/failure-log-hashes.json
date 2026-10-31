@@ -1,0 +1,192 @@
+[
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+    "sha256": "7753e62dcaa29bb39f7ea683db082ceb6cc97485e48220b24d486cc7551d8c48",
+    "bytes": 267740,
+    "encoding": "utf-16",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 31s",
+      "thread 'main_window::extensions_page::tests::w6_manager_pointer_preview_confirm_and_toggle_commit_real_config' (14884) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page.rs:445:9:",
+      "test result: FAILED. 1237 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 281.18s",
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.json",
+    "sha256": "6e1ae5410f08807253d54b49fa21e6af32de4b3a30f605f2632289b07ccd4888",
+    "bytes": 323,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": []
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/main-window-related.log",
+    "sha256": "3bfaa6eac4846c2d2ba00d0cddef2d5c2cffd78c93a5207f5249076437e7115c",
+    "bytes": 45558,
+    "encoding": "utf-16",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.42s",
+      "thread 'main_window::archive_page_tests::archive_settings_official_search_never_saves' (11600) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\archive_page_tests.rs:205:5:",
+      "test result: FAILED. 185 passed; 1 failed; 0 ignored; 0 measured; 1051 filtered out; finished in 92.13s",
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-command-naming/evidence/logs/main-window-related.log",
+    "sha256": "ab9f8d3086afd7e4e3abf81b839d7567537a9256383e6fcd09ac9040e4b82f31",
+    "bytes": 29303,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 05s",
+      "thread 'main_window::extensions_page::removal::tests::expansion_storage_retained_data_remains_reachable_without_installed_package_and_clear_needs_review' (89792) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+      "thread 'main_window::extensions_page::removal::tests::expansion_storage_retained_restore_requires_fresh_confirmation_and_preserves_values' (83380) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+      "thread 'main_window::extensions_page::removal::tests::expansion_storage_retained_stale_confirmation_and_busy_cancel_keep_data' (87408) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+      "thread 'main_window::extensions_page::removal::tests::expansion_storage_ui_keyboard_clear_choice_and_dialog_cancel_preserve_data' (71972) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+      "thread 'main_window::extensions_page::removal::tests::expansion_storage_ui_paged_metadata_last_action_and_keyboard_confirmation_fit' (84564) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+      "thread 'main_window::extensions_page::removal::tests::expansion_storage_ui_remove_waits_for_actual_io_without_blocking_view' (91760) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+      "test result: FAILED. 206 passed; 6 failed; 0 ignored; 0 measured; 1087 filtered out; finished in 106.50s",
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/workspace-fmt-02.log",
+    "sha256": "a10dc64199ab961c0535764cd091414b0fe073b07319888ac77a799bff365e58",
+    "bytes": 32405,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:6:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:20:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:29:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:37:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:55:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:72:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:88:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:96:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:1:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:5:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:94:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:224:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:5:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:12:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:19:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:30:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:38:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:46:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:59:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:68:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:75:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:94:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:105:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:113:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:117:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:123:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:127:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:136:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:143:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1135:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1184:",
+      "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1201:"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-production.log",
+    "sha256": "4e6447e59baf8441caaeafc0f9afc2f68dbbd6e426c44a5781cfff1563ead614",
+    "bytes": 1023,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "error: unused import: `SPACING_12`",
+      "error: field `animated` is never read",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\") due to 2 previous errors"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-production.json",
+    "sha256": "e9acd3ef2f502b22ae15738e984c99c211193cb3f0570d804c0ade1f67b43a5c",
+    "bytes": 639,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": []
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-tests-final.log",
+    "sha256": "b2b3b00aa15d4d9ded636c917cd27381285f130276722af2829c13babd66fa05",
+    "bytes": 163,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 44.16s"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-tests-final.json",
+    "sha256": "41565e4a05ccd4329151934712911ac52ba0dc7a8aae2821041b816b367bcd69",
+    "bytes": 624,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": []
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/workspace-check-final.log",
+    "sha256": "0ef2951ca7d3431ff5d00156c847a7a4dff40f05873aa2cc15f9b396c29aacc6",
+    "bytes": 1052,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "warning: unused import: `SPACING_12`",
+      "warning: field `animated` is never read",
+      "warning: `nxtools-desktop` (bin \"nxtools-desktop\") generated 2 warnings (run `cargo fix --bin \"nxtools-desktop\" -p nxtools-desktop` to apply 1 suggestion)",
+      "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 13.94s"
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/workspace-check-final.json",
+    "sha256": "4a4615a9ea8775498432d6c5fe6961cc9c0e094006fefb4b0006fef9e593bb4d",
+    "bytes": 588,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": []
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/baseline-blocker-attribution.json",
+    "sha256": "235d6085817f1b80a9260141a20b4a6835b8ae50bfdb4f4539612a9dba72832c",
+    "bytes": 1109,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": []
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/commands/quick-full-source-final.log",
+    "sha256": "81649343f92fe8b88c9a1249837d0bcaebe47741bf60d6fd3eddc5f4f8e97adf",
+    "bytes": 551,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "QL-11 custom commands must use the shared tokenized master-detail editor contract.",
+      "+         throw 'QL-11 custom commands must use the shared tokenized ma ...",
+      "    + FullyQualifiedErrorId : QL-11 custom commands must use the shared tokenized master-detail editor contract."
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/commands/release-chain-final.log",
+    "sha256": "b4f477b068e809cecbd97d4423f59443f7bff7d2c016df73c72aa7f5188db3df",
+    "bytes": 5939,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": [
+      "PASS Quick Launch release-chain SourceOnly: 100 assertions; 26 broken chains + 73 retained security predicates; no product/native command executed."
+    ]
+  },
+  {
+    "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/commands/check-results.json",
+    "sha256": "0bfcb4f457efa6647a8d7a7aa357dca913305712f3d2d69ba29bb5b58d198558",
+    "bytes": 3382,
+    "encoding": "utf-8-sig",
+    "evidence_level": "HISTORICAL_NOT_RERUN",
+    "signals": []
+  }
+]

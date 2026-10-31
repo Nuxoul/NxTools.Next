@@ -309,3 +309,37 @@ async fn v2_missing_negotiation_and_cumulative_receive_after_ack_fail_closed() {
     assert!(operation.take_batch().is_none());
     drop(accepted);
 }
+
+#[tokio::test]
+async fn completed_operation_retains_original_connection_after_replacement() {
+    let (bridge, endpoint) = platform_bridge(32);
+    endpoint.set_connected_for_contract_test(true);
+    let bridge = Arc::new(bridge);
+    let origin = bridge.connection_generation().expect("original connection");
+    let client = ArchiveReadClient::new(bridge.clone()).expect("owner");
+    let command = request();
+    let operation = client.start(command.clone()).expect("read admission");
+    assert_eq!(operation.connection_generation(), origin);
+    endpoint
+        .try_receive_command_for_contract_test()
+        .expect("start");
+    negotiate(&endpoint, &client, &command).await;
+    send(&endpoint, &client, batch(&command)).await;
+    let first = operation.take_batch().expect("batch");
+    operation.acknowledge(first.sequence).expect("credit");
+    endpoint
+        .try_receive_command_for_contract_test()
+        .expect("ack");
+    send(&endpoint, &client, complete(&command)).await;
+    assert_eq!(
+        operation.terminal().expect("completion").status,
+        ArchiveReadStatus::Succeeded
+    );
+    let _receiver = endpoint.open_connection_for_contract_test();
+    assert_ne!(bridge.connection_generation(), Some(origin));
+    assert_eq!(
+        operation.connection_generation(),
+        origin,
+        "origin survives removed read pending and current shared bridge replacement"
+    );
+}

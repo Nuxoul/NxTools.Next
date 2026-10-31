@@ -4,18 +4,21 @@ use super::*;
 pub(super) enum PlatformRequestOperation {
     Environment,
     OpenDirectory,
+    SettingPath,
 }
 impl PlatformRequestOperation {
     pub(super) fn terminal_event(self) -> &'static str {
         match self {
             Self::Environment => "extension.environment.terminal",
             Self::OpenDirectory => "extension.directory.terminal",
+            Self::SettingPath => "extension.setting_path.terminal",
         }
     }
     fn accepted_event(self) -> &'static str {
         match self {
             Self::Environment => "extension.environment.accepted",
             Self::OpenDirectory => "extension.directory.dispatch",
+            Self::SettingPath => "extension.setting_path.accepted",
         }
     }
 }
@@ -43,6 +46,14 @@ impl ExtensionApplication {
             move |path| AppConfig::set_extension_runtime_override(path, &id, executable),
             cx,
         );
+    }
+    pub(crate) fn request_setting_path(
+        &mut self,
+        command: PlatformCommand,
+        id: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) -> Option<async_channel::Receiver<nxtools_protocol::PlatformCommandResult>> {
+        self.request_platform(command, id, PlatformRequestOperation::SettingPath, cx)
     }
     pub(crate) fn request_runtime(
         &mut self,
@@ -82,6 +93,9 @@ impl ExtensionApplication {
             return None;
         }
         info!(event=operation.accepted_event(),correlation_id=%id,"extension platform operation admitted");
+        if matches!(operation, PlatformRequestOperation::SettingPath) {
+            return Some(receiver);
+        }
         cx.spawn(async move |this, cx| {
             cx.background_executor()
                 .timer(std::time::Duration::from_secs(timeout))
@@ -92,6 +106,7 @@ impl ExtensionApplication {
                     let message = match operation {
                         PlatformRequestOperation::Environment => "运行环境操作超时，请重试",
                         PlatformRequestOperation::OpenDirectory => "打开插件目录超时，请确认后重试",
+                        PlatformRequestOperation::SettingPath => "路径选择尚未完成",
                     };
                     let _ = reply.try_send(nxtools_protocol::PlatformCommandResult {
                         success: false,

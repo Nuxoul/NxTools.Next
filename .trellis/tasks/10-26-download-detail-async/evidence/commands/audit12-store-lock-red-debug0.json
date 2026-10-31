@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T07:49:51.1881052Z",
+    "started_utc":  "2026-10-26T07:48:05.0863097Z",
+    "command":  "cargo --config profile.test.package.nxtools-desktop.debug=0 test -p nxtools-desktop --bin nxtools-desktop audit12_real_detail_request -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\download-detail-async\\audit12-store-lock-red-debug0.log"
+}

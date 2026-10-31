@@ -1,0 +1,26 @@
+﻿[
+    {
+        "exit":  0,
+        "name":  "names-protection"
+    },
+    {
+        "exit":  0,
+        "name":  "history-identity-protection"
+    },
+    {
+        "exit":  0,
+        "name":  "sort-protection"
+    },
+    {
+        "exit":  0,
+        "name":  "quick-presentation-related"
+    },
+    {
+        "exit":  0,
+        "name":  "scoped-fmt"
+    },
+    {
+        "exit":  0,
+        "name":  "scoped-diff"
+    }
+]

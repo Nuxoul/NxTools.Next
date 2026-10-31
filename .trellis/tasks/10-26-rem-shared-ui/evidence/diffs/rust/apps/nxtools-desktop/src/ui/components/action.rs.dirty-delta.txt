@@ -1,0 +1,20 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/action.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/action.rs
+@@ -215,7 +215,7 @@
+     icon: MaterialIcon,
+     label: &'static str,
+ ) -> Button {
+-    action_button(id, label).icon(Icon::new(icon).size(px(14.0)))
++    action_button(id, label).icon(Icon::new(icon).small())
+ }
+ 
+ pub(crate) fn icon_action(
+@@ -236,7 +236,7 @@
+         .secondary()
+         .debug_selector(move || id.to_string())
+         .accessibility_label(accessible_name)
+-        .icon(Icon::new(icon).size(px(14.0)))
++        .icon(Icon::new(icon).small())
+         .small()
+ }
+ 

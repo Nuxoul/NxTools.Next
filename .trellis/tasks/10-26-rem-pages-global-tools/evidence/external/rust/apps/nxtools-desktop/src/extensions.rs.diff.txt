@@ -1,0 +1,161 @@
+--- task-start
++++ independent-observed
+@@ -9,6 +9,7 @@
+ pub(crate) mod manual_runs;
+ mod runtime_environment;
+ pub(crate) mod service;
++pub(crate) mod storage_management;
+ pub(crate) mod ui_host;
+ use gpui_kit::{Context, Entity, Global, WeakEntity};
+ use nxtools_core::AppConfig;
+@@ -21,6 +22,14 @@
+ 
+ use crate::notifications::{AppNotification, NotificationLevel};
+ use crate::quick_launch::QuickLaunchApplication;
++
++#[derive(Clone, Copy)]
++enum DataCleanup {
++    Unchanged,
++    Retained,
++    Cleared,
++    Pending,
++}
+ 
+ pub(crate) struct ExtensionApplication {
+     config_path: PathBuf,
+@@ -60,6 +69,7 @@
+     /// Last management result (action, durably saved, runtime applied), never presentation text.
+     pub(crate) last_commit: Option<(&'static str, bool, bool)>,
+     pub(crate) commit_revision: u64,
++    pub(crate) storage_management: storage_management::StorageManagement,
+ }
+ 
+ pub(crate) struct ExtensionApplicationGlobal(pub(crate) WeakEntity<ExtensionApplication>);
+@@ -100,6 +110,7 @@
+             status: None,
+             last_commit: None,
+             commit_revision: 0,
++            storage_management: Default::default(),
+         }
+     }
+     fn notify_operation(
+@@ -875,6 +886,7 @@
+         &mut self,
+         id: String,
+         reviewed: nxtools_extensions::PackageRegistry,
++        clear_data: bool,
+         cx: &mut Context<Self>,
+     ) {
+         if self.busy || self.packages != reviewed {
+@@ -888,9 +900,42 @@
+         }
+         // Publication after the locked commit cancels owned runs; stale/failed review
+         // must not cancel an otherwise current invocation.
+-        self.commit(
++        let storage = self
++            .service
++            .as_ref()
++            .and_then(|service| service.storage_owner());
++        self.commit_with_cleanup(
+             "remove",
+-            move |path| AppConfig::remove_extension_checked(path, &id, &reviewed),
++            move |path| match storage {
++                Some(storage) => AppConfig::remove_extension_data_checked(
++                    path, &id, &reviewed, &storage, clear_data,
++                )
++                .map(|(config, pending)| {
++                    (
++                        config,
++                        if pending {
++                            DataCleanup::Pending
++                        } else if clear_data {
++                            DataCleanup::Cleared
++                        } else {
++                            DataCleanup::Retained
++                        },
++                    )
++                }),
++                None => {
++                    // An unconfigured test/host may remove only a package without durable data.
++                    anyhow::ensure!(
++                        reviewed
++                            .packages
++                            .iter()
++                            .find(|package| package.manifest.id == id)
++                            .is_some_and(|package| package.data_uuid.is_none()),
++                        nxtools_extensions::storage::StorageError::Unavailable
++                    );
++                    AppConfig::remove_extension_checked(path, &id, &reviewed)
++                        .map(|config| (config, DataCleanup::Unchanged))
++                }
++            },
+             cx,
+         );
+     }
+@@ -998,6 +1043,20 @@
+         operation: impl FnOnce(&std::path::Path) -> anyhow::Result<AppConfig> + Send + 'static,
+         cx: &mut Context<Self>,
+     ) {
++        self.commit_with_cleanup(
++            action,
++            move |path| operation(path).map(|config| (config, DataCleanup::Unchanged)),
++            cx,
++        );
++    }
++    fn commit_with_cleanup(
++        &mut self,
++        action: &'static str,
++        operation: impl FnOnce(&std::path::Path) -> anyhow::Result<(AppConfig, DataCleanup)>
++        + Send
++        + 'static,
++        cx: &mut Context<Self>,
++    ) {
+         if self.busy {
+             return;
+         }
+@@ -1024,9 +1083,12 @@
+         let service = self.service.clone();
+         cx.spawn(async move |this, cx| {
+             let outcome = background.spawn(async move {
++                let span = tracing::info_span!("extension.management", correlation_id=%id, action);
++                let _entered = span.enter();
++                info!(event = "extension.management.started");
+                 match service {
+-                    Some(service) => service.commit_config(&config_path, operation),
+-                    None => operation(&config_path).map(|config| (config, true)),
++                    Some(service) => service.commit_config_with_result(&config_path, operation),
++                    None => operation(&config_path).map(|(config, pending)| (config, true, pending)),
+                 }
+             }).await;
+             let _ = this.update(cx, |app, cx| {
+@@ -1034,17 +1096,26 @@
+                 if action=="trust" { app.trust_revision=app.trust_revision.wrapping_add(1); }
+                 app.commit_revision = app.commit_revision.wrapping_add(1);
+                 match outcome {
+-                    Ok((config, applied)) => {
++                    Ok((config, applied, cleanup)) => {
++                        let cleanup_pending = matches!(cleanup, DataCleanup::Pending);
+                         app.packages = config.extensions;
+                         app.refresh_committed_storage_metadata();
+                         app.preview = None;
+                         app.last_commit = Some((action, true, applied));
+-                        app.notify_operation(operation_key.clone(), if applied { NotificationLevel::Success } else { NotificationLevel::Error },
+-                            if applied { "已保存" } else { "已保存，但扩展运行时未能应用；请重试" }, cx);
++                        let (level, message) = match (applied, cleanup, action) {
++                            (false, DataCleanup::Pending, "remove") => (NotificationLevel::Error, "扩展已移除，数据待清理，运行时未能应用；请检查后重试"),
++                            (true, DataCleanup::Pending, "remove") => (NotificationLevel::Info, "扩展已移除，数据待清理；请稍后检查并重试"),
++                            (false, _, _) => (NotificationLevel::Error, "已保存，但扩展运行时未能应用；请重试"),
++                            (true, DataCleanup::Cleared, "remove") => (NotificationLevel::Success, "扩展已移除，此安装的数据已清理"),
++                            (true, DataCleanup::Retained, "remove") => (NotificationLevel::Success, "扩展已移除，扩展数据已保留"),
++                            (true, _, "remove") => (NotificationLevel::Success, "扩展已移除"),
++                            (true, _, _) => (NotificationLevel::Success, "已保存"),
++                        };
++                        app.notify_operation(operation_key.clone(), level, message, cx);
+                         let snapshot = app.packages.clone();
+                         let quick = app.quick_launch.clone();
+                         cx.defer(move |cx| { let _ = quick.update(cx, |quick, cx| quick.apply_extension_snapshot(snapshot, cx)); });
+-                        info!(event = "extension.management.completed", correlation_id=%id, action, elapsed_ms=started.elapsed().as_millis(), "extension change committed");
++                        info!(event = "extension.management.completed", correlation_id=%id, action, runtime_applied=applied, cleanup_pending, elapsed_ms=started.elapsed().as_millis(), "extension change committed");
+                     }
+                     Err(error) => {
+                         let message: String = match error.downcast_ref::<nxtools_extensions::PackageError>() {

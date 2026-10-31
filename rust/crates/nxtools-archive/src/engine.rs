@@ -68,6 +68,115 @@ impl<'password> ArchiveEngine<'password> {
         request: OpenRequest,
         control: &OperationControl,
     ) -> Result<ArchiveSnapshot> {
+        let mut snapshot = self.open_impl(request, control, false)?;
+        let refusal = if matches!(
+            snapshot.format,
+            ArchiveFormat::Zip | ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::TarXz
+        ) {
+            self.modification_eligibility(&snapshot, control).err()
+        } else {
+            Some(crate::ArchiveModificationRefusal::BackendMissing)
+        };
+        snapshot.capabilities = ArchiveCapabilities {
+            split_read: !snapshot.revision.volumes.is_empty(),
+            ..ArchiveCapabilities::opened(snapshot.format, refusal)
+        };
+        control.checkpoint()?;
+        Ok(snapshot)
+    }
+    /// Fresh read-only admission against this immutable revision, not a creation-format claim.
+    pub fn modification_eligibility(
+        &self,
+        snapshot: &ArchiveSnapshot,
+        control: &OperationControl,
+    ) -> std::result::Result<(), crate::ArchiveModificationRefusal> {
+        use crate::ArchiveModificationRefusal as Refusal;
+        if snapshot.format == ArchiveFormat::Zip {
+            return crate::zip_edit::eligibility(snapshot, &self.limits, control);
+        }
+        let format = match snapshot.format {
+            ArchiveFormat::Tar => "Tar",
+            ArchiveFormat::TarGz => "TarGz",
+            ArchiveFormat::TarXz => "TarXz",
+            _ => return Err(Refusal::BackendMissing),
+        };
+        if !snapshot.revision.volumes.is_empty() {
+            return Err(Refusal::Volumes);
+        }
+        let inspect = || -> Result<()> {
+            let mut source = File::open(&snapshot.revision.path)?;
+            ensure_revision(&mut source, &snapshot.revision, control)?;
+            let (_, mut plain) = crate::tar_edit_outer::Outer::open(
+                source.try_clone()?,
+                format,
+                &self.limits,
+                control,
+            )?;
+            let members = crate::tar_edit::inspect(&mut plain, &self.limits, control)?;
+            if members.len() != snapshot.entries.len()
+                || members.iter().zip(snapshot.entries.iter()).any(|(a, b)| {
+                    a.name != b.display_path
+                        || a.directory != (b.kind == crate::EntryKind::Directory)
+                        || Some(a.size) != b.size
+                })
+            {
+                return Err(ArchiveError::UnsupportedOperation);
+            }
+            ensure_revision(&mut source, &snapshot.revision, control)
+        };
+        inspect().map_err(|error| match error {
+            ArchiveError::SourceChanged => Refusal::SourceChanged,
+            ArchiveError::CorruptArchive => Refusal::Corrupt,
+            ArchiveError::IoFailure => Refusal::SourceUnavailable,
+            ArchiveError::ResourceLimit | ArchiveError::Cancelled => Refusal::UnverifiedMetadata,
+            _ => Refusal::UnsupportedStructure,
+        })
+    }
+    /// Browser read-only projection bound to the original opened source version. Native
+    /// object identity remains C# final admission authority, never inferred from a filename.
+    pub fn inspect_modification_source(
+        &self,
+        request: OpenRequest,
+        expected: &nxtools_protocol::archive_browser::ArchiveSourceBinding,
+        control: &OperationControl,
+    ) -> std::result::Result<(), crate::ArchiveModificationRefusal> {
+        use crate::ArchiveModificationRefusal as Refusal;
+        let snapshot = self.open(request, control).map_err(|error| match error {
+            ArchiveError::SourceChanged => Refusal::SourceChanged,
+            ArchiveError::CorruptArchive => Refusal::Corrupt,
+            ArchiveError::UnsupportedEncryption => Refusal::UnsupportedEncryption,
+            ArchiveError::IoFailure => Refusal::SourceUnavailable,
+            _ => Refusal::UnverifiedMetadata,
+        })?;
+        let modified = snapshot
+            .revision
+            .modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|duration| u64::try_from(duration.as_nanos()).ok());
+        if expected.validate().is_err()
+            || snapshot.revision.digest != expected.digest
+            || snapshot.revision.size != expected.size
+            || modified != Some(expected.modified_unix_ns)
+        {
+            return Err(Refusal::SourceChanged);
+        }
+        snapshot.capabilities.admit(crate::ArchiveOperation::Add)
+    }
+    /// Private extraction admission only. Public open/TEST keep unknown stream metadata.
+    pub(crate) fn open_for_output_readmission(
+        &self,
+        request: OpenRequest,
+        control: &OperationControl,
+    ) -> Result<ArchiveSnapshot> {
+        self.open_impl(request, control, true)
+    }
+    fn open_impl(
+        &self,
+        request: OpenRequest,
+        control: &OperationControl,
+        stream_declarations: bool,
+    ) -> Result<ArchiveSnapshot> {
         control.source_delete_begin();
         control.checkpoint()?;
         if self.zip_volumes
@@ -193,7 +302,17 @@ impl<'password> ArchiveEngine<'password> {
                 let mut spool = tgz::decode_xz(&mut file, &self.limits, control)?;
                 tar::list(&mut spool, request.encoding, &self.limits, control)?
             } else {
-                xz::list(&mut file, &request.path, &self.limits, control)?
+                if stream_declarations {
+                    xz::list_for_output_preflight(
+                        &mut file,
+                        &request.path,
+                        &self.limits,
+                        control,
+                        true,
+                    )?
+                } else {
+                    xz::list(&mut file, &request.path, &self.limits, control)?
+                }
             };
             let session = entries
                 .first()
@@ -228,7 +347,17 @@ impl<'password> ArchiveEngine<'password> {
                 let mut spool = tgz::decode_zstd(&mut file, &self.limits, control)?;
                 tar::list(&mut spool, request.encoding, &self.limits, control)?
             } else {
-                zstd::list(&mut file, &request.path, &self.limits, control)?
+                if stream_declarations {
+                    zstd::list_for_output_preflight(
+                        &mut file,
+                        &request.path,
+                        &self.limits,
+                        control,
+                        true,
+                    )?
+                } else {
+                    zstd::list(&mut file, &request.path, &self.limits, control)?
+                }
             };
             let session = entries
                 .first()
@@ -296,12 +425,21 @@ impl<'password> ArchiveEngine<'password> {
         for entry in &mut entries {
             entry.id.session = snapshot.session;
         }
-        Ok(ArchiveSnapshot {
+        let mut projected = ArchiveSnapshot {
             entries: entries.into(),
             comment,
             backend_safe,
             ..snapshot.clone()
-        })
+        };
+        projected.capabilities = ArchiveCapabilities {
+            split_read: !projected.revision.volumes.is_empty(),
+            ..ArchiveCapabilities::opened(
+                projected.format,
+                self.modification_eligibility(&projected, control).err(),
+            )
+        };
+        control.checkpoint()?;
+        Ok(projected)
     }
 
     pub fn execute(
@@ -406,7 +544,7 @@ impl<'password> ArchiveEngine<'password> {
         }
         let mut file = open_snapshot(&snapshot, &self.limits, control)?;
         ensure_revision(&mut file, &snapshot.revision, control)?;
-        if !snapshot.backend_safe {
+        if !snapshot.backend_safe && !request.plan.isolated_browser_entry {
             return Err(ArchiveError::OutputCollision);
         }
         let total = request.plan.total_bytes();

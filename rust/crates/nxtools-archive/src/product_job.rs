@@ -28,6 +28,7 @@ pub fn execute_with_output_readmission(
         || command.operation_id != control.operation_id()
         || request.kind != ArchiveJobKind::Extract
         || request.readmission.is_some()
+        || request.extract.as_ref().is_some_and(|extract| extract.reclamation.is_some())
     {
         return Err(ArchiveError::UnsupportedOperation);
     }

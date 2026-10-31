@@ -1,0 +1,69 @@
+--- live-dirty-baseline/rust/apps/nxtools-desktop/src/quick_launch/tests.rs
++++ own-current/rust/apps/nxtools-desktop/src/quick_launch/tests.rs
+@@ -1078,7 +1078,7 @@
+             visit_count: 2,
+             last_visited_at_unix_ms: 1,
+         }];
+-        panel.results = recent_directory_results(&panel.recent_directories, "");
++        panel.results = recent_directory_results(&panel.recent_directories, "").into();
+         panel.search_input.update(cx, |input, cx| {
+             input.set_placeholder("筛选最近目录", window, cx);
+             input.set_value("repo", window, cx);
+@@ -2625,7 +2625,7 @@
+     panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
+     window.simulate_input("item");
+     panel.update_in(window, |panel, _window, cx| {
+-        panel.replace_results(panel.results.clone(), cx); // This fixture supplies current completed provider rows.
++        panel.replace_results(panel.results.to_vec(), cx); // This fixture supplies current completed provider rows.
+         panel.selected = 24;
+         panel
+             .result_scroll
+@@ -4415,7 +4415,7 @@
+     );
+     panel.update_in(window, |panel, _, cx| {
+         panel.search_pending = false;
+-        panel.results = vec![search_result("current", ApplicationSource::IndexedFile)];
++        panel.results = vec![search_result("current", ApplicationSource::IndexedFile)].into();
+         panel.activate_selected(
+             QuickLaunchAction::Open,
+             QuickLaunchActionTrigger::Pointer,
+@@ -4746,7 +4746,8 @@
+         panel.results = vec![search_result(
+             "current-ime-result",
+             ApplicationSource::IndexedFile,
+-        )];
++        )]
++        .into();
+         panel.selected = 0;
+         panel.search_pending = false;
+     });
+@@ -4797,7 +4798,8 @@
+         panel.results = vec![search_result(
+             "current-cancel-result",
+             ApplicationSource::IndexedFile,
+-        )];
++        )]
++        .into();
+         panel.selected = 0;
+         panel.search_pending = false;
+     });
+@@ -4836,7 +4838,8 @@
+         panel.results = vec![search_result(
+             "composing-result",
+             ApplicationSource::IndexedFile,
+-        )];
++        )]
++        .into();
+         panel.selected = 0;
+         panel.search_pending = false;
+     });
+@@ -4875,7 +4878,8 @@
+         panel.results = vec![search_result(
+             "committed-result",
+             ApplicationSource::IndexedFile,
+-        )];
++        )]
++        .into();
+         panel.selected = 0;
+         panel.search_pending = false;
+     });

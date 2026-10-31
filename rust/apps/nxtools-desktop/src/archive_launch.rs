@@ -102,6 +102,8 @@ pub(crate) fn parse_arguments(
                             Some("here") => ArchiveExtractMode::Here,
                             Some("name") => ArchiveExtractMode::Name,
                             Some("dialog") => ArchiveExtractMode::Dialog,
+                            Some("smart-dialog") => ArchiveExtractMode::SmartDialog,
+                            Some("name-dialog") => ArchiveExtractMode::NameDialog,
                             _ => return Err(LaunchFailure::InvalidRequest),
                         },
                     );

@@ -7,14 +7,8 @@ const path = require("node:path");
 const vm = require("node:vm");
 const capturePolicy = require("../capture-policy.js");
 const batchPolicy = require("../batch-handoff-policy.js");
-const source = fs.readFileSync(path.join(__dirname, "../background.js"), "utf8");
-
-function section(start, end) {
-  const first = source.indexOf(start);
-  const last = source.indexOf(end, first + start.length);
-  assert(first >= 0 && last > first, `production section ${start}`);
-  return source.slice(first, last);
-}
+const { backgroundSource, extractDeclarations } = require("./harness/background-source.cjs");
+const source = backgroundSource();
 
 function fixture(limit = 2) {
   let now = 10000;
@@ -53,11 +47,13 @@ function fixture(limit = 2) {
     const USEFUL_HEADER_ALLOWLIST = new Set(['authorization','cookie','referer','range']);
     const GOOGLEVIDEO_MIN_REMAINING_MS = 100, GOOGLEVIDEO_MAX_FUTURE_MS = 100000;
     function parseUrlOrNull(value) { try { return new URL(value); } catch { return null; } }
-    ${section("function normalizeResourceUrlKey(", "function googleVideoIdentity(")}
-    ${section("function boundedCapturedText(", "function headerObjectToPayload(")}
-    ${section("function bucketForTab(", "function mobileRuleId(")}
-    ${section("function clearTabResources(", "function clearTab(")}
-    ${section("async function sendResource(", "async function sendResourcesBatch(")}
+    ${extractDeclarations(source, [
+      "normalizeResourceUrlKey", "isHttpUrl", "isGoogleVideoUrl", "googleVideoInvalidReason", "isUsableGoogleVideoUrl",
+      "boundedCapturedText", "boundedCapturedUrl", "boundedCapturedNumber", "sanitizeCapturedHeaderObject",
+      "bucketForTab", "removeCachedResource", "indexCachedResource", "enforceResourceCapacity", "cacheResource",
+      "pruneResources", "serializeResources", "schedulePersistResources", "persistResourcesNow", "loadPersistentResources",
+      "clearTabResources", "sendResource"
+    ])}
     globalThis.api = { cacheResource, pruneResources, serializeResources, loadPersistentResources,
       clearTabResources, persistResourcesNow, sendResource, resourcesByTab, resourcesById };
   `, cx);

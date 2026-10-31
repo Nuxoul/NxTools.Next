@@ -1,15 +1,11 @@
-use crate::icons::MaterialIcon;
+use super::titlebar::{CaptionCapabilities, controlled_titlebar};
 use crate::theme::Theme;
-use crate::ui::metrics::{
-    FEATURE_WINDOW_TITLE_LANE_HEIGHT, SETTINGS_FOOTER_HEIGHT, SPACING_4, SPACING_8, SPACING_12,
-};
+use crate::ui::metrics::SETTINGS_FOOTER_HEIGHT;
 use crate::ui::typography::UI_FONT_FAMILY;
 use gpui_kit::component::Sizable;
-use gpui_kit::component::button::ButtonVariants;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::{
-    AnyElement, FontWeight, IntoElement, MouseButton, SharedString, Window, WindowControlArea, div,
-    prelude::*, px,
+    AnyElement, FontWeight, IntoElement, Length, SharedString, Window, div, prelude::*, px,
 };
 
 /// Shared public SettingItem::render content: title-adjacent help and one
@@ -19,16 +15,17 @@ pub(crate) fn aligned_setting_row(
     title: &'static str,
     help: &'static str,
     help_selector: impl Into<SharedString>,
-    control_width: f32,
+    control_width: impl Into<Length>,
     control: AnyElement,
 ) -> AnyElement {
+    let control_width: Length = control_width.into();
     let selector = selector.into();
     let title_selector = format!("{selector}-title");
     div()
         .debug_selector(move || selector.to_string())
         .w_full()
         .min_w_0()
-        .min_h(px(32.0))
+        .min_h_8()
         .flex()
         .items_center()
         .gap_3()
@@ -51,7 +48,7 @@ pub(crate) fn aligned_setting_row(
         )
         .child(
             div()
-                .w(px(control_width))
+                .w(control_width)
                 .max_w(gpui_kit::relative(0.65))
                 .min_w_0()
                 .flex_none()
@@ -149,44 +146,13 @@ pub(crate) fn feature_settings_window(
         .text_color(theme.text)
         .flex()
         .flex_col()
-        .child(
-            div()
-                .h(px(48.0))
-                .w_full()
-                .flex_none()
-                .px(px(SPACING_12))
-                .border_b_1()
-                .border_color(theme.border_subtle)
-                .bg(theme.surface)
-                .window_control_area(WindowControlArea::Drag)
-                .flex()
-                .items_center()
-                .child(
-                    div()
-                        .id(ids.title)
-                        .debug_selector(move || ids.title.into())
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .text_sm()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(title),
-                )
-                .child(
-                    div()
-                        .flex_none()
-                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                        .child(
-                            gpui_kit::component::button::Button::new(ids.close)
-                                .debug_selector(move || ids.close.into())
-                                .icon(gpui_kit::component::Icon::new(MaterialIcon::Close))
-                                .accessibility_label("关闭设置窗口")
-                                .tooltip("关闭设置窗口")
-                                .ghost()
-                                .on_click(on_close),
-                        ),
-                ),
-        )
+        .child(controlled_titlebar(
+            ids.title,
+            ids.close,
+            title,
+            CaptionCapabilities::MINIMIZE,
+            on_close,
+        ))
         .child(
             div()
                 .id(ids.content)
@@ -195,13 +161,13 @@ pub(crate) fn feature_settings_window(
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .p(px(SPACING_12))
+                .p_3()
                 .child(
                     div()
                         .w_full()
                         .flex()
                         .flex_col()
-                        .gap(px(SPACING_12))
+                        .gap_3()
                         .child(
                             div()
                                 .id(gpui_kit::SharedString::from(format!(
@@ -210,11 +176,11 @@ pub(crate) fn feature_settings_window(
                                 )))
                                 .debug_selector(move || format!("{}-enable-row", ids.root))
                                 .w_full()
-                                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))
+                                .min_h_8()
                                 .flex_none()
                                 .flex()
                                 .items_center()
-                                .gap(px(SPACING_12))
+                                .gap_3()
                                 .child(
                                     div()
                                         .debug_selector(move || {
@@ -224,7 +190,7 @@ pub(crate) fn feature_settings_window(
                                         .min_w_0()
                                         .flex()
                                         .items_center()
-                                        .gap(px(SPACING_4))
+                                        .gap_1()
                                         .text_sm()
                                         .font_weight(FontWeight::MEDIUM)
                                         .child(enabled_label.clone())
@@ -238,7 +204,7 @@ pub(crate) fn feature_settings_window(
                                         .flex_none()
                                         .flex()
                                         .items_center()
-                                        .gap(px(SPACING_8))
+                                        .gap_2()
                                         .child(
                                             div()
                                                 .id(ids.status)
@@ -279,10 +245,11 @@ pub(crate) fn settings_toggle(
     div()
         .debug_selector(move || id.into())
         .flex_none()
+        .w(px(36.0))
         .child(
             Switch::new(id)
                 .checked(enabled)
-                .small()
+                .with_size(gpui_kit::component::Size::Medium)
                 .on_change(on_toggle),
         )
         .into_any_element()
@@ -291,11 +258,11 @@ pub(crate) fn settings_toggle(
 pub(crate) fn dialog_footer(content: AnyElement) -> AnyElement {
     div()
         .size_full()
-        .px(px(SPACING_12))
+        .px_3()
         .flex()
         .items_center()
         .justify_end()
-        .gap(px(SPACING_8))
+        .gap_2()
         .child(content)
         .into_any_element()
 }
@@ -366,11 +333,8 @@ mod tests {
             .nth(1)
             .and_then(|source| source.split("pub(crate) fn settings_toggle(").next())
             .expect("feature settings shell source");
-        assert!(feature_window.contains(".window_control_area(WindowControlArea::Drag)"));
-        assert!(
-            feature_window
-                .contains("on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())")
-        );
+        assert!(feature_window.contains("controlled_titlebar("));
+        assert!(feature_window.contains("CaptionCapabilities::MINIMIZE"));
     }
 
     #[gpui_kit::test]
@@ -528,7 +492,7 @@ mod alignment_tests {
                 description.size.width <= px(24.0),
                 "description is a help trigger, not inline copy"
             );
-            assert!(description.top() >= px(48.0));
+            assert!(description.top() >= px(34.0));
             assert!((description.center().y - toggle.center().y).abs() <= px(1.0));
             assert!((status.center().y - toggle.center().y).abs() <= px(1.0));
             assert!(
@@ -537,7 +501,40 @@ mod alignment_tests {
             );
             assert!(status.right() < toggle.left());
             assert!(description.right() <= px(448.0));
-            assert!(close.right() <= px(448.0));
+            assert!(close.right() <= px(460.0));
         }
+    }
+}
+
+#[cfg(test)]
+mod consistency_tests {
+    use super::*;
+    use gpui_kit::{Context, Render, TestAppContext, size};
+    struct ToggleFixture;
+    impl Render for ToggleFixture {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().child(settings_toggle(
+                Theme::zed_dark(),
+                "ux-setting-switch",
+                true,
+                |_, _, _| {},
+            ))
+        }
+    }
+    #[gpui_kit::test]
+    fn ux_repair_settings_switch_uses_same_official_medium_size(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let (_, surface) = cx.add_window_view(|window, cx| {
+            gpui_kit::base::Root::new(cx.new(|_| ToggleFixture), window, cx)
+        });
+        surface.simulate_resize(size(px(300.0), px(100.0)));
+        surface.refresh().expect("real settings switch");
+        let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        let toggle = nodes
+            .iter()
+            .find(|node| node.role() == Some(gpui_kit::Role::Switch))
+            .expect("actual switch semantic node")
+            .bounds();
+        assert_eq!(toggle.size, size(px(36.0), px(20.0)));
     }
 }

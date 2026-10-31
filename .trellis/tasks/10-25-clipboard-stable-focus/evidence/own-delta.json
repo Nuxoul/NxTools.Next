@@ -1,0 +1,515 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+    "baseline_sha256": "6f0170c5055f8663ad9d926028fc46c0ba705b60d457a59c41452f381c7e0c07",
+    "delivery_sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+    "added": 18,
+    "removed": 31,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 370,
+        "baseline_line_count": 0,
+        "delivery_start_line": 370,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "    focus_scope: gpui_kit::FocusHandle,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 800,
+        "baseline_line_count": 0,
+        "delivery_start_line": 801,
+        "delivery_line_count": 10,
+        "baseline_text": "",
+        "delivery_text": "        let focus_scope = cx.focus_handle();\n        let focus_lost_subscription = cx.on_focus_lost(window, |panel, window, cx| {\n            // A strong handle can outlive its row. Restore only while this panel is\n            // still the mounted ancestor, never after a different owner replaced it.\n            if window.focus_lost_restore_target(cx).as_ref() == Some(&panel.focus_scope)\n                && panel.search_input_ready(window, cx)\n            {\n                panel.focus_search_input(window, cx);\n            }\n        });\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 934,
+        "baseline_line_count": 0,
+        "delivery_start_line": 945,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "            focus_scope,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 961,
+        "baseline_line_count": 0,
+        "delivery_start_line": 973,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                focus_lost_subscription,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 2610,
+        "baseline_line_count": 0,
+        "delivery_start_line": 2623,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "            .track_focus(&self.focus_scope)\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 2920,
+        "baseline_line_count": 1,
+        "delivery_start_line": 2934,
+        "delivery_line_count": 1,
+        "baseline_text": "                            list(self.list_scroll.clone(), move |index, window, app| {\n",
+        "delivery_text": "                            list(self.list_scroll.clone(), move |index, _window, app| {\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 3076,
+        "baseline_line_count": 29,
+        "delivery_start_line": 3090,
+        "delivery_line_count": 0,
+        "baseline_text": "                                let actions_focused = [\"edit\", \"pin\", \"favorite\", \"delete\"]\n                                    .into_iter()\n                                    .map(|key| {\n                                        gpui_kit::SharedString::from(format!(\n                                            \"clipboard-item-action-{index}-{key}\"\n                                        ))\n                                    })\n                                    .any(|id| {\n                                        window\n                                            .use_keyed_state(id, app, |_, cx| cx.focus_handle())\n                                            .read(app)\n                                            .is_focused(window)\n                                    })\n                                    || window\n                                        .use_keyed_state(\n                                            (\"clipboard-open-target\", index),\n                                            app,\n                                            |_, cx| cx.focus_handle(),\n                                        )\n                                        .read(app)\n                                        .is_focused(window)\n                                    || window\n                                        .use_keyed_state(\n                                            (\"history-row-action\", index),\n                                            app,\n                                            |_, cx| cx.focus_handle(),\n                                        )\n                                        .read(app)\n                                        .is_focused(window);\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 3134,
+        "baseline_line_count": 1,
+        "delivery_start_line": 3119,
+        "delivery_line_count": 0,
+        "baseline_text": "                                    actions_focused,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 3984,
+        "baseline_line_count": 0,
+        "delivery_start_line": 3968,
+        "delivery_line_count": 3,
+        "baseline_text": "",
+        "delivery_text": "\n#[cfg(test)]\nmod history_identity_tests;\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+    "baseline_sha256": "1c0bb864f8126a0f562a7d53aebd3c316a45d9d9e39b056647e891e17460320b",
+    "delivery_sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+    "added": 275,
+    "removed": 173,
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start_line": 27,
+        "baseline_line_count": 1,
+        "delivery_start_line": 27,
+        "delivery_line_count": 1,
+        "baseline_text": "use crate::ui::components::action::focusable_content;\n",
+        "delivery_text": "use crate::ui::components::action::focused_action;\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 126,
+        "baseline_line_count": 0,
+        "delivery_start_line": 126,
+        "delivery_line_count": 61,
+        "baseline_text": "",
+        "delivery_text": ") -> impl IntoElement {\n    HistoryRow {\n        theme,\n        entry,\n        index,\n        selected,\n        available_image_width,\n        modifier_actions,\n        category_menu,\n        handlers,\n    }\n}\n\n#[derive(gpui_kit::IntoElement)]\nstruct HistoryRow {\n    theme: Theme,\n    entry: ClipboardItem,\n    index: usize,\n    selected: bool,\n    available_image_width: f32,\n    modifier_actions: ClipboardModifierActions,\n    category_menu: CategorySourceMenu,\n    handlers: HistoryRowHandlers,\n}\n\nimpl RenderOnce for HistoryRow {\n    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {\n        let focus = window\n            .use_keyed_state((\"history-row-focus\", self.entry.id as u64), cx, |_, cx| {\n                cx.focus_handle().tab_stop(true)\n            })\n            .read(cx)\n            .clone();\n        let actions_focused = focus.contains_focused(window, cx);\n        render_history_row(\n            self.theme,\n            self.entry,\n            self.index,\n            self.selected,\n            self.available_image_width,\n            self.modifier_actions,\n            self.category_menu,\n            self.handlers,\n            actions_focused,\n            focus,\n            window,\n            cx,\n        )\n    }\n}\n\n#[allow(clippy::too_many_arguments)]\nfn render_history_row(\n    theme: Theme,\n    entry: ClipboardItem,\n    index: usize,\n    selected: bool,\n    available_image_width: f32,\n    modifier_actions: ClipboardModifierActions,\n    category_menu: CategorySourceMenu,\n    handlers: HistoryRowHandlers,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 127,
+        "baseline_line_count": 0,
+        "delivery_start_line": 188,
+        "delivery_line_count": 3,
+        "baseline_text": "",
+        "delivery_text": "    focus: gpui_kit::FocusHandle,\n    window: &Window,\n    cx: &mut App,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 128,
+        "baseline_line_count": 0,
+        "delivery_start_line": 192,
+        "delivery_line_count": 2,
+        "baseline_text": "",
+        "delivery_text": "    let item_id = entry.id;\n    let focused = focus.is_focused(window) && window.last_input_was_keyboard();\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 175,
+        "baseline_line_count": 1,
+        "delivery_start_line": 241,
+        "delivery_line_count": 1,
+        "baseline_text": "            format!(\"history-row-actions-{index}\"),\n",
+        "delivery_text": "            format!(\"history-row-actions-{}\", entry.id),\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 197,
+        "baseline_line_count": 1,
+        "delivery_start_line": 263,
+        "delivery_line_count": 1,
+        "baseline_text": "    let group_name = format!(\"history-row-actions-{index}\");\n",
+        "delivery_text": "    let group_name = format!(\"history-row-actions-{}\", entry.id);\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 319,
+        "baseline_line_count": 1,
+        "delivery_start_line": 385,
+        "delivery_line_count": 1,
+        "baseline_text": "        .id((\"history-row-slot\", index))\n",
+        "delivery_text": "        .id((\"history-row-slot\", item_id as u64))\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 329,
+        "baseline_line_count": 143,
+        "delivery_start_line": 395,
+        "delivery_line_count": 172,
+        "baseline_text": "        .child(focusable_content(\n            (\"history-row-action\", index),\n            theme,\n            false,\n            project_menu::context_menu(\n                menu_trigger_id,\n                ListItem::new((\"history-row\", index))\n                    .debug_selector(move || format!(\"clipboard-item-{}\", entry.id))\n                    .accessibility_label(format!(\"剪贴板记录 {}\", entry.id))\n                    .selected(selected)\n                    .aria_selected(selected)\n                    .group(group_name.clone())\n                    .when(entry.kind != ClipboardKind::Text, |row| {\n                        row.h(px(card_height))\n                    })\n                    .when(entry.kind == ClipboardKind::Text, |row| {\n                        row.min_h(px(TEXT_ROW_HEIGHT))\n                            .max_h(px(text_card_max_height))\n                    })\n                    .px_2()\n                    .border_1()\n                    .border_color(theme.border_subtle)\n                    .rounded_md()\n                    .bg(theme.surface)\n                    .when(finish_enabled(), |row| {\n                        row.shadow(vec![\n                            gpui_kit::BoxShadow::new(\n                                px(0.0),\n                                px(1.0),\n                                gpui_kit::black().opacity(0.08),\n                            )\n                            .blur_radius(px(1.0)),\n                        ])\n                    })\n                    .py_1()\n                    .overflow_hidden()\n                    .on_mouse_enter(move |event, window, cx| {\n                        if event.pressed_button.is_some() || cx.has_active_drag() {\n                            return;\n                        }\n                        let panel_bounds = window.bounds();\n                        move_preview(\n                            true,\n                            move_preview_entry.clone(),\n                            panel_bounds,\n                            panel_bounds.origin + event.position,\n                            window.scale_factor(),\n                            cx,\n                        );\n                    })\n                    .on_hover(move |hovered, window, cx| {\n                        // GPUI also emits hover entry from paint; only movement admits preview.\n                        if *hovered {\n                            return;\n                        }\n                        let panel_bounds = window.bounds();\n                        let mouse = window.mouse_position();\n                        on_preview(\n                            *hovered,\n                            preview_entry.clone(),\n                            panel_bounds,\n                            point(\n                                panel_bounds.origin.x + mouse.x,\n                                panel_bounds.origin.y + mouse.y,\n                            ),\n                            window.scale_factor(),\n                            cx,\n                        );\n                    })\n                    .child(\n                        div()\n                            .w_full()\n                            .min_w_0()\n                            .flex()\n                            .flex_col()\n                            .gap(px(CONTENT_GAP))\n                            .child(\n                                div()\n                                    .relative()\n                                    .h(px(METADATA_HEIGHT))\n                                    .flex_shrink_0()\n                                    .pr(px(HOVER_ACTION_RAIL_WIDTH))\n                                    .flex()\n                                    .items_center()\n                                    .gap(px(4.0))\n                                    .child(source_icon(\n                                        theme,\n                                        source,\n                                        source_icon_path,\n                                        index,\n                                        entry.kind,\n                                        source_icon_color,\n                                    ))\n                                    .when(is_pinned, |row| {\n                                        row.child(state_icon(theme, MaterialIcon::Keep, \"已置顶\"))\n                                    })\n                                    .when(is_favorite, |row| {\n                                        row.child(state_icon(theme, MaterialIcon::Star, \"已收藏\"))\n                                    })\n                                    .child(\n                                        div()\n                                            .absolute()\n                                            .top_0()\n                                            .right_0()\n                                            .w(px(HOVER_ACTION_RAIL_WIDTH))\n                                            .h(px(METADATA_HEIGHT))\n                                            .flex()\n                                            .items_center()\n                                            .justify_end()\n                                            .gap(px(4.0))\n                                            .when(actions_focused, |slot| slot.invisible())\n                                            .group_hover(group_name.clone(), |style| {\n                                                style.invisible()\n                                            })\n                                            .when_some(usage, |row, usage| {\n                                                row.child(usage_badge(theme, usage))\n                                            })\n                                            .child(time_label(theme, relative_time)),\n                                    )\n                                    .child(\n                                        div()\n                                            .debug_selector(move || {\n                                                format!(\"clipboard-history-actions-{index}\")\n                                            })\n                                            .map(|rail| {\n                                                #[cfg(test)]\n                                                let rail = rail\n                                                    .child(feedback_tests::paint_probe(\"actions\"));\n                                                rail\n                                            })\n                                            .absolute()\n                                            .top_0()\n                                            .right_0()\n                                            .w(px(HOVER_ACTION_RAIL_WIDTH))\n                                            .when(!actions_focused, |rail| rail.invisible())\n                                            .group_hover(group_name, |style| style.visible())\n                                            .h(px(METADATA_HEIGHT))\n                                            .pl_1()\n                                            .flex()\n                                            .items_center()\n                                            .justify_end()\n                                            .child(\n                                                Toolbar::new((\"clipboard-history-toolbar\", index))\n",
+        "delivery_text": "        .child(\n            focused_action(\n                (\"history-row-action\", item_id as u64),\n                &focus,\n                theme,\n                false,\n                window,\n                cx,\n                move |event, window, cx| {\n                    let Some(action) = action_from_click(event, modifier_actions) else {\n                        return;\n                    };\n                    click_action(action, event, window, cx);\n                },\n            )\n            .border_0()\n            .w_full()\n            .flex()\n            .flex_col()\n            .child(\n                div().w_full().min_w_0().child(project_menu::context_menu(\n                    menu_trigger_id,\n                    ListItem::new((\"history-row\", item_id as u64))\n                        .debug_selector(move || format!(\"clipboard-item-{}\", entry.id))\n                        .accessibility_label(format!(\"剪贴板记录 {}\", entry.id))\n                        .selected(selected)\n                        .aria_selected(selected)\n                        .group(group_name.clone())\n                        .when(entry.kind != ClipboardKind::Text, |row| {\n                            row.h(px(card_height))\n                        })\n                        .when(entry.kind == ClipboardKind::Text, |row| {\n                            row.min_h(px(TEXT_ROW_HEIGHT))\n                                .max_h(px(text_card_max_height))\n                        })\n                        .px_2()\n                        .border_1()\n                        .border_color(theme.border_subtle)\n                        .rounded_md()\n                        .bg(theme.surface)\n                        .when(finish_enabled(), |row| {\n                            row.shadow(vec![\n                                gpui_kit::BoxShadow::new(\n                                    px(0.0),\n                                    px(1.0),\n                                    gpui_kit::black().opacity(0.08),\n                                )\n                                .blur_radius(px(1.0)),\n                            ])\n                        })\n                        .py_1()\n                        .overflow_hidden()\n                        .on_mouse_enter(move |event, window, cx| {\n                            if event.pressed_button.is_some() || cx.has_active_drag() {\n                                return;\n                            }\n                            let panel_bounds = window.bounds();\n                            move_preview(\n                                true,\n                                move_preview_entry.clone(),\n                                panel_bounds,\n                                panel_bounds.origin + event.position,\n                                window.scale_factor(),\n                                cx,\n                            );\n                        })\n                        .on_hover(move |hovered, window, cx| {\n                            // GPUI also emits hover entry from paint; only movement admits preview.\n                            if *hovered {\n                                return;\n                            }\n                            let panel_bounds = window.bounds();\n                            let mouse = window.mouse_position();\n                            on_preview(\n                                *hovered,\n                                preview_entry.clone(),\n                                panel_bounds,\n                                point(\n                                    panel_bounds.origin.x + mouse.x,\n                                    panel_bounds.origin.y + mouse.y,\n                                ),\n                                window.scale_factor(),\n                                cx,\n                            );\n                        })\n                        .child(\n                            div()\n                                .w_full()\n                                .min_w_0()\n                                .flex()\n                                .flex_col()\n                                .gap(px(CONTENT_GAP))\n                                .child(\n                                    div()\n                                        .relative()\n                                        .h(px(METADATA_HEIGHT))\n                                        .flex_shrink_0()\n                                        .pr(px(HOVER_ACTION_RAIL_WIDTH))\n                                        .flex()\n                                        .items_center()\n                                        .gap(px(4.0))\n                                        .child(source_icon(\n                                            theme,\n                                            source,\n                                            source_icon_path,\n                                            index,\n                                            item_id,\n                                            entry.kind,\n                                            source_icon_color,\n                                        ))\n                                        .when(is_pinned, |row| {\n                                            row.child(state_icon(\n                                                theme,\n                                                MaterialIcon::Keep,\n                                                \"已置顶\",\n                                            ))\n                                        })\n                                        .when(is_favorite, |row| {\n                                            row.child(state_icon(\n                                                theme,\n                                                MaterialIcon::Star,\n                                                \"已收藏\",\n                                            ))\n                                        })\n                                        .child(\n                                            div()\n                                                .absolute()\n                                                .top_0()\n                                                .right_0()\n                                                .w(px(HOVER_ACTION_RAIL_WIDTH))\n                                                .h(px(METADATA_HEIGHT))\n                                                .flex()\n                                                .items_center()\n                                                .justify_end()\n                                                .gap(px(4.0))\n                                                .when(actions_focused, |slot| slot.invisible())\n                                                .group_hover(group_name.clone(), |style| {\n                                                    style.invisible()\n                                                })\n                                                .when_some(usage, |row, usage| {\n                                                    row.child(usage_badge(theme, usage))\n                                                })\n                                                .child(time_label(theme, relative_time)),\n                                        )\n                                        .child(\n                                            div()\n                                                .debug_selector(move || {\n                                                    format!(\"clipboard-history-actions-{index}\")\n                                                })\n                                                .map(|rail| {\n                                                    #[cfg(test)]\n                                                    let rail = rail.child(\n                                                        feedback_tests::paint_probe(\"actions\"),\n                                                    );\n                                                    rail\n                                                })\n                                                .absolute()\n                                                .top_0()\n                                                .right_0()\n                                                .w(px(HOVER_ACTION_RAIL_WIDTH))\n                                                .when(!actions_focused, |rail| rail.invisible())\n                                                .group_hover(group_name, |style| style.visible())\n                                                .h(px(METADATA_HEIGHT))\n                                                .pl_1()\n                                                .flex()\n                                                .items_center()\n                                                .justify_end()\n                                                .child(\n                                                    Toolbar::new((\n                                                        \"clipboard-history-toolbar\",\n                                                        item_id as u64,\n                                                    ))\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 480,
+        "baseline_line_count": 0,
+        "delivery_start_line": 575,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                                            item_id,\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 486,
+        "baseline_line_count": 1,
+        "delivery_start_line": 582,
+        "delivery_line_count": 0,
+        "baseline_text": "                                                            theme,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 488,
+        "baseline_line_count": 0,
+        "delivery_start_line": 583,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                                            item_id,\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 496,
+        "baseline_line_count": 1,
+        "delivery_start_line": 592,
+        "delivery_line_count": 0,
+        "baseline_text": "                                                        theme,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 498,
+        "baseline_line_count": 0,
+        "delivery_start_line": 593,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                                        item_id,\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 509,
+        "baseline_line_count": 1,
+        "delivery_start_line": 605,
+        "delivery_line_count": 0,
+        "baseline_text": "                                                        theme,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 511,
+        "baseline_line_count": 0,
+        "delivery_start_line": 606,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                                        item_id,\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 522,
+        "baseline_line_count": 1,
+        "delivery_start_line": 618,
+        "delivery_line_count": 0,
+        "baseline_text": "                                                        theme,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 524,
+        "baseline_line_count": 0,
+        "delivery_start_line": 619,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                                        item_id,\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 530,
+        "baseline_line_count": 18,
+        "delivery_start_line": 626,
+        "delivery_line_count": 22,
+        "baseline_text": "                                            ),\n                                    ),\n                            )\n                            .child(content)\n                            .when_some(extension_feedback, |content, feedback| {\n                                content.child(feedback)\n                            }),\n                    )\n                    .into_any_element(),\n                menu_items,\n            ),\n            move |event, window, cx| {\n                let Some(action) = action_from_click(event, modifier_actions) else {\n                    return;\n                };\n                click_action(action, event, window, cx);\n            },\n        ))\n",
+        "delivery_text": "                                                ),\n                                        ),\n                                )\n                                .child(content)\n                                .when_some(extension_feedback, |content, feedback| {\n                                    content.child(feedback)\n                                }),\n                        )\n                        .into_any_element(),\n                    menu_items,\n                )),\n            )\n            .when(focused, |action| {\n                action.child(\n                    div()\n                        .absolute()\n                        .inset_0()\n                        .border_2()\n                        .border_color(theme.focus_ring),\n                )\n            }),\n        )\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 553,
+        "baseline_line_count": 0,
+        "delivery_start_line": 653,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "    item_id: i64,\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 557,
+        "baseline_line_count": 1,
+        "delivery_start_line": 658,
+        "delivery_line_count": 1,
+        "baseline_text": "    let button = Button::new((\"clipboard-open-target\", index))\n",
+        "delivery_text": "    let button = Button::new((\"clipboard-open-target\", item_id as u64))\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 646,
+        "baseline_line_count": 1,
+        "delivery_start_line": 747,
+        "delivery_line_count": 0,
+        "baseline_text": "    _theme: Theme,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 648,
+        "baseline_line_count": 0,
+        "delivery_start_line": 748,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "    item_id: i64,\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 663,
+        "baseline_line_count": 1,
+        "delivery_start_line": 764,
+        "delivery_line_count": 1,
+        "baseline_text": "        \"clipboard-item-action-{index}-{key}\"\n",
+        "delivery_text": "        \"clipboard-item-action-{item_id}-{key}\"\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 943,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1044,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "    item_id: i64,\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 963,
+        "baseline_line_count": 1,
+        "delivery_start_line": 1065,
+        "delivery_line_count": 1,
+        "baseline_text": "        .id((\"clipboard-source\", index))\n",
+        "delivery_text": "        .id((\"clipboard-source\", item_id as u64))\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs",
+    "baseline_sha256": "610db1d79f8d2e61d8561b4fc9e50d1fc3731c14ba6c11372dbdc7d637d7cea2",
+    "delivery_sha256": "48d69994a59f0c21e193148014d0ef9ec5e0fcbd79c60390ee021e395d8b206e",
+    "added": 2,
+    "removed": 5,
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start_line": 47,
+        "baseline_line_count": 3,
+        "delivery_start_line": 47,
+        "delivery_line_count": 1,
+        "baseline_text": "        // Same public keyed handles as ClipboardPanel's production projection.\n        // Never seed a synthetic actions_focused flag or add an input owner.\n        let actions_focused = window.focused(cx).is_some();\n",
+        "delivery_text": "        // The actual row component derives action visibility from its own focus scope.\n"
+      },
+      {
+        "kind": "delete",
+        "baseline_start_line": 77,
+        "baseline_line_count": 1,
+        "delivery_start_line": 75,
+        "delivery_line_count": 0,
+        "baseline_text": "            actions_focused,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 146,
+        "baseline_line_count": 1,
+        "delivery_start_line": 143,
+        "delivery_line_count": 1,
+        "baseline_text": "        \"clipboard-item-action-0-{key}\"\n",
+        "delivery_text": "        \"clipboard-item-action-1302-{key}\"\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs",
+    "baseline_sha256": "9950bc1317f3a333ea3bea74e623a4f8d686fe5252b24fb1013aedcbda0e5b38",
+    "delivery_sha256": "590cd0e831172bd049422f9967afdbaf73d2e53d3a63912b44db20429afc926f",
+    "added": 19,
+    "removed": 2,
+    "operations": [
+      {
+        "kind": "delete",
+        "baseline_start_line": 39,
+        "baseline_line_count": 1,
+        "delivery_start_line": 39,
+        "delivery_line_count": 0,
+        "baseline_text": "            true,\n",
+        "delivery_text": ""
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 88,
+        "baseline_line_count": 0,
+        "delivery_start_line": 87,
+        "delivery_line_count": 11,
+        "baseline_text": "",
+        "delivery_text": "    let row = surface\n        .debug_bounds(\"history-row-slot-0\")\n        .expect(\"actual row\");\n    surface.simulate_mouse_move(\n        point(row.left() + px(20.0), row.top() + px(12.0)),\n        None,\n        Default::default(),\n    );\n    surface\n        .refresh()\n        .expect(\"actual hover reveals management rail\");\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 132,
+        "baseline_line_count": 0,
+        "delivery_start_line": 142,
+        "delivery_line_count": 5,
+        "baseline_text": "",
+        "delivery_text": "    surface.update(|window, cx| window.focus_next(cx));\n    surface\n        .refresh()\n        .expect(\"actual row Tab focus reveals management rail\");\n    surface.refresh().expect(\"paint focused action rail\");\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 144,
+        "baseline_line_count": 1,
+        "delivery_start_line": 159,
+        "delivery_line_count": 3,
+        "baseline_text": "        let bounds = surface.debug_bounds(selector).expect(\"ordinary action\");\n",
+        "delivery_text": "        let bounds = surface\n            .debug_bounds(selector)\n            .unwrap_or_else(|| panic!(\"ordinary {key} action after actual row focus\"));\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/polish_tests.rs",
+    "baseline_sha256": "559da1a2672d536066930f76cfd1c5e74509a1e230339d34d21ee32eca6ea666",
+    "delivery_sha256": "a0f92a727c0b810b6ab4a3f54f929b0dca19b5795dbe4cc078001fa365261a60",
+    "added": 0,
+    "removed": 1,
+    "operations": [
+      {
+        "kind": "delete",
+        "baseline_start_line": 346,
+        "baseline_line_count": 1,
+        "delivery_start_line": 346,
+        "delivery_line_count": 0,
+        "baseline_text": "            true,\n",
+        "delivery_text": ""
+      }
+    ]
+  },
+  {
+    "path": "docs/reference-code/clipboard.md",
+    "baseline_sha256": "a6436cc758fe9ff150406d6c455edca3381def6ad2dbe478029ae521f6c4e6be",
+    "delivery_sha256": "8ef525609b37d359538f3033aa92901ca003baea93a324821124ab55798d6e96",
+    "added": 30,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 833,
+        "baseline_line_count": 0,
+        "delivery_start_line": 833,
+        "delivery_line_count": 30,
+        "baseline_text": "",
+        "delivery_text": "\n## Audit #10 retained history focus identity prerequisite (2026-10-25)\nCanonical phase remains Clipboard + Tools. Rechecked legacy Controls/ClipboardHistoryListView.cs\nconstructor79–99/PointerReleased472–491: coordinates resolve cached actual item and pass\nthat item to selected/ItemClicked/ItemRightClicked. Popup constructor61–167 binds actions,\nOpened/Activated search focus, PrepareForPopupShow206–239 and HidePopup248–259 retain one\nreused popup/menu-before-preview-hide -> inherited Window.Hide; Preview remains independently\npassive. Avalonia native base unavailable, not new show/hide proof. No native owner change.\nExact pre0.3.9 elements/list.rs::List has id=None and invokes render_item/layout_as_root/\nprepaint without adding an index element namespace. Window::use_keyed_state -> with_global_id\nuses the current full element stack. Component0.8.0 Button::render and project unchanged\nFocusableContent use that keyed state for actual FocusHandle; gpui div owns one release click.\nBefore repair history slot/wrapper/ListItem/Toolbar/open and management Button IDs use index,\nso Prepend/front splice or reorder can retain focus/armed state on a different domain record.\nRequired boundary: entry.id+action-kind throughout actual ancestry and production focus lookup,\nexisting view/window namespace isolates panels; index only positions/debug hints/paging.\nKeep original bounded320rows/ListState.splice/query-generation/selection/full-by-ID worker\nactions/native menu/one preview/search InputState. Removed row/action retires focus/gesture;\nrelease must never invoke occupant of the old index. Original Ctrl-digit already arms itemID,\nso preserve its generation checks rather than add a second dispatcher. No shared-helper,\nvendor/native/protocol/theme/layout redesign. Real production focus/page/action red-green,\nexact own-deltas and separate physical/native/DPI/user limits belong to single-item task\n`.trellis/tasks/10-25-clipboard-stable-focus/`; no other audit item is authorized.\nAdditional verified removal boundary: pre0.3.9 app/context.rs::Context::on_focus_lost\nretains a weak view subscription; window.rs::draw dispatches it after the rendered tree swap\nonly when a previous nonempty focus path becomes empty. Window::focused alone can still\nreturn a strongly held orphan. Window::focus_lost_restore_target resolves only a still-mounted\nancestor during that callback. A non-Tab panel focus scope can therefore qualify the original\nsearch fallback without a row cache, index lookup, global dispatcher, or cross-panel focus steal.\nChanging focus increments the original GPUI focus_generation, cancelling an old armed release.\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs",
+    "baseline_sha256": "f8eea7e3192996a95f5db9fbeb1eefa1aa1d33425aa922245b3e8844ef24553f",
+    "delivery_sha256": "9a7ea27199d7d60e7b3b0fe89de7c4525e57355e6a311539932981333c20fc0b",
+    "added": 0,
+    "removed": 1,
+    "operations": [
+      {
+        "kind": "delete",
+        "baseline_start_line": 55,
+        "baseline_line_count": 1,
+        "delivery_start_line": 55,
+        "delivery_line_count": 0,
+        "baseline_text": "            true,\n",
+        "delivery_text": ""
+      }
+    ]
+  },
+  {
+    "path": "tests/architecture/clipboard-ui-lifecycle.ps1",
+    "baseline_sha256": "468b3e3f4e90c56f05d50b4f99a519bca620a1c626b4c1259fa3fdc1f432f6b0",
+    "delivery_sha256": "aabb7de696bae25db9f575ec1bdb5c6af21c6ac2943e49c5cc389223c819cc5b",
+    "added": 8,
+    "removed": 1,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 50,
+        "baseline_line_count": 0,
+        "delivery_start_line": 50,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "$historyRowSource = [regex]::Replace($historyRowSource, '(?m)^\\s*//[^\\r\\n]*', '')\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 52,
+        "baseline_line_count": 1,
+        "delivery_start_line": 53,
+        "delivery_line_count": 2,
+        "baseline_text": "    'focusable_content(', 'Toolbar::new(', '.content(management_button(', 'Label::new(',\n",
+        "delivery_text": "    'focused_action(', '.use_keyed_state((\"history-row-focus\", self.entry.id as u64)',\n    'focus.contains_focused(window, cx)', 'Toolbar::new(', '.content(management_button(', 'Label::new(',\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 68,
+        "baseline_line_count": 0,
+        "delivery_start_line": 70,
+        "delivery_line_count": 5,
+        "baseline_text": "",
+        "delivery_text": "foreach ($contract in @('focus_lost_subscription = cx.on_focus_lost(window,',\n    'window.focus_lost_restore_target(cx).as_ref() == Some(&panel.focus_scope)',\n    '.track_focus(&self.focus_scope)', 'focus_lost_subscription,')) {\n    if (-not $popupModSource.Contains($contract)) { throw \"Clipboard retained focus lifecycle missing: $contract\" }\n}\n"
+      }
+    ]
+  },
+  {
+    "path": "tests/architecture/clipboard-ui-lifecycle.tests.py",
+    "baseline_sha256": "aea38793debe180afcc63982fbfd27a450b7d8f10244bec5040a519a50f975a1",
+    "delivery_sha256": "7b0d5ef5337fccae0e7cc2c1eff4413f1c2f9654267a498ae4da023d7a3c07bc",
+    "added": 14,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 58,
+        "baseline_line_count": 0,
+        "delivery_start_line": 58,
+        "delivery_line_count": 14,
+        "baseline_text": "",
+        "delivery_text": "    def test_row_focus_identity_cannot_be_replaced_by_index_or_comment(self):\n        self.disconnect(\"rust/apps/nxtools-desktop/src/ui/history.rs\",\n                        '.use_keyed_state((\"history-row-focus\", self.entry.id as u64)',\n                        '.use_keyed_state((\"history-row-focus\", self.index as u64)')\n        result = self.run_gate()\n        self.assertNotEqual(result.returncode, 0, \"index retained focus passed gate\")\n\n    def test_removed_focus_scope_guard_cannot_be_replaced_by_a_comment(self):\n        self.disconnect(\"rust/apps/nxtools-desktop/src/ui/mod.rs\",\n                        'window.focus_lost_restore_target(cx).as_ref() == Some(&panel.focus_scope)',\n                        'true')\n        result = self.run_gate()\n        self.assertNotEqual(result.returncode, 0, \"cross-panel fallback passed gate\")\n\n"
+      }
+    ]
+  }
+]

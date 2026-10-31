@@ -13,6 +13,8 @@ internal interface IExplorerShellPlatform
     // must opt into exact active-view observation; folder lookup is never its proof.
     bool SupportsTargetObservation => false;
     IntPtr FindConfirmedTarget(string target, bool isDirectory) => IntPtr.Zero;
+    IntPtr FindEnteredDirectory(string directory) => FindExplorerWindow(directory);
+    int EnterDirectory(string directory) => OpenNative(directory,true);
     void LaunchExplorer(string arguments);
     bool IsWindow(IntPtr window);
     bool IsIconic(IntPtr window);
@@ -34,6 +36,10 @@ internal static class ExplorerShellActivation
 {
     private const int MaxAttempts = 8;
 
+    internal static WindowsCommandResult EnterAndActivate(string target,Action<string>? stages=null) =>
+        LaunchAndActivate(target,new NativeExplorerShellPlatform(stages,politeActivation:true),stages,true);
+    internal static WindowsCommandResult EnterAndActivate(string target,IExplorerShellPlatform platform) =>
+        LaunchAndActivate(target,platform,null,true);
     internal static WindowsCommandResult LaunchAndActivate(string target) =>
         LaunchAndActivate(target, new NativeExplorerShellPlatform(), null);
 
@@ -50,7 +56,7 @@ internal static class ExplorerShellActivation
     internal static WindowsCommandResult LaunchAndActivate(
         string target,
         IExplorerShellPlatform platform,
-        Action<string>? stageChanged)
+        Action<string>? stageChanged, bool enterDirectory=false)
     {
         var stage = "target_resolution";
         void SetStage(string nextStage)
@@ -73,26 +79,31 @@ internal static class ExplorerShellActivation
         try
         {
             var isDirectory = Directory.Exists(target);
+            enterDirectory &= isDirectory;
             if (!isDirectory && !File.Exists(target))
             {
                 return Failure("target_missing", "The Explorer target is no longer available.", 2);
             }
             SetStage("target_resolved");
 
-            var directory = isDirectory ? target : Path.GetDirectoryName(target);
+            var fullTarget = NormalizeDirectory(target);
+            var parent = Path.GetDirectoryName(fullTarget);
+            var revealRoot = isDirectory && (enterDirectory || string.IsNullOrWhiteSpace(parent));
+            var directory = revealRoot ? fullTarget : parent;
             if (string.IsNullOrWhiteSpace(directory))
             {
                 return Failure("target_parent_missing", "The Explorer target has no containing directory.", 3);
             }
             directory = NormalizeDirectory(directory);
 
-            SetStage(isDirectory ? "native_directory_open_requested" : "selection_requested");
-            var nativeResult = platform.OpenNative(target, isDirectory);
+            SetStage(revealRoot ? "native_directory_open_requested" : "selection_requested");
+            var nativeResult = enterDirectory && platform.FindEnteredDirectory(target)!=IntPtr.Zero ? 0
+                : enterDirectory ? platform.EnterDirectory(target) : platform.OpenNative(target,isDirectory);
             var fallbackLaunched = false;
             void LaunchFallback()
             {
                 SetStage("explorer_fallback_requested");
-                platform.LaunchExplorer(isDirectory
+                platform.LaunchExplorer(revealRoot
                     ? $"\"{target}\""
                     : $"/select,\"{target}\"");
                 fallbackLaunched = true;
@@ -115,7 +126,7 @@ internal static class ExplorerShellActivation
                 if (platform.SupportsTargetObservation)
                 {
                     SetStage("target_readback");
-                    candidate = platform.FindConfirmedTarget(target, isDirectory);
+                    candidate = enterDirectory ? platform.FindEnteredDirectory(target) : platform.FindConfirmedTarget(target, isDirectory);
                 }
                 else if (candidate == IntPtr.Zero || !platform.IsWindow(candidate))
                 {
@@ -234,6 +245,14 @@ internal static class ExplorerShellActivation
     internal static string NormalizeDirectory(string directory)
     {
         var fullPath = Path.GetFullPath(directory);
+        // Shell automation publishes ordinary DOS/UNC paths even when the request
+        // came from a canonical extended-length filesystem path. Normalize only
+        // these explicit aliases; device/volume namespaces retain their identity.
+        if (fullPath.StartsWith(@"\\?\UNC\", StringComparison.OrdinalIgnoreCase))
+            fullPath = @"\\" + fullPath[8..];
+        else if (fullPath.Length >= 7 && fullPath.StartsWith(@"\\?\", StringComparison.Ordinal) &&
+                 char.IsAsciiLetter(fullPath[4]) && fullPath[5] == ':' && fullPath[6] == '\\')
+            fullPath = fullPath[4..];
         var root = Path.GetPathRoot(fullPath);
         return !string.IsNullOrEmpty(root) &&
             fullPath.Length <= root.Length
@@ -251,16 +270,19 @@ internal static class ExplorerShellActivation
             Data: stage,
             NativeErrorCode: nativeErrorCode == 0 ? null : nativeErrorCode);
 
-    internal static IntPtr ObserveTarget(string target, bool isDirectory, IExplorerTargetObservationPlatform platform)
+    internal static IntPtr ObserveTarget(string target, bool isDirectory, IExplorerTargetObservationPlatform platform, bool enterDirectory=false)
     {
-        var expectedDirectory = NormalizeDirectory(isDirectory ? target : Path.GetDirectoryName(target)!);
-        var expectedFile = isDirectory ? null : Path.GetFullPath(target);
+        var fullTarget = NormalizeDirectory(target);
+        var parent = Path.GetDirectoryName(fullTarget);
+        var revealRoot = isDirectory && (enterDirectory || string.IsNullOrWhiteSpace(parent));
+        var expectedDirectory = NormalizeDirectory(revealRoot ? fullTarget : parent!);
+        var expectedFile = revealRoot ? null : fullTarget;
         foreach (var view in platform.ReadActiveViews())
         {
             if (view.Root == IntPtr.Zero || view.View == IntPtr.Zero || !view.Visible ||
                 !string.Equals(NormalizeDirectory(view.Directory), expectedDirectory, StringComparison.OrdinalIgnoreCase)) continue;
-            if (isDirectory || view.SelectedPaths.Any(path => string.Equals(
-                Path.GetFullPath(path), expectedFile, StringComparison.OrdinalIgnoreCase))) return view.Root;
+            if (revealRoot || view.SelectedPaths.Any(path => string.Equals(
+                NormalizeDirectory(path), expectedFile, StringComparison.OrdinalIgnoreCase))) return view.Root;
         }
         return IntPtr.Zero;
     }
@@ -299,14 +321,12 @@ internal static class ExplorerShellActivation
 
     internal sealed class NativeTargetObservationPlatform : IExplorerTargetObservationPlatform
     {
-        private readonly bool _isDirectory;
         private readonly Action<int> _nativeFailure;
         private readonly Func<object> _createWindows;
         private readonly Action<string>? _observationStage;
-        internal NativeTargetObservationPlatform(bool isDirectory, Action<int> nativeFailure,
+        internal NativeTargetObservationPlatform(Action<int> nativeFailure,
             Func<object>? createWindows = null, Action<string>? observationStage = null)
         {
-            _isDirectory = isDirectory;
             _nativeFailure = nativeFailure;
             _observationStage = observationStage;
             _createWindows = createWindows ?? (() => Activator.CreateInstance(Type.GetTypeFromCLSID(
@@ -331,21 +351,32 @@ internal static class ExplorerShellActivation
                     try
                     {
                         candidate = collection.Item(index);
-                        if (candidate is IExplorerBrowserDispatch browser && candidate is IExplorerServiceProvider services)
+                        if (candidate is not IExplorerServiceProvider services)
                         {
-                            // IWebBrowser2.HWND can identify a tab child. Classify the
-                            // real native root, but still require its active view below.
-                            var hwnd = new IntPtr(browser.WindowHandle);
-                            var root = NativeExplorerShellPlatform.ReadRootWindow(hwnd);
-                            if (root != hwnd) Report("observation_browser_child_hwnd");
-                            if (NativeExplorerShellPlatform.IsExplorerRoot(root)) view = ReadActiveView(root, services);
-                            else Report("observation_explorer_root_rejected");
+                            Report("observation_service_interface_missing");
+                            continue;
                         }
-                        else Report("observation_browser_interfaces_missing");
+                        Report("observation_service_interface_acquired");
+                        // Service-only candidates are supported when their native
+                        // browser still proves an actual Explorer root and active view.
+                        var expectedRoot = IntPtr.Zero;
+                        if (candidate is IExplorerBrowserDispatch dispatch)
+                        {
+                            var hwnd = new IntPtr(dispatch.WindowHandle);
+                            expectedRoot = NativeExplorerShellPlatform.ReadRootWindow(hwnd);
+                            if (expectedRoot != hwnd) Report("observation_browser_child_hwnd");
+                            if (!NativeExplorerShellPlatform.IsExplorerRoot(expectedRoot))
+                            { Report("observation_explorer_root_rejected"); continue; }
+                        }
+                        else Report("observation_browser_dispatch_unavailable_using_service");
+                        view = ReadActiveView(expectedRoot, services);
                     }
-                    catch (COMException error)
+                    catch (Exception error) when (error is COMException or InvalidCastException or
+                        InvalidOperationException or ArgumentException or MissingMemberException or
+                        Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
                     {
-                        // A closing tab/provider is not evidence; keep its code, never its payload.
+                        // One closing/incompatible candidate cannot abort later candidates.
+                        Report(error is COMException ? "observation_candidate_com_failure" : "observation_candidate_managed_failure");
                         _nativeFailure(error.HResult);
                     }
                     finally { ReleaseCom(candidate); }
@@ -375,10 +406,19 @@ internal static class ExplorerShellActivation
                 var browserId = typeof(IExplorerShellBrowser).GUID;
                 var result = services.QueryService(ref service, ref browserId, out shellBrowser);
                 if (result < 0) { Report("observation_query_service_failed"); _nativeFailure(result); return null; }
-                if (shellBrowser is not IExplorerShellBrowser browser) return null;
+                if (shellBrowser is not IExplorerShellBrowser browser)
+                { Report("observation_shell_browser_interface_missing"); return null; }
+                Report("observation_query_service_succeeded");
+                result = browser.GetWindow(out var browserWindow);
+                if (result < 0) { Report("observation_browser_window_failed"); _nativeFailure(result); return null; }
+                var actualRoot = NativeExplorerShellPlatform.ReadRootWindow(browserWindow);
+                if (!NativeExplorerShellPlatform.IsExplorerRoot(actualRoot) || (root != IntPtr.Zero && root != actualRoot))
+                { Report("observation_browser_root_mismatch"); return null; }
+                root = actualRoot;
                 result = browser.QueryActiveShellView(out shellView);
                 if (result < 0) { Report("observation_active_view_failed"); _nativeFailure(result); return null; }
-                if (shellView is null) return null;
+                if (shellView is null) { Report("observation_active_view_missing"); return null; }
+                Report("observation_active_view_acquired");
                 result = shellView.GetWindow(out var viewWindow);
                 if (result < 0) { Report("observation_view_window_failed"); _nativeFailure(result); return null; }
                 if (!NativeExplorerShellPlatform.IsVisibleView(viewWindow, root)) { Report("observation_view_visibility_rejected"); return null; }
@@ -392,13 +432,13 @@ internal static class ExplorerShellActivation
                 folder = active.Folder;
                 folderSelf = ReadFolderSelf(folder);
                 var directory = (string)((dynamic)folderSelf).Path;
-                if (!Path.IsPathFullyQualified(directory)) return null;
-                if (_isDirectory) return new(root, viewWindow,
-                    NativeExplorerShellPlatform.IsVisibleView(viewWindow, root), directory, []);
+                if (!Path.IsPathFullyQualified(directory)) { Report("observation_folder_not_filesystem"); return null; }
+                Report("observation_filesystem_folder_decoded");
                 selected = active.SelectedItems();
                 dynamic items = selected;
                 var count = (int)items.Count;
                 if (count < 0 || count > 4096) return null; // fail closed on unsupported selection size
+                Report(count == 0 ? "observation_selection_empty" : "observation_selection_present");
                 var paths = new List<string>(count);
                 for (var index = 0; index < count; index++)
                 {
@@ -411,6 +451,7 @@ internal static class ExplorerShellActivation
                     }
                     finally { ReleaseCom(item); }
                 }
+                Report("observation_active_view_snapshot_ready");
                 return new(root, viewWindow, NativeExplorerShellPlatform.IsVisibleView(viewWindow, root), directory, paths);
             }
             finally
@@ -477,7 +518,8 @@ internal static class ExplorerShellActivation
         private const uint GaRoot = 2;
         private readonly Action<string>? _observationStage;
         private readonly HashSet<string> _reportedObservationStages = [];
-        internal NativeExplorerShellPlatform(Action<string>? observationStage = null) => _observationStage = observationStage;
+        private readonly bool _politeActivation;
+        internal NativeExplorerShellPlatform(Action<string>? observationStage = null,bool politeActivation=false) { _observationStage=observationStage;_politeActivation=politeActivation; }
         private void ReportObservationStage(string stage)
         {
             // Fixed vocabulary, once per command rather than per window/attempt.
@@ -488,12 +530,30 @@ internal static class ExplorerShellActivation
         private int _lastNativeError;
         public int LastErrorCode => _lastNativeError;
 
+        private NativeDirectoryOpusTargetPlatform? _directoryOpus;
         public bool SupportsTargetObservation => true;
-        public IntPtr FindConfirmedTarget(string target, bool isDirectory) =>
-            ObserveTarget(target, isDirectory, new NativeTargetObservationPlatform(isDirectory,
-                code => _lastNativeError = code, observationStage: ReportObservationStage));
+        public IntPtr FindConfirmedTarget(string target, bool isDirectory)
+        {
+            try
+            {
+                var root = ObserveTarget(target, isDirectory, new NativeTargetObservationPlatform(
+                    code => _lastNativeError = code, observationStage: ReportObservationStage));
+                if (root != IntPtr.Zero) return root;
+            }
+            catch (Exception error) when (error is COMException or InvalidCastException or
+                Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+            {
+                _lastNativeError = error.HResult;
+                ReportObservationStage("observation_explorer_reader_failed");
+            }
+            _directoryOpus ??= new NativeDirectoryOpusTargetPlatform(ReportObservationStage);
+            return ObserveTarget(target, isDirectory, new DirectoryOpusTargetObservation(
+                target, isDirectory, _directoryOpus, ReportObservationStage, code => _lastNativeError = code));
+        }
         public IntPtr FindExplorerWindow(string directory) => FindConfirmedTarget(directory, true);
 
+        public IntPtr FindEnteredDirectory(string target) => ObserveTarget(target,true,new NativeTargetObservationPlatform(code=>_lastNativeError=code,observationStage:ReportObservationStage),true);
+        public int EnterDirectory(string target) => ExplorerNativeFolder.Enter(target);
         public int OpenNative(string target, bool isDirectory)
         {
             int result;
@@ -518,6 +578,7 @@ internal static class ExplorerShellActivation
 
         public void TryActivateWindow(IntPtr window)
         {
+            if (_politeActivation) { _=SetForegroundWindow(window);return; }
             var currentThread = GetCurrentThreadId();
             var targetThread = GetWindowThreadProcessId(window, out _);
             var foreground = GetForegroundWindowNative();

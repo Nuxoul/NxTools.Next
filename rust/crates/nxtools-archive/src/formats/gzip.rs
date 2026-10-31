@@ -137,8 +137,16 @@ pub(crate) fn stream(
     file: &mut impl Read,
     limits: &ResourceLimits,
     control: &OperationControl,
-    mut chunk: impl FnMut(&[u8]) -> Result<()>,
+    chunk: impl FnMut(&[u8]) -> Result<()>,
 ) -> Result<ArchiveOutcome> {
+    stream_members(file, limits, control, chunk).map(|(outcome, _)| outcome)
+}
+pub(crate) fn stream_members(
+    file: &mut impl Read,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    mut chunk: impl FnMut(&[u8]) -> Result<()>,
+) -> Result<(ArchiveOutcome, u64)> {
     if limits.max_working_bytes < 256 * 1024 {
         return Err(ArchiveError::ResourceLimit);
     }
@@ -202,10 +210,13 @@ pub(crate) fn stream(
     if members == 0 {
         return Err(ArchiveError::CorruptArchive);
     }
-    Ok(ArchiveOutcome {
-        files_verified: 1,
-        bytes_verified: total,
-    })
+    Ok((
+        ArchiveOutcome {
+            files_verified: 1,
+            bytes_verified: total,
+        },
+        members,
+    ))
 }
 pub(crate) fn extract(
     mut file: File,

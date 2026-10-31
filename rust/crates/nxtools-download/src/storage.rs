@@ -113,6 +113,16 @@ pub(crate) struct QueueAdmission<'a> {
 }
 
 impl SqliteDownloadStore {
+    /// Runs a fixture operation while holding the actual SQLite connection mutex.
+    #[cfg(feature = "test-support")]
+    pub(crate) fn with_connection_lock_for_test<R>(&self, operation: impl FnOnce() -> R) -> R {
+        let _connection = self
+            .connection
+            .lock()
+            .expect("synthetic store connection lock");
+        operation()
+    }
+
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DownloadStorageError> {
         let path = path.as_ref();
         quarantine_empty_database_file(path)?;

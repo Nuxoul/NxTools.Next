@@ -1,0 +1,118 @@
+{
+  "status": "BLOCKED before effective runtime red; no product layout repair yet",
+  "created_at": "2026-10-25T22:50:15.200073",
+  "task_start": "2026-10-25T22:42:11.697439",
+  "existing": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+      "before_sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+      "current_sha256": "be1cce574fa09a5e24e2216a2048bb3c688f72da130f6c47dfa895e27b427e6b"
+    },
+    {
+      "path": "docs/reference-code/download.md",
+      "before_sha256": "135970f15de5e95754e9873ffb294b156068a2dc4267339950bf628671a558ca",
+      "current_sha256": "57e8012bd1a2bac019c86cb14cd3a9f48ce4832bb22321159762535cdc8d9979"
+    }
+  ],
+  "new": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+      "sha256": "93a05ac653d04ec4c0d351f66d79846f79ff6d34ec7b026d489a61cdb914ca40"
+    },
+    {
+      "path": ".trellis/tasks/10-25-rem-new-download/prd.md",
+      "sha256": "367720f673fa90bace08d20245ce6b7d6376c18a86aeb9d0994cbdc51ae9decd"
+    }
+  ],
+  "protected_count": 25,
+  "frozen_history_count": 480,
+  "compile_exit": 101,
+  "full_desktop_runs": 0,
+  "evidence": [
+    {
+      "path": "evidence/checkpoint-01/.trellis__tasks__10-25-rem-new-download__prd.md.snapshot",
+      "sha256": "367720f673fa90bace08d20245ce6b7d6376c18a86aeb9d0994cbdc51ae9decd",
+      "bytes": 8074
+    },
+    {
+      "path": "evidence/checkpoint-01/baseline-manifest.json",
+      "sha256": "cf33cc883c13ea0a42d021ed6e50c3def0f003170b3c57422ea4411f7935f42c",
+      "bytes": 714
+    },
+    {
+      "path": "evidence/checkpoint-01/blocker-rust__apps__nxtools-desktop__src__extensions__event_history.rs.observed",
+      "sha256": "d8a8fc08c6724aef546b13c00cbeb014a71c64daec699d13a5bf23c7b25bcd62",
+      "bytes": 3012
+    },
+    {
+      "path": "evidence/checkpoint-01/blocker-rust__crates__nxtools-extensions__src__api.rs.observed",
+      "sha256": "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+      "bytes": 2549
+    },
+    {
+      "path": "evidence/checkpoint-01/blocker-rust__crates__nxtools-extensions__src__runtime.rs.observed",
+      "sha256": "7a26e95e76b833d6bf1e47555932ba277b7ddc17e6e79ce245f94c673191b29c",
+      "bytes": 59633
+    },
+    {
+      "path": "evidence/checkpoint-01/capture-baseline.py",
+      "sha256": "1be960de0ffc621ded5b4e26aa4141b9e7eeb9deaff94b51d5dc4a73071bb739",
+      "bytes": 2827
+    },
+    {
+      "path": "evidence/checkpoint-01/compact-confirmed-red.log",
+      "sha256": "031c6a8e3996c0c9c65b94eb16dcebc20af02f13b9b9a2caceef393d03c8bd25",
+      "bytes": 5460
+    },
+    {
+      "path": "evidence/checkpoint-01/docs__reference-code__download.md.baseline",
+      "sha256": "135970f15de5e95754e9873ffb294b156068a2dc4267339950bf628671a558ca",
+      "bytes": 265083
+    },
+    {
+      "path": "evidence/checkpoint-01/docs__reference-code__download.md.current",
+      "sha256": "57e8012bd1a2bac019c86cb14cd3a9f48ce4832bb22321159762535cdc8d9979",
+      "bytes": 267539
+    },
+    {
+      "path": "evidence/checkpoint-01/docs__reference-code__download.md.own-delta.txt",
+      "sha256": "3cbf299c0d11f783da6ecb0325ccc3a562d6144578e34384d5485a8047476ffd",
+      "bytes": 2903
+    },
+    {
+      "path": "evidence/checkpoint-01/frozen-history.json",
+      "sha256": "e40ad7235a5e17be61097af36e6961397980ab15435204dd0ce3726608ee57ee",
+      "bytes": 94040
+    },
+    {
+      "path": "evidence/checkpoint-01/protected-baseline.json",
+      "sha256": "84e4b3f04202c76f0448f49f35a803d3a9c7986cb68a7a357f2bc8781659d941",
+      "bytes": 4123
+    },
+    {
+      "path": "evidence/checkpoint-01/rust__apps__nxtools-desktop__src__downloads__new_download_rem_tests.rs.snapshot",
+      "sha256": "93a05ac653d04ec4c0d351f66d79846f79ff6d34ec7b026d489a61cdb914ca40",
+      "bytes": 5844
+    },
+    {
+      "path": "evidence/checkpoint-01/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.baseline",
+      "sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+      "bytes": 137203
+    },
+    {
+      "path": "evidence/checkpoint-01/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.current",
+      "sha256": "be1cce574fa09a5e24e2216a2048bb3c688f72da130f6c47dfa895e27b427e6b",
+      "bytes": 137270
+    },
+    {
+      "path": "evidence/checkpoint-01/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.own-delta.txt",
+      "sha256": "728cef21ec557601218b647657ea7414ed9f1bafa1bf0d35ff9c833b3a8b2d35",
+      "bytes": 331
+    },
+    {
+      "path": "evidence/checkpoint-01/shared-compile-blocker.json",
+      "sha256": "7eb84a008877e3ed2256a9a1fbb8a7bcda0b78bf05930bc40534109a0ff41f2b",
+      "bytes": 1471
+    }
+  ]
+}

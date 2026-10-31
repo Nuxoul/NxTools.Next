@@ -3,6 +3,7 @@
   "name": "NxTools Download Interceptor",
   "description": "Intercept browser downloads and send them to NxTools.",
   "version": "0.7.0",
+  "minimum_chrome_version": "121",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArh9uoEGy5esC9y2AGR814h0iNb6783TgMeyJM3uQ7MxJPZfAPHYU/enNwMpko9xKi1g/F8i96Ix5+skDJgRY0d36H20P3W3qlCXSIXxLQycnKvJ3731748ZLrWvGKRewA7FMN/ha+CUFNDzFWmNTv/kTEonV/v2KQu2TCiCJKCo3BoHRSL8La03ZAhG4TiHA4881W3Gwas+WJn3BevHdN0hVcdh8IgFQsCdEBLpds3rO0IWa7k8pcZVgqSkMh+roJ1JudswvClAv3IyArZwCVEgm49WDjgCSiqAcZkqIqO/xmlvRCQfLYmOL+SrIoniE5YVA3s/2YqJHZGkN6PhxbQIDAQAB",
   "icons": {
     "16": "icons/icon-16.png",
@@ -28,12 +29,35 @@
     "https://*/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "handoff-policy.js",
+      "capture-policy.js",
+      "blob-transfer-policy.js",
+      "batch-handoff-policy.js",
+      "bg/constants.js",
+      "bg/state.js",
+      "bg/naming.js",
+      "bg/request-context.js",
+      "bg/settings.js",
+      "bg/native-transport.js",
+      "bg/site-adapters.js",
+      "bg/resource-cache.js",
+      "bg/media.js",
+      "bg/tab-bridge.js",
+      "bg/capture.js",
+      "bg/handoff.js",
+      "bg/resource-choices.js",
+      "bg/popup-state.js",
+      "bg/context-menu.js",
+      "bg/router.js",
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["shadow-styles.js", "blob-transfer-policy.js", "content-script.js"],
+      "js": ["shadow-styles.js", "blob-transfer-policy.js", "content/constants.js", "content/runtime.js", "content/media-info.js", "content/resource-choice-text.js", "content/blob-bridge.js", "content/media-geometry.js", "content-script.js"],
       "run_at": "document_start",
       "all_frames": true
     }

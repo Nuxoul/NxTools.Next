@@ -1,0 +1,402 @@
+{
+  "status": "PASS",
+  "reports": 2,
+  "local_links": 78,
+  "original_git_visible_files_unchanged": 8045,
+  "indexed_records_hash_checked": 258,
+  "original_findings": 13,
+  "no_old_manifest_or_product_changes": true,
+  "links": [
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-final-convergence-admission/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/source-index.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/AGENTS.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/spec/shared/verification.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/spec/shared/ui-design.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/docs/reference-code/gpui-kit-080.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/source-index.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-24-download-enter-popover/prd.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-24-download-enter-popover/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-download-sort-keyboard/prd.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-download-sort-keyboard/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-download-sort-keyboard/evidence/own-delta.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-button-accessible-names/prd.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-button-accessible-names/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-button-accessible-names/evidence/own-delta.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-archive-prompt-object/parent-review-r1-r2.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-archive-prompt-object/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/unresolved-diagnostics/create-keyboard-unresolved-probe.rs.txt",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-default-submit-keyboard/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-default-submit-keyboard/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-rem-role-consistency/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-new-download-basic/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-new-download-overlays/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-download-settings-task/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-shared-ui/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-pages-global-tools/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-quick-clipboard/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-archive-final-matrix/role-matrix.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-cursor-semantics/inventory.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-cursor-semantics/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-command-naming/command-matrix.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-command-naming/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-command-naming/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-download-picker-identity/prd.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-download-picker-identity/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-clipboard-stable-focus/prd.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-clipboard-stable-focus/parent-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-clipboard-stable-focus/evidence/own-delta.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-download-virtual-projection/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-download-virtual-projection/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-download-detail-async/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-download-detail-async/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-quick-retained-text/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-quick-retained-text/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-archive-final-matrix/role-matrix.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-16-archive-manager/ui-spec.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/spec/shared/ui-design.md:293",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-cursor-semantics/inventory.md:42",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-extensions-compile-closeout/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-archive-settings-search-diagnosis/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-extension-preview-cancel-diagnosis/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-quick-source-release-chain/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-final-convergence-admission/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/tests/architecture/quick-launch-release-chain.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/tests/architecture/quick-launch-release-chain-tests.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-quick-source-release-chain/evidence/own-deltas.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-final-convergence-admission/evidence/failure-log-hashes.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/source-index.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks.json",
+      "state": "GENERATED_AT_END_AND_THEN_VERIFIED"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/tests/native/gpui-kit-acceptance.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/csharp/NxTools.PlatformHost.Tests/README.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/tests/performance/indexer-idle-cpu.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/tests/runtime/quick-launch-search-smoke.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks.json",
+      "state": "GENERATED_AT_END_AND_THEN_VERIFIED"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/source-index.json",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-final-convergence-admission/outcomes.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-rem-archive-final-matrix/role-matrix.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/tests/native/gpui-kit-acceptance.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/csharp/NxTools.PlatformHost.Tests/README.md",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/tests/performance/indexer-idle-cpu.ps1",
+      "state": "EXISTS"
+    },
+    {
+      "report": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "target": "D:/Code/NxTools.Next-main/.trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks.json",
+      "state": "GENERATED_AT_END_AND_THEN_VERIFIED"
+    }
+  ],
+  "scope": "REPORT_LINK_SOURCE_HISTORY_INTEGRITY_ONLY"
+}

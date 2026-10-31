@@ -1,0 +1,18 @@
+{
+  "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs",
+  "baseline_sha256": "1207f0043e4db0969baefbb5b1e40a77f034e093daca9c2440d2723909e39731",
+  "delivery_sha256": "20e6dfb7d4329467d1495169d26af5a1360e56133c583468288e3237360df2e3",
+  "operations": [
+    {
+      "tag": "replace",
+      "baseline_start": 91,
+      "baseline_end": 92,
+      "delivery_start": 91,
+      "delivery_end": 100,
+      "baseline_text": "internal sealed record ArchiveJobPrompt(ArchiveJobTicket Ticket,string Kind,string? ErrorCode=null,uint Attempt=0,ulong? ExistingBytes=null,ulong? IncomingBytes=null,ulong? ApprovedLimit=null);\n",
+      "delivery_text": "// UI-only values; never pass these strings into native output or authorization APIs.\n[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]\ninternal sealed record ArchiveJobPromptDisplay(string? IncomingMember,string Target) {\n    private static bool Text(string? value,int limit)=>!string.IsNullOrEmpty(value) && Encoding.UTF8.GetByteCount(value)<=limit && !value.Any(char.IsControl);\n    internal bool Valid(string kind)=>Text(Target,65535) && (kind==\"conflict\"?Text(IncomingMember,32767):kind==\"create_overwrite\" && IncomingMember is null);\n    public override string ToString()=>\"ArchiveJobPromptDisplay([PRIVATE])\";\n}\ninternal sealed record ArchiveJobPrompt(ArchiveJobTicket Ticket,string Kind,string? ErrorCode=null,uint Attempt=0,ulong? ExistingBytes=null,ulong? IncomingBytes=null,ulong? ApprovedLimit=null,\n    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobPromptDisplay? Display=null);\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

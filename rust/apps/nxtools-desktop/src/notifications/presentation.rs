@@ -193,6 +193,9 @@ impl OfficialPresenter {
             let default_source = self.source.unwrap_or(window_handle);
             let screen_host = self.source.is_some();
             let top_inset = self.top_inset;
+            let copy_button = cx.new(|cx| {
+                super::copy::CopyButton::new(self.center.clone(), id.clone(), generation, cx)
+            });
             let note = Notification::new()
                 .id1::<OfficialSlot>(index)
                 .delivery(NotificationDelivery::InApp)
@@ -211,6 +214,7 @@ impl OfficialPresenter {
                 .duration(item.dwell.unwrap_or(Duration::from_secs(
                     nxtools_core::default_notification_duration() as u64,
                 )))
+                .header_action(move |_, _, _| copy_button.clone().into_any_element())
                 .content(move |_, window, cx| {
                     let focus = window.use_keyed_state(
                         SharedString::from(format!(
@@ -478,10 +482,11 @@ fn content_element(
         .flex_col()
         .gap_1()
         .child(
-            div()
-                .w_full()
-                .flex_shrink_0()
-                .child(Label::new(item.title).font_semibold().whitespace_normal()),
+            div().w_full().flex_shrink_0().pr_8().child(
+                div()
+                    .debug_selector(|| "notification-title-text".into())
+                    .child(Label::new(item.title).font_semibold().whitespace_normal()),
+            ),
         )
         .child(
             div()

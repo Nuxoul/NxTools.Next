@@ -175,6 +175,18 @@ impl Render for ManualFeedback {
                         .text_color(cx.theme().muted_foreground)
                         .child(format!("{} · {}", run.package_name, run.state.label())),
                 );
+            if let Some(progress) = &run.progress {
+                body = body.child(
+                    div()
+                        .debug_selector(|| "extension-manual-progress".into())
+                        .w_full()
+                        .flex_shrink_0()
+                        .child(crate::extensions::manual_runs::progress_view(
+                            progress,
+                            "extension-manual-progress-bar",
+                        )),
+                );
+            }
             let guidance = match &run.state {
                 ManualState::Running => Some("正在处理，关闭详情不会取消。"),
                 ManualState::Cancelling => Some("正在等待取消完成；已产生的效果不能撤回。"),

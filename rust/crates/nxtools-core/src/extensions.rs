@@ -5,7 +5,119 @@ use std::{
     path::{Path, PathBuf},
 };
 
+/// Original Core config boundary composed with the host-owned bounded data owner.
+#[derive(Clone)]
+pub struct ConfigExtensionStorage {
+    path: PathBuf,
+    owner: nxtools_extensions::storage::StorageOwner,
+}
+impl ConfigExtensionStorage {
+    pub fn new(path: PathBuf, owner: nxtools_extensions::storage::StorageOwner) -> Self {
+        Self { path, owner }
+    }
+}
+impl nxtools_extensions::storage::StorageHost for ConfigExtensionStorage {
+    fn owner(&self) -> nxtools_extensions::storage::StorageOwner {
+        self.owner.clone()
+    }
+    fn bind(
+        &self,
+        reviewed: &nxtools_extensions::InstalledPackage,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> std::result::Result<
+        nxtools_extensions::InstalledPackage,
+        nxtools_extensions::storage::StorageError,
+    > {
+        use nxtools_extensions::storage::StorageError;
+        let result = AppConfig::with_config_lock(&self.path, || {
+            anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+            let mut config = AppConfig::load_from(&self.path)?;
+            let current = config
+                .extensions
+                .packages
+                .iter()
+                .find(|package| package.manifest.id == reviewed.manifest.id)
+                .ok_or(StorageError::Stale)?;
+            anyhow::ensure!(current == reviewed, StorageError::Stale);
+            anyhow::ensure!(
+                current.enabled
+                    && current
+                        .manifest
+                        .runtime
+                        .as_ref()
+                        .is_some_and(|runtime| runtime.protocol_version == 2),
+                StorageError::Stale
+            );
+            current.verify_approval().map_err(|_| StorageError::Stale)?;
+            config
+                .extensions
+                .verify_runtime_selection(&current.manifest.id)
+                .map_err(|_| StorageError::Stale)?;
+            anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+            if let Some(namespace) = current.data_uuid {
+                self.owner
+                    .verify_namespace_blocking(namespace, &current.manifest.id)?;
+                anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+                return Ok(current.clone());
+            }
+            let namespace = nxtools_extensions::InstallationDataId::new_v4();
+            self.owner
+                .reserve_namespace_blocking(namespace, &current.manifest.id)?;
+            anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+            let package = config
+                .extensions
+                .packages
+                .iter_mut()
+                .find(|package| package.manifest.id == reviewed.manifest.id)
+                .ok_or(StorageError::Stale)?;
+            package.data_uuid = Some(namespace);
+            let bound = package.clone();
+            config.normalize();
+            config.save_to(&self.path)?;
+            tracing::info!(event = "extension.storage.identity_committed");
+            Ok(bound)
+        });
+        result.map_err(|error| {
+            error
+                .downcast_ref::<StorageError>()
+                .copied()
+                .unwrap_or(StorageError::Io)
+        })
+    }
+}
+
 impl AppConfig {
+    /// Reserve durable data metadata before publishing its pointer under the original lock.
+    /// Compare the whole reviewed package; failed reservation/commit cannot expose data.
+    pub fn allocate_extension_data_checked(
+        path: &Path,
+        reviewed: &nxtools_extensions::InstalledPackage,
+        namespace: nxtools_extensions::InstallationDataId,
+        storage: &nxtools_extensions::storage::StorageOwner,
+    ) -> Result<Self> {
+        anyhow::ensure!(!namespace.is_nil(), "invalid extension data identity");
+        Self::try_update_section(path, |config| {
+            let package = config
+                .extensions
+                .packages
+                .iter_mut()
+                .find(|package| package.manifest.id == reviewed.manifest.id)
+                .ok_or_else(|| anyhow::anyhow!("extension data target unavailable"))?;
+            anyhow::ensure!(
+                package == reviewed,
+                "extension data allocation review is stale"
+            );
+            anyhow::ensure!(
+                package.data_uuid.is_none(),
+                "extension data identity already allocated"
+            );
+            storage.reserve_namespace_blocking(namespace, &reviewed.manifest.id)?;
+            package.data_uuid = Some(namespace);
+            config.extensions.validate()?;
+            Ok(())
+        })
+    }
+
     pub fn save_extension_runtime_defaults(
         path: &Path,
         defaults: BTreeMap<String, PathBuf>,
@@ -213,6 +325,213 @@ impl AppConfig {
         })
     }
 
+    /// Explicit pointer-switch restore. Never merge values or reactivate a retained UUID.
+    /// Only call from the existing bounded management worker, not a GPUI/async reader.
+    pub fn restore_extension_data_checked(
+        path: &Path,
+        reviewed: &nxtools_extensions::InstalledPackage,
+        retained: &nxtools_extensions::storage::RetainedStorage,
+        storage: &nxtools_extensions::storage::StorageOwner,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<(Self, bool)> {
+        use nxtools_extensions::storage::StorageError;
+        Self::with_config_lock(path, || {
+            anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+            let mut config = Self::load_from(path)?;
+            let current = config
+                .extensions
+                .packages
+                .iter()
+                .find(|package| package.manifest.id == reviewed.manifest.id)
+                .ok_or(StorageError::Stale)?;
+            anyhow::ensure!(current == reviewed, StorageError::Stale);
+            anyhow::ensure!(
+                current
+                    .manifest
+                    .runtime
+                    .as_ref()
+                    .is_some_and(|runtime| runtime.protocol_version == 2),
+                StorageError::Stale
+            );
+            current.verify_approval().map_err(|_| StorageError::Stale)?;
+            config
+                .extensions
+                .verify_runtime_selection(&current.manifest.id)
+                .map_err(|_| StorageError::Stale)?;
+            storage.reconcile_current_registry_blocking(&config.extensions)?;
+            let restored = nxtools_extensions::InstallationDataId::new_v4();
+            storage.prepare_restore_blocking(
+                &current.manifest.id,
+                retained,
+                current.data_uuid,
+                restored,
+            )?;
+            let commit = (|| -> Result<()> {
+                anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+                reviewed
+                    .verify_approval()
+                    .map_err(|_| StorageError::Stale)?;
+                config
+                    .extensions
+                    .verify_runtime_selection(&reviewed.manifest.id)
+                    .map_err(|_| StorageError::Stale)?;
+                config
+                    .extensions
+                    .packages
+                    .iter_mut()
+                    .find(|package| package.manifest.id == reviewed.manifest.id)
+                    .ok_or(StorageError::Stale)?
+                    .data_uuid = Some(restored);
+                config.normalize();
+                anyhow::ensure!(!cancelled(), StorageError::Cancelled);
+                config.save_to(path)
+            })();
+            if let Err(error) = commit {
+                // Original lock is still held. Read durable config, never infer rollback
+                // from an in-memory draft; a failed reconciliation keeps the intent.
+                if let Ok(durable) = Self::load_from(path) {
+                    let _ = storage.reconcile_current_registry_blocking(&durable.extensions);
+                }
+                return Err(error);
+            }
+            tracing::info!(event = "extension.storage.restore_pointer_committed");
+            let pending = storage
+                .reconcile_current_registry_blocking(&config.extensions)
+                .unwrap_or_else(|_| {
+                    tracing::warn!(
+                        event = "extension.storage.cleanup_pending",
+                        reason = "restore_postcommit_reconciliation_failed"
+                    );
+                    true
+                });
+            Ok((config, pending))
+        })
+    }
+
+    /// Host management reads only a finite metadata page, under the same fresh config lock
+    /// as destructive review. Reading never reconciles/deletes data or rewrites config.
+    pub fn review_retained_extension_data_checked(
+        path: &Path,
+        reviewed: &nxtools_extensions::PackageRegistry,
+        storage: &nxtools_extensions::storage::StorageOwner,
+        package: Option<String>,
+        after: Option<nxtools_extensions::InstallationDataId>,
+    ) -> Result<nxtools_extensions::storage::RetainedStoragePage> {
+        Self::with_config_lock(path, || {
+            let config = Self::load_from(path)?;
+            anyhow::ensure!(
+                &config.extensions == reviewed,
+                nxtools_extensions::storage::StorageError::Stale
+            );
+            Ok(storage.retained_page_blocking(package, after)?)
+        })
+    }
+
+    /// Clear only the exact retained generation confirmed against a fresh registry. This
+    /// never rewrites configuration, credentials, code staging or unrelated user data.
+    pub fn clear_retained_extension_data_checked(
+        path: &Path,
+        id: &str,
+        reviewed: &nxtools_extensions::PackageRegistry,
+        retained: &nxtools_extensions::storage::RetainedStorage,
+        storage: &nxtools_extensions::storage::StorageOwner,
+    ) -> Result<bool> {
+        Self::with_config_lock(path, || {
+            let config = Self::load_from(path)?;
+            anyhow::ensure!(
+                &config.extensions == reviewed,
+                nxtools_extensions::storage::StorageError::Stale
+            );
+            Ok(storage.clear_retained_blocking(id, retained, &config.extensions)?)
+        })
+    }
+
+    /// Hold the original config lock throughout review -> durable retirement intent ->
+    /// config commit -> fresh pointer reconciliation. Postcommit cleanup cannot undo removal.
+    pub fn remove_extension_data_checked(
+        path: &Path,
+        id: &str,
+        reviewed: &nxtools_extensions::PackageRegistry,
+        storage: &nxtools_extensions::storage::StorageOwner,
+        clear: bool,
+    ) -> Result<(Self, bool)> {
+        Self::with_config_lock(path, || {
+            let mut config = Self::load_from(path)?;
+            anyhow::ensure!(
+                &config.extensions == reviewed,
+                "extension removal review is stale"
+            );
+            let namespace = config
+                .extensions
+                .packages
+                .iter()
+                .find(|package| package.manifest.id == id)
+                .ok_or_else(|| anyhow::anyhow!("extension removal target unavailable"))?
+                .data_uuid;
+            if let Some(namespace) = namespace {
+                storage.prepare_retirement_blocking(namespace, id, clear)?;
+            }
+            config.extensions.remove(id)?;
+            config.normalize();
+            config.save_to(path)?;
+            let cleanup_pending = storage
+                .reconcile_current_registry_blocking(&config.extensions)
+                .unwrap_or_else(|_| {
+                    tracing::warn!(
+                        event = "extension.storage.cleanup_pending",
+                        reason = "postcommit_reconciliation_failed"
+                    );
+                    true
+                });
+            Ok((config, cleanup_pending))
+        })
+    }
+
+    /// Explicit host retry of already authorized ClearPending/CleanupOnly obligations.
+    /// Fresh registry review is mandatory; retained generations are never authorized here.
+    pub fn retry_extension_storage_cleanup_checked(
+        path: &Path,
+        reviewed: &nxtools_extensions::PackageRegistry,
+        storage: &nxtools_extensions::storage::StorageOwner,
+    ) -> Result<bool> {
+        Self::with_config_lock(path, || {
+            let config = Self::load_from(path)?;
+            anyhow::ensure!(
+                &config.extensions == reviewed,
+                nxtools_extensions::storage::StorageError::Stale
+            );
+            Ok(storage.reconcile_current_registry_blocking(&config.extensions)?)
+        })
+    }
+
+    /// Startup/retry reconciliation never consumes a cached registry and never rewrites config.
+    pub fn reconcile_extension_storage(
+        path: &Path,
+        storage: &nxtools_extensions::storage::StorageOwner,
+    ) -> Result<bool> {
+        Self::with_config_lock(path, || {
+            let config = Self::load_from(path)?;
+            Ok(storage.reconcile_current_registry_blocking(&config.extensions)?)
+        })
+    }
+
+    /// Compare reviewed extension state inside the original locked reread. Other sections
+    /// may change independently; a changed package/chain/settings review must be renewed.
+    pub fn remove_extension_checked(
+        path: &Path,
+        id: &str,
+        reviewed: &nxtools_extensions::PackageRegistry,
+    ) -> Result<Self> {
+        Self::try_update_section(path, |config| {
+            anyhow::ensure!(
+                &config.extensions == reviewed,
+                "extension removal review is stale"
+            );
+            config.extensions.remove(id)?;
+            Ok(())
+        })
+    }
+
     pub fn remove_extension(path: &Path, id: &str) -> Result<Self> {
         Self::try_update_section(path, |config| {
             config.extensions.remove(id)?;
@@ -232,6 +551,49 @@ mod tests {
 
     const PACKAGE: &[u8] = br#"{"schema_version":1,"id":"example.web","name":"Web","version":"1.0.0","handlers":[{"id":"web","title":"Web","feature":"quick_launch","entry":"command","keywords":["web"],"action":{"type":"website","url_template":"https://example.test/?q={query}"}}]}"#;
 
+    #[test]
+    fn remediation_reviewed_removal_rejects_changed_extension_config_but_preserves_other_sections()
+    {
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-removal-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("owned directory");
+        let path = root.join("config.json");
+        let mut config = AppConfig::default();
+        config
+            .extensions
+            .install(
+                nxtools_extensions::ImportPreview::from_json(PACKAGE).expect("package"),
+                "fixture".into(),
+                false,
+            )
+            .expect("install");
+        config.save_to(&path).expect("save");
+        let reviewed = config.extensions.clone();
+        AppConfig::set_extension_aliases(&path, "example.web", "web", vec!["changed".into()])
+            .expect("concurrent extension change");
+        let changed = fs::read(&path).expect("changed bytes");
+        let outcome = AppConfig::remove_extension_checked(&path, "example.web", &reviewed);
+        assert!(
+            outcome.is_err(),
+            "stale reviewed removal must not delete newer configuration"
+        );
+        assert_eq!(fs::read(&path).expect("stale no write"), changed);
+        let mut current = AppConfig::load_from(&path).expect("current");
+        let reviewed = current.extensions.clone();
+        current.system.start_on_login_silently = true;
+        current.save_to(&path).expect("other section change");
+        let removed = AppConfig::remove_extension_checked(&path, "example.web", &reviewed)
+            .expect("current removal");
+        assert!(removed.extensions.packages.is_empty());
+        assert!(removed.system.start_on_login_silently);
+        fs::remove_dir_all(root).expect("owned cleanup");
+    }
     #[test]
     fn w6_import_enable_reopen_preserves_other_sections_and_failed_update_bytes() {
         let root = std::env::temp_dir().join(format!(
@@ -802,6 +1164,344 @@ mod tests {
             newer_hash
         );
         fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn expansion_settings_locked_save_rechecks_readiness_and_preserves_disk_bytes() {
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-p1-core-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("owned root");
+        let path = root.join("config.json");
+        let mut initial = AppConfig::default();
+        initial.download.default_connection_limit = 23;
+        initial.save_to(&path).expect("seed");
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.validation","name":"Validation","version":"1",
+            "settings":[{"key":"name","title":"Name","type":"text","validation":{"required":true,"min_length":2}}],
+            "handlers":[{"id":"web","title":"Web","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://fixture.test"}}]});
+        AppConfig::import_extension_json(
+            &path,
+            &serde_json::to_vec(&manifest).expect("manifest"),
+            "owned".into(),
+            false,
+        )
+        .expect("required-unconfigured import");
+        let before = fs::read(&path).expect("before");
+        for values in [
+            std::collections::BTreeMap::new(),
+            std::collections::BTreeMap::from([("name".into(), serde_json::json!("x"))]),
+        ] {
+            assert!(
+                AppConfig::save_extension_settings(&path, "fixture.validation", values).is_err()
+            );
+            assert_eq!(fs::read(&path).expect("failed save unchanged"), before);
+        }
+        AppConfig::save_extension_settings(
+            &path,
+            "fixture.validation",
+            std::collections::BTreeMap::from([("name".into(), serde_json::json!("ready"))]),
+        )
+        .expect("valid save");
+        let current = AppConfig::load_from(&path).expect("reopen");
+        assert_eq!(current.download.default_connection_limit, 23);
+        assert_eq!(current.extensions.packages[0].settings["name"], "ready");
+        fs::remove_dir_all(root).expect("owned cleanup");
+    }
+
+    #[test]
+    fn expansion_storage_binding_rechecks_trust_and_never_recreates_missing_namespace() {
+        use nxtools_extensions::storage::{StorageHost, StorageOwner};
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-p3-binding-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("owned root");
+        let source = root.join("source");
+        fs::create_dir(&source).expect("source");
+        let manifest = serde_json::json!({"schema_version":1,"id":"fixture.binding","name":"Binding","version":"1","runtime":{"program":"python","protocol_version":2},"files":["entry.py"],"handlers":[{"id":"run","title":"Run","feature":"tools","entry":"action","action":{"type":"script","entry_file":"entry.py"}}]});
+        fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("json"),
+        )
+        .expect("manifest");
+        fs::write(source.join("entry.py"), b"not executed").expect("code");
+        let executable = root.join("fixture.exe");
+        fs::write(&executable, b"synthetic interpreter; never executed").expect("interpreter");
+        let preview = nxtools_extensions::ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&root.join("packages"))
+            .expect("stage");
+        let hash = preview.content_hash.clone();
+        let mut config = AppConfig::default();
+        config.download.default_connection_limit = 23;
+        config
+            .extensions
+            .install(preview, "owned".into(), false)
+            .expect("install");
+        let path = root.join("config.json");
+        config.save_to(&path).expect("seed");
+        let owner = StorageOwner::new(root.join("data")).expect("owner");
+        let host = super::ConfigExtensionStorage::new(path.clone(), owner.clone());
+        let reviewed = config.extensions.packages[0].clone();
+        let before = fs::read(&path).expect("before");
+        assert!(host.bind(&reviewed, &|| false).is_err());
+        assert_eq!(fs::read(&path).expect("untrusted unchanged"), before);
+        config
+            .extensions
+            .approve(
+                "fixture.binding",
+                &hash,
+                nxtools_extensions::RuntimeIdentity::inspect(&executable).expect("identity"),
+            )
+            .expect("approve");
+        config
+            .extensions
+            .set_enabled("fixture.binding", true, &[])
+            .expect("enable");
+        config.save_to(&path).expect("approved");
+        let reviewed = config.extensions.packages[0].clone();
+        assert!(host.bind(&reviewed, &|| true).is_err());
+        let config_before = fs::read(&path).expect("before blocked binding");
+        let lock = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(path.with_extension("json.lock"))
+            .expect("original config lock");
+        fs2::FileExt::lock_exclusive(&lock).expect("hold lock");
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task_cancelled = cancelled.clone();
+        let task_host = host.clone();
+        let task_reviewed = reviewed.clone();
+        let (send, receive) = std::sync::mpsc::channel();
+        let task = std::thread::spawn(move || {
+            let result = task_host.bind(&task_reviewed, &|| {
+                task_cancelled.load(std::sync::atomic::Ordering::Acquire)
+            });
+            send.send(result).expect("test receiver");
+        });
+        assert!(
+            receive
+                .recv_timeout(std::time::Duration::from_millis(30))
+                .is_err(),
+            "actual config lock must block the transaction"
+        );
+        cancelled.store(true, std::sync::atomic::Ordering::Release);
+        fs2::FileExt::unlock(&lock).expect("release config lock");
+        assert_eq!(
+            receive
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("cancelled bind returns"),
+            Err(nxtools_extensions::storage::StorageError::Cancelled)
+        );
+        task.join().expect("binding worker");
+        assert_eq!(
+            fs::read(&path).expect("cancel did not publish"),
+            config_before
+        );
+        assert!(
+            !root.join("data").exists(),
+            "cancel before admission cannot allocate data"
+        );
+        let bound = host
+            .bind(&reviewed, &|| false)
+            .expect("lazy locked binding");
+        assert!(bound.data_uuid.is_some());
+        assert_eq!(
+            AppConfig::load_from(&path)
+                .expect("reopen")
+                .download
+                .default_connection_limit,
+            23
+        );
+        assert_eq!(host.bind(&bound, &|| false).expect("same binding"), bound);
+        assert!(
+            host.bind(&reviewed, &|| false).is_err(),
+            "old full review is stale"
+        );
+        fs::write(
+            root.join("data").join("catalog.json"),
+            br#"{"version":1,"namespaces":{},"pending":null}"#,
+        )
+        .expect("simulate lost namespace metadata");
+        assert!(
+            host.bind(&bound, &|| false).is_err(),
+            "never recreate a missing referenced namespace"
+        );
+        drop(host);
+        drop(owner);
+        fs::remove_dir_all(root).expect("owned cleanup");
+    }
+
+    #[test]
+    fn expansion_storage_data_identity_is_lazy_upgrade_stable_and_reimport_fresh() {
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-p3-core-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("owned root");
+        let path = root.join("config.json");
+        let mut initial = AppConfig::default();
+        initial.download.default_connection_limit = 23;
+        initial.save_to(&path).expect("seed");
+        let imported = AppConfig::import_extension_json(&path, PACKAGE, "owned".into(), false)
+            .expect("import");
+        let before = fs::read(&path).expect("legacy bytes");
+        assert_eq!(imported.extensions.packages[0].data_uuid, None);
+        assert!(
+            !String::from_utf8(before.clone())
+                .expect("json")
+                .contains("data_uuid")
+        );
+        AppConfig::load_from(&path).expect("side-effect-free load");
+        assert_eq!(fs::read(&path).expect("load did not write"), before);
+        let reviewed = imported.extensions.packages[0].clone();
+        let namespace = nxtools_extensions::InstallationDataId::new_v4();
+        let blocked = root.join("blocked-data");
+        fs::write(&blocked, b"not a directory").expect("owned blocked root");
+        let unavailable =
+            nxtools_extensions::storage::StorageOwner::new(blocked).expect("lazy owner");
+        assert!(
+            AppConfig::allocate_extension_data_checked(&path, &reviewed, namespace, &unavailable)
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(&path).expect("failed reservation did not publish pointer"),
+            before
+        );
+        drop(unavailable);
+        let owner =
+            nxtools_extensions::storage::StorageOwner::new(root.join("data")).expect("owner");
+        let allocated =
+            AppConfig::allocate_extension_data_checked(&path, &reviewed, namespace, &owner)
+                .expect("locked allocation after durable reservation");
+        assert_eq!(allocated.extensions.packages[0].data_uuid, Some(namespace));
+        assert_eq!(
+            allocated.extensions.packages[0].content_hash,
+            reviewed.content_hash
+        );
+        assert_eq!(allocated.download.default_connection_limit, 23);
+        let allocated_bytes = fs::read(&path).expect("allocated bytes");
+        assert!(
+            AppConfig::allocate_extension_data_checked(
+                &path,
+                &reviewed,
+                nxtools_extensions::InstallationDataId::new_v4(),
+                &owner,
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fs::read(&path).expect("stale did not write"),
+            allocated_bytes
+        );
+        let upgraded = AppConfig::import_extension_json(&path, PACKAGE, "upgrade".into(), true)
+            .expect("explicit replacement");
+        assert_eq!(upgraded.extensions.packages[0].data_uuid, Some(namespace));
+        assert!(!upgraded.extensions.packages[0].enabled);
+        AppConfig::remove_extension_checked(&path, "example.web", &upgraded.extensions)
+            .expect("checked remove");
+        let reimported = AppConfig::import_extension_json(&path, PACKAGE, "fresh".into(), false)
+            .expect("reimport");
+        assert_eq!(reimported.extensions.packages[0].data_uuid, None);
+        let fresh = nxtools_extensions::InstallationDataId::new_v4();
+        assert_ne!(fresh, namespace);
+        let allocated = AppConfig::allocate_extension_data_checked(
+            &path,
+            &reimported.extensions.packages[0],
+            fresh,
+            &owner,
+        )
+        .expect("fresh allocation");
+        assert_eq!(allocated.extensions.packages[0].data_uuid, Some(fresh));
+        fs::remove_dir_all(root).expect("owned cleanup");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn expansion_storage_remove_commit_failure_preserves_registration_and_default_retains() {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-p3-remove-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir(&root).expect("owned root");
+        let path = root.join("config.json");
+        AppConfig::default().save_to(&path).expect("seed");
+        let imported = AppConfig::import_extension_json(&path, PACKAGE, "owned".into(), false)
+            .expect("import");
+        let owner =
+            nxtools_extensions::storage::StorageOwner::new(root.join("data")).expect("owner");
+        let namespace = nxtools_extensions::InstallationDataId::new_v4();
+        owner
+            .reserve_namespace_blocking(namespace, "example.web")
+            .expect("durable reserve");
+        let allocated = AppConfig::allocate_extension_data_checked(
+            &path,
+            &imported.extensions.packages[0],
+            namespace,
+            &owner,
+        )
+        .expect("allocate");
+        let before = fs::read(&path).expect("before");
+        let held = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&path)
+            .expect("deny config rename");
+        assert!(
+            AppConfig::remove_extension_data_checked(
+                &path,
+                "example.web",
+                &allocated.extensions,
+                &owner,
+                true
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&path).expect("config retained"), before);
+        assert!(
+            owner
+                .retained_metadata_blocking("example.web")
+                .expect("not removed")
+                .is_empty()
+        );
+        drop(held);
+        let (removed, cleanup_pending) = AppConfig::remove_extension_data_checked(
+            &path,
+            "example.web",
+            &allocated.extensions,
+            &owner,
+            false,
+        )
+        .expect("default retains after actual commit");
+        assert!(removed.extensions.packages.is_empty());
+        assert!(!cleanup_pending);
+        assert_eq!(
+            owner
+                .retained_metadata_blocking("example.web")
+                .expect("retained")
+                .len(),
+            1
+        );
+        fs::remove_dir_all(root).expect("owned cleanup");
     }
 
     #[test]

@@ -1,0 +1,7 @@
+﻿{
+    "name":  "workspace-check-final",
+    "command":  "cargo check --workspace --tests",
+    "exit":  0,
+    "elapsed":  67.2567162,
+    "finished":  "2026-10-26T07:01:41.5919621+08:00"
+}

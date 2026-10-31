@@ -7,6 +7,7 @@ use nxtools_protocol::{
     archive_browser::ArchiveBrowserContext, archive_job::*, archive_password::PrivatePassword,
 };
 use std::path::PathBuf;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub(super) struct DraftSource {
@@ -362,7 +363,11 @@ pub(super) struct ExtractDraft {
     pub open_after: bool,
     pub keep_open: bool,
     pub remember: bool,
+    pub remember_destination: bool,
     pub delete_source: bool,
+    pub reclamation: bool,
+    pub continue_reclamation: bool,
+    pub recovery_id: String,
 }
 impl ExtractDraft {
     pub fn new(
@@ -370,24 +375,95 @@ impl ExtractDraft {
         source: PathBuf,
         selection: Option<DraftSelection>,
     ) -> Self {
-        let destination = source
-            .parent()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let destination = if settings.default_destination != ArchiveDestination::Here {
+            settings.extract_custom_destination.clone()
+        } else {
+            None
+        }
+        .unwrap_or_else(|| {
+            source
+                .parent()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        });
         Self {
             source,
             destination,
             strategy: settings.default_destination,
             conflict: settings.conflict_policy,
             copy_motw: settings.copy_motw,
-            single_file_folder: false,
+            single_file_folder: settings.smart_single_file_folder,
             selected_only: selection.as_ref().is_some_and(|s| !s.ordinals.is_empty()),
             selection,
-            open_after: true,
-            keep_open: false,
+            open_after: settings.open_after_extract,
+            keep_open: settings.keep_extract_progress_open,
             remember: false,
+            remember_destination: settings.extract_custom_destination.is_some(),
             delete_source: false,
+            reclamation: false,
+            continue_reclamation: false,
+            recovery_id: Uuid::new_v4().to_string(),
         }
+    }
+    pub fn continue_reclamation(settings: &ArchiveSettings, source: PathBuf) -> Self {
+        let mut draft = Self::new(settings, source, None);
+        draft.strategy = ArchiveDestination::Here;
+        draft.conflict = ArchiveConflictPolicy::Ask;
+        draft.selected_only = false;
+        draft.reclamation = true;
+        draft.continue_reclamation = true;
+        draft.recovery_id.clear();
+        draft
+    }
+    pub fn reclamation_refusal(&self) -> Option<String> {
+        if self.source.as_os_str().is_empty() {
+            return Some("请先选择普通 .zip 原压缩包。".into());
+        }
+        if self
+            .source
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("zip"))
+        {
+            return Some("初始空间回收只支持普通单卷 .zip；其他格式仍可使用普通解压。".into());
+        }
+        if self.strategy != ArchiveDestination::Here {
+            return Some("空间回收必须使用“当前文件夹”目标策略。".into());
+        }
+        if self.conflict != ArchiveConflictPolicy::Ask {
+            return Some("空间回收必须使用“询问”冲突处理，不能跳过、覆盖或自动重命名。".into());
+        }
+        if self.selected_only {
+            return Some("空间回收只支持完整解压全部文件，不能使用选定文件。".into());
+        }
+        if self.delete_source {
+            return Some("空间回收会保留已消耗的原压缩包外壳，不能同时删除来源。".into());
+        }
+        None
+    }
+    fn reclamation_intent(&self) -> Result<Option<ArchiveReclamationIntent>, String> {
+        if !self.reclamation {
+            if self.continue_reclamation {
+                return Err("继续空间回收解压必须保持空间回收模式启用。".into());
+            }
+            return Ok(None);
+        }
+        if let Some(reason) = self.reclamation_refusal() {
+            return Err(reason);
+        }
+        let recovery_id = Uuid::parse_str(self.recovery_id.trim())
+            .map_err(|_| "请输入恢复记录或源标记中的有效恢复 UUID。".to_owned())?;
+        if recovery_id.is_nil() {
+            return Err("恢复 UUID 不能为全零值。".into());
+        }
+        Ok(Some(ArchiveReclamationIntent {
+            mode: if self.continue_reclamation {
+                ArchiveReclamationMode::Continue
+            } else {
+                ArchiveReclamationMode::Start
+            },
+            recovery_id,
+        }))
     }
     pub fn request(&self, settings: &ArchiveSettings) -> Result<ArchiveJobRequest, String> {
         if self.delete_source {
@@ -409,6 +485,7 @@ impl ExtractDraft {
         } else {
             None
         };
+        let reclamation = self.reclamation_intent()?;
         let request = ArchiveJobRequest {
             kind: ArchiveJobKind::Extract,
             paths: vec![
@@ -439,6 +516,7 @@ impl ExtractDraft {
                 },
                 copy_motw: self.copy_motw,
                 selection,
+                reclamation,
             }),
         };
         request
@@ -471,11 +549,42 @@ pub(super) struct ModifyDraft {
     pub action: ArchiveJobModifyAction,
     pub ordinals: Vec<u64>,
     pub value: Option<String>,
+    pub source_prefix: Option<String>,
     pub added: Vec<String>,
     pub codepage: u32,
 }
 impl ModifyDraft {
     pub fn request(&self) -> Result<ArchiveJobRequest, String> {
+        if self.browser.format == "SevenZ" {
+            let facts = self
+                .browser
+                .sevenz_edit
+                .as_ref()
+                .ok_or("尚未确认源结构或元数据可安全保留，不能修改。")?;
+            if let Some(refusal) = facts.refusal {
+                return Err(refusal.message().into());
+            }
+        }
+        if matches!(self.browser.format.as_str(), "Tar" | "TarGz" | "TarXz") {
+            let facts = self
+                .browser
+                .tar_edit
+                .as_ref()
+                .ok_or("尚未确认源结构或元数据可安全保留，不能修改。")?;
+            if let Some(refusal) = facts.refusal {
+                return Err(refusal.message().into());
+            }
+        }
+        if self.action == ArchiveJobModifyAction::ReplaceContent
+            && (!matches!(
+                self.browser.format.as_str(),
+                "SevenZ" | "Tar" | "TarGz" | "TarXz"
+            ) || self.added.len() != 1
+                || self.ordinals.len() != 1
+                || self.value.is_some())
+        {
+            return Err("替换内容只接受一个原始文件条目和一个普通替换文件。".into());
+        }
         let source = self.source.to_str().ok_or("归档路径不是有效 Unicode。")?;
         let request = ArchiveJobRequest {
             kind: ArchiveJobKind::Modify,
@@ -492,6 +601,7 @@ impl ModifyDraft {
                 action: self.action,
                 ordinals: self.ordinals.clone(),
                 value: self.value.clone(),
+                source_prefix: self.source_prefix.clone(),
             }),
             readmission: None,
         };

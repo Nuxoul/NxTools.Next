@@ -545,6 +545,7 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
     application.update(cx, |application, cx| {
         application.handle_link_detector_capture("https://first.invalid", cx)
     });
+    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
     let first = *cx.windows().last().expect("first capture panel");
     cx.run_until_parked();
     executor.advance_clock(Duration::from_secs(4));
@@ -552,6 +553,7 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
     application.update(cx, |application, cx| {
         application.handle_link_detector_capture("https://second.invalid", cx)
     });
+    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
     assert_eq!(
         cx.windows(),
         vec![first],
@@ -594,6 +596,7 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
     application.update(cx, |application, cx| {
         application.handle_link_detector_capture("https://third.invalid", cx);
     });
+    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
     cx.run_until_parked();
     let third = *cx.windows().last().expect("capture after timer close");
     assert_ne!(third, first);
@@ -609,6 +612,7 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
         application.forget_link_panel();
         application.handle_link_detector_capture("https://fourth.invalid", cx);
     });
+    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
     cx.run_until_parked();
     let fourth = *cx.windows().last().expect("capture after explicit forget");
     assert_ne!(fourth, third);

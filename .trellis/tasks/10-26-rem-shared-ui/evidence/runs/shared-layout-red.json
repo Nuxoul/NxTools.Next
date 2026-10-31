@@ -1,0 +1,7 @@
+﻿{
+    "name":  "shared-layout-red",
+    "command":  "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  196.53677059999998,
+    "finished":  "2026-10-26T05:31:59.3930503+08:00"
+}

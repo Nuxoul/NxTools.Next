@@ -1,0 +1,8 @@
+﻿
+
+Algorithm : SHA256
+Hash      : 58AB9C4F4C2F9266D8C025B7F264A3504EBD76626560F7B3CCC109D78A5DD0ED
+Path      : D:\Code\NxTools.Next-main\target\debug\deps\nxtools_desktop-5f49fb86e1516e0a.exe
+
+
+

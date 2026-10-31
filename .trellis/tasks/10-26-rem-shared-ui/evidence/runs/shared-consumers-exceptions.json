@@ -1,0 +1,7 @@
+﻿{
+    "name":  "shared-consumers-exceptions",
+    "command":  "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  242.37826139999999,
+    "finished":  "2026-10-26T06:01:46.1574392+08:00"
+}

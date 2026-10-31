@@ -1,0 +1,11 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs
+@@ -70,7 +70,7 @@
+                     .child(
+                         Button::new("tool-currency-configure")
+                             .debug_selector(|| "tool-currency-configure".into())
+-                            .label("配置")
++                            .label("配置…")
+                             .small()
+                             .outline()
+                             .on_click(cx.listener(|this, _, _, cx| {

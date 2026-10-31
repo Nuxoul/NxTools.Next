@@ -1,0 +1,11 @@
+--- baseline/rust/apps/nxtools-desktop/src/main_window.rs
++++ current/rust/apps/nxtools-desktop/src/main_window.rs
+@@ -92,6 +92,8 @@
+ pub(crate) mod visual_preview;
+ 
+ use self::clipboard_page::*;
++#[cfg(test)]
++pub(crate) use self::download_page::projection_tests;
+ use self::download_page::*;
+ use self::quick_launch_page::*;
+ 

@@ -1,0 +1,39 @@
+{
+  "exit": 0,
+  "scope": "Four new task/verifier files only, not Rust fmt",
+  "explicit_whitespace": [
+    {
+      "file": "prd.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_no_index_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": ""
+    },
+    {
+      "file": "inventory.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_no_index_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": ""
+    },
+    {
+      "file": "outcomes.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_no_index_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": ""
+    },
+    {
+      "file": "evidence/verify.py",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_no_index_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": ""
+    }
+  ],
+  "verify_python_ast": "PASS"
+}

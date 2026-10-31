@@ -1,0 +1,20 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/storage_management.rs",
+    "sha256": "0826ca29765d6873534cc3923d0e7a73fb225c0c0ac8c84e268add589864e253",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/extensions/storage_management.rs.new-observed",
+    "attribution": "Independent new source;not edited by Queue08."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs",
+    "sha256": "26949f26a7c7806ebbac35fe0f2c8f11b31bf25c26a220a9e8be292b9dc49afd",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs.new-observed",
+    "attribution": "Independent new source;not edited by Queue08."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs",
+    "sha256": "9bfcc3336902f92d922e7b87c3ad95b4bd9bd3dc9f5f4b13d5b929cf11c17f45",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs.new-observed",
+    "attribution": "Independent new source;not edited by Queue08."
+  }
+]

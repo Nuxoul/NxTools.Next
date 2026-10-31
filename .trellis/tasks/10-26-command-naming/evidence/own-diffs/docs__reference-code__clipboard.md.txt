@@ -1,0 +1,22 @@
+--- live-task-start/docs/reference-code/clipboard.md
++++ own-delivery/docs/reference-code/clipboard.md
+@@ -860,3 +860,19 @@
+ ancestor during that callback. A non-Tab panel focus scope can therefore qualify the original
+ search fallback without a row cache, index lookup, global dispatcher, or cross-panel focus steal.
+ Changing focus increments the original GPUI focus_generation, cancelling an old armed release.
++
++## Audit #8 command-result naming follow-up (2026-10-26)
++Actual Settings Buttons in main_window/clipboard_page.rs defer to ClipboardApplication:
++request_clipboard_export/import -> request_clipboard_archive_path -> typed
++PickClipboardArchivePath; request_clipboard_storage_migration -> PickClipboardStorageDirectory.
++The original matching CommandResult handler retires pending state and starts no worker operation
++when success carries no nonempty path. These picker commands use one U+2026 in visible labels;
++the original Button label also supplies its semantic name. Backup/Compact call
++start_clipboard_database_operation directly, with the original serialized worker and fixed
++database-parent/backups destination; they do not open a picker and retain no ellipsis.
++Existing history Delete is soft_delete_async with original undo/restore owner, not file deletion.
++No changed import/export/retention/privacy/storage policy or new confirmation is authorized.
++Production Button-label and synthetic pointer/Tab/Space/IPC-cancel regressions are recorded in
++.trellis/tasks/10-26-command-naming; no actual archive/data/native picker operation was performed.
++Strict/broad shared-tree failures and separate physical/reader/visual/user acceptance remain
++explicit there; these source entries do not declare global audit or release completion.

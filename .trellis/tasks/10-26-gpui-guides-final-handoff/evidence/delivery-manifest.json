@@ -1,0 +1,196 @@
+{
+  "created_utc": "2026-10-26T11:29:32.838154+00:00",
+  "status": "DOCUMENTATION_HANDOFF_COMPLETE_PROJECT_REMEDIATION_INCOMPLETE",
+  "files": [
+    {
+      "path": "docs/audits/2026-10-26-gpui-guides-final-review.md",
+      "sha256": "3b9c48dbeb1d013c2179d10e130e90601f48ba5ecb723e6705179bff65578ef0",
+      "bytes": 60613
+    },
+    {
+      "path": "docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "sha256": "f5cddc44cbd63c1bce9e003860ad730f50a94b8b18998f0ceae5b4d98c4cf3b1",
+      "bytes": 15267
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/baseline.py",
+      "sha256": "f3ef261ed448d02bd5042fd912e94f0352852fcf4c891732500ed3d4b4687a97",
+      "bytes": 1583
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/check-documents.py",
+      "sha256": "4d6fb2930a48af8bec279a130259034420ca7304630e58c4b6456fb73ab85e47",
+      "bytes": 4735
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/check-final.py",
+      "sha256": "5ff4f7f7cf1c3bf2b5bdbbc7c3b470ed151abdfd0433f101d5d59ea645516805",
+      "bytes": 4729
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/check-preparation-01.json",
+      "sha256": "26372a9a4df70147fcf98c73857ee7f30fd3c4d048257fd583e3007d338a3f4c",
+      "bytes": 528
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks-final.json",
+      "sha256": "9dad0ce17bcdcb3a321b25baa3f93cca4bca5b8bbe2f429b2609bede200439d0",
+      "bytes": 5161
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks.json",
+      "sha256": "76b6ed436b3ea832fc657ea16f0935b41c861ca69f0ecef51ca919f352b88d51",
+      "bytes": 4957
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-1-full-new-file-diff-final.log",
+      "sha256": "e18fc368451f20818269d9caac469bac07383a7c87a89afb1bcd354562798531",
+      "bytes": 61427
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-1-full-new-file-diff.log",
+      "sha256": "8535861b64495da490ab1624f16d8938e2024d23effda9e64ce03fc2f1b4c8b2",
+      "bytes": 60610
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-1-no-index-whitespace-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-1-no-index-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-2-full-new-file-diff-final.log",
+      "sha256": "aa725a616a7a4dd2cd2ad8eecc5449f8888e79aa6d41ded79b70f406fd7b9ace",
+      "bytes": 15864
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-2-full-new-file-diff.log",
+      "sha256": "55f35deb0c1b1af08b3d4de213005332ed23cea6a0fa1b8e0288c14f1b87decc",
+      "bytes": 15592
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-2-no-index-whitespace-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-2-no-index-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-scope-handoff-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-scoped-git-diff-check-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-scoped-git-diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-structure-final.json",
+      "sha256": "3f0ff25c6b3c092023cee56c9803be3b90cfc6fb98d9a590f57df23dd7c43b0a",
+      "bytes": 15857
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-structure.json",
+      "sha256": "bf4bf935dbed70be16ce2358b7779b6249f4200974bf8a4f7cb3898711fea4bc",
+      "bytes": 17175
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-diff-names-before.txt",
+      "sha256": "0d5f3716db618378f400a7648d7ccf616b1cffc01ab28d01f1e67de79d5cd6d9",
+      "bytes": 14667
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-no-index-semantics-bad.log",
+      "sha256": "588c60c37d3c5bc8fc9aa7141e4355a93b494e907e8c64e19a285fb0f1204eca",
+      "bytes": 174
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-no-index-semantics-clean.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-no-index-semantics.json",
+      "sha256": "ea886998d899d02c0b677e6397f2cb5730eb86c46ed0a91954a707f4222f77c7",
+      "bytes": 1146
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-status-after.txt",
+      "sha256": "08ad042e50702f96c95df4995900fdefa1ce64521d3718974f68f54d16d04e7a",
+      "bytes": 33816
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-status-before.txt",
+      "sha256": "cdf37331dd1e739a286c4059b321020b83be15ebd25f4395d46964dc7ada150f",
+      "bytes": 33710
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/handoff-final-checks.json",
+      "sha256": "9dd1f4b48e56553803625f772eee9d85c305c8adb42dcca435d65afa0abd9444",
+      "bytes": 3133
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/handoff-outcome-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/index.py",
+      "sha256": "c1bcc0213e99dad4191c5158e02711cd9f1849afdf47e5d15b4d8389aaa8b6de",
+      "bytes": 5616
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/seal.py",
+      "sha256": "42d21f85f24213840faf8ddbaa58042f9d47988f13be9a52ef946572178cadc9",
+      "bytes": 3014
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/source-index.json",
+      "sha256": "c3ec8e5c5459b2f10f03991623f8b18c27253c262a34cf4c19c564ce32a5fdf7",
+      "bytes": 78653
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/spec-contracts-final.log",
+      "sha256": "059d5494dcac55eadf7369becd975bb4ef1d7e20a2158f9dba45ef21a134020d",
+      "bytes": 175
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/spec-contracts-handoff-final.log",
+      "sha256": "059d5494dcac55eadf7369becd975bb4ef1d7e20a2158f9dba45ef21a134020d",
+      "bytes": 175
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/spec-contracts.log",
+      "sha256": "059d5494dcac55eadf7369becd975bb4ef1d7e20a2158f9dba45ef21a134020d",
+      "bytes": 175
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/verify.py",
+      "sha256": "3b4faa2e60205eee3a08995b6d6a0df68f65bde0950773bf0947f48469b425ec",
+      "bytes": 2891
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/workspace-baseline.json",
+      "sha256": "aa1f50dd78455bc06aa6916850f59672dfb2dc42af651b6cf46b8697105bd326",
+      "bytes": 1833737
+    },
+    {
+      "path": ".trellis/tasks/10-26-gpui-guides-final-handoff/outcomes.md",
+      "sha256": "c4e3c37787680e52b6ef42cb7a522e9e561cf1dff90c4e4587fe05f0c95769f9",
+      "bytes": 3608
+    }
+  ]
+}

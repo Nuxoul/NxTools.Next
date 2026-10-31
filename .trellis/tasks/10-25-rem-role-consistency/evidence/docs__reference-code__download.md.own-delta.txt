@@ -1,0 +1,35 @@
+--- dirty-baseline/docs/reference-code/download.md
++++ audit06/docs/reference-code/download.md
+@@ -2935,3 +2935,32 @@
+ engine/persistence/native/geometry change. Preserve 430x326 fixed client, original input state,
+ validation/cancel/close and prior audit#1/#9 behavior. New red/green evidence belongs only to
+ `.trellis/tasks/10-25-default-submit-keyboard/`, not native/physical/reader/user acceptance.
++
++## Audit #6 ordinary rem-role prerequisite (2026-10-25)
++
++ABDM first: QueueInfoComponent.kt::createConfigurableList148–155/247–331 preserves
++weekdays followed by independent start/stop configuration and enabled-only time editing.
++Table.kt::Table159–183 uses the same keyed LazyColumn render for layout/scroll and fixed
++cell-width alignment with its header. OptionsDialog.kt::BaseOptionDialog delegates native
++visible/modeless/close and UiScaledContent; AWT/Compose native internals were not inspected.
++Legacy next: SettingsWindow.axaml::SchedulerSection900–927 and footer999–1006 retain the
++policy/explanation and explicit Cancel/Save. Its .axaml.cs constructor/OnOpened/OnClosed and
++WindowAnimationService.Attach close chain remain as recorded above; Avalonia native base
++is unavailable. This reference check does not authorize a new native/window lifecycle.
++
++Next open_schedule_window623–699 retains keyed activation,430x326 default/minimum,
++normal client-decorated show, production Root and deferred close-identity cleanup.
++Component0.8.0 root.rs::WindowState::prepare applies Theme.font_size to window rem; actual
++product-theme/Root regression confirms the default16px design base. Form::label_width takes
++Pixels, so resolve the ordinary relative label rail only at this existing layout boundary;
++its controls remain actual Small outlined Toggle/default Switch/default H23 minute TimeField.
++GPUI uniform_list.rs::measure_item invokes the same task-row callback on every measurement;
++row rendering and actual virtual stride must use one relative role, not a second calculator.
++Current ordinary row/header layout ratios can use GPUI scale builders or metrics::ordinary_rem
++against the fixed16 design base. Preserve bitmap20/native fixed clients/titlebar/footer/
++physical edges and all original stable-ID selection/context/OLE/sort callbacks. Exact current
++Switch and XSmall Progress internals remain released fixed-pixel tracks, not custom substitutes.
++Schedule validation keeps its original two-line viewport budget with full text scrollable;
++Tooltip/copy and original submit/save/cancel/failure ownership remain. Evidence belongs only to
++`.trellis/tasks/10-25-rem-role-consistency/`; controlled14/16/18 base-font geometry/paint is not
++native/DPI/reader/visual/user acceptance or a claim that all ordinary px consumers are repaired.

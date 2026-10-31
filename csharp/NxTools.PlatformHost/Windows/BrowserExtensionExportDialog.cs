@@ -24,6 +24,7 @@ internal static class BrowserExtensionExportDialog
             format,
             BrowserExtensionPackageService.FirefoxFormat,
             StringComparison.OrdinalIgnoreCase);
+        var isStore = string.Equals(format, BrowserExtensionPackageService.ChromeStoreFormat, StringComparison.OrdinalIgnoreCase);
         return StaDialogRunner.Run(
             "NxTools browser extension export",
             () =>
@@ -38,11 +39,11 @@ internal static class BrowserExtensionExportDialog
                     AutoUpgradeEnabled = true,
                     OverwritePrompt = true,
                     RestoreDirectory = true,
-                    DefaultExt = isFirefox ? "xpi" : "crx",
-                    FileName = isFirefox
+                    DefaultExt = isStore ? "zip" : isFirefox ? "xpi" : "crx",
+                    FileName = isStore ? BrowserExtensionPackageService.DefaultStoreExportFileName : isFirefox
                         ? BrowserExtensionPackageService.DefaultFirefoxExportFileName
                         : BrowserExtensionPackageService.DefaultExportFileName,
-                    Filter = isFirefox
+                    Filter = isStore ? "Chrome 商店上传包 (*.zip)|*.zip" : isFirefox
                         ? "NxTools Firefox 扩展 (*.xpi)|*.xpi"
                         : "NxTools Chrome/Edge 扩展 (*.crx)|*.crx",
                     Title = "导出浏览器扩展",

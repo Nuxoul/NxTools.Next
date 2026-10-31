@@ -1,0 +1,19 @@
+# Execution plan
+
+User approved audit F1–F9. Canonical order:
+1. [x] **Results and recovery** — actual runtime/UI completion text/status, explicit removal/current locked commit and bounded event metadata; focused regressions passed7/7 before later convenience tests.
+2. [x] **API contracts** — additive bounded pages/search scope, known/current capability requirements, schemas/helpers/offline validator;70item owner/worker pages and independent library/schema/SDK checks passed. Latest integrated quality results recorded separately.
+3. [x] **Configuration convenience** — completed in the user-requested2026-10-25 continuation: actual direct Settings pointer/focus/edit/no-write regression and same-turn A-B-A path-edit generation now pass. Official nonbool SettingItem uses public vertical layout to avoid22DIP collapsed fields; original draft/Input/native/SaveCancel owners retained. Previous-turn edit stop and failed checks remain chronological in outcomes.md.
+4. [x] Quality checks executed and recorded: remediation10/10, settings23/23 and affected library/native-injected/SDK checks retained; latest closeout measured fullDesktop1196/1196/0ignored, strictDesktoptestsClippy/workspace PASS, with concurrent test-only strengthening separately reverified3/3. Historical1159/1 and earlier failures remain in outcomes.md. Source completed; no frozen-worktree/native/visual/installed or deployment acceptance claim.
+
+## Policy
+Every Rust verification sets CARGO_BUILD_JOBS=1, CARGO_INCREMENTAL=0, RUSTFLAGS=-C codegen-units=256; preflight Cargo/rustc/clippy/MSBuild/relevant test/non-Unity dotnet excluding VBCSCompiler. Exit75 means not launched. One compile at a time/full timeout; inspect survivors before retry. No full-suite green hunting, unrelated fix, broad vendor formatting or reset. Scratch baselines/logs extensions-remediation-*; artifacts never justify deployment. No delegation/commit/archive/package/install/service/live product or user-window operations.
+
+## User-requested continuation (2026-10-25)
+The user said “继续”; resume **Configuration convenience**, not a new phase. The prior3failededit stop applied to the previous turn; this continuation reread the live settings file and saved its current baseline before narrowly resuming. Close the actual named Input/render/edit assertion, real same-turn A-B-A edit -> original native reply regression, and local settings lint. Retain original official Settings/Input/C#picker/deferred owners, no vendor/native lifecycle redesign or other-session download edits. Run focused tests red/green first, scoped strictchecks/workspace and one integrated Desktop pass for this concrete follow-up; preserve historical1147/6 results, no greenhunting/deployment/commit/delegation.
+
+## Continuation closeout
+Source delta confined to extensions_settings.rs (per-edit event subscription, public SettingItem vertical adaptation, local lint and actual regressions). Logs extensions-remediation-closeout-* retain focus-red/22DIP evidence and test-only probe lease failure, corrected outside entity lease before final tests. No temporary DEBUG probes remain. See continuation.md/outcomes.md for exact results and remaining integration failure; no second fullsuite run for this continuation.
+
+## Interactive acceptance — deferred by user
+User2026-10-25 selected “暂不运行原生界面”. Prepare documentation only: [acceptance-plan.md](acceptance-plan.md) records evidence levels, missing guarded fixture entry, isolation prerequisites, nativepicker/focus N01–N07, controlled stale-result G01–G03, F1–F9 tasks U01–U06 and visual/keyboard/provider limits. All new cases NOT RUN. No fixture creation/build/launch/native dialog/capture/Cargo/fulltest/userwindow/package/install action in this documentation step. Resume only after a new user instruction authorizes the exact slice and isolation boundaries; do not substitute injected tests or repeatedly request the denied action.

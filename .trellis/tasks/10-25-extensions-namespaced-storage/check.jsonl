@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/10-25-extensions-namespaced-storage/prd.md", "reason": "P3 acceptance and strict no-user-state/native/deployment scope"}
+{"file": ".trellis/spec/nxtools-core/backend/quality-guidelines.md", "reason": "Locked persistence, missing/corrupt/stale and section preservation gates"}
+{"file": ".trellis/spec/nxtools-extensions/backend/quality-guidelines.md", "reason": "Legacy compatibility/currentidentity/real lease lifecycle"}

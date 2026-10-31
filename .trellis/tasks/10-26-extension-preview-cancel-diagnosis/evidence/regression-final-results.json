@@ -1,0 +1,16 @@
+﻿[
+    {
+        "name":  "animated-reopen-final",
+        "command":  "cargo test -p nxtools-desktop main_window::extensions_page::tests::preview_cancel_after_animated_entrance_keeps_reopened_identity_and_config -- --exact --test-threads=1 --nocapture",
+        "exit":  0,
+        "elapsed_seconds":  187.9483464,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\animated-reopen-final.log"
+    },
+    {
+        "name":  "business-fixture-eight-seeds",
+        "command":  "cargo test -p nxtools-desktop main_window::extensions_page::tests::w6_manager_pointer_preview_confirm_and_toggle_commit_real_config -- --exact --test-threads=1 --nocapture",
+        "exit":  0,
+        "elapsed_seconds":  6.3131914,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\business-fixture-eight-seeds.log"
+    }
+]

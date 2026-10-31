@@ -1,0 +1,42 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+    "sha256": "b789126ec66823ce3d3e8adbbdc8967905d8e9f38c37c881288d420ec4b45f9b"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+    "sha256": "6fb1e7172c4386477b3425cb5c5d3e9da418bf4a4c5842c23968362d3dd9eac8"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+    "sha256": "1926b1c486ccf69b351673910a2d8bccdb3a5a88927a7dd9057ddd2c2aca2a21"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+    "sha256": "efd78174d06ffbb917c5c3d7e2760dec38dc8025f5bc1622b5b993372a64f2b2"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+    "sha256": "7ba97edf433bbbf2dde3054e5876283c6583bee2ddf7f037e715a3618a5b0782"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+    "sha256": "653c71ee42465619291ca7367a7f72e4a1150f40f29a7a9ab4e41e0a6241a75a"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/catalog.rs",
+    "sha256": "1530f9ef62f1db06725a9bfd5190f787345dd83a04f0f0a4b63ce57001a2d27d"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/import_confirmation.rs",
+    "sha256": "19da6a30d9d316a8445f993c07f010a91d48f5aa3e83e7191ef99655122e0cd1"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/trust_confirmation.rs",
+    "sha256": "78079836e46a3fc6ab0fa0e65edee283e3cf2f1d1292fa4651873eb72dfbdca7"
+  }
+]

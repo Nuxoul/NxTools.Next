@@ -1,0 +1,13 @@
+--- baseline/rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs
++++ current/rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs
+@@ -115,8 +115,8 @@
+                 selected: true,
+                 visible_task_ids: Arc::new(vec![task_id]),
+             },
+-            self.task.clone(),
+-            Some(DownloadProgress {
++            &self.task,
++            Some(&DownloadProgress {
+                 task_id,
+                 downloaded_bytes: 1,
+                 total_bytes: Some(9),

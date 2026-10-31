@@ -1,0 +1,8 @@
+{
+  "result": "STOPPED_WITHOUT_OVERWRITE",
+  "stage": "owner invariant function locator",
+  "error": "AssertionError: reconcile_download_selection",
+  "cause": "The evidence script regex required a direct opening parenthesis after the function name and did not recognize this existing generic function.",
+  "completed": ["own-deltas.json with bidirectional byte replay", "current snapshots", "protected-manifest.json", "unowned-observations.json"],
+  "recovery": "Append a finalizer using a generic-aware exact source locator. Do not rewrite existing deltas/current snapshots. This is not a product behavior failure."
+}

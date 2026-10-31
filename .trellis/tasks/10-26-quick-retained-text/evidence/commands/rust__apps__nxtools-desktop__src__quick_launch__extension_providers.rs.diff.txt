@@ -1,0 +1,11 @@
+--- rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs [live baseline]
++++ rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs [current]
+@@ -522,7 +522,7 @@
+             })
+         });
+         panel.update_in(window, |panel, _, _| {
+-            panel.results = vec![normal()];
++            panel.results = vec![normal()].into();
+             panel.selected = 0;
+             panel.search_pending = false;
+         });

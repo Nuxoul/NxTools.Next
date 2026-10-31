@@ -912,3 +912,111 @@ pub(crate) fn validate_local(file: &mut File, entry: &ArchiveEntry) -> Result<u6
     }
     Ok(data_offset)
 }
+
+pub(crate) struct ReclamationLayout {
+    pub extents: Vec<(u64, u64, u64)>,
+    pub structure: Vec<u8>,
+}
+
+/// Qualify a complete ordinary ZIP layout without reading any file payload. The returned
+/// retained structure is compared byte-for-byte on fresh-process reclamation continuation.
+pub(crate) fn reclamation_layout(
+    file: &mut File,
+    entries: &[ArchiveEntry],
+    limits: &ResourceLimits,
+    control: &OperationControl,
+) -> Result<ReclamationLayout> {
+    preflight_created(file, entries, limits, control)?;
+    let central = directory(file, limits)?;
+    let length = file.metadata()?.len();
+    // Classic EOCD follows the central directory directly; ZIP64 and application trailers
+    // cannot enter the destructive adapter, even when the ordinary reader supports them.
+    file.seek(SeekFrom::Start(central.offset + central.size))?;
+    let mut eocd = [0u8; 22];
+    read_exact(file, &mut eocd)?;
+    if &eocd[..4] != b"PK\x05\x06"
+        || u16_at(&eocd, 10) == u16::MAX
+        || u32_at(&eocd, 12) == u32::MAX
+        || u32_at(&eocd, 16) == u32::MAX
+        || central.offset + central.size + 22 + u64::from(u16_at(&eocd, 20)) != length
+        || entries.is_empty()
+    {
+        return Err(ArchiveError::ReclamationUnsupported);
+    }
+    let mut records = Vec::with_capacity(entries.len());
+    let mut ordered = Vec::with_capacity(entries.len());
+    for entry in entries {
+        control.checkpoint()?;
+        let location = entry.zip.as_ref().ok_or(ArchiveError::CorruptArchive)?;
+        if entry.encrypted
+            || entry.method != 0
+            || location.zip64_sizes
+            || location.aes.is_some()
+            || location.flags & !(8 | 0x800) != 0
+            || !matches!(entry.kind, EntryKind::File | EntryKind::Directory)
+            || entry.size != entry.compressed_size
+            || !entry.warnings.is_empty()
+        {
+            return Err(ArchiveError::ReclamationUnsupported);
+        }
+        entry.metadata.validate()?;
+        let payload = validate_local(file, entry)?;
+        let payload_end = payload
+            .checked_add(entry.size.ok_or(ArchiveError::CorruptArchive)?)
+            .ok_or(ArchiveError::CorruptArchive)?;
+        let end = validate_descriptor(file, entry, payload)?;
+        file.seek(SeekFrom::Start(location.header_offset))?;
+        let mut local = [0u8; 30];
+        read_exact(file, &mut local)?;
+        if u16_at(&local, 4) > 20
+            || u32_at(&local, 18) == u32::MAX
+            || u32_at(&local, 22) == u32::MAX
+        {
+            return Err(ArchiveError::ReclamationUnsupported);
+        }
+        records.push((payload, payload_end, end));
+        ordered.push((location.header_offset, payload, payload_end, end));
+    }
+    ordered.sort_unstable();
+    let mut cursor = 0;
+    for &(header, _, _, end) in &ordered {
+        if header != cursor {
+            return Err(ArchiveError::ReclamationUnsupported);
+        }
+        cursor = end;
+    }
+    if cursor != central.offset {
+        return Err(ArchiveError::ReclamationUnsupported);
+    }
+    let retained = ordered
+        .iter()
+        .try_fold(
+            length - central.offset,
+            |sum, (header, start, end, record_end)| {
+                sum.checked_add(start - header)?
+                    .checked_add(record_end - end)
+            },
+        )
+        .ok_or(ArchiveError::ResourceLimit)?;
+    // The sealed base64 structure and envelope must fit one acknowledged private call.
+    if retained > 44 * 1024 || retained > limits.max_metadata_bytes {
+        return Err(ArchiveError::ResourceLimit);
+    }
+    let mut structure = Vec::with_capacity(retained as usize);
+    for &(header, start, end, record_end) in &ordered {
+        for (offset, count) in [(header, start - header), (end, record_end - end)] {
+            file.seek(SeekFrom::Start(offset))?;
+            let before = structure.len();
+            structure.resize(before + count as usize, 0);
+            read_exact(file, &mut structure[before..])?;
+        }
+    }
+    file.seek(SeekFrom::Start(central.offset))?;
+    let before = structure.len();
+    structure.resize(retained as usize, 0);
+    read_exact(file, &mut structure[before..])?;
+    Ok(ReclamationLayout {
+        extents: records,
+        structure,
+    })
+}

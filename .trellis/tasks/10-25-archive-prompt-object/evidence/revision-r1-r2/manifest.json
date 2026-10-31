@@ -1,0 +1,237 @@
+{
+  "revision": "R1/R2 only; changes requested, pending parent acceptance",
+  "base_manifest_sha256": "bea18e4b467792ba69e46cb825d96b405a63e684634c1638e92ea64d27371924",
+  "base_manifest": "../delivery-manifest.json",
+  "base_own_deltas_sha256": "ce07e982cc393e881976240d5cd20900db633bb21db074b278f60bb5b14d277b",
+  "scope": [
+    "Remove exactly one newly introduced unresolved diagnostic from default registration; preserve complete source and failure evidence",
+    "Translate only this task PRD and outcomes to English",
+    "No production display/keyboard/schema/vendor changes; no full-suite rerun"
+  ],
+  "changed": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "baseline_sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+      "after_sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4",
+      "delta": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.delta.json",
+      "operation_count": 1
+    },
+    {
+      "path": ".trellis/tasks/10-25-archive-prompt-object/prd.md",
+      "baseline_sha256": "305121445549cb2cffe7a869ef3b731abf5c008f7711848d0ccb7807c79fed08",
+      "after_sha256": "70e31e1d4a9461ba9a1b05c55b7881d5bf75d4cc12cc84809c05439399150e82",
+      "delta": ".trellis__tasks__10-25-archive-prompt-object__prd.md.delta.json",
+      "operation_count": 11
+    },
+    {
+      "path": ".trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+      "baseline_sha256": "7b83e0caf2547aca5ffcd9c31b3c9aa8944c25ab0705d89fcb8e1c1e2a22eb80",
+      "after_sha256": "624b194cbcf2ab56f25c70ac855f6c63fb94bcd9cd8b38938dea699fcab85d0a",
+      "delta": ".trellis__tasks__10-25-archive-prompt-object__outcomes.md.delta.json",
+      "operation_count": 12
+    }
+  ],
+  "diagnostic": {
+    "status": "UNRESOLVED / NOT ACCEPTED",
+    "default_registered": false,
+    "ignored_or_weakened": false,
+    "file": "unresolved-diagnostics/create-keyboard-unresolved-probe.rs.txt",
+    "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c",
+    "original_source_sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+    "original_lines": "1070-1145 inclusive",
+    "historical_focused": "6/7",
+    "historical_full_desktop": "1207/1208,0ignored; not rerun"
+  },
+  "verification": [
+    {
+      "name": "standard-audit04",
+      "command": "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+      "exit_code": 0,
+      "elapsed_seconds": 189.16
+    },
+    {
+      "name": "original-archive-job-regressions",
+      "command": "cargo test -p nxtools-desktop archive::application::jobs::tests:: -- --test-threads=1 --skip audit04_",
+      "exit_code": 0,
+      "elapsed_seconds": 1.62
+    },
+    {
+      "name": "desktop-strict-clippy",
+      "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+      "exit_code": 0,
+      "elapsed_seconds": 31.28
+    },
+    {
+      "name": "job-tests-scoped-fmt",
+      "command": "rustfmt --check --edition 2024 --config skip_children=true rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "exit_code": 0
+    }
+  ],
+  "frozen_artifact_count": 92,
+  "frozen_source_count": 28,
+  "evidence": [
+    {
+      "file": ".trellis__tasks__10-25-archive-prompt-object__outcomes.md.baseline",
+      "sha256": "7b83e0caf2547aca5ffcd9c31b3c9aa8944c25ab0705d89fcb8e1c1e2a22eb80",
+      "bytes": 11126
+    },
+    {
+      "file": ".trellis__tasks__10-25-archive-prompt-object__outcomes.md.delta.json",
+      "sha256": "ce2bfe956fa4bbdaf94d3c72f67b6cab769aff280926a03e358cef8589b43e03",
+      "bytes": 35933
+    },
+    {
+      "file": ".trellis__tasks__10-25-archive-prompt-object__outcomes.md.delta.txt",
+      "sha256": "f7e05e4eee9f7ae50cc5b29b7b91eac632e4fe13fd1a1ed1a95b7b48e475de13",
+      "bytes": 33402
+    },
+    {
+      "file": ".trellis__tasks__10-25-archive-prompt-object__prd.md.baseline",
+      "sha256": "305121445549cb2cffe7a869ef3b731abf5c008f7711848d0ccb7807c79fed08",
+      "bytes": 4122
+    },
+    {
+      "file": ".trellis__tasks__10-25-archive-prompt-object__prd.md.delta.json",
+      "sha256": "0d39808715354ecbc4f49156ef793485de43b6983f109b89f0c4c3f4935b7d15",
+      "bytes": 13607
+    },
+    {
+      "file": ".trellis__tasks__10-25-archive-prompt-object__prd.md.delta.txt",
+      "sha256": "018998b622ecdebe51031f3cdb42f6ff0c399b75e42923243a743019243a3167",
+      "bytes": 11286
+    },
+    {
+      "file": "baseline-manifest.json",
+      "sha256": "031a79e20b421a2bf4f8d6229575f7395aea316cc22646ccbbd390c587952db1",
+      "bytes": 1132
+    },
+    {
+      "file": "desktop-strict-clippy.log",
+      "sha256": "33467d9a6ef8c7073be42733c4e1f5479781bcf84dc492499abfe6561837221f",
+      "bytes": 1148
+    },
+    {
+      "file": "document-checks.json",
+      "sha256": "646037b78fb54cc51016ec99a42a6e206374720e78290089ee67adc9fcc383b4",
+      "bytes": 430
+    },
+    {
+      "file": "frozen-artifacts.json",
+      "sha256": "6ad021a5b2d136b4e928fdf5e926f84b916b26516e14699cf9fcd591991a3a4a",
+      "bytes": 20309
+    },
+    {
+      "file": "frozen-sources-expanded.json",
+      "sha256": "2649fcae096a4c2b148677ca2fd9d739209046dc6ae975cd6741dcf98528ce84",
+      "bytes": 8315
+    },
+    {
+      "file": "frozen-sources.json",
+      "sha256": "06d32e594eccf1f9e6279cd680b3363444aecb5d76a781b50b2a8c7dc50f3028",
+      "bytes": 7156
+    },
+    {
+      "file": "gpui-component-catalog.py.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "file": "gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "file": "markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "file": "original-archive-job-regressions.log",
+      "sha256": "a7c92f2836a9d77560e3bbd3a7efa9061627e9766b5667d6e831445d7b873b0e",
+      "bytes": 3964
+    },
+    {
+      "file": "own-deltas.json",
+      "sha256": "2ef34318824dabcc3d8d48ed5fea47e5dca34865300ef09d006a5ef41153651d",
+      "bytes": 53524
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+      "sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+      "bytes": 48182
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.delta.json",
+      "sha256": "aee30ec2fba791e6b4174a2fe1398c347897760ee8f50c532477e7b54af6bdb1",
+      "bytes": 3486
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.delta.txt",
+      "sha256": "490b0f00664002c4690ac50361de035ea75de4b865f291df3b26da33faf96b65",
+      "bytes": 3229
+    },
+    {
+      "file": "scope-checks.json",
+      "sha256": "2fddefde2a52923b234edce01d27bb006908de6fe5b3e3eca6ccb7df3740fbe6",
+      "bytes": 648
+    },
+    {
+      "file": "spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "file": "standard-audit04.log",
+      "sha256": "ebcc40ca924d7d2a8318adbe4311bd973ed7b023e0a006295d1fed0a56bf75f9",
+      "bytes": 2962
+    },
+    {
+      "file": "unresolved-diagnostics/create-keyboard-unresolved-probe.rs.txt",
+      "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c",
+      "bytes": 2834
+    },
+    {
+      "file": "unresolved-diagnostics/job_tests.before-r1-r2.rs.txt",
+      "sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+      "bytes": 48182
+    },
+    {
+      "file": "unresolved-diagnostics/README.md",
+      "sha256": "18ab752fc51268af952a3cc1c09721abd015160671bd5965311f51b23684852b",
+      "bytes": 4243
+    },
+    {
+      "file": "verification-summary.json",
+      "sha256": "0c02cb792ada1754f5c02551ebc519c30d495adbe74ad3f10e30de474aad66d2",
+      "bytes": 875
+    },
+    {
+      "file": "verify.ps1",
+      "sha256": "b14b3ccab2c4e91fc0fc10525e38190ab7f41f3433b8a625e8ebe1085fd429bf",
+      "bytes": 2223
+    }
+  ],
+  "document_checks": [
+    {
+      "name": "spec-contracts.py",
+      "exit_code": 0
+    },
+    {
+      "name": "gpui-component-catalog.py",
+      "exit_code": 0
+    },
+    {
+      "name": "gpui-release-contracts.py",
+      "exit_code": 0
+    },
+    {
+      "name": "markdown-editor-contracts.py",
+      "exit_code": 0
+    },
+    {
+      "name": "scoped-diff-check",
+      "exit_code": 0
+    }
+  ],
+  "tooling_note": "One PowerShell evidence-only array serialization failed; corrected by assigning the combined array before serialization. No runtime checks were repeated."
+}

@@ -479,3 +479,226 @@ fn capture_pause_deadline_and_timeout_are_generation_scoped(cx: &mut TestAppCont
         .read_with(cx, |app, _| assert!(app.capture_pause_snapshot().pending));
     f.worker.shutdown().expect("fixture worker");
 }
+
+#[gpui_kit::test]
+fn text_card_height_save_publishes_next_turn_and_failure_keeps_current_panel(
+    cx: &mut TestAppContext,
+) {
+    let fixture = setup(cx);
+    let mut surface = panel(&fixture, cx, true);
+    let current = fixture.application.read_with(&surface, |app, _| {
+        app.popup
+            .lifecycle
+            .current()
+            .cloned()
+            .expect("mounted panel")
+    });
+    let panel = current.panel.upgrade().expect("panel entity");
+    let leased_panel = panel.clone();
+    fixture.application.update(&mut surface, |app, cx| {
+        app.set_text_card_max_height(210, cx);
+        assert_eq!(
+            leased_panel.read(cx).text_card_max_height_for_test(),
+            160,
+            "no synchronous cross-entity publication"
+        );
+    });
+    surface.run_until_parked();
+    assert_eq!(
+        panel.read_with(&surface, |panel, _| panel.text_card_max_height_for_test()),
+        210
+    );
+    let path = fixture.directory.path().join("config.json");
+    assert_eq!(
+        AppConfig::load_from(&path)
+            .expect("committed before publish")
+            .clipboard
+            .text_card_max_height,
+        210
+    );
+    assert!(
+        fixture
+            .endpoint
+            .try_receive_command_for_contract_test()
+            .is_err()
+    );
+    std::fs::write(&path, b"{broken").expect("failed commit fixture");
+    fixture.application.update(&mut surface, |app, cx| {
+        app.set_text_card_max_height(320, cx)
+    });
+    surface.run_until_parked();
+    assert_eq!(
+        panel.read_with(&surface, |panel, _| panel.text_card_max_height_for_test()),
+        210
+    );
+    assert_eq!(
+        fixture.application.read_with(&surface, |app, _| app
+            .clipboard_settings()
+            .text_card_max_height),
+        210
+    );
+    assert_eq!(std::fs::read(&path).expect("no overwrite"), b"{broken");
+    fixture
+        .worker
+        .clone()
+        .shutdown()
+        .expect("shutdown synthetic worker");
+}
+
+#[gpui_kit::test]
+fn input_followup_reveal_ack_requires_native_activation_before_search_focus(
+    cx: &mut TestAppContext,
+) {
+    let fixture = setup(cx);
+    let mut surface = panel(&fixture, cx, false);
+    let reveal_id = uuid::Uuid::new_v4();
+    let popup = fixture.application.read_with(cx, |app, _| {
+        app.popup.lifecycle.current().cloned().expect("popup")
+    });
+    surface.update(|window, cx| window.blur(cx));
+    fixture.application.update(cx, |app, cx| {
+        app.popup.pending_visibility.insert(
+            reveal_id,
+            PendingPopupVisibility {
+                window: popup.window,
+                native_window_handle: popup.native_window_handle,
+                visible: true,
+                session_id: popup.session_id,
+                close_reason: None,
+                started_at: Instant::now(),
+            },
+        );
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: reveal_id,
+                result: nxtools_protocol::PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    data: None,
+                    native_error_code: None,
+                },
+            },
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let activation = fixture
+        .endpoint
+        .try_receive_command_for_contract_test()
+        .expect("SW_SHOWNOACTIVATE requires explicit primary activation");
+    assert!(
+        matches!(activation.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::ActivateWindow(command)) if command.window_handle == 88)
+    );
+    assert!(
+        fixture
+            .endpoint
+            .try_receive_command_for_contract_test()
+            .is_err(),
+        "one activation only"
+    );
+    fixture.application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: activation.id,
+                result: nxtools_protocol::PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    data: None,
+                    native_error_code: None,
+                },
+            },
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    assert!(
+        surface.update(|window, cx| window.focused(cx).is_some()),
+        "activation completion leaves the original input focus ready"
+    );
+    fixture.worker.shutdown().expect("close worker");
+}
+
+#[gpui_kit::test]
+fn input_followup_activation_retirement_and_failures_cannot_refocus(cx: &mut TestAppContext) {
+    let fixture = setup(cx);
+    for terminal in ["hide", "replace", "disconnect", "failure", "timeout"] {
+        let mut surface = panel(&fixture, cx, true);
+        let popup = fixture.application.read_with(cx, |app, _| {
+            app.popup.lifecycle.current().cloned().expect("popup")
+        });
+        fixture.application.update(cx, |app, cx| {
+            app.request_popup_activation(popup.clone(), cx)
+        });
+        let activation = fixture
+            .endpoint
+            .try_receive_command_for_contract_test()
+            .expect("activation");
+        assert!(
+            fixture
+                .application
+                .read_with(cx, |app, _| app.popup.pending_activation.is_some())
+        );
+        surface.update(|window, cx| window.focus_next(cx));
+        let focus_before = surface.update(|window, cx| window.focused(cx));
+        match terminal {
+            "hide" => {
+                fixture.application.update(cx, |app, _| {
+                    app.hide_popup(popup.window, 88, popup.session_id, PopupCloseReason::Escape)
+                        .expect("hide");
+                });
+            }
+            "replace" => {
+                fixture.application.update(cx, |app, _| {
+                    let mut replacement = popup.clone();
+                    replacement.session_id = uuid::Uuid::new_v4();
+                    app.popup
+                        .lifecycle
+                        .replace_without_topmost_confirmation(replacement);
+                });
+            }
+            "disconnect" => {
+                fixture.application.update(cx, |app, cx| {
+                    app.handle_platform_notification(
+                        PlatformNotification::Disconnected {
+                            generation: 1,
+                            pending_command_ids: vec![activation.id],
+                        },
+                        cx,
+                    )
+                });
+            }
+            "failure" => {
+                fixture.application.update(cx, |app, cx| {
+                    app.finish_popup_activation(activation.id, false, Some(5), "native_result", cx);
+                });
+            }
+            "timeout" => {
+                fixture.application.update(cx, |app, cx| {
+                    app.finish_popup_activation(activation.id, false, None, "timeout", cx);
+                });
+            }
+            _ => unreachable!(),
+        }
+        fixture.application.update(cx, |app, cx| {
+            app.finish_popup_activation(activation.id, true, None, "late_result", cx);
+        });
+        cx.run_until_parked();
+        assert!(
+            fixture
+                .application
+                .read_with(cx, |app, _| app.popup.pending_activation.is_none()),
+            "{terminal} clears pending"
+        );
+        assert_eq!(
+            surface.update(|window, cx| window.focused(cx)),
+            focus_before,
+            "{terminal} cannot restore search from a late result"
+        );
+        while fixture
+            .endpoint
+            .try_receive_command_for_contract_test()
+            .is_ok()
+        {}
+    }
+    fixture.worker.shutdown().expect("close worker");
+}

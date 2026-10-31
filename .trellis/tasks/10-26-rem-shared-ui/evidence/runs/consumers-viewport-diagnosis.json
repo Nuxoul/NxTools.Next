@@ -1,0 +1,7 @@
+﻿{
+    "name":  "consumers-viewport-diagnosis",
+    "command":  "cargo test -p nxtools-desktop main_window::shared_rem_tests -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  259.1368117,
+    "finished":  "2026-10-26T05:56:05.4808100+08:00"
+}

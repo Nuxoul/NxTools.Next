@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T02:16:11.1377366Z",
+    "started_utc":  "2026-10-26T02:12:30.8349729Z",
+    "command":  "cargo test -p nxtools-desktop audit08_clipboard_command_labels -- --test-threads=1",
+    "exit":  101,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\clipboard-label-red.log"
+}

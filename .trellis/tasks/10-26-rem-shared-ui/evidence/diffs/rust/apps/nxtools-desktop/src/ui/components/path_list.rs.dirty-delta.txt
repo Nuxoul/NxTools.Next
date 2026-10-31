@@ -1,0 +1,125 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/path_list.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/path_list.rs
+@@ -9,7 +9,7 @@
+ use crate::icons::MaterialIcon;
+ use crate::theme::Theme;
+ use crate::ui::components::action::{danger_ghost_button_variant, labelled_icon_action};
+-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};
++use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};
+ use crate::ui::typography::{
+     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+@@ -73,29 +73,29 @@
+     div()
+         .debug_selector(|| "quick-launch-exclusion-setting".into())
+         .w_full()
+-        .py(px(SPACING_12))
++        .py_3()
+         .border_b_1()
+         .border_color(theme.border_subtle)
+         .flex()
+         .flex_col()
+-        .gap(px(SPACING_8))
++        .gap_2()
+         .child(
+             div()
+                 .w_full()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_12))
++                .gap_3()
+                 .child(
+                     div()
+                         .min_w_0()
+                         .flex()
+                         .items_center()
+-                        .gap(px(SPACING_4))
++                        .gap_1()
+                         .child(
+                             div()
+-                                .h(px(LINE_HEIGHT_BODY))
+-                                .text_size(px(TEXT_BODY))
+-                                .line_height(px(LINE_HEIGHT_BODY))
++                                .h(ordinary_rem(LINE_HEIGHT_BODY))
++                                .text_size(ordinary_rem(TEXT_BODY))
++                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                 .text_color(theme.text)
+                                 .child("排除目录"),
+                         )
+@@ -107,7 +107,7 @@
+                 .child(
+                     div()
+                         .debug_selector(|| "quick-launch-add-index-exclusion".into())
+-                        .h(px(CONTROL_HEIGHT_INPUT))
++                        .h_8()
+                         .flex_none()
+                         .child(add),
+                 ),
+@@ -155,7 +155,7 @@
+         .selected(selected)
+         .aria_selected(selected)
+         .w_full()
+-        .h(px(PATH_LIST_ROW_HEIGHT))
++        .min_h(px(PATH_LIST_ROW_HEIGHT))
+         .py_0()
+         .flex_none()
+         .cursor_pointer()
+@@ -179,13 +179,13 @@
+                 .items_center()
+                 .child(
+                     div()
+-                        .w(px(PATH_LIST_ICON_RAIL_WIDTH))
++                        .w(ordinary_rem(PATH_LIST_ICON_RAIL_WIDTH))
+                         .flex_none()
+                         .flex()
+                         .items_center()
+                         .child(
+                             Icon::new(MaterialIcon::Folder)
+-                                .size(px(14.0))
++                                .small()
+                                 .text_color(theme.icon_muted),
+                         ),
+                 )
+@@ -194,12 +194,12 @@
+                         .id(path_selector.clone())
+                         .debug_selector(move || path_selector.to_string())
+                         .min_w_0()
+-                        .h(px(LINE_HEIGHT_BODY))
++                        .h(ordinary_rem(LINE_HEIGHT_BODY))
+                         .flex_1()
+-                        .ml(px(SPACING_8))
++                        .ml_2()
+                         .truncate()
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .text_color(theme.text_secondary)
+                         .tooltip(move |window, cx| {
+                             let tooltip_path = tooltip_path.clone();
+@@ -222,7 +222,7 @@
+                         .child(
+                             Button::new(delete_id)
+                                 .accessibility_label(remove_name)
+-                                .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
++                                .icon(Icon::new(MaterialIcon::Delete).small())
+                                 // Named 40px delete hit contract; Kit keeps radius/content/state grammar.
+                                 .with_size(px(PATH_LIST_DELETE_HIT_TARGET))
+                                 .custom(delete_variant)
+@@ -241,12 +241,12 @@
+     div()
+         .debug_selector(|| "quick-launch-exclusion-empty".into())
+         .w_full()
+-        .h(px(PATH_LIST_ROW_HEIGHT))
+-        .px(px(SPACING_12))
++        .min_h(px(PATH_LIST_ROW_HEIGHT))
++        .px_3()
+         .flex()
+         .items_center()
+-        .text_size(px(TEXT_LABEL))
+-        .line_height(px(LINE_HEIGHT_LABEL))
++        .text_size(ordinary_rem(TEXT_LABEL))
++        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+         .text_color(theme.text_muted)
+         .child("尚未添加排除目录")
+         .into_any_element()

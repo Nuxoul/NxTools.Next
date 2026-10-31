@@ -1,0 +1,50 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions.rs",
+    "sha256": "f26f289748e751a8512e1196b2b113ddc3ba2e350433ca45b0d86e745d094e37",
+    "bytes": 54486,
+    "observed_sha256": "53dde88e1c29a5fee4062ac5385c1c85727ffd866001c86d3f40bf6b45a359fb",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/extensions.rs.observed",
+    "attribution": "Independent current-source observation,not edited by Queue08;not required to remain live."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service.rs",
+    "sha256": "87a57a3cddb97f19dca676102943b2f6c58c8e066c622ccda6156dd6d9a731b0",
+    "bytes": 26210,
+    "observed_sha256": "ae259e03ae9c384a969441a2e1af14a1e5246c5e9cf7e59e0c9dec84b5da92e3",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/extensions/service.rs.observed",
+    "attribution": "Independent current-source observation,not edited by Queue08;not required to remain live."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+    "sha256": "c8603f33f60281851632e25017d2038114678e5db4211136d9ca1abce28c5cc8",
+    "bytes": 30808,
+    "observed_sha256": "7d6f3ac300b7e043c3267df860898c9e2b5576dfdbd87945a9d1626315b121ad",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/main_window/extensions_page.rs.observed",
+    "attribution": "Independent current-source observation,not edited by Queue08;not required to remain live."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+    "sha256": "ff81b221db1072b324dc1a4832f77e4e4d2f813d820a4a24d46047402a1064d5",
+    "bytes": 137380,
+    "observed_sha256": "db6e9b6cf27477455d05b3be0d13445deca273b0505f1479ffa7ec0804f4a0dd",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs.observed",
+    "attribution": "Independent current-source observation,not edited by Queue08;not required to remain live."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs",
+    "sha256": "3e4de2bbc46ce92a402b85c8fadc2375307ff7ca2f7c3339e55fc940e36c880d",
+    "bytes": 4086,
+    "observed_sha256": "b77f4f81a0d94df296d1c5f92a990efbc15ee3ae1320fb4d7ea3919cbcd0fe7c",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs.observed",
+    "attribution": "Independent current-source observation,not edited by Queue08;not required to remain live."
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs",
+    "sha256": "d84c2d6a5d6d1c40d7da48797c0c59a13b04deff6ed18bf2905f90fe005fd772",
+    "bytes": 19983,
+    "observed_sha256": "b64cbd2613239947d0b52dc4bd49c2b6545e848eda1eebc6bfd3f173be6fac90",
+    "snapshot": "evidence/external/rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs.observed",
+    "attribution": "Independent current-source observation,not edited by Queue08;not required to remain live."
+  }
+]

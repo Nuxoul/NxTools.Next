@@ -1,0 +1,88 @@
+--- live-task-start-dirty/rust/apps/nxtools-desktop/src/network_settings.rs
++++ queue08-blocked-checkpoint/rust/apps/nxtools-desktop/src/network_settings.rs
+@@ -29,7 +29,6 @@
+ use crate::ui::components::field::inline_error;
+ use crate::ui::components::settings::{SettingsShellIds, dialog_footer, settings_shell};
+ use crate::ui::components::titlebar::client_titlebar;
+-use crate::ui::metrics::SPACING_8;
+ use gpui_kit::component::form::{Field, Form};
+ use gpui_kit::component::group_box::GroupBoxVariant;
+ use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, SettingPage, Settings};
+@@ -1020,6 +1019,7 @@
+     fn render_setting_control(
+         &mut self,
+         slot: usize,
++        window: &Window,
+         cx: &mut Context<Self>,
+     ) -> gpui_kit::AnyElement {
+         match slot {
+@@ -1123,7 +1123,7 @@
+                     )
+                     .into_any_element()
+             }
+-            4 => self.render_blacklist_table(cx),
++            4 => self.render_blacklist_table(window, cx),
+             5 => self.render_blacklist_editor(cx),
+             6 => self.render_theme_chooser(cx),
+             7 => {
+@@ -1133,9 +1133,9 @@
+                     .outline()
+                     .with_size(gpui_kit::component::Size::Medium)
+                     .disabled(self.saving)
+-                    .dropdown_menu(move |menu, _, _| {
++                    .dropdown_menu(move |menu, window, _| {
+                         nxtools_core::NotificationPosition::ALL.into_iter().fold(
+-                            menu.min_w(px(160.0)),
++                            menu.min_w(crate::ui::metrics::ordinary_rem(160.0).to_pixels(window.rem_size())),
+                             |menu, position| {
+                                 let view = view.clone();
+                                 menu.item(
+@@ -1161,7 +1161,7 @@
+             8 => div()
+                 .id("global-notification-duration")
+                 .debug_selector(|| "global-notification-duration".into())
+-                .w(px(168.0))
++                .w(crate::ui::metrics::ordinary_rem(168.0))
+                 .child(
+                     NumberInput::new(&self.notification_duration)
+                         .w_full()
+@@ -1182,9 +1182,9 @@
+         let owner = cx.entity().downgrade();
+         let ordinary = |slot: usize, title: &'static str, help: &'static str| {
+             let owner = owner.clone();
+-            SettingItem::render(move |_, _, app| {
++            SettingItem::render(move |_, window, app| {
+                 let control = owner
+-                    .update(app, |view, cx| view.render_setting_control(slot, cx))
++                    .update(app, |view, cx| view.render_setting_control(slot, window, cx))
+                     .unwrap_or_else(|_| div().into_any_element());
+                 crate::ui::components::settings::aligned_setting_row(
+                     format!("global-setting-{slot}"),
+@@ -1199,9 +1199,9 @@
+         };
+         let complex = |slot: usize, keywords: &'static str| {
+             let owner = owner.clone();
+-            SettingItem::render(move |_, _, app| {
++            SettingItem::render(move |_, window, app| {
+                 let control = owner
+-                    .update(app, |view, cx| view.render_setting_control(slot, cx))
++                    .update(app, |view, cx| view.render_setting_control(slot, window, cx))
+                     .unwrap_or_else(|_| div().into_any_element());
+                 div()
+                     .w_full()
+@@ -1301,7 +1301,7 @@
+         let footer_actions = div()
+             .flex()
+             .items_center()
+-            .gap(px(SPACING_8))
++            .gap_2()
+             .child(
+                 div()
+                     .debug_selector(|| "network-settings-cancel".into())
+@@ -2670,3 +2670,6 @@
+         let _ = std::fs::remove_dir_all(directory);
+     }
+ }
++
++#[cfg(test)]
++mod page_rem_tests;

@@ -1,0 +1,161 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "original struct, constructor, activation, default Enter, save/failure/defer",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "15de5f3d89aa97a3eb8e0b3d3636b9ffa1863829bd799fd24ec6b3a3c356c997",
+    "after_sha256": "15de5f3d89aa97a3eb8e0b3d3636b9ffa1863829bd799fd24ec6b3a3c356c997",
+    "normalized_sha256": "74d66cb7b16838230f48d5cc1a12b71c619f520f252db21e1e2cb7cce978d007"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "parse/validation and existing helper tests",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "5b796639e4ebc0c0c0442dbbfb245402a8addab0739b6c018064dc04ddd90bd1",
+    "after_sha256": "5b796639e4ebc0c0c0442dbbfb245402a8addab0739b6c018064dc04ddd90bd1",
+    "normalized_sha256": "7b2eedb1d8c0d084583dc49b5706d664f6700eb83b7ce3344dac562d4d7b3d4e"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "titlebar close callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "5c2cdcada48767e32c23e84f0a8cc71b13a324cc445e11c33bd8351304cecbfa",
+    "after_sha256": "5c2cdcada48767e32c23e84f0a8cc71b13a324cc445e11c33bd8351304cecbfa",
+    "normalized_sha256": "bc7fcf2d6f00e46bac4e92ca2e058c4509e886cc1850e133a6642690414171b3"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "default Enter capture/release owner",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "b49723da9a90c8f203f5a08bc85df9625debb81e8935d8312a186fbaaeb7b6ed",
+    "after_sha256": "b49723da9a90c8f203f5a08bc85df9625debb81e8935d8312a186fbaaeb7b6ed",
+    "normalized_sha256": "5c0d959283ace52de6f632c06b1fcc340e77cf244d1810c7c23add2710a518c5"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "weekday requested-value callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "702c397e817db2e6b5d73f98d70832114b275866e524f7fe754379f0ef8bf55b",
+    "after_sha256": "702c397e817db2e6b5d73f98d70832114b275866e524f7fe754379f0ef8bf55b",
+    "normalized_sha256": "7bd975069fb0ce4cdc6e1008fc270719d5a1e225fcee28be86cad31ddf7f91c0"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "start requested-value callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "ff1fc86f17065225dab15f9da65a3fbe6305da08c150ffc57d6525cf02caf5e1",
+    "after_sha256": "ff1fc86f17065225dab15f9da65a3fbe6305da08c150ffc57d6525cf02caf5e1",
+    "normalized_sha256": "53de537f41387889c4b8019b7893595e938a62f8317ed6a8f789add55716df04"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "stop control callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "f04fd8d7f96f95725b7ad5cb62649d9de31706a8f000dda2f0fc13ac3d37af1e",
+    "after_sha256": "f04fd8d7f96f95725b7ad5cb62649d9de31706a8f000dda2f0fc13ac3d37af1e",
+    "normalized_sha256": "9dfd61046bd217340e9fb7e4c6867a40c08e5ce2895fcab3b77570d3877d3e92"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "Cancel callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "d3fc5f2e7035b9d1a778f42485e9fd389426312282cc146c9ee1dc3a15db64ad",
+    "after_sha256": "d3fc5f2e7035b9d1a778f42485e9fd389426312282cc146c9ee1dc3a15db64ad",
+    "normalized_sha256": "b99f354da985028eb9889bece91f44c1c70651a56740139b5b0ddb729fb25e7d"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "label": "Apply callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "afd848e860be76608c880195d438d3c3f4b12690815e9a5c2f2b198a44959385",
+    "after_sha256": "afd848e860be76608c880195d438d3c3f4b12690815e9a5c2f2b198a44959385",
+    "normalized_sha256": "6fc7a8fea84010013f3aba81786ebc0840e8fa370b64fe9ee239885d180b6b8c"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "all original task/filter/sort/selection functions before render",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "15971120dcad89ccf01db743eccf1faac9d2403874c961858fbea7fcdf130bef",
+    "after_sha256": "15971120dcad89ccf01db743eccf1faac9d2403874c961858fbea7fcdf130bef",
+    "normalized_sha256": "64695c286cbb41fd91854ea40f1964be400f70b1cf0fa736505372766197bd34"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "render_downloads original owner and actual uniform_list callback",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "b7785292c2d7a2d58b6bbe033e18714b47419dd0b05e13f3ed5237fe2f6710bd",
+    "after_sha256": "b7785292c2d7a2d58b6bbe033e18714b47419dd0b05e13f3ed5237fe2f6710bd",
+    "normalized_sha256": "d384c18202a189687d49dcd727132296a8124af39a8984924de372c5a57bb0c2"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "row immutable IDs and projection before layout",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "fec1ddcf2d0b4a0833bf5fc23158ed4bc78f9a8cc0fe3707997b1101580f141e",
+    "after_sha256": "fec1ddcf2d0b4a0833bf5fc23158ed4bc78f9a8cc0fe3707997b1101580f141e",
+    "normalized_sha256": "2e59eafc7f81807b5a0b4ad54f264fe855b7bb8f87880a22fd3802c78c890df4"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "row pointer/context/selection/OLE callback boundary",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "38aa6e34e4cf4c62fdd459ba668bc2d915587427364ff1b8e282a3e6ebdd5fc6",
+    "after_sha256": "38aa6e34e4cf4c62fdd459ba668bc2d915587427364ff1b8e282a3e6ebdd5fc6",
+    "normalized_sha256": "73e27d6adc1728bcd3b76045f6bf9d49704d23d0223cc233ec315d6b6cfd3181"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "all original progress/context/menu/batch/detail/format functions",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "3085c62124034c5b63f594b792cbd8c20a108d2f93eedf80533afc5aecad7fd6",
+    "after_sha256": "3085c62124034c5b63f594b792cbd8c20a108d2f93eedf80533afc5aecad7fd6",
+    "normalized_sha256": "a5d7142bfced758786db41bf4bdee917c9b18ad59945ddbcc9ac1a0ad5e09edb"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "sort header actual Button and accessible naming before content style",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "88b5eab2d9baf0114c3483f72a74a43f3521b05587162df4f1a673df6fe17fd2",
+    "after_sha256": "88b5eab2d9baf0114c3483f72a74a43f3521b05587162df4f1a673df6fe17fd2",
+    "normalized_sha256": "9b52d2a398c219650341dbb585dab78ecc15de20266099d8e6913b19b194d898"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "label": "sort header single click/scroll/persist/deferred owner",
+    "whitespace_normalized_equal": true,
+    "before_sha256": "441241ac82caed98c266db97f581fb91b42882ef27dea9fb76f20113eb6cc328",
+    "after_sha256": "441241ac82caed98c266db97f581fb91b42882ef27dea9fb76f20113eb6cc328",
+    "normalized_sha256": "ba191ddf5540d524521df021591abe625a4dec9e60816d5f59ef3fb8678a107b"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+    "label": "entire original dirty prefix is byte-identical",
+    "old_prefix_equal": true,
+    "baseline_sha256": "867f91ed203f5ed55f88ed0b29a6d9f6541411e5e39d945fc06ee08b0220d734",
+    "baseline_bytes": 142864
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+    "label": "entire original dirty prefix is byte-identical",
+    "old_prefix_equal": true,
+    "baseline_sha256": "d11a415c105b5858cafd3a64a21111b67b3554c7f5e6589d261c998a4ab2bddf",
+    "baseline_bytes": 49397
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "label": "entire original dirty prefix is byte-identical",
+    "old_prefix_equal": true,
+    "baseline_sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6",
+    "baseline_bytes": 262735
+  },
+  {
+    "label": "protected-baseline.json",
+    "count": 17,
+    "unchanged": true
+  },
+  {
+    "label": "frozen-history.json",
+    "count": 345,
+    "unchanged": true
+  }
+]

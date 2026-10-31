@@ -1,0 +1,23 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+        "sha256":  "d8a8fc08c6724aef546b13c00cbeb014a71c64daec699d13a5bf23c7b25bcd62",
+        "observed_at":  "2026-10-25T22:48:33.1184184+08:00",
+        "last_write":  "2026-10-24T23:53:43.6588000+08:00",
+        "snapshot":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06-new\\blocker-rust__apps__nxtools-desktop__src__extensions__event_history.rs.observed"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/runtime.rs",
+        "sha256":  "7a26e95e76b833d6bf1e47555932ba277b7ddc17e6e79ce245f94c673191b29c",
+        "observed_at":  "2026-10-25T22:48:33.1333994+08:00",
+        "last_write":  "2026-10-25T22:44:44.7982582+08:00",
+        "snapshot":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06-new\\blocker-rust__crates__nxtools-extensions__src__runtime.rs.observed"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/api.rs",
+        "sha256":  "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+        "observed_at":  "2026-10-25T22:48:33.1379384+08:00",
+        "last_write":  "2026-10-25T22:45:31.3291280+08:00",
+        "snapshot":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06-new\\blocker-rust__crates__nxtools-extensions__src__api.rs.observed"
+    }
+]

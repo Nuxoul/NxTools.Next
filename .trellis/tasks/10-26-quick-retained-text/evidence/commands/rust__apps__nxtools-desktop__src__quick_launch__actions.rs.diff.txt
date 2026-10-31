@@ -1,0 +1,62 @@
+--- rust/apps/nxtools-desktop/src/quick_launch/actions.rs [live baseline]
++++ rust/apps/nxtools-desktop/src/quick_launch/actions.rs [current]
+@@ -210,12 +210,12 @@
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub(crate) struct QuickLaunchActionItem {
+     pub(crate) action: Option<QuickLaunchAction>,
+-    pub(crate) label: String,
++    pub(crate) label: gpui_kit::SharedString,
+     pub(crate) icon: Option<MaterialIcon>,
+     pub(crate) icon_path: Option<PathBuf>,
+     pub(crate) enabled: bool,
+     pub(crate) submenu: Option<QuickLaunchShellSubmenu>,
+-    pub(crate) section_label: Option<String>,
++    pub(crate) section_label: Option<gpui_kit::SharedString>,
+     pub(crate) divider_before: bool,
+ }
+ 
+@@ -287,7 +287,7 @@
+         };
+         converted.push(QuickLaunchActionItem {
+             action,
+-            label: item.title,
++            label: item.title.into(),
+             icon: None,
+             icon_path: item
+                 .icon_path
+@@ -393,7 +393,7 @@
+ #[derive(Clone)]
+ pub(crate) struct QuickLaunchActionLevel {
+     pub(crate) id: uuid::Uuid,
+-    pub(crate) title: String,
++    pub(crate) title: gpui_kit::SharedString,
+     pub(crate) items: Vec<QuickLaunchActionItem>,
+     pub(crate) filter: String,
+     pub(crate) selected: usize,
+@@ -411,6 +411,7 @@
+ pub(crate) struct QuickLaunchActionMode {
+     pub(crate) id: uuid::Uuid,
+     pub(crate) target: SearchResult,
++    pub(crate) target_title: gpui_kit::SharedString,
+     pub(crate) parent: QuickLaunchResultsContext,
+     pub(crate) navigation_context: Option<nxtools_protocol::DirectoryNavigationContext>,
+     pub(crate) levels: Vec<QuickLaunchActionLevel>,
+@@ -470,6 +471,7 @@
+         let shell_pending = quick_launch_result_capabilities(&target).shell_actions;
+         Self {
+             id: uuid::Uuid::new_v4(),
++            target_title: target.entry.name.clone().into(),
+             target,
+             parent: QuickLaunchResultsContext {
+                 query,
+@@ -529,8 +531,8 @@
+         self.levels.len()
+     }
+ 
+-    pub(crate) fn title(&self) -> &str {
+-        &self.current_level().title
++    pub(crate) fn title(&self) -> gpui_kit::SharedString {
++        self.current_level().title.clone()
+     }
+ 
+     pub(crate) fn current_level_id(&self) -> uuid::Uuid {

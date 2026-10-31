@@ -1,0 +1,30 @@
+[
+    {
+        "check":  "names",
+        "exit":  0
+    },
+    {
+        "check":  "downloads",
+        "exit":  0
+    },
+    {
+        "check":  "global-settings",
+        "exit":  0
+    },
+    {
+        "check":  "ui",
+        "exit":  0
+    },
+    {
+        "check":  "strict-clippy",
+        "exit":  0
+    },
+    {
+        "check":  "workspace-check",
+        "exit":  0
+    },
+    {
+        "check":  "fmt",
+        "exit":  0
+    }
+]

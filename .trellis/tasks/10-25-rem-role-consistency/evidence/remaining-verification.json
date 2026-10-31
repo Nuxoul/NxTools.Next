@@ -1,0 +1,65 @@
+﻿[
+    {
+        "name":  "download-page-related",
+        "command":  "cargo test -p nxtools-desktop main_window::download_page:: -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  26.66,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\download-page-related.log"
+    },
+    {
+        "name":  "default-submit-protected",
+        "command":  "cargo test -p nxtools-desktop audit05_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  6.14,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\default-submit-protected.log"
+    },
+    {
+        "name":  "history-identity-protected",
+        "command":  "cargo test -p nxtools-desktop history_identity_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  21.54,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\history-identity-protected.log"
+    },
+    {
+        "name":  "accessible-names-protected",
+        "command":  "cargo test -p nxtools-desktop accessible_name_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  2.4,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\accessible-names-protected.log"
+    },
+    {
+        "name":  "sort-keyboard-protected",
+        "command":  "cargo test -p nxtools-desktop sort_keyboard_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  17.78,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\sort-keyboard-protected.log"
+    },
+    {
+        "name":  "prompt-display-protected",
+        "command":  "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  6.3,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\prompt-display-protected.log"
+    },
+    {
+        "name":  "desktop-strict-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit_code":  0,
+        "elapsed_seconds":  40.75,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\desktop-strict-clippy.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit_code":  0,
+        "elapsed_seconds":  31.02,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\workspace-check.log"
+    },
+    {
+        "name":  "workspace-fmt",
+        "command":  "cargo fmt --all -- --check",
+        "exit_code":  0,
+        "elapsed_seconds":  9.38,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\workspace-fmt.log"
+    }
+]

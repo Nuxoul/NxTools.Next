@@ -1,0 +1,61 @@
+# 原报告 #4 — 当前决策对象交付（待父 review，非验收）
+
+## 结果与范围
+仅第 6 次单项／原 #4。Conflict 官方 Dialog 显示当前 prompt 的传入成员和完整被覆盖目标；CreateOverwrite 显示本次输出压缩包。对象绑定在原 ticket 的 `ArchiveJobPrompt.display` 内，不从 progress、selection/index 或其他 job 重建。旧载荷无字段显示“本次提示未提供对象标识”，不伪造标识、不自动批准。沿用 `Phase A — Engine contracts and safety foundation` 稳定化，不宣称阶段或整体 UI 完成；交父 review 后停止，第 7 项未授权。
+
+## 真实链路与变更
+1. 现有 ZIP、TAR/四种 compound、Gzip/BZip2/XZ/Zstd、7z/RAR 原输出调用均汇入 `PrivateOutput::begin_extracted_file`。普通格式已传入 plan-prefixed target；隔离 codec 在原 `plan_paths` 映射。
+2. `PrivateOutput.display_prefix` 只记本次 `reserve_subfolder` 成功的展示前缀，绝不替代会影响 native 操作的 `plan_prefix`。从完整当前相对名精确匹配原 immutable entries，保留原 member 字符串。没有 basename/全局 progress 猜测，没有 codec 接口／dispatch 修改。
+3. `ExtractionConflict::begin` 在原 Ask pending ticket 的通知中附 display；domain `Prompt::Conflict` 不增加路径，避免其派生 Debug 泄漏。原 native path、observation token 和所有 decision 分支不读取 display。
+4. `ArchiveJobSession.Prompt` 严格解析 UI-only display，用本次不可变 Command.Request.Destination 纯字符串组成目标展示；不调用新 filesystem API。CreateOverwrite 的原 runner native 预检回调从同一 immutable Command 的 Destination/Create.Name 创建 display。
+5. 原 typed event -> bridge -> job record -> `refresh_job` -> `ProgressSnapshot` -> `JobProgressView::show_prompt` 原 owner 不变。原 `reply_job` 的 prompt 相等/ticket/kind/terminal/一次回复 guard、原 C# Reply/InteractionPort 不变。
+6. 原官方 Component0.8.0 Dialog body/footer、DescriptionList vertical/one column/borderless 公共 slot + Label；Button outline/default Medium32 和 Checkbox 仍是原控件/回调。只把同一 Checkbox 放入原 Dialog 的固定 footer，保证 apply-all 不随长正文滚走。无第二 focus/close/reply dispatcher。
+7. 完整标识每 24 Unicode scalar 插入视觉换行，不删字符/不省略/不当 Markdown；原完整字符串附给实际 Label-role 语义节点，长正文可滚到底。没有 Clipboard/Shell/OS 动作。原 client 默认560x300、最小480x260未改。
+8. 必要构造适配仅 readmission 的 `display: None`、旧 Destination fixture 的 None，以及 CLI 两个测试 literal 的 None；原安全断言未删减。未改 worker.rs/worker_wire.rs（两者已保存 baseline，最终列为观察未改）。
+
+## 兼容、隐私与安全不变量
+- 版本保持 job1／原 worker schema；`display` optional/default，None 省略。新接收端读旧载荷成功；旧严格接收端会拒绝新 populated 字段，**不是双向混版兼容**。没有放宽 deny_unknown_fields／C# strict、没有擅升版本或增加 capability/预算授权。
+- display typed shape 仅 Conflict（有 member）／CreateOverwrite（无 member），有限 UTF-8 bytes 与无控制字符；非法类型/未知字段拒绝。缺字段只 honest fallback。
+- Rust `ArchiveJobPromptDisplay::Debug` 和 C# record ToString `[PRIVATE]`；外层 prompt/event 的嵌套输出不含新 payload。原 correlation/accepted/state/terminal/count/elapsed/native-code 诊断不变，无 tick/per-frame 日志。实际原 C# sink sentinel 通过。
+- native identity/source session/entry ordinal、overwrite validation、path safety、有限资源预算、temp 输出完整验证/发布、password clearing、ticket/generation、once reply、cancel/disconnect/timeout/apply-all、cleanup-held slot 和跨实体 defer 保持。未改 native output/session/runner、安全策略、codec 或依赖/vendor。
+
+## 参考与 API 证据
+重新只读 Bandizip `D:\Tool\Bandizip\langs\SimpChinese.lang:579`–588 的 existing/incoming/Skip/Overwrite/Rename/apply-all。未运行 Bandizip GUI、未反编译/反汇编/提取依赖；资源不证明动态布局。
+重新只读 licensed Archiver `D:\Code\Archiver-main\core\src\lib.rs:230` decoder 和 `:665` 单文件 File::create；没有复制 truncating publication/progress-name 作为授权。旧 NxTools 无已识别的一般归档 UI，不杜撰迁移来源。
+精确 Component0.8.0 `dialog/dialog.rs:735`/769–786 的 viewport/body-scroll/footer，`description_list.rs` vertical/columns/item、Label 与 footer public slots 已读。索引已追加到 `docs/reference-code/archive.md`，不覆盖历史结论。
+
+## 实际验证（source/compiled/synthetic，不是 visual/user acceptance）
+| 检查 | 实际结果与证据 |
+| --- | --- |
+| typed-wire 有效红 | 新增两条已编译测试0/2，运行时 strict parser 因 display 不存在拒绝；`desktop-object-red.log`。不是 compile failure。 |
+| 真实 UI 有效红 | typed 模型贯通后，受控仅去掉原 Dialog 两个 prompt_objects slot；同两条0/2，分别在实际 incoming/output target missing 断言失败。立刻恢复整文件 SHA256 `6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3`；`desktop-real-ui-red.log`。 |
+| focused UI | 最终7条6PASS/1FAIL，`desktop-object-final.log`。两个对象、两 job/同 sizes/连续ticket/旧迟到reply、pointer覆盖/跳过/重命名/apply-all、Create pointer与missing fallback cancel、Conflict Tab+Space单次deferred reply、长Unicode真滚动固定footer通过。Create keyboard FAIL 保留，见下。 |
+| 原 worker producer | `prompt_display_contract`2/2，涵盖18次格式/策略运行：10 engine formats+ZIP/TAR Name，7z非solid/solid+RAR4/5+7z/RAR Name；真实worker/InteractionPort，controlled fake native 观察token，Skip不分配/写入/发布。 |
+| 原 worker/安全直接回归 | interaction4 + job2 + output_readmission3 + prompt2 + cancel1 + extraction9 + wire18 = **39/39**。原取消/stale/source/预算/完整性/cleanup断言保留。`worker-direct-regressions.log`。不是全部 Archive 套件或 native acceptance。 |
+| Protocol | 归档job6/6，含旧省略/roundtrip/严格未知类型/shape/bounds/Debug sentinel；整套79/80，唯一无关 default-apps FAIL；两份日志保留。 |
+| IPC | 原42/42，`ipc-regressions.log`；使用隔离临时管道/合成身份，不连接真实产品/服务。 |
+| C# build | `dotnet build ...Tests.csproj --no-restore` 最终0warnings/0errors；初次新增测试 nullable CS8602 已本地修复并留原日志，不当行为红。 |
+| C# 精确 fixtures | LIST5后同组RUN5/PASS5/SKIP0：create confirmation cancel/changed target、detached preflight cancellation slot、strict wire/pre-cancel picker（不创建picker）、session conflict global admission cancel、ZIP decisions。仅GUID临时合成sources/output/helpercopy+原Job/worker，未执行产品/服务/实际HWND/Shell/registry。`csharp-five-fixtures.log`。 |
+| strict Clippy | Archive isolated-codecs --tests PASS；Protocol --tests PASS；Desktop --tests FAIL于未改 shell_integration.rs:256 needless_update。本项新增unwrap均改expect，不加allow。 |
+| workspace check/fmt | `cargo check --workspace --tests` PASS。workspace fmt 曾FAIL于本项新增两行与无关archive_page.rs；仅本项两行局部修正后8个本项Rust文件 scoped rustfmt --check PASS。没有改无关格式或重跑全仓格式猎绿。 |
+| 唯一完整 Desktop | **1207PASS/1FAIL/0ignored，共1208**，236.99s测试阶段；唯一本次新增CreateOverwrite keyboard失败。`desktop-full-once.log`。本项只有这一轮完整Desktop，不重跑猎绿；其余全部（含原Unlock）PASS，不归因对象展示修复。 |
+| source gates | 10 related PASS：catalog/release/Markdown/spec、archiveCLI/PhaseF shell/spike/release chain、ClipboardUI/DownloadUI。额外QuickLaunch gate仍FAIL1765（历史build writer检查），不改security/build/gate凑绿。 |
+
+所有 Rust shell 均 CARGO_BUILD_JOBS=1、CARGO_INCREMENTAL=0、RUSTFLAGS=-C codegen-units=256，串行自然等待其他cargo/rustc，不kill/暂停/请求他人让出；充分timeout，无重复构建/残留worker。没有Release/package/install/commit/push/递归代理。
+
+## 保留失败与限定交付
+1. **CreateOverwrite Space激活缺口**：`audit04_create_keyboard_release_and_missing_object_cancel_are_once_only` 明确Tab到实际“确认覆盖”Button，KeyDown/Up后0回复而期望1；失败未删除/ignore/降断言。原 baseline 的 DialogAction.child(Button) 从未附 Button.on_click，当前本项也逐字保留该 owner；locked Button/Base仅on_click存在才装keyboard handler，外层DialogAction靠pointer冒泡。是源代码可追溯的既有边界，但本轮没有把原baseline完整替换再编译来声称旧runtime验收。父明确要求不顺手修此缺口。本项Create pointer正向另测通过，不能冒充keyboard通过。该失败测试后半fallback在此用例未执行；独立pointer/fallback测试实际通过。
+2. **Protocol full 79/80**：未修改 `lib.rs:2332` 的 `default_apps_fixed_empty_payload_rejects_arbitrary_targets` 失败，归档display测试PASS；不修无关命令。
+3. **Desktop strict Clippy**：未修改 `archive/shell_integration.rs:256` needless_update；不修改该owner或加suppression。
+4. **全仓fmt**：无关 `main_window/archive_page.rs:798` 差异保留；本项scoped fmt全通过。
+5. **Extra QuickLaunch source gate**：原1765 compound FAIL保留。
+
+以上使本交付**不是全绿／未验收**，等待父独立review判断#4限定范围。不推进下项。
+
+## Dirty baseline 与并发边界
+每existing file写前保存当下dirtybaseline，非HEAD。最终13个existing task文件有delta、1个新worker测试、PRD/outcomes；另外2个已观察源码文件未修改。13个前五项production保护hash全部一致。
+两次外部rustfmt重排发生于本项新增区域：Rust job_tests首次追加后1E0F→E176；Protocol新增后9325→EE7F。均立即停写/报父，保存live边界，获明确受限恢复后只做本项必要adaptation；未覆盖格式变化。证据区分原dirtybaseline、外部live、后续自身改动，且验证原preexisting内容保持（唯一必要旧literal None列明）。
+父可读 `evidence/` 内含精确baseline、own-delta双向重建、manifest与日志；不要求父跨本会话scratch。无先前parent-review修改。
+
+## 未执行／不能推断
+未启动真实Desktop/PlatformHost/服务/原生HWND/Explorer/Shell/picker/真实剪贴板；未读写真实用户config/db/archive/registry。未做physical input/IME、多DPI、UIA/reader、屏幕截图/视觉对照或用户验收。headless semantic/geometry/paint生命周期不等同accessibility reader或native UI验收。C# scoped native-file/Job fixtures不等同真实应用生命周期；跨层链路由各真实边界的合成测试证明，未运行一个实际产品进程的完整端到端UI会话。

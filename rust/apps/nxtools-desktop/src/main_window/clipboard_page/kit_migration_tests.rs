@@ -702,3 +702,241 @@ fn image_modes_settings_save_roundtrip_and_failed_commit_keeps_live_mode(cx: &mu
     );
     assert_eq!(std::fs::read(&path).expect("no overwrite"), b"{broken");
 }
+
+#[gpui_kit::test]
+fn text_card_height_official_input_persists_and_failed_commit_retains_live(
+    cx: &mut TestAppContext,
+) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    search(&mut surface, "文本卡最大高度");
+    let input = surface.update(|window, _| {
+        let nodes = test_support::snapshots(window);
+        nodes
+            .iter()
+            .find(|node| node.label() == Some("文本卡最大高度"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "official NumberInput: {:?}",
+                    nodes
+                        .iter()
+                        .map(|node| (node.label(), node.role()))
+                        .collect::<Vec<_>>()
+                )
+            })
+            .bounds()
+    });
+    assert_eq!(
+        input.size.height,
+        px(30.0),
+        "official32DIP frame has1DIPborder each edge"
+    );
+    let path = f.directory.path().join("config.json");
+    AppConfig::update_section(&path, |config| {
+        config.clipboard.storage_directory = "latest-root".into();
+        config.download.default_connection_limit = 24;
+    })
+    .expect("other owners");
+    surface.simulate_click(input.center(), Modifiers::default());
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("210");
+    surface.run_until_parked();
+    assert_eq!(
+        AppConfig::load_from(&path)
+            .expect("real input save")
+            .clipboard
+            .text_card_max_height,
+        210
+    );
+    for height in [120, 160, 210, 320] {
+        f.application.update(&mut surface, |owner, cx| {
+            owner.set_text_card_max_height(height, cx)
+        });
+        surface.run_until_parked();
+        let saved = AppConfig::load_from(&path).expect("durable height");
+        assert_eq!(saved.clipboard.text_card_max_height, height);
+        assert_eq!(saved.clipboard.storage_directory, "latest-root");
+        assert_eq!(saved.download.default_connection_limit, 24);
+        assert!(
+            f.endpoint.try_receive_command_for_contract_test().is_err(),
+            "presentation has no native capture side effects"
+        );
+    }
+    std::fs::write(&path, b"{broken").expect("failed commit");
+    f.application.update(&mut surface, |owner, cx| {
+        owner.set_text_card_max_height(160, cx)
+    });
+    surface.run_until_parked();
+    assert_eq!(
+        f.application.read_with(&surface, |owner, _| owner
+            .clipboard_settings()
+            .text_card_max_height),
+        320
+    );
+    assert_eq!(std::fs::read(&path).expect("unchanged"), b"{broken");
+}
+
+#[gpui_kit::test]
+fn audit08_clipboard_command_labels_match_picker_or_immediate_result(cx: &mut TestAppContext) {
+    let fixture = fixture(cx);
+    let mut surface = VisualTestContext::from_window(fixture.window, cx);
+    for (query, expected) in [
+        (
+            "历史归档",
+            vec![
+                ("clipboard-export-archive", "导出…"),
+                ("clipboard-import-archive", "导入…"),
+            ],
+        ),
+        (
+            "数据库维护",
+            vec![
+                ("clipboard-database-backup", "备份"),
+                ("clipboard-database-compact", "压缩"),
+            ],
+        ),
+        ("存储位置", vec![("clipboard-storage-migrate", "迁移…")]),
+    ] {
+        search(&mut surface, query);
+        for (id, label) in expected {
+            let node = surface.update(|window, _| {
+                test_support::snapshots(window)
+                    .into_iter()
+                    .find(|node| {
+                        node.role() == Some(gpui_kit::Role::Button)
+                            && node.path().last() == Some(&gpui_kit::ElementId::from(id))
+                    })
+                    .unwrap_or_else(|| panic!("actual production Button {id}"))
+            });
+            assert_eq!(node.label(), Some(label), "actual label/a11y for {id}");
+            let hit = node.bounds();
+            assert!(hit.size.width > px(0.) && hit.left() >= px(176.) && hit.right() <= px(920.));
+        }
+    }
+    assert!(!fixture.directory.path().join("backups").exists());
+}
+
+#[gpui_kit::test]
+fn audit08_clipboard_picker_pointer_keyboard_once_and_cancel_preserve_data(
+    cx: &mut TestAppContext,
+) {
+    let fixture = fixture(cx);
+    fixture.endpoint.set_connected_for_contract_test(true);
+    let config_path = fixture.directory.path().join("config.json");
+    let before = std::fs::read(&config_path).expect("owned config bytes");
+    let database = fixture.worker.database_path();
+    let mut surface = VisualTestContext::from_window(fixture.window, cx);
+    for (index, (query, id)) in [
+        ("历史归档", "clipboard-export-archive"),
+        ("历史归档", "clipboard-import-archive"),
+        ("存储位置", "clipboard-storage-migrate"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        search(&mut surface, query);
+        let hit = button_bounds(&mut surface, id);
+        if index == 1 {
+            surface.update(|window, cx| window.focus_next(cx));
+            for _ in 0..80 {
+                let focused = surface.update(|window, _| {
+                    test_support::snapshots(window).into_iter().any(|node| {
+                        node.path().last() == Some(&gpui_kit::ElementId::from(id))
+                            && node.focused() == Some(true)
+                    })
+                });
+                if focused {
+                    break;
+                }
+                surface.simulate_keystrokes("tab");
+            }
+            assert!(
+                surface.update(|window, _| test_support::snapshots(window).into_iter().any(
+                    |node| node.path().last() == Some(&gpui_kit::ElementId::from(id))
+                        && node.focused() == Some(true)
+                ))
+            );
+            let key = gpui_kit::Keystroke::parse("space").expect("Space");
+            surface.simulate_event(gpui_kit::KeyDownEvent {
+                keystroke: key.clone(),
+                is_held: false,
+                prefer_character_input: false,
+            });
+            surface.run_until_parked();
+            assert!(
+                fixture
+                    .endpoint
+                    .try_receive_command_for_contract_test()
+                    .is_err(),
+                "key down alone cannot dispatch"
+            );
+            surface.simulate_event(gpui_kit::KeyUpEvent {
+                keystroke: key.clone(),
+            });
+            surface.run_until_parked();
+            let request = fixture
+                .endpoint
+                .try_receive_command_for_contract_test()
+                .expect("one keyboard picker");
+            assert!(matches!(
+                request.message,
+                nxtools_protocol::Message::PlatformCommand(
+                    PlatformCommand::PickClipboardArchivePath(
+                        nxtools_protocol::PickClipboardArchivePathCommand {
+                            mode: nxtools_protocol::ClipboardArchivePickerMode::Import,
+                            ..
+                        }
+                    )
+                )
+            ));
+            surface.simulate_event(gpui_kit::KeyUpEvent { keystroke: key });
+            surface.run_until_parked();
+            assert!(
+                fixture
+                    .endpoint
+                    .try_receive_command_for_contract_test()
+                    .is_err(),
+                "duplicate release cannot dispatch"
+            );
+            terminal(&fixture, request.id, true, cx);
+        } else {
+            surface.simulate_click(hit.center(), Modifiers::default());
+            surface.run_until_parked();
+            let request = fixture
+                .endpoint
+                .try_receive_command_for_contract_test()
+                .expect("one pointer picker");
+            assert!(
+                matches!(
+                    request.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::PickClipboardArchivePath(_)
+                    )
+                ) || matches!(
+                    request.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::PickClipboardStorageDirectory(_)
+                    )
+                )
+            );
+            assert!(
+                fixture
+                    .endpoint
+                    .try_receive_command_for_contract_test()
+                    .is_err()
+            );
+            terminal(&fixture, request.id, true, cx);
+        }
+        assert!(
+            !fixture
+                .application
+                .read_with(cx, |app, _| app.clipboard_management_busy())
+        );
+        assert_eq!(
+            std::fs::read(&config_path).expect("cancel unchanged config"),
+            before
+        );
+        assert_eq!(fixture.worker.database_path(), database);
+        assert!(!fixture.directory.path().join("backups").exists());
+    }
+}

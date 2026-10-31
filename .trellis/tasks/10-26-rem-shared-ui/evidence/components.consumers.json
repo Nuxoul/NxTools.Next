@@ -1,0 +1,2985 @@
+[
+  {
+    "module": "action.rs",
+    "symbols": [
+      "focused_action",
+      "focusable_content",
+      "SegmentedOption",
+      "primary_button_variant",
+      "primary_action_button",
+      "danger_hover_button_variant",
+      "danger_ghost_button_variant",
+      "action_button",
+      "labelled_icon_action",
+      "icon_action",
+      "icon_action_button",
+      "icon_action_tooltip_surface",
+      "segmented_control",
+      "input_segmented_control"
+    ],
+    "callers": [
+      {
+        "path": "downloads.rs",
+        "line": 73,
+        "text": "SegmentedOption, action_button, danger_hover_button_variant, icon_action, icon_action_button,"
+      },
+      {
+        "path": "downloads.rs",
+        "line": 74,
+        "text": "icon_action_tooltip_surface, segmented_control,"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 53,
+        "text": "SegmentedOption, action_button, focused_action, icon_action, labelled_icon_action,"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 54,
+        "text": "segmented_control,"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 28,
+        "text": "use crate::ui::components::action::{SegmentedOption, action_button, primary_action_button};"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1054,
+        "text": "crate::ui::components::action::input_segmented_control("
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1077,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1132,
+        "text": "action_button(\"global-notification-position\", selected.label())"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1309,
+        "text": "action_button(\"network-settings-cancel-button\", \"取消\")"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1324,
+        "text": "primary_action_button("
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 72,
+        "text": "action_button(\"download-delete-cancel\", \"取消\")"
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 85,
+        "text": "action_button(\"download-delete-confirm\", \"删除文件\")"
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 88,
+        "text": ".custom(danger_hover_button_variant(theme, cx))"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1242,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1251,
+        "text": "action_button(action.button_id(), label)"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1428,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1463,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1515,
+        "text": "icon_action_button("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1531,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2711,
+        "text": "icon_action("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2743,
+        "text": "icon_action("
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 335,
+        "text": "action_button(\"download-schedule-cancel\", \"取消\")"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 349,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1019,
+        "text": ".child(icon_action_tooltip_surface("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1020,
+        "text": "icon_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1159,
+        "text": "list.child(crate::ui::components::action::focusable_content("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1206,
+        "text": "action_button(\"download-settings-category-add-button\", \"+ 新增\")"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1401,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1428,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1456,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1460,
+        "text": ".custom(danger_hover_button_variant(theme, cx))"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1540,
+        "text": ".child(icon_action_tooltip_surface("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1541,
+        "text": "icon_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1621,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1648,
+        "text": "action_button(\"download-settings-ffmpeg-cancel-button\", \"取消\")"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1674,
+        "text": "action_button(\"download-settings-ffmpeg-gyan-button\", \"Gyan.dev\")"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1693,
+        "text": "action_button(\"download-settings-ffmpeg-btbn-button\", \"BtbN GitHub\")"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1954,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1996,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2033,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2070,
+        "text": "action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2115,
+        "text": "action_button(\"download-settings-firefox-store\", \"打开 Firefox 扩展商店\")"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2386,
+        "text": "action_button(\"download-settings-cancel-button\", \"取消\")"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2412,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2475,
+        "text": "segmented_control("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2480,
+        "text": "SegmentedOption::new(\"download-settings-taskbar-left\", \"靠左\", on_left),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2481,
+        "text": "SegmentedOption::new(\"download-settings-taskbar-right\", \"靠右\", on_right),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2498,
+        "text": "segmented_control("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2503,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2508,
+        "text": "SegmentedOption::new(\"download-settings-duplicate-reject\", \"拒绝创建\", on_reject),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2533,
+        "text": "segmented_control("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2538,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2543,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2548,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2571,
+        "text": "segmented_control("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2576,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2581,
+        "text": "SegmentedOption::new(\"download-settings-taskbar-mode-task\", \"按任务\", on_task),"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2582,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2608,
+        "text": ".child(icon_action_tooltip_surface("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2609,
+        "text": "icon_action_button("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2633,
+        "text": ".child(icon_action_tooltip_surface("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2634,
+        "text": "icon_action_button("
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 111,
+        "text": "action_button(\"download-shutdown-now-button\", \"立即关机\")"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 113,
+        "text": ".custom(danger_hover_button_variant(theme, cx))"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 129,
+        "text": "action_button(\"download-shutdown-cancel-button\", \"取消\")"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 375,
+        "text": ".child(icon_action_tooltip_surface("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 427,
+        "text": "crate::ui::components::action::icon_action("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 548,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 640,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 692,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/window_support.rs",
+        "line": 236,
+        "text": "crate::ui::components::action::primary_action_button("
+      },
+      {
+        "path": "downloads/window_support.rs",
+        "line": 248,
+        "text": "action_button(spec.button_id, label).icon(Icon::new(spec.icon).size(px(14.0)))"
+      },
+      {
+        "path": "downloads/window_support.rs",
+        "line": 250,
+        "text": "None => icon_action_button(spec.button_id, spec.icon, \"拖拽下载文件\"),"
+      },
+      {
+        "path": "downloads/window_support.rs",
+        "line": 303,
+        "text": "icon_action(\"download-window-close\", MaterialIcon::Close, \"关闭下载窗口\")"
+      },
+      {
+        "path": "main_window/clipboard_page.rs",
+        "line": 999,
+        "text": "9 => action_button(\"clipboard-open-global-blacklist\", \"全局设置\")"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 989,
+        "text": "let filter_segments = segmented_control("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 997,
+        "text": "SegmentedOption::new("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1080,
+        "text": "icon_action(\"download-settings\", MaterialIcon::Settings, \"下载设置\")"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1092,
+        "text": "icon_action(\"download-schedule\", MaterialIcon::History, \"下载计划\")"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1104,
+        "text": "labelled_icon_action("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1109,
+        "text": ".custom(crate::ui::components::action::primary_button_variant("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1167,
+        "text": "action_button(\"download-sort\", sort_label)"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2130,
+        "text": "let button = icon_action(id, icon, tooltip)"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2154,
+        "text": "let button = icon_action(id, icon, tooltip)"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2294,
+        "text": "let button = icon_action(\"download-batch-clear\", MaterialIcon::Close, \"清除多选\")"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 699,
+        "text": "let refresh_volumes_control = action_button("
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 68,
+        "text": "labelled_icon_action("
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 157,
+        "text": "let entry = focused_action(card.id, &focus, theme, false, window, cx, toggle_enabled)"
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 21,
+        "text": "crate::ui::components::action::focused_action(id, &focus, theme, disabled, window, cx, on_click)"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 27,
+        "text": "use crate::ui::components::action::focused_action;"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 396,
+        "text": "focused_action("
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 62,
+        "text": "use crate::ui::components::action::focused_action;"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2777,
+        "text": "focused_action("
+      },
+      {
+        "path": "ui/native_acceptance.rs",
+        "line": 25,
+        "text": "components::action::action_button(\"acceptance-action\", \"合成验收动作\")"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 15,
+        "text": "action_button, danger_ghost_button_variant, focusable_content, icon_action,"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 16,
+        "text": "labelled_icon_action, primary_button_variant,"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 111,
+        "text": "labelled_icon_action(\"quick-launch-add-custom-command\", MaterialIcon::Add, \"新增\")"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 265,
+        "text": "focusable_content("
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 291,
+        "text": "let delete_action = action_button(\"quick-launch-delete-custom-command\", \"删除\")"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 292,
+        "text": ".custom(danger_ghost_button_variant(theme, cx))"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 296,
+        "text": "let picker_action = icon_action("
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 320,
+        "text": "let save_action = action_button(\"quick-launch-save-custom-command\", \"保存\")"
+      },
+      {
+        "path": "ui/components/custom_command_editor.rs",
+        "line": 321,
+        "text": ".custom(primary_button_variant(theme, cx))"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 6,
+        "text": "use crate::ui::components::action::focusable_content;"
+      },
+      {
+        "path": "ui/components/list.rs",
+        "line": 94,
+        "text": "focusable_content(action_id, theme, false, content, on_click)"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 11,
+        "text": "use crate::ui::components::action::{danger_ghost_button_variant, labelled_icon_action};"
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 49,
+        "text": "let add = labelled_icon_action("
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 149,
+        "text": "let delete_variant = danger_ghost_button_variant(theme, cx);"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 12,
+        "text": "action_button, danger_hover_button_variant, labelled_icon_action,"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 55,
+        "text": "let clear_variant = danger_hover_button_variant(theme, cx);"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 78,
+        "text": "action_button(\"quick-launch-clear-history-button\", \"清空历史\")"
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 222,
+        "text": "labelled_icon_action("
+      },
+      {
+        "path": "ui/components/state.rs",
+        "line": 197,
+        "text": "crate::ui::components::action::focused_action("
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 8,
+        "text": "use crate::ui::components::action::icon_action;"
+      },
+      {
+        "path": "ui/components/titlebar.rs",
+        "line": 148,
+        "text": "icon_action(close_id, MaterialIcon::Close, \"关闭\")"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 10,
+        "text": "use crate::ui::components::action::focusable_content;"
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 121,
+        "text": "focusable_content("
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 207,
+        "text": "focusable_content(action_id, theme, false, content, move |_, window, cx| {"
+      },
+      {
+        "path": "main_window/tools_page/currency_settings.rs",
+        "line": 35,
+        "text": "focused_action("
+      },
+      {
+        "path": "main_window/tools_page/floating_assistant_settings.rs",
+        "line": 52,
+        "text": "focused_action("
+      }
+    ],
+    "units": [
+      {
+        "line": 30,
+        "text": ".relative()"
+      },
+      {
+        "line": 31,
+        "text": ".border_2()"
+      },
+      {
+        "line": 38,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "line": 96,
+        "text": ".border_2()"
+      },
+      {
+        "line": 218,
+        "text": "action_button(id, label).icon(Icon::new(icon).size(px(14.0)))"
+      },
+      {
+        "line": 239,
+        "text": ".icon(Icon::new(icon).size(px(14.0)))"
+      },
+      {
+        "line": 273,
+        "text": "gpui_kit::component::Size::Small,"
+      },
+      {
+        "line": 288,
+        "text": "gpui_kit::component::Size::Medium,"
+      },
+      {
+        "line": 321,
+        "text": ".w(gpui_kit::relative(option_width))"
+      }
+    ]
+  },
+  {
+    "module": "custom_command_editor.rs",
+    "symbols": [
+      "CustomCommandEditorActions",
+      "CustomCommandEditorInputs",
+      "CustomCommandEditorState",
+      "custom_command_editor"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 56,
+        "text": "use crate::ui::components::custom_command_editor::{"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 57,
+        "text": "CustomCommandEditorActions, CustomCommandEditorInputs, CustomCommandEditorState,"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 58,
+        "text": "custom_command_editor,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 857,
+        "text": "let custom_commands_control = custom_command_editor("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 859,
+        "text": "CustomCommandEditorState {"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 862,
+        "text": "inputs: CustomCommandEditorInputs {"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 872,
+        "text": "CustomCommandEditorActions {"
+      },
+      {
+        "path": "ui/components/mod.rs",
+        "line": 2,
+        "text": "pub(crate) mod custom_command_editor;"
+      }
+    ],
+    "units": [
+      {
+        "line": 80,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 98,
+        "text": ".h(px(COMMAND_MASTER_ROW_HEIGHT))"
+      },
+      {
+        "line": 99,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 102,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 103,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 117,
+        "text": ".w(px(COMMAND_MASTER_WIDTH))"
+      },
+      {
+        "line": 121,
+        "text": ".border_r_1()"
+      },
+      {
+        "line": 127,
+        "text": ".h(px(COMMAND_MASTER_HEADER_HEIGHT))"
+      },
+      {
+        "line": 128,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 130,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 134,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 138,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 139,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 140,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 166,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 170,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 171,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 180,
+        "text": ".h(px(COMMAND_EDITOR_HEIGHT))"
+      },
+      {
+        "line": 182,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "line": 183,
+        "text": ".border_1()"
+      },
+      {
+        "line": 225,
+        "text": ".h(px(COMMAND_MASTER_ROW_HEIGHT))"
+      },
+      {
+        "line": 228,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 234,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 241,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 243,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 244,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 255,
+        "text": ".h(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 258,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 259,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 302,
+        "text": ".with_size(Size::Medium)"
+      },
+      {
+        "line": 328,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 333,
+        "text": ".h(px(COMMAND_DETAIL_HEADER_HEIGHT))"
+      },
+      {
+        "line": 334,
+        "text": ".px(px(SPACING_16))"
+      },
+      {
+        "line": 336,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 340,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 344,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 345,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 346,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 360,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 362,
+        "text": ".p(px(SPACING_16))"
+      },
+      {
+        "line": 388,
+        "text": ".gap_2()"
+      },
+      {
+        "line": 394,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 424,
+        "text": ".gap_4()"
+      },
+      {
+        "line": 462,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "line": 478,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      }
+    ]
+  },
+  {
+    "module": "dialog.rs",
+    "symbols": [
+      "DialogShellIds",
+      "dialog_shell"
+    ],
+    "callers": [
+      {
+        "path": "downloads.rs",
+        "line": 76,
+        "text": "use crate::ui::components::dialog::{DialogShellIds, dialog_shell};"
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 100,
+        "text": "dialog_shell("
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 102,
+        "text": "DialogShellIds {"
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 377,
+        "text": ".child(dialog_shell("
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 379,
+        "text": "DialogShellIds {"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 148,
+        "text": "dialog_shell("
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 150,
+        "text": "DialogShellIds {"
+      }
+    ],
+    "units": [
+      {
+        "line": 32,
+        "text": ".h(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "line": 41,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 49,
+        "text": ".h(px(SETTINGS_FOOTER_HEIGHT))"
+      },
+      {
+        "line": 52,
+        "text": ".border_t_1()"
+      }
+    ]
+  },
+  {
+    "module": "field.rs",
+    "symbols": [
+      "field_shell",
+      "path_picker_shell",
+      "inline_error"
+    ],
+    "callers": [
+      {
+        "path": "downloads.rs",
+        "line": 77,
+        "text": "use crate::ui::components::field::{field_shell, inline_error, path_picker_shell};"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 29,
+        "text": "use crate::ui::components::field::inline_error;"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1296,
+        "text": ".child(inline_error(theme, \"network-settings-inline-error\", error)),"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 2066,
+        "text": "let inline_error = window"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 2072,
+        "text": "assert!(inline_error.left() >= content.left());"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 2073,
+        "text": "assert!(inline_error.right() <= content.right());"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 2075,
+        "text": "inline_error.bottom() <= footer.top(),"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 2076,
+        "text": "\"inline_error={inline_error:?}, footer={footer:?}\""
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1806,
+        "text": ".child(div().flex_none().w_full().child(field_shell("
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2843,
+        "text": "inline_error(theme, \"download-inline-error\", error)"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 3172,
+        "text": "return path_picker_shell(selector, field, picker);"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1532,
+        "text": ".child(div().flex_1().min_w_0().child(field_shell("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2461,
+        "text": ".child(field_shell(theme, selector, Input::new(input)))"
+      }
+    ],
+    "units": [
+      {
+        "line": 16,
+        "text": ".with_size(gpui_kit::component::Size::Medium)"
+      },
+      {
+        "line": 31,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "line": 36,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 37,
+        "text": ".child(div().flex_1().min_w_0().child(field))"
+      }
+    ]
+  },
+  {
+    "module": "hotkey.rs",
+    "symbols": [
+      "HOTKEY_FIELD_WIDTH",
+      "HotkeyFieldState",
+      "hotkey_field"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 60,
+        "text": "use crate::ui::components::hotkey::{HotkeyFieldState, hotkey_field};"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 597,
+        "text": "HotkeyFieldState::Applied,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 602,
+        "text": "HotkeyFieldState::Waiting,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 607,
+        "text": "HotkeyFieldState::Waiting,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 612,
+        "text": "HotkeyFieldState::Recording,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 617,
+        "text": "HotkeyFieldState::Applying,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 622,
+        "text": "HotkeyFieldState::Failed,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 627,
+        "text": "let hotkey_control = hotkey_field("
+      }
+    ],
+    "units": [
+      {
+        "line": 80,
+        "text": ".w(px(HOTKEY_FIELD_WIDTH))"
+      },
+      {
+        "line": 81,
+        "text": ".min_w(px(HOTKEY_FIELD_WIDTH))"
+      },
+      {
+        "line": 84,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 91,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 95,
+        "text": ".size(px(HOTKEY_STATE_MARKER_SIZE))"
+      },
+      {
+        "line": 97,
+        "text": ".rounded(px(HOTKEY_STATE_MARKER_SIZE / 2.0))"
+      },
+      {
+        "line": 104,
+        "text": ".flex_1()"
+      }
+    ]
+  },
+  {
+    "module": "list.rs",
+    "symbols": [
+      "compact_list_row"
+    ],
+    "callers": [],
+    "units": [
+      {
+        "line": 30,
+        "text": ".relative()"
+      },
+      {
+        "line": 32,
+        "text": ".h(px(SETTINGS_ROW_MIN_HEIGHT))"
+      },
+      {
+        "line": 34,
+        "text": ".px(px(SPACING_8))"
+      },
+      {
+        "line": 62,
+        "text": ".top(px(SPACING_8))"
+      },
+      {
+        "line": 63,
+        "text": ".bottom(px(SPACING_8))"
+      },
+      {
+        "line": 64,
+        "text": ".w(px(2.0))"
+      },
+      {
+        "line": 73,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 74,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 87,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 88,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      }
+    ]
+  },
+  {
+    "module": "menu.rs",
+    "symbols": [
+      "MenuTone",
+      "context_menu_shell",
+      "context_menu_item"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 61,
+        "text": "use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1778,
+        "text": "tone: MenuTone,"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1780,
+        "text": "context_menu_item(theme, selector, label, icon, tone)"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1800,
+        "text": "download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1818,
+        "text": "download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1836,
+        "text": "download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1850,
+        "text": "let mut menu = context_menu_shell(menu);"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1888,
+        "text": "MenuTone::Normal,"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1910,
+        "text": "MenuTone::Normal,"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2029,
+        "text": ".fold(context_menu_shell(menu), |menu, action| {"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2062,
+        "text": "MenuTone::Danger,"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2083,
+        "text": "MenuTone::Danger,"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 28,
+        "text": "use crate::ui::components::menu::{MenuTone, context_menu_item};"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 342,
+        "text": ".tone(MenuTone::Danger)"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 698,
+        "text": "context_menu_item("
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 703,
+        "text": "MenuTone::Normal,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 63,
+        "text": "use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3826,
+        "text": "context_menu_shell(menu)"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3828,
+        "text": "context_menu_item("
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3833,
+        "text": "MenuTone::Normal,"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3846,
+        "text": "context_menu_item("
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3851,
+        "text": "MenuTone::Danger,"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 19,
+        "text": "use crate::ui::components::menu::MenuTone;"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 35,
+        "text": "pub(super) tone: MenuTone,"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 48,
+        "text": "tone: MenuTone::Normal,"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 60,
+        "text": "pub(crate) fn tone(mut self, tone: MenuTone) -> Self {"
+      },
+      {
+        "path": "ui/components/project_menu.rs",
+        "line": 539,
+        "text": "} else if item.tone == MenuTone::Danger {"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 2,
+        "text": "use super::{menu::MenuTone, project_menu::MenuItem};"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 150,
+        "text": "let danger = item.tone == MenuTone::Danger;"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 176,
+        "text": "Icon::new(icon).when(item.tone == MenuTone::Danger && enabled, |icon| {"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 246,
+        "text": ".tone(MenuTone::Danger),"
+      }
+    ],
+    "units": [
+      {
+        "line": 20,
+        "text": "menu.min_w(px(MENU_MIN_WIDTH)).max_w(px(MENU_MAX_WIDTH))"
+      },
+      {
+        "line": 44,
+        "text": ".min_w(px(MENU_CONTENT_MIN_WIDTH))"
+      }
+    ]
+  },
+  {
+    "module": "mod.rs",
+    "symbols": [],
+    "callers": [],
+    "units": []
+  },
+  {
+    "module": "native_context_menu.rs",
+    "symbols": [
+      "consume_source_press",
+      "consume_source_release"
+    ],
+    "callers": [
+      {
+        "path": "ui/mod.rs",
+        "line": 2632,
+        "text": "if components::native_context_menu::consume_source_press(window, cx) {"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2638,
+        "text": "if components::native_context_menu::consume_source_release(window, cx) {"
+      }
+    ],
+    "units": [
+      {
+        "line": 578,
+        "text": "px(placement.anchor_x as f32 / scale),"
+      },
+      {
+        "line": 579,
+        "text": "px(placement.anchor_y as f32 / scale),"
+      }
+    ]
+  },
+  {
+    "module": "path_list.rs",
+    "symbols": [
+      "exact_path_tooltip",
+      "path_exclusion_setting"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 62,
+        "text": "use crate::ui::components::path_list::path_exclusion_setting;"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 810,
+        "text": "let index_exclusions_control = path_exclusion_setting("
+      }
+    ],
+    "units": [
+      {
+        "line": 76,
+        "text": ".py(px(SPACING_12))"
+      },
+      {
+        "line": 77,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 81,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 87,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 93,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 96,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 97,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 98,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 110,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "line": 121,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "line": 122,
+        "text": ".border_1()"
+      },
+      {
+        "line": 158,
+        "text": ".h(px(PATH_LIST_ROW_HEIGHT))"
+      },
+      {
+        "line": 169,
+        "text": ".h(px(1.0))"
+      },
+      {
+        "line": 182,
+        "text": ".w(px(PATH_LIST_ICON_RAIL_WIDTH))"
+      },
+      {
+        "line": 188,
+        "text": ".size(px(14.0))"
+      },
+      {
+        "line": 197,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 198,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 199,
+        "text": ".ml(px(SPACING_8))"
+      },
+      {
+        "line": 201,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 202,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 220,
+        "text": ".size(px(PATH_LIST_DELETE_HIT_TARGET))"
+      },
+      {
+        "line": 225,
+        "text": ".icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))"
+      },
+      {
+        "line": 227,
+        "text": ".with_size(px(PATH_LIST_DELETE_HIT_TARGET))"
+      },
+      {
+        "line": 244,
+        "text": ".h(px(PATH_LIST_ROW_HEIGHT))"
+      },
+      {
+        "line": 245,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 248,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 249,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      }
+    ]
+  },
+  {
+    "module": "popover.rs",
+    "symbols": [
+      "list_box"
+    ],
+    "callers": [
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 2,
+        "text": "use crate::ui::components::popover::list_box;"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1811,
+        "text": ".child(list_box(\"download-new-category-list\", category_scroll.clone(), rows))"
+      }
+    ],
+    "units": [
+      {
+        "line": 13,
+        "text": ".flex_1()"
+      }
+    ]
+  },
+  {
+    "module": "project_menu.rs",
+    "symbols": [
+      "MenuItem",
+      "context_menu"
+    ],
+    "callers": [
+      {
+        "path": "archive/browser.rs",
+        "line": 1616,
+        "text": "let item = item.context_menu(move |menu, _, cx| {"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1442,
+        "text": ".context_menu(move |menu, window, cx| {"
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 334,
+        "text": "// same inset as Kit SidebarGroup/MenuItem labels."
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 29,
+        "text": "use crate::ui::components::project_menu::{self, MenuItem};"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 265,
+        "text": "vec![MenuItem::new(\"clipboard-menu-category-unavailable\", hint).disabled(true)]"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 272,
+        "text": "MenuItem::new("
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 292,
+        "text": "MenuItem::new(\"clipboard-menu-paste\", \"粘贴\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 297,
+        "text": "MenuItem::new(\"clipboard-menu-copy\", \"复制\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 302,
+        "text": "MenuItem::new(\"clipboard-menu-plain-paste\", \"纯文本粘贴\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 307,
+        "text": "MenuItem::new(\"clipboard-menu-without-breaks\", \"去除换行\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 313,
+        "text": "MenuItem::separator(),"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 314,
+        "text": "MenuItem::new(\"clipboard-menu-edit\", \"编辑\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 320,
+        "text": "MenuItem::new("
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 328,
+        "text": "MenuItem::new("
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 340,
+        "text": "MenuItem::new(\"clipboard-menu-delete\", \"删除\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 346,
+        "text": "MenuItem::separator(),"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 347,
+        "text": "MenuItem::new(\"clipboard-menu-categories\", \"来源分类\").submenu(category_items),"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 354,
+        "text": "MenuItem::new("
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 375,
+        "text": "MenuItem::new(\"clipboard-menu-extension\", \"扩展处理\")"
+      },
+      {
+        "path": "ui/history.rs",
+        "line": 415,
+        "text": "div().w_full().min_w_0().child(project_menu::context_menu("
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 3825,
+        "text": "tab.context_menu(move |menu, _window, _cx| {"
+      },
+      {
+        "path": "ui/components/native_context_menu.rs",
+        "line": 3,
+        "text": "project_menu::{Handler, MenuItem},"
+      },
+      {
+        "path": "ui/components/native_context_menu.rs",
+        "line": 133,
+        "text": "items: &mut [MenuItem],"
+      },
+      {
+        "path": "ui/components/native_context_menu.rs",
+        "line": 177,
+        "text": "items: Vec<MenuItem>,"
+      },
+      {
+        "path": "ui/components/native_context_menu.rs",
+        "line": 200,
+        "text": "mut items: Vec<MenuItem>,"
+      },
+      {
+        "path": "ui/components/native_context_menu.rs",
+        "line": 252,
+        "text": "owner.dismiss_preview_for_interaction(\"context_menu\", cx)"
+      },
+      {
+        "path": "ui/components/native_context_menu.rs",
+        "line": 673,
+        "text": "pub(super) fn test_callback_count(mut items: Vec<MenuItem>) -> usize {"
+      },
+      {
+        "path": "ui/components/native_context_menu_preview.rs",
+        "line": 66,
+        "text": "MenuItem::new(\"fixture-copy\", \"复制（合成动作）\").on_click(selected),"
+      },
+      {
+        "path": "ui/components/native_context_menu_preview.rs",
+        "line": 67,
+        "text": "MenuItem::new(\"fixture-disabled\", \"禁用动作\")"
+      },
+      {
+        "path": "ui/components/native_context_menu_preview.rs",
+        "line": 70,
+        "text": "MenuItem::new(\"fixture-cascade\", \"来源分类\").submenu(vec!["
+      },
+      {
+        "path": "ui/components/native_context_menu_preview.rs",
+        "line": 71,
+        "text": "MenuItem::new(\"fixture-child\", \"合成分类\")"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 2,
+        "text": "use super::{menu::MenuTone, project_menu::MenuItem};"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 23,
+        "text": "items: Vec<MenuItem>,"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 71,
+        "text": "items: Vec<MenuItem>,"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 80,
+        "text": "fn new(id: Uuid, items: Vec<MenuItem>, window: &mut Window, cx: &mut Context<Self>) -> Self {"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 126,
+        "text": "items: Vec<MenuItem>,"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 235,
+        "text": "MenuItem::new(\"preview-paste\", \"粘贴\").icon(crate::icons::MaterialIcon::ContentPaste),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 236,
+        "text": "MenuItem::new(\"preview-copy\", \"复制\").icon(crate::icons::MaterialIcon::ContentCopy),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 237,
+        "text": "MenuItem::new(\"preview-plain\", \"纯文本粘贴\").icon(crate::icons::MaterialIcon::TextFields),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 238,
+        "text": "MenuItem::separator(),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 239,
+        "text": "MenuItem::new(\"preview-edit\", \"编辑\").icon(crate::icons::MaterialIcon::Edit),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 240,
+        "text": "MenuItem::new(\"preview-favorite\", \"收藏\")"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 243,
+        "text": "MenuItem::new(\"preview-disabled\", \"暂不可用的动作\").disabled(true),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 244,
+        "text": "MenuItem::new(\"preview-delete\", \"删除\")"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 247,
+        "text": "MenuItem::separator(),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 248,
+        "text": "MenuItem::new(\"preview-categories\", \"来源分类\").submenu(vec!["
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 249,
+        "text": "MenuItem::new(\"preview-category\", \"合成分类\").checked(true),"
+      },
+      {
+        "path": "ui/components/styled_menu_surface.rs",
+        "line": 251,
+        "text": "MenuItem::new(\"preview-extensions\", \"扩展处理\").submenu(vec![MenuItem::new("
+      }
+    ],
+    "units": []
+  },
+  {
+    "module": "quick_launch_diagnostics.rs",
+    "symbols": [
+      "QuickLaunchDiagnosticsData",
+      "QuickLaunchDiagnosticsActions",
+      "exact_log_path_tooltip",
+      "quick_launch_diagnostics"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 63,
+        "text": "use crate::ui::components::quick_launch_diagnostics::{"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 64,
+        "text": "QuickLaunchDiagnosticsActions, QuickLaunchDiagnosticsData, quick_launch_diagnostics,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1022,
+        "text": "quick_launch_diagnostics("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1024,
+        "text": "QuickLaunchDiagnosticsData {"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1040,
+        "text": "QuickLaunchDiagnosticsActions {"
+      },
+      {
+        "path": "ui/components/mod.rs",
+        "line": 12,
+        "text": "pub(crate) mod quick_launch_diagnostics;"
+      }
+    ],
+    "units": [
+      {
+        "line": 62,
+        "text": ".border_1()"
+      },
+      {
+        "line": 75,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "line": 94,
+        "text": ".h(px(DIAGNOSTICS_ROW_HEIGHT))"
+      },
+      {
+        "line": 96,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 144,
+        "text": ".h(px(DIAGNOSTICS_ROW_HEIGHT))"
+      },
+      {
+        "line": 146,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 171,
+        "text": ".h(px(DIAGNOSTICS_ROW_HEIGHT))"
+      },
+      {
+        "line": 173,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 176,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 180,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 183,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 186,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 187,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 188,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 196,
+        "text": ".h(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 199,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 200,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 219,
+        "text": ".h(px(CONTROL_HEIGHT_INPUT))"
+      },
+      {
+        "line": 249,
+        "text": ".h(px(DIAGNOSTICS_ROW_HEIGHT))"
+      },
+      {
+        "line": 251,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 252,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 256,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 260,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 263,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 266,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 267,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 268,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 296,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 297,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 298,
+        "text": ".border_l_1()"
+      },
+      {
+        "line": 310,
+        "text": ".min_h(px(LINE_HEIGHT_BODY))"
+      }
+    ]
+  },
+  {
+    "module": "settings.rs",
+    "symbols": [
+      "aligned_setting_row",
+      "SettingsShellIds",
+      "settings_shell",
+      "FeatureSettingsWindowIds",
+      "FeatureSettingsWindowSpec",
+      "feature_settings_window",
+      "settings_toggle",
+      "dialog_footer"
+    ],
+    "callers": [
+      {
+        "path": "downloads.rs",
+        "line": 79,
+        "text": "SettingsShellIds, dialog_footer, settings_shell, settings_toggle,"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 30,
+        "text": "use crate::ui::components::settings::{SettingsShellIds, dialog_footer, settings_shell};"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1189,
+        "text": "crate::ui::components::settings::aligned_setting_row("
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1340,
+        "text": "settings_shell("
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1342,
+        "text": "SettingsShellIds {"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1349,
+        "text": "dialog_footer(footer_actions),"
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 68,
+        "text": "let footer = dialog_footer("
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 322,
+        "text": "let footer = dialog_footer("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1050,
+        "text": "let certificate_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1060,
+        "text": "let automatic_categories_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1264,
+        "text": "let enabled_control = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1730,
+        "text": "let adaptive_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1754,
+        "text": "let progress_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1764,
+        "text": "let completion_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1774,
+        "text": "let completion_sound_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1784,
+        "text": "let completion_directory_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1794,
+        "text": "let task_removal_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1804,
+        "text": "let taskbar_overlay_toggle = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1882,
+        "text": "let taskbar_progress_info = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1893,
+        "text": "let taskbar_speed_info = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1904,
+        "text": "let taskbar_remaining_info = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1916,
+        "text": "let taskbar_task_count_info = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1927,
+        "text": "let taskbar_connection_info = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 1939,
+        "text": "let taskbar_bytes_info = settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2193,
+        "text": "(DownloadSettingsPage::Transfer, 9) => settings_toggle("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2313,
+        "text": "crate::ui::components::settings::aligned_setting_row("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2431,
+        "text": "settings_shell("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2433,
+        "text": "SettingsShellIds {"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2445,
+        "text": "dialog_footer(footer_actions),"
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 107,
+        "text": "let footer = dialog_footer("
+      },
+      {
+        "path": "main_window/clipboard_page.rs",
+        "line": 539,
+        "text": ".child(crate::ui::components::settings::aligned_setting_row("
+      },
+      {
+        "path": "main_window/clipboard_page.rs",
+        "line": 966,
+        "text": ".child(crate::ui::components::settings::aligned_setting_row("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 360,
+        "text": "crate::ui::components::settings::aligned_setting_row("
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 6,
+        "text": "FeatureSettingsWindowIds, FeatureSettingsWindowSpec, feature_settings_window,"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 495,
+        "text": "feature_settings_window("
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 497,
+        "text": "FeatureSettingsWindowSpec {"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 498,
+        "text": "ids: FeatureSettingsWindowIds {"
+      },
+      {
+        "path": "main_window/tools_page/currency_settings.rs",
+        "line": 262,
+        "text": "feature_settings_window("
+      },
+      {
+        "path": "main_window/tools_page/currency_settings.rs",
+        "line": 264,
+        "text": "FeatureSettingsWindowSpec {"
+      },
+      {
+        "path": "main_window/tools_page/currency_settings.rs",
+        "line": 265,
+        "text": "ids: FeatureSettingsWindowIds {"
+      },
+      {
+        "path": "main_window/tools_page/floating_assistant_settings.rs",
+        "line": 777,
+        "text": "feature_settings_window("
+      },
+      {
+        "path": "main_window/tools_page/floating_assistant_settings.rs",
+        "line": 779,
+        "text": "FeatureSettingsWindowSpec {"
+      },
+      {
+        "path": "main_window/tools_page/floating_assistant_settings.rs",
+        "line": 780,
+        "text": "ids: FeatureSettingsWindowIds {"
+      }
+    ],
+    "units": [
+      {
+        "line": 31,
+        "text": ".min_h(px(32.0))"
+      },
+      {
+        "line": 34,
+        "text": ".gap_3()"
+      },
+      {
+        "line": 37,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 41,
+        "text": ".gap_1()"
+      },
+      {
+        "line": 54,
+        "text": ".w(px(control_width))"
+      },
+      {
+        "line": 55,
+        "text": ".max_w(gpui_kit::relative(0.65))"
+      },
+      {
+        "line": 91,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 99,
+        "text": ".h(px(SETTINGS_FOOTER_HEIGHT))"
+      },
+      {
+        "line": 102,
+        "text": ".border_t_1()"
+      },
+      {
+        "line": 154,
+        "text": ".h(px(48.0))"
+      },
+      {
+        "line": 157,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 158,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 168,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 195,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 198,
+        "text": ".p(px(SPACING_12))"
+      },
+      {
+        "line": 204,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 213,
+        "text": ".min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))"
+      },
+      {
+        "line": 217,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 223,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 227,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 241,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 294,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 298,
+        "text": ".gap(px(SPACING_8))"
+      }
+    ]
+  },
+  {
+    "module": "shortcut.rs",
+    "symbols": [],
+    "callers": [],
+    "units": [
+      {
+        "line": 13,
+        "text": ".gap_1()"
+      }
+    ]
+  },
+  {
+    "module": "state.rs",
+    "symbols": [
+      "WORK_STATE_ICON_SIZE",
+      "WORK_STATE_MIN_HEIGHT",
+      "empty_state",
+      "progress_state",
+      "inline_error_state",
+      "interactive_state"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 67,
+        "text": "empty_state, inline_error_state, interactive_state, progress_state,"
+      },
+      {
+        "path": "quick_launch.rs",
+        "line": 55,
+        "text": "use crate::ui::components::state::{empty_state, progress_state};"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 257,
+        "text": ".child(crate::ui::components::state::empty_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1224,
+        "text": "workspace.child(inline_error_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1238,
+        "text": "let empty = empty_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1246,
+        "text": "Some(open_application) => interactive_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1262,
+        "text": "empty_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1271,
+        "text": "empty_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2578,
+        "text": "progress_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2587,
+        "text": "inline_error_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2598,
+        "text": "return empty_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2848,
+        "text": "progress_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2857,
+        "text": "inline_error_state("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2868,
+        "text": "return empty_state("
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 31,
+        "text": "use crate::ui::components::state::{empty_state, progress_state};"
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 740,
+        "text": "surface.child(progress_state("
+      },
+      {
+        "path": "quick_launch/file_dialog_search.rs",
+        "line": 747,
+        "text": "surface.child(empty_state("
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1549,
+        "text": "container.child(progress_state("
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1557,
+        "text": "container.child(empty_state("
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1573,
+        "text": "container.child(progress_state("
+      },
+      {
+        "path": "quick_launch/panel.rs",
+        "line": 1581,
+        "text": "container.child(empty_state("
+      },
+      {
+        "path": "quick_launch/preview.rs",
+        "line": 575,
+        "text": ".child(empty_state("
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 64,
+        "text": "use crate::ui::components::state::progress_state;"
+      },
+      {
+        "path": "ui/mod.rs",
+        "line": 2874,
+        "text": "list.child(progress_state("
+      }
+    ],
+    "units": [
+      {
+        "line": 28,
+        "text": ".min_h(px(WORK_STATE_MIN_HEIGHT))"
+      },
+      {
+        "line": 32,
+        "text": ".p_3()"
+      },
+      {
+        "line": 48,
+        "text": ".gap_2()"
+      },
+      {
+        "line": 53,
+        "text": ".child(Icon::new(icon).size(px(WORK_STATE_ICON_SIZE))),"
+      },
+      {
+        "line": 58,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 61,
+        "text": ".gap_1()"
+      },
+      {
+        "line": 94,
+        "text": ".min_h(px(WORK_STATE_MIN_HEIGHT))"
+      },
+      {
+        "line": 96,
+        "text": ".p_3()"
+      },
+      {
+        "line": 99,
+        "text": ".gap_2()"
+      },
+      {
+        "line": 108,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 112,
+        "text": ".gap_1()"
+      },
+      {
+        "line": 150,
+        "text": ".min_h(px(WORK_STATE_MIN_HEIGHT))"
+      },
+      {
+        "line": 210,
+        "text": ".min_h(px(WORK_STATE_MIN_HEIGHT))"
+      },
+      {
+        "line": 217,
+        "text": ".border_2()"
+      }
+    ]
+  },
+  {
+    "module": "styled_menu_surface.rs",
+    "symbols": [],
+    "callers": [],
+    "units": [
+      {
+        "line": 33,
+        "text": "point(px(0.0), px(0.0)),"
+      },
+      {
+        "line": 34,
+        "text": "size(px(640.0), px(480.0)),"
+      }
+    ]
+  },
+  {
+    "module": "titlebar.rs",
+    "symbols": [
+      "ModuleHeader",
+      "client_titlebar"
+    ],
+    "callers": [
+      {
+        "path": "downloads.rs",
+        "line": 81,
+        "text": "use crate::ui::components::titlebar::client_titlebar;"
+      },
+      {
+        "path": "main_window.rs",
+        "line": 69,
+        "text": "use crate::ui::components::titlebar::ModuleHeader;"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 31,
+        "text": "use crate::ui::components::titlebar::client_titlebar;"
+      },
+      {
+        "path": "network_settings.rs",
+        "line": 1237,
+        "text": "let titlebar = client_titlebar("
+      },
+      {
+        "path": "downloads/delete_confirmation.rs",
+        "line": 22,
+        "text": "let titlebar = client_titlebar("
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 230,
+        "text": "let titlebar = client_titlebar("
+      },
+      {
+        "path": "downloads/shutdown_window.rs",
+        "line": 38,
+        "text": "let titlebar = client_titlebar("
+      },
+      {
+        "path": "downloads/window_support.rs",
+        "line": 282,
+        "text": "client_titlebar("
+      },
+      {
+        "path": "main_window/archive_page.rs",
+        "line": 1334,
+        "text": "ModuleHeader::new("
+      },
+      {
+        "path": "main_window/clipboard_page.rs",
+        "line": 718,
+        "text": "ModuleHeader::new("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1130,
+        "text": "ModuleHeader::new("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 514,
+        "text": "ModuleHeader::new("
+      },
+      {
+        "path": "main_window/shell.rs",
+        "line": 45,
+        "text": "ModuleHeader::new("
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 224,
+        "text": "ModuleHeader::new("
+      }
+    ],
+    "units": [
+      {
+        "line": 67,
+        "text": ".h(px(MODULE_HEADER_HEIGHT))"
+      },
+      {
+        "line": 70,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 71,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 77,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 83,
+        "text": ".h(px(LINE_HEIGHT_PAGE_TITLE))"
+      },
+      {
+        "line": 84,
+        "text": ".text_size(px(TEXT_PAGE_TITLE))"
+      },
+      {
+        "line": 85,
+        "text": ".line_height(px(LINE_HEIGHT_PAGE_TITLE))"
+      },
+      {
+        "line": 96,
+        "text": ".h(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 97,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 98,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 105,
+        "text": ".child(div().flex_1().min_w_0())"
+      },
+      {
+        "line": 120,
+        "text": ".h(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "line": 123,
+        "text": ".pl(px(SPACING_12))"
+      },
+      {
+        "line": 124,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 133,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 134,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 140,
+        "text": ".w(px(TITLEBAR_HEIGHT))"
+      }
+    ]
+  },
+  {
+    "module": "tooltip.rs",
+    "symbols": [
+      "TOOLTIP_MAX_WIDTH",
+      "TOOLTIP_MAX_HEIGHT",
+      "TOOLTIP_SURFACE_MAX_WIDTH",
+      "TOOLTIP_SURFACE_MAX_HEIGHT",
+      "bounded_text_tooltip",
+      "description_help"
+    ],
+    "callers": [
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 3,
+        "text": "use crate::ui::components::tooltip::bounded_text_tooltip;"
+      },
+      {
+        "path": "downloads/new_download_view.rs",
+        "line": 1731,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "downloads/schedule_view.rs",
+        "line": 418,
+        "text": ".child(crate::ui::components::tooltip::description_help("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2,
+        "text": "use crate::ui::components::tooltip::bounded_text_tooltip;"
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2302,
+        "text": "label.child(crate::ui::components::tooltip::description_help("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2688,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "downloads/settings_view.rs",
+        "line": 2946,
+        "text": "row.child(crate::ui::components::tooltip::description_help("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 3,
+        "text": "use crate::ui::components::tooltip::bounded_text_tooltip;"
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 364,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 522,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 920,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1029,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "downloads/task_window.rs",
+        "line": 1048,
+        "text": ".tooltip(bounded_text_tooltip("
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 2,
+        "text": "use crate::ui::components::tooltip::bounded_text_tooltip;"
+      },
+      {
+        "path": "main_window/download_page.rs",
+        "line": 1303,
+        "text": "bounded_text_tooltip(selector, message, false)"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 3,
+        "text": "use crate::ui::components::tooltip::bounded_text_tooltip;"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 382,
+        "text": "crate::ui::components::tooltip::description_help("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 1143,
+        "text": "bounded_text_tooltip(\"compact-setting-description-tooltip\", message, false)"
+      },
+      {
+        "path": "main_window/tools_page.rs",
+        "line": 84,
+        "text": ".child(crate::ui::components::tooltip::description_help("
+      },
+      {
+        "path": "ui/components/path_list.rs",
+        "line": 102,
+        "text": ".child(crate::ui::components::tooltip::description_help("
+      },
+      {
+        "path": "ui/components/quick_launch_diagnostics.rs",
+        "line": 272,
+        "text": ".child(super::tooltip::description_help("
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 49,
+        "text": "label.child(super::tooltip::description_help(help_selector, help))"
+      },
+      {
+        "path": "ui/components/settings.rs",
+        "line": 231,
+        "text": ".child(super::tooltip::description_help("
+      },
+      {
+        "path": "ui/components/volume_scope.rs",
+        "line": 48,
+        "text": ".child(super::tooltip::description_help("
+      }
+    ],
+    "units": [
+      {
+        "line": 27,
+        "text": ".max_w(px(TOOLTIP_MAX_WIDTH))"
+      },
+      {
+        "line": 28,
+        "text": ".max_h(px(TOOLTIP_MAX_HEIGHT))"
+      },
+      {
+        "line": 34,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 35,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 38,
+        "text": ".max_w(px(TOOLTIP_SURFACE_MAX_WIDTH))"
+      },
+      {
+        "line": 39,
+        "text": ".max_h(px(TOOLTIP_SURFACE_MAX_HEIGHT))"
+      },
+      {
+        "line": 74,
+        "text": ".max_w(px(TOOLTIP_MAX_WIDTH))"
+      }
+    ]
+  },
+  {
+    "module": "volume_scope.rs",
+    "symbols": [
+      "volume_scope_setting",
+      "automatic_volume_scope_row",
+      "volume_scope_row",
+      "empty_volume_scope_row"
+    ],
+    "callers": [
+      {
+        "path": "main_window.rs",
+        "line": 71,
+        "text": "automatic_volume_scope_row, empty_volume_scope_row, volume_scope_row, volume_scope_setting,"
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 727,
+        "text": "let mut volume_scope_rows = vec![automatic_volume_scope_row("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 743,
+        "text": "volume_scope_rows.push(empty_volume_scope_row("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 768,
+        "text": "volume_scope_rows.push(volume_scope_row("
+      },
+      {
+        "path": "main_window/quick_launch_page.rs",
+        "line": 793,
+        "text": "let index_volumes_control = volume_scope_setting("
+      }
+    ],
+    "units": [
+      {
+        "line": 29,
+        "text": ".py(px(SPACING_12))"
+      },
+      {
+        "line": 30,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 34,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 39,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 42,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 43,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 44,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 59,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "line": 60,
+        "text": ".border_1()"
+      },
+      {
+        "line": 83,
+        "text": ".h(px(VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT))"
+      },
+      {
+        "line": 86,
+        "text": ".border_b_1()"
+      },
+      {
+        "line": 95,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 100,
+        "text": ".with_size(Size::Small),"
+      },
+      {
+        "line": 105,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 108,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 111,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 112,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 114,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 157,
+        "text": ".h(px(VOLUME_SCOPE_ROW_HEIGHT))"
+      },
+      {
+        "line": 161,
+        "text": "row.border_b_1().border_color(theme.border_subtle)"
+      },
+      {
+        "line": 169,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 174,
+        "text": ".with_size(Size::Small),"
+      },
+      {
+        "line": 179,
+        "text": ".h(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 181,
+        "text": ".flex_1()"
+      },
+      {
+        "line": 183,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 184,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 192,
+        "text": ".h(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 193,
+        "text": ".w(px(196.0))"
+      },
+      {
+        "line": 197,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 198,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 216,
+        "text": ".h(px(VOLUME_SCOPE_ROW_HEIGHT))"
+      },
+      {
+        "line": 217,
+        "text": ".px(px(SPACING_12))"
+      },
+      {
+        "line": 220,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 221,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      }
+    ]
+  }
+]

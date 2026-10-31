@@ -82,7 +82,10 @@ pub(crate) fn execute<W: Write + Send>(
 ) -> Result<(u64, u64)> {
     // One original source acquisition/Job. Only the password changes; all request intent stays.
     let mut password = request.password.take().map(SecretPassword::from_owned);
-    let extracting = matches!(request.operation.as_str(), "extract" | "modify_zip");
+    let extracting = matches!(
+        request.operation.as_str(),
+        "extract" | "modify_zip" | "modify_7z"
+    );
     if extracting {
         use std::io::Read as _;
         let mut signature = [0; 8];
@@ -92,6 +95,16 @@ pub(crate) fn execute<W: Write + Send>(
             || count >= 7 && &signature[..7] == b"Rar!\x1a\x07\0"
             || count == 8 && &signature == b"Rar!\x1a\x07\x01\0")
         {
+            if request.browser_entry.is_some() {
+                return super::worker::execute_attempt(
+                    request,
+                    control,
+                    output,
+                    replies,
+                    metadata,
+                    interaction,
+                );
+            }
             return Err(ArchiveError::UnsupportedOperation);
         }
     }
@@ -104,7 +117,7 @@ pub(crate) fn execute<W: Write + Send>(
         read.limits = request.limits;
         read.job_execution = request.job_execution;
         read.volume_paths = request.volume_paths.clone();
-        if request.output_readmission.is_some() {
+        if request.output_readmission.is_some() || request.browser_entry.is_some() {
             let original = crate::ResourceLimits::default();
             read.limits.max_entry_bytes = original.max_entry_bytes;
             read.limits.max_output_bytes = original.max_output_bytes;
@@ -127,7 +140,10 @@ pub(crate) fn execute<W: Write + Send>(
         read.password = password.as_ref().map(|value| value.expose().to_owned());
         let result = super::worker::execute_attempt(
             read,
-            if read.read_contract.is_some() || read.job_execution == Some(true) {
+            if read.browser_authorize.is_some()
+                || read.read_contract.is_some()
+                || read.job_execution == Some(true)
+            {
                 control
             } else {
                 &attempt

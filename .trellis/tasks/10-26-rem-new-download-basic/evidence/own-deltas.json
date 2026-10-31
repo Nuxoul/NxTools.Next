@@ -1,0 +1,1124 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "baseline": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.baseline",
+    "snapshot": "evidence/current/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.current",
+    "baseline_sha256": "be1cce574fa09a5e24e2216a2048bb3c688f72da130f6c47dfa895e27b427e6b",
+    "after_sha256": "e74fdb7ccb9dd16a223014f9b43ae9cf5edeafc8effc3baa11af9bb8fa7d1c19",
+    "inherited_prefix_equal": false,
+    "operations": [
+      {
+        "kind": "insert",
+        "before_start": 3,
+        "before_end": 3,
+        "after_start": 3,
+        "after_end": 4,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1817,
+        "before_end": 1818,
+        "after_start": 1818,
+        "after_end": 1819,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1829,
+        "before_end": 1830,
+        "after_start": 1830,
+        "after_end": 1831,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1906,
+        "before_end": 1909,
+        "after_start": 1907,
+        "after_end": 1910,
+        "before_lines": [
+          "                .overflow_hidden()\n",
+          "                .px(px(16.0))\n",
+          "                .py(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .overflow_y_scrollbar()\n",
+          "                .px_4()\n",
+          "                .py_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1912,
+        "before_end": 1919,
+        "after_start": 1913,
+        "after_end": 1928,
+        "before_lines": [
+          "                .child(Form::horizontal().small().label_width(px(72.0)).child(\n",
+          "                    new_download_form_field(\n",
+          "                        \"download-new-url-field\",\n",
+          "                        \"下载地址\",\n",
+          "                        new_download_url_control(&self.url, false),\n",
+          "                    ),\n",
+          "                ))\n"
+        ],
+        "after_lines": [
+          "                .child(\n",
+          "                    Form::horizontal()\n",
+          "                        .small()\n",
+          "                        .flex_none()\n",
+          "                        .label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))\n",
+          "                        .child(new_download_form_field(\n",
+          "                            \"download-new-url-field\",\n",
+          "                            \"下载地址\",\n",
+          "                            new_download_url_control_layout(\n",
+          "                                &self.url,\n",
+          "                                false,\n",
+          "                                probe.media.is_none(),\n",
+          "                            ),\n",
+          "                        )),\n",
+          "                )\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 1923,
+        "before_end": 1923,
+        "after_start": 1932,
+        "after_end": 1933,
+        "before_lines": [],
+        "after_lines": [
+          "                        .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1933,
+        "before_end": 1935,
+        "after_start": 1943,
+        "after_end": 1950,
+        "before_lines": [
+          "                                    Form::horizontal().small().label_width(px(72.0)).child(\n",
+          "                                        new_download_form_field(\n"
+        ],
+        "after_lines": [
+          "                                    Form::horizontal()\n",
+          "                                        .small()\n",
+          "                                        .flex_none()\n",
+          "                                        .label_width(\n",
+          "                                            ordinary_rem(72.0).to_pixels(window.rem_size()),\n",
+          "                                        )\n",
+          "                                        .child(new_download_form_field(\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1937,
+        "before_end": 1938,
+        "after_start": 1952,
+        "after_end": 1953,
+        "before_lines": [
+          "                                            path_picker_shell(\n"
+        ],
+        "after_lines": [
+          "                                            new_download_path_picker_shell(\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 1967,
+        "before_end": 1967,
+        "after_start": 1982,
+        "after_end": 1983,
+        "before_lines": [],
+        "after_lines": [
+          "                                                probe.media.is_none(),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1968,
+        "before_end": 1970,
+        "after_start": 1984,
+        "after_end": 1985,
+        "before_lines": [
+          "                                        ),\n",
+          "                                    ),\n"
+        ],
+        "after_lines": [
+          "                                        )),\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 1974,
+        "before_end": 1974,
+        "after_start": 1989,
+        "after_end": 1990,
+        "before_lines": [],
+        "after_lines": [
+          "                                        .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2006,
+        "before_end": 2007,
+        "after_start": 2022,
+        "after_end": 2028,
+        "before_lines": [
+          "                    body.child(download_inline_error(theme, error))\n"
+        ],
+        "after_lines": [
+          "                    body.child(\n",
+          "                        div()\n",
+          "                            .flex_none()\n",
+          "                            .w_full()\n",
+          "                            .child(download_inline_error(theme, error)),\n",
+          "                    )\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 2011,
+        "before_end": 2011,
+        "after_start": 2032,
+        "after_end": 2033,
+        "before_lines": [],
+        "after_lines": [
+          "                .id(\"download-new-compact-body\")\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2013,
+        "before_end": 2016,
+        "after_start": 2035,
+        "after_end": 2038,
+        "before_lines": [
+          "                .overflow_hidden()\n",
+          "                .px(px(16.0))\n",
+          "                .py(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .overflow_y_scrollbar()\n",
+          "                .px_4()\n",
+          "                .py_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2018,
+        "before_end": 2026,
+        "after_start": 2040,
+        "after_end": 2052,
+        "before_lines": [
+          "                .gap(px(8.0))\n",
+          "                .child(Form::horizontal().small().label_width(px(72.0)).child(\n",
+          "                    new_download_form_field(\n",
+          "                        \"download-new-url-field\",\n",
+          "                        \"下载地址\",\n",
+          "                        new_download_url_control(&self.url, self.handoff_pending),\n",
+          "                    ),\n",
+          "                ))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n",
+          "                .child(\n",
+          "                    Form::horizontal()\n",
+          "                        .small()\n",
+          "                        .flex_none()\n",
+          "                        .label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))\n",
+          "                        .child(new_download_form_field(\n",
+          "                            \"download-new-url-field\",\n",
+          "                            \"下载地址\",\n",
+          "                            new_download_url_control(&self.url, self.handoff_pending),\n",
+          "                        )),\n",
+          "                )\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2029,
+        "before_end": 2030,
+        "after_start": 2055,
+        "after_end": 2062,
+        "before_lines": [
+          "                        .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .when(!compact_error, |line| {\n",
+          "                            line.h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                        })\n",
+          "                        .when(compact_error, |line| {\n",
+          "                            line.min_h(ordinary_rem(LINE_HEIGHT_BODY))\n",
+          "                        })\n",
+          "                        .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2033,
+        "before_end": 2034,
+        "after_start": 2065,
+        "after_end": 2066,
+        "before_lines": [
+          "                        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                        .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2046,
+        "before_end": 2047,
+        "after_start": 2078,
+        "after_end": 2079,
+        "before_lines": [
+          "                            .size(px(ICON_GLYPH_SMALL))\n"
+        ],
+        "after_lines": [
+          "                            .size(ordinary_rem(ICON_GLYPH_SMALL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2060,
+        "before_end": 2063,
+        "after_start": 2092,
+        "after_end": 2100,
+        "before_lines": [
+          "                                .truncate()\n",
+          "                                .text_size(px(TEXT_BODY))\n",
+          "                                .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                                .when(!compact_error, |text| text.truncate())\n",
+          "                                .map(|text| {\n",
+          "                                    #[cfg(test)]\n",
+          "                                    let text = text.child(rem_tests::type_probe(\"guidance\"));\n",
+          "                                    text\n",
+          "                                })\n",
+          "                                .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2079,
+        "before_end": 2080,
+        "after_start": 2116,
+        "after_end": 2124,
+        "before_lines": [
+          "                    |body, error| body.child(download_inline_error(theme, error)),\n"
+        ],
+        "after_lines": [
+          "                    |body, error| {\n",
+          "                        body.child(\n",
+          "                            div()\n",
+          "                                .flex_none()\n",
+          "                                .w_full()\n",
+          "                                .child(download_inline_error(theme, error)),\n",
+          "                        )\n",
+          "                    },\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2141,
+        "before_end": 2142,
+        "after_start": 2185,
+        "after_end": 2186,
+        "before_lines": [
+          "                        footer.child(actions).child(div().w(px(SPACING_8)))\n"
+        ],
+        "after_lines": [
+          "                        footer.child(actions).child(div().w_2())\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 2209,
+        "before_end": 2209,
+        "after_start": 2253,
+        "after_end": 2261,
+        "before_lines": [],
+        "after_lines": [
+          "    // Media internals keep their existing pixel roles for the next bounded slice.\n",
+          "    let measure = |value| -> gpui_kit::AbsoluteLength {\n",
+          "        if probe.media.is_none() {\n",
+          "            ordinary_rem(value).into()\n",
+          "        } else {\n",
+          "            px(value).into()\n",
+          "        }\n",
+          "    };\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2211,
+        "before_end": 2213,
+        "after_start": 2263,
+        "after_end": 2265,
+        "before_lines": [
+          "        .w(px(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))\n",
+          "        .h(px(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .w(measure(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))\n",
+          "        .h(measure(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2216,
+        "before_end": 2217,
+        "after_start": 2268,
+        "after_end": 2269,
+        "before_lines": [
+          "        .pl(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "        .pl(measure(SPACING_12))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2222,
+        "before_end": 2223,
+        "after_start": 2274,
+        "after_end": 2275,
+        "before_lines": [
+          "        .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "        .gap(measure(SPACING_4))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2227,
+        "before_end": 2228,
+        "after_start": 2279,
+        "after_end": 2281,
+        "before_lines": [
+          "                .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                .h(measure(LINE_HEIGHT_BODY))\n",
+          "                .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2231,
+        "before_end": 2232,
+        "after_start": 2284,
+        "after_end": 2285,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap(measure(SPACING_8))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2234,
+        "before_end": 2235,
+        "after_start": 2287,
+        "after_end": 2288,
+        "before_lines": [
+          "                        .size(px(14.0))\n"
+        ],
+        "after_lines": [
+          "                        .size(measure(14.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2242,
+        "before_end": 2244,
+        "after_start": 2295,
+        "after_end": 2297,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(measure(TEXT_BODY))\n",
+          "                        .line_height(measure(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 2246,
+        "before_end": 2246,
+        "after_start": 2299,
+        "after_end": 2304,
+        "before_lines": [],
+        "after_lines": [
+          "                        .map(|text| {\n",
+          "                            #[cfg(test)]\n",
+          "                            let text = text.child(rem_tests::type_probe(\"status\"));\n",
+          "                            text\n",
+          "                        })\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2253,
+        "before_end": 2254,
+        "after_start": 2311,
+        "after_end": 2313,
+        "before_lines": [
+          "                .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                .h(measure(LINE_HEIGHT_BODY))\n",
+          "                .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2255,
+        "before_end": 2257,
+        "after_start": 2314,
+        "after_end": 2316,
+        "before_lines": [
+          "                .text_size(px(TEXT_BODY))\n",
+          "                .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                .text_size(measure(TEXT_BODY))\n",
+          "                .line_height(measure(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2258,
+        "before_end": 2259,
+        "after_start": 2317,
+        "after_end": 2323,
+        "before_lines": [
+          "                .child(size_label),\n"
+        ],
+        "after_lines": [
+          "                .child(size_label)\n",
+          "                .map(|text| {\n",
+          "                    #[cfg(test)]\n",
+          "                    let text = text.child(rem_tests::type_probe(\"size\"));\n",
+          "                    text\n",
+          "                }),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2264,
+        "before_end": 2265,
+        "after_start": 2328,
+        "after_end": 2330,
+        "before_lines": [
+          "                .h(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                .h(measure(LINE_HEIGHT_BODY))\n",
+          "                .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2266,
+        "before_end": 2268,
+        "after_start": 2331,
+        "after_end": 2333,
+        "before_lines": [
+          "                .text_size(px(TEXT_BODY))\n",
+          "                .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                .text_size(measure(TEXT_BODY))\n",
+          "                .line_height(measure(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2273,
+        "before_end": 2274,
+        "after_start": 2338,
+        "after_end": 2344,
+        "before_lines": [
+          "                .child(capability),\n"
+        ],
+        "after_lines": [
+          "                .child(capability)\n",
+          "                .map(|text| {\n",
+          "                    #[cfg(test)]\n",
+          "                    let text = text.child(rem_tests::type_probe(\"capability\"));\n",
+          "                    text\n",
+          "                }),\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 3045,
+        "before_end": 3045,
+        "after_start": 3115,
+        "after_end": 3120,
+        "before_lines": [],
+        "after_lines": [
+          "                .map(|text| {\n",
+          "                    #[cfg(test)]\n",
+          "                    let text = text.child(rem_tests::type_probe(selector));\n",
+          "                    text\n",
+          "                })\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 3054,
+        "before_end": 3054,
+        "after_start": 3129,
+        "after_end": 3152,
+        "before_lines": [],
+        "after_lines": [
+          "/// Original field/picker composition, with ordinary rails following the official controls.\n",
+          "fn new_download_path_picker_shell(\n",
+          "    selector: &'static str,\n",
+          "    field: AnyElement,\n",
+          "    picker: AnyElement,\n",
+          "    ordinary: bool,\n",
+          ") -> AnyElement {\n",
+          "    if !ordinary {\n",
+          "        return path_picker_shell(selector, field, picker);\n",
+          "    }\n",
+          "    div()\n",
+          "        .debug_selector(move || selector.into())\n",
+          "        .h_8()\n",
+          "        .w_full()\n",
+          "        .min_w_0()\n",
+          "        .flex()\n",
+          "        .items_center()\n",
+          "        .gap_2()\n",
+          "        .child(div().flex_1().min_w_0().child(field))\n",
+          "        .child(picker)\n",
+          "        .into_any_element()\n",
+          "}\n",
+          "\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 3055,
+        "before_end": 3055,
+        "after_start": 3153,
+        "after_end": 3161,
+        "before_lines": [],
+        "after_lines": [
+          "    new_download_url_control_layout(input, disabled, true)\n",
+          "}\n",
+          "\n",
+          "fn new_download_url_control_layout(\n",
+          "    input: &Entity<InputState>,\n",
+          "    disabled: bool,\n",
+          "    ordinary: bool,\n",
+          ") -> AnyElement {\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 3056,
+        "before_end": 3057,
+        "after_start": 3162,
+        "after_end": 3163,
+        "before_lines": [
+          "    path_picker_shell(\n"
+        ],
+        "after_lines": [
+          "    new_download_path_picker_shell(\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 3083,
+        "before_end": 3083,
+        "after_start": 3189,
+        "after_end": 3190,
+        "before_lines": [],
+        "after_lines": [
+          "        ordinary,\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+    "baseline": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_rem_tests.rs.baseline",
+    "snapshot": "evidence/current/rust__apps__nxtools-desktop__src__downloads__new_download_rem_tests.rs.current",
+    "baseline_sha256": "c7998ae2f4a5280249ae6b2acc51980676c1ac5441c08b075859326d06699f45",
+    "after_sha256": "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680",
+    "inherited_prefix_equal": true,
+    "operations": [
+      {
+        "kind": "insert",
+        "before_start": 167,
+        "before_end": 167,
+        "after_start": 167,
+        "after_end": 554,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[gpui_kit::test]\n",
+          "fn audit06_new_long_content_scrolls_without_moving_fixed_actions(cx: &mut TestAppContext) {\n",
+          "    for confirmed in [false, true] {\n",
+          "        for base in [16.0, 14.0, 18.0] {\n",
+          "            let mut f = fixture(cx, confirmed);\n",
+          "            let original = f.surface.read(|cx| ComponentTheme::global(cx).clone());\n",
+          "            let long_name = \"合成中文文件名称与完整后缀\".repeat(24) + \".bin\";\n",
+          "            let long_path = \"D:\\\\合成目录\\\\\".to_owned() + &\"长中文路径层级\\\\\".repeat(24);\n",
+          "            let long_error = \"请检查下载地址与保存路径：合成中文错误详情，所有内容必须可读。\\n\"\n",
+          "                .repeat(40)\n",
+          "                + \"完整错误末尾\";\n",
+          "            f.surface.update(|window, cx| {\n",
+          "                ComponentTheme::update(cx, |theme| theme.font_size = px(base));\n",
+          "                f.view.update(cx, |view, cx| {\n",
+          "                    view.file_name.update(cx, |input, cx| {\n",
+          "                        input.set_value(long_name.clone(), window, cx)\n",
+          "                    });\n",
+          "                    view.directory.update(cx, |input, cx| {\n",
+          "                        input.set_value(long_path.clone(), window, cx)\n",
+          "                    });\n",
+          "                    view.error = Some(long_error.clone());\n",
+          "                    cx.notify();\n",
+          "                });\n",
+          "            });\n",
+          "            f.surface.refresh().expect(\"long production content\");\n",
+          "            let root = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-root\")\n",
+          "                .expect(\"fixed root\");\n",
+          "            let title = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-titlebar\")\n",
+          "                .expect(\"fixed title\");\n",
+          "            let footer = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-footer\")\n",
+          "                .expect(\"fixed footer\");\n",
+          "            let viewport = gpui_kit::Bounds::from_corners(\n",
+          "                gpui_kit::point(root.left(), title.bottom()),\n",
+          "                gpui_kit::point(root.right(), footer.top()),\n",
+          "            );\n",
+          "            let selector = if confirmed {\n",
+          "                \"download-inline-error\"\n",
+          "            } else {\n",
+          "                \"download-new-probe-guidance\"\n",
+          "            };\n",
+          "            let before = f.surface.debug_bounds(selector).expect(\"full error layout\");\n",
+          "            for _ in 0..60 {\n",
+          "                f.surface.simulate_event(gpui_kit::ScrollWheelEvent {\n",
+          "                    position: viewport.center(),\n",
+          "                    delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -8.0)),\n",
+          "                    ..Default::default()\n",
+          "                });\n",
+          "                f.surface.refresh().expect(\"actual body wheel scroll\");\n",
+          "            }\n",
+          "            let after = f\n",
+          "                .surface\n",
+          "                .debug_bounds(selector)\n",
+          "                .expect(\"current error layout\");\n",
+          "            let cancel = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-cancel-action\")\n",
+          "                .expect(\"Cancel hit\");\n",
+          "            f.view.read_with(&f.surface, |view, cx| {\n",
+          "                assert_eq!(view.file_name.read(cx).value().as_str(), long_name);\n",
+          "                assert_eq!(view.directory.read(cx).value().as_str(), long_path);\n",
+          "                assert_eq!(view.error.as_deref(), Some(long_error.as_str()));\n",
+          "                assert!(!view.probing && !view.submitting);\n",
+          "            });\n",
+          "            f.surface\n",
+          "                .update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));\n",
+          "            assert!(\n",
+          "                before.size.height > viewport.size.height,\n",
+          "                \"complete error must lay out, not single-line truncate confirmed={confirmed} base={base}: {before:?}\"\n",
+          "            );\n",
+          "            assert!(\n",
+          "                after.top() < before.top(),\n",
+          "                \"real wheel scrolls complete error confirmed={confirmed} base={base}\"\n",
+          "            );\n",
+          "            assert!(\n",
+          "                after.bottom() <= viewport.bottom() + px(0.5) && after.bottom() > viewport.top(),\n",
+          "                \"complete error end reachable confirmed={confirmed} base={base}: {after:?}, {viewport:?}\"\n",
+          "            );\n",
+          "            assert_eq!(\n",
+          "                root.size,\n",
+          "                size(px(560.0), px(if confirmed { 246.0 } else { 176.0 }))\n",
+          "            );\n",
+          "            assert_eq!(title.size.height, px(34.0));\n",
+          "            assert_eq!(footer.size.height, px(44.0));\n",
+          "            assert!(cancel.top() >= footer.top() && cancel.bottom() <= footer.bottom());\n",
+          "            assert_eq!(f.surface.debug_bounds(\"download-new-footer\"), Some(footer));\n",
+          "            assert!(\n",
+          "                f.application\n",
+          "                    .read_with(&f.surface, |app, _| app.tasks().is_empty())\n",
+          "            );\n",
+          "        }\n",
+          "    }\n",
+          "}\n",
+          "\n",
+          "thread_local! {\n",
+          "    static TYPE_PAINT: RefCell<std::collections::HashMap<&'static str, (gpui_kit::Pixels, gpui_kit::Pixels)>> = RefCell::new(std::collections::HashMap::new());\n",
+          "}\n",
+          "\n",
+          "pub(super) fn type_probe(role: &'static str) -> AnyElement {\n",
+          "    gpui_kit::canvas(\n",
+          "        |_, _, _| (),\n",
+          "        move |_, (), window, _| {\n",
+          "            let style = window.text_style();\n",
+          "            let font = style.font_size.to_pixels(window.rem_size());\n",
+          "            let line = style\n",
+          "                .line_height\n",
+          "                .to_pixels(style.font_size, window.rem_size());\n",
+          "            TYPE_PAINT.with(|paint| paint.borrow_mut().insert(role, (font, line)));\n",
+          "        },\n",
+          "    )\n",
+          "    .absolute()\n",
+          "    .size_full()\n",
+          "    .into_any_element()\n",
+          "}\n",
+          "\n",
+          "#[gpui_kit::test]\n",
+          "fn audit06_new_painted_type_and_basic_control_rails_follow_root(cx: &mut TestAppContext) {\n",
+          "    for confirmed in [false, true] {\n",
+          "        let mut f = fixture(cx, confirmed);\n",
+          "        let original = f.surface.read(|cx| ComponentTheme::global(cx).clone());\n",
+          "        let mut default_label_line = None;\n",
+          "        for base in [16.0, 14.0, 18.0] {\n",
+          "            TYPE_PAINT.with(|paint| paint.borrow_mut().clear());\n",
+          "            f.surface.update(|window, cx| {\n",
+          "                ComponentTheme::update(cx, |theme| theme.font_size = px(base));\n",
+          "                f.view.update(cx, |_, cx| cx.notify());\n",
+          "                window.refresh();\n",
+          "                window.draw(cx).clear(cx);\n",
+          "            });\n",
+          "            let types = TYPE_PAINT.with(|paint| paint.borrow().clone());\n",
+          "            let ratio = base / 16.0;\n",
+          "            for role in if confirmed {\n",
+          "                vec![\"status\", \"size\", \"capability\"]\n",
+          "            } else {\n",
+          "                vec![\"guidance\"]\n",
+          "            } {\n",
+          "                assert_eq!(\n",
+          "                    types.get(role),\n",
+          "                    Some(&(px(12.0 * ratio), px(18.0 * ratio))),\n",
+          "                    \"paint role={role} base={base}\"\n",
+          "                );\n",
+          "            }\n",
+          "            let (label_font, label_line) = types\n",
+          "                .get(\"download-new-url-field\")\n",
+          "                .copied()\n",
+          "                .expect(\"actual official label paint\");\n",
+          "            assert_eq!(label_font, px(14.0 * ratio), \"official text_sm label font\");\n",
+          "            let baseline_line = *default_label_line.get_or_insert(label_line);\n",
+          "            assert!(\n",
+          "                (label_line - baseline_line * ratio).abs() < px(0.02),\n",
+          "                \"original inherited label line follows font, not a new forced type role\"\n",
+          "            );\n",
+          "            let url = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-url-control\")\n",
+          "                .expect(\"URL rail\");\n",
+          "            let label = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-url-field-label\")\n",
+          "                .expect(\"label\");\n",
+          "            let paste = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-url-paste\")\n",
+          "                .expect(\"paste\");\n",
+          "            let input = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-url-field-input\")\n",
+          "                .expect(\"input\");\n",
+          "            assert_eq!(label.left(), px(16.0 * ratio));\n",
+          "            assert_eq!(\n",
+          "                url.left(),\n",
+          "                px(88.0 * ratio) + px(4.0),\n",
+          "                \"72 rem label plus released fixed4 Field gap\"\n",
+          "            );\n",
+          "            assert_eq!(url.size.height, px(32.0 * ratio));\n",
+          "            assert!((paste.left() - input.right() - px(8.0 * ratio)).abs() < px(0.5));\n",
+          "            if base == 16.0 {\n",
+          "                assert_eq!(input.top(), px(42.0));\n",
+          "                assert_eq!(paste.right(), px(544.0));\n",
+          "            }\n",
+          "            if confirmed {\n",
+          "                let directory = f\n",
+          "                    .surface\n",
+          "                    .debug_bounds(\"download-new-directory-control\")\n",
+          "                    .expect(\"directory rail\");\n",
+          "                let directory_input = f\n",
+          "                    .surface\n",
+          "                    .debug_bounds(\"download-new-directory-input\")\n",
+          "                    .expect(\"directory input\");\n",
+          "                let picker = f\n",
+          "                    .surface\n",
+          "                    .debug_bounds(\"download-new-directory-picker\")\n",
+          "                    .expect(\"picker\");\n",
+          "                let inspector = f\n",
+          "                    .surface\n",
+          "                    .debug_bounds(\"download-new-probe-inspector\")\n",
+          "                    .expect(\"inspector\");\n",
+          "                assert_eq!(directory.left(), url.left());\n",
+          "                assert_eq!(directory.size.height, input.size.height);\n",
+          "                assert_eq!(picker.top(), directory_input.top());\n",
+          "                assert_eq!(picker.size.height, input.size.height);\n",
+          "                assert_eq!(inspector.size, size(px(120.0 * ratio), px(112.0 * ratio)));\n",
+          "                assert!((inspector.left() - directory.right() - px(8.0 * ratio)).abs() < px(0.5));\n",
+          "                if base == 16.0 {\n",
+          "                    assert_eq!(directory.top(), px(82.0));\n",
+          "                    assert_eq!(inspector.bottom(), px(194.0));\n",
+          "                }\n",
+          "            }\n",
+          "        }\n",
+          "        f.surface\n",
+          "            .update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));\n",
+          "    }\n",
+          "}\n",
+          "\n",
+          "// Traverse the same public focus sequence used by released Button tests.\n",
+          "fn tab_to(surface: &mut VisualTestContext, id: &'static str) {\n",
+          "    for _ in 0..40 {\n",
+          "        surface.update(|window, cx| window.focus_next(cx));\n",
+          "        surface.update(|window, cx| window.draw(cx).clear(cx));\n",
+          "        if surface.update(|window, _| {\n",
+          "            gpui_kit::base::test_support::snapshots(window)\n",
+          "                .iter()\n",
+          "                .any(|node| {\n",
+          "                    node.path().last() == Some(&gpui_kit::ElementId::from(id))\n",
+          "                        && node.focused() == Some(true)\n",
+          "                })\n",
+          "        }) {\n",
+          "            return;\n",
+          "        }\n",
+          "    }\n",
+          "    panic!(\"original Button {id} not reachable by Tab sequence\");\n",
+          "}\n",
+          "\n",
+          "#[gpui_kit::test]\n",
+          "fn audit06_new_relative_layout_keeps_tab_and_cancel_pointer_owner(cx: &mut TestAppContext) {\n",
+          "    for confirmed in [false, true] {\n",
+          "        for base in [16.0, 14.0, 18.0] {\n",
+          "            let mut f = fixture(cx, confirmed);\n",
+          "            let original = f.surface.read(|cx| ComponentTheme::global(cx).clone());\n",
+          "            f.surface.update(|window, cx| {\n",
+          "                ComponentTheme::update(cx, |theme| theme.font_size = px(base));\n",
+          "                window.activate_window();\n",
+          "                window.blur(cx);\n",
+          "            });\n",
+          "            f.surface.refresh().expect(\"fixed production viewport\");\n",
+          "            tab_to(&mut f.surface, \"download-paste-url\");\n",
+          "            if confirmed {\n",
+          "                tab_to(&mut f.surface, \"download-pick-directory\");\n",
+          "            }\n",
+          "            let footer = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-footer\")\n",
+          "                .expect(\"fixed footer\");\n",
+          "            if confirmed {\n",
+          "                for (id, selector) in [\n",
+          "                    (\n",
+          "                        \"download-new-schedule-trigger\",\n",
+          "                        \"download-new-footer-secondary-schedule-action\",\n",
+          "                    ),\n",
+          "                    (\n",
+          "                        \"download-add-to-queue-button\",\n",
+          "                        \"download-new-footer-secondary-queue-action\",\n",
+          "                    ),\n",
+          "                    (\n",
+          "                        \"download-start-now-button\",\n",
+          "                        \"download-new-footer-primary-action\",\n",
+          "                    ),\n",
+          "                ] {\n",
+          "                    tab_to(&mut f.surface, id);\n",
+          "                    let hit = f\n",
+          "                        .surface\n",
+          "                        .debug_bounds(selector)\n",
+          "                        .expect(\"actual footer Button\");\n",
+          "                    assert!(\n",
+          "                        hit.top() >= footer.top()\n",
+          "                            && hit.bottom() <= footer.bottom()\n",
+          "                            && hit.left() >= footer.left()\n",
+          "                            && hit.right() <= footer.right(),\n",
+          "                        \"original action remains inside fixed footer id={id} base={base}\"\n",
+          "                    );\n",
+          "                }\n",
+          "            }\n",
+          "            tab_to(&mut f.surface, \"download-new-cancel\");\n",
+          "            let cancel = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-cancel-action\")\n",
+          "                .expect(\"Cancel hit\");\n",
+          "            let handle = f.surface.update(|window, _| window.window_handle());\n",
+          "            f.surface\n",
+          "                .simulate_click(cancel.center(), gpui_kit::Modifiers::default());\n",
+          "            f.surface.run_until_parked();\n",
+          "            let closed = f.surface.read(|cx| !cx.windows().contains(&handle));\n",
+          "            cx.update(|cx| ComponentTheme::update(cx, |theme| *theme = original));\n",
+          "            assert!(\n",
+          "                closed,\n",
+          "                \"original Cancel pointer callback closes exact window confirmed={confirmed} base={base}\"\n",
+          "            );\n",
+          "            assert!(cx.read(|cx| f.application.read(cx).tasks().is_empty()));\n",
+          "        }\n",
+          "    }\n",
+          "}\n",
+          "\n",
+          "#[gpui_kit::test]\n",
+          "fn audit06_new_long_inputs_keep_original_entity_and_keyboard_tail_access(cx: &mut TestAppContext) {\n",
+          "    for base in [16.0, 14.0, 18.0] {\n",
+          "        let mut f = fixture(cx, true);\n",
+          "        let original = f.surface.read(|cx| ComponentTheme::global(cx).clone());\n",
+          "        let values = [\n",
+          "            \"D:\\\\合成目录\\\\\".to_owned() + &\"可访问的中文路径层级\\\\\".repeat(20),\n",
+          "            \"可访问的完整中文文件名称\".repeat(24) + \".bin\",\n",
+          "        ];\n",
+          "        let inputs = f.view.read_with(&f.surface, |view, _| {\n",
+          "            [view.directory.clone(), view.file_name.clone()]\n",
+          "        });\n",
+          "        f.surface.update(|window, cx| {\n",
+          "            ComponentTheme::update(cx, |theme| theme.font_size = px(base));\n",
+          "            for (input, value) in inputs.iter().zip(&values) {\n",
+          "                input.update(cx, |state, cx| state.set_value(value.clone(), window, cx));\n",
+          "            }\n",
+          "            f.view.update(cx, |_, cx| cx.notify());\n",
+          "        });\n",
+          "        f.surface.refresh().expect(\"long original Inputs\");\n",
+          "        for (index, selector) in [\n",
+          "            \"download-new-directory-input\",\n",
+          "            \"download-new-file-name-control\",\n",
+          "        ]\n",
+          "        .iter()\n",
+          "        .enumerate()\n",
+          "        {\n",
+          "            let hit = f\n",
+          "                .surface\n",
+          "                .debug_bounds(selector)\n",
+          "                .expect(\"original Input hit\");\n",
+          "            let footer = f\n",
+          "                .surface\n",
+          "                .debug_bounds(\"download-new-footer\")\n",
+          "                .expect(\"footer\");\n",
+          "            assert!(\n",
+          "                hit.top() >= px(34.0) && hit.bottom() <= footer.top(),\n",
+          "                \"long input remains reachable base={base}\"\n",
+          "            );\n",
+          "            f.surface\n",
+          "                .simulate_click(hit.center(), gpui_kit::Modifiers::default());\n",
+          "            assert!(\n",
+          "                f.surface\n",
+          "                    .update(|window, cx| inputs[index].focus_handle(cx).is_focused(window)),\n",
+          "                \"pointer focuses original Input\"\n",
+          "            );\n",
+          "            f.surface.simulate_keystrokes(\"end\");\n",
+          "            f.surface.simulate_input(\"末\");\n",
+          "            assert_eq!(\n",
+          "                inputs[index].read_with(&f.surface, |state, _| state.value()),\n",
+          "                values[index].clone() + \"末\",\n",
+          "                \"real keyboard reaches full long-text tail\"\n",
+          "            );\n",
+          "            f.surface.simulate_keystrokes(\"backspace\");\n",
+          "            assert_eq!(\n",
+          "                inputs[index].read_with(&f.surface, |state, _| state.value()),\n",
+          "                values[index]\n",
+          "            );\n",
+          "            let retained = f.view.read_with(&f.surface, |view, _| {\n",
+          "                if index == 0 {\n",
+          "                    view.directory.clone()\n",
+          "                } else {\n",
+          "                    view.file_name.clone()\n",
+          "                }\n",
+          "            });\n",
+          "            assert_eq!(retained.entity_id(), inputs[index].entity_id());\n",
+          "        }\n",
+          "        f.surface\n",
+          "            .update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));\n",
+          "        assert!(\n",
+          "            f.application\n",
+          "                .read_with(&f.surface, |app, _| app.tasks().is_empty())\n",
+          "        );\n",
+          "        assert!(\n",
+          "            !f.view\n",
+          "                .read_with(&f.surface, |view, _| view.probing || view.submitting)\n",
+          "        );\n",
+          "    }\n",
+          "}\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "baseline": "evidence/baselines/docs__reference-code__download.md.baseline",
+    "snapshot": "evidence/current/docs__reference-code__download.md.current",
+    "baseline_sha256": "57e8012bd1a2bac019c86cb14cd3a9f48ce4832bb22321159762535cdc8d9979",
+    "after_sha256": "4dc87a812cae765702817ff22696c863fae9d824700d58badeed12f9e79ca448",
+    "inherited_prefix_equal": true,
+    "operations": [
+      {
+        "kind": "insert",
+        "before_start": 2996,
+        "before_end": 2996,
+        "after_start": 2996,
+        "after_end": 3024,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "## Audit #6 Queue04: basic New Download relative roles (2026-10-26)\n",
+          "\n",
+          "The bounded basic slice retains Component0.8.0 Small Form/Field, Medium/default Input and\n",
+          "outlined paste/directory Buttons, plus original footer variants and callbacks. Native compact\n",
+          "560x176 and ordinary confirmed560x246 remain fixed (34caption/44footer); the separate278media\n",
+          "base and all error/media sizing and hidden-target native handoff functions are unchanged.\n",
+          "Ordinary16/8body insets,72label rail,32control composition,12/18guidance and inspector text,\n",
+          "13/14vector sizes,120x112ordinary inspector and command gaps now follow the accepted16px\n",
+          "design base through metrics::ordinary_rem or GPUI scale builders. Form.label_width resolves\n",
+          "Rems to Pixels at the Window boundary. Released Small Form/Field internal6/4pixel gaps and\n",
+          "inherited label line metrics remain official; no vendor/theme/font override is added.\n",
+          "\n",
+          "One bounded body scrollbar retains intrinsic form/error height. Compact fallback error wraps\n",
+          "instead of permanently truncating one line; expanded/confirmed errors retain the original\n",
+          "official Alert through a nonshrinking local layout slot. Actual40-line synthetic error wheel\n",
+          "scroll reaches its full end while the fixed footer remains available. Long original Inputs\n",
+          "retain their complete values/entities and accept actual pointer focus,End and tail editing.\n",
+          "Ordinary path-picker rails are local composition only; media uses the original shared helper,\n",
+          "and media inspector pixel roles remain for the next slice. Category/calendar/Popover/media\n",
+          "option internals and all original input/probe/picker/submit/deferred callbacks are preserved.\n",
+          "\n",
+          "Evidence lives in `.trellis/tasks/10-26-rem-new-download-basic/`: actual production Root16/14/18,\n",
+          "paint-time inherited type,default density,scroll-end,public focus sequence and real Cancel\n",
+          "pointer checks. Controlled base-font variation is not Windows DPI; source/compiled fixtures\n",
+          "do not establish physical/native/IME/reader/visual/user or installed-release acceptance.\n",
+          "The earlier compile-only checkpoints and full Desktop failure remain immutable history;\n",
+          "this bounded slice does not close original audit#6 or authorize a full Desktop/package run.\n"
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T02:46:40.6963369Z",
+    "started_utc":  "2026-10-26T02:42:59.4216551Z",
+    "command":  "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit":  0,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit08-first-green.log"
+}

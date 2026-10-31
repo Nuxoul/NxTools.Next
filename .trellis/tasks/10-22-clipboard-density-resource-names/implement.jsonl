@@ -1,0 +1,13 @@
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Existing document/input/native owners and explicit current user amendments"}
+{"file":".trellis/spec/nxtools-core/backend/database-guidelines.md","reason":"Serde compatibility and locked field-only settings merge"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official Settings NumberInput and public theme composition"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"HTTP metadata/cancel/client snapshot and regression boundaries"}
+{"file":".trellis/tasks/10-22-clipboard-density-resource-names/research/reference-evidence.md","reason":"Verified ABDM then legacy filename and Clipboard lifecycle chains"}
+{"file":"docs/reference-code/shellrs-ui.md","reason":"GPL behavior-only theme chooser presentation reference"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Reveal versus original same-host directory navigation invariants"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Exact Explorer target readback, passive windows, hook and Windows ownership"}
+{"file":".trellis/spec/platformhost/diagnostics.md","reason":"Low-noise correlation/native diagnostics without notification payload"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Bounded optional notification bridge Rust/C# DTO compatibility"}
+{"file":"docs/reference-code/clipboard.md","reason":"Stationary-pointer red, exact GPUI paint-hover versus legacy PointerMoved and unchanged native owners"}
+{"file":"docs/reference-code/download.md","reason":"ABDM then legacy completion/Shell chain and recurrent native reader-success/path-alias regressions"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Scoped key-free store ZIP, optional exact ID, original registration/native acceptance boundaries"}

@@ -71,7 +71,7 @@ impl ExtensionManagerView {
         } else if needs_trust {
             "先检查来源和运行环境，再决定是否信任。".into()
         } else if !package.enabled {
-            "启用后才可使用；不会自动运行手动动作。".into()
+            String::new()
         } else if let Some(run) = &recent {
             format!("最近调用：{}", run.state.label())
         } else if package
@@ -102,72 +102,11 @@ impl ExtensionManagerView {
         } else {
             "查看使用方法，找到对应功能入口。".into()
         };
-        let primary_id = id.clone();
-        let primary = if let Some(run) = &pending {
-            let run_id = run.id;
-            let owner = self.application.clone();
-            Button::new(format!("extension-next-{id}"))
-                .label("查看进度")
-                .outline()
-                .disabled(busy)
-                .on_click(move |_, window, cx| {
-                    crate::extensions::manual_actions::show_run(
-                        owner.clone(),
-                        run_id,
-                        None,
-                        window,
-                        cx,
-                    )
-                })
-        } else if needs_trust {
-            extensions_settings::view_button(
-                format!("extension-next-{id}"),
-                "检查并信任",
-                busy,
-                cx.entity().downgrade(),
-                move |view, window, cx| view.open_trust(primary_id.clone(), window, cx),
-            )
-        } else if !package.enabled {
-            extensions_settings::app_button(
-                format!("extension-toggle-{id}"),
-                "启用插件",
-                busy,
-                self.application.downgrade(),
-                move |app, cx| app.set_enabled(primary_id.clone(), true, cx),
-            )
-        } else {
-            extensions_settings::view_button(
-                format!("extension-next-{id}"),
-                "使用方法",
-                busy,
-                cx.entity().downgrade(),
-                move |view, window, cx| view.open_usage(primary_id.clone(), window, cx),
-            )
-        };
-        let manage_id = id.clone();
-        let mut actions = div()
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .gap_2()
-            .child(primary)
-            .child(extensions_settings::view_button(
-                format!("extension-manage-{id}"),
-                "详情",
-                busy,
-                cx.entity().downgrade(),
-                move |view, _, _| view.open_package(manage_id.clone()),
-            ));
-        if package.enabled {
-            let toggle_id = id.clone();
-            actions = actions.child(extensions_settings::app_button(
-                format!("extension-toggle-{id}"),
-                "停用",
-                busy,
-                self.application.downgrade(),
-                move |app, cx| app.set_enabled(toggle_id.clone(), false, cx),
-            ));
-        }
+        let action_view = cx.entity().downgrade();
+        let action_application = self.application.clone();
+        let action_id = id.clone();
+        let pending_id = pending.as_ref().map(|run| run.id);
+        let enabled = package.enabled;
         ListItem::new(format!("extension-package-{id}"))
             .accessibility_label(format!("{}，{}", package.manifest.name, status))
             .w_full()
@@ -177,9 +116,85 @@ impl ExtensionManagerView {
             .border_1()
             .border_color(Theme::active(cx).border_subtle)
             .bg(Theme::active(cx).surface)
+            // The public suffix is a root-level slot; pin the official actions to the
+            // content-derived grid cell, not its shorter, vertically centered body.
+            .suffix(move |_, _| {
+                let id = &action_id;
+                let primary_id = id.clone();
+                let primary = if let Some(run_id) = pending_id {
+                    let owner = action_application.clone();
+                    Button::new(format!("extension-next-{id}"))
+                        .label("查看进度")
+                        .outline()
+                        .disabled(busy)
+                        .on_click(move |_, window, cx| {
+                            crate::extensions::manual_actions::show_run(
+                                owner.clone(),
+                                run_id,
+                                None,
+                                window,
+                                cx,
+                            )
+                        })
+                } else if needs_trust {
+                    extensions_settings::view_button(
+                        format!("extension-next-{id}"),
+                        "检查并信任",
+                        busy,
+                        action_view.clone(),
+                        move |view, window, cx| view.open_trust(primary_id.clone(), window, cx),
+                    )
+                } else if !enabled {
+                    extensions_settings::app_button(
+                        format!("extension-toggle-{id}"),
+                        "启用插件",
+                        busy,
+                        action_application.downgrade(),
+                        move |app, cx| app.set_enabled(primary_id.clone(), true, cx),
+                    )
+                } else {
+                    extensions_settings::view_button(
+                        format!("extension-next-{id}"),
+                        "使用方法",
+                        busy,
+                        action_view.clone(),
+                        move |view, window, cx| view.open_usage(primary_id.clone(), window, cx),
+                    )
+                };
+                let manage_id = id.clone();
+                let mut actions = div()
+                    .absolute()
+                    .left_4()
+                    .right_4()
+                    .bottom_4()
+                    .flex_shrink_0()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(primary)
+                    .child(extensions_settings::view_button(
+                        format!("extension-manage-{id}"),
+                        "详情",
+                        busy,
+                        action_view.clone(),
+                        move |view, _, _| view.open_package(manage_id.clone()),
+                    ));
+                if enabled {
+                    let toggle_id = id.clone();
+                    actions = actions.child(extensions_settings::app_button(
+                        format!("extension-toggle-{id}"),
+                        "停用",
+                        busy,
+                        action_application.downgrade(),
+                        move |app, cx| app.set_enabled(toggle_id.clone(), false, cx),
+                    ));
+                }
+                actions
+            })
             .child(
                 div()
                     .min_w_0()
+                    .pb_11()
                     .flex()
                     .flex_col()
                     .gap_3()
@@ -235,14 +250,15 @@ impl ExtensionManagerView {
                                     .line_clamp(1)
                                     .child(modes),
                             )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(Theme::active(cx).text_secondary)
-                                    .child(hint),
-                            ),
-                    )
-                    .child(actions),
+                            .when(!hint.is_empty(), |body| {
+                                body.child(
+                                    div()
+                                        .text_sm()
+                                        .text_color(Theme::active(cx).text_secondary)
+                                        .child(hint),
+                                )
+                            }),
+                    ),
             )
             .into_any_element()
     }
@@ -277,9 +293,10 @@ impl ExtensionManagerView {
                             cx.defer(move|cx|{let _=view.update(cx,|view,cx|{view.open_package(id);view.detail_initial_page=target_page;cx.notify();});});
                         });
                     let close=Button::new("extension-usage-close").debug_selector(||"extension-usage-close".into()).label("知道了").outline().on_click(|_,window,cx|window.close_dialog(cx));
-                    let settings=Button::new("extension-usage-settings").label("打开设置").outline().on_click(move|_,window,cx| {
+                    let settings=Button::new("extension-usage-settings").debug_selector(||"extension-usage-settings".into()).label("打开设置").outline().on_click(move|_,window,cx| {
                         window.close_dialog(cx);let view=settings_view.clone();let id=settings_id.clone();
-                        cx.defer(move|cx|{let _=view.update(cx,|view,cx|{view.open_package(id);cx.notify();});});
+                        let source=window.window_handle();
+                        cx.defer(move|cx|{let _=source.update(cx,|_,window,cx|{let _=view.update(cx,|view,cx|{view.open_settings(id,window,cx);cx.notify();});});});
                     });
                     dialog.title("如何使用").w((window.viewport_size().width-px(32.0)).min(px(560.0)))
                         .child(body).footer(gpui_kit::component::dialog::DialogFooter::new().child(entry).child(settings).child(close))

@@ -20,8 +20,8 @@ use gpui_kit::component::{Disableable, Icon, IndexPath, Sizable};
 use gpui_kit::{
     Anchor, AnyElement, AnyWindowHandle, App, Context, Entity, EventEmitter, Focusable, FontWeight,
     IntoElement, MouseButton, Render, ScrollHandle, Subscription, Task, Window,
-    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowDecorations, WindowKind,
-    WindowOptions, div, prelude::*, px, size,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, div,
+    prelude::*, px, size,
 };
 use nxtools_core::DownloadRowDoubleClickActionSettings;
 use nxtools_core::{
@@ -95,8 +95,15 @@ mod completion_shutdown_impl;
 #[cfg(debug_assertions)]
 pub(crate) mod completion_transition_preview;
 mod delete_confirmation;
+mod detail_request;
+#[cfg(test)]
+pub(crate) mod detail_request_tests;
+mod directory_picker;
+#[cfg(test)]
+mod directory_picker_tests;
 #[cfg(debug_assertions)]
 pub(crate) mod fixed_transition_preview;
+mod floating_assistant;
 mod new_download_view;
 #[cfg(test)]
 mod polish_tests;
@@ -113,6 +120,8 @@ use self::artifact_actions::PendingDownloadArtifactAction;
 #[cfg(test)]
 use self::artifact_actions::resolve_download_artifact_target;
 use self::delete_confirmation::*;
+pub(crate) use self::detail_request::DownloadDetailScope;
+use self::directory_picker::*;
 use self::new_download_view::*;
 use self::schedule_view::*;
 use self::settings_view::*;
@@ -121,10 +130,6 @@ use self::task_window::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DownloadApplicationEvent {
-    DirectoryPicked {
-        target: DownloadDirectoryTarget,
-        path: PathBuf,
-    },
     FfmpegExecutablePicked {
         path: PathBuf,
     },
@@ -200,6 +205,7 @@ pub(crate) enum DownloadDirectoryTarget {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DownloadSettingsDraft {
     default_directory: PathBuf,
+    chrome_web_store_extension_id: String,
     automatic_categories_enabled: bool,
     categories: Vec<DownloadCategorySettings>,
     duplicate_strategy: DownloadDuplicateStrategySettings,
@@ -513,7 +519,7 @@ struct PendingDownloadTaskIcon {
     started_at: Instant,
 }
 
-const DOWNLOAD_TASK_ICON_SIZE: u32 = 24;
+const DOWNLOAD_TASK_ICON_SIZE: u32 = 48;
 const DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT: usize = 8;
 const DOWNLOAD_TASK_ICON_RETRY_DELAY: Duration = Duration::from_secs(5);
 
@@ -573,9 +579,10 @@ pub(crate) struct DownloadApplication {
     platform: Rc<PlatformBridge>,
     notifications: Entity<NotificationCenter>,
     default_directory: PathBuf,
-    tasks: Vec<DownloadEngineTask>,
+    tasks: Rc<Vec<DownloadEngineTask>>,
     task_detail: Option<DownloadTaskDetail>,
     task_detail_error: Option<(DownloadTaskId, String)>,
+    detail_requests: detail_request::DetailRequests,
     snapshot_error: Option<String>,
     queues: Vec<DownloadQueue>,
     latest_progress: HashMap<DownloadTaskId, DownloadProgress>,
@@ -628,9 +635,11 @@ pub(crate) struct DownloadApplication {
     ffmpeg_install_directory: PathBuf,
     show_progress_window: bool,
     show_completion_window: bool,
-    pending_directory_picker: Option<(uuid::Uuid, DownloadDirectoryTarget)>,
+    pending_directory_picker: Option<PendingDownloadDirectoryPicker>,
     pending_settings_path_actions: HashMap<uuid::Uuid, PendingDownloadSettingsPathAction>,
     pending_extension_export: Option<PendingExtensionExport>,
+    pending_browser_registration: Option<(uuid::Uuid, Instant)>,
+    pending_browser_store_page: Option<(uuid::Uuid, Instant)>,
     pending_ffmpeg_operations: HashMap<uuid::Uuid, PendingFfmpegPlatformOperation>,
     ffmpeg_install_state: FfmpegInstallViewState,
     pending_ffmpeg_install: Option<PendingFfmpegInstall>,
@@ -780,9 +789,10 @@ impl DownloadApplication {
             platform,
             notifications,
             default_directory,
-            tasks,
+            tasks: Rc::new(tasks),
             task_detail: None,
             task_detail_error: None,
+            detail_requests: detail_request::DetailRequests::default(),
             snapshot_error: None,
             queues,
             latest_progress: HashMap::new(),
@@ -813,6 +823,7 @@ impl DownloadApplication {
                     cx.defer(move |cx| {
                         let _ = application.update(cx, |application, cx| {
                             application.cleanup_new_download_handoff(cx);
+                            application.cleanup_directory_picker(cx);
                         });
                     });
                 })
@@ -844,6 +855,8 @@ impl DownloadApplication {
             pending_directory_picker: None,
             pending_settings_path_actions: HashMap::new(),
             pending_extension_export: None,
+            pending_browser_registration: None,
+            pending_browser_store_page: None,
             pending_ffmpeg_operations: HashMap::new(),
             ffmpeg_install_state: FfmpegInstallViewState::Idle,
             pending_ffmpeg_install: None,
@@ -877,7 +890,15 @@ impl DownloadApplication {
 
     #[cfg(test)]
     pub(crate) fn replace_tasks_for_test(&mut self, tasks: Vec<DownloadEngineTask>) {
-        self.tasks = tasks;
+        self.tasks = Rc::new(tasks);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn replace_progress_for_test(&mut self, progress: Vec<DownloadProgress>) {
+        self.latest_progress = progress
+            .into_iter()
+            .map(|progress| (progress.task_id, progress))
+            .collect();
     }
 
     #[cfg(test)]
@@ -914,7 +935,18 @@ impl DownloadApplication {
         &self.tasks
     }
 
+    /// Shares the authoritative immutable snapshot with deferred row composition.
+    pub(crate) fn task_snapshot(&self) -> Rc<Vec<DownloadEngineTask>> {
+        Rc::clone(&self.tasks)
+    }
+
+    pub(crate) fn task_removal_deletes_file(&self) -> bool {
+        self.config.download.task_removal_deletes_file
+    }
+
     pub(crate) fn task_icon_path(&self, task_id: DownloadTaskId) -> Option<&Path> {
+        #[cfg(test)]
+        crate::main_window::projection_tests::observe_icon_read();
         self.task_icons.get(&task_id).map(PathBuf::as_path)
     }
 
@@ -999,27 +1031,6 @@ impl DownloadApplication {
         self.snapshot_error.as_deref()
     }
 
-    pub(crate) fn request_task_detail(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
-        if self.task_detail(task_id).is_some() {
-            return;
-        }
-        match load_download_task_detail(&self.engine, task_id) {
-            Ok(detail) => {
-                self.task_detail = Some(detail);
-                self.task_detail_error = None;
-            }
-            Err(error) => {
-                warn!(
-                    task_id = %task_id.as_uuid(),
-                    "could not load selected download task detail"
-                );
-                self.task_detail = None;
-                self.task_detail_error = Some((task_id, error));
-            }
-        }
-        cx.notify();
-    }
-
     fn default_queue(&self) -> Option<&DownloadQueue> {
         self.queues.iter().find(|queue| queue.id == "default")
     }
@@ -1027,6 +1038,11 @@ impl DownloadApplication {
     fn settings_draft(&self) -> DownloadSettingsDraft {
         DownloadSettingsDraft {
             default_directory: self.default_directory.clone(),
+            chrome_web_store_extension_id: self
+                .config
+                .download
+                .chrome_web_store_extension_id
+                .clone(),
             automatic_categories_enabled: self.config.download.automatic_categories_enabled,
             categories: self.config.download.categories.clone(),
             duplicate_strategy: self.config.download.duplicate_strategy,
@@ -1085,6 +1101,8 @@ impl DownloadApplication {
     }
 
     pub(crate) fn progress(&self, task_id: DownloadTaskId) -> Option<&DownloadProgress> {
+        #[cfg(test)]
+        crate::main_window::projection_tests::observe_progress_read();
         self.latest_progress.get(&task_id)
     }
 
@@ -1448,56 +1466,6 @@ impl DownloadApplication {
             ),
         }
         cx.notify();
-    }
-
-    fn request_directory(
-        &mut self,
-        current_directory: String,
-        target: DownloadDirectoryTarget,
-        cx: &mut Context<Self>,
-    ) {
-        if self.pending_directory_picker.is_some() {
-            return;
-        }
-        match self
-            .platform
-            .send_command(PlatformCommand::PickDirectory(PickDirectoryCommand {
-                current_directory,
-                title: "选择下载保存目录".into(),
-            })) {
-            Ok(command_id) => {
-                self.pending_directory_picker = Some((command_id, target));
-                info!(
-                    event = "download.directory_picker.accepted",
-                    %command_id,
-                    ?target,
-                    "download directory picker accepted"
-                );
-            }
-            Err(error) => {
-                self.notifications.update(cx, |notifications, cx| {
-                    notifications.show_error(
-                        format!("download-directory-picker-{}", uuid::Uuid::new_v4()),
-                        "无法打开目录选择器",
-                        error.to_string(),
-                        cx,
-                    );
-                });
-            }
-        }
-        cx.notify();
-    }
-
-    pub(crate) fn request_new_download_directory(
-        &mut self,
-        current_directory: String,
-        cx: &mut Context<Self>,
-    ) {
-        self.request_directory(current_directory, DownloadDirectoryTarget::NewTask, cx);
-    }
-
-    fn request_settings_directory(&mut self, current_directory: String, cx: &mut Context<Self>) {
-        self.request_directory(current_directory, DownloadDirectoryTarget::Settings, cx);
     }
 
     fn request_ffmpeg_executable(&mut self, current_path: String, cx: &mut Context<Self>) {
@@ -2225,9 +2193,13 @@ impl DownloadApplication {
         let opened_view_slot = Rc::clone(&view_slot);
         let opened = cx.open_window(window_options, move |window, cx| {
             let close_application = application.clone();
+            let closing_window = window.window_handle();
             window.on_window_should_close(cx, move |_, cx| {
-                close_application.update(cx, |application, cx| {
-                    application.handle_settings_window_closed(cx);
+                let application = close_application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |application, cx| {
+                        application.handle_native_settings_window_closed(closing_window, cx);
+                    });
                 });
                 true
             });
@@ -2627,7 +2599,30 @@ impl DownloadApplication {
         cx.notify();
     }
 
+    fn handle_native_settings_window_closed(
+        &mut self,
+        window: AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
+        if self.settings_window == Some(window) {
+            self.handle_settings_window_closed(cx);
+        } else if self
+            .pending_directory_picker
+            .as_ref()
+            .is_some_and(|pending| pending.request.window == window)
+        {
+            self.retire_directory_picker("window_closed", cx);
+        }
+    }
+
     fn handle_settings_window_closed(&mut self, cx: &mut Context<Self>) {
+        if self
+            .pending_directory_picker
+            .as_ref()
+            .is_some_and(|pending| Some(pending.request.window) == self.settings_window)
+        {
+            self.retire_directory_picker("window_closed", cx);
+        }
         self.settings_window = None;
         #[cfg(test)]
         {
@@ -2660,6 +2655,16 @@ impl DownloadApplication {
             );
             Err(message)
         };
+        if !nxtools_core::is_valid_chrome_web_store_extension_id(
+            &draft.chrome_web_store_extension_id,
+        ) {
+            return failed(
+                "validation",
+                "Chrome 商店扩展 ID 必须留空或为 32 位 a–p 小写字母".into(),
+            );
+        }
+        let browser_identity_changed = self.config.download.chrome_web_store_extension_id
+            != draft.chrome_web_store_extension_id;
         if draft.default_directory.exists() && !draft.default_directory.is_dir() {
             return failed("validation", "默认保存位置不是文件夹".into());
         }
@@ -2685,6 +2690,7 @@ impl DownloadApplication {
         let previous_speed_limit = self.engine.global_speed_limit();
         let next_download_settings = DownloadSettings {
             default_directory: draft.default_directory.to_string_lossy().into_owned(),
+            chrome_web_store_extension_id: draft.chrome_web_store_extension_id.clone(),
             automatic_categories_enabled: draft.automatic_categories_enabled,
             categories: draft.categories.clone(),
             duplicate_strategy: draft.duplicate_strategy,
@@ -2764,6 +2770,15 @@ impl DownloadApplication {
                 }
             };
         self.config = next_config;
+        if browser_identity_changed
+            || !self
+                .config
+                .download
+                .chrome_web_store_extension_id
+                .is_empty()
+        {
+            self.request_browser_registration(correlation_id, cx);
+        }
         self.apply_background_speed_policy(correlation_id)?;
         if let Err(error) = self
             .engine
@@ -2908,6 +2923,9 @@ impl DownloadApplication {
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        if self.handle_browser_store_page(&notification, cx) {
+            return;
+        }
         if let PlatformNotification::Event(PlatformEvent::ForegroundChanged(foreground)) =
             &notification
         {
@@ -2934,29 +2952,7 @@ impl DownloadApplication {
             self.failed_task_icon_resources.clear();
             self.request_task_icons();
             let correlation_id = uuid::Uuid::new_v4();
-            match self.platform.send_command_correlated(
-                PlatformCommand::EnsureBrowserNativeMessaging(
-                    EnsureBrowserNativeMessagingCommand {
-                        enabled: true,
-                        chromium_extension_id: "haohhnpjfggpdadhcbjakjpkmkljkpif".into(),
-                        firefox_extension_id: "nxtools-download-interceptor@nxtools.local".into(),
-                    },
-                ),
-                correlation_id,
-            ) {
-                Ok(command_id) => info!(
-                    event = "download.browser_native_messaging.registration_requested",
-                    %correlation_id,
-                    %command_id,
-                    "browser native messaging registration queued after PlatformHost connected"
-                ),
-                Err(error) => warn!(
-                    event = "download.browser_native_messaging.registration_request_failed",
-                    %correlation_id,
-                    %error,
-                    "browser native messaging registration could not be queued"
-                ),
-            }
+            self.request_browser_registration(correlation_id, cx);
             match self.apply_taskbar_overlay_placement(correlation_id) {
                 Ok(command_id) => info!(
                     event = "download.taskbar_overlay.reconnect_restore_accepted",
@@ -2997,8 +2993,9 @@ impl DownloadApplication {
             self.pending_task_icon_resources.clear();
             self.pending_task_window_activations.clear();
             self.pending_taskbar_overlay_gestures.clear();
-            self.pending_directory_picker = None;
+            self.retire_directory_picker("disconnected", cx);
             self.pending_settings_path_actions.clear();
+            self.finish_browser_registration(false, None, "disconnected", cx);
             if let Some(pending) = self.pending_extension_export.take() {
                 let elapsed = pending.started_at.elapsed().as_millis();
                 self.publish_extension_export_status(
@@ -3173,6 +3170,18 @@ impl DownloadApplication {
             return;
         }
         if self
+            .pending_browser_registration
+            .is_some_and(|(id, _)| id == correlation_id)
+        {
+            self.finish_browser_registration(
+                result.success,
+                result.native_error_code,
+                "native_result",
+                cx,
+            );
+            return;
+        }
+        if self
             .pending_extension_export
             .as_ref()
             .is_some_and(|pending| pending.command_id == correlation_id)
@@ -3286,67 +3295,17 @@ impl DownloadApplication {
             cx.notify();
             return;
         }
-        let Some((pending_id, target)) = self.pending_directory_picker else {
-            return;
-        };
-        if pending_id != correlation_id {
-            return;
-        }
-        self.pending_directory_picker = None;
-        self.handle_directory_result(correlation_id, target, result, cx);
+        self.handle_directory_result(correlation_id, result, cx);
     }
 
     fn handle_directory_result(
         &mut self,
         correlation_id: uuid::Uuid,
-        target: DownloadDirectoryTarget,
         result: PlatformCommandResult,
         cx: &mut Context<Self>,
     ) {
-        if result.success {
-            if let Some(path) = result.data.filter(|path| !path.trim().is_empty()) {
-                info!(
-                    event = "download.directory_picker.succeeded",
-                    %correlation_id,
-                    ?target,
-                    "download directory picker completed"
-                );
-                cx.emit(DownloadApplicationEvent::DirectoryPicked {
-                    target,
-                    path: PathBuf::from(path),
-                });
-            } else {
-                info!(
-                    event = "download.directory_picker.cancelled",
-                    %correlation_id,
-                    ?target,
-                    "download directory picker completed without a selection"
-                );
-            }
-        } else {
-            let native_error_present = result.error.is_some();
-            let reason = result
-                .error
-                .unwrap_or_else(|| "Windows 未返回错误详情".into());
-            self.notifications.update(cx, |notifications, cx| {
-                notifications.show_error(
-                    format!("download-directory-picker-{correlation_id}"),
-                    "无法选择下载目录",
-                    reason,
-                    cx,
-                );
-            });
-            warn!(
-                event = "download.directory_picker.failed",
-                %correlation_id,
-                ?target,
-                native_error_present,
-                "download directory picker failed"
-            );
-        }
-        cx.notify();
+        self.receive_directory_result(correlation_id, result, cx);
     }
-
     fn refresh(&mut self, cx: &mut Context<Self>) {
         self.refresh_snapshot(true, cx);
     }
@@ -3530,33 +3489,11 @@ impl DownloadApplication {
         self.latest_progress.clear();
         self.last_event_sequence = snapshot.sequence;
         self.publish_terminal_notifications(&tasks, cx);
-        self.tasks = tasks;
+        self.tasks = Rc::new(tasks);
         self.queues = snapshot.queues;
         self.request_task_icons();
-        if refresh_task_detail
-            && let Some(task_id) = self
-                .task_detail
-                .as_ref()
-                .map(|detail| detail.task.task.id())
-        {
-            if self.tasks.iter().any(|task| task.task.id() == task_id) {
-                match load_download_task_detail(&self.engine, task_id) {
-                    Ok(detail) => {
-                        self.task_detail = Some(detail);
-                        self.task_detail_error = None;
-                    }
-                    Err(error) => {
-                        warn!(
-                            task_id = %task_id.as_uuid(),
-                            "could not refresh selected download task detail"
-                        );
-                        self.task_detail_error = Some((task_id, error));
-                    }
-                }
-            } else {
-                self.task_detail = None;
-                self.task_detail_error = None;
-            }
+        if refresh_task_detail {
+            self.refresh_selected_task_detail(cx);
         }
         let task_states = self
             .tasks
@@ -3606,6 +3543,12 @@ impl DownloadApplication {
             self.last_event_sequence = 0;
         }
         let sequence = envelope.sequence;
+        let detail_rejected =
+            if let DownloadEvent::CommandRejected { request_id, .. } = &envelope.event {
+                self.claim_detail_rejection(*request_id, cx)
+            } else {
+                false
+            };
         if self.last_event_sequence != 0 && sequence <= self.last_event_sequence {
             warn!(
                 event = "download.desktop.stale_event_dropped",
@@ -3625,6 +3568,14 @@ impl DownloadApplication {
             );
         }
         self.last_event_sequence = sequence;
+        // Read-only TaskDetail rejection is owned by its correlated async reply.
+        // It cannot trigger a query -> rejection -> snapshot -> query loop.
+        if detail_rejected {
+            if sequence_gap {
+                self.refresh_snapshot(false, cx);
+            }
+            return;
+        }
         let progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
         if sequence_gap && progress_event {
             self.refresh_snapshot(true, cx);

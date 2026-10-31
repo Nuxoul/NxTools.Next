@@ -1,0 +1,47 @@
+[package]
+name = "nxtools-archive"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "nxtools-archive-worker"
+path = "src/worker_main.rs"
+
+[features]
+isolated-codecs = ["dep:sevenz-rust2", "dep:unrar_sys"]
+
+[dependencies]
+nxtools-ipc = { path = "../nxtools-ipc" }
+nxtools-protocol = { path = "../nxtools-protocol" }
+async-channel.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+base64 = "=0.22.1"
+aes = { version = "=0.8.4", features = ["zeroize"] }
+hmac = "=0.12.1"
+pbkdf2 = { version = "=0.12.2", default-features = false, features = ["hmac"] }
+sha1 = { version = "=0.10.6", default-features = false }
+subtle = { version = "=2.6.1", default-features = false }
+bzip2 = "=0.6.1"
+deflate64 = { version = "=0.1.12", default-features = false }
+tar = { version = "=0.4.46", default-features = false }
+tempfile = "=3.27.0"
+lzma-rust2 = { version = "=0.21.0", default-features = false, features = ["std", "xz", "encoder"] }
+zstd-safe = { version = "=7.2.4", default-features = false, features = ["std"] }
+globset = { version = "=0.4.19", default-features = false }
+encoding_rs.workspace = true
+crc32fast = "=1.5.0"
+flate2 = { version = "=1.1.9", default-features = false, features = ["zlib-rs"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+uuid.workspace = true
+zip = { workspace = true, features = ["aes-crypto"] }
+zeroize = "=1.9.0"
+sevenz-rust2 = { version = "=0.23.0", default-features = false, features = ["compress", "aes256"], optional = true }
+unrar_sys = { version = "=0.5.8", optional = true }
+
+[lints]
+workspace = true

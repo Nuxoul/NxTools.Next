@@ -1,0 +1,2542 @@
+{
+  "created_utc": "2026-10-26T07:33:57.267593+00:00",
+  "status": "IMPLEMENTED_BOUNDED_VERIFICATION_WITH_BASELINE_QUALITY_BLOCKERS",
+  "basis": "Live dirty task-start snapshot, not HEAD",
+  "files": [
+    {
+      "path": "evidence/baseline/.trellis/spec/browser-extension/contracts.md",
+      "bytes": 10594,
+      "sha256": "c182f0ce6d4eabe6959d29286c63af8b1bf5feed9bfe35ab8356382b3dea48c4"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/browser-extension/index.md",
+      "bytes": 2897,
+      "sha256": "b3f8f095bc5ea55cb5985b1fc575372c40719dcec75effbe3b81d287a8700ecc"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/browser-extension/ui-guidelines.md",
+      "bytes": 4004,
+      "sha256": "d58c918f9f12e7835b7cceab0ea7196ee52908177aa2558a659e9aacac983449"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/guides/code-reuse-thinking-guide.md",
+      "bytes": 7381,
+      "sha256": "86fd10dc10916c00309714aa2275234f01b0ad40d21a485d43b3422e7ca79397"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/guides/cross-layer-thinking-guide.md",
+      "bytes": 14979,
+      "sha256": "4c54130c02a7b8bc43f9a012e0837f798f43e2d137d6bc6d7498d2adb0bac3f4"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/guides/index.md",
+      "bytes": 4104,
+      "sha256": "c62205c77c49a17cf34e70f9d4469ea1e7cdd87b934190b0768d88140e529aaa"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/index.md",
+      "bytes": 5121,
+      "sha256": "c70846728447b4a42563478bbd7a8f98fca7f44d23599964c61f875dd0e845ca"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/database-guidelines.md",
+      "bytes": 2250,
+      "sha256": "93df33ad1985895b608512ff51c1eaea41f0e340edd5cbe35c171be758ec62d4"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/directory-structure.md",
+      "bytes": 3835,
+      "sha256": "52e6e53546fcdf0f5ca5125a60bbe8978cfc368eb89725a9a4bf01b5bc49125e"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/error-handling.md",
+      "bytes": 22982,
+      "sha256": "1654b8ce2ca63c1bb35397c660eb91816fffbdcb1a17f22eb98dbe673f5becdb"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/extraction-metadata.md",
+      "bytes": 6288,
+      "sha256": "94482054e94f87abb5fbebde22118d276d51e3bc8cb3cc3d57bc9b19b42e153c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/index.md",
+      "bytes": 4290,
+      "sha256": "e2cb666f12f217f37c1ba1b6bafdc3a36e323c8d433621a9f53c21cff270e27c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/logging-guidelines.md",
+      "bytes": 2407,
+      "sha256": "d35fc22f187b0f22b7a19d9fd3e0ed0b94aa1f266d90e4b965fa0e9184b8ca91"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/product-jobs.md",
+      "bytes": 5869,
+      "sha256": "887666673c2761c7d9ea490f4d7b40b255316e99397a409d1ad18866c68e8146"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/product-read.md",
+      "bytes": 18535,
+      "sha256": "d5d67b5e063ce766e432bf4015f473a5d420eab01b28639af081da6624af8d9c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/quality-guidelines.md",
+      "bytes": 32345,
+      "sha256": "13b89d23709c48a6b547711e47d25b5aa3618286ec0c529ba6f30d02a6fa4764"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/rar-safety.md",
+      "bytes": 10779,
+      "sha256": "13d4ae5469fd3169e13ab7ee8ded663860cbf086a5b8ac2d98f00a8d39d4058b"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/sevenz-safety.md",
+      "bytes": 9355,
+      "sha256": "5a0b25846fcd0e390619903d9051a43a0e187034b88b6cf7dfb9dc6b3a013003"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/source-deletion.md",
+      "bytes": 6223,
+      "sha256": "ebb7349f01d9ef13298cadec2268119f38723881e20cde808fc39fb7f82f8fb0"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/tar-stream-safety.md",
+      "bytes": 11109,
+      "sha256": "88b67ef700156840cf05518fb0521c24709305c9ff062ce172d4c8e3f47aecdb"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-archive/backend/zip-volumes.md",
+      "bytes": 5891,
+      "sha256": "f940c1773c1f47a021fe8ce8a6b9d3103d4b92951d7175ad3604d6ec9754c7a2"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-browser-host/backend/database-guidelines.md",
+      "bytes": 706,
+      "sha256": "6440f2b27a77847c077f84d2a6085144926c15f1162e4258d2219cfdd691c2d8"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-browser-host/backend/directory-structure.md",
+      "bytes": 742,
+      "sha256": "3b3aeae39e5becab2a1399c9d12b95d56816b02652039e5b9dfbdb144627b2f6"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-browser-host/backend/error-handling.md",
+      "bytes": 679,
+      "sha256": "05a2e1e67573609c9bf3e5658492dbcc29c2abdaac5904cb1fa69f1305c44de0"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-browser-host/backend/index.md",
+      "bytes": 916,
+      "sha256": "6c0b91ed5270a967ce92cc9663c3d31b10c7cf89f8ddffb22106852ac949c4e1"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-browser-host/backend/logging-guidelines.md",
+      "bytes": 634,
+      "sha256": "bdf0167e14c8f7fb380c76c3ab4e43b7641a3b9f02be18b75460f907ee258aef"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-browser-host/backend/quality-guidelines.md",
+      "bytes": 2793,
+      "sha256": "a616b3d74c42f95c5c6ec8cf8064021a3d757c329c00097628fed66bd1f82fa9"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/archive-commands.md",
+      "bytes": 5876,
+      "sha256": "6a2179a898c017041d2be4bb6a1916fae3be20d8b9fba2d263eb3073b71c8643"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/database-guidelines.md",
+      "bytes": 574,
+      "sha256": "8ed2a0e1edc89fee973d90f81b190fd0d4d90fdfaa572b3b70130d2e62cc4afd"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/directory-structure.md",
+      "bytes": 1187,
+      "sha256": "21ec9153be89f43afb1d06c9e346a3f4ec3195e7c0af569661ddb0d79cf944bf"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/error-handling.md",
+      "bytes": 1314,
+      "sha256": "1b7524c758d6cc853ea8d8547d2e4a4c28197caf6253a1d42388d4895cfb40c3"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/index.md",
+      "bytes": 912,
+      "sha256": "a7451ace6edea0869d1cddf9752317a6ad6c914797ac227e7a0d402663469c0f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/logging-guidelines.md",
+      "bytes": 504,
+      "sha256": "8ca3d545e18bd6e143ba5029c7e1b2c4ca1e5bfee454b43d8f0e44a9d4bbb3b6"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-cli/backend/quality-guidelines.md",
+      "bytes": 3481,
+      "sha256": "80693aa1c03ecff3522d091efa35b1641edf432a2a110e42b4e128b04c827687"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-clipboard/backend/database-guidelines.md",
+      "bytes": 6515,
+      "sha256": "3462ef7e39729cd428db3f3e9db81acd011e2ccefdf1e649bc99105a8a53682d"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-clipboard/backend/directory-structure.md",
+      "bytes": 993,
+      "sha256": "6436a7f4116d863fd2c06857845cb41a7a46b7b9f213014f188793e88d2835c8"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-clipboard/backend/error-handling.md",
+      "bytes": 812,
+      "sha256": "1aa0e8020f6783222cd587602a82763862445099077d80c1f40a3559eafa6f75"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-clipboard/backend/index.md",
+      "bytes": 980,
+      "sha256": "0990460b567590f32cfdb412da178667436205f8950dbfcca22f46b0bb978699"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-clipboard/backend/logging-guidelines.md",
+      "bytes": 682,
+      "sha256": "ecc00f754f88f721ecbd24341a71cdb8daab406389be5a06305dcc23b2acb85c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-clipboard/backend/quality-guidelines.md",
+      "bytes": 3080,
+      "sha256": "228e846d6c9c97e32b7be8c08ff3bb1dff725a38e67af875f13b5a5547b38594"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-core/backend/database-guidelines.md",
+      "bytes": 5556,
+      "sha256": "01738a8e019ff9f5851f2e63f520e82b94d55f7e651af4c4890a9272d16d9c74"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-core/backend/directory-structure.md",
+      "bytes": 916,
+      "sha256": "4480258ed95f85045c3f427eae9801ade4e3bf148acf056c2d665df09659de70"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-core/backend/error-handling.md",
+      "bytes": 859,
+      "sha256": "63c186061031138da55b8310cad252ffce258c465d0697fdad0c516aceac64c3"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-core/backend/index.md",
+      "bytes": 1211,
+      "sha256": "a5b0fab12ee46104e763670a41bf15ace73d90ae812264e2438ad08379ef4f8a"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-core/backend/logging-guidelines.md",
+      "bytes": 785,
+      "sha256": "754c76660d10879a28404df632b0109ea0904cc96c18fe4bc61f9067192084e1"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-core/backend/quality-guidelines.md",
+      "bytes": 857,
+      "sha256": "e97bad88d190e6169cffff6d750d13c4c106d6f6f3f7081751b642ae7edbdc8d"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/database-guidelines.md",
+      "bytes": 5867,
+      "sha256": "8059e8e01f1565a48d054f654af1ed4ce2bd8347cebb5522fe341b780920b218"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/directory-structure.md",
+      "bytes": 1485,
+      "sha256": "04c6a95e637a735a7d0a6d24bc6fdb863ca29b152fb4fa158bfff1a7556fcc48"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/error-handling.md",
+      "bytes": 904,
+      "sha256": "ef86dfdef3b7770ae0e912bb63b3bc9cb4b3a15f502c77f3482345a222e580fb"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/index.md",
+      "bytes": 2992,
+      "sha256": "888ff5a462dd45eafbf9bc91894d246f1b54c26b13fa597f24559bcaa262736b"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/logging-guidelines.md",
+      "bytes": 844,
+      "sha256": "e836c4a82225f890d935d884f0de38c1c6299a571453c1133db6f6c77ecdb701"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/quality-guidelines.md",
+      "bytes": 75923,
+      "sha256": "8d8b17d34df03af222a1e68c045cce526d9b516629da186ca29018a69750b201"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md",
+      "bytes": 44615,
+      "sha256": "4fd197940bcae8f4eb692ad3dbed90ebecaabe8496c7609e7b4f809cbe78c5cd"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download/backend/database-guidelines.md",
+      "bytes": 6428,
+      "sha256": "7ae2d688afca3382d7cd7dff030d1348dffa36406cc2fa8ddcb5d9c57372ac8f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download/backend/directory-structure.md",
+      "bytes": 1244,
+      "sha256": "2155d76d63628a4565a588ea90bff1e8bf96f8caf9a6bfa098b81903e77225f0"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download/backend/error-handling.md",
+      "bytes": 944,
+      "sha256": "d8b8291ce0c61143bd537265e207ddbde85d3073507600fd9800c7b25d3e1468"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download/backend/index.md",
+      "bytes": 1063,
+      "sha256": "824863a74ae8110831c42fe25ece0a6d5b447ae880ccb17685dfec9d4a7dab42"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download/backend/logging-guidelines.md",
+      "bytes": 775,
+      "sha256": "b61829aa914d3db0b6cad328472366bec6230e18128420475879d382ab507b46"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download/backend/quality-guidelines.md",
+      "bytes": 10720,
+      "sha256": "2f6e2e11b6057a325686ecef6becb90effa389287b6f9caaa01dd99787217f1c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download-ipc/backend/database-guidelines.md",
+      "bytes": 552,
+      "sha256": "93b512efbc80c964a2d6cab2cc400f1c4b195c85c311b6164a06671404d080da"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download-ipc/backend/directory-structure.md",
+      "bytes": 607,
+      "sha256": "414139d3357e36e539671189fff60e64cebbfbb84e30503bec7106a567d569bd"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download-ipc/backend/error-handling.md",
+      "bytes": 637,
+      "sha256": "b916703cb69124e90fb9c11fa47ac5a610c4eaf86ab3cb22c52adc85e3de67aa"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download-ipc/backend/index.md",
+      "bytes": 775,
+      "sha256": "95b4f317188a7e70b463f981074091b6ec6d430835815fd4815bc86e9ae7bb5d"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download-ipc/backend/logging-guidelines.md",
+      "bytes": 542,
+      "sha256": "03d5e771ea575acc5ba27d47c544c32e28f97b1ea3e6b28eade7d3de81456cf4"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-download-ipc/backend/quality-guidelines.md",
+      "bytes": 652,
+      "sha256": "37835429b25bdfc1d9bc390594ea9a0d55c932690226ffb09b601d776912343f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-extensions/backend/database-guidelines.md",
+      "bytes": 3627,
+      "sha256": "498d3925e1d0b01f9e5960ba73ba9491cb5f5d943f3adb08f226c856b09ab9a0"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-extensions/backend/directory-structure.md",
+      "bytes": 1041,
+      "sha256": "f74330ca82a6aabe9c15773a2bdeea493df2e4cb5772b0fc9dee97933d016995"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-extensions/backend/error-handling.md",
+      "bytes": 1064,
+      "sha256": "e0606963f0d12b9473bab61f89ee278ffb0ec57b895a4ea211c647bf71884c0c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-extensions/backend/index.md",
+      "bytes": 1429,
+      "sha256": "95649d2c269344e55abea2684d4766e102f5fc6ec408d949c96024c5904b6aac"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-extensions/backend/logging-guidelines.md",
+      "bytes": 1405,
+      "sha256": "c6968a933d55ff48e7465355a9c3ecac49a93d04594b4392a76af8e1981ac219"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-extensions/backend/quality-guidelines.md",
+      "bytes": 15048,
+      "sha256": "e9b48879f595a38ecf09c10e49f91aa37fc1569d7709396465eee5011f877169"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-finder/backend/database-guidelines.md",
+      "bytes": 941,
+      "sha256": "5b73748fc7f6c3029e03db5ea44c9055d7a0cd663d130b713d7d32af70df08a9"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-finder/backend/directory-structure.md",
+      "bytes": 867,
+      "sha256": "41169c85e60eef2ecf381f0ef0e4b55955164e78368578a5b135e88a6b7c3569"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-finder/backend/error-handling.md",
+      "bytes": 707,
+      "sha256": "1efeee36489b5f7ba18d15e037036502ce7eb1ffd62ae4e04fc9f78b818215cd"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-finder/backend/index.md",
+      "bytes": 874,
+      "sha256": "968a0a640d6cffe8279bed2611f8c6298b2789189b376529b18e7f4b2eb150fc"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-finder/backend/logging-guidelines.md",
+      "bytes": 539,
+      "sha256": "d5e9a2dd714c016b4bdd0c4a8944757cd70294490679de68b6c729123890080c"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-finder/backend/quality-guidelines.md",
+      "bytes": 4834,
+      "sha256": "537e7097336ea68eda0e676adc94c35d03f093e04a2578764765d01fb6823543"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-indexer/backend/database-guidelines.md",
+      "bytes": 6470,
+      "sha256": "2304f026ceab853e64a00a4cfd334e456469c0100876add2747a978f28e9fc3f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-indexer/backend/directory-structure.md",
+      "bytes": 846,
+      "sha256": "e2d07c53d652551b323998a1988e0071ff0b92aab6b6eff635e1af5d175aa37b"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-indexer/backend/error-handling.md",
+      "bytes": 790,
+      "sha256": "ab315bea7205e0356e185f53402e185ca0b9a417a4a06f7c0ddb463927b4d118"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-indexer/backend/index.md",
+      "bytes": 1058,
+      "sha256": "dafb5467cb4407706bda18da308f41aa2e829e97e3802aef27961007ad48c869"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-indexer/backend/logging-guidelines.md",
+      "bytes": 677,
+      "sha256": "8c0792f0481e26074cf01ec2d77447595d1d32b8a29770fb2175822bec79a37b"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-indexer/backend/quality-guidelines.md",
+      "bytes": 9379,
+      "sha256": "0f6ddd3bf7fcdcc852a808dabdbacbc16f398bc2611072e2cc4fceb399f3ca03"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-ipc/backend/database-guidelines.md",
+      "bytes": 613,
+      "sha256": "2fc2d1e40df4007419fa796dee845efaf103991108d5400b8a6907de9fe6e87b"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-ipc/backend/directory-structure.md",
+      "bytes": 4664,
+      "sha256": "c1b574d305ea5e08449f067e35dbebb8eae65d48a8658e8f53bcb30be05b93d2"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-ipc/backend/error-handling.md",
+      "bytes": 688,
+      "sha256": "a42c1478914215209471302b0c094c0ec07624e93a15386c5f37321fe15d25b5"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-ipc/backend/index.md",
+      "bytes": 861,
+      "sha256": "70adc7b9d0a70448014a4f0d81f72516a53b597b94cf035f6d1c7f7c0e50952f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-ipc/backend/logging-guidelines.md",
+      "bytes": 564,
+      "sha256": "3bea02d9daae7df28f4346b7efd8fee9e16af1985ab0ce93f085044591a5cbb8"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-ipc/backend/quality-guidelines.md",
+      "bytes": 5412,
+      "sha256": "330dae66e183050732c13498579b369fdf05e4937ed73c151241e199e35c5601"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-network/backend/database-guidelines.md",
+      "bytes": 679,
+      "sha256": "08c67384bc52ca745c1e08d3225bc8f7cbc2ed7b261d20c038a51012787ef09f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-network/backend/directory-structure.md",
+      "bytes": 692,
+      "sha256": "8d123dd881b5c70d9ffcf2ef9d24eef1d6f54fcc3a4cd0d918a537b660d443eb"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-network/backend/error-handling.md",
+      "bytes": 654,
+      "sha256": "79d8ebeafd4ad53a05517f250d850a853ddf5e5f98d45e2de0f037ba19a60197"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-network/backend/index.md",
+      "bytes": 828,
+      "sha256": "a5be21d348641ed54c84b4ccd81f64be37a151a33ddec4e10361fc667c1d161e"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-network/backend/logging-guidelines.md",
+      "bytes": 633,
+      "sha256": "e5d0e96c5ee599253ea2e1594e85c75a443af41a455f8697b26fc366da634c1f"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-network/backend/quality-guidelines.md",
+      "bytes": 1180,
+      "sha256": "d10f6b45be4c9787c95ea5a3a7d464a8cf9dbe0ee838df5b08a8bc296e060583"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-protocol/backend/database-guidelines.md",
+      "bytes": 546,
+      "sha256": "1b3138c7a1097eea4789f61b80778ac9b80977d2c7faa1f2d0a5d9dd675efc11"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-protocol/backend/directory-structure.md",
+      "bytes": 3606,
+      "sha256": "d20b78f8338eae3e2e08346047736351df7706f850fa840a335d1d532f2fc240"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-protocol/backend/error-handling.md",
+      "bytes": 647,
+      "sha256": "acd45ffed2fd0be78005ef99163c1604056191be4facb50544d77ab85089a20a"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-protocol/backend/index.md",
+      "bytes": 760,
+      "sha256": "e9cfb965d119e18f0ca56cb3988626ef0d180ac099eb50c92c638649d1e41bfd"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-protocol/backend/logging-guidelines.md",
+      "bytes": 596,
+      "sha256": "b0b92cd3dc255ba8f648d0b646308ff0654eb52df70ae2e684d4699fe22c570e"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/nxtools-protocol/backend/quality-guidelines.md",
+      "bytes": 2169,
+      "sha256": "4215e1800ad5ba341ae1cdd62e0ed051ae145ed991a921ea87f8348a06f1f4dc"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/archive-creation.md",
+      "bytes": 24919,
+      "sha256": "a431281e5a9ae0c50ff41444e0283463596e302fc232385f828112cf055e8c6d"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/archive-extraction-metadata.md",
+      "bytes": 5586,
+      "sha256": "8b5136d32decff0ad47233b8a6c607074de0e8bc1bfe3aa37aa609d23e932779"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/archive-source-deletion.md",
+      "bytes": 7302,
+      "sha256": "387a4168c61a6ab55eb2a8d1f57e839bab32db4070f77af16eaf7bf0e1195a81"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/diagnostics.md",
+      "bytes": 5852,
+      "sha256": "2ca0ae3fa102376d86f103c9fdc99fe9c6ea57e90c8d97fadfedc676b948fc3d"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/floating-assistant.md",
+      "bytes": 8728,
+      "sha256": "d1fc0075900caea79510a805535419fb51855268f4d62c4f80e39ee066b94ba9"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/index.md",
+      "bytes": 6483,
+      "sha256": "c3618b84666f36e5e8e487d2746e8ba01b8a97522530ad823e0fdf3d41f82d12"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/platformhost/native-contracts.md",
+      "bytes": 54940,
+      "sha256": "59a35ffd03293b95c5dcf1be46f31aac9acd5aa6a8dd65da31245cb2bc574527"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/shared/architecture.md",
+      "bytes": 6039,
+      "sha256": "8c75ba7d928561d49252b603ecfdb91d923fb10fcdfacf6df7e5714684dae9de"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/shared/engineering.md",
+      "bytes": 6327,
+      "sha256": "b7314d6ab3c04acbf58919b06df8b2ca9db7b67a70aeb6acba79035a72ff54e2"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/shared/foundation-backlog.md",
+      "bytes": 5826,
+      "sha256": "dfae6e7e01580c57f9d881bdc741e8765903714420986b4b1d45a1dbc3985458"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/shared/ui-component-selection.md",
+      "bytes": 11375,
+      "sha256": "9e7663149a6187c73f782d278164607ca079691d11f7fd7a51c569e4852f238e"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/shared/ui-design.md",
+      "bytes": 60262,
+      "sha256": "eea54d464af86cf5f707bb95c4f7df8bc569989a220933710b360f26293fd820"
+    },
+    {
+      "path": "evidence/baseline/.trellis/spec/shared/verification.md",
+      "bytes": 6012,
+      "sha256": "fe0b38ab41c50de4c89c0624844474cb92d84da923701ce4165115f6b7373468"
+    },
+    {
+      "path": "evidence/baseline/AGENTS.md",
+      "bytes": 11363,
+      "sha256": "a98a11c8924c6a50d239011aaf419cfabc1b37057fd36d96ce456156d6ff3019"
+    },
+    {
+      "path": "evidence/baseline/Cargo.lock",
+      "bytes": 257536,
+      "sha256": "0c95452c5e45bcb1011b3875c53309792259793c68bbb8465a66c4ccbd22ee4e"
+    },
+    {
+      "path": "evidence/baseline/Cargo.toml",
+      "bytes": 2662,
+      "sha256": "fce993344cb099565ff6871e1937a63065f036749e3c6fdc4239efecb7c3c8b6"
+    },
+    {
+      "path": "evidence/baseline/CONTEXT.md",
+      "bytes": 1364,
+      "sha256": "1b26365a3b3105bbcb723b16c524ee39330f9aa4dd15dad0363bbbbaa2a85ad9"
+    },
+    {
+      "path": "evidence/baseline/docs/reference-code/download.md",
+      "bytes": 279464,
+      "sha256": "92939197d20fe5f31a2eed129708e690614e3d7bf8409551b19b8f0502bba8bb"
+    },
+    {
+      "path": "evidence/baseline/docs/reference-code/gpui-kit-080.md",
+      "bytes": 8204,
+      "sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c"
+    },
+    {
+      "path": "evidence/baseline/docs/reference-code/gpui-kit-component-index.md",
+      "bytes": 50194,
+      "sha256": "66b979d78091896f33396c4bebb08abf006a1e563ac66e58798b14979fe13479"
+    },
+    {
+      "path": "evidence/baseline/docs/reference-code/gpui-kit-component-table.md",
+      "bytes": 28309,
+      "sha256": "5ea632ff42ac6ed51a0adb2849b9a62cc00d747815f43f6267dee1531a0b7811"
+    },
+    {
+      "path": "evidence/baseline/docs/reference-code/gpui.md",
+      "bytes": 38658,
+      "sha256": "ec85d67362cfec332440f489ee3e9c07268e1369be6c67b24f936bb9e0b77cb2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/application.rs",
+      "bytes": 49626,
+      "sha256": "e9b6ecef70e8d785d0dce783a65793a76d7aea912a30ac3c150864b591dea458"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+      "bytes": 52079,
+      "sha256": "c5ac905305a6c1f2b18850e55b234f27c4b47add63e9c1803e7141a3ba3b6162"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/browser.rs",
+      "bytes": 98468,
+      "sha256": "b00bcc000f0406d545e63ba64eb70f186b96331916241cfac596698b04622bba"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/browser_drag.rs",
+      "bytes": 19215,
+      "sha256": "26708659a1c4a4035ccacfff90727be8e96e63d1a1e5721f18e493fa2cbe507f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+      "bytes": 27270,
+      "sha256": "2b70bf369510460311b11b3340d17bf91bfc442f11b232c72df190ecce61e751"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+      "bytes": 44228,
+      "sha256": "8da2902f2d854dbd970235220b0c04828070bcf64d0afa91e72a8730e80ec7c3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/draft.rs",
+      "bytes": 19993,
+      "sha256": "4442707c8cf10643a01794170f220aed12a7f8a59632e7256d2f172e90e29274"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/draft_tests.rs",
+      "bytes": 11025,
+      "sha256": "3ce45cfe8c481a1c1bcf1c3b9d589ac988a5d9079a769f6d61056e4533e4b9a4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/entry.rs",
+      "bytes": 17633,
+      "sha256": "fc55094060ce7b640ab0d60ec347284471c7fd51ccc9de38cc695299d6d06e69"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/entry_tests.rs",
+      "bytes": 8837,
+      "sha256": "b1eb168f96a5bcfe60f81e4d051347845c24a697dbc22eb1d07d83dd8d365bda"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/forms.rs",
+      "bytes": 73233,
+      "sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+      "bytes": 36025,
+      "sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "bytes": 66387,
+      "sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/jobs.rs",
+      "bytes": 51306,
+      "sha256": "eec77c96fa9ce8ba34cfe58dc07a1cd15cc04d0e50c55d194f3fd24f95e6913a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/launch_entry.rs",
+      "bytes": 12929,
+      "sha256": "bd62aaa1f2b289cd92701de773f9782ff08cbeaec1bca0a8b2e7652ca1dec43e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/model.rs",
+      "bytes": 12786,
+      "sha256": "b390b3fc3b62720b101b19d5f3b880fdf335d23a259249bb6f0184383b19c7e9"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/model_drag.rs",
+      "bytes": 6019,
+      "sha256": "4717eb73e73d0268f7b03a360329f25ba303809eb47a9e641c1848d9535caf7f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/model_tests.rs",
+      "bytes": 9558,
+      "sha256": "86e3343f401d032b21e1ef12cfe765650a705d1c83a914f7180e05c0bf73f3dc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/password.rs",
+      "bytes": 7440,
+      "sha256": "db1cbc9896b94b7dde06640d366be9de6ea78b05e9f88344695b1de18c1ae312"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/progress.rs",
+      "bytes": 21122,
+      "sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/queue.rs",
+      "bytes": 3298,
+      "sha256": "dc3e5b39a0166e0ded934e97b18e866d6e6410228e5263310fc8f4f18f66d691"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/queue_tests.rs",
+      "bytes": 2827,
+      "sha256": "b06917cb4418e2566552f3fce8e9cbf5d7afcba5dcb8b91e3b84b4ec2679889a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/readmission.rs",
+      "bytes": 7906,
+      "sha256": "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/shell_integration.rs",
+      "bytes": 17578,
+      "sha256": "31ccbea07e93986a3e62233afc7b20126b385f884d4a9b2ce1b0131ec5871024"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/ui_state.rs",
+      "bytes": 14839,
+      "sha256": "ab16d263001bd96cee9f905ea8e05e0af4696ccd65df38363b93bc16c710838b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive/virtual_drag_spike.rs",
+      "bytes": 5997,
+      "sha256": "d75691c8833c1789320de9aa9d3fd501a4e82cf03f1d13aa9404c84532d6d1ac"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive.rs",
+      "bytes": 600,
+      "sha256": "c3be81620df630917669577be51225df1ae904792863c318a5f92545d52f5f23"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive_component_spike.rs",
+      "bytes": 17794,
+      "sha256": "af9b8e67b998d38326cbd60c0f2d5058717579807a8725ff57378e3dcf64c5f8"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive_launch.rs",
+      "bytes": 8497,
+      "sha256": "0c0adff7936d6c90affd99fe9f98292bab370dc5c3bd6fc6a79050b8ffe92ed3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/archive_launch_tests.rs",
+      "bytes": 7852,
+      "sha256": "d3f1d21d99ab12cb9a15f8c60ca78a570908252a51289d0fd18d6dad82fe6978"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/assets.rs",
+      "bytes": 9283,
+      "sha256": "d3e2dfb5edd6bb3ca905f2d3dc68156ba335f64daafc4d9b783b0f94477413a7"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard/capture_pause.rs",
+      "bytes": 8544,
+      "sha256": "ed6e0647da5af847bf9fe8e37d2cbef61b3329d2ec698c362c6e1bd26e7eb751"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard/currency_tests.rs",
+      "bytes": 8881,
+      "sha256": "08275d408e12c84a64de326a02bf7e093c5fc25bd4087cea1053838ea0b7bf3b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard/currency_tool.rs",
+      "bytes": 13411,
+      "sha256": "73ca8b3715020df1d03e4c4dc684d5ba83c71c477ab3cf179abc4f18c957727e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard/extension_adapter.rs",
+      "bytes": 30604,
+      "sha256": "7e952887602443840afa239b16b8f80b364b1ed2d981e211ce97d38e53d784ad"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard/popup_activation.rs",
+      "bytes": 4247,
+      "sha256": "1ed9bf519ad61fdb35ddf9bbfc066cdd6cd126b1a9c5eb99bd9e6d284a933003"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard.rs",
+      "bytes": 167891,
+      "sha256": "f267e5b76cf3e746b4b0487872292e699ee21291c17db813ff84fb90de2e1097"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard_preview_presentation.rs",
+      "bytes": 15000,
+      "sha256": "f99db2a099aefe01727d29b5099551af23b7e089fb0fb447e16e60ea6a93cdd4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard_preview_presentation_tests.rs",
+      "bytes": 30480,
+      "sha256": "529f21b69fb5090bbaba44146e133e6698d070896690c29c93a272a4956b8899"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard_resize_tests.rs",
+      "bytes": 25275,
+      "sha256": "711cd26690750c21873ca337e4b1bac8c66a91c36865dcb21d757dcf9dd2915f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard_worker/icon_colors.rs",
+      "bytes": 11124,
+      "sha256": "131340529b84c107749d114e0e41521e56e75c9286de2bbb6f5db2e6ffa26bfc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard_worker/thumbnails.rs",
+      "bytes": 11366,
+      "sha256": "a2cf049f2c5cb04a51fc85435687fc0f2603edfff6f13a7e437c02213e3fb0de"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/clipboard_worker.rs",
+      "bytes": 83641,
+      "sha256": "cd326875e5943a24cfd8c7dc303ab930870868ed13faf2b849a61416ea05dd36"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/completion_actions.rs",
+      "bytes": 12367,
+      "sha256": "fbf9ce1fb325d90039085a21275c4ebeb7de28114f051f0d2b4d710c341fc10f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/download_taskbar_overlay.rs",
+      "bytes": 49462,
+      "sha256": "a5268e650fc198ff627aaaa48910a588d36738ee6e7c4e47ab1c40d2228c6983"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/download_window_lifecycle.rs",
+      "bytes": 15017,
+      "sha256": "56996f44eece67c33ab235cf6d58fd1a48febb4c979af3db410de33a1b694240"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/artifact_actions.rs",
+      "bytes": 21064,
+      "sha256": "c8a9ed36aaaf2a38c641f7aefb256b3eccb3ba71e40e7b761d8a21407e7423b3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/auxiliary_theme_tests.rs",
+      "bytes": 8605,
+      "sha256": "4e3dec626a7eb52baaa62c4c7e3ea7977a54e3738eeb656756ab2bbb9fe4e953"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs",
+      "bytes": 35179,
+      "sha256": "8637516874396f5f2f542ae7ab945df2b6d81b8cf957fbef7c570e26516395a6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/completion_shutdown_impl.rs",
+      "bytes": 28707,
+      "sha256": "168285c3c031246943850b920f89079efcd9986580301d65e1b3d0f8615206be"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/completion_transition_preview.rs",
+      "bytes": 3681,
+      "sha256": "c5faa87f9d786bd03d2c4805bbba4b49dd527e4e4ba4caf49e54d6521d4e9338"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/delete_confirmation.rs",
+      "bytes": 4580,
+      "sha256": "2d1477b2dde1d1d41e6243dfaa717551c985079db50b34bdc9133c555685d565"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+      "bytes": 11375,
+      "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+      "bytes": 30309,
+      "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/fixed_transition_preview.rs",
+      "bytes": 6857,
+      "sha256": "b22c08df72ee38234b51a9c809aa9251be9185994248459976f5c1d70e5e4e41"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs",
+      "bytes": 12745,
+      "sha256": "f1fcc8d208ec51d2b6c234edffc0b46effb3f7425bda9df31cef340d5031dcc2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+      "bytes": 15831,
+      "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/new_download_overlay_rem_tests.rs",
+      "bytes": 24925,
+      "sha256": "94ea1422a60e1e0091b6b3a5c02b060ad38d5ff618fa06b3b758041de787c715"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+      "bytes": 23416,
+      "sha256": "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+      "bytes": 142970,
+      "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+      "bytes": 160699,
+      "sha256": "f8df57174a6ec3c34eafba0c4d4b0cc9974d3c3ba4ab32ae2f436be05c8a677f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/progress_display.rs",
+      "bytes": 5124,
+      "sha256": "6103eb8c0846382bc2b8b5f5d00a2b9f6c16e75b7a6bbaefdcd9b398a7c55268"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+      "bytes": 22341,
+      "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs",
+      "bytes": 31812,
+      "sha256": "d818ffccb431cc998dd8074e28f2532c10ebf249f4cfffe47264b47ad8b8d5d3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+      "bytes": 131458,
+      "sha256": "a33fc73c5591388013fabd00ef465c71c559f732d011d9187c08929957b924d1"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/shutdown_window.rs",
+      "bytes": 6678,
+      "sha256": "5118433f736bbfeca3d40c52e9a19c33c5f13a51045ded3422a1d193c7bf4143"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+      "bytes": 49831,
+      "sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs",
+      "bytes": 26517,
+      "sha256": "c56f29eae6514f1dc6aa1dfef88e6b74ed41da0b7ebb66330a4749552188fd7a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/tests.rs",
+      "bytes": 335038,
+      "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/visual_preview.rs",
+      "bytes": 12032,
+      "sha256": "b5f110c310826664a1dd362e26d20ac4a0017f70ffd0848cd2cef44fac1ff4f5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+      "bytes": 14536,
+      "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/downloads.rs",
+      "bytes": 143707,
+      "sha256": "63dca70eaf3c2027a81dcdf8850f0a1bb1b0194bb9b1a8de6c98aa72a8385a82"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+      "bytes": 20217,
+      "sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/directory/tests.rs",
+      "bytes": 9424,
+      "sha256": "22161069771f59d71ec859b2fcfa671bd876aefe2f0dce816b9a43033e32b49d"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/directory.rs",
+      "bytes": 6333,
+      "sha256": "627effa25deceb14b9dce9e9c6affbb3f068642f07dce499e2ddb4a794588c3c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/download_resolver.rs",
+      "bytes": 19596,
+      "sha256": "bb5f9f91c91a77d5d19a2ad28deb196dd5e62db167e0452f74f8616f726bd4a5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+      "bytes": 3129,
+      "sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/feature_adapters.rs",
+      "bytes": 48981,
+      "sha256": "2fcc87547e00ecf1251899f01b5f263e4dd9041ace189284a978448c0fedcaba"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/manual_actions.rs",
+      "bytes": 53178,
+      "sha256": "645aa48108347ccc7835094c94cf0249de4bf27e2f162c8419d8ac8996089d1a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/manual_feedback.rs",
+      "bytes": 10914,
+      "sha256": "a9b0baaab45d14c50e1fce93a50a263e353fc06c32d069fd1fcf85039d982b9c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/manual_notifications.rs",
+      "bytes": 8770,
+      "sha256": "90db1d5f1058a7a972ec9b4ccdc977161112d867bf504181bf71d1a4dbfff292"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/manual_runs.rs",
+      "bytes": 25053,
+      "sha256": "6510586db300103e113998b3fdee887dec1c237b817263d8de9958ceed2a5bdf"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/pages.rs",
+      "bytes": 5509,
+      "sha256": "3d7fcf6977c2bf08043316791f674466ffa4aa3185fbb9cccc2ad918b18b03d9"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/pages_tests.rs",
+      "bytes": 5225,
+      "sha256": "03be560c6d5e518c38d617b6ad5a4c6c799a0bf359247144319d623c2c1ecffa"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/runtime_environment.rs",
+      "bytes": 4860,
+      "sha256": "31a01d6561505cf1a4f6b13783d10594a19b17d9043c597c4c41e632d6805b28"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/service.rs",
+      "bytes": 27853,
+      "sha256": "7ae9f618cf9061df3a90b0061cc6caf57be081524c7986af0c1609506234c3d3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/service_storage.rs",
+      "bytes": 4147,
+      "sha256": "8a8fc2a4d8ab94b558831ebf8c2b6fcdc9fca5ea49c5c470425ff35bae3b3dd7"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs",
+      "bytes": 20123,
+      "sha256": "1792cfcea4e44bcfacef3c5a4b798b972702927cc04af3f7ace4a30f0b30f722"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/storage_management.rs",
+      "bytes": 11637,
+      "sha256": "0b1e6bc7fcae535bc6ed3b8948c28837f485ddbf505936a6fe3035d1aee3a6fe"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions/ui_host.rs",
+      "bytes": 22625,
+      "sha256": "4ff9cc7b19602b86fe14ddd99e1490ec171794b5eda63b5e1cbb13d1bda46253"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/extensions.rs",
+      "bytes": 58186,
+      "sha256": "3ec87a353d95279e453cd4ab11d8c2f92335f14ab02f0ff894a5517053d3a13f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/icons.rs",
+      "bytes": 3905,
+      "sha256": "9e490d1f0abc38b3cc0c08e7676fc04278275e199dd01abe9689fec92f23dcb5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main.rs",
+      "bytes": 39303,
+      "sha256": "c7c1bedb3e71ecd52f9585e687f4ed83a75825997b70ee97406b22554a9eabf2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+      "bytes": 66317,
+      "sha256": "935b46db9ceef4e95aea1a102e9236d845095c117fb7dc1b0263e241562aec2f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+      "bytes": 44664,
+      "sha256": "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/archive_temp_settings.rs",
+      "bytes": 8973,
+      "sha256": "d5736bb1de9c6e3055b167c39760e84e66cb8228a07072dcb58eb3209d6814c2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/clipboard_page/kit_migration_tests.rs",
+      "bytes": 35662,
+      "sha256": "7cd53c852b6f8afece078645e872f773dbedbe8bf5b574a76cd4ae648481680d"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+      "bytes": 44783,
+      "sha256": "f7a19bdbd3bc848666f7e3d30064a39cb6e93032b7ba081f2e4d6329fb6d74ef"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/command_naming_tests.rs",
+      "bytes": 17437,
+      "sha256": "4b3da1b55cf7d35d7dd4d28399ced16d4b523bd545057c6e3313dfe760ee54c5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/currency_tests.rs",
+      "bytes": 14578,
+      "sha256": "abb0f820bc8a3dfd782b730d8d3729d45fcca7a85c1680d5393d22603d6a5f9c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs",
+      "bytes": 6584,
+      "sha256": "855dde5e45f3cc204fcb266969ab2d7d68cfd9aefdd59fc9ed56c0ef416275ed"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+      "bytes": 62340,
+      "sha256": "d443ed923241e37c5670a680473a9c1a9982c59f75eccaeeb1232ab4c5cdfe4a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+      "bytes": 131559,
+      "sha256": "e9c7f297ca3a16c3f8191b11ad717af78ce838021eb5c2451a5fe88c47d46daa"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/activity.rs",
+      "bytes": 9102,
+      "sha256": "db895acbc96b4816d233ec3e70a092ede1deb219cd1abfcca7e58fe2ad5eb078"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/catalog.rs",
+      "bytes": 13124,
+      "sha256": "625e64650794793c4fa1099dd4e22d340dd26f94dcb668ecafc793baac709bbd"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/environment.rs",
+      "bytes": 45190,
+      "sha256": "470e241dfc24723860b9142e23ef69f2489c22a2cb946279ae5c745c27ecf0b4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/import_confirmation.rs",
+      "bytes": 25104,
+      "sha256": "31422d8d9c5ad3860260568caac2111457ed51a624a4619b6d99180dbeed2202"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs",
+      "bytes": 5627,
+      "sha256": "862146015a11ec57b9c8e797f8870a689eb7bc761e430151ed52ed33fe6fd688"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs",
+      "bytes": 31777,
+      "sha256": "a98f000071c5cad25beb25d4e2a0cd3244d7c62323c84fce63ba07d705ad2292"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/setting_paths.rs",
+      "bytes": 5455,
+      "sha256": "bf1d8ff6a79645293702b65407a1f829f62f7a15c2150e0eeea9da65d4d9a622"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs",
+      "bytes": 16693,
+      "sha256": "0debbb2a961a81c3c388064edfa956ec90f128fb3840fc00780745611f8b20ad"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/trust_confirmation.rs",
+      "bytes": 37333,
+      "sha256": "6afbfae6e36a6ca22f17eb4a54da06fc21e38bf6e2099f0f70d4b4ca3c384674"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/usage.rs",
+      "bytes": 13471,
+      "sha256": "90ac142cf4556b1d60b24bbef6870351ecb85b38b6f9ed680e5fd54279ce1b60"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs",
+      "bytes": 20229,
+      "sha256": "b64cbd2613239947d0b52dc4bd49c2b6545e848eda1eebc6bfd3f173be6fac90"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+      "bytes": 31002,
+      "sha256": "7d6f3ac300b7e043c3267df860898c9e2b5576dfdbd87945a9d1626315b121ad"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+      "bytes": 141046,
+      "sha256": "da1fc0ab732a2770adffd89d37e83109587356b9fcf824128b2a93844a432b83"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/floating_assistant_tests.rs",
+      "bytes": 7285,
+      "sha256": "9498ab95bbe52618ea228aec100b33b9f101549ed2e5f93b420b3a6c1d1a53f4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/kit_foundation_tests.rs",
+      "bytes": 36458,
+      "sha256": "9144af2fafc9589c27b2ca4f4913c08afd30ccf29091df44657a07d4029f6483"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/notifications.rs",
+      "bytes": 371,
+      "sha256": "407c59ee472a52f9052383b8be3d5b367be8880f4032bbe2290482020f91e03c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs",
+      "bytes": 5945,
+      "sha256": "f2edacc61ec3ac99a5069b60b7f1119539286f015962e8e7a1223ab0914eb4b5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/quick_launch_page/settings_compatibility_tests.rs",
+      "bytes": 8173,
+      "sha256": "aa0a02399902cd75209825db1fb969cafdb993a065738163a2b1f9ca610848a6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs",
+      "bytes": 56375,
+      "sha256": "a8e3ee75a776b23ce04e359c5d2fc1756ccf5a947464b6d627b575db9ea830f1"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs",
+      "bytes": 13295,
+      "sha256": "5b892c83db1ed8941d39df20fe3482b1252fe51464e32270cc2d377088921ccc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/shell.rs",
+      "bytes": 17954,
+      "sha256": "1926b1c486ccf69b351673910a2d8bccdb3a5a88927a7dd9057ddd2c2aca2a21"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/tests.rs",
+      "bytes": 237372,
+      "sha256": "a75743c4fbb201ca43bf5a3acf7ac4adbc81d84f6102cf60e65850a99409b02b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+      "bytes": 11823,
+      "sha256": "305e6a46e378f6474b586e2f289cde97df1e1b4d684c349c7ac6d378b394dd6f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+      "bytes": 30202,
+      "sha256": "43bcf9801a0f9cc5e7ce752805efbbfc1d25ed16bea8ac51ee4a9d625bea5037"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+      "bytes": 22945,
+      "sha256": "e9673a2c5b7c71e28db40d63d8cd3b7869f39304c00071e67e2a3ea7a5b96eff"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/visual_preview/archive.rs",
+      "bytes": 2739,
+      "sha256": "1b6606ead20796d4d8a9559e02f25bfb36c617b8bb153460dc3cf9cb2f406239"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/visual_preview/extensions.rs",
+      "bytes": 13649,
+      "sha256": "6887520159c4c9d3aa6eebd1377dc071807dd86dca253f03e19ccb30426a00b7"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/visual_preview/final_gallery.rs",
+      "bytes": 7784,
+      "sha256": "81a225bbc76adb1c2be0655818336ae7e991307c28ac845c50fe2f1825443ded"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/visual_preview/notification_positions.rs",
+      "bytes": 4760,
+      "sha256": "661a785c48ef408c11b67c9db697f78accbed12dc0e55ff48c77f2ad55155aff"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/visual_preview/quick_settings.rs",
+      "bytes": 5378,
+      "sha256": "e81d22827112104f741d5551d25c51dafd6f51ea4ae7fef3d12ced5746648c8c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window/visual_preview.rs",
+      "bytes": 10042,
+      "sha256": "eab370e9687551f4909e5f8a68cb1862dec17b68f3bc3f39412a47e9212f397e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/main_window.rs",
+      "bytes": 22943,
+      "sha256": "f71cc50372f9e73ece8cdd14b453e4dfcd4ba5807ad41617f5c76525a5067c61"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+      "bytes": 13200,
+      "sha256": "b789126ec66823ce3d3e8adbbdc8967905d8e9f38c37c881288d420ec4b45f9b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+      "bytes": 39415,
+      "sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/notification_tests.rs",
+      "bytes": 7289,
+      "sha256": "aa4bd6dbb1af53f040a321188865ce55c7963976f3391a7450e5936dce4fc8c4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs",
+      "bytes": 10901,
+      "sha256": "2d26dbde4a22c40de6236fcfc3ce0538b0e5006b424560ffb114c390f9d23233"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/system_proxy.rs",
+      "bytes": 6750,
+      "sha256": "5f6c4f3c30bcca1b4ecddd576ea70a23ab58e9025f98b86b80b6aa0606accc56"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/theme_chooser.rs",
+      "bytes": 8243,
+      "sha256": "cca95842b8e5eb7e7bf6a313c91d0d411fd29cec2c2cd473480e471f1d7cd202"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings/visual_preview.rs",
+      "bytes": 6306,
+      "sha256": "091ece842b8e7a682db63c1487c2e1cc24e17025855678fb8a102ade307a6ae5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/network_settings.rs",
+      "bytes": 111886,
+      "sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/copy.rs",
+      "bytes": 9851,
+      "sha256": "eab44b471bccda4caeb6ae9663fe0a72a1100764e26d7cb85f8b99058844fdb2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/copy_tests.rs",
+      "bytes": 13536,
+      "sha256": "891c703caedd28f017009b4781e97ede7d81b5439e1cd8518cabe491c32fc0d8"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/expiry_tests.rs",
+      "bytes": 6574,
+      "sha256": "628502f82773efffe8f092027c07ee6a7ee8ed17ff98dff8961a0b5e62ec4a2a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/presentation.rs",
+      "bytes": 21150,
+      "sha256": "fd69248af812b182f9301fde4cd938f7efbbc71f58feaac098fddbc7043b5acc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/presentation_tests.rs",
+      "bytes": 21325,
+      "sha256": "20b4235571d47bf35ed73ebead0764a90a8f52f9fb5dcce07b123e23ff584c49"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/screen/preview.rs",
+      "bytes": 10378,
+      "sha256": "11f3ebc27828694a936a1fb4dc40762e6e4855019ffd9a2c4c29a1eb63cd6db4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/screen/preview_cadence.rs",
+      "bytes": 1868,
+      "sha256": "b6d8e83717dc56e01856a3b88e660fdbce3107e0a7b4603c96f29c0e05e0a449"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/screen/tests.rs",
+      "bytes": 32993,
+      "sha256": "aa4861aba2c11d16b38ef1e12b2f11569e4d1c2ac95e01acc8bd3454a91f355c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications/screen.rs",
+      "bytes": 21321,
+      "sha256": "b2b7681376b6e684c41a2448e5dbbe480404a4c4bd6802c84671826c85aa0b73"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/notifications.rs",
+      "bytes": 13407,
+      "sha256": "8b127e9a51f1f0fcad0fa5536631981c25466f63f815843697d0bd05c4ba3957"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/platform_events/main_preparation/tests.rs",
+      "bytes": 8815,
+      "sha256": "13cd102e2adaf5c72c143dcbfca5b0a40596e86936840ebef14182ef60be6989"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/platform_events/main_preparation.rs",
+      "bytes": 6220,
+      "sha256": "5e3ca66a3064dededdf941058afc1be9ecc6847aa902fd1d29ce484d13f969ce"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/platform_events.rs",
+      "bytes": 26193,
+      "sha256": "25460cf99f0b0d0b0c2d2a3bac5c6533c7b6ae5618205de9237a339daf95b0b6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/popup_lifecycle.rs",
+      "bytes": 7107,
+      "sha256": "0e75ac7d3b822b96f45c9926e09264a6001e0c50d72d324e98cd5eada416c5fa"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/actions.rs",
+      "bytes": 31838,
+      "sha256": "e10429556f048887cc01dec83fcce5e4970e5a5eaeeee2e93b17a2e2224593d7"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/archive_open.rs",
+      "bytes": 2913,
+      "sha256": "952a5e2c0e359bf41f865611247692b01fc5bcd7db1a37ff9a93fc4b79e60dd0"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/auxiliary_theme_tests.rs",
+      "bytes": 4835,
+      "sha256": "87108c68e510cf242461deb325100d5082f8ff9722a58848dddceaa6ab3d3dfc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs",
+      "bytes": 25386,
+      "sha256": "c230afb00589fd60c561b3dd3a195c7522a0f0d595c9d0cc0a3a7aa5a26345a9"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+      "bytes": 63991,
+      "sha256": "7725b228baf2a0ed30f99ab63bcd144882d04d50d591c26e2a62ca39777374dc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/floating_assistant.rs",
+      "bytes": 6725,
+      "sha256": "64c0057249ca291a334c6ec6a4b79abd51f637a7c52c01b0502a5cd3696429ad"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/icon.rs",
+      "bytes": 2397,
+      "sha256": "e2097d842ff76918e1bbd8cb6145eee773d2ba3f7f3b5075ddeaef94d005b1a5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+      "bytes": 71302,
+      "sha256": "22f7cb1b9973fc5b8c4cb71ed420dbc86f944982c619dae6834f725e1ed465b9"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/polish_tests.rs",
+      "bytes": 36901,
+      "sha256": "fc6956ae3b0e9b8d311b9f31350105d71783f0f91081e91e90a23e68e9054982"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/preview.rs",
+      "bytes": 26649,
+      "sha256": "88fbbf9b64b53fc1f89a12fddc3e1877668b204a7f966c373ddde755ebcdbd8c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/search.rs",
+      "bytes": 19029,
+      "sha256": "858315de1226d69a716379bfd4152aab917dbb5395a15fb386d9ba3b0f08cd30"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/tests.rs",
+      "bytes": 188920,
+      "sha256": "406d8f6805d111e1fcf4ba7715bdd8d726a3af95d5cb89a9ced6ef614d5c5102"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch/visual_preview.rs",
+      "bytes": 6885,
+      "sha256": "39d0659579319b2b0808e112cb4176739fc3c5f7e0f0af7ba88a2d609d6d58cf"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/quick_launch.rs",
+      "bytes": 160220,
+      "sha256": "55d950208060777298b3118a350966b5a5717f66e8d1de338fc01bf1a89d6e6d"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/runtime.rs",
+      "bytes": 36280,
+      "sha256": "1301a6c28e13252868b624f92c41552658ff0401d834d3287e51dcd324771b28"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/shell.rs",
+      "bytes": 3018,
+      "sha256": "7aaa1fa65aa462a10d30bff856f7fe9100d4d2f41ae8d510c06a7ea3808fee37"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/startup_failure.rs",
+      "bytes": 3802,
+      "sha256": "0c58c76605b114f16282dad9d8b7bb4c574da3dd80d6a9adb4205897b86d7a5f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/theme.rs",
+      "bytes": 21386,
+      "sha256": "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/theme_graphite_tests.rs",
+      "bytes": 3790,
+      "sha256": "3db1c00baedb8d15512088ca7d3f756bf933528f27f6b50c947af0527eb35e2d"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/currency.rs",
+      "bytes": 17816,
+      "sha256": "5eeb1274a5b2cbb58f288e6ce4b9611c3f6930cab77ae94b513824fc0cd5c895"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/currency_tests.rs",
+      "bytes": 13087,
+      "sha256": "203dc4dfac348b8f8e135ed869e7d97f1aaeea71232eb1431e243d802096fae3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/actions.rs",
+      "bytes": 25178,
+      "sha256": "0d184e3a52d10f8ae980bf58a0f29e1108aaa29ad342181524dfbc3cfa3e71b6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/application/tests.rs",
+      "bytes": 29789,
+      "sha256": "f4fcf36291d13bc2a5178e205611b1b0b646b7163eb1b26714cdb7034f828670"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/application.rs",
+      "bytes": 33888,
+      "sha256": "5b8c2cdab508acadd6b4b6eab6f00564123fa289180603cb927188b8363e6c33"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/lifecycle.rs",
+      "bytes": 1632,
+      "sha256": "0771eacaeef179fd8e0d3d8ca8afb98efe9a3460cf4a1411ee93679361873e6b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/media.rs",
+      "bytes": 15680,
+      "sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/mod.rs",
+      "bytes": 992,
+      "sha256": "16cfe42d74f8f76d70acea0250893979539ecb5ab29327c3ba7ecfff1b78bd14"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/playback.rs",
+      "bytes": 10641,
+      "sha256": "0754f335078d29637232c8a14e015ba704e85e85e6b8bec95db5c6e10647c0f3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/floating_assistant/view.rs",
+      "bytes": 7733,
+      "sha256": "da18f3378a5f3b48342732fc93cd5ce2783097c5375c627ba84e1937557c134a"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/link_detector.rs",
+      "bytes": 7842,
+      "sha256": "b6fd9c7c83d5a0e941d8e128364d08242529516127b8af6278fff69a30b58fb6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/link_panel.rs",
+      "bytes": 22381,
+      "sha256": "d22d62b170e07c680a920a3f6b39c4be470d3702575b05144006a8b804cca485"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/mod.rs",
+      "bytes": 149,
+      "sha256": "ab5be4a91e94c5e16fe4b108bc6d33f32420cab3192abf34661140de4f04cb69"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/tools/polish_tests.rs",
+      "bytes": 28809,
+      "sha256": "80ef557912e964755959b32277dd502c280a8155415bf118776c3cc794a800fd"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/auxiliary_theme_tests.rs",
+      "bytes": 5578,
+      "sha256": "65b844a499f30e9f543954e09ee277760ac7d2663fbd8727dde8cb839589808f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/capture_controls.rs",
+      "bytes": 4870,
+      "sha256": "78356ba36a7f1514c4260d1fb2ff71b1240397a6d03e3406ccd5be1a0ee495fe"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/action.rs",
+      "bytes": 21733,
+      "sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs",
+      "bytes": 7590,
+      "sha256": "2af2a15d7ba36b48ec397a19abb54fa9470bad44b3ab1b1a3c0629dc1bbe13e3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+      "bytes": 24083,
+      "sha256": "535236eca6630d5aaf0e38e75986988d7b2e07b33c48337c3227ede6e5047fda"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/dialog.rs",
+      "bytes": 1589,
+      "sha256": "84f7b0829aac03b859fc38e54450488334e88067290ed12eb960adf1ace422ea"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/field.rs",
+      "bytes": 1568,
+      "sha256": "0d6d712991d10eccccbc377e6e387a4b62dc3741453cb1bb506191d59387841e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs",
+      "bytes": 7711,
+      "sha256": "7ed87d7f8b6bcd632485adf4385e6718310780fff9d9e51dcbad58cc3134511f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/kit_adoption_tests.rs",
+      "bytes": 7268,
+      "sha256": "8ae9b887386ebf781e31770e48d795153cf24060b4397700b31ef63a6d0c801d"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/list.rs",
+      "bytes": 7758,
+      "sha256": "291ba00a4e29c94fcc3dac9137a3c0884e9ae04daa187bbcdfca946533d6aa4b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/menu.rs",
+      "bytes": 1797,
+      "sha256": "6d7a68a636d4315f5a666210871e387fcc683c90e5af2500d10d05d03b807fea"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/mod.rs",
+      "bytes": 632,
+      "sha256": "a22684b6c84965f7ae484d13e28fe9670b55a7f52f1acebdf74f3a5ca91a5d1c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/native_context_menu.rs",
+      "bytes": 28523,
+      "sha256": "fa7dfb41aebf81f96db52a7d1131141788a3e3f533f365f378ca8a4d4eaac584"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/native_context_menu_preview.rs",
+      "bytes": 5606,
+      "sha256": "33bc8f0f11569ce7947f7f3b2048b373db0f4ae163f406a6c8f86a34b2a992f5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/native_context_menu_tests.rs",
+      "bytes": 10870,
+      "sha256": "aa4452863eab23e9b7746832d2da293b21444eecd19220722125ade25d9ac8ba"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs",
+      "bytes": 20585,
+      "sha256": "204df982153115bb296535339bea7b0c96f1160948a58a52ee8689139ea15c32"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+      "bytes": 14109,
+      "sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/popover.rs",
+      "bytes": 537,
+      "sha256": "0a02df9078a1b6870209d4a53a4fe7cfaa8622328672721cdcde67555fd42325"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/project_menu.rs",
+      "bytes": 30021,
+      "sha256": "cfb939b65cad9bc3cac5ded75ae800e5e4183e6250057a2ce108a9c96ba238fc"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/project_menu_tests.rs",
+      "bytes": 13560,
+      "sha256": "98f7643e655b68192e59a6ed6923e9701316c59f1d14f3aea4b3a0dd92f9f1f4"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs",
+      "bytes": 14655,
+      "sha256": "1deca08ac288f5a26c5cb64b3d31dbb3220fc2e100439f7d7c4d9e746149ec44"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+      "bytes": 20269,
+      "sha256": "e19bba4be4acb11da7dab5213401aebccad224440b0ba88c518d6be3bc1f152e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/shortcut.rs",
+      "bytes": 2289,
+      "sha256": "7cee7cd8db83164ab677fecedfe88a25da3e319166e82469fc25d4116cbf36b7"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/state.rs",
+      "bytes": 9609,
+      "sha256": "4b2bd86123cdaf7bb9d4e6fe7aaf0ecd0e4ae66de7ee1691d2b5903fe2fcd4c2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/styled_menu_surface.rs",
+      "bytes": 10656,
+      "sha256": "f95e033190504e6f40ddef13a31779a9f495074df5ab72635f3b5f74863bcf22"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/styled_menu_surface_tests.rs",
+      "bytes": 4412,
+      "sha256": "71f1eb60dd41e21710575a9b3a40806b17df3cd19504b46090b3c608a8a7d811"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/support_migration_tests.rs",
+      "bytes": 12959,
+      "sha256": "33987c92f950a10f6641499dfe6eccbb1a0c16fc74165a226f14594e02d53d36"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/titlebar.rs",
+      "bytes": 5008,
+      "sha256": "e15e7221897038988dd8c88f40dd5fdb970e06e02896eeb6d3b3903b4f54209f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/tooltip.rs",
+      "bytes": 8133,
+      "sha256": "6d60db37be16092d76e1f38904580a49884f82e0f1a214b4568c414bd870ff9c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+      "bytes": 12842,
+      "sha256": "b2108299ed569d7d0c31db779e32f5f348ba4adddecf041ad72025948ee546a6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/efficiency.rs",
+      "bytes": 12346,
+      "sha256": "8d6de47ffb665803793f0f40504fb0e402151361f591ab4d5f1e37ad463a50b2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs",
+      "bytes": 99733,
+      "sha256": "512db11d2fe9178766c0e72f32556b953af80e6a5fde554e57d76ca23aba977f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/extension_feedback.rs",
+      "bytes": 27729,
+      "sha256": "525353c423ecc4aeb9efe34c40f7dd1a19046f39f260c8d9e57985fc6f6b2389"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/final_gallery.rs",
+      "bytes": 3996,
+      "sha256": "143e2cf81930bd92123f641b253352ba7d2a98c974f8b4ba79860aed8e769b21"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/history.rs",
+      "bytes": 49887,
+      "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs",
+      "bytes": 13323,
+      "sha256": "48d69994a59f0c21e193148014d0ef9ec5e0fcbd79c60390ee021e395d8b206e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+      "bytes": 29661,
+      "sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs",
+      "bytes": 9832,
+      "sha256": "590cd0e831172bd049422f9967afdbaf73d2e53d3a63912b44db20429afc926f"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs",
+      "bytes": 8606,
+      "sha256": "9a7ea27199d7d60e7b3b0fe89de7c4525e57355e6a311539932981333c20fc0b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/icon_colors.rs",
+      "bytes": 2228,
+      "sha256": "7c936d6aa4b46084758131f6e90393e2b2aa789224a7f2d0b619030d29e542b1"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/kit_migration_tests.rs",
+      "bytes": 39913,
+      "sha256": "1955f224fecfdb198f94e6e320cb522301aedf88b5fe32df212ea05e73f55ec3"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/markdown_document.rs",
+      "bytes": 7200,
+      "sha256": "fa4ab5fee037165402bf8665b790f5aacaf6933ae30796920e319ae957d4a1b1"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/markdown_edit.rs",
+      "bytes": 5772,
+      "sha256": "e7f6a6a96d3f73583fd1eb96b7ae088b7542c1ae2c0c0d7ec94b042753ec2d38"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/metrics.rs",
+      "bytes": 3774,
+      "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/mod.rs",
+      "bytes": 170959,
+      "sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/motion.rs",
+      "bytes": 8026,
+      "sha256": "32d23462db1ac1d0d894ae11c0f3531dde092ba40e2b4da261afed5051bedb6c"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/native_acceptance.rs",
+      "bytes": 5696,
+      "sha256": "aff24b13dcf4294369845b1dd06137af1d5a457b989462a1f8e420495d98d353"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/notification_tests.rs",
+      "bytes": 6077,
+      "sha256": "ab4fc1a5937fe06bfa8081d1dbc91c18eafa11ae1e4ec8379bdb828a99bdd5a5"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/polish_tests.rs",
+      "bytes": 29840,
+      "sha256": "a0f92a727c0b810b6ab4a3f54f929b0dca19b5795dbe4cc078001fa365261a60"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/preview.rs",
+      "bytes": 50537,
+      "sha256": "7b89fc1bbe05da139e0f8650e92ae6b165ab6325d06dd2a6b9e84451f8d55212"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/preview_image.rs",
+      "bytes": 5699,
+      "sha256": "4cd1f2abe46c89eb56d5a131f00608f2b311438e50a251596bc8028899fdc26b"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/preview_rich.rs",
+      "bytes": 7018,
+      "sha256": "97a43a26f3c93836d35924c690feb07c8839718a7402b6edc260b1a85a824815"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/preview_text.rs",
+      "bytes": 15013,
+      "sha256": "e88783401f55237d7b7ebf7d80d2fc921c6d8290b5613cd92ab5064cddd40a57"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/search_input.rs",
+      "bytes": 6101,
+      "sha256": "1dbc0074994740d96b2c798c923c25d16c0cd8e1dedbe1d1df50ccef72763fa1"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/summary_targets.rs",
+      "bytes": 4265,
+      "sha256": "2de5cb2f8fc37727de0a6f653993be884ea61e21507ddef098135a0caa5efaa7"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/tests.rs",
+      "bytes": 47679,
+      "sha256": "1c3a4bafedd4246d206c7591cb869f2a827be25137e36204edf2aaadba113629"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/ui/typography.rs",
+      "bytes": 2015,
+      "sha256": "a23ca9f2c045cc8d6b2b58661ed28ee0dcd54889871c9b8f806fc71cb4fdee1e"
+    },
+    {
+      "path": "evidence/baseline/rust/apps/nxtools-desktop/src/windows_icon.rs",
+      "bytes": 3074,
+      "sha256": "edb01320e1989cd93ea191e50265fb54c7e795aa40e27f47a26725bbf50e6df6"
+    },
+    {
+      "path": "evidence/baseline/rust/crates/nxtools-download/src/engine/projection.rs",
+      "bytes": 15579,
+      "sha256": "66668e81da30a7820796957aa08215ac1b818675a1cdf21f9fd6680740f3a636"
+    },
+    {
+      "path": "evidence/baseline/rust/crates/nxtools-download/src/message.rs",
+      "bytes": 14423,
+      "sha256": "2d3b6a56d3f2c49085bc9a6c2a80547879504d8caae29e10fc61f7789e92367c"
+    },
+    {
+      "path": "evidence/baseline/tests/architecture/download-ui-lifecycle.ps1",
+      "bytes": 24042,
+      "sha256": "dc6c0541e3319bfd3273ef1fb3e1cd961a8493e37ced01347f9a525688d8eea3"
+    },
+    {
+      "path": "evidence/baseline-manifest.json",
+      "bytes": 109553,
+      "sha256": "7fc481e55a30a70313bb64c87ab4044fadfee6402290d500d48d5ab05a15883a"
+    },
+    {
+      "path": "evidence/commands/audit11-final-build.admission.json",
+      "bytes": 98,
+      "sha256": "a95ae35342170689fb9c328a6d0f7e4225e0e8860f5a8fee4824ea4726b37eb3"
+    },
+    {
+      "path": "evidence/commands/audit11-final-build.json",
+      "bytes": 580,
+      "sha256": "c751df4a8841298577585cdcd4b064a74d22d3d8ecc712dd0196bbb92e4c73be"
+    },
+    {
+      "path": "evidence/commands/audit11-final-build.log",
+      "bytes": 256,
+      "sha256": "7aef7175adca17cf83b024a8d644b92f776961c3b3f331e71da71c3cac904b72"
+    },
+    {
+      "path": "evidence/commands/audit11-final-five-01.admission.json",
+      "bytes": 98,
+      "sha256": "fa8179d266bf4d9699668d49a5141ec88aab4df487b75f28abb66bd698807e16"
+    },
+    {
+      "path": "evidence/commands/audit11-final-five-01.json",
+      "bytes": 594,
+      "sha256": "a00870c5eb2b93e77f3be9fbd525f47cca88339505a93b51dd21d0f243bb5840"
+    },
+    {
+      "path": "evidence/commands/audit11-final-five-01.log",
+      "bytes": 2982,
+      "sha256": "a4ffd2419ada68f59fe70202dd8330882b2e1e928c78513e08535bbc1296f980"
+    },
+    {
+      "path": "evidence/commands/audit11-final-five-02.admission.json",
+      "bytes": 98,
+      "sha256": "4f1074e84889e151bf483aa2348e93fa521d55848946f6277bdfd8c912b97f42"
+    },
+    {
+      "path": "evidence/commands/audit11-final-five-02.log",
+      "bytes": 955,
+      "sha256": "421304e290063289c99f727d82b82aba23fa3208161bedbec6b11f9286367846"
+    },
+    {
+      "path": "evidence/commands/audit11-five-corrected.json",
+      "bytes": 671,
+      "sha256": "e481e6eb6dea55187d4ead243d0c6ca6e69a0bf269c6e46c9bddcad9bd07652e"
+    },
+    {
+      "path": "evidence/commands/audit11-five-corrected.log",
+      "bytes": 5731,
+      "sha256": "77b4199f15d24ce21001e2d4787d6cb215e31b20bbef37b4a2a2b1ca31b54ac2"
+    },
+    {
+      "path": "evidence/commands/audit11-five-final.json",
+      "bytes": 669,
+      "sha256": "b3392535fe77d90f3b0b4df07122113154d609ee8e72422debecc8a6ceae19a7"
+    },
+    {
+      "path": "evidence/commands/audit11-five-final.log",
+      "bytes": 4733,
+      "sha256": "4eec46210fdd95858331fcf21fbd40aa8511c36d0398d2a4e5a9062782e300be"
+    },
+    {
+      "path": "evidence/commands/audit11-five-one-shot.json",
+      "bytes": 671,
+      "sha256": "41f14fbc61dca78714028e3e1ac8e9f4ca935966cc2433b100a9e0c65713bae9"
+    },
+    {
+      "path": "evidence/commands/audit11-five-one-shot.log",
+      "bytes": 5779,
+      "sha256": "f741527b9e783e96eaf0ec1613d54c17714f34295848edc8fa083187dc3e535d"
+    },
+    {
+      "path": "evidence/commands/audit11-fixture-corrected-build.admission.json",
+      "bytes": 98,
+      "sha256": "91d27ad4b7db8c865a6aaabb1fd81320085475fbedda54c18d02372345b50a3d"
+    },
+    {
+      "path": "evidence/commands/audit11-fixture-corrected-build.json",
+      "bytes": 592,
+      "sha256": "206319e1173f2b0989a46ae808123f2986eccfa809efea558a8acb3204e36fc7"
+    },
+    {
+      "path": "evidence/commands/audit11-fixture-corrected-build.log",
+      "bytes": 256,
+      "sha256": "564f2c8eb5f5250acf02d498d78c5c06a30592a4f2af35a4c91a03efe0005868"
+    },
+    {
+      "path": "evidence/commands/audit11-fixture-diagnostic-build.admission.json",
+      "bytes": 98,
+      "sha256": "6a7bbaed500e17620e41a5bf2c429869aa5cdfb48ce396a2a0a4ef251afae05d"
+    },
+    {
+      "path": "evidence/commands/audit11-fixture-diagnostic-build.json",
+      "bytes": 571,
+      "sha256": "eef9940e145e8c70a6eff62435277d1161985a1aa990ac4d74835bd13559f1e9"
+    },
+    {
+      "path": "evidence/commands/audit11-fixture-diagnostic-build.log",
+      "bytes": 1800,
+      "sha256": "cd5b01f21cc28cd8c26429012b1566bd17b04ba92a7caa80f979de5fbb43f447"
+    },
+    {
+      "path": "evidence/commands/audit11-green-01.admission.json",
+      "bytes": 98,
+      "sha256": "267877288950d148c851123b1ecd5e944a4a1ae5fbf3b65b922f71a2856e6596"
+    },
+    {
+      "path": "evidence/commands/audit11-green-01.json",
+      "bytes": 589,
+      "sha256": "ad971f86c3c3e4c08ce1d670ea850e8e72ab48a9d5305fd6335181dd5a006cbe"
+    },
+    {
+      "path": "evidence/commands/audit11-green-01.log",
+      "bytes": 1225,
+      "sha256": "296d6b5840f7f2ba2ea99e39fdd589a8d2b57b20110480830c4a75d2d08fdb47"
+    },
+    {
+      "path": "evidence/commands/audit11-green-02.admission.json",
+      "bytes": 98,
+      "sha256": "f295637c74bcf0125aef25e84b0acd8261f34e8edfbd706f24113c893e6f0f55"
+    },
+    {
+      "path": "evidence/commands/audit11-green-02.json",
+      "bytes": 587,
+      "sha256": "b03f6208545822ae0ade39b8896c1379046bee591c5b86c56f44a6b3066224d5"
+    },
+    {
+      "path": "evidence/commands/audit11-green-02.log",
+      "bytes": 4533,
+      "sha256": "6239af30323e73b9040620e18e7cdabdf50fab01397ae73c3afb287066490a93"
+    },
+    {
+      "path": "evidence/commands/audit11-one-shot-build.admission.json",
+      "bytes": 98,
+      "sha256": "8ec4471c7b67cd4ba46834040e592dc31c0e3dc9887e6ad22f21fd3a872a16f6"
+    },
+    {
+      "path": "evidence/commands/audit11-one-shot-build.json",
+      "bytes": 583,
+      "sha256": "633ce31a94db55b1dbea1e3c3928dae59aab27ed4f29e60e977cdc82c10f5d31"
+    },
+    {
+      "path": "evidence/commands/audit11-one-shot-build.log",
+      "bytes": 256,
+      "sha256": "74fa38007d5ec4950be39ab24cc28a7d635678373ecbab330cbb20b2e1c3914b"
+    },
+    {
+      "path": "evidence/commands/audit11-red-01.admission.json",
+      "bytes": 98,
+      "sha256": "a70283797f2d1b41d4b22f1894eecc1ac945371c059c4a4849a2669f3be01c16"
+    },
+    {
+      "path": "evidence/commands/audit11-red-01.json",
+      "bytes": 587,
+      "sha256": "38d5bb7408c28832d2aae6e39ca85445c7af7ae3eaac7de109bee302cd8599cf"
+    },
+    {
+      "path": "evidence/commands/audit11-red-01.log",
+      "bytes": 4599,
+      "sha256": "b593109b49e6de6fd1e16b57eb468824c5741c8a932aea2e79924e431f3b9e1a"
+    },
+    {
+      "path": "evidence/commands/audit11-red-10000.admission.json",
+      "bytes": 98,
+      "sha256": "c195a5e82332223be432c2fcf2551334054936f0b5c81764aeaa0b6585a7aa1d"
+    },
+    {
+      "path": "evidence/commands/audit11-red-10000.json",
+      "bytes": 590,
+      "sha256": "784905c5c0c648f1521204c91bfa678679fb5816a508cba7595b4b5582270a00"
+    },
+    {
+      "path": "evidence/commands/audit11-red-10000.log",
+      "bytes": 3490,
+      "sha256": "19afeb9e2f2e8d97ba8ea37c267552979e2496dbe17abf7d1a1226afc717225b"
+    },
+    {
+      "path": "evidence/commands/Cargo.lock.diff.txt",
+      "bytes": 197,
+      "sha256": "d19e06678c9e83009d9da7729a12d5cc676a342238db07afe1cac5195bdba261"
+    },
+    {
+      "path": "evidence/commands/clipboard-ui-lifecycle.log",
+      "bytes": 1346,
+      "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+    },
+    {
+      "path": "evidence/commands/desktop-shell-lifecycle.log",
+      "bytes": 336,
+      "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283"
+    },
+    {
+      "path": "evidence/commands/docs__reference-code__download.md.diff.txt",
+      "bytes": 2251,
+      "sha256": "611575fc2f8fe9c72ee6403387507c3631da6d9a5d501d3b8ad38aafe91f41fc"
+    },
+    {
+      "path": "evidence/commands/download-main-related.json",
+      "bytes": 1249,
+      "sha256": "730b13f65ece5b4a22f6a71c8e46cd8bc88a60814396b94a3dbb53b47b274f8b"
+    },
+    {
+      "path": "evidence/commands/download-main-related.log",
+      "bytes": 2988,
+      "sha256": "697fa84ed83ee9c76a25247bab2ebe032ed792cd90633cc9fbd54f3249fee285"
+    },
+    {
+      "path": "evidence/commands/download-page-related.json",
+      "bytes": 657,
+      "sha256": "305516f2b7e30523981977194c7babd14c091c220e32768801f1b93c97ed3a31"
+    },
+    {
+      "path": "evidence/commands/download-page-related.log",
+      "bytes": 3412,
+      "sha256": "51a65821400a1be7cd972a0bfab8c5000507bf434abb71d078ca066319ad0130"
+    },
+    {
+      "path": "evidence/commands/download-ui-lifecycle.log",
+      "bytes": 100,
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+    },
+    {
+      "path": "evidence/commands/downloads-related.json",
+      "bytes": 640,
+      "sha256": "aae8378892a815a858d165d5b766338655f9dce2153041370bba100145725eae"
+    },
+    {
+      "path": "evidence/commands/downloads-related.log",
+      "bytes": 21922,
+      "sha256": "7625bd7598dac2ad3743f387e833fb4b96570d2c423dd22a69a5576ad8fa6f9e"
+    },
+    {
+      "path": "evidence/commands/final-alias-and-identity.json",
+      "bytes": 714,
+      "sha256": "4c7b24731a81e652b4447457200dbc1d942ef84de20ce99dae157a86b80bf60f"
+    },
+    {
+      "path": "evidence/commands/final-alias-and-identity.log",
+      "bytes": 2747,
+      "sha256": "18a79b315b6c1eef424c65415d6a6f62c29e278a53bc79e2ee60b4cdfae1353f"
+    },
+    {
+      "path": "evidence/commands/final-alias-build.admission.json",
+      "bytes": 98,
+      "sha256": "e85e284e6606605a8b405a264e164202adf21c222dc0a10ce9a323279af468ef"
+    },
+    {
+      "path": "evidence/commands/final-alias-build.json",
+      "bytes": 578,
+      "sha256": "894402a7b4aaf7625d745265937bd3be16d4a20e9e625c363a8852eb351f8a18"
+    },
+    {
+      "path": "evidence/commands/final-alias-build.log",
+      "bytes": 256,
+      "sha256": "95a41e9b66a1e74db3b1e883ae3fe1d2ea3569335269dced244511634a61a0ec"
+    },
+    {
+      "path": "evidence/commands/finalize.py",
+      "bytes": 5068,
+      "sha256": "b44db61128703664fe32e5dd8db5cfca425ba69143069ee36a05582b878dcd9a"
+    },
+    {
+      "path": "evidence/commands/finish.ps1",
+      "bytes": 2084,
+      "sha256": "42daebbd0aa29aa2e89b95ddc926c3175bf9a75847f26d9385baad0333953a0e"
+    },
+    {
+      "path": "evidence/commands/fixture-watchdog-01.json",
+      "bytes": 263,
+      "sha256": "a896a05b6c2fe9a91646a2b0dbca580adf12cd86c68265f65f48d228a5fc91d8"
+    },
+    {
+      "path": "evidence/commands/fixture-watchdog-01.log",
+      "bytes": 383,
+      "sha256": "887d2fe0c937913b67f2e33ab16f354f95770ba0f2dd85e0f3ca855a9f8abbc3"
+    },
+    {
+      "path": "evidence/commands/fixture-watchdog-01.stderr.log",
+      "bytes": 1422,
+      "sha256": "79a179554c68c04f916127c6e01af71b49472d0d970bf0e3b1b1c4bc885cb89c"
+    },
+    {
+      "path": "evidence/commands/gpui-component-catalog.log",
+      "bytes": 528,
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+    },
+    {
+      "path": "evidence/commands/gpui-release-contracts.log",
+      "bytes": 378,
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+    },
+    {
+      "path": "evidence/commands/guard.py",
+      "bytes": 637,
+      "sha256": "9128c75991ae71d2d8ccc9b1a685bd9e83a8089f6c5a329b1327233b28422127"
+    },
+    {
+      "path": "evidence/commands/inspect-delta.py",
+      "bytes": 682,
+      "sha256": "a3e91eb6a1e819c6751c910b8ad261bf3c694b1bbf62844c8d582a8f74fecaf7"
+    },
+    {
+      "path": "evidence/commands/interrupted-and-diagnostic.json",
+      "bytes": 774,
+      "sha256": "f1f1c76e9aa3d343303da18e4233cf668c59d3dc83664087f5a3053a145a0267"
+    },
+    {
+      "path": "evidence/commands/markdown-editor-contracts.log",
+      "bytes": 480,
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+    },
+    {
+      "path": "evidence/commands/protected-related.json",
+      "bytes": 787,
+      "sha256": "57bc697cb029c344ee94f3aa225b21bbaee4a10cd152347d9e48ba6c84b6f77c"
+    },
+    {
+      "path": "evidence/commands/protected-related.log",
+      "bytes": 8018,
+      "sha256": "a2418b554ca913aec52636120cb937a79d2bbaa4da991f7b466cd90188de9006"
+    },
+    {
+      "path": "evidence/commands/publish.py",
+      "bytes": 7590,
+      "sha256": "eb61e634923742c6c8ed6e6016aba56d494e9a0a4f90374de7e7fd4c66d10764"
+    },
+    {
+      "path": "evidence/commands/quality-results.json",
+      "bytes": 293,
+      "sha256": "a2142ed9e2dbd14ee6fe750ede230a7d5f5a0ce23402f8f1c57a5a79a71950bb"
+    },
+    {
+      "path": "evidence/commands/quality.ps1",
+      "bytes": 860,
+      "sha256": "92fd2ff541ed47236e0331b4d89d03046fd4eaf660ea04cd1327b0392a43e7a9"
+    },
+    {
+      "path": "evidence/commands/regression-results.json",
+      "bytes": 312,
+      "sha256": "aedfd417afb16a0f54e68f1326aaf5939d5ad1c53c84e336e61b5b8dee685dbe"
+    },
+    {
+      "path": "evidence/commands/regressions.ps1",
+      "bytes": 1459,
+      "sha256": "ff148f49470afd25df1cb72b93998d3ddff944dbd34a330b5f89376bdbb437d8"
+    },
+    {
+      "path": "evidence/commands/run-exe.ps1",
+      "bytes": 1768,
+      "sha256": "25c59b0d1cfae10972d1a1dda078e23b4c05c23289428000d5cf0c6e68d33b7d"
+    },
+    {
+      "path": "evidence/commands/run.ps1",
+      "bytes": 1622,
+      "sha256": "af9532d1267b1ed1bbbd5971ce0c8d575ee7d8e083cbc2efe63b7c512844ade9"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__downloads.rs.diff.txt",
+      "bytes": 2535,
+      "sha256": "b57d3fbc94af05482bf32041aca487c5f3269acb4705e9c672a3614520995263"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__downloads__floating_assistant.rs.diff.txt",
+      "bytes": 1062,
+      "sha256": "e2a3d529c759fd7f324b7f1ebef2a20ac4e42355a8d46f1f006f5c6fc269d049"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__main_window.rs.diff.txt",
+      "bytes": 341,
+      "sha256": "8ebd37d3bebca748e741f7d97a2cdd87eb77a647f87d4a1f0171e0ec882ad5a3"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__main_window__download_average_tests.rs.diff.txt",
+      "bytes": 538,
+      "sha256": "fa762cdbcb1fda097ad3d837dc539762e7b6c93d045704fa64db437979cf1260"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__main_window__download_page.rs.diff.txt",
+      "bytes": 10649,
+      "sha256": "a1f4c040f9845eb56fa968d8e42f2f9e6e22a283b1ef8a5bb0ccf1651317011b"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.diff.txt",
+      "bytes": 1226,
+      "sha256": "8f5df8dc3c33424e9f992d69aa13b2798a651a44df6b4712b21228618866057b"
+    },
+    {
+      "path": "evidence/commands/rust__apps__nxtools-desktop__src__main_window__tests.rs.diff.txt",
+      "bytes": 943,
+      "sha256": "08519888087ab6cd72e1b1be2f5e08d4e3884607cde7e55f56098b8bcf4a25ed"
+    },
+    {
+      "path": "evidence/commands/scoped-checks.json",
+      "bytes": 946,
+      "sha256": "564bd53e6d4596f1f0bcf64e15d5bb66eacdaf7040834f8f9c081c0e2356590c"
+    },
+    {
+      "path": "evidence/commands/scoped-diff.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/commands/scoped-fmt.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/commands/source-gate-results.json",
+      "bytes": 1543,
+      "sha256": "b97d220850e411c5b94a444b5d77070c7d269c8a3ff3f4e6a9df06d540cc2120"
+    },
+    {
+      "path": "evidence/commands/source-gates.ps1",
+      "bytes": 1162,
+      "sha256": "b9a96114caef854549f67497f6f70000a388c416ff4dde058005ded3c4aa0147"
+    },
+    {
+      "path": "evidence/commands/spec-contracts.log",
+      "bytes": 352,
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+    },
+    {
+      "path": "evidence/commands/strict-production.admission.json",
+      "bytes": 98,
+      "sha256": "88db863f7ac7fdca4dbf291af6cdf6ac345f78effb86769da738dad3097244f4"
+    },
+    {
+      "path": "evidence/commands/strict-production.json",
+      "bytes": 566,
+      "sha256": "53ec3277215a879905f243c0be4e8df3d5b6b8536a69f063203e4497f91b5552"
+    },
+    {
+      "path": "evidence/commands/strict-production.log",
+      "bytes": 1585,
+      "sha256": "42e6143608bf392e15524de5c2d53c7f5df0da357f8d0746800f430dc35258cd"
+    },
+    {
+      "path": "evidence/commands/strict-tests-final.admission.json",
+      "bytes": 98,
+      "sha256": "ff39aaf4e1dd05e6823c86be906b037e21ce3b4549f0ff93eb775831e0dbeae8"
+    },
+    {
+      "path": "evidence/commands/strict-tests-final.json",
+      "bytes": 573,
+      "sha256": "419d5d3961cf0ec6179c2dbf8494fddc47ea13a800544e30a5914bad1d389ba2"
+    },
+    {
+      "path": "evidence/commands/strict-tests-final.log",
+      "bytes": 163,
+      "sha256": "91264fbd793fd5e2729d5b389cb61670ce4dd2245f0f7bb78b81900ea305024c"
+    },
+    {
+      "path": "evidence/commands/strict-tests.admission.json",
+      "bytes": 98,
+      "sha256": "2145d44e772e93db0d576119446eec1c48ada927f5b4043d5b3541c234221704"
+    },
+    {
+      "path": "evidence/commands/strict-tests.json",
+      "bytes": 569,
+      "sha256": "996678b9caff237249947238743455fb9bd133346256343adf01efd7d58614f2"
+    },
+    {
+      "path": "evidence/commands/strict-tests.log",
+      "bytes": 1384,
+      "sha256": "f2dfda4b2b06a9c8679b97f7a2f0bb73592de3a361f755e82bab933c49502214"
+    },
+    {
+      "path": "evidence/commands/ui-consistency.log",
+      "bytes": 86,
+      "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a"
+    },
+    {
+      "path": "evidence/commands/ui-motion-policy.log",
+      "bytes": 168,
+      "sha256": "adc8f86392baa2b036578585fbd28130f9b9ed0214d79d6f01ed5c1d9458e6b6"
+    },
+    {
+      "path": "evidence/commands/ui-state-lifecycle.log",
+      "bytes": 108,
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+    },
+    {
+      "path": "evidence/commands/ui-token-boundaries.log",
+      "bytes": 92,
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+    },
+    {
+      "path": "evidence/commands/workspace-check.admission.json",
+      "bytes": 98,
+      "sha256": "55e7b16335e9c290aafbc167ce4d4e6f127bc523e63efdc9ac022ac7511c434e"
+    },
+    {
+      "path": "evidence/commands/workspace-check.json",
+      "bytes": 547,
+      "sha256": "642991f404e36f19989d5939342961fa921cf76ca0d1d214be90672f19c5d1cd"
+    },
+    {
+      "path": "evidence/commands/workspace-check.log",
+      "bytes": 997,
+      "sha256": "5192f88e61fef725d7a55ec94a36f7697fb6295c02d276973962b81720e09030"
+    },
+    {
+      "path": "evidence/commands/workspace-fmt.admission.json",
+      "bytes": 98,
+      "sha256": "7bd87c93430416016d2e15007c146a1e2674e4d803c87dfba0f42ea28e2a16ec"
+    },
+    {
+      "path": "evidence/commands/workspace-fmt.json",
+      "bytes": 540,
+      "sha256": "0038e10c73e4c199ed42a2a51e0e0c5e2c39f2bfc59cfc0814e2edc6d0450f01"
+    },
+    {
+      "path": "evidence/commands/workspace-fmt.log",
+      "bytes": 32957,
+      "sha256": "ca7073e792e760b42cd0795567c708fb415b222e88ecb813775a1f240dd2eebe"
+    },
+    {
+      "path": "evidence/current/docs/reference-code/download.md",
+      "bytes": 281269,
+      "sha256": "0d95134f0e1c3b27ce5a332339fa118c72f37a4978ee7901233f872d5e0039b7"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs",
+      "bytes": 12770,
+      "sha256": "73cdb3f53ece36deb22c6658c16c4fcb61a46953108b95fc416ea2bf910e3883"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/downloads.rs",
+      "bytes": 144379,
+      "sha256": "11b1214dc5d111b27825aad9ef52d4ee7a2696008e946e5955fc2e29a88e62e2"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs",
+      "bytes": 6578,
+      "sha256": "0aa091c5a2c3490571cc36280ef2b5b6f82ec518d125c8f35fbb015aa45d61db"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+      "bytes": 62373,
+      "sha256": "529dde267f681d13a5aebb10976af02c3896dd8e345a58a731190013dbed4269"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/download_page/projection_tests.rs",
+      "bytes": 23434,
+      "sha256": "813532ea76951192b5e08cbb874a72ae381867e6ffb1851158a98690fc6fabaf"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+      "bytes": 131430,
+      "sha256": "85d82409dd69d0b603ab1234fa7aa211388480180c8d6c7dbb742af8adf6c89d"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window/tests.rs",
+      "bytes": 237399,
+      "sha256": "bde7e002a0054d3051550e6a03f00cc64c7832ffa333ffafaf69cf914cd09952"
+    },
+    {
+      "path": "evidence/current/rust/apps/nxtools-desktop/src/main_window.rs",
+      "bytes": 23010,
+      "sha256": "2c47c13b9c82df873b9216d3e55501fab5a98df47fe31fd466498f72e6e117db"
+    },
+    {
+      "path": "evidence/deltas/docs__reference-code__download.md.txt",
+      "bytes": 2236,
+      "sha256": "eac68416b66d84823646b2ec007052d6c30aa3244e66308464cef7e575ac636b"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__downloads.rs.txt",
+      "bytes": 2476,
+      "sha256": "b4619d15e960af2c7eb4b18d7e310ea0a2aaa07a32c8ced80d056556ac1e2c1f"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__downloads__floating_assistant.rs.txt",
+      "bytes": 1057,
+      "sha256": "75834ececd241104b077dbce10c7a557e8443ebbcb9b9e9b138f4b4755020fe1"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__main_window.rs.txt",
+      "bytes": 345,
+      "sha256": "4ce24ffba3225dadf9fa858792082ef2c1d0308effaa7b39074dfb29de5af6f6"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__main_window__download_average_tests.rs.txt",
+      "bytes": 540,
+      "sha256": "0cdc588fa48b89c907f92d82456fe10b2e956413df63ae19b2bfad1c4bd5b172"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__main_window__download_page.rs.txt",
+      "bytes": 10428,
+      "sha256": "05391ba998caa4c4e79e5a5f512333c03ae89743d03323f505a13fa89f0f2ad2"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.txt",
+      "bytes": 1212,
+      "sha256": "d13bac0419b862011d7cf4942c0c9aec908e7f90db143db0369534b91f30e942"
+    },
+    {
+      "path": "evidence/deltas/rust__apps__nxtools-desktop__src__main_window__tests.rs.txt",
+      "bytes": 929,
+      "sha256": "51babe28dd3c2203032a180b6565cfcfe535a61ab010406d1a1f88241dd8cb88"
+    },
+    {
+      "path": "evidence/historical-manifest.json",
+      "bytes": 713473,
+      "sha256": "40a2d5c7682d0c26a8d48fbc3a9c3346b9b40247bb18ff1d3b63dea7eb8a161e"
+    },
+    {
+      "path": "evidence/own-deltas.json",
+      "bytes": 23550,
+      "sha256": "2cb75f722726205da73a18274a6d0f53dc98d449e57887ba082ee3fc43789229"
+    },
+    {
+      "path": "evidence/owner-checks.json",
+      "bytes": 2296,
+      "sha256": "44e53b4ccbe82b0860c326143ed9c9786b866f2f6f4b24b37dd1911602f86308"
+    },
+    {
+      "path": "evidence/protected-manifest.json",
+      "bytes": 100334,
+      "sha256": "cbcd453f943cb8c67ce955080b0c627fc3db96b669fc1bef23d74c89df417224"
+    },
+    {
+      "path": "evidence/publication-attempt-01.json",
+      "bytes": 620,
+      "sha256": "8eb4f32c9acba165195e23aa1d34dd1d326a7d1b8deb7431c744da97afe67963"
+    },
+    {
+      "path": "evidence/task-start-git-status.txt",
+      "bytes": 32245,
+      "sha256": "db881d6e1f30c7ce0363c1824a3e0e9ccab9f34203e2b16d11c0b80777cc2960"
+    },
+    {
+      "path": "evidence/unowned/Cargo.lock",
+      "bytes": 257547,
+      "sha256": "6c63823a32a7ca18fd89013aa1c3ee96ad6c383320b78857a5be9996e5d37b0f"
+    },
+    {
+      "path": "evidence/unowned-observations.json",
+      "bytes": 396,
+      "sha256": "29868c83037a21de85b0512c34321c145dc71a49b8b6e819cd9df5983085b04e"
+    },
+    {
+      "path": "evidence/verification-summary.json",
+      "bytes": 1547,
+      "sha256": "36cf12e90ee1ddbe513260ba6da3453a350ee4182424d98e0cdebbfce97507d7"
+    },
+    {
+      "path": "evidence/verify.py",
+      "bytes": 4406,
+      "sha256": "e21ba576bcdc2cd8df9516b028ad68e41cd4369961ff5d2b7a5d8bc55bd9d3ba"
+    },
+    {
+      "path": "outcomes.md",
+      "bytes": 10297,
+      "sha256": "ec9ed55f066362ea233d60bd06af4e269e894c9cab1c93e6bdab49e4ce812f72"
+    },
+    {
+      "path": "prd.md",
+      "bytes": 3754,
+      "sha256": "bed580b386f2c1ec7c525fe4b7a671d2be74f72ad556668e9a37bdf41a22d014"
+    }
+  ]
+}

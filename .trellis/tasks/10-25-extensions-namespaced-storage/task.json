@@ -1,0 +1,32 @@
+{
+  "id": "extensions-namespaced-storage",
+  "name": "extensions-namespaced-storage",
+  "title": "P3 — Namespaced persistent storage",
+  "description": "R3/A3 quota, lifecycle, explicit restore and atomic data",
+  "status": "source_completed_acceptance_pending",
+  "dev_type": "fullstack",
+  "scope": "Approved R3/A3 bounded durable namespace and explicit lifecycle through original owners",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-25",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-25-extensions-capability-expansion",
+  "relatedFiles": [],
+  "notes": "P3 source/isolated boundary verification completed; storage18PASS,Settings26PASS,Core6+1+11,Extensions116PASS,strictlint/workspace/static gates PASS. See outcomes.md. Native/visual/installed/P8 acceptance deferred; canonical next P4.",
+  "meta": {
+    "implementation_approved": true,
+    "native_ui_authorized": false,
+    "source_completed": true,
+    "outcomes": "outcomes.md",
+    "deployed": false
+  }
+}

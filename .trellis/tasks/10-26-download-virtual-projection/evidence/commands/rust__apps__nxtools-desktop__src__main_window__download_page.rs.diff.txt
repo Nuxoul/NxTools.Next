@@ -1,0 +1,236 @@
+--- baseline/rust/apps/nxtools-desktop/src/main_window/download_page.rs
++++ current/rust/apps/nxtools-desktop/src/main_window/download_page.rs
+@@ -324,17 +324,20 @@
+     filter: DownloadTaskFilter,
+     query: &str,
+     sort: DownloadSortState,
+-) -> Vec<DownloadEngineTask> {
++) -> Vec<usize> {
+     let mut visible = tasks
+         .iter()
+-        .filter(|task| filter.matches(task.task.status()))
+-        .filter(|task| download_task_matches_search(task, query))
+-        .cloned()
++        .enumerate()
++        .filter(|(_, task)| filter.matches(task.task.status()))
++        .filter(|(_, task)| download_task_matches_search(task, query))
++        .map(|(index, _)| index)
+         .collect::<Vec<_>>();
+     if sort.key == DownloadSortKey::Queue {
+         return visible;
+     }
+     visible.sort_by(|left, right| {
++        let left = &tasks[*left];
++        let right = &tasks[*right];
+         let ordering = match sort.key {
+             DownloadSortKey::Queue => std::cmp::Ordering::Equal,
+             DownloadSortKey::Name => download_task_name(left)
+@@ -800,55 +803,35 @@
+             .value()
+             .trim()
+             .to_owned();
+-        let (total_count, counts, visible_tasks, visible_progress, visible_icons, snapshot_error) =
+-            self.downloads
+-                .upgrade()
+-                .map(|application| {
+-                    let application = application.read(cx);
+-                    let tasks = application.tasks();
+-                    let visible_tasks = download_tasks_for_view(
+-                        tasks,
+-                        self.download_filter,
+-                        &search_query,
+-                        self.download_sort,
+-                    );
+-                    let visible_progress = visible_tasks
+-                        .iter()
+-                        .filter_map(|task| {
+-                            application
+-                                .progress(task.task.id())
+-                                .cloned()
+-                                .map(|progress| (task.task.id(), progress))
+-                        })
+-                        .collect::<HashMap<_, _>>();
+-                    let visible_icons = visible_tasks
+-                        .iter()
+-                        .filter_map(|task| {
+-                            application
+-                                .task_icon_path(task.task.id())
+-                                .map(|path| (task.task.id(), path.to_path_buf()))
+-                        })
+-                        .collect::<HashMap<_, _>>();
+-                    (
+-                        tasks.len(),
+-                        download_filter_counts(tasks.iter().map(|task| task.task.status())),
+-                        visible_tasks,
+-                        visible_progress,
+-                        visible_icons,
+-                        application.snapshot_error().map(str::to_owned),
+-                    )
+-                })
+-                .unwrap_or_default();
++        let (tasks, snapshot_error) = self
++            .downloads
++            .upgrade()
++            .map(|application| {
++                let application = application.read(cx);
++                (
++                    application.task_snapshot(),
++                    application.snapshot_error().map(str::to_owned),
++                )
++            })
++            .unwrap_or_default();
++        let total_count = tasks.len();
++        let counts = download_filter_counts(tasks.iter().map(|task| task.task.status()));
++        let visible_tasks = download_tasks_for_view(
++            &tasks,
++            self.download_filter,
++            &search_query,
++            self.download_sort,
++        );
+         let selected_task_id = reconcile_download_selection(
+             self.selected_download_task,
+             &mut self.selected_download_tasks,
+             &visible_tasks,
+-            |task| task.task.id(),
++            |index| tasks[*index].task.id(),
+         );
+         self.selected_download_task = selected_task_id;
+         let visible_task_ids = visible_tasks
+             .iter()
+-            .map(|task| task.task.id())
++            .map(|index| tasks[*index].task.id())
+             .collect::<Vec<_>>();
+         let selected_task_ids = visible_task_ids
+             .iter()
+@@ -860,7 +843,7 @@
+             .filter(|task_id| self.selected_download_tasks.contains(task_id))
+             .or(selected_task_id);
+         let selected_task = selected_task_id
+-            .and_then(|task_id| visible_tasks.iter().find(|task| task.task.id() == task_id))
++            .and_then(|task_id| tasks.iter().find(|task| task.task.id() == task_id))
+             .cloned();
+         let (detail_snapshot, detail_error) = selected_task_id
+             .and_then(|task_id| {
+@@ -873,13 +856,14 @@
+                 })
+             })
+             .unwrap_or_default();
+-        let selected_progress = selected_task_id
+-            .and_then(|task_id| visible_progress.get(&task_id))
+-            .cloned();
++        let selected_progress = selected_task_id.and_then(|task_id| {
++            self.downloads
++                .upgrade()
++                .and_then(|application| application.read(cx).progress(task_id).cloned())
++        });
+         let main_window = cx.entity();
+         let batch_toolbar = (selected_task_ids.len() > 1).then(|| {
+-            let mut capabilities =
+-                download_context_capabilities(&visible_tasks, &selected_task_ids);
++            let mut capabilities = download_context_capabilities(&tasks, &selected_task_ids);
+             if capabilities.can_move_queue
+                 && let Some(application) = self.downloads.upgrade()
+             {
+@@ -937,32 +921,42 @@
+             .into_any_element()
+         });
+         let visible_count = visible_tasks.len();
+-        let virtual_tasks = Arc::new(visible_tasks);
++        // Indices only address this captured immutable owner snapshot, never a refreshed Vec.
++        let virtual_tasks = tasks;
++        let virtual_indices = visible_tasks;
+         let virtual_task_ids = Arc::new(visible_task_ids);
+-        let virtual_progress = Arc::new(visible_progress);
+-        let virtual_icons = Arc::new(visible_icons);
+         let virtual_main_window = main_window.clone();
++        #[cfg(test)]
++        projection_tests::after_projection(cx);
+         let task_list = uniform_list(
+             "download-task-list",
+             visible_count,
+-            cx.processor(move |this, range: std::ops::Range<usize>, _window, _cx| {
++            cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
++                #[cfg(test)]
++                projection_tests::observe_range(range.clone());
++                let application = this.downloads.upgrade();
++                let application = application.as_ref().map(|application| application.read(cx));
+                 range
+-                    .filter_map(|index| virtual_tasks.get(index).cloned())
+-                    .map(|task| {
+-                        let progress = virtual_progress.get(&task.task.id()).cloned();
+-                        let icon_path = virtual_icons.get(&task.task.id()).cloned();
+-                        download_task_row(
+-                            theme,
+-                            this.downloads.clone(),
+-                            virtual_main_window.clone(),
+-                            DownloadRowSelection {
+-                                selected: this.selected_download_tasks.contains(&task.task.id()),
+-                                visible_task_ids: virtual_task_ids.clone(),
+-                            },
+-                            task,
+-                            progress,
+-                            icon_path,
+-                        )
++                    .filter_map(|index| {
++                        let task = virtual_tasks.get(*virtual_indices.get(index)?)?;
++                        let task_id = *virtual_task_ids.get(index)?;
++                        // Never resolve an old index against the current owner's replacement Vec.
++                        (task.task.id() == task_id).then(|| {
++                            download_task_row(
++                                theme,
++                                this.downloads.clone(),
++                                virtual_main_window.clone(),
++                                DownloadRowSelection {
++                                    selected: this.selected_download_tasks.contains(&task_id),
++                                    visible_task_ids: virtual_task_ids.clone(),
++                                },
++                                task,
++                                application.and_then(|application| application.progress(task_id)),
++                                application
++                                    .and_then(|application| application.task_icon_path(task_id))
++                                    .map(|path| path.to_path_buf()),
++                            )
++                        })
+                     })
+                     .collect::<Vec<_>>()
+             }),
+@@ -1308,10 +1302,12 @@
+     application: gpui_kit::WeakEntity<DownloadApplication>,
+     main_window: Entity<MainWindow>,
+     selection: DownloadRowSelection,
+-    task: DownloadEngineTask,
+-    live_progress: Option<DownloadProgress>,
++    task: &DownloadEngineTask,
++    live_progress: Option<&DownloadProgress>,
+     icon_path: Option<PathBuf>,
+ ) -> AnyElement {
++    #[cfg(test)]
++    projection_tests::observe_row(task, live_progress);
+     let DownloadRowSelection {
+         selected,
+         visible_task_ids,
+@@ -1325,7 +1321,7 @@
+     let name_id = gpui_kit::SharedString::from(format!("download-task-name-text-{element_id}"));
+     let status = task.task.status();
+     let created_at_unix_ms = task.task.created_at_unix_ms();
+-    let name = download_task_name(&task).to_owned();
++    let name = download_task_name(task).to_owned();
+     let category = task
+         .task
+         .request()
+@@ -1341,7 +1337,7 @@
+         status,
+         task.downloaded_bytes,
+         task.total_bytes,
+-        live_progress.as_ref(),
++        live_progress,
+     );
+     if status == DownloadStatus::Completed {
+         transfer.speed = task
+@@ -3463,3 +3459,6 @@
+ #[cfg(test)]
+ #[path = "download_average_tests.rs"]
+ mod download_average_tests;
++
++#[cfg(test)]
++pub(crate) mod projection_tests;

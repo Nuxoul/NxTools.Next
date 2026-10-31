@@ -14,6 +14,11 @@ use std::sync::{
 pub(crate) struct ExtensionServiceGlobal(pub ExtensionService);
 impl Global for ExtensionServiceGlobal {}
 impl ExtensionApplication {
+    #[cfg(test)]
+    pub(crate) fn unbind_service_for_test(&mut self) {
+        self.event_control = None;
+        self.service = None;
+    }
     pub(crate) fn bind_ui(
         &mut self,
         clipboard: WeakEntity<crate::clipboard::ClipboardApplication>,
@@ -26,6 +31,8 @@ impl ExtensionApplication {
             .try_global::<ExtensionServiceGlobal>()
             .map(|global| global.0.clone());
         self.event_control = self.service.as_ref().map(|service| service.events.clone());
+        self.observe_runtime_progress(cx);
+        self.observe_storage_metadata(cx);
         if let Some(service) = &self.service {
             let mut changed = service.manual_effects.subscribe();
             cx.spawn(async move |this, cx| {
@@ -54,6 +61,68 @@ impl ExtensionApplication {
             })
             .detach();
         }
+    }
+    pub(crate) fn refresh_committed_storage_metadata(&mut self) {
+        if let Some(current) = self
+            .service
+            .as_ref()
+            .and_then(|service| service.runtime.snapshot().ok())
+        {
+            super::service::refresh_storage_metadata(&mut self.packages, &current);
+        }
+    }
+    pub(crate) fn observe_storage_metadata(&self, cx: &mut Context<Self>) {
+        let Some(service) = self.service.as_ref() else {
+            return;
+        };
+        let Some(mut changed) = service.subscribe_storage_metadata() else {
+            return;
+        };
+        cx.spawn(async move |this, cx| {
+            // Initial projection also covers binding completed before the observer attached.
+            loop {
+                if this
+                    .update(cx, |app, cx| {
+                        let Some(snapshot) = app
+                            .service
+                            .as_ref()
+                            .and_then(|service| service.runtime.snapshot().ok())
+                        else {
+                            return;
+                        };
+                        super::service::refresh_storage_metadata(&mut app.packages, &snapshot);
+                        let quick = app.quick_launch.clone();
+                        cx.defer(move |cx| {
+                            let _ = quick.update(cx, |quick, cx| {
+                                quick.refresh_extension_storage_metadata(&snapshot, cx)
+                            });
+                        });
+                        cx.notify();
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+                if changed.changed().await.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+    pub(crate) fn observe_runtime_progress(&self, cx: &mut Context<Self>) {
+        let Some(service) = &self.service else {
+            return;
+        };
+        let mut changed = service.runtime.subscribe_progress();
+        cx.spawn(async move |this, cx| {
+            while changed.changed().await.is_ok() {
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
     pub(crate) fn handle_host_call(&mut self, call: UiHostCall, cx: &mut Context<Self>) {
         let current = self.packages.packages.iter().any(|package| {
@@ -226,7 +295,7 @@ impl ExtensionApplication {
                     });
                 });
             }
-            "quick_launch.search" => {
+            "quick_launch.search" | "quick_launch.search_catalog" => {
                 let Ok(input) = serde_json::from_value::<Query>(call.params) else {
                     respond(call.reply, HostReply::error("invalid_params"), cx);
                     return;
@@ -236,13 +305,20 @@ impl ExtensionApplication {
                     return;
                 }
                 let quick = self.quick_launch.clone();
+                let scoped = call.method == "quick_launch.search_catalog";
                 cx.defer(move |cx| {
                     if *call.cancellation.borrow() {
                         let _ = call.reply.try_send(HostReply::error("cancelled"));
                         return;
                     }
                     let reply = quick
-                        .update(cx, |quick, _| quick.extension_search(&input.query))
+                        .update(cx, |quick, _| {
+                            if scoped {
+                                quick.extension_search_catalog(&input.query)
+                            } else {
+                                quick.extension_search(&input.query)
+                            }
+                        })
                         .unwrap_or_else(|_| HostReply::error("ui_unavailable"));
                     let _ = call.reply.try_send(reply);
                 });

@@ -1,0 +1,25 @@
+﻿[
+    {
+        "name":  "standard-audit04",
+        "command":  "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  189.16
+    },
+    {
+        "name":  "original-archive-job-regressions",
+        "command":  "cargo test -p nxtools-desktop archive::application::jobs::tests:: -- --test-threads=1 --skip audit04_",
+        "exit_code":  0,
+        "elapsed_seconds":  1.62
+    },
+    {
+        "name":  "desktop-strict-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit_code":  0,
+        "elapsed_seconds":  31.28
+    },
+    {
+        "name":  "job-tests-scoped-fmt",
+        "command":  "rustfmt --check --edition 2024 --config skip_children=true rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+        "exit_code":  0
+    }
+]

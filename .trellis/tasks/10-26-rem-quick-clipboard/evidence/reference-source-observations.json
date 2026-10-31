@@ -1,0 +1,45 @@
+{
+  "level": "Read-only source observations, not task-start baselines or native acceptance",
+  "files": [
+    {
+      "path": "D:\\Code\\NxTools\\Views\\ClipboardHistoryPopupWindow.axaml.cs",
+      "sha256": "a7d361637213332254691da25d08377dbcc06c7a3499ea98a24c1efd4dd0b6b5",
+      "bytes": 37366
+    },
+    {
+      "path": "D:\\Code\\NxTools\\Views\\ClipboardPreviewWindow.cs",
+      "sha256": "f5f4767c1fff4e4dbc7e2024054faa7fc3497ba0e6cc85e6656696e9a6194bf2",
+      "bytes": 8460
+    },
+    {
+      "path": "D:\\Code\\NxTools\\Controls\\ClipboardHistoryListView.cs",
+      "sha256": "bd511e0cbb52f606834e96ec0b8b7491d3fd91d82c5237556cd354177272752d",
+      "bytes": 20553
+    },
+    {
+      "path": "D:\\Code\\SwiftList-main\\App\\Views\\QuickSearchWindow\\Helpers\\QuickSearchWindowInputHandler.cs",
+      "sha256": "c557f7f65e8b187196ee56e31ece54fed459ea6dc2cc39f6c9d5420b5ee7ee00",
+      "bytes": 12039
+    },
+    {
+      "path": "D:\\Code\\SwiftList-main\\App\\Services\\QuickLookManager.cs",
+      "sha256": "6b8e1c356d851943d20a45841c24c843cde84b9425fac24888fe049086ca11a4",
+      "bytes": 17373
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\.diagnostics\\listary-managed\\Listary\\Main\\Views\\SearchWindowBase.cs",
+      "sha256": "6ff5f0c8b8268449eb53b65ab2986d6dd45e09b63f94a298eff39e9bce7897b8",
+      "bytes": 17630
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost\\Windows\\WindowsPlatformAdapter.NativeMethods.cs",
+      "sha256": "300c9def4067dbcd7b78a5df18eb2d6b00161e3ead16893770a67b10b785782b",
+      "bytes": 58313
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\vendor\\gpui-component-080\\src\\list\\list_item.rs",
+      "sha256": "658c486bc555f7f0720297e1a7cf886b615d45c69a88023a26fb99146e9dae07",
+      "bytes": 9876
+    }
+  ]
+}

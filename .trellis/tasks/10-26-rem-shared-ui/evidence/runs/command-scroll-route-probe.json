@@ -1,0 +1,7 @@
+﻿{
+    "name":  "command-scroll-route-probe",
+    "command":  "cargo test -p nxtools-desktop audit06_shared_actual_quick_form -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  185.8773819,
+    "finished":  "2026-10-26T06:15:30.9386368+08:00"
+}

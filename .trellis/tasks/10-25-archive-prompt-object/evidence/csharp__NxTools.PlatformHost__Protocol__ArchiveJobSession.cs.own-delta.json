@@ -1,0 +1,36 @@
+{
+  "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs",
+  "baseline_sha256": "860d0db31079b56221e03fc9040b285b0018508f9fbdd1d57eb830830a52fb9e",
+  "delivery_sha256": "caa2b3dbdffa3d2d7409bb644fac28410cc7533889be06796c807ba614d4a187",
+  "operations": [
+    {
+      "tag": "replace",
+      "baseline_start": 119,
+      "baseline_end": 120,
+      "delivery_start": 119,
+      "delivery_end": 122,
+      "baseline_text": "            var prompt=new ArchiveJobPrompt(new(op.Command.OperationId,Guid.NewGuid(),op.Command.Generation),\"create_overwrite\",ExistingBytes:checked((ulong)target.Size));\n",
+      "delivery_text": "            var request=op.Command.Request!;\n            var display=new ArchiveJobPromptDisplay(null,DisplayTarget(request.Destination!,request.Create!.Name));\n            var prompt=new ArchiveJobPrompt(new(op.Command.OperationId,Guid.NewGuid(),op.Command.Generation),\"create_overwrite\",ExistingBytes:checked((ulong)target.Size),Display:display);\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 182,
+      "baseline_end": 183,
+      "delivery_start": 184,
+      "delivery_end": 192,
+      "baseline_text": "        var prompt=new ArchiveJobPrompt(ticket,kind,code,attempt,Size(\"existing_bytes\"),Size(\"incoming_bytes\")??Size(\"declared_bytes\"),Size(\"admitted_entry_bytes\"));op.Prompt=prompt;\n",
+      "delivery_text": "        ArchiveJobPromptDisplay? display=null;\n        if(kind==\"conflict\" && value.TryGetProperty(\"display\",out var context) && context.ValueKind!=JsonValueKind.Null) {\n            display=context.Deserialize<ArchiveJobPromptDisplay>(ArchiveJobWire.Strict)??throw new InvalidDataException();\n            if(!display.Valid(kind))throw new InvalidDataException();\n            display=display with{Target=DisplayTarget(op.Command.Request!.Destination!,display.Target)};\n            if(!display.Valid(kind))throw new InvalidDataException();\n        }\n        var prompt=new ArchiveJobPrompt(ticket,kind,code,attempt,Size(\"existing_bytes\"),Size(\"incoming_bytes\")??Size(\"declared_bytes\"),Size(\"admitted_entry_bytes\"),display);op.Prompt=prompt;\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 185,
+      "baseline_end": 185,
+      "delivery_start": 194,
+      "delivery_end": 196,
+      "baseline_text": "",
+      "delivery_text": "    // String presentation only: no native path normalization, observation or authority is added.\n    private static string DisplayTarget(string root,string relative)=>root.TrimEnd('\\\\')+\"\\\\\"+relative.Replace('/','\\\\');\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

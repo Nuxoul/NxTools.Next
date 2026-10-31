@@ -1,0 +1,31 @@
+{
+  "keyboard": [
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_category_confirm_does_not_fall_through ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_compact_input_enter_keeps_probe_validation ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_focused_cancel_does_not_probe ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_ime_busy_and_native_gate_do_not_submit ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_outer_enter_submits_one_committed_future_task ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_outer_inputs_keep_default_and_guard_repeats ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_schedule_confirm_clear_and_dismiss_keep_owners ... ok",
+    "test downloads::new_download_view::keyboard_tests::new_download_keyboard_schedule_layer_and_select_keep_enter ... ok"
+  ],
+  "picker": [
+    "test downloads::directory_picker_tests::directory_picker_cancel_failure_disconnect_retry_and_old_ids_are_isolated ... ok",
+    "test downloads::directory_picker_tests::directory_picker_closed_settings_result_cannot_write_reopened_draft ... ok",
+    "test downloads::directory_picker_tests::directory_picker_dispatch_rejection_releases_original_token_and_can_retry ... ok",
+    "test downloads::directory_picker_tests::directory_picker_failure_claim_then_closed_origin_has_no_current_notice ... ok",
+    "test downloads::directory_picker_tests::directory_picker_fixed_confirmation_replacement_retires_original_view_request ... ok",
+    "test downloads::directory_picker_tests::directory_picker_new_task_aba_edit_close_reopen_and_silent_hydration ... ok",
+    "test downloads::directory_picker_tests::directory_picker_new_task_settings_isolation_explicit_draft_and_apply_policy ... ok",
+    "test downloads::directory_picker_tests::directory_picker_normal_result_changes_only_original_draft_and_cancel_keeps_disk ... ok",
+    "test downloads::directory_picker_tests::directory_picker_old_settings_close_callback_preserves_current_window_and_request ... ok",
+    "test downloads::directory_picker_tests::directory_picker_result_claim_then_close_reopen_cannot_apply_or_fail_replacement ... ok",
+    "test downloads::directory_picker_tests::directory_picker_result_claim_then_same_turn_aba_is_not_applied ... ok",
+    "test downloads::directory_picker_tests::directory_picker_result_then_edit_before_deferred_apply_keeps_new_draft ... ok",
+    "test downloads::directory_picker_tests::directory_picker_same_turn_aba_user_edit_rejects_old_result ... ok",
+    "test downloads::directory_picker_tests::directory_picker_same_type_views_do_not_share_a_result ... ok"
+  ],
+  "keyboard_count": 8,
+  "picker_count": 14,
+  "sources_unchanged": true
+}

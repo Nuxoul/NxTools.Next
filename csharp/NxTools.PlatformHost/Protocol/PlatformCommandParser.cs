@@ -62,6 +62,7 @@ internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Wid
 internal sealed record PresentFixedWindowOverAnchorCommand(long WindowHandle, long AnchorWindowHandle, int Width, int Height);
 internal sealed record PrepareNotificationWindowCommand(long WindowHandle, long SourceWindowHandle, uint SourceProcessId,
     string Position, int Width, int Height, bool KeepVisible = false);
+internal sealed record PrepareMainWindowCommand(long WindowHandle, uint SourceProcessId, int Width, int Height);
 internal sealed record MoveWindowCenteredOverCommand(
     long WindowHandle,
     long AnchorWindowHandle,
@@ -112,6 +113,7 @@ internal sealed record ShowContextMenuCommand(long SourceWindowHandle, uint Sour
     IReadOnlyList<NativeContextMenuItem> Items, long PopupWindowHandle = 0);
 internal sealed record CancelContextMenuCommand(Guid SessionId);
 internal sealed record OpenShellTargetCommand(string Target, string Action);
+internal sealed record OpenDefaultAppsSettingsCommand;
 internal sealed record ShutdownSystemCommand(ushort DelaySeconds);
 internal sealed record ExportBrowserExtensionCommand(string Format, string Destination);
 internal sealed record LaunchProcessCommand(
@@ -146,6 +148,7 @@ internal sealed record PickDirectoryCommand(string CurrentDirectory, string Titl
 internal sealed record PickProgramCommand(string CurrentPath);
 internal sealed record PickExtensionManifestCommand(string CurrentPath);
 internal sealed record PickExtensionRuntimeCommand(string Program, string CurrentPath);
+internal sealed record PickExtensionSettingPathCommand(long SourceWindowHandle, uint SourceProcessId, string Kind, string CurrentPath);
 internal sealed record InspectExtensionRuntimeCommand(string Program, string Executable);
 internal sealed record EnsureIndexerServiceCommand;
 internal sealed record EnsureBrowserNativeMessagingCommand(
@@ -155,6 +158,20 @@ internal sealed record EnsureBrowserNativeMessagingCommand(
 
 internal static class PlatformCommandParser
 {
+    public static PrepareMainWindowCommand ParsePrepareMainWindow(ProtocolEnvelope envelope)
+    {
+        try {
+            if (GetCommandName(envelope) != "prepare_main_window") throw new InvalidDataException();
+            var data = envelope.Payload.GetProperty("data");
+            if (data.EnumerateObject().Any(property => property.Name is not ("window_handle" or "source_process_id" or "width" or "height"))) throw new InvalidDataException();
+            var command = new PrepareMainWindowCommand(data.GetProperty("window_handle").GetInt64(), data.GetProperty("source_process_id").GetUInt32(), data.GetProperty("width").GetInt32(), data.GetProperty("height").GetInt32());
+            MainWindowPreparation.Validate(command);
+            return command;
+        } catch (Exception failure) when (failure is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException or InvalidDataException) {
+            throw new InvalidDataException("Invalid main-window preparation payload.");
+        }
+    }
+
     public static PrepareNotificationWindowCommand ParsePrepareNotificationWindow(ProtocolEnvelope envelope)
     {
         try
@@ -449,6 +466,18 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
     public static OpenShellTargetCommand ParseOpenShellTarget(ProtocolEnvelope envelope) =>
         Parse<OpenShellTargetCommand>(envelope, "open_shell_target", "Open target command payload was empty.");
 
+    public static OpenDefaultAppsSettingsCommand ParseOpenDefaultAppsSettings(ProtocolEnvelope envelope)
+    {
+        if (envelope.Type != "platform_command" || envelope.Payload.ValueKind != JsonValueKind.Object ||
+            !envelope.Payload.TryGetProperty("command", out var command) || command.ValueKind != JsonValueKind.String ||
+            command.GetString() != "open_default_apps_settings" ||
+            !envelope.Payload.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
+            data.EnumerateObject().Any() ||
+            envelope.Payload.EnumerateObject().Count() != 2)
+            throw new InvalidDataException("Default apps settings requires its fixed command and an empty data object.");
+        return new();
+    }
+
     public static ShutdownSystemCommand ParseShutdownSystem(ProtocolEnvelope envelope) =>
         Parse<ShutdownSystemCommand>(envelope, "shutdown_system", "Shutdown command payload was empty.");
 
@@ -533,6 +562,18 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
         return new PickExtensionManifestCommand(currentPath.GetString()!);
     }
 
+    internal static PickExtensionSettingPathCommand ParsePickExtensionSettingPath(ProtocolEnvelope envelope)
+    {
+        if (GetCommandName(envelope) != "pick_extension_setting_path" || !envelope.Payload.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
+            data.EnumerateObject().Count() != 4 || data.EnumerateObject().Any(p => p.Name is not ("source_window_handle" or "source_process_id" or "kind" or "current_path")) ||
+            !data.TryGetProperty("source_window_handle", out var window) || window.ValueKind != JsonValueKind.Number || !window.TryGetInt64(out var hwnd) || hwnd <= 0 ||
+            !data.TryGetProperty("source_process_id", out var process) || process.ValueKind != JsonValueKind.Number || !process.TryGetUInt32(out var pid) || pid == 0 ||
+            !data.TryGetProperty("kind", out var kind) || kind.ValueKind != JsonValueKind.String || kind.GetString() is not ("file" or "folder") ||
+            !data.TryGetProperty("current_path", out var path) || path.ValueKind != JsonValueKind.String || path.GetString()!.Length >= 32767 || path.GetString()!.Contains('\0'))
+            throw new InvalidDataException("Invalid extension setting path payload.");
+        return new(hwnd, pid, kind.GetString()!, path.GetString()!);
+    }
+
     internal static bool IsExtensionRuntimeProgram(string? program) =>
         program is "python" or "node" or "powershell" or "pwsh";
 
@@ -577,6 +618,18 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
             envelope,
             "ensure_browser_native_messaging",
             "Browser native messaging registration payload was empty.");
+
+    public static Windows.Archive.ArchiveShellIntegrationCommand ParseArchiveShellIntegration(
+        ProtocolEnvelope envelope)
+    {
+        var parsed = Parse<Windows.Archive.ArchiveShellIntegrationCommand>(
+            envelope, "archive_shell_integration", "Archive shell integration payload was empty.");
+        if (parsed.Version != 1 || parsed.Action is not ("status" or "apply" or "revert") || parsed.DesiredRevision < 0)
+            throw new InvalidDataException("Invalid archive shell integration command.");
+        try { Windows.Archive.ArchiveIntegrationPlan.NormalizeIntent(parsed.ToIntent()); }
+        catch (ArgumentException) { throw new InvalidDataException("Invalid archive association configuration."); }
+        return parsed;
+    }
 
     public static string GetCommandName(ProtocolEnvelope envelope)
     {

@@ -1,0 +1,555 @@
+{
+  "scope": "seventh single item, original audit#5 only; pending parent review",
+  "existing": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+      "baseline_sha256": "bb8e7eace6172caa29ef34eb98a602862be9bc8e393398689bca83fd9abd3f15",
+      "own_after_sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2",
+      "current_sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2",
+      "own_delta": "rust__apps__nxtools-desktop__src__archive__forms.rs.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 6
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+      "baseline_sha256": "e095a12211c2b6460e2f51f31f9a4e2801ed78b07b090e838ceb14c4a577505b",
+      "own_after_sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391",
+      "current_sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391",
+      "own_delta": "rust__apps__nxtools-desktop__src__archive__forms_tests.rs.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 1
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+      "baseline_sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+      "own_after_sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+      "current_sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+      "own_delta": "rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 15
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "baseline_sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4",
+      "own_after_sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3",
+      "current_sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3",
+      "own_delta": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 1
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+      "baseline_sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+      "own_after_sha256": "9ff0ef94d2e1739132488dbfab8e37c8f610553867f51771633c74b771f0f45e",
+      "current_sha256": "9ff0ef94d2e1739132488dbfab8e37c8f610553867f51771633c74b771f0f45e",
+      "own_delta": "rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 5
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+      "baseline_sha256": "a8b02fd12f4e0e24976f1e85f0135433924248dc578ba4b808c735767e7dd356",
+      "own_after_sha256": "867f91ed203f5ed55f88ed0b29a6d9f6541411e5e39d945fc06ee08b0220d734",
+      "current_sha256": "867f91ed203f5ed55f88ed0b29a6d9f6541411e5e39d945fc06ee08b0220d734",
+      "own_delta": "rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 1
+    },
+    {
+      "path": "docs/reference-code/archive.md",
+      "baseline_sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+      "own_after_sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78",
+      "current_sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+      "own_delta": "docs__reference-code__archive.md.own-delta.json",
+      "own_after_is_current": false,
+      "operations": 1
+    },
+    {
+      "path": "docs/reference-code/download.md",
+      "baseline_sha256": "99abefb822f4e7aa1693b62087b2cd081a8e15f6f6e0ace0bffa7e14cd3d64f6",
+      "own_after_sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6",
+      "current_sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6",
+      "own_delta": "docs__reference-code__download.md.own-delta.json",
+      "own_after_is_current": true,
+      "operations": 1
+    }
+  ],
+  "new": [
+    {
+      "path": ".trellis/tasks/10-25-default-submit-keyboard/prd.md",
+      "sha256": "21db1e7f2a4c1398c3b43af237df89d885688315cd22d59d9e9b1bcabac9045a"
+    },
+    {
+      "path": ".trellis/tasks/10-25-default-submit-keyboard/outcomes.md",
+      "sha256": "52b28c108cca187d614d8c149729677b26555f5e4644eced3e23a9380ddd05f8"
+    }
+  ],
+  "observed_unmodified": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+      "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783"
+    }
+  ],
+  "concurrency": [
+    {
+      "path": "docs/reference-code/archive.md",
+      "own_lines": "771-800",
+      "external_lines": "801-834",
+      "baseline_prefix_byte_identical": true,
+      "own_after_sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78",
+      "current_sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+      "external_delta": "archive-reference.external-append.json",
+      "status": "Observed external append;writingstopped;reportedparent;nooverwritenoreservation;notclaimedasownwork"
+    }
+  ],
+  "evidence": [
+    {
+      "file": "accessible-names-protected.log",
+      "sha256": "6b07dd50fe3e9055b5167408d0991d606b860662d19e16d858e2a8482fbf6fea",
+      "bytes": 2136
+    },
+    {
+      "file": "archive-form-enter-red.log",
+      "sha256": "7fcd349d5d4a76fab99788b0751a0b0d066a4005477d89d72b1fec2920cc072b",
+      "bytes": 2316
+    },
+    {
+      "file": "archive-form-first-green.log",
+      "sha256": "18de183ab0f99f17833699b3561654f8a80e8ac1db0d546fed08d2d93636730d",
+      "bytes": 2788
+    },
+    {
+      "file": "archive-form-green.log",
+      "sha256": "9c275ab757c953bb5ddae9b8e634bad25b49ceb179b7c76068bbba79efc98bd2",
+      "bytes": 3834
+    },
+    {
+      "file": "archive-reference.external-append.json",
+      "sha256": "a615eca9f0d424c7a1f363cc48b902eb99df86698ddf5a2b569d71518316edb0",
+      "bytes": 3502
+    },
+    {
+      "file": "archive-reference.external-live.baseline",
+      "sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+      "bytes": 68633
+    },
+    {
+      "file": "archive-reference.own-after-before-external.md.txt",
+      "sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78",
+      "bytes": 65674
+    },
+    {
+      "file": "archive-related.log",
+      "sha256": "95ace5686d27344da1626c3c827ace7e36043d3e622195982121c7ba652b11f9",
+      "bytes": 29870
+    },
+    {
+      "file": "archive-static-gates.json",
+      "sha256": "b6599cca36208e62ac17353af75a7b10895d0adc5bf0670177d09bbeda226382",
+      "bytes": 256
+    },
+    {
+      "file": "audit05-expanded-behavior.log",
+      "sha256": "45531a29329ee107ec47ba0bfd9cc303b9196f39cb14156d31af355430506177",
+      "bytes": 4002
+    },
+    {
+      "file": "audit05-final-matrix-first.log",
+      "sha256": "56a3543fd6104b4ec79646d4a5101c67e7abcf127f369c2812194670a97272a5",
+      "bytes": 4420
+    },
+    {
+      "file": "audit05-final-matrix.log",
+      "sha256": "a7d2a52b63025c9812cdcd09274064a395be8edf61c452b44de492ba4d557570",
+      "bytes": 4982
+    },
+    {
+      "file": "audit05-first-expanded.log",
+      "sha256": "a1d40f58d0fb85ac873f7069cef1d2c5f9777955b5aee1977243a9ffd75c5338",
+      "bytes": 1960
+    },
+    {
+      "file": "audit05-first-four-green.log",
+      "sha256": "3fae08e72d46d190f282e1bcaca84bd6241b5b723ca53ec5a10d013969a1f37b",
+      "bytes": 1656
+    },
+    {
+      "file": "audit05-lifecycle-matrix.log",
+      "sha256": "ccfb34f50bc0e0d0278b1042284abef37ca2ae57c3c86c6c175bddfd033bb226",
+      "bytes": 6292
+    },
+    {
+      "file": "audit05-safety-expanded.log",
+      "sha256": "e93abbd7af9983578333c81f3e3b075fb9ecc2b1328a5a9ffbd9173ed958aa84",
+      "bytes": 5198
+    },
+    {
+      "file": "audit05-safety-green.log",
+      "sha256": "955fe73d36d1efdb9155966406d8b39ee50b137f0413a03c231fb9e617e23899",
+      "bytes": 2778
+    },
+    {
+      "file": "baseline-manifest.json",
+      "sha256": "942ee90cdfa4a142addd64cd2cba03dba11f3980dd976c2091ac0f2d9a943d5d",
+      "bytes": 3158
+    },
+    {
+      "file": "create-confirm-first-green.log",
+      "sha256": "7a0f2559dc533c8ad0075cb6040849784ace46280e4bd2e1523c5e64684fe95c",
+      "bytes": 1000
+    },
+    {
+      "file": "create-confirm-red.log",
+      "sha256": "f93d8acb46386e6ce76c0ee566e75c6fbb13ea05334ec9666fff76561d9afb7b",
+      "bytes": 2372
+    },
+    {
+      "file": "desktop-full-once.log",
+      "sha256": "ce62f70c9026a5b8296ee4e2420b0b11066ef7a0f80615288f6fd8d3564f7314",
+      "bytes": 264858
+    },
+    {
+      "file": "desktop-strict-clippy.log",
+      "sha256": "a0be3d1db0fa02c59ccbd9d3d04d8dae419dc7536a444928cab5bade0edf06fe",
+      "bytes": 2428
+    },
+    {
+      "file": "display-six-after-confirm.log",
+      "sha256": "cbc8924fc14f9efff2aba53ff2abc364fed34d6b7f6a9d8b8e47a30a2283fcb4",
+      "bytes": 1962
+    },
+    {
+      "file": "docs__reference-code__archive.md.baseline",
+      "sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+      "bytes": 63195
+    },
+    {
+      "file": "docs__reference-code__archive.md.own-delta.json",
+      "sha256": "86f5d03e8808a418b5158c9a6f23d39360fef9d18664bd10987b274dff93fa8a",
+      "bytes": 3018
+    },
+    {
+      "file": "docs__reference-code__archive.md.own-delta.txt",
+      "sha256": "72ffd35d1c7f3504d0ea81be23e565086998fbc5e165757b026def6afc1b00ec",
+      "bytes": 2842
+    },
+    {
+      "file": "docs__reference-code__download.md.baseline",
+      "sha256": "99abefb822f4e7aa1693b62087b2cd081a8e15f6f6e0ace0bffa7e14cd3d64f6",
+      "bytes": 260768
+    },
+    {
+      "file": "docs__reference-code__download.md.own-delta.json",
+      "sha256": "c486dba69edab82644a91329298f6c4ecfd4a74a9d1563daf0e9b0f596416090",
+      "bytes": 2506
+    },
+    {
+      "file": "docs__reference-code__download.md.own-delta.txt",
+      "sha256": "e7405175f5f70db15161e1e14032be43d369b819ad33a0aff69e7f6ec168cd84",
+      "bytes": 2330
+    },
+    {
+      "file": "downloads-related.log",
+      "sha256": "afdea1e44e66689023d9fb36534808c23416a76633ce311f20b62135c5ed2cd1",
+      "bytes": 39380
+    },
+    {
+      "file": "final-artifact.txt",
+      "sha256": "f833b23bb076fb29c5ba5ba059f32e8e92e0dfa6bf042a6c9524925714162170",
+      "bytes": 205
+    },
+    {
+      "file": "final-verification.json",
+      "sha256": "8c8ced41416443292500c09dcae08d305d596445e7871d489e216fdc8a6a8fa7",
+      "bytes": 3005
+    },
+    {
+      "file": "focused-final.log",
+      "sha256": "12895f08fa2c8afb16c06b17270057f686ee02b3f0f5216eaa609b7a3c99f719",
+      "bytes": 4140
+    },
+    {
+      "file": "form-child-layers-green.log",
+      "sha256": "cc8499a3a51b8dc77034cb0e93ecea36ad58f096e3020fd9ac5b148add4bba7b",
+      "bytes": 3416
+    },
+    {
+      "file": "gate-archive-cli.py.log",
+      "sha256": "b81f461138af79acbac458619c2dd2fe0fd71c386c9512c2414048a6a758ce9d",
+      "bytes": 166
+    },
+    {
+      "file": "gate-archive-phase-f-shell.py.log",
+      "sha256": "016e5ed278fd87802a06deb02f9ef194f8351f07952512c9b431651143e0147d",
+      "bytes": 458
+    },
+    {
+      "file": "gate-archive-phase-f-spike.py.log",
+      "sha256": "729fe9263126157c727fd21623b44cbb5508b8268bdb63062a967978f8ba6ba4",
+      "bytes": 466
+    },
+    {
+      "file": "gate-archive-release-chain.ps1.log",
+      "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315",
+      "bytes": 238
+    },
+    {
+      "file": "gate-clipboard-ui-lifecycle.ps1.log",
+      "sha256": "df1a3dd5d487d372ad65757ba8ee1507d9b3e6e607c2cf0a765000d1bd9e01cb",
+      "bytes": 1350
+    },
+    {
+      "file": "gate-download-ui-lifecycle.ps1.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "file": "gate-gpui-component-catalog.py.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "file": "gate-gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "file": "gate-markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "file": "gate-quick-launch-lifecycle.ps1.log",
+      "sha256": "a3e0ad1d8b62a159013a21b87cb96633b74c8806669acf61063ac2ce4a0a4311",
+      "bytes": 4033
+    },
+    {
+      "file": "gate-spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "file": "history-identity-protected.log",
+      "sha256": "5c14f6450a5dc2a3b2155ebccc4400dd8c648ee901bf88ec316e30bc73eb8747",
+      "bytes": 3102
+    },
+    {
+      "file": "item04-frozen.json",
+      "sha256": "5db5f699dd7e6a14e42a1f20f1b71abf410aa06fce7a13d8cd726598813ff791",
+      "bytes": 27498
+    },
+    {
+      "file": "last-boundaries.log",
+      "sha256": "3d4ca0c53c9d3bdd6d143124a6cc3a7e92f38ab0bdb30582e48989d7e895854a",
+      "bytes": 5414
+    },
+    {
+      "file": "original-restored-probe-evidence.rs.txt",
+      "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c",
+      "bytes": 2834
+    },
+    {
+      "file": "own-deltas.json",
+      "sha256": "f6a8d678e638d21da6bf4c33f1261a4e2cc54e201ad25f844ec6fd9f0f7aed8c",
+      "bytes": 71007
+    },
+    {
+      "file": "owner-invariants.json",
+      "sha256": "d282dbffe881b2fa87bc8feb399a59de4530db8ac7830e5e19a14bc290de83c0",
+      "bytes": 1128
+    },
+    {
+      "file": "prompt-input-intent-actual.log",
+      "sha256": "86c3fb91a3a8ea902f0f529ef5fcaeb56eac2ba51b191a22879519523229aa04",
+      "bytes": 1712
+    },
+    {
+      "file": "prompt-input-intent-red.log",
+      "sha256": "e26e4b7f3be4ebbe825d8ebba08e5b9e9a052e42c7176ffb192854279b9b4d21",
+      "bytes": 2982
+    },
+    {
+      "file": "prompt-intent-artifact.txt",
+      "sha256": "5efa8010954d36e0dc54f5a94e34833f9a293316c7114fa5ead97cb828b80baa",
+      "bytes": 205
+    },
+    {
+      "file": "protected-manifest.json",
+      "sha256": "1fa00db3738925f4822aea14adf06b381575528639d67bbf4040bf46cdf6be82",
+      "bytes": 2305
+    },
+    {
+      "file": "protected-regression-map.json",
+      "sha256": "8111fe8ee6e33ccaeddffab00ec4a7d97e70ed8a25882950b360b31ee179a90b",
+      "bytes": 5535
+    },
+    {
+      "file": "restore-probe-check.json",
+      "sha256": "44c4ba72dbd822a6895a42d5fe5a28940c6ce104def8088eb8e9f151d0a39d03",
+      "bytes": 485
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__forms.rs.baseline",
+      "sha256": "bb8e7eace6172caa29ef34eb98a602862be9bc8e393398689bca83fd9abd3f15",
+      "bytes": 71780
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__forms.rs.own-delta.json",
+      "sha256": "8d0c299526c99b2b6de1c2d8c9b86850ab7fc5cb8903ee44039dd22022057695",
+      "bytes": 3379
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__forms.rs.own-delta.txt",
+      "sha256": "25c19f5b2bc0a4118300930e30e81d9e82fdb6f28e3ed71f0940b57a1e40fed9",
+      "bytes": 3252
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__forms_tests.rs.baseline",
+      "sha256": "e095a12211c2b6460e2f51f31f9a4e2801ed78b07b090e838ceb14c4a577505b",
+      "bytes": 25211
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__forms_tests.rs.own-delta.json",
+      "sha256": "b7f22d409469da319a30bc418b9d749cbf205e7320a44797286e505ed0c77108",
+      "bytes": 11740
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__forms_tests.rs.own-delta.txt",
+      "sha256": "60ff08bca8b078027c4b44ebaee1cbcc53114d580be557f15cad139969113060",
+      "bytes": 11273
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+      "sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4",
+      "bytes": 45348
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+      "sha256": "d9ee3188ad53fec4131afad99d9e118cdcc75f5cd98bcc8f6de1d3436e9b75a9",
+      "bytes": 22431
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.txt",
+      "sha256": "a2ba8728f389d6d43266fd887198369df72eb9128b8ff8c5e202f9506b96c168",
+      "bytes": 21834
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__progress.rs.baseline",
+      "sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+      "bytes": 17735
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+      "sha256": "3a2814cd1865432975b6571f0849966685c56a1f65c71953f377d5b4231d1b2c",
+      "bytes": 10903
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.txt",
+      "sha256": "f81bb15d52b3d2ae046d6d1df3f10b0faf0d53cb02f6cd927b2197e09423fd3b",
+      "bytes": 12240
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.baseline",
+      "sha256": "a8b02fd12f4e0e24976f1e85f0135433924248dc578ba4b808c735767e7dd356",
+      "bytes": 131255
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.own-delta.json",
+      "sha256": "bd7292808a8d5c40c353f883e4fcfa7e9aa7898b4b9d084c328c394dbb0c5ac5",
+      "bytes": 12561
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.own-delta.txt",
+      "sha256": "dcadd71d95548625b9adb45e4920321a8e0c1fa352fe5a4b880890c69662a50a",
+      "bytes": 12191
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.baseline",
+      "sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+      "bytes": 20306
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.own-delta.json",
+      "sha256": "3cd5790f5ec67eec34c6d6fe86f19a62c16b1674ef9f71d79ec1bd52eaa74fdb",
+      "bytes": 3740
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.own-delta.txt",
+      "sha256": "b42b5b706b56a0eb213de2253147926b5d26cc0b8315e36900c78d5d9b6cf216",
+      "bytes": 3306
+    },
+    {
+      "file": "scope-checks.json",
+      "sha256": "732e566b7edf6b1aa8a60c80e263e5e266056a56298f64356bfb2e18486d0fd2",
+      "bytes": 558
+    },
+    {
+      "file": "scoped-diff-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": "scoped-fmt-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "file": "sort-keyboard-protected.log",
+      "sha256": "02101328eb5f1181daef3b45bac905d90ea75f90233f81ba46c511d88c6549a8",
+      "bytes": 1410
+    },
+    {
+      "file": "source-gates.json",
+      "sha256": "51ea8f748100b6645b76490c19e46cb7523a61804afc61c0ec0ccead7831b044",
+      "bytes": 358
+    },
+    {
+      "file": "static-gates.json",
+      "sha256": "5bb289a91e75043a246f3f32c909196092fa1c7dd48fa9bf62f9cf99d769283c",
+      "bytes": 351
+    },
+    {
+      "file": "verify-final.ps1",
+      "sha256": "3d9c0a13075917ab1d1a1f62043d68d5612a72955cee0e2108161349f500a6da",
+      "bytes": 2103
+    },
+    {
+      "file": "workspace-check.log",
+      "sha256": "376121a8f44d55b20da33ae735077eb88e13f5097ddc7f3d4413c01b3844adbc",
+      "bytes": 2366
+    },
+    {
+      "file": "workspace-deltas.json",
+      "sha256": "2d6c810e65853acf6f2694c4665ec049c5dd041edf4d0ed95d904b2c6a8d88fc",
+      "bytes": 74000
+    },
+    {
+      "file": "workspace-fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ],
+  "acceptance": {
+    "focused": "15/15",
+    "archive": "134/134",
+    "downloads": "188/188",
+    "protected_regressions": {
+      "new_download_keyboard": 8,
+      "directory_picker": 14,
+      "history_identity": 11,
+      "accessible_name": 7,
+      "sort_keyboard": 3,
+      "archive_display": 6
+    },
+    "strict_desktop_clippy": "PASS",
+    "workspace_check": "PASS",
+    "workspace_fmt": "PASS",
+    "scoped_fmt_diff": "PASS",
+    "full_desktop_once": "1232/1232;0failed;0ignored;258.96s;onecompleteexecutiononly",
+    "related_source_gates": "10PASS",
+    "extra_quick_launch_gate": "FAIL1765;notrepaired",
+    "native_physical_IME_DPI_reader_visual_user": "NOTRUN/NOTACCEPTED"
+  },
+  "protected_count": 13,
+  "prior_item_frozen_count": 124
+}

@@ -1,0 +1,52 @@
+--- dirty-baseline/rust/crates/nxtools-archive/src/worker_output.rs
++++ delivery/rust/crates/nxtools-archive/src/worker_output.rs
+@@ -137,6 +137,8 @@
+     plan_paths: Option<std::collections::HashMap<String, String>>,
+     plan_directories: Option<std::collections::HashSet<String>>,
+     plan_prefix: String,
++    // Presentation only; unlike plan_prefix this never changes a native operation path.
++    display_prefix: Option<String>,
+ }
+ impl<'a, W: Write> PrivateOutput<'a, W> {
+     pub fn new(writer: &'a mut W, control: &'a OperationControl, replies: ReplyPort) -> Self {
+@@ -153,6 +155,7 @@
+             plan_paths: None,
+             plan_directories: None,
+             plan_prefix: String::new(),
++            display_prefix: None,
+         }
+     }
+     pub(crate) fn reserve_subfolder(
+@@ -172,6 +175,7 @@
+             match self.call("directory_new", Some(&candidate), None, &[]) {
+                 Ok(_) => {
+                     plan.replace_subfolder(candidate)?;
++                    self.display_prefix = plan.subfolder().map(|name| format!("{name}/"));
+                     return Ok(());
+                 }
+                 Err(ArchiveError::OutputCollision) => continue,
+@@ -455,6 +459,15 @@
+             .ok_or(ArchiveError::IoFailure)
+     }
+     fn begin_extracted_file(&mut self, path: &str, incoming: Option<u64>) -> Result<Option<Uuid>> {
++        let member_path = if self.plan_paths.is_none() {
++            self.display_prefix
++                .as_deref()
++                .and_then(|prefix| path.strip_prefix(prefix))
++                .unwrap_or(path)
++        } else {
++            path
++        }
++        .to_owned();
+         let path = if let Some(paths) = &self.plan_paths {
+             let Some(mapped) = paths.get(path) else {
+                 return Ok(None);
+@@ -466,7 +479,7 @@
+         let Some(mut conflict) = self.conflict.take() else {
+             return self.begin_file(&path).map(Some);
+         };
+-        let result = conflict.begin(self, &path, incoming);
++        let result = conflict.begin(self, &path, &member_path, incoming);
+         self.conflict = Some(conflict);
+         result
+     }

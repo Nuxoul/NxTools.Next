@@ -1,0 +1,6 @@
+{
+  "interrupted_run": "audit11-final-five-02",
+  "observed": "Compilation completed; log stopped at new deferred-range fixture. Tool returned TOOL_ABORTED. Subsequent process inspection found no surviving cargo/rustc/test process; no terminal result exists.",
+  "diagnostic": "fixture-watchdog-01 stdout reports 0 passed / 1 failed in 0.88s. The wrapper incorrectly captured null ExitCode and returned 0; this is a FAILED test, not PASS.",
+  "cause_scope": "The added cross-window wrapper repeatedly updated/rendered the original MainWindow and did not settle. Eight-render assertion demonstrated the fixture loop. Replaced with a test-only one-shot post-projection seam on the original production window. No production performance change made for this fixture failure."
+}

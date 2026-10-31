@@ -50,3 +50,32 @@ and initial signed release. Interrupted enrollment is not treated as completed; 
 the same identity can resume. Existing completed trust cannot be replaced through retry.
 Installer BrowserHost backup is committed only after trusted update success; failure
 restores the old host after exact-handle verification of the newly installed file.
+
+## Explicit same-key bootstrap maintenance (2026-10-23)
+
+The user-approved single installer (sequence25 onward) performs explained same-release migration.
+Before suspending/replacing application files it reads the fixed updater registration/hash/key and
+protocol marker. Absent/compatible updater skips migration; mismatched identity rejects. A legacy
+updater prompts for explicit administrator approval once; the elevated preparation process invokes
+the original `--maintain-trusted-bootstrap` then continues ordinary file preparation. Cancel/failure
+blocks replacement. The former two-package workflow is superseded; no manual maintenance sequencing.
+Sequence26 removes the duplicate migration ZIP: Inno ExtractTemporaryFiles('{app}\*') reuses the
+normal-install compressed resources with relative directories intact. The compiled PlatformHost SHA
+is checked before maintenance execution; the original maintenance verifier still authenticates the
+complete package using the same publisher key, fixed service scope and anti-downgrade floor.
+
+`TrustedBootstrapMaintenance` verifies the enrolled key/current bootstrap/service identity and a
+strictly newer signed package; preserves Releases/state.json and snapshots; journals old/new exact
+hashes before replacement. Original update service is stopped before taking the original deployment
+gate. A shared maintenance admission lock prevents new business updates during ready/commit/cleanup.
+New service readiness is an authenticated read-only pipe frame, not SCM Running alone. Before commit,
+failure restores old bootstrap/enrollment/registry hash; committed cleanup never rolls back business
+state and can resume. Failed/incomplete recovery retains its journal. The Windows adapter fixes
+service/path scope and never installs a missing updater. Runtime maintenance is separately authorized.
+
+New package admission remains strict. `VerifyRecoverySnapshot` accepts historical required-member
+sets ONLY after authenticating the signed manifest and matching durable sequence/releaseID/manifestSHA.
+Such a recovery VerifiedRelease cannot be used as a new update request. Original transaction restores
+the old package using its own verified deployment child, then exact-hash removes only failed-new archive
+members absent from the old signed set; foreign bytes reject cleanup and preserve recovery evidence.
+Source fixtures and offline real-snapshot checks do not certify actual SCM/admin/installed acceptance.

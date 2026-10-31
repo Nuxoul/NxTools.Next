@@ -1,0 +1,19 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/menu.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/menu.rs
+@@ -4,6 +4,7 @@
+ 
+ use crate::icons::MaterialIcon;
+ use crate::theme::Theme;
++use crate::ui::metrics::ordinary_rem;
+ 
+ const MENU_MIN_WIDTH: f32 = 192.0;
+ const MENU_MAX_WIDTH: f32 = 240.0;
+@@ -41,7 +42,7 @@
+         div()
+             .debug_selector(move || selector.into())
+             .w_full()
+-            .min_w(px(MENU_CONTENT_MIN_WIDTH))
++            .min_w(ordinary_rem(MENU_CONTENT_MIN_WIDTH))
+             .text_color(foreground)
+             .child(Label::new(label.clone()).text_sm())
+     })

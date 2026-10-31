@@ -1,0 +1,30 @@
+﻿[
+    {
+        "name":  "focused-six-final",
+        "command":  "cargo test -p nxtools-desktop audit06_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  205.47,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\focused-six-final.log"
+    },
+    {
+        "name":  "desktop-strict-clippy-final",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit_code":  0,
+        "elapsed_seconds":  33.92,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\desktop-strict-clippy-final.log"
+    },
+    {
+        "name":  "workspace-check-final",
+        "command":  "cargo check --workspace --tests",
+        "exit_code":  0,
+        "elapsed_seconds":  26.33,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\workspace-check-final.log"
+    },
+    {
+        "name":  "workspace-fmt-final",
+        "command":  "cargo fmt --all -- --check",
+        "exit_code":  1,
+        "elapsed_seconds":  8.64,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\workspace-fmt-final.log"
+    }
+]

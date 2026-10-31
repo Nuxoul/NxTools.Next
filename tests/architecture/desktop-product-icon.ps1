@@ -3,7 +3,7 @@ param(
     [string]$DesktopExecutable,
 
     [string]$ExpectedBrandIcon = (
-        Join-Path $PSScriptRoot '..\..\browser_extension\nxtools-interceptor\icons\icon-32.png'
+        Join-Path $PSScriptRoot '..\..\rust\apps\nxtools-desktop\assets\brand\nxtools-32.png'
     )
 )
 
@@ -17,6 +17,11 @@ if (-not [System.IO.File]::Exists($desktopPath)) {
 if (-not [System.IO.File]::Exists($brandPath)) {
     throw "Expected brand icon does not exist: $brandPath"
 }
+
+# Pure PE parser checks both RT_GROUP_ICON IDs and all18 real decoded sizes.
+# Keep the existing associated-icon pixel check below as a separate Windows boundary.
+& python (Join-Path $PSScriptRoot 'approved-icons.py') --desktop-pe $desktopPath
+if ($LASTEXITCODE -ne 0) { throw 'Desktop embedded application/archive resources differ from approved icons.' }
 
 try {
     Add-Type -AssemblyName System.Drawing.Common -ErrorAction Stop

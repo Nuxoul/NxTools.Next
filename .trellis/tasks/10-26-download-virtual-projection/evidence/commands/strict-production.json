@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T07:15:38.6239080Z",
+    "started_utc":  "2026-10-26T07:15:02.6254634Z",
+    "command":  "cargo clippy -p nxtools-desktop -- -D warnings",
+    "exit":  101,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\download-virtual-projection\\strict-production.log"
+}

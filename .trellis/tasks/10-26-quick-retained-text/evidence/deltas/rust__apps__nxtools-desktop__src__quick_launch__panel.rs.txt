@@ -1,0 +1,216 @@
+--- live-dirty-baseline/rust/apps/nxtools-desktop/src/quick_launch/panel.rs
++++ own-current/rust/apps/nxtools-desktop/src/quick_launch/panel.rs
+@@ -44,13 +44,13 @@
+     pub(crate) application: WeakEntity<QuickLaunchApplication>,
+     pub(crate) target: nxtools_protocol::ForegroundContext,
+     pub(crate) navigation_context: Option<nxtools_protocol::DirectoryNavigationContext>,
+-    pub(crate) results: Vec<SearchResult>,
++    pub(crate) results: QuickLaunchResults,
+     pub(crate) selected: usize,
+     pub(crate) action_mode: Option<QuickLaunchActionMode>,
+     pub(crate) recent_directory_mode: bool,
+     pub(crate) recent_directories: Vec<RecentDirectory>,
+     pub(crate) search_input: Entity<InputState>,
+-    pub(crate) status: Option<String>,
++    pub(crate) status: Option<gpui_kit::SharedString>,
+     pub(crate) icons: HashMap<String, PathBuf>,
+     pub(crate) is_open: bool,
+     pub(crate) results_visible: bool,
+@@ -124,7 +124,8 @@
+                         this.search_pending = false;
+                     } else if this.recent_directory_mode {
+                         this.selected = 0;
+-                        this.results = recent_directory_results(&this.recent_directories, &query);
++                        this.results =
++                            recent_directory_results(&this.recent_directories, &query).into();
+                         this.search_pending = false;
+                         this.reset_presented_results();
+                         this.result_scroll
+@@ -202,7 +203,7 @@
+             application,
+             target,
+             navigation_context,
+-            results,
++            results: results.into(),
+             selected: 0,
+             action_mode: None,
+             recent_directory_mode: false,
+@@ -242,7 +243,7 @@
+         self.dismiss_preview(cx);
+         self.target = target;
+         self.navigation_context = navigation_context;
+-        self.results = results;
++        self.results = results.into();
+         self.icons.clear();
+         self.selected = 0;
+         self.action_mode = None;
+@@ -342,7 +343,9 @@
+                 pending: false,
+             });
+         self.search_pending = update.pending;
+-        if apply_search_update(&mut self.results, update.results, update.pending) {
++        let mut committed = Vec::new();
++        if apply_search_update(&mut committed, update.results, update.pending) {
++            self.results = committed.into();
+             self.selected = 0;
+             self.result_scroll
+                 .0
+@@ -379,7 +382,7 @@
+         }
+         self.dismiss_preview(cx);
+         self.recent_directory_mode = true;
+-        self.results = results;
++        self.results = results.into();
+         self.selected = 0;
+         self.search_pending = false;
+         self.reset_presented_results();
+@@ -785,7 +788,7 @@
+     pub(crate) fn replace_results(&mut self, results: Vec<SearchResult>, cx: &mut Context<Self>) {
+         self.dismiss_preview(cx);
+         self.selected = selection_after_results_refresh(&self.results, self.selected, &results);
+-        self.results = results;
++        self.results = results.into();
+         self.retain_icons_for_results();
+         self.reset_presented_results();
+         self.result_scroll
+@@ -1007,7 +1010,7 @@
+     /// Query/engine health stays attached to the last-good search results.
+     pub(crate) fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
+         self.search_pending = false;
+-        self.status = Some(message);
++        self.status = Some(message.into());
+         cx.notify();
+     }
+ 
+@@ -1084,7 +1087,7 @@
+         index: usize,
+         visible_position: usize,
+         result: &SearchResult,
+-        query: String,
++        query: gpui_kit::SharedString,
+         panel: WeakEntity<QuickLaunchPanel>,
+         render: (&mut Window, &mut App),
+     ) -> AnyElement {
+@@ -1098,7 +1101,7 @@
+             Some(quick_launch_primary_action(result, false, false))
+         };
+         let preview_application = self.application.clone();
+-        let preview_result = result.clone();
++        let preview_results = self.results.clone();
+         let pointer_panel = panel.clone();
+         let press_panel = panel.clone();
+         let right_click_panel = panel.clone();
+@@ -1106,13 +1109,14 @@
+         let click_panel = panel;
+         let icon_path = self.icons.get(&result.entry.id).cloned();
+         let has_icon_path = icon_path.is_some();
+-        let subtitle = if let Some(subtitle) = &result.subtitle {
+-            subtitle.clone()
+-        } else if result.copy_text().is_some() {
+-            "按 Enter 复制结果".to_owned()
+-        } else {
+-            result.entry.target.clone()
+-        };
++        let display = self.results.display(index);
++        let subtitle = display.subtitle.clone();
++        let title = display.title.clone();
++        #[cfg(test)]
++        {
++            super::retained_text_tests::observe(format!("result-title-{index}"), &title);
++            super::retained_text_tests::observe(format!("result-subtitle-{index}"), &subtitle);
++        }
+         let shortcut_hint = quick_launch_shortcut_hint(visible_position);
+         let name_highlights = if result
+             .subtitle
+@@ -1144,7 +1148,9 @@
+                 let entered = *hovered;
+                 let panel_bounds = window.bounds();
+                 let panel_scale_factor = window.scale_factor();
+-                let result = preview_result.clone();
++                let Some(result) = preview_results.get(index).cloned() else {
++                    return;
++                };
+                 schedule_application_update(
+                     preview_application.clone(),
+                     move |application, cx| {
+@@ -1221,10 +1227,7 @@
+                             .line_height(px(LINE_HEIGHT_BODY))
+                             .text_color(theme.text)
+                             .truncate()
+-                            .child(
+-                                StyledText::new(result.entry.name.clone())
+-                                    .with_highlights(name_highlights),
+-                            ),
++                            .child(StyledText::new(title).with_highlights(name_highlights)),
+                     )
+                     .child(
+                         div()
+@@ -1327,6 +1330,9 @@
+         let navigation_panel = panel.clone();
+         let click_panel = panel;
+         let section_label = item.section_label.clone();
++        let label = item.label.clone();
++        #[cfg(test)]
++        super::retained_text_tests::observe(format!("action-label-{index}"), &label);
+         let divider_before = item.divider_before;
+         let row = quick_launch_row_shell(theme, selected)
+             .id(("quick-launch-action", index))
+@@ -1388,7 +1394,7 @@
+                                 theme.text_muted
+                             })
+                             .truncate()
+-                            .child(item.label.clone()),
++                            .child(label),
+                     ),
+             )
+             .child(
+@@ -1466,6 +1472,8 @@
+                     .border_color(theme.border_subtle)
+             })
+             .when_some(section_label, |container, label| {
++                #[cfg(test)]
++                super::retained_text_tests::observe(format!("action-section-{index}"), &label);
+                 container.child(
+                     div()
+                         .h(px(24.0))
+@@ -1493,7 +1501,7 @@
+         let panel = cx.entity().downgrade();
+         let recent_button_panel = panel.clone();
+         let preview_scroll_application = self.application.clone();
+-        let query = self.search_input.read(cx).value().to_string();
++        let query = self.search_input.read(cx).value();
+         let recent_button_visible = !self.recent_directories.is_empty()
+             && self.navigation_context.is_some()
+             && self.action_mode.is_none()
+@@ -1501,8 +1509,8 @@
+         let recent_directory_mode = self.recent_directory_mode;
+         let action_target = self.action_mode.as_ref().map(|mode| {
+             (
+-                mode.title().to_string(),
+-                mode.target().entry.name.clone(),
++                mode.title(),
++                mode.target_title.clone(),
+                 mode.shell_pending(),
+             )
+         });
+@@ -1516,6 +1524,11 @@
+             Vec::new()
+         };
+         let result_surface = if let Some((level_title, target, pending)) = action_target {
++            #[cfg(test)]
++            {
++                super::retained_text_tests::observe("action-level-title".into(), &level_title);
++                super::retained_text_tests::observe("action-target-title".into(), &target);
++            }
+             div()
+                 .id("quick-launch-actions-scroll")
+                 .flex_1()
+@@ -1761,6 +1774,8 @@
+             )
+             .when(self.results_visible, |panel| panel.child(result_surface))
+             .when_some(self.status.clone(), |panel, status| {
++                #[cfg(test)]
++                super::retained_text_tests::observe("status".into(), &status);
+                 panel.child(
+                     div()
+                         .absolute()

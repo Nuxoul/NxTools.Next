@@ -1,0 +1,5 @@
+# Extensions errors
+
+Evidence: `repo:rust/crates/nxtools-extensions/src/lib.rs#PackageError`, `repo:rust/apps/nxtools-desktop/src/extensions.rs`.
+
+PackageError fixed parse/version/size/identity/existence/limit classes preserve old registry/config; duplicate/unknown fields never get last-wins fallback. KeywordConflict carries UI-only requested keyword, not diagnostic payload. RuntimeError distinguishes untrusted/stale/cancel/timeout/queue/protocol/native/handler states. Superseded rows/effects cannot execute; completion and native cleanup are distinct. Detached consumer cancels only its run, unconfirmed cleanup stays occupied, exact reaped broker may recover except after shutdown. Download receipt errors explicitly resolution_required, cancellation reaches engine/no silent retry, publication fail-closed. Event/manual protocol error cannot become success; circuit retry does not replay. Raw paths/child output/credential/URL/ErrorDebug are not log-safe. Actual boundary regressions and contracts are in quality-guidelines.md and owning parent code-spec.

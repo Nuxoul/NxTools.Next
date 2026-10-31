@@ -1,0 +1,96 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "region": "prefix before header (menu/algorithm/selection/rows/detail)",
+    "sha256": "f0d2479d342527c656115e45de3c2a71c6f8c32b6580cb250231e440716b84c8",
+    "bytes": 127161,
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "region": "suffix after header (original persistence and modules)",
+    "sha256": "c1a04669173cc17d5d13ef125100d0b1cb25e6ffda1c4e221122ae7de3d79cbc",
+    "bytes": 860,
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+    "region": "entire pre-existing prefix",
+    "sha256": "e9d7c81998b9c05599b4bafdc5ecf5397803c36dce41202566dfcce082ef56a2",
+    "bytes": 35183,
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tests.rs",
+    "region": "whole baseline file",
+    "sha256": "a75743c4fbb201ca43bf5a3acf7ac4adbc81d84f6102cf60e65850a99409b02b",
+    "unchanged": true
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "region": "entire pre-existing prefix",
+    "sha256": "2e9d7815c04397dc785fd81069fd45bdd12109491e921f508edd81cb80cc63a3",
+    "bytes": 259292,
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+    "region": "whole protected accepted file",
+    "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+    "region": "whole protected accepted file",
+    "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "region": "whole protected accepted file",
+    "sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+    "region": "whole protected accepted file",
+    "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "region": "whole protected accepted file",
+    "sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "region": "whole protected accepted file",
+    "sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+    "region": "whole protected accepted file",
+    "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+    "region": "whole protected accepted file",
+    "sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+    "region": "whole protected accepted file",
+    "sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6",
+    "unchanged": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs",
+    "region": "whole protected accepted file",
+    "sha256": "2af2a15d7ba36b48ec397a19abb54fa9470bad44b3ab1b1a3c0629dc1bbe13e3",
+    "unchanged": true
+  }
+]

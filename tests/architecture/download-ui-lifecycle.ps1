@@ -137,10 +137,10 @@ function Assert-NativeCloseDefersMutation {
 }
 
 Assert-SourceContains `
-    -Pattern 'fn download_window_close_button(theme: Theme)' `
+    -Pattern 'titlebar::controlled_titlebar(' `
     -Message "Download windows must share one explicit client-drawn close control."
 Assert-SourceContains `
-    -Pattern '.on_click(|_, window, _| window.remove_window())' `
+    -Pattern '|_, window, _| window.remove_window()' `
     -Message "Client-drawn download titlebars must close through an explicit GPUI action."
 Assert-SourceContains `
     -Pattern 'this.file_name.clone(),' `
@@ -207,7 +207,7 @@ Assert-SourceContains `
 foreach ($requiredDialogShellContract in @(
     'pub(crate) struct DialogShellIds',
     'pub(crate) fn dialog_shell(',
-    '.h(px(TITLEBAR_HEIGHT))',
+    '.child(titlebar)',
     '.h(px(SETTINGS_FOOTER_HEIGHT))',
     '.font_family(UI_FONT_FAMILY)'
 )) {
@@ -319,7 +319,7 @@ foreach ($requiredActionContract in @(
     'download-complete-primary-open-action',
     'let spec = action.spec()',
     'action_button(spec.button_id, label)',
-    'icon_action_button(spec.button_id, spec.icon)',
+    'icon_action_button(spec.button_id, spec.icon, "拖拽下载文件")',
     'tooltip: Some("拖拽文件")',
     'tooltip_selector: Some("download-complete-drag-tooltip")',
     'primary_action_button(',

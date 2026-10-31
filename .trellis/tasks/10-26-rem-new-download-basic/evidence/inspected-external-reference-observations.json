@@ -1,0 +1,32 @@
+[
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\addDownload\\single\\AddDownloadPage.kt",
+    "sha256": "21747a661318d4d59b04fd272aec6cd4e9f392eeb93c85fd141e3cf0034b665e",
+    "inspection_order": 0,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\addDownload\\shared\\LocationTextField.kt",
+    "sha256": "844a09fe920976c844027cc169b6602d767d42bb5820f8b863cf004bcccd98bb",
+    "inspection_order": 1,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Views\\AddDownloadWindow.axaml",
+    "sha256": "775864b7913bdd6cfb33659fc07d94dd31ee6e378eb15716dab132593ad1858f",
+    "inspection_order": 2,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Views\\AddDownloadWindow.axaml.cs",
+    "sha256": "2e857670775656a1b7ea2a1025690f78669c5f5b350b3720884d0a277851e344",
+    "inspection_order": 3,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Services\\WindowAnimationService.cs",
+    "sha256": "987a3040ade0a027ed37564158a9d408903dbb47e342e940f716fd0eadb51346",
+    "inspection_order": 4,
+    "owned_edit": false
+  }
+]

@@ -1,0 +1,5 @@
+$ErrorActionPreference='Stop'
+& (Join-Path $PSScriptRoot 'run.ps1') -Name strict-production-import-clean -CargoArgs 'clippy -p nxtools-desktop -- -D warnings'
+& (Join-Path $PSScriptRoot 'run.ps1') -Name strict-tests-import-clean -CargoArgs 'clippy -p nxtools-desktop --tests -- -D warnings'
+& (Join-Path $PSScriptRoot 'run.ps1') -Name shared-direct-final -CargoArgs 'test -p nxtools-desktop audit06_shared -- --test-threads=1'
+& (Join-Path $PSScriptRoot 'run.ps1') -Name workspace-fmt-import-clean -CargoArgs 'fmt --all -- --check'

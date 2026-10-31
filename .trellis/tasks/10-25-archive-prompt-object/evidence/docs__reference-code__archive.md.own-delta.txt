@@ -1,0 +1,41 @@
+--- dirty-baseline/docs/reference-code/archive.md
++++ delivery/docs/reference-code/archive.md
+@@ -733,3 +733,38 @@
+ must retain newer values. No arbitrary external-process config watching or general framework claim.
+ Evidence/limits: [bounded repair outcomes](../../.trellis/tasks/10-16-archive-manager/ui-ac-settings-repair-outcomes.md).
+ Original negative UI acceptance remains historical; missing settings/reference/physical gates remain.
++
++## 2026-10-25 — audit #4 decision-object display (bounded implementation index)
++
++This is stabilization within `Phase A — Engine contracts and safety foundation`, not phase/UI
++acceptance. Re-read allowed Bandizip `langs/SimpChinese.lang:579`–588: existing/incoming labels,
++Skip/Overwrite/Rename/apply-all are resource evidence only, not live layout/native behavior.
++Re-read licensed Archiver `core/src/lib.rs:230` decoder and `:665` single-file final `File::create`;
++that truncating output/progress-name callback is NOT a safe confirmation or publication source.
++No old general NxTools archive UI was identified in the existing tracked-source investigation.
++
++Verified current producer chain: formats ZIP/TAR/standalone Gzip/BZip2/XZ/Zstd and isolated
++7z/RAR `begin_extracted_file` -> `worker_output.rs::PrivateOutput` (ordinary format receives
++plan-prefixed target; isolated codec maps the current member through `planned_unique`) ->
++`worker_conflict.rs::ExtractionConflict::begin` -> original InteractionPort pending ticket ->
++private conflict frame -> `ArchiveJobSession.OnFrame/Prompt` -> `ArchiveJobEvent` -> original
++Desktop job record/`refresh_job` -> `ProgressSnapshot` -> `JobProgressView::show_prompt`.
++CreateOverwrite uses `ArchiveWorkerRunner.ExecuteAsync` original native observation and
++`ArchiveJobSession.ConfirmCreateOverwrite`, bound to the immutable operation Command's
++Destination/Create.Name, not progress/selection. `ArchiveJobSession.Reply`, Desktop `reply_job`
++and original InteractionPort retain single reply/ticket/generation/cancel authority.
++
++Display strings are UI-only snapshots, never an output path grant or native token. Preserve
++source revision/ordinal, plan/path validation, native observed identity/signature, budgets,
++temporary verified output/publication, password clearing and original cleanup-bound lifetime.
++New optional display is omitted when absent; new receivers accept old payloads with explicit
++unavailable-object fallback. Old strict receivers reject new populated fields: no mixed-version
++compatibility claim, unknown-field relaxation or version change. New payload Debug/ToString
++must redact the names; fixed correlated production diagnostics remain unchanged.
++
++Exact released Component0.8.0 `dialog/dialog.rs:735` limits the Dialog to viewport, `:769`–786
++scrolls body separately from footer. `description_list.rs::vertical/columns/item` provides read-only
++metadata slots. Keep original official Button/Checkbox and Dialog close/confirm/deferred reply
++owners and 560x300/default,480x260/min native client. Task evidence belongs to
++`.trellis/tasks/10-25-archive-prompt-object/`; source/compiled/synthetic is not physical/native,
++reader/DPI/visual or user acceptance.

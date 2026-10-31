@@ -1,0 +1,26 @@
+﻿[
+    {
+        "exit":  1,
+        "name":  "strict-tests-final"
+    },
+    {
+        "exit":  1,
+        "name":  "strict-production-final"
+    },
+    {
+        "exit":  0,
+        "name":  "workspace-check-final"
+    },
+    {
+        "exit":  1,
+        "name":  "workspace-fmt-final"
+    },
+    {
+        "exit":  0,
+        "name":  "scoped-fmt-final"
+    },
+    {
+        "exit":  0,
+        "name":  "scoped-diff-final"
+    }
+]

@@ -1,0 +1,204 @@
+﻿[
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          },
+                          {
+                              "ProcessId":  93412,
+                              "ParentProcessId":  92880,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name storage_store --edition=2024 rust\\crates\\nxtools-extensions\\tests\\storage_store.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --warn=clippy::unwrap_used --deny=unsafe_code --deny=clippy::todo --deny=clippy::dbg_macro --test --cfg feature=\\\"test-support\\\" --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values(\\\"test-support\\\"))\" -C metadata=95eb4d98759c8dd0 -C extra-filename=-fa6dd9b4b1178046 --out-dir D:\\Code\\NxTools.Next-main\\target\\debug\\deps -L dependency=D:\\Code\\NxTools.Next-main\\target\\debug\\deps --extern base64=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libbase64-7a20a9ab5a7e60ed.rlib --extern fs2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libfs2-16b37ddd6476b5bb.rlib --extern nxtools_extensions=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libnxtools_extensions-286b3857b6336a9a.rlib --extern regex=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libregex-086da8314227a448.rlib --extern serde=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde-932abfab91224c42.rlib --extern serde_json=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde_json-2628455ca93b910a.rlib --extern sha2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libsha2-d57f732b79e93653.rlib --extern tempfile=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtempfile-9528a9a4e13f905e.rlib --extern thiserror=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libthiserror-4e4528b9f7d52a46.rlib --extern tokio=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtokio-e212453075431a53.rlib --extern tracing=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtracing-ca88c5e77cfbb7fd.rlib --extern url=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\liburl-c9408dfa7f3435e1.rlib --extern uuid=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libuuid-b211795770a3265a.rlib --extern zip=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libzip-6a1a9330e1cb3fda.rlib -C codegen-units=256"
+                          }
+                      ],
+        "utc":  "2026-10-26T03:59:00.9112364Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          },
+                          {
+                              "ProcessId":  28104,
+                              "ParentProcessId":  92880,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name validated_settings --edition=2024 rust\\crates\\nxtools-extensions\\tests\\validated_settings.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --warn=clippy::unwrap_used --deny=unsafe_code --deny=clippy::todo --deny=clippy::dbg_macro --test --cfg feature=\\\"test-support\\\" --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values(\\\"test-support\\\"))\" -C metadata=39463c56054265bd -C extra-filename=-5647faf9b3225666 --out-dir D:\\Code\\NxTools.Next-main\\target\\debug\\deps -L dependency=D:\\Code\\NxTools.Next-main\\target\\debug\\deps --extern base64=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libbase64-7a20a9ab5a7e60ed.rlib --extern fs2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libfs2-16b37ddd6476b5bb.rlib --extern nxtools_extensions=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libnxtools_extensions-286b3857b6336a9a.rlib --extern regex=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libregex-086da8314227a448.rlib --extern serde=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde-932abfab91224c42.rlib --extern serde_json=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde_json-2628455ca93b910a.rlib --extern sha2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libsha2-d57f732b79e93653.rlib --extern tempfile=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtempfile-9528a9a4e13f905e.rlib --extern thiserror=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libthiserror-4e4528b9f7d52a46.rlib --extern tokio=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtokio-e212453075431a53.rlib --extern tracing=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtracing-ca88c5e77cfbb7fd.rlib --extern url=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\liburl-c9408dfa7f3435e1.rlib --extern uuid=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libuuid-b211795770a3265a.rlib --extern zip=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libzip-6a1a9330e1cb3fda.rlib -C codegen-units=256"
+                          }
+                      ],
+        "utc":  "2026-10-26T03:59:16.5251267Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          },
+                          {
+                              "ProcessId":  70704,
+                              "ParentProcessId":  92880,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name transport_declarations --edition=2024 rust\\crates\\nxtools-extensions\\tests\\transport_declarations.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --warn=clippy::unwrap_used --deny=unsafe_code --deny=clippy::todo --deny=clippy::dbg_macro --test --cfg feature=\\\"test-support\\\" --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values(\\\"test-support\\\"))\" -C metadata=a990cb31e1621d74 -C extra-filename=-2c120b80243d63d6 --out-dir D:\\Code\\NxTools.Next-main\\target\\debug\\deps -L dependency=D:\\Code\\NxTools.Next-main\\target\\debug\\deps --extern base64=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libbase64-7a20a9ab5a7e60ed.rlib --extern fs2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libfs2-16b37ddd6476b5bb.rlib --extern nxtools_extensions=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libnxtools_extensions-286b3857b6336a9a.rlib --extern regex=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libregex-086da8314227a448.rlib --extern serde=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde-932abfab91224c42.rlib --extern serde_json=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde_json-2628455ca93b910a.rlib --extern sha2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libsha2-d57f732b79e93653.rlib --extern tempfile=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtempfile-9528a9a4e13f905e.rlib --extern thiserror=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libthiserror-4e4528b9f7d52a46.rlib --extern tokio=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtokio-e212453075431a53.rlib --extern tracing=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtracing-ca88c5e77cfbb7fd.rlib --extern url=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\liburl-c9408dfa7f3435e1.rlib --extern uuid=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libuuid-b211795770a3265a.rlib --extern zip=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libzip-6a1a9330e1cb3fda.rlib -C codegen-units=256"
+                          }
+                      ],
+        "utc":  "2026-10-26T03:59:32.1676041Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          },
+                          {
+                              "ProcessId":  91384,
+                              "ParentProcessId":  92880,
+                              "Name":  "rustc.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\rustc.exe\" --crate-name nxtools_extensions --edition=2024 rust\\crates\\nxtools-extensions\\src\\lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --warn=clippy::unwrap_used --deny=unsafe_code --deny=clippy::todo --deny=clippy::dbg_macro --test --cfg feature=\\\"test-support\\\" --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values(\\\"test-support\\\"))\" -C metadata=66b0bfeedf85dda7 -C extra-filename=-9905f8212588a097 --out-dir D:\\Code\\NxTools.Next-main\\target\\debug\\deps -L dependency=D:\\Code\\NxTools.Next-main\\target\\debug\\deps --extern base64=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libbase64-7a20a9ab5a7e60ed.rlib --extern fs2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libfs2-16b37ddd6476b5bb.rlib --extern regex=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libregex-086da8314227a448.rlib --extern serde=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde-932abfab91224c42.rlib --extern serde_json=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libserde_json-2628455ca93b910a.rlib --extern sha2=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libsha2-d57f732b79e93653.rlib --extern tempfile=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtempfile-9528a9a4e13f905e.rlib --extern thiserror=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libthiserror-4e4528b9f7d52a46.rlib --extern tokio=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtokio-e212453075431a53.rlib --extern tracing=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libtracing-ca88c5e77cfbb7fd.rlib --extern url=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\liburl-c9408dfa7f3435e1.rlib --extern uuid=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libuuid-b211795770a3265a.rlib --extern zip=D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libzip-6a1a9330e1cb3fda.rlib -C codegen-units=256"
+                          }
+                      ],
+        "utc":  "2026-10-26T03:59:47.7536408Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:00:03.2891216Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:00:18.8248535Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:00:34.3166678Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:00:49.7876118Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:01:05.2688977Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:01:20.9422552Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  92880,
+                              "ParentProcessId":  80740,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-extensions --features test-support -- --test-threads=1"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:01:36.5068947Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  5792,
+                              "ParentProcessId":  89420,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" clippy -p nxtools-extensions -p nxtools-core --features nxtools-extensions/test-support --tests -- -D warnings"
+                          },
+                          {
+                              "ProcessId":  89592,
+                              "ParentProcessId":  92392,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" check -p nxtools-extensions -p nxtools-core --features nxtools-extensions/test-support --tests"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:01:52.0087806Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  94192,
+                              "ParentProcessId":  88084,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" clippy -p nxtools-desktop --tests -- -D warnings"
+                          },
+                          {
+                              "ProcessId":  22920,
+                              "ParentProcessId":  91804,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" check -p nxtools-desktop --tests"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:02:07.5021674Z"
+    },
+    {
+        "processes":  [
+                          {
+                              "ProcessId":  94192,
+                              "ParentProcessId":  88084,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" clippy -p nxtools-desktop --tests -- -D warnings"
+                          },
+                          {
+                              "ProcessId":  22920,
+                              "ParentProcessId":  91804,
+                              "Name":  "cargo.exe",
+                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" check -p nxtools-desktop --tests"
+                          }
+                      ],
+        "utc":  "2026-10-26T04:02:23.0120259Z"
+    },
+    {
+        "processes":  [
+
+                      ],
+        "utc":  "2026-10-26T04:02:38.4733241Z"
+    }
+]

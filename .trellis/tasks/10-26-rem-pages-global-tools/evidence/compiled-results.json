@@ -1,0 +1,106 @@
+[
+  {
+    "name": "global-behavior-green",
+    "command": "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit": 0,
+    "elapsed": 232.6402197,
+    "finished": "2026-10-26T08:15:06.7627047+08:00",
+    "log": "evidence/runs/global-behavior-green.log",
+    "test_summaries": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 27.35s"
+    ]
+  },
+  {
+    "name": "global-behavior-initial",
+    "command": "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 82.28337909999999,
+    "finished": "2026-10-26T08:01:24.5985062+08:00",
+    "log": "evidence/runs/global-behavior-initial.log",
+    "test_summaries": []
+  },
+  {
+    "name": "global-behavior-run",
+    "command": "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 204.32481629999998,
+    "finished": "2026-10-26T08:05:16.0757236+08:00",
+    "log": "evidence/runs/global-behavior-run.log",
+    "test_summaries": [
+      "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 3.15s"
+    ]
+  },
+  {
+    "name": "global-layout-red",
+    "command": "cargo test -p nxtools-desktop audit06_pages_global_ordinary -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 196.0087364,
+    "finished": "2026-10-26T07:34:12.0424874+08:00",
+    "log": "evidence/runs/global-layout-red.log",
+    "test_summaries": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1275 filtered out; finished in 0.48s"
+    ]
+  },
+  {
+    "name": "global-ordinary-green",
+    "command": "cargo test -p nxtools-desktop audit06_pages_global_ordinary -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 28.733314699999998,
+    "finished": "2026-10-26T07:43:49.0624759+08:00",
+    "log": "evidence/runs/global-ordinary-green.log",
+    "test_summaries": []
+  },
+  {
+    "name": "global-rules-confirmed-red",
+    "command": "cargo test -p nxtools-desktop audit06_pages_global_ordinary -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 186.14503489999998,
+    "finished": "2026-10-26T07:42:43.0351009+08:00",
+    "log": "evidence/runs/global-rules-confirmed-red.log",
+    "test_summaries": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1277 filtered out; finished in 0.61s"
+    ]
+  },
+  {
+    "name": "global-rules-layout-red",
+    "command": "cargo test -p nxtools-desktop audit06_pages_global_ordinary -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 28.2611894,
+    "finished": "2026-10-26T07:35:40.5989459+08:00",
+    "log": "evidence/runs/global-rules-layout-red.log",
+    "test_summaries": []
+  },
+  {
+    "name": "global-viewport-green",
+    "command": "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 9.3144279,
+    "finished": "2026-10-26T08:10:27.6445563+08:00",
+    "log": "evidence/runs/global-viewport-green.log",
+    "test_summaries": [
+      "test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 1280 filtered out; finished in 7.42s"
+    ]
+  },
+  {
+    "name": "pages-ordinary-green",
+    "command": "cargo test -p nxtools-desktop audit06_pages_ -- --test-threads=1 --nocapture",
+    "exit": 0,
+    "elapsed": 191.77744769999998,
+    "finished": "2026-10-26T07:58:12.4391398+08:00",
+    "log": "evidence/runs/pages-ordinary-green.log",
+    "test_summaries": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1278 filtered out; finished in 1.56s"
+    ]
+  },
+  {
+    "name": "pages-shell-tools-red",
+    "command": "cargo test -p nxtools-desktop audit06_pages_ -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 191.5516414,
+    "finished": "2026-10-26T07:51:25.2653248+08:00",
+    "log": "evidence/runs/pages-shell-tools-red.log",
+    "test_summaries": [
+      "test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 1277 filtered out; finished in 1.20s"
+    ]
+  }
+]

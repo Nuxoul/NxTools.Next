@@ -1,0 +1,116 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__settings_view.rs.baseline",
+        "sha256":  "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+        "captured_at":  "2026-10-26T03:47:27.6321075+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__task_window.rs.baseline",
+        "sha256":  "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+        "captured_at":  "2026-10-26T03:47:27.6372367+08:00"
+    },
+    {
+        "path":  "docs/reference-code/download.md",
+        "baseline":  "evidence/baselines/docs__reference-code__download.md.baseline",
+        "sha256":  "315db7a617756cd301825aaebfc8753e9ac179b4a63a740c39a775d7b98804fe",
+        "captured_at":  "2026-10-26T03:47:27.6392495+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__window_support.rs.baseline",
+        "sha256":  "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+        "captured_at":  "2026-10-26T03:47:27.6432925+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__task_windows_impl.rs.baseline",
+        "sha256":  "c56f29eae6514f1dc6aa1dfef88e6b74ed41da0b7ebb66330a4749552188fd7a",
+        "captured_at":  "2026-10-26T03:47:27.6469349+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.baseline",
+        "sha256":  "272bc26198986a050f53588c82cc8859a3e514cb286691cd541865054d4c4062",
+        "captured_at":  "2026-10-26T03:47:27.6503278+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__tests.rs.baseline",
+        "sha256":  "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783",
+        "captured_at":  "2026-10-26T03:47:27.6535741+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.baseline",
+        "sha256":  "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a",
+        "captured_at":  "2026-10-26T03:47:27.6570904+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.baseline",
+        "sha256":  "1e642d827362c0f84a229b463983653c52c021117ff72fff79ac7421bd687ce3",
+        "captured_at":  "2026-10-26T03:47:27.6602416+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_rem_tests.rs.baseline",
+        "sha256":  "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680",
+        "captured_at":  "2026-10-26T03:47:27.6627791+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/new_download_overlay_rem_tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_overlay_rem_tests.rs.baseline",
+        "sha256":  "94ea1422a60e1e0091b6b3a5c02b060ad38d5ff618fa06b3b758041de787c715",
+        "captured_at":  "2026-10-26T03:47:27.6662843+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_keyboard_tests.rs.baseline",
+        "sha256":  "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29",
+        "captured_at":  "2026-10-26T03:47:27.6698052+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__directory_picker.rs.baseline",
+        "sha256":  "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+        "captured_at":  "2026-10-26T03:47:27.6732964+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__directory_picker_tests.rs.baseline",
+        "sha256":  "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab",
+        "captured_at":  "2026-10-26T03:47:27.6763172+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/metrics.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__ui__metrics.rs.baseline",
+        "sha256":  "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420",
+        "captured_at":  "2026-10-26T03:47:27.6792825+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__ui__components__settings.rs.baseline",
+        "sha256":  "292a9cb577521aa6c5b36ba19f205a4d30b28c7117fc1e8c5e466f1f66e34f71",
+        "captured_at":  "2026-10-26T03:47:27.6826436+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__ui__components__field.rs.baseline",
+        "sha256":  "5de208e485ea894dfd6687a7d3c8c103603fe27c035a3c10d213a6e0da722c6f",
+        "captured_at":  "2026-10-26T03:47:27.6856617+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__main_window__download_page.rs.baseline",
+        "sha256":  "b797e668770db50515049007c5070edb2ab9d46955b34936cf5d7bbf9f4c9191",
+        "captured_at":  "2026-10-26T03:47:27.6883728+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+        "baseline":  "evidence/baselines/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.baseline",
+        "sha256":  "d443ed923241e37c5670a680473a9c1a9982c59f75eccaeeb1232ab4c5cdfe4a",
+        "captured_at":  "2026-10-26T03:47:27.6916361+08:00"
+    }
+]

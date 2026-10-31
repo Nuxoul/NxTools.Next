@@ -1,0 +1,7 @@
+﻿{
+    "name":  "downloads-related-after-independent-repair",
+    "command":  "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+    "exit":  0,
+    "elapsed":  350.7701727,
+    "finished":  "2026-10-26T06:58:14.4237003+08:00"
+}

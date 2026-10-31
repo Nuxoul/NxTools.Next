@@ -1,0 +1,14 @@
+{
+  "effective_root_red": "NOT_RUN",
+  "production_implementation": "NOT_IMPLEMENTED",
+  "scoped_quick_clipboard_ui_tests": "NOT_RUN",
+  "accepted_first_seven_protection_tests": "NOT_RUN",
+  "strict_production_clippy": "NOT_RUN",
+  "strict_test_clippy": "NOT_RUN",
+  "workspace_check": "NOT_RUN",
+  "scoped_rustfmt": "NOT_RUN",
+  "workspace_rustfmt": "NOT_RUN",
+  "source_document_gates": "11/11 PASS",
+  "native_physical_visual_user_release": "NOT_RUN / NOT_AUTHORIZED",
+  "rust_invocations": 0
+}

@@ -116,42 +116,9 @@ test("an acceptance for a different handoff never cancels the browser download",
   assert.deepEqual(calls, []);
 });
 
-test("interception holds the browser save dialog until the handoff resolves", () => {
-  // Resolving onDeterminingFilename eagerly lets Chrome open its own Save As
-  // dialog before the intercepted download is canceled. The listener must
-  // forward suggest into the handoff and only resolve it on terminal paths.
-  const source = require("node:fs").readFileSync(
-    require("node:path").join(__dirname, "..", "background.js"),
-    "utf8",
-  );
-
-  assert.match(
-    source,
-    /determiningFilenameEvent\.addListener\(\(downloadItem, suggest\) => \{\s*void interceptBrowserDownload\(downloadItem, \{ suggest \}\);/,
-    "the listener forwards suggest instead of resolving it eagerly",
-  );
-  assert.match(
-    source,
-    /const yieldToBrowser = \(\) => \{/,
-    "every hand-back path resolves the pending suggestion",
-  );
-  const handoffBody = source.slice(
-    source.indexOf("async function interceptBrowserDownload"),
-    source.indexOf("function createContextMenus"),
-  );
-  const handoffResolves = [...handoffBody.matchAll(/yieldToBrowser\(\);/g)].length;
-  assert.equal(
-    handoffResolves,
-    4,
-    "disabled, site-disabled, accepted and rejected paths all yield once",
-  );
-});
-
 test("the worker has no obsolete response-header takeover or duplicate Blob reader", () => {
-  const source = require("node:fs").readFileSync(
-    require("node:path").join(__dirname, "..", "background.js"),
-    "utf8",
-  );
+  const { backgroundSource, extractDeclaration } = require("./harness/background-source.cjs");
+  const source = backgroundSource();
   const obsoleteOwners = [
     "preemptedBrowserDownloads",
     "PREEMPTED_DOWNLOAD_TTL_MS",
@@ -170,10 +137,7 @@ test("the worker has no obsolete response-header takeover or duplicate Blob read
     assert.doesNotMatch(source, new RegExp(`\\b${owner}\\b`), `${owner} must not remain as a duplicate owner`);
   }
 
-  const captureBody = source.slice(
-    source.indexOf("function registerHeaderCapture"),
-    source.indexOf("function clearTabResources"),
-  );
+  const captureBody = extractDeclaration(source, "registerHeaderCapture");
   assert.match(captureBody, /rememberRequestHeaders\(details\);/);
   assert.match(captureBody, /captureRequestResource\(details\);/);
   assert.match(captureBody, /onResponseStarted\.addListener\([\s\S]*captureNetworkResource\(details\);/);
@@ -185,13 +149,11 @@ test("the worker has no obsolete response-header takeover or duplicate Blob read
 test("active Blob upload and content-script base64 fallback remain available", () => {
   const fs = require("node:fs");
   const path = require("node:path");
-  const source = fs.readFileSync(path.join(__dirname, "..", "background.js"), "utf8");
+  const { backgroundSource, extractDeclaration } = require("./harness/background-source.cjs");
+  const source = backgroundSource();
   const contentSource = fs.readFileSync(path.join(__dirname, "..", "content-script.js"), "utf8");
   assert.match(source, /return await sendBlobResourceViaContentScript\(resource\);/);
-  const blobBody = source.slice(
-    source.indexOf("async function sendBlobResourceViaContentScript"),
-    source.indexOf("async function sendDownloadPayload"),
-  );
+  const blobBody = extractDeclaration(source, "sendBlobResourceViaContentScript");
   for (const message of ["content_blob_info", "prepare_blob_upload", "content_upload_blob", "commit_blob_upload"]) {
     assert.ok(blobBody.includes(`"${message}"`), `${message} remains on the active bounded upload path`);
   }

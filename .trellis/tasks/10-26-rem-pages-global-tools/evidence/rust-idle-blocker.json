@@ -1,0 +1,17 @@
+﻿{
+    "observed":  "2026-10-26T08:50:20.7697337+08:00",
+    "state":  "Blocked checkpoint observation, no Rust command started",
+    "rust":  [
+                 {
+                     "ProcessId":  83436,
+                     "ParentProcessId":  84988,
+                     "Name":  "cargo.exe",
+                     "CreationDate":  "\/Date(1792973804160)\/",
+                     "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                 }
+             ],
+    "idle_waits":  [
+                       "20minute wrapper wait expired before command/log creation",
+                       "additional300second bounded observation expired"
+                   ]
+}

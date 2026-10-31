@@ -1,0 +1,5 @@
+{
+  "historical_sha256": "d8a8fc08c6724aef546b13c00cbeb014a71c64daec699d13a5bf23c7b25bcd62",
+  "current_snapshot_sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+  "scope": "scratch-only replay; real nxtools_extensions types, not a live-source rollback or full Desktop acceptance"
+}

@@ -1,0 +1,70 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+    "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+    "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+    "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs",
+    "sha256": "8637516874396f5f2f542ae7ab945df2b6d81b8cf957fbef7c570e26516395a6"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+    "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+    "sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs",
+    "sha256": "2af2a15d7ba36b48ec397a19abb54fa9470bad44b3ab1b1a3c0629dc1bbe13e3"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+    "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+    "sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/dialog.rs",
+    "sha256": "84f7b0829aac03b859fc38e54450488334e88067290ed12eb960adf1ace422ea"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+    "sha256": "641fe48ca573be4c126060f21441836a4b6ec1a789f795487b0f5ae2d771f1e4"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/theme.rs",
+    "sha256": "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c"
+  }
+]

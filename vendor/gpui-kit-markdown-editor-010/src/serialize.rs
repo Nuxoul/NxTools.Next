@@ -211,13 +211,11 @@ fn list_item(doc: &EditorDocument, item: BlockId, marker: &str) -> String {
                     })
                 });
             // Two paragraphs in a row need a blank line, or they merge.
-            body.push_str(
-                if spread || bare_nested || (!is_list && !prev_is_list) || prev_is_list {
-                    "\n\n"
-                } else {
-                    "\n"
-                },
-            );
+            body.push_str(if spread || bare_nested || !is_list || prev_is_list {
+                "\n\n"
+            } else {
+                "\n"
+            });
         }
         body.push_str(text);
     }

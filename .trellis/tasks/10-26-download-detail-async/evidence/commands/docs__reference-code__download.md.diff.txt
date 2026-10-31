@@ -1,0 +1,28 @@
+--- dirty-baseline/docs/reference-code/download.md
++++ current/docs/reference-code/download.md
+@@ -3168,3 +3168,25 @@
+   data-projection optimization, not a DataTable migration or detail-threading change.
+ - Regression/evidence owner: `.trellis/tasks/10-26-download-virtual-projection/`.
+   Synthetic construction/access/identity evidence is not native, DPI or visual acceptance.
++
++### Audit #12 selected-detail IO/lifecycle review (2026-10-26)
++
++- ABDM first: ProgressDownloadPage.kt::ProgressDownloadPage/RenderPartInfo consume the
++  original monitor item and scoped BaseSingleDownloadComponent.extraDownloadProgressInfo;
++  scoped close/onDismiss does not imply cancelling the download. Legacy then:
++  DownloadTaskViewModel Header/Cookie/Segment summary projections and AddLog retain300;
++  MainWindow OnOpened/OnClosing/OnClosed and HideToTray retain presentation ownership.
++  Neither application source proves unavailable AWT/Avalonia native implementation.
++- Next's render_downloads -> cx.defer -> DownloadApplication::request_task_detail ->
++  window_support::load_download_task_detail -> DownloadEngine::handle_command(TaskDetail)
++  -> engine/projection.rs::command_task_detail -> task + original store load_transfer_plan
++  and load_task_timeline(300) is synchronous. Both storage methods take Mutex<Connection>.
++  refresh_snapshot also reloads selected detail synchronously. Deferral is not background IO.
++- Preserve that typed command/store/schema and original download runtime. Background blocking
++  work must retain no GPUI lease; install pending before dispatch, scope publication to current
++  task/request generation and retire selection/closed presentation before accepting completion.
++  Cache hits, failures and late replies obey the same boundary. Cancelled IO may physically
++  finish, but must not overwrite newer details or spawn unbounded replacement workers.
++- Evidence owner: `.trellis/tasks/10-26-download-detail-async/`. Real synthetic SQLite mutex
++  contention tests must prove UI progress while the store is still blocked; source defer tokens
++  or helper-only tests do not prove responsiveness. No native/network acceptance is implied.

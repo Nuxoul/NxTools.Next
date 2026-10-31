@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/browser-extension/index.md", "reason": "Extension pre-dev checklist and test commands"}
+{"file": ".trellis/spec/browser-extension/contracts.md", "reason": "Handoff identity, privacy, demand-only native transport, resource cache invariants"}
+{"file": ".trellis/spec/browser-extension/ui-guidelines.md", "reason": "Popup/Shadow DOM interaction and accessibility baseline"}
+{"file": ".trellis/spec/shared/architecture.md", "reason": "Authority boundaries"}
+{"file": ".trellis/spec/shared/engineering.md", "reason": "Diagnostics and privacy rules"}
+{"file": "docs/reference-code/download.md", "reason": "Browser extension reference chain and legacy findings"}
+{"file": ".trellis/tasks/10-12-browser-extension-ui-redesign/design.md", "reason": "Previous approved visual baseline"}

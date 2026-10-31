@@ -1,0 +1,16 @@
+﻿[
+    {
+        "name":  "extension-contracts",
+        "command":  "cargo test -p nxtools-extensions --test api_contracts --test transport_declarations -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  13.4283659,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\extension-contracts.log"
+    },
+    {
+        "name":  "desktop-closeout",
+        "command":  "cargo test -p nxtools-desktop compile_closeout_ -- --test-threads=1",
+        "exit":  101,
+        "elapsed_seconds":  71.9721649,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\desktop-closeout.log"
+    }
+]

@@ -1,0 +1,28 @@
+{
+  "exit": 0,
+  "checks": [
+    {
+      "path": "prd.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    },
+    {
+      "path": "command-matrix.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    },
+    {
+      "path": "outcomes.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    },
+    {
+      "path": "evidence/verify.py",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true
+    }
+  ],
+  "verify_python_ast": "PASS",
+  "final_specs_exit": 0,
+  "scope": "Task document whitespace/AST/navigation only, not product/native acceptance"
+}

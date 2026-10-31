@@ -1,0 +1,22 @@
+[
+  {
+    "path": "vendor/gpui-component-080/src/dialog/dialog.rs",
+    "sha256": "3cc994c06711c6102b9ed0f91681b889ff1ac15c9ac24a961da302dd555b49fe"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/dialog/footer.rs",
+    "sha256": "ea3f8401c3455f0aced322f3ea6b9479c60b36d5213a624998a0e159f7d96e90"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/button/button.rs",
+    "sha256": "fdd2ed48d6ba0efe6945e7ea041b46738e3e266556d1adc91276d79ade158174"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/root.rs",
+    "sha256": "392cd7259b1ae87eb4ac7699dc54778bc98297ce3bc1f5db18dca857c663d997"
+  },
+  {
+    "path": "docs/reference-code/winshun.md",
+    "sha256": "37bc5aee17ef5fdbef15bb80736749d79f86e492555243a02b57776be36c921a"
+  }
+]

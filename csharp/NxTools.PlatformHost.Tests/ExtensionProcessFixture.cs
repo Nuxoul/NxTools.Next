@@ -51,7 +51,7 @@ internal static class ExtensionProcessFixture
         }
         if (mode == "badutf8") { Console.OpenStandardOutput().Write(new byte[] { 0xc3, 0x28, 10 }); return 0; }
         if (mode == "oversized") { Console.WriteLine(new string('x', 256 * 1024 + 1)); return 0; }
-        if (mode == "stdoutflood") { for (var i = 0; i < 5000; i++) Console.WriteLine(new string('x', 1024)); return 0; }
+        if (mode == "stdoutflood") { var count = args.Length > 2 ? int.Parse(args[2]) : 5000; for (var i = 0; i < count; i++) Console.WriteLine(new string('x', 1024)); return 0; }
         if (mode == "stderrflood") { for (var i = 0; i < 100; i++) Console.Error.WriteLine(new string('x', 1024)); return 0; }
         if (mode == "joblimits")
         {

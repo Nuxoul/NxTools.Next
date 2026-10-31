@@ -1,0 +1,9 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/main_window.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/main_window.rs
+@@ -517,3 +517,6 @@
+ 
+ #[cfg(test)]
+ mod page_rem_tests;
++
++#[cfg(test)]
++mod command_naming_tests;

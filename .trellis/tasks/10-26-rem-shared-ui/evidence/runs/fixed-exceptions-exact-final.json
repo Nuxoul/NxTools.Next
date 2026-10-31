@@ -1,0 +1,7 @@
+﻿{
+    "name":  "fixed-exceptions-exact-final",
+    "command":  "cargo test -p nxtools-desktop audit06_shared_clipboard_fixed -- --test-threads=1",
+    "exit":  0,
+    "elapsed":  204.1288887,
+    "finished":  "2026-10-26T07:14:16.2210287+08:00"
+}

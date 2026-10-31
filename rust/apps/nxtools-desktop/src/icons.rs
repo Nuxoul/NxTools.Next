@@ -81,6 +81,7 @@ material_icons! {
     TextFields => "material-symbols/text-fields.svg",
     Image => "material-symbols/image.svg",
     Folder => "material-symbols/folder.svg",
+    FolderFilled => "material-symbols/folder-filled.svg",
     FolderZip => "material-symbols/folder-zip.svg",
     Add => "material-symbols/add.svg",
     Edit => "material-symbols/edit.svg",

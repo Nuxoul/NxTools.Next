@@ -1,3 +1,4 @@
+pub use nxtools_protocol::archive_job::{ArchiveModificationRefusal, ArchiveOperation};
 use std::{path::PathBuf, sync::Arc, time::SystemTime};
 use uuid::Uuid;
 
@@ -16,6 +17,26 @@ pub enum ArchiveFormat {
     Bzip2,
     Xz,
     Zstd,
+}
+impl ArchiveFormat {
+    pub fn from_browser_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "Zip" => Self::Zip,
+            "SevenZ" => Self::SevenZ,
+            "Rar4" => Self::Rar4,
+            "Rar5" => Self::Rar5,
+            "Tar" => Self::Tar,
+            "TarGz" => Self::TarGz,
+            "TarBz2" => Self::TarBz2,
+            "TarXz" => Self::TarXz,
+            "TarZstd" => Self::TarZstd,
+            "Gzip" => Self::Gzip,
+            "Bzip2" => Self::Bzip2,
+            "Xz" => Self::Xz,
+            "Zstd" => Self::Zstd,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -145,12 +166,92 @@ impl ArchiveEntry {
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ArchiveCapabilities {
+    pub browse: bool,
+    pub preview: bool,
+    pub add: bool,
+    pub delete: bool,
+    pub replace_content: bool,
+    pub rename_file: bool,
+    pub rename_directory_subtree: bool,
+    pub new_directory: bool,
+    pub comment: bool,
+    pub modification_refusal: Option<ArchiveModificationRefusal>,
     pub test: bool,
     pub extract: bool,
     pub create: bool,
     pub modify: bool,
     pub split_read: bool,
     pub split_write: bool,
+}
+impl ArchiveCapabilities {
+    /// Installed edit backends; callers still require opened source eligibility facts.
+    /// Create encoders and filename suffixes never supply modification support.
+    pub fn opened(format: ArchiveFormat, refusal: Option<ArchiveModificationRefusal>) -> Self {
+        let refusal = if matches!(
+            format,
+            ArchiveFormat::Zip
+                | ArchiveFormat::SevenZ
+                | ArchiveFormat::Tar
+                | ArchiveFormat::TarGz
+                | ArchiveFormat::TarXz
+        ) {
+            refusal
+        } else {
+            Some(ArchiveModificationRefusal::BackendMissing)
+        };
+        let edit = refusal.is_none();
+        Self {
+            browse: true,
+            preview: true,
+            test: true,
+            extract: true,
+            add: edit,
+            delete: edit
+                || format == ArchiveFormat::Zip
+                    && refusal == Some(ArchiveModificationRefusal::UnverifiedMetadata),
+            replace_content: edit
+                && matches!(
+                    format,
+                    ArchiveFormat::SevenZ
+                        | ArchiveFormat::Tar
+                        | ArchiveFormat::TarGz
+                        | ArchiveFormat::TarXz
+                ),
+            rename_file: edit,
+            rename_directory_subtree: edit,
+            new_directory: edit,
+            comment: edit && format == ArchiveFormat::Zip,
+            modify: edit,
+            modification_refusal: refusal,
+            ..Default::default()
+        }
+    }
+    pub fn admit(
+        self,
+        operation: ArchiveOperation,
+    ) -> std::result::Result<(), ArchiveModificationRefusal> {
+        let available = match operation {
+            ArchiveOperation::Browse => self.browse,
+            ArchiveOperation::Extract => self.extract,
+            ArchiveOperation::Preview => self.preview,
+            ArchiveOperation::Add => self.add,
+            ArchiveOperation::Delete => self.delete,
+            ArchiveOperation::ReplaceContent => self.replace_content,
+            ArchiveOperation::RenameFile => self.rename_file,
+            ArchiveOperation::RenameDirectorySubtree => self.rename_directory_subtree,
+            ArchiveOperation::NewDirectory => self.new_directory,
+            ArchiveOperation::Comment => self.comment,
+        };
+        if available {
+            Ok(())
+        } else if operation == ArchiveOperation::ReplaceContent {
+            Err(ArchiveModificationRefusal::BackendMissing)
+        } else {
+            Err(self
+                .modification_refusal
+                .unwrap_or(ArchiveModificationRefusal::BackendMissing))
+        }
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]

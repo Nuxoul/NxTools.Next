@@ -43,17 +43,31 @@ internal static class ArchiveWorkerAdmission
             var browser = request.BrowserEntry is { } selection ? System.Text.Json.JsonSerializer.Deserialize<Protocol.ArchiveEntryCommand>(
                 System.Text.Json.JsonSerializer.Serialize(selection, Protocol.JsonDefaults.Options), Protocol.JsonDefaults.Options) : null;
             if (browser is not null && (browser.Browser?.Valid != true || browser.OperationId != request.OperationId || browser.Path != request.Path || browser.Codepage != request.Codepage ||
-                limits.max_entry_bytes > 536870912 || limits.max_output_bytes > 536870912 || request.ConfirmedOverwrites is not null)) throw new ArchiveOutputException("invalid_request");
+                limits.max_entry_bytes > Protocol.ArchiveEntrySession.MaterializeEntryLimit || limits.max_output_bytes > Protocol.ArchiveEntrySession.MaterializeOutputLimit || request.ConfirmedOverwrites is not null)) throw new ArchiveOutputException("invalid_request");
+            Protocol.ArchiveBrowserContext? authorization = null;
+            if (request.BrowserAuthorize is { } context) {
+                reservation.Text(context.Comment, 65536, "invalid_request");
+                reservation.Text(context.Source.Native, 256, "invalid_request");
+                authorization = context with { Source = context.Source with { Digest = context.Source.Digest.ToArray() } };
+                if (!authorization.Valid || browser is not null || limits.max_entry_bytes > Protocol.ArchiveEntrySession.MaterializeEntryLimit || limits.max_output_bytes > Protocol.ArchiveEntrySession.MaterializeOutputLimit || request.ConfirmedOverwrites is not null) throw new ArchiveOutputException("invalid_request");
+            }
             Protocol.ArchiveJobExtract? jobExtract=null;
             if(request.JobExtract is {} job) {
                 if(!request.JobExecution || request.Operation!="extract" || !job.Valid)throw new ArchiveOutputException("invalid_request");
                 jobExtract=System.Text.Json.JsonSerializer.Deserialize<Protocol.ArchiveJobExtract>(System.Text.Json.JsonSerializer.Serialize(job,Protocol.JsonDefaults.Options),Protocol.JsonDefaults.Options);
             }
+            if (request.ExtractOptions?.Reclamation is { } reclaim && (!reclaim.Valid || request.Operation != "extract" || !request.JobExecution ||
+                jobExtract?.Reclamation != reclaim || jobExtract.Valid != true || request.ExtractOptions.CopyMotw != jobExtract.CopyMotw || request.OutputReadmission is not null || request.DeleteSource is not null ||
+                request.ConfirmedOverwrites is { Count: > 0 } || request.BrowserEntry is not null || request.BrowserAuthorize is not null || request.Password is not null ||
+                request.ConflictPolicy != "ask" || string.IsNullOrEmpty(request.OutputRoot) || limits.max_metadata_bytes < ArchiveReclamationSession.MaximumJournalBytes))
+                throw new ArchiveOutputException("reclamation_invalid_request");
+            if (jobExtract?.Reclamation is not null && request.ExtractOptions?.Reclamation != jobExtract.Reclamation)
+                throw new ArchiveOutputException("reclamation_invalid_request");
             Protocol.ArchiveJobModify? jobModify = null;
             if(request.JobModify is {} edit) {
-                if(request.Operation!="modify_zip" || !request.JobExecution || edit.Browser.Valid!=true || edit.Browser.Format!="Zip" || edit.Ordinals.Length>4096 || edit.Value?.Length>65535) throw new ArchiveOutputException("invalid_edit_request");
+                if(!ArchiveWorkerRunner.IsModification(request.Operation) || !request.JobExecution || edit.Browser?.Valid!=true || !ArchiveWorkerRunner.ModificationFormatMatches(request.Operation,edit.Browser.Format) || edit.Ordinals is null || edit.Ordinals.Length>4096 || edit.Value?.Length>65535 || sources?.Count>31) throw new ArchiveOutputException("invalid_edit_request");
                 jobModify=System.Text.Json.JsonSerializer.Deserialize<Protocol.ArchiveJobModify>(System.Text.Json.JsonSerializer.Serialize(edit,Protocol.JsonDefaults.Options),Protocol.JsonDefaults.Options);
-                if(edit.Action=="add" ? sources is not {Count:>0} : sources is not null)throw new ArchiveOutputException("invalid_edit_request");
+                if(!Protocol.ArchiveJobWire.ValidModify(jobModify,1+(sources?.Count??0)) || (edit.Action is "add" or "replace_content" ? sources is not {Count:>0} : sources is not null))throw new ArchiveOutputException("invalid_edit_request");
             }
             // Verify the complete capture against the caller again, not only each individual copy.
             CheckList(request.SourcePaths, sources);
@@ -67,7 +81,7 @@ internal static class ArchiveWorkerAdmission
             }
             return request with { SourcePaths = sources, ZipOptions = request.ZipOptions is { } zip ? zip with { ExcludePatterns = patterns } : null,
                 TreeOptions = request.TreeOptions is { } tree ? tree with { ExcludePatterns = treePatterns } : null,
-                ConfirmedOverwrites = overwrites, Limits = limits, BrowserEntry = browser, JobExtract=jobExtract, JobModify=jobModify };
+                ConfirmedOverwrites = overwrites, Limits = limits, BrowserEntry = browser, BrowserAuthorize = authorization, JobExtract=jobExtract, JobModify=jobModify };
         }
         catch (Exception failure) when (failure is InvalidOperationException or ArgumentOutOfRangeException or IndexOutOfRangeException)
         { throw new ArchiveOutputException("request_changed"); }

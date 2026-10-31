@@ -1,8 +1,8 @@
 use gpui_kit::component::{Disableable, button::Button, label::Label};
-use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
+use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*};
 
 use crate::theme::Theme;
-use crate::ui::metrics::{SPACING_4, SPACING_8};
+use crate::ui::metrics::ordinary_rem;
 use crate::ui::typography::UI_MONO_FONT_FAMILY;
 
 pub(crate) const HOTKEY_FIELD_WIDTH: f32 = 260.0;
@@ -39,6 +39,7 @@ pub(crate) fn hotkey_field(
     value: impl Into<SharedString>,
     status: impl Into<SharedString>,
     state: HotkeyFieldState,
+    reset: Option<Button>,
     on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
     let value = value.into();
@@ -77,24 +78,33 @@ pub(crate) fn hotkey_field(
         );
     div()
         .debug_selector(move || selector.into())
-        .w(px(HOTKEY_FIELD_WIDTH))
-        .min_w(px(HOTKEY_FIELD_WIDTH))
+        .w(ordinary_rem(HOTKEY_FIELD_WIDTH))
+        .max_w_full()
+        .min_w_0()
         .flex()
         .flex_col()
-        .gap(px(SPACING_4))
-        .child(trigger)
+        .gap_1()
         .child(
             div()
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(px(SPACING_8))
+                .gap_2()
+                .when_some(reset, |row, reset| row.child(reset))
+                .child(div().flex_1().min_w_0().child(trigger)),
+        )
+        .child(
+            div()
+                .w_full()
+                .flex()
+                .items_center()
+                .gap_2()
                 .child(
                     div()
                         .debug_selector(move || state_selector.clone())
-                        .size(px(HOTKEY_STATE_MARKER_SIZE))
+                        .size(ordinary_rem(HOTKEY_STATE_MARKER_SIZE))
                         .flex_none()
-                        .rounded(px(HOTKEY_STATE_MARKER_SIZE / 2.0))
+                        .rounded_full()
                         .bg(marker_color),
                 )
                 .child(
@@ -126,6 +136,7 @@ mod tests {
                 "Ctrl+Space",
                 "合成录制入口",
                 self.state,
+                None,
                 move |_, _, _| calls.set(calls.get() + 1),
             )
         }

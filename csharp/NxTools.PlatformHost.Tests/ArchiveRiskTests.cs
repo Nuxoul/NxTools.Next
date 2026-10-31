@@ -47,6 +47,10 @@ internal static class ArchiveRiskTests
         }
         File.WriteAllBytes(source, bytes);
     }
+#if !DEBUG
+    public static Task ActualZipRiskConfirmation() =>
+        throw new TestSkippedException("Tiny risk fixture requires the DEBUG-only stricter threshold seam.");
+#else
     public static async Task ActualZipRiskConfirmation()
     {
         var worker = Environment.GetEnvironmentVariable("NXTOOLS_ARCHIVE_WORKER_FIXTURE");
@@ -64,11 +68,7 @@ internal static class ArchiveRiskTests
                 var foreign = Path.Combine(output.FullName, ".nxpart-foreign"); File.WriteAllText(foreign, "foreign");
                 var events = new ConcurrentQueue<ArchiveWorkerEvent>(); var log = new CaptureLog();
                 using var runner = ArchiveWorkerRunner.ForPackage(events.Enqueue, log);
-#if DEBUG
                 if (mode is not ("ordinary" or "production_pending")) runner.RiskThresholdFixture = (1024, 2);
-#else
-                throw new TestSkippedException("Tiny risk fixture requires the DEBUG-only stricter threshold seam.");
-#endif
                 ulong entryLimit = mode is "entry_limit" or "declared_limit" ? 3072UL : mode == "production_pending" ? 128UL << 20 : 8192UL;
                 ulong totalLimit = mode == "total_limit" ? 3072UL : mode == "production_pending" ? 128UL << 20 : 16384UL;
                 var id = Guid.NewGuid(); var writes = 0;
@@ -132,4 +132,5 @@ internal static class ArchiveRiskTests
             }
         } finally { if (copied) File.Delete(helper); root.Delete(true); }
     }
+#endif
 }

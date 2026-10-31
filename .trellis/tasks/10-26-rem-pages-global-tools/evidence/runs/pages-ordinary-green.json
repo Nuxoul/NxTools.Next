@@ -1,0 +1,7 @@
+﻿{
+    "name":  "pages-ordinary-green",
+    "command":  "cargo test -p nxtools-desktop audit06_pages_ -- --test-threads=1 --nocapture",
+    "exit":  0,
+    "elapsed":  191.77744769999998,
+    "finished":  "2026-10-26T07:58:12.4391398+08:00"
+}

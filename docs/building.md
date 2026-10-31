@@ -18,14 +18,18 @@ tools. The build script searches:
 2. the current `PATH`;
 3. versioned `C:\Program Files (x86)\Windows Kits\10\bin\*\x64` directories.
 
-Then run:
+For trusted packaging, first read [the persistent packaging handoff](../PACKAGING.md).
+It includes the existing local PEM/ledger paths; plain `package.ps1` without signing arguments is
+not a complete trusted-release command. On the configured workstation use:
 
 ```powershell
-.\scripts\package.ps1
+.\scripts\package-local.ps1 -CheckOnly
+.\scripts\package-local.ps1
 ```
 
-The preflight check fails immediately with a clear message when the compiler is absent, before
-Cargo spends time optimizing the GPUI dependency graph.
+The first command discovers prerequisites without reserving a sequence or building; the second
+automatically selects the next sequence and delegates to the original verified packaging pipeline.
+The preflight fails before Cargo when required tools or publisher material are absent.
 
 The Windows wrappers also own the repository's low-peak Rust policy. They force one Cargo build job,
 disable incremental compilation for verification/package runs and apply the required 256 codegen

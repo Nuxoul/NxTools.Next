@@ -1,0 +1,336 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs
++++ audit06/rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs
+@@ -1283,3 +1283,333 @@
+         expected
+     );
+ }
++
++#[gpui_kit::test]
++fn audit06_download_rows_and_header_follow_root_rem(cx: &mut TestAppContext) {
++    use gpui_kit::component::Theme as ComponentTheme;
++    let (main, handle, _temp, downloads) = sort_keyboard_workspace(cx);
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    let original = surface.read(|cx| ComponentTheme::global(cx).clone());
++    let tasks = downloads.read_with(&surface, |app, _| app.tasks().to_vec());
++    let selectors = tasks
++        .iter()
++        .map(|task| {
++            let selector: &'static str = Box::leak(
++                format!("download-task-row-{}", task.task.id().as_uuid()).into_boxed_str(),
++            );
++            (task.task.id(), selector)
++        })
++        .collect::<Vec<_>>();
++    let mut measured = Vec::new();
++    for dimensions in [(1060.0, 650.0), (920.0, 480.0)] {
++        surface.simulate_resize(size(px(dimensions.0), px(dimensions.1)));
++        for base in [16.0, 14.0, 18.0] {
++            surface.update(|window, cx| {
++                ComponentTheme::update(cx, |theme| theme.font_size = px(base));
++                window.refresh();
++            });
++            AUDIT06_TYPE_PAINT.with(|paint| paint.borrow_mut().clear());
++            surface
++                .refresh()
++                .expect("actual MainWindow under production Root");
++            let rows = selectors
++                .iter()
++                .map(|(_, selector)| surface.debug_bounds(selector).expect("actual retained row"))
++                .collect::<Vec<_>>();
++            let name = surface
++                .debug_bounds("download-task-name-text-selected")
++                .expect("actual primary line");
++            let path = surface
++                .debug_bounds("download-task-path-text-selected")
++                .expect("actual secondary line");
++            let category = surface
++                .debug_bounds("download-task-category-selected")
++                .expect("category cell");
++            let category_header = surface
++                .debug_bounds("download-category-header")
++                .expect("matching header cell");
++            let header = surface
++                .debug_bounds("download-table-header")
++                .expect("header");
++            let vector = surface
++                .debug_bounds("download-task-icon-fallback-selected")
++                .expect("actual vector fallback");
++            let rem = surface.update(|window, _| window.rem_size());
++            let painted = surface.update(|window, _| {
++                let selected = crate::theme::Theme::zed_dark().element_selected;
++                window.painted_quads().iter().any(|quad| {
++                    (quad.bounds.size.height.as_f32() / window.scale_factor()
++                        - rows[0].size.height.as_f32())
++                    .abs()
++                        <= 0.1
++                        && quad.bounds.size.width.as_f32() / window.scale_factor() > 300.0
++                        && quad.background == gpui_kit::Background::from(selected)
++                })
++            });
++            let types = AUDIT06_TYPE_PAINT.with(|paint| paint.borrow().clone());
++            measured.push((
++                dimensions,
++                base,
++                rem,
++                rows,
++                name,
++                path,
++                category,
++                category_header,
++                header,
++                vector,
++                painted,
++                types,
++            ));
++        }
++    }
++    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
++    assert_eq!(selectors.len(), 2);
++    for (
++        dimensions,
++        base,
++        rem,
++        rows,
++        name,
++        path,
++        category,
++        category_header,
++        header,
++        vector,
++        painted,
++        types,
++    ) in measured
++    {
++        let ratio = base / 16.0;
++        assert_eq!(rem, px(base));
++        assert_eq!(
++            rows[0].size.height,
++            px(48.0 * ratio),
++            "real virtual row height at base={base}"
++        );
++        assert_eq!(
++            (rows[1].top() - rows[0].top()).abs(),
++            px(48.0 * ratio),
++            "uniform_list measurement uses actual row role"
++        );
++        assert!((name.size.height - px(20.0 * ratio)).abs() <= px(0.5));
++        assert!((path.size.height - px(18.0 * ratio)).abs() <= px(0.5));
++        assert!((path.top() - name.bottom() - px(4.0 * ratio)).abs() <= px(0.5));
++        assert_eq!(category.size.width, px(64.0 * ratio));
++        assert_eq!(category_header.size.width, category.size.width);
++        assert!(
++            (category.left() - category_header.left()).abs() <= px(4.0),
++            "existing fixed selection edges remain"
++        );
++        assert_eq!(header.size.height, px(28.0 * ratio));
++        assert!((vector.size.height - px(15.0 * ratio)).abs() <= px(0.5));
++        assert!(rows.iter().all(|row| row.right() <= px(dimensions.0)));
++        assert!(
++            painted,
++            "actual selected row quad must retain scaled row height"
++        );
++        assert_eq!(
++            types.get("name"),
++            Some(&(px(13.0 * ratio), px(20.0 * ratio))),
++            "actual primary text paint style"
++        );
++        assert_eq!(
++            types.get("path"),
++            Some(&(px(12.0 * ratio), px(18.0 * ratio))),
++            "actual supporting text paint style"
++        );
++    }
++    assert_eq!(
++        main.read_with(&surface, |main, _| main.selected_download_tasks.len()),
++        1
++    );
++}
++
++thread_local! {
++    static AUDIT06_TYPE_PAINT: RefCell<HashMap<&'static str, (gpui_kit::Pixels, gpui_kit::Pixels)>> = RefCell::new(HashMap::new());
++}
++
++pub(super) fn audit06_type_probe(role: &'static str) -> AnyElement {
++    gpui_kit::canvas(
++        |_, _, _| (),
++        move |_, (), window, _| {
++            let style = window.text_style();
++            let font = style.font_size.to_pixels(window.rem_size());
++            let line = style
++                .line_height
++                .to_pixels(style.font_size, window.rem_size());
++            AUDIT06_TYPE_PAINT.with(|paint| paint.borrow_mut().insert(role, (font, line)));
++        },
++    )
++    .absolute()
++    .size_full()
++    .into_any_element()
++}
++
++#[gpui_kit::test]
++fn audit06_virtual_scroll_remeasures_and_selects_current_stable_id(cx: &mut TestAppContext) {
++    use gpui_kit::component::Theme as ComponentTheme;
++    let (main, handle, _temp, downloads) = sort_keyboard_workspace(cx);
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    let original = surface.read(|cx| ComponentTheme::global(cx).clone());
++    downloads.update(&mut surface, |app, cx| {
++        let request = app.tasks()[0].task.request().clone();
++        for index in 0..28 {
++            let mut request = request.clone();
++            request.source_url = format!("https://synthetic.invalid/queued-{index}");
++            request.file_name = Some(format!("合成任务-{index:02}.bin"));
++            app.submit_with_idempotency(
++                request,
++                nxtools_download::DownloadSubmitMode::QueueOnly,
++                None,
++                cx,
++            )
++            .expect("queue only, never execute transfer");
++        }
++    });
++    let ordered = surface.read(|cx| {
++        let view = main.read(cx);
++        download_tasks_for_view(
++            downloads.read(cx).tasks(),
++            view.download_filter,
++            "",
++            view.download_sort,
++        )
++        .into_iter()
++        .map(|task| task.task.id())
++        .collect::<Vec<_>>()
++    });
++    let last_id = *ordered.last().expect("last immutable task");
++    let selector: &'static str =
++        Box::leak(format!("download-task-row-{}", last_id.as_uuid()).into_boxed_str());
++    let mut measured = Vec::new();
++    for dimensions in [(1060.0, 650.0), (920.0, 480.0)] {
++        surface.simulate_resize(size(px(dimensions.0), px(dimensions.1)));
++        for base in [16.0, 14.0, 18.0] {
++            surface.update(|window, cx| {
++                ComponentTheme::update(cx, |theme| theme.font_size = px(base));
++                main.update(cx, |view, cx| {
++                    view.download_list_scroll
++                        .scroll_to_item(0, ScrollStrategy::Top);
++                    cx.notify();
++                });
++                window.refresh();
++            });
++            surface.refresh().expect("new rem remeasures actual rows");
++            main.update(&mut surface, |view, cx| {
++                view.download_list_scroll.scroll_to_bottom();
++                cx.notify();
++            });
++            surface.refresh().expect("actual uniform-list end");
++            let row = surface
++                .debug_bounds(selector)
++                .expect("last actual virtual row");
++            let viewport = surface
++                .debug_bounds("download-task-list-viewport")
++                .expect("actual list viewport");
++            surface.simulate_click(row.center(), Modifiers::default());
++            surface.run_until_parked();
++            surface
++                .refresh()
++                .expect("current stable-ID pointer selection");
++            let selected = main.read_with(&surface, |view, _| view.selected_download_task);
++            let end = main.read_with(&surface, |view, _| {
++                view.download_list_scroll.is_scrolled_to_end()
++            });
++            measured.push((base, row, viewport, selected, end));
++        }
++    }
++    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
++    assert_eq!(ordered.len(), 30);
++    for (base, row, viewport, selected, end) in measured {
++        assert_eq!(
++            row.size.height,
++            px(3.0 * base),
++            "actual end-row measurement follows current rem"
++        );
++        assert!(
++            row.top() >= viewport.top() && row.bottom() <= viewport.bottom() + px(0.5),
++            "last row fully reachable: row={row:?}, viewport={viewport:?}"
++        );
++        assert_eq!(end, Some(true));
++        assert_eq!(
++            selected,
++            Some(last_id),
++            "pointer after remeasure retains immutable identity"
++        );
++    }
++}
++
++struct Audit06BitmapRow {
++    task: nxtools_download::DownloadEngineTask,
++    main: Entity<MainWindow>,
++    downloads: gpui_kit::WeakEntity<DownloadApplication>,
++    icon: std::path::PathBuf,
++}
++impl Render for Audit06BitmapRow {
++    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
++        div().size_full().flex().flex_col().child(download_task_row(
++            Theme::zed_dark(),
++            self.downloads.clone(),
++            self.main.clone(),
++            DownloadRowSelection {
++                selected: true,
++                visible_task_ids: Arc::new(vec![self.task.task.id()]),
++            },
++            self.task.clone(),
++            None,
++            Some(self.icon.clone()),
++        ))
++    }
++}
++
++#[gpui_kit::test]
++fn audit06_bitmap_and_physical_selection_edges_remain_fixed(cx: &mut TestAppContext) {
++    use gpui_kit::component::Theme as ComponentTheme;
++    let (main, handle, temp, downloads) = sort_keyboard_workspace(cx);
++    let original = handle
++        .update(cx, |_, _, cx| ComponentTheme::global(cx).clone())
++        .expect("theme");
++    let task = cx.read(|cx| downloads.read(cx).tasks()[0].clone());
++    let icon = temp.path().join("synthetic-icon.png");
++    image::RgbaImage::from_pixel(20, 20, image::Rgba([12, 34, 56, 255]))
++        .save(&icon)
++        .expect("temporary synthetic bitmap");
++    let (_, surface) = cx.add_window_view(move |window, cx| {
++        let view = cx.new(|_| Audit06BitmapRow {
++            task,
++            main,
++            downloads: downloads.downgrade(),
++            icon,
++        });
++        gpui_kit::base::Root::new(view, window, cx)
++    });
++    surface.simulate_resize(size(px(740.0), px(180.0)));
++    let mut measured = Vec::new();
++    for base in [16.0, 14.0, 18.0] {
++        surface.update(|window, cx| {
++            ComponentTheme::update(cx, |theme| theme.font_size = px(base));
++            window.refresh();
++        });
++        surface.refresh().expect("production bitmap row");
++        let bitmap = surface
++            .debug_bounds("download-task-shell-icon-selected")
++            .expect("actual bitmap bounds");
++        let edges = surface.update(|window, _| {
++            window.painted_quads().iter().any(|quad| {
++                (quad.bounds.size.height.as_f32() / window.scale_factor() - 3.0 * base).abs() <= 0.1
++                    && (quad.border_widths.left.as_f32() / window.scale_factor() - 2.0).abs() <= 0.1
++            })
++        });
++        measured.push((bitmap, edges));
++    }
++    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
++    for (bitmap, edges) in measured {
++        assert_eq!(
++            bitmap.size,
++            size(px(20.0), px(20.0)),
++            "bitmap exception does not follow rem"
++        );
++        assert!(edges, "physical selection edge remains two logical pixels");
++    }
++}

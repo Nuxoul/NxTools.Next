@@ -1,0 +1,74 @@
+--- live-dirty-baseline/rust/apps/nxtools-desktop/src/downloads.rs
++++ own-current/rust/apps/nxtools-desktop/src/downloads.rs
+@@ -575,7 +575,7 @@
+     platform: Rc<PlatformBridge>,
+     notifications: Entity<NotificationCenter>,
+     default_directory: PathBuf,
+-    tasks: Vec<DownloadEngineTask>,
++    tasks: Rc<Vec<DownloadEngineTask>>,
+     task_detail: Option<DownloadTaskDetail>,
+     task_detail_error: Option<(DownloadTaskId, String)>,
+     snapshot_error: Option<String>,
+@@ -784,7 +784,7 @@
+             platform,
+             notifications,
+             default_directory,
+-            tasks,
++            tasks: Rc::new(tasks),
+             task_detail: None,
+             task_detail_error: None,
+             snapshot_error: None,
+@@ -884,7 +884,15 @@
+ 
+     #[cfg(test)]
+     pub(crate) fn replace_tasks_for_test(&mut self, tasks: Vec<DownloadEngineTask>) {
+-        self.tasks = tasks;
++        self.tasks = Rc::new(tasks);
++    }
++
++    #[cfg(test)]
++    pub(crate) fn replace_progress_for_test(&mut self, progress: Vec<DownloadProgress>) {
++        self.latest_progress = progress
++            .into_iter()
++            .map(|progress| (progress.task_id, progress))
++            .collect();
+     }
+ 
+     #[cfg(test)]
+@@ -921,11 +929,18 @@
+         &self.tasks
+     }
+ 
++    /// Shares the authoritative immutable snapshot with deferred row composition.
++    pub(crate) fn task_snapshot(&self) -> Rc<Vec<DownloadEngineTask>> {
++        Rc::clone(&self.tasks)
++    }
++
+     pub(crate) fn task_removal_deletes_file(&self) -> bool {
+         self.config.download.task_removal_deletes_file
+     }
+ 
+     pub(crate) fn task_icon_path(&self, task_id: DownloadTaskId) -> Option<&Path> {
++        #[cfg(test)]
++        crate::main_window::projection_tests::observe_icon_read();
+         self.task_icons.get(&task_id).map(PathBuf::as_path)
+     }
+ 
+@@ -1101,6 +1116,8 @@
+     }
+ 
+     pub(crate) fn progress(&self, task_id: DownloadTaskId) -> Option<&DownloadProgress> {
++        #[cfg(test)]
++        crate::main_window::projection_tests::observe_progress_read();
+         self.latest_progress.get(&task_id)
+     }
+ 
+@@ -3487,7 +3504,7 @@
+         self.latest_progress.clear();
+         self.last_event_sequence = snapshot.sequence;
+         self.publish_terminal_notifications(&tasks, cx);
+-        self.tasks = tasks;
++        self.tasks = Rc::new(tasks);
+         self.queues = snapshot.queues;
+         self.request_task_icons();
+         if refresh_task_detail

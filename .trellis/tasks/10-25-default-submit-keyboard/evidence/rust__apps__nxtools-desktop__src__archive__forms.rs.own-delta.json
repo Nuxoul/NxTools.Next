@@ -1,0 +1,63 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+  "baseline_sha256": "bb8e7eace6172caa29ef34eb98a602862be9bc8e393398689bca83fd9abd3f15",
+  "after_sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2",
+  "operations": [
+    {
+      "kind": "replace",
+      "baseline_start": 20,
+      "baseline_end": 22,
+      "after_start": 20,
+      "after_end": 22,
+      "baseline_text": "    App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent,\n    ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,\n",
+      "after_text": "    App, AppContext, Context, Entity, EntityInputHandler, FocusHandle, Focusable, IntoElement,\n    KeyDownEvent, ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 105,
+      "baseline_end": 105,
+      "after_start": 105,
+      "after_end": 106,
+      "baseline_text": "",
+      "after_text": "    default_enter_held: bool,\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 418,
+      "baseline_end": 418,
+      "after_start": 419,
+      "after_end": 422,
+      "baseline_text": "",
+      "after_text": "        subscriptions.push(cx.observe_window_activation(window, |this, _, _| {\n            this.default_enter_held = false;\n        }));\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 448,
+      "baseline_end": 448,
+      "after_start": 452,
+      "after_end": 453,
+      "baseline_text": "",
+      "after_text": "            default_enter_held: false,\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 459,
+      "baseline_end": 459,
+      "after_start": 464,
+      "after_end": 493,
+      "baseline_text": "",
+      "after_text": "    }\n    fn default_enter(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {\n        if event.keystroke.key != \"enter\" {\n            return;\n        }\n        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {\n            return;\n        }\n        if event.keystroke.modifiers.modified()\n            || event.prefer_character_input\n            || self.busy()\n            || window.has_active_dialog(cx)\n        {\n            return;\n        }\n        let Some(input) = [&self.name, &self.destination, &self.volume]\n            .into_iter()\n            .find(|input| input.focus_handle(cx).is_focused(window))\n            .cloned()\n        else {\n            return;\n        };\n        if input.update(cx, |input, cx| {\n            input.marked_text_range(window, cx).is_some()\n        }) {\n            return;\n        }\n        cx.stop_propagation();\n        self.submit(window, cx);\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 1574,
+      "baseline_end": 1574,
+      "after_start": 1608,
+      "after_end": 1614,
+      "baseline_text": "",
+      "after_text": "            .capture_key_down(cx.listener(Self::default_enter))\n            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {\n                if event.keystroke.key == \"enter\" {\n                    this.default_enter_held = false;\n                }\n            }))\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

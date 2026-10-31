@@ -1,0 +1,34 @@
+[
+    {
+        "name":  "download-page",
+        "command":  "cargo test -p nxtools-desktop main_window::download_page::kit_migration_tests -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "started":  "2026-10-26T01:52:40.2881982+08:00",
+        "ended":  "2026-10-26T01:57:06.1079203+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\download-page-final.log"
+    },
+    {
+        "name":  "desktop-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  0,
+        "started":  "2026-10-26T01:57:06.2576359+08:00",
+        "ended":  "2026-10-26T01:57:52.7058374+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\desktop-clippy-final.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "started":  "2026-10-26T01:57:52.7413541+08:00",
+        "ended":  "2026-10-26T01:58:56.7846074+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\workspace-check-final.log"
+    },
+    {
+        "name":  "workspace-fmt",
+        "command":  "cargo fmt --all -- --check",
+        "exit":  1,
+        "started":  "2026-10-26T01:58:56.8230044+08:00",
+        "ended":  "2026-10-26T01:59:05.1443346+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-basic\\workspace-fmt-final.log"
+    }
+]

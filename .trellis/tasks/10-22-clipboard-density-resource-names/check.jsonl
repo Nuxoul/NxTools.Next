@@ -1,0 +1,14 @@
+{"file":".trellis/spec/shared/verification.md","reason":"One Cargo/memory policy, actual test counts and acceptance separation"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Whole-card payload/focus/passive owner preservation"}
+{"file":".trellis/spec/nxtools-core/backend/quality-guidelines.md","reason":"Default/clamp/legacy/merge/failure checks"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Real HTTP filename/cancellation/request context regressions"}
+{"file":".trellis/tasks/10-22-clipboard-density-resource-names/research/reference-evidence.md","reason":"Source-backed legacy/new differences and scope limits"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Preserve exact-target confirmation and existing bounded native owners"}
+{"file":"csharp/NxTools.PlatformHost.Tests/README.md","reason":"Audited fixture-only filters and truthful RUN/PASS/SKIP counts"}
+{"file":"rust/apps/nxtools-desktop/src/clipboard/popup_activation.rs","reason":"Current primary activation pending-before-dispatch, session/HWND/retirement and deferred focus; notification copy cancelled"}
+{"file":"docs/reference-code/shellrs-ui.md","reason":"Presentation precedent only, no GPL implementation/assets or save policy copying"}
+{"file":".trellis/tasks/10-22-clipboard-density-resource-names/clipboard-finish-input-outcomes.md","reason":"Exact input/native and feather red-green evidence, bounded CPU/scene/idle comparison and acceptance limits"}
+{"file":"rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs","reason":"Five actual GPUI stationary-pointer, same-coordinate, text/image, leave and identity regressions"}
+{"file":".trellis/tasks/10-22-clipboard-density-resource-names/clipboard-idle-preview-outcomes.md","reason":"Stationary-open actual red/green, final1040pass1Archivefail/static15of16 and separate installed acceptance"}
+{"file":".trellis/tasks/10-22-clipboard-density-resource-names/download-openwith-reveal-outcomes.md","reason":"Two native reds, actual icon geometry red, final10native/153download/1042desktop and installed acceptance limits"}
+{"file":".trellis/tasks/10-22-clipboard-density-resource-names/chrome-store-outcomes.md","reason":"Two actual reds, storeZIP independent bytes/hash, exactnative/Core/BrowserHost/UI tests and failing integrated/static ledger"}

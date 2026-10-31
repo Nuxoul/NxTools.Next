@@ -1,0 +1,7 @@
+﻿{
+    "name":  "global-viewport-green",
+    "command":  "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  9.3144279,
+    "finished":  "2026-10-26T08:10:27.6445563+08:00"
+}

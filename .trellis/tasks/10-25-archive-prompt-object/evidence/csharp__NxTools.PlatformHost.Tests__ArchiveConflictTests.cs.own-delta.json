@@ -1,0 +1,27 @@
+{
+  "path": "csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs",
+  "baseline_sha256": "ca693479c8e4f389ab44ea11a8a4f7e40620fe3b854a6eb47cfc6d11347e3bcc",
+  "delivery_sha256": "b6fb4337b08e82e685026fca1b4853bf631fdcd653c30de89d0f361caa36e7da",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 67,
+      "baseline_end": 67,
+      "delivery_start": 67,
+      "delivery_end": 68,
+      "baseline_text": "",
+      "delivery_text": "                    Check(prompt.GetProperty(\"display\").GetProperty(\"incoming_member\").GetString()==(mode==\"cancel_after_commit\"?\"b.txt\":\"a.txt\") && prompt.GetProperty(\"display\").GetProperty(\"target\").GetString()==(mode==\"cancel_after_commit\"?\"b.txt\":\"a.txt\"),\"current worker object snapshot\");\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 80,
+      "baseline_end": 80,
+      "delivery_start": 81,
+      "delivery_end": 82,
+      "baseline_text": "",
+      "delivery_text": "                            Check(Prompts(events)[1].GetProperty(\"display\").GetProperty(\"incoming_member\").GetString()==\"b.txt\" && Prompts(events)[1].GetProperty(\"display\").GetProperty(\"target\").GetString()==\"b.txt\",\"second ticket has second object, not previous size/progress\");\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

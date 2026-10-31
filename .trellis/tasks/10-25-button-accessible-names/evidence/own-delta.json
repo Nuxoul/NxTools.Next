@@ -1,0 +1,425 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "baseline_sha256": "55bea700ba6460dc5e4ee35d61c2f3e8f4d345ef041849463404ff9166b9e865",
+    "delivery_sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+    "added": 16,
+    "removed": 4,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 132,
+        "baseline_line_count": 0,
+        "delivery_start_line": 132,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "/// Custom visual content does not provide a Button name; callers must supply its action meaning.\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 134,
+        "baseline_line_count": 0,
+        "delivery_start_line": 135,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "    accessible_name: impl Into<SharedString>,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 142,
+        "baseline_line_count": 0,
+        "delivery_start_line": 144,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "        .accessibility_label(accessible_name)\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 223,
+        "baseline_line_count": 3,
+        "delivery_start_line": 226,
+        "delivery_line_count": 1,
+        "baseline_text": "    icon_action_button(id, icon)\n        .accessibility_label(tooltip_label)\n        .tooltip(tooltip_label)\n",
+        "delivery_text": "    icon_action_button(id, icon, tooltip_label).tooltip(tooltip_label)\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 228,
+        "baseline_line_count": 1,
+        "delivery_start_line": 229,
+        "delivery_line_count": 6,
+        "baseline_text": "pub(crate) fn icon_action_button(id: &'static str, icon: MaterialIcon) -> Button {\n",
+        "delivery_text": "/// Low-level icon Button: the semantic name is required even when an outer Tooltip owns hover.\npub(crate) fn icon_action_button(\n    id: &'static str,\n    icon: MaterialIcon,\n    accessible_name: impl Into<SharedString>,\n) -> Button {\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 232,
+        "baseline_line_count": 0,
+        "delivery_start_line": 238,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "        .accessibility_label(accessible_name)\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 525,
+        "baseline_line_count": 0,
+        "delivery_start_line": 532,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                    \"应用升级设置\",\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 615,
+        "baseline_line_count": 0,
+        "delivery_start_line": 623,
+        "delivery_line_count": 4,
+        "baseline_text": "",
+        "delivery_text": "\n#[cfg(test)]\n#[path = \"action_name_tests.rs\"]\nmod name_tests;\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+    "baseline_sha256": "99f06d7e2ea942263138e2889327e7e57c8bcfdbed294bdd0cd84eba15f1ba6b",
+    "delivery_sha256": "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+    "added": 39,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 150,
+        "baseline_line_count": 0,
+        "delivery_start_line": 150,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "    let remove_name = format!(\"移除排除目录：{path}\");\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 223,
+        "baseline_line_count": 0,
+        "delivery_start_line": 224,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                .accessibility_label(remove_name)\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 329,
+        "baseline_line_count": 0,
+        "delivery_start_line": 331,
+        "delivery_line_count": 37,
+        "baseline_text": "",
+        "delivery_text": "\n    #[gpui_kit::test]\n    fn accessible_name_excluded_path_delete_buttons_identify_each_object(\n        cx: &mut gpui_kit::TestAppContext,\n    ) {\n        cx.update(gpui_kit::init);\n        let removes = Rc::new(Cell::new(0));\n        let held = removes.clone();\n        let (_, surface) = cx.add_window_view(move |window, cx| {\n            let view = cx.new(|_| PathFixture {\n                selects: Rc::new(Cell::new(0)),\n                removes: held,\n            });\n            gpui_kit::base::Root::new(view, window, cx)\n        });\n        surface.refresh().expect(\"actual excluded path rows\");\n        let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));\n        for (index, path) in [r\"C:\\synthetic\\合成长路径\", r\"C:\\synthetic\\第二路径\"]\n            .into_iter()\n            .enumerate()\n        {\n            let id = gpui_kit::ElementId::from(gpui_kit::SharedString::from(format!(\n                \"quick-launch-exclusion-delete-button-{index}\"\n            )));\n            let button = nodes\n                .iter()\n                .find(|node| node.path().last() == Some(&id))\n                .expect(\"actual trailing delete Button\");\n            assert_eq!(button.role(), Some(gpui_kit::Role::Button));\n            assert_eq!(\n                button.label(),\n                Some(format!(\"移除排除目录：{path}\").as_str())\n            );\n            assert_eq!(button.bounds().size, gpui_kit::size(px(40.0), px(40.0)));\n        }\n        assert_eq!(removes.get(), 0, \"semantic observation cannot remove paths\");\n    }\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "baseline_sha256": "14e0330f998bfada1b30a3e4ca7cc9b717c663e5fbe8f91b310ca18e43f1a80d",
+    "delivery_sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+    "added": 43,
+    "removed": 26,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 1020,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1020,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                            \"选择默认保存目录\",\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 1533,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1534,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                            \"选择 FFmpeg 可执行文件\",\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 1611,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1613,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                            \"自动下载 FFmpeg\",\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 1943,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1946,
+        "delivery_line_count": 5,
+        "baseline_text": "",
+        "delivery_text": "                    if self.taskbar_overlay_editing {\n                        \"结束任务栏布局预览\"\n                    } else {\n                        \"编辑任务栏布局\"\n                    },\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 2395,
+        "baseline_line_count": 0,
+        "delivery_start_line": 2403,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                            \"应用下载设置\",\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 2586,
+        "baseline_line_count": 12,
+        "delivery_start_line": 2595,
+        "delivery_line_count": 15,
+        "baseline_text": "            icon_action_button(presentation.copy_button_id, MaterialIcon::ContentCopy)\n                .outline()\n                .on_click(move |_, _, cx| {\n                    let application = copy_application.clone();\n                    cx.defer(move |cx| {\n                        application.update(cx, |application, cx| {\n                            application.perform_download_settings_path_action(\n                                path_kind,\n                                DownloadSettingsPathAction::Copy,\n                                cx,\n                            );\n                        });\n",
+        "delivery_text": "            icon_action_button(\n                presentation.copy_button_id,\n                MaterialIcon::ContentCopy,\n                presentation.copy_tooltip,\n            )\n            .outline()\n            .on_click(move |_, _, cx| {\n                let application = copy_application.clone();\n                cx.defer(move |cx| {\n                    application.update(cx, |application, cx| {\n                        application.perform_download_settings_path_action(\n                            path_kind,\n                            DownloadSettingsPathAction::Copy,\n                            cx,\n                        );\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 2599,
+        "baseline_line_count": 1,
+        "delivery_start_line": 2611,
+        "delivery_line_count": 2,
+        "baseline_text": "                }),\n",
+        "delivery_text": "                });\n            }),\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 2607,
+        "baseline_line_count": 12,
+        "delivery_start_line": 2620,
+        "delivery_line_count": 15,
+        "baseline_text": "            icon_action_button(presentation.open_button_id, MaterialIcon::OpenInNew)\n                .outline()\n                .on_click(move |_, _, cx| {\n                    let application = application.clone();\n                    cx.defer(move |cx| {\n                        application.update(cx, |application, cx| {\n                            application.perform_download_settings_path_action(\n                                path_kind,\n                                DownloadSettingsPathAction::Open,\n                                cx,\n                            );\n                        });\n",
+        "delivery_text": "            icon_action_button(\n                presentation.open_button_id,\n                MaterialIcon::OpenInNew,\n                presentation.open_tooltip,\n            )\n            .outline()\n            .on_click(move |_, _, cx| {\n                let application = application.clone();\n                cx.defer(move |cx| {\n                    application.update(cx, |application, cx| {\n                        application.perform_download_settings_path_action(\n                            path_kind,\n                            DownloadSettingsPathAction::Open,\n                            cx,\n                        );\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 2620,
+        "baseline_line_count": 1,
+        "delivery_start_line": 2636,
+        "delivery_line_count": 2,
+        "baseline_text": "                }),\n",
+        "delivery_text": "                });\n            }),\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "baseline_sha256": "6e211ab826784e0ae613516478bb3601f62d39e624106dba50c36bdb4278b445",
+    "delivery_sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+    "added": 17,
+    "removed": 7,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 1243,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1243,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "            \"立即下载\",\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 1463,
+        "baseline_line_count": 1,
+        "delivery_start_line": 1464,
+        "delivery_line_count": 1,
+        "baseline_text": "                                                        \"确定\", theme, false, cx,\n",
+        "delivery_text": "                                                        \"确定下载计划\", \"确定\", theme, false, cx,\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 1513,
+        "baseline_line_count": 6,
+        "delivery_start_line": 1514,
+        "delivery_line_count": 10,
+        "baseline_text": "                    icon_action_button(\"download-refresh-probe\", MaterialIcon::ManageSearch)\n                        .outline()\n                        .disabled(submitting)\n                        .on_click(cx.listener(|this, _, window, cx| {\n                            this.begin_probe(window, cx);\n                        })),\n",
+        "delivery_text": "                    icon_action_button(\n                        \"download-refresh-probe\",\n                        MaterialIcon::ManageSearch,\n                        \"重新探测下载链接\",\n                    )\n                    .outline()\n                    .disabled(submitting)\n                    .on_click(cx.listener(|this, _, window, cx| {\n                        this.begin_probe(window, cx);\n                    })),\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 1527,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1532,
+        "delivery_line_count": 5,
+        "baseline_text": "",
+        "delivery_text": "                        if self.handoff_staged {\n                            \"重试打开下载确认\"\n                        } else {\n                            \"探测下载链接\"\n                        },\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+    "baseline_sha256": "472851fb3b268b7ccaf8604264b29e6f912e86c03d2f2b1cb9be0aa4ec71d7c7",
+    "delivery_sha256": "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+    "added": 7,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 528,
+        "baseline_line_count": 0,
+        "delivery_start_line": 528,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                                \"重试下载\",\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 620,
+        "baseline_line_count": 0,
+        "delivery_start_line": 621,
+        "delivery_line_count": 5,
+        "baseline_text": "",
+        "delivery_text": "                            \"重试下载\"\n                        } else {\n                            \"继续下载\"\n                        },\n                        if status == DownloadStatus::Failed {\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start_line": 666,
+        "baseline_line_count": 0,
+        "delivery_start_line": 672,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                            \"暂停下载\",\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "baseline_sha256": "19a09ffda2c788a77ad116eed676adea94b9e08acca0918834f292d533efecfd",
+    "delivery_sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+    "added": 1,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 301,
+        "baseline_line_count": 0,
+        "delivery_start_line": 301,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                        \"应用下载计划\",\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+    "baseline_sha256": "293ababb6e290567a89cf2604866ded43848192b991d83608e7926d00a976d48",
+    "delivery_sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+    "added": 2,
+    "removed": 1,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 238,
+        "baseline_line_count": 0,
+        "delivery_start_line": 238,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                \"打开文件\",\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start_line": 249,
+        "baseline_line_count": 1,
+        "delivery_start_line": 250,
+        "delivery_line_count": 1,
+        "baseline_text": "            None => icon_action_button(spec.button_id, spec.icon),\n",
+        "delivery_text": "            None => icon_action_button(spec.button_id, spec.icon, \"拖拽下载文件\"),\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "baseline_sha256": "dc60dc4f74dee163de700e3bf96e5a5aa1be3171e67fe7a009189055d17a7f25",
+    "delivery_sha256": "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+    "added": 1,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 1326,
+        "baseline_line_count": 0,
+        "delivery_start_line": 1326,
+        "delivery_line_count": 1,
+        "baseline_text": "",
+        "delivery_text": "                            \"应用全局设置\",\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+    "baseline_sha256": "7b73db0a61a6e7de8996ce5bd071ecb83d8522ef7d1f084b4cfb34de8719274a",
+    "delivery_sha256": "c23e7f6dd605026b6d646bd8621d45ed8033c3693c98f70cb4c23eb56952d0c6",
+    "added": 32,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 933,
+        "baseline_line_count": 0,
+        "delivery_start_line": 933,
+        "delivery_line_count": 32,
+        "baseline_text": "",
+        "delivery_text": "\n#[gpui_kit::test]\nfn accessible_name_global_apply_is_actual_button_and_stable_while_saving(cx: &mut TestAppContext) {\n    let (application, view, mut surface, directory) = fixture(cx);\n    let path = directory.join(\"config.json\");\n    let before = std::fs::read(&path).expect(\"synthetic original config\");\n    for saving in [false, true] {\n        view.update_in(&mut surface, |view, _, cx| {\n            view.saving = saving;\n            cx.notify();\n        });\n        surface.refresh().expect(\"actual global Apply state\");\n        let button = surface\n            .update(|window, _| test_support::snapshots(window))\n            .into_iter()\n            .find(|node| {\n                node.path().last()\n                    == Some(&gpui_kit::ElementId::from(\"network-settings-save-button\"))\n            })\n            .expect(\"actual Global Apply Button, not footer wrapper\");\n        assert_eq!(button.role(), Some(gpui_kit::Role::Button));\n        assert_eq!(button.label(), Some(\"应用全局设置\"));\n        if saving {\n            surface.simulate_click(button.bounds().center(), Default::default());\n            surface.run_until_parked();\n            assert!(view.read_with(&surface, |view, _| view.saving));\n            assert_eq!(std::fs::read(&path).expect(\"busy never saves\"), before);\n        }\n    }\n    application.update(&mut surface, |application, cx| application.close_window(cx));\n    std::fs::remove_dir_all(directory).expect(\"remove isolated global fixture\");\n}\n"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+    "baseline_sha256": "d5f0122bd6638702c361e3c6d71f70dfa6c898c85071204a34df608bbea18d75",
+    "delivery_sha256": "a8b02fd12f4e0e24976f1e85f0135433924248dc578ba4b808c735767e7dd356",
+    "added": 139,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 3249,
+        "baseline_line_count": 0,
+        "delivery_start_line": 3249,
+        "delivery_line_count": 139,
+        "baseline_text": "",
+        "delivery_text": "\nfn accessible_actual_button(\n    surface: &mut VisualTestContext,\n    id: &'static str,\n    expected: &str,\n) -> gpui_kit::base::test_support::ElementSnapshot {\n    let button = surface\n        .update(|window, _| gpui_kit::base::test_support::snapshots(window))\n        .into_iter()\n        .find(|node| node.path().last() == Some(&gpui_kit::ElementId::from(id)))\n        .unwrap_or_else(|| panic!(\"actual production Button {id}\"));\n    assert_eq!(\n        button.role(),\n        Some(gpui_kit::Role::Button),\n        \"{id} must name the Button rather than its wrapper\"\n    );\n    assert_eq!(\n        button.label(),\n        Some(expected),\n        \"actual production Button {id} name\"\n    );\n    button\n}\n\n#[gpui_kit::test]\nfn accessible_name_download_settings_apply_and_default_directory(cx: &mut TestAppContext) {\n    let (application, directory, mut surface) = queue02_settings_window(cx);\n    let view = application.read_with(&surface, |app, _| {\n        app.settings_view.clone().expect(\"actual settings\")\n    });\n    accessible_actual_button(\n        &mut surface,\n        \"download-settings-pick-directory\",\n        \"选择默认保存目录\",\n    );\n    let apply = accessible_actual_button(\n        &mut surface,\n        \"download-settings-apply-button\",\n        \"应用下载设置\",\n    );\n    view.update_in(&mut surface, |view, _, cx| {\n        view.saving = true;\n        cx.notify();\n    });\n    surface.refresh().expect(\"actual saving Apply\");\n    let busy = accessible_actual_button(\n        &mut surface,\n        \"download-settings-apply-button\",\n        \"应用下载设置\",\n    );\n    // Existing status copy has natural width; semantic naming must not replace it.\n    assert_eq!(busy.bounds().size.height, apply.bounds().size.height);\n    assert_eq!(busy.bounds().right(), apply.bounds().right());\n    assert_eq!(busy.bounds().top(), apply.bounds().top());\n    let footer = surface\n        .debug_bounds(\"download-settings-shell-footer\")\n        .expect(\"original footer\");\n    assert!(busy.bounds().top() >= footer.top() && busy.bounds().bottom() <= footer.bottom());\n    surface.simulate_click(busy.bounds().center(), Default::default());\n    surface.run_until_parked();\n    assert!(view.read_with(&surface, |view, _| view.saving));\n    assert!(\n        !directory.join(\"config.json\").exists(),\n        \"busy observation never persists config\"\n    );\n    surface.update(|window, _| window.remove_window());\n    std::fs::remove_dir_all(directory).expect(\"remove isolated settings fixture\");\n}\n\n#[gpui_kit::test]\nfn accessible_name_download_settings_ffmpeg_and_diagnostic_objects(cx: &mut TestAppContext) {\n    let (_application, directory, mut surface) = queue02_settings_window(cx);\n    select_official_download_page(&mut surface, DownloadSettingsPage::Transfer);\n    surface.refresh().expect(\"real transfer page\");\n    accessible_actual_button(\n        &mut surface,\n        \"download-settings-pick-ffmpeg-button\",\n        \"选择 FFmpeg 可执行文件\",\n    );\n    accessible_actual_button(\n        &mut surface,\n        \"download-settings-ffmpeg-install-button\",\n        \"自动下载 FFmpeg\",\n    );\n    select_official_download_page(&mut surface, DownloadSettingsPage::Diagnostics);\n    surface.refresh().expect(\"real diagnostic paths\");\n    for kind in [\n        DownloadSettingsPathKind::Config,\n        DownloadSettingsPathKind::Logs,\n        DownloadSettingsPathKind::Database,\n    ] {\n        let spec = kind.presentation();\n        accessible_actual_button(&mut surface, spec.copy_button_id, spec.copy_tooltip);\n        accessible_actual_button(&mut surface, spec.open_button_id, spec.open_tooltip);\n    }\n    surface.update(|window, _| window.remove_window());\n    std::fs::remove_dir_all(directory).expect(\"remove isolated diagnostic fixture\");\n}\n\n#[gpui_kit::test]\nfn accessible_name_new_download_probe_and_refresh_are_actual_buttons(cx: &mut TestAppContext) {\n    cx.update(gpui_kit::init);\n    let (application, directory, _endpoint) = window_fixture(cx);\n    application.update(cx, |app, cx| app.open_new_download_window(cx));\n    cx.run_until_parked();\n    let (handle, view) = application.read_with(cx, |app, _| {\n        (\n            app.new_download_window.expect(\"window\"),\n            app.new_download_view.clone().expect(\"actual view\"),\n        )\n    });\n    let mut surface = VisualTestContext::from_window(handle, cx);\n    surface.refresh().expect(\"actual compact form\");\n    accessible_actual_button(&mut surface, \"download-probe\", \"探测下载链接\");\n    view.update_in(&mut surface, |view, window, cx| {\n        view.url.update(cx, |input, cx| {\n            input.set_value(\"https://synthetic.invalid/file.bin\", window, cx)\n        });\n        view.probe = Some(DownloadProbe {\n            resolution: None,\n            final_url: \"https://synthetic.invalid/file.bin\".into(),\n            file_name: Some(\"file.bin\".into()),\n            total_bytes: Some(8),\n            supports_ranges: false,\n            content_type: None,\n            validator: Default::default(),\n            media: None,\n        });\n        cx.notify();\n    });\n    surface.simulate_resize(new_download_window_size(true));\n    surface\n        .refresh()\n        .expect(\"actual confirmed form without network\");\n    accessible_actual_button(&mut surface, \"download-refresh-probe\", \"重新探测下载链接\");\n    accessible_actual_button(&mut surface, \"download-start-now-button\", \"立即下载\");\n    surface.update(|window, _| window.remove_window());\n    std::fs::remove_dir_all(directory).expect(\"remove isolated probe fixture\");\n}\n"
+      }
+    ]
+  },
+  {
+    "path": "docs/reference-code/gpui-kit-080.md",
+    "baseline_sha256": "126fb2f69f00a5315e202d0f5f83154cb448d595f93bc747b6c51e2a12641093",
+    "delivery_sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c",
+    "added": 18,
+    "removed": 0,
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start_line": 43,
+        "baseline_line_count": 0,
+        "delivery_start_line": 43,
+        "delivery_line_count": 18,
+        "baseline_text": "",
+        "delivery_text": "\n## Audit #3 actual Button accessible-name prerequisite (2026-10-25)\nVerified exact Component0.8.0 button/button.rs::Button::render: explicit accessibility_label\nfalls back only to Button.label, not icon, arbitrary child content or Tooltip. Public\nButton::accessibility_label supplies the original Base Button semantic node without new layout,\nfocus or activation owner. Shared primary custom-content and icon helpers therefore need an\nexplicit semantic-name contract; outer Tooltip names do not repair their inner Button.\nReference-only recheck: ABDM LocationTextField.kt::LocationTextField uses download_location\ncontentDescription and original directory picker callback; AddDownloadPage.kt::MainActionButtons\nkeeps named Add/Download/Cancel. Legacy SettingsWindow constructor -> WindowAnimationService.Attach,\nOnOpened -> ConfigureForCurrentScope, SaveButton_Click -> ApplySettingsCommand -> Close, and\nVideoSettingsWindow.axaml BrowseFfmpegExecutableCommand retain action purposes and owners.\nAvalonia native base unavailable. Quick Find note correctly records no legacy exclusion surface;\nSwiftList ExclusionsTab.xaml -> Templates.xaml::RuleItemTemplate preserves one trailing remove\ncommand. Names-only correction must keep original visible copy/IntoElement paint, component\nvariants/sizes/parent adaptations, IDs, single pointer/keyboard click, disabled/loading, picker/\nsubmission/focus generations and native/deferred boundaries. Full provider/reader acceptance is\nnot implied by semantic fixture snapshots; task .trellis/tasks/10-25-button-accessible-names/.\n"
+      }
+    ]
+  },
+  {
+    "path": "tests/architecture/download-ui-lifecycle.ps1",
+    "baseline_sha256": "5d37115d404e6969d47d0994423f085c0f6f2683b64914c5628b9fe6cdbc8f48",
+    "delivery_sha256": "dc6c0541e3319bfd3273ef1fb3e1cd961a8493e37ced01347f9a525688d8eea3",
+    "added": 1,
+    "removed": 1,
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start_line": 322,
+        "baseline_line_count": 1,
+        "delivery_start_line": 322,
+        "delivery_line_count": 1,
+        "baseline_text": "    'icon_action_button(spec.button_id, spec.icon)',\r\n",
+        "delivery_text": "    'icon_action_button(spec.button_id, spec.icon, \"拖拽下载文件\")',\r\n"
+      }
+    ]
+  }
+]

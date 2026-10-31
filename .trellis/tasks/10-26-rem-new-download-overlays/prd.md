@@ -1,0 +1,20 @@
+# Queue05 — New Download overlays and media ordinary rem roles
+
+## Authorized scope and seam
+Continue original audit#6 in this conversation without delegation. Preserve Queue04 basic-form delivery and all earlier evidence. Change only actual NewDownloadView category ListItem/search, schedule calendar/time Select Popover, probe inspector and HLS/DASH ordinary row/column/type/spacing composition. Production NewDownloadView under official Component0.8.0 Root at16/14/18 is the agreed test seam. New tests exercise actual wheel/focus/key/pointer and original callbacks, not direct business methods as positive activation evidence.
+
+## References and components
+Read mandatory selection/current080/table/index and Download note before ABDM CategorySelect/AddDownloadPage (bounded category dropdown/intrinsic inspector/original footer) and legacy AddDownloadWindow.axaml plus constructor->WindowAnimationService.Attach->OnOpened/RequestClose/OnClosed cleanup. Legacy master-quality metadata chain remains HlsPlaylistParser->BuildHlsResourceOptionsAsync->ApplyHlsResources; ABDM has no matching full master-quality/DASH chooser. Native framework bases unavailable, not inferred. Retain actual styled ListItem/Input/Popover/Small Select/Small compact ghost date Buttons/RadioGroup+Radio. No new controller, vendor patch, dependency, theme/basefont/palette or native policy.
+
+## Fixed budgets and ordinary roles
+Keep current compact560x176/ordinary560x246,caption34/footer44,error reserve38,media base278,HLS one/many338/418 and DASH one/many353/433 from current size functions. Keep category320x240,schedule304x200,calendar viewport<=124 and media-list viewport<=120. All native size/handoff helpers remain byte/normalized-identical. Preserve hairlines,bitmap/hit geometry exceptions and original default16 measurements. Ordinary two-line category34 with12/18+11/16,calendar header28/meta14/day19 and7equal date columns,66time rails,media40rows and body/inspector roles may follow accepted ordinary_rem. At larger rem use existing bounded scroll/flex/wrap,not larger windows or hidden controls. Any unresolvable approved-budget conflict is reported rather than bypassed.
+
+## Invariants and candidate paths
+- Existing new_download_view.rs: only render/layout expressions, public adaptation and cfg(test) observation/module declaration; original state/constructors/Enter/IME/held/busy/PopoverSelect guards,picker identity,probe350ms/editgeneration/TLS,submit/defer/Cancel remain.
+- New new_download_overlay_rem_tests.rs: isolated temporary/memory-engine/disconnected-bridge actual Root fixtures; red before each repaired category/schedule/media slice; full long Chinese text remains accessible through existing content/Tooltip or public wrapping.
+- Download reference: English append only. Task directory owns new dirty baselines,exact reversible deltas,logs and verifier. Do not alter Queue04 test file or prior evidence/acceptance.
+
+Preserve all existing callbacks and scroll owners. Category search/highlight/confirm/focus-return remain original; schedule draft reset/confirmed selection/clear/overlay cancel and child Enter never submitting outer remain; DASH optional audio repeat-to-clear and typed selection remain. Public focus traversal is synthetic focus evidence,not physical Tab certification; explicit KeyDown/KeyUp provide activation evidence. No fixed sleeps,ignored/weakened old assertions,removed controls,unnecessary truncation or second dispatcher.
+
+## Verification and exclusions
+Run new focused red/green,Downloads including oldkeyboard8/picker14,Queue04five,accepted Schedule/row6,audit05 and related protections;strictDesktop Clippy,workspace check,scoped/fullfmt observation,scoped diff and relevant source/catalog/release/editor/spec gates. Full Desktop is NOT run. Every Rust invocation jobs1/incremental0/codegen256,natural idle,serial full timeout,no kill/pause/reservations. No real external network/download,picker/Shell/Host/service/user data,extension execution,packaging/install,commit/push. Controlled font changes are not Windows DPI;native/physical/IME/reader/visual/user/release acceptance stays unperformed.

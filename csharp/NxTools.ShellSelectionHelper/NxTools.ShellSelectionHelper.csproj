@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    P207 dedicated x64 out-of-process COM local server (IExecuteCommand + IObjectWithSelection).
+    Packaged by the existing release owner. Deployment does not register or activate COM.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <AssemblyName>NxTools.ShellSelectionHelper</AssemblyName>
+    <RootNamespace>NxTools.ShellSelectionHelper</RootNamespace>
+    <SelfContained>false</SelfContained>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="NxTools.PlatformHost.Tests" />
+    <Compile Remove="Generated\DesktopIdentity.g.cs" Condition="'$(ShellSelectionIdentityPath)' != ''" />
+    <Compile Include="$(ShellSelectionIdentityPath)" Condition="'$(ShellSelectionIdentityPath)' != ''" />
+  </ItemGroup>
+</Project>

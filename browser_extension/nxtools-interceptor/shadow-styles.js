@@ -20,6 +20,8 @@
     --nt-accent: #bfc0c4;
     --nt-accent-soft: #353539;
     --nt-accent-text: #18181b;
+    --nt-success: #7fbf9a;
+    --nt-success-soft: #22302a;
     --nt-warning: #d6a85f;
     --nt-danger: #ff6b78;
     --nt-danger-soft: #35252a;`;
@@ -54,7 +56,10 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.22);
   }
   .panel[hidden] { display: none; }
-  .choice { display: grid; grid-template-columns: minmax(0,1fr); gap: 4px; width: 100%; min-height: 56px; padding: 10px; text-align: left; font: inherit; cursor: pointer; background: transparent; border: 0; border-bottom: 1px solid var(--nt-border-subtle); color: var(--nt-text); border-radius: 4px; }
+  .choice { display: grid; grid-template-columns: 28px minmax(0,1fr); align-items: center; gap: 10px; width: 100%; min-height: 52px; padding: 8px 10px; text-align: left; font: inherit; cursor: pointer; background: transparent; border: 0; border-bottom: 1px solid var(--nt-border-subtle); color: var(--nt-text); border-radius: 4px; }
+  .choice-kind { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: 1px solid var(--nt-border-subtle); border-radius: 6px; background: var(--nt-surface-raised); color: var(--nt-text-secondary); }
+  .choice-kind svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .choice-text { display: grid; gap: 2px; min-width: 0; }
   .choice:last-child { border-bottom-color: transparent; }
   .choice:hover { background: var(--nt-surface-hover); }
   .choice:active { background: var(--nt-surface-pressed); }

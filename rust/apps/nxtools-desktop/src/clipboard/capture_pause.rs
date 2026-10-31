@@ -79,6 +79,8 @@ impl ClipboardApplication {
         }
         self.capture_pause.requested = paused;
         self.invalidate_currency_capture();
+        self.invalidate_link_detection();
+        self.link_panel.last_fingerprint = None;
         self.capture_pause.deadline =
             (paused && timed).then(|| Instant::now() + Duration::from_secs(15 * 60));
         self.capture_pause.generation = self.capture_pause.generation.wrapping_add(1);
@@ -111,6 +113,7 @@ impl ClipboardApplication {
     pub(super) fn reapply_capture_pause(&mut self, cx: &mut Context<Self>) {
         self.capture_pause.pending = None;
         self.invalidate_currency_capture();
+        self.invalidate_link_detection();
         info!(
             event = "clipboard.capture_pause.reapplied",
             generation = self.capture_pause.generation,
@@ -130,6 +133,7 @@ impl ClipboardApplication {
     pub(super) fn disconnect_capture_pause(&mut self, cx: &mut Context<Self>) {
         self.capture_pause.pending = None;
         self.invalidate_currency_capture();
+        self.invalidate_link_detection();
         self.capture_pause.applied = None;
         self.capture_pause.failed = true;
         self.publish_capture_pause(cx);

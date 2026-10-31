@@ -136,6 +136,8 @@ internal static class TrustedUpdateNewUserSimulationTests
             foreach (var file in new[] { "NxTools.exe", "NxTools.PlatformHost.exe", "NxTools.Indexer.exe", "NxTools.BrowserHost.exe", "NxTools.Cli.exe",
                 "LICENSE-MIT", "LICENSE-APACHE", "THIRD_PARTY_NOTICES.md", "browser_extension/nxtools-interceptor/manifest.json" })
                 File.WriteAllText(Path.Combine(package, file.Replace('/', Path.DirectorySeparatorChar)), $"synthetic-release-{sequence}:{file}");
+            foreach (var file in TrustedReleaseManifestTests.ArchiveMembers)
+                File.WriteAllText(Path.Combine(package, file), $"synthetic-release-{sequence}:{file}");
             TrustedReleaseManifest.SignPackage(package, signingKey, sequence, Guid.NewGuid());
             return package;
         }

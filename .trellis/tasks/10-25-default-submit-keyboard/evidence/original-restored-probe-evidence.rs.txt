@@ -1,0 +1,76 @@
+#[gpui_kit::test]
+fn audit04_create_keyboard_release_and_missing_object_cancel_are_once_only(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let id = owner.update(cx, |app, cx| {
+        app.submit_job(request(1), completion(), cx)
+            .expect("original job admission")
+    });
+    cx.run_until_parked();
+    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\本次.zip");
+    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
+    object_replies(&endpoint);
+    surface.update(|window, cx| window.focus_next(cx));
+    // Traverse the original Dialog focus scope, never call its reply/confirm helper.
+    for _ in 0..8 {
+        if object_node(&mut surface, "确认覆盖").focused() == Some(true) {
+            break;
+        }
+        surface.simulate_keystrokes("tab");
+    }
+    assert_eq!(object_node(&mut surface, "确认覆盖").focused(), Some(true));
+    surface.simulate_event(gpui_kit::KeyDownEvent {
+        keystroke: gpui_kit::Keystroke::parse("space").expect("space press"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("space").expect("space release"),
+    });
+    object_draw(&mut surface);
+    let replies = object_replies(&endpoint);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].ticket, prompt.ticket);
+    assert_eq!(
+        replies[0].decision,
+        Some(ArchiveJobConflictDecision::Overwrite)
+    );
+    surface.simulate_event(gpui_kit::KeyUpEvent {
+        keystroke: gpui_kit::Keystroke::parse("space").expect("duplicate release"),
+    });
+    object_draw(&mut surface);
+    assert!(object_replies(&endpoint).is_empty());
+    let mut missing = object_prompt(
+        id,
+        "conflict",
+        Some("not-displayed.txt"),
+        r"C:\not-displayed.txt",
+    );
+    missing.display = None;
+    let ticket = missing.ticket.clone();
+    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);
+    let labels = object_labels(&mut surface);
+    assert_eq!(
+        labels
+            .iter()
+            .filter(|label| label.as_str() == "本次提示未提供对象标识")
+            .count(),
+        2
+    );
+    assert!(
+        !labels
+            .iter()
+            .any(|label| label.contains("本次.zip") || label.contains("not-displayed"))
+    );
+    assert!(
+        object_replies(&endpoint).is_empty(),
+        "missing metadata never auto-approves"
+    );
+    surface.simulate_keystrokes("escape");
+    object_draw(&mut surface);
+    let replies = object_replies(&endpoint);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].ticket, ticket);
+    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);
+}

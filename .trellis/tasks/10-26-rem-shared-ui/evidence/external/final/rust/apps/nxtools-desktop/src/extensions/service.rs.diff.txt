@@ -1,0 +1,215 @@
+--- task-start
++++ independent-observed
+@@ -1,3 +1,5 @@
++#[path = "service_storage.rs"]
++mod storage;
+ use super::{
+     download_resolver::{ExtensionDownloadResolver, HandlerFuture, ResolverInvoker},
+     feature_adapters::{FeatureAdapters, UiHostCall},
+@@ -12,6 +14,8 @@
+     path::PathBuf,
+     sync::{Arc, Mutex},
+ };
++use storage::DesktopStorage;
++pub(crate) use storage::refresh_storage_metadata;
+ 
+ struct ExecutionLease {
+     shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+@@ -38,15 +42,36 @@
+     engine: WeakDownloadEngine,
+     _lease: Arc<ExecutionLease>,
+     publication: Arc<Mutex<()>>,
++    storage: Option<Arc<DesktopStorage>>,
+     pub(crate) events: super::committed_events::EventControl,
+     pub(crate) manual_effects: super::manual_runs::ManualEffects,
+ }
+ impl ExtensionService {
++    #[cfg(test)]
+     pub(crate) fn new(
+         engine: &DownloadEngine,
+         registry: PackageRegistry,
+         worker: Option<ClipboardCaptureWorkerHandle>,
+         ui: bool,
++    ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
++        Self::new_inner(engine, registry, worker, ui, None)
++    }
++    pub(crate) fn new_with_storage(
++        engine: &DownloadEngine,
++        registry: PackageRegistry,
++        worker: Option<ClipboardCaptureWorkerHandle>,
++        ui: bool,
++        config_path: PathBuf,
++        data_root: PathBuf,
++    ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
++        Self::new_inner(engine, registry, worker, ui, Some((config_path, data_root)))
++    }
++    fn new_inner(
++        engine: &DownloadEngine,
++        registry: PackageRegistry,
++        worker: Option<ClipboardCaptureWorkerHandle>,
++        ui: bool,
++        storage: Option<(PathBuf, PathBuf)>,
+     ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
+         registry.validate()?;
+         let (sender, receiver) = async_channel::bounded(32);
+@@ -64,12 +89,13 @@
+             .parent()
+             .ok_or_else(|| anyhow::anyhow!("desktop executable directory unavailable"))?
+             .join("NxTools.PlatformHost.exe");
+-        let (service, receiver) = Self::with_adapter(
++        let (service, receiver) = Self::with_adapter_storage(
+             engine,
+             registry,
+             broker_path,
+             adapter,
+             ui.then_some(receiver),
++            storage,
+         )?;
+         let events = super::committed_events::attach(&service, engine, subscription)?;
+         *service
+@@ -79,12 +105,23 @@
+             .map_err(|_| anyhow::anyhow!("extension event state unavailable"))? = events;
+         Ok((service, receiver))
+     }
++    #[cfg(test)]
+     fn with_adapter(
+         engine: &DownloadEngine,
+         registry: PackageRegistry,
+         broker_path: PathBuf,
+         adapter: Arc<FeatureAdapters>,
+         receiver: Option<async_channel::Receiver<UiHostCall>>,
++    ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
++        Self::with_adapter_storage(engine, registry, broker_path, adapter, receiver, None)
++    }
++    fn with_adapter_storage(
++        engine: &DownloadEngine,
++        registry: PackageRegistry,
++        broker_path: PathBuf,
++        adapter: Arc<FeatureAdapters>,
++        receiver: Option<async_channel::Receiver<UiHostCall>>,
++        storage: Option<(PathBuf, PathBuf)>,
+     ) -> anyhow::Result<(Self, Option<async_channel::Receiver<UiHostCall>>)> {
+         let executor = tokio::runtime::Builder::new_current_thread()
+             .enable_all()
+@@ -93,7 +130,18 @@
+         let handle = executor.handle().clone();
+         let (shutdown, stop) = tokio::sync::oneshot::channel();
+         let manual_effects = adapter.manual_effects.clone();
+-        let runtime = ExtensionRuntime::new(registry.clone(), broker_path, adapter);
++        let publication = Arc::new(Mutex::new(()));
++        let storage = storage
++            .map(|(path, root)| DesktopStorage::new(path, root, publication.clone()).map(Arc::new))
++            .transpose()?;
++        let runtime = ExtensionRuntime::new_with_storage(
++            registry.clone(),
++            broker_path,
++            adapter,
++            storage
++                .clone()
++                .map(|host| host as Arc<dyn nxtools_extensions::storage::StorageHost>),
++        );
+         let runtime_shutdown = runtime.clone();
+         std::thread::Builder::new()
+             .name("extension-runtime".into())
+@@ -113,17 +161,39 @@
+                 shutdown: Mutex::new(Some(shutdown)),
+                 events: Mutex::new(Vec::new()),
+             }),
+-            publication: Arc::new(Mutex::new(())),
++            publication,
++            storage,
+             events: Default::default(),
+             manual_effects,
+         };
+         service.install_resolver(registry)?;
++        if let Some(storage) = service.storage.clone() {
++            service.executor.spawn_blocking(move || {
++                let id = uuid::Uuid::new_v4();
++                let started = std::time::Instant::now();
++                let span = tracing::info_span!("extension.storage.startup", correlation_id=%id);
++                let _entered = span.enter();
++                tracing::info!(event = "extension.storage.reconciliation_accepted");
++                let outcome = storage.ensure_reconciled();
++                tracing::info!(
++                    event = "extension.storage.reconciliation_terminal",
++                    reason = match outcome {
++                        Ok(true) => "cleanup_pending",
++                        Ok(false) => "success",
++                        Err(error) => error.code(),
++                    },
++                    elapsed_ms = started.elapsed().as_millis() as u64
++                );
++            });
++        }
+         Ok((service, receiver))
+     }
++    #[cfg(test)]
+     pub(crate) fn publish_registry(&self, registry: PackageRegistry) -> anyhow::Result<()> {
+         registry.validate()?;
+         self.publish_registry_with(registry, || {})
+     }
++    #[cfg(test)]
+     fn publish_registry_with(
+         &self,
+         registry: PackageRegistry,
+@@ -133,6 +203,26 @@
+             .publication
+             .lock()
+             .map_err(|_| anyhow::anyhow!("extension publication unavailable"))?;
++        if self.storage.is_some() {
++            let current = self.runtime.snapshot()?;
++            anyhow::ensure!(
++                !current.packages.iter().any(|package| {
++                    registry
++                        .packages
++                        .iter()
++                        .find(|next| next.manifest.id == package.manifest.id)
++                        .is_some_and(|next| package.data_uuid != next.data_uuid)
++                }),
++                "extension publication metadata is stale"
++            );
++        }
++        self.publish_locked(registry, after_install)
++    }
++    fn publish_locked(
++        &self,
++        registry: PackageRegistry,
++        after_install: impl FnOnce(),
++    ) -> anyhow::Result<()> {
+         let engine = self
+             .engine
+             .upgrade()
+@@ -166,6 +256,25 @@
+             engine.set_request_resolver(Arc::new(NoopDownloadRequestResolver))?;
+         }
+         Ok(())
++    }
++    /// Background-only original Core mutation + publication, serialized with lazy binding.
++    pub(crate) fn commit_config(
++        &self,
++        path: &std::path::Path,
++        operation: impl FnOnce(&std::path::Path) -> anyhow::Result<nxtools_core::AppConfig>,
++    ) -> anyhow::Result<(nxtools_core::AppConfig, bool)> {
++        let _publication = self
++            .publication
++            .lock()
++            .map_err(|_| anyhow::anyhow!("extension publication unavailable"))?;
++        let config = operation(path)?;
++        let applied = self
++            .publish_locked(config.extensions.clone(), || {})
++            .is_ok();
++        Ok((config, applied))
++    }
++    pub(crate) fn subscribe_storage_metadata(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
++        self.storage.as_ref().map(|storage| storage.subscribe())
+     }
+     pub(crate) fn invoke(
+         &self,
+@@ -521,3 +630,7 @@
+         service.runtime.shutdown();
+     }
+ }
++
++#[cfg(test)]
++#[path = "service_storage_tests.rs"]
++mod storage_tests;

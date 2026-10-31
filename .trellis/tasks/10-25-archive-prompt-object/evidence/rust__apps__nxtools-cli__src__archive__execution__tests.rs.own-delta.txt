@@ -1,0 +1,18 @@
+--- dirty-baseline/rust/apps/nxtools-cli/src/archive/execution/tests.rs
++++ delivery/rust/apps/nxtools-cli/src/archive/execution/tests.rs
+@@ -143,6 +143,7 @@
+             existing_bytes: Some(5),
+             incoming_bytes: Some(6),
+             approved_limit: None,
++            display: None,
+         };
+         endpoint
+             .send_notification_for_contract_test(PlatformNotification::Event(
+@@ -203,6 +204,7 @@
+             existing_bytes: Some(0),
+             incoming_bytes: Some(8),
+             approved_limit: None,
++            display: None,
+         }),
+         ..event(&request, ArchiveJobEventKind::Prompt)
+     };

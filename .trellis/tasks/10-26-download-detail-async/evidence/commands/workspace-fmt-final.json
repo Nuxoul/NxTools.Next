@@ -1,0 +1,13 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "_LINK_":  "/DEBUG:NONE",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T08:51:30.1803399Z",
+    "started_utc":  "2026-10-26T08:51:20.4635298Z",
+    "command":  "cargo fmt --all -- --check",
+    "exit":  1,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\download-detail-async\\workspace-fmt-final.log"
+}

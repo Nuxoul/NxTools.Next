@@ -1,0 +1,7 @@
+﻿{
+    "name":  "strict-tests-import-clean",
+    "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit":  0,
+    "elapsed":  32.4349071,
+    "finished":  "2026-10-26T07:03:47.0779832+08:00"
+}

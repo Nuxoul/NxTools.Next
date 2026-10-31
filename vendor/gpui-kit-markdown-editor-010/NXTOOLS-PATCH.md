@@ -6,4 +6,15 @@ User-approved exact plan2026-10-22 permits only src/element.rs passive presentat
 
 Additional explicit user approval after actual Rust1.96.0 E0658 permits exactly3replacements in src/cull.rs: unstable i.isolate_lowest_one() -> stable i & i.wrapping_neg(), preserving Fenwick lowbit semantics. No nightly/BOOTSTRAP/toolchain upgrade. No other original source/manifests modified; Cargo optional lock entries do not imply enabledfeatures. Root consumer disablesdefaults and reuses its existing15grammarfeatures. No GPUI framework patches added.
 
+Explicit integration-closeout approval2026-10-22 additionally permits ONE expression in src/serialize.rs::list_item:
+`spread || bare_nested || (!is_list && !prev_is_list) || prev_is_list` becomes
+`spread || bare_nested || !is_list || prev_is_list`. All16Boolean combinations are identical;
+the original file hash must be restored by reversing exactly this one substitution. No serializer
+behavior change, lint allow, dependency upgrade or other vendor formatting/edit is authorized.
+Supplemental explicit approval in the same closeout permits only rustfmt whitespace in this
+serializer push_str fragment and the passive link callback's if block in element.rs. The gate
+reverses the exact serializer fragment to its upstream hash and the callback formatting to the
+approved passive baseline SHA2562a44a51e00c803b278b9b4c925a2c0dbe0625cf94334c7c16658e9c2836660a8.
+No whole-vendor format sweep or further source change is authorized.
+
 Source/provenance/compiledfixture/native/physical/useracceptance remain separate. This patch does not authorize package/install/runtime/service actions.

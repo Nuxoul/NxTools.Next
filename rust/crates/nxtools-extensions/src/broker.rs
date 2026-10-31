@@ -46,6 +46,8 @@ pub struct BrokerStart {
     pub memory_bytes: u64,
     pub max_processes: u8,
     pub stdin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_plane: Option<u16>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -76,6 +78,7 @@ struct Pending {
     // Runtime execution slots belong to native cleanup, not the consumer future.
     _execution_slots: Option<[OwnedSemaphorePermit; 2]>,
     input_bytes: usize,
+    input_limit: usize,
     cleanup_pending: bool,
 }
 struct Shared {
@@ -225,6 +228,35 @@ impl BrokerClient {
                     let _ = reader_shared.stop.send(true);
                     break;
                 }
+                let data_sink = if event.op == "stdout" {
+                    reader_shared.pending.lock().ok().and_then(|pending| {
+                        pending
+                            .get(&event.run_id)
+                            .filter(|run| run.input_limit > crate::session::INPUT_CONTROL_BYTES)
+                            .and_then(|run| run.events.clone())
+                    })
+                } else {
+                    None
+                };
+                if let Some(sink) = data_sink {
+                    if !matches!(
+                        tokio::time::timeout(
+                            Duration::from_millis(250),
+                            sink.send(Ok(event.clone()))
+                        )
+                        .await,
+                        Ok(Ok(()))
+                    ) {
+                        if let Ok(mut pending) = reader_shared.pending.lock()
+                            && let Some(run) = pending.get_mut(&event.run_id)
+                        {
+                            run.events = None;
+                            run.cancel_requested = true;
+                        }
+                        enqueue_cancel(&reader_shared, event.run_id);
+                    }
+                    continue;
+                }
                 let Ok(mut pending) = reader_shared.pending.lock() else {
                     let _ = reader_shared.stop.send(true);
                     break;
@@ -321,6 +353,7 @@ impl BrokerClient {
             || request.run_id.is_nil()
             || request.stdin.contains(['\r', '\n'])
             || request.stdin.len() + 1 > MAX_FRAME_BYTES
+            || !matches!(request.data_plane, None | Some(2))
         {
             return Err(BrokerError::InvalidFrame);
         }
@@ -350,6 +383,12 @@ impl BrokerClient {
                 cancel_requested: false,
                 _execution_slots: execution_slots,
                 input_bytes: request.stdin.len() + 1,
+                input_limit: crate::session::INPUT_CONTROL_BYTES
+                    + if request.data_plane == Some(2) {
+                        crate::data_plane::DATA_WIRE_BYTES
+                    } else {
+                        0
+                    },
                 cleanup_pending: false,
             },
         );
@@ -385,7 +424,7 @@ impl BrokerClient {
             .input_bytes
             .checked_add(data.len() + 1)
             .ok_or(BrokerError::InvalidFrame)?;
-        if input_bytes > 1024 * 1024 {
+        if input_bytes > run.input_limit {
             return Err(BrokerError::InvalidFrame);
         }
         self.shared
@@ -580,6 +619,7 @@ mod tests {
             memory_bytes: 512 * 1024 * 1024,
             max_processes: 8,
             stdin: input,
+            data_plane: None,
         };
         let mut run = broker
             .start(identity, request)
@@ -624,6 +664,7 @@ mod tests {
             memory_bytes: 512 * 1024 * 1024,
             max_processes: 8,
             stdin: "{}".into(),
+            data_plane: None,
         };
         let mut cancel_run = broker
             .start(cancel_identity, request)
@@ -702,6 +743,7 @@ mod tests {
             memory_bytes: 512 * 1024 * 1024,
             max_processes: 8,
             stdin: input,
+            data_plane: None,
         };
         let mut duplex = broker
             .start(duplex_identity.clone(), request)
@@ -795,6 +837,7 @@ mod tests {
                 memory_bytes: 512 * 1024 * 1024,
                 max_processes: 8,
                 stdin: "{}".into(),
+                data_plane: None,
             };
             let plugin_slot = Arc::new(tokio::sync::Semaphore::new(1))
                 .try_acquire_owned()

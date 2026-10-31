@@ -1,0 +1,18 @@
+--- dirty-baseline/csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs
++++ delivery/csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs
+@@ -65,6 +65,7 @@
+                     var prompt = Prompts(events)[0]; var ticket = prompt.GetProperty("ticket").Deserialize<ArchivePasswordTicket>()!;
+                     Check(ticket.OperationId == id, "original logical task ticket");
+                     Check(prompt.GetProperty("existing_bytes").GetUInt64() == 10, "observed target size");
++                    Check(prompt.GetProperty("display").GetProperty("incoming_member").GetString()==(mode=="cancel_after_commit"?"b.txt":"a.txt") && prompt.GetProperty("display").GetProperty("target").GetString()==(mode=="cancel_after_commit"?"b.txt":"a.txt"),"current worker object snapshot");
+                     if (mode == "next_job" && priorJobTicket is not null) Check(!runner.RespondConflict(id, priorJobTicket, "overwrite", true), "prior task ticket rejected");
+                     if (mode == "changed") File.WriteAllText(oldA, "external-change");
+                     if (mode is "cancel" or "cancel_after_commit") {
+@@ -78,6 +79,7 @@
+                             Check(Prompts(events).Length == 2, "apply-all leaked from prior logical task");
+                             var next = Prompts(events)[1].GetProperty("ticket").Deserialize<ArchivePasswordTicket>()!;
+                             Check(next != ticket, "fresh prompt ticket");
++                            Check(Prompts(events)[1].GetProperty("display").GetProperty("incoming_member").GetString()=="b.txt" && Prompts(events)[1].GetProperty("display").GetProperty("target").GetString()=="b.txt","second ticket has second object, not previous size/progress");
+                             Check(runner.RespondConflict(id, ticket, "overwrite"), "old answer delivered for Rust rejection");
+                             Check(runner.RespondConflict(id, next, "skip"), "current second Skip");
+                         }

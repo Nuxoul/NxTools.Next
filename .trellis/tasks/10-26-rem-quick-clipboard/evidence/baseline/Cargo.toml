@@ -1,0 +1,86 @@
+[workspace]
+resolver = "2"
+members = [
+    "rust/apps/nxtools-browser-host",
+    "rust/apps/nxtools-cli",
+    "rust/apps/nxtools-desktop",
+    "rust/apps/nxtools-indexer",
+    "rust/crates/nxtools-archive",
+    "rust/crates/nxtools-clipboard",
+    "rust/crates/nxtools-core",
+    "rust/crates/nxtools-download",
+    "rust/crates/nxtools-download-ipc",
+    "rust/crates/nxtools-extensions",
+    "rust/crates/nxtools-finder",
+    "rust/crates/nxtools-ipc",
+    "rust/crates/nxtools-network",
+    "rust/crates/nxtools-protocol",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+aes = "0.8.4"
+anyhow = "1.0.98"
+async-channel = "2.5.0"
+chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
+cbc = "0.1.2"
+directories = "6.0.0"
+fs2 = "0.4.3"
+gpui-kit = "=0.8.0"
+gpui-kit-markdown-editor = { path = "vendor/gpui-kit-markdown-editor-010", default-features = false }
+
+image = { version = "=0.25.10", default-features = false, features = ["png"] }
+imagesize = "0.13.0"
+markdown = "=1.0.0"
+memmap2 = "0.9.11"
+rayon = "1.12.0"
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "system-proxy"] }
+roxmltree = "0.20.0"
+rusqlite = { version = "0.40.1", features = ["backup", "bundled"] }
+raw-window-handle = "0.6"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+encoding_rs = "0.8.35"
+sysinfo = { version = "0.39.6", default-features = false, features = ["disk"] }
+thiserror = "2.0.12"
+tokio = { version = "1.45.1", features = ["io-util", "macros", "net", "process", "rt", "sync", "time"] }
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt"] }
+unicode-width = "0.2.2"
+url = "2.5.8"
+uuid = { version = "1.16.0", features = ["serde", "v4"] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_Memory",
+    "Win32_System_Pipes",
+    "Win32_System_ProcessStatus",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+] }
+windows-service = "0.8.1"
+zip = { version = "8.3.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+todo = "deny"
+unwrap_used = "warn"
+
+[patch.crates-io]
+gpui-pre-windows = { path = "vendor/gpui-pre-windows-039" }
+gpui-component = { path = "vendor/gpui-component-080" }

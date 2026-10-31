@@ -58,6 +58,14 @@ pub(crate) fn preflight(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<u32> {
+    scan(file, limits, control, true).map(|result| result.0)
+}
+fn scan(
+    file: &mut (impl Read + Seek),
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    enforce_output: bool,
+) -> Result<(u32, Option<u64>)> {
     let log = window_log(limits)?;
     let length = file.seek(SeekFrom::End(0))?;
     file.rewind()?;
@@ -66,6 +74,7 @@ pub(crate) fn preflight(
     let mut metadata = 0u64;
     let mut declared = 0u64;
     let mut standard = false;
+    let mut all_known = true;
     while file.stream_position()? < length {
         control.checkpoint()?;
         frames += 1;
@@ -111,6 +120,7 @@ pub(crate) fn preflight(
             _ => 8,
         };
         let content_size = if size_length == 0 {
+            all_known = false;
             None
         } else {
             let size = integer(file, size_length)? + if size_length == 2 { 256 } else { 0 };
@@ -120,7 +130,9 @@ pub(crate) fn preflight(
             declared = declared
                 .checked_add(size)
                 .ok_or(ArchiveError::ResourceLimit)?;
-            if declared > limits.max_entry_bytes || declared > limits.max_output_bytes {
+            if enforce_output
+                && (declared > limits.max_entry_bytes || declared > limits.max_output_bytes)
+            {
                 return Err(ArchiveError::ResourceLimit);
             }
             Some(size)
@@ -163,7 +175,7 @@ pub(crate) fn preflight(
         return Err(ArchiveError::CorruptArchive);
     }
     file.rewind()?;
-    Ok(log)
+    Ok((log, all_known.then_some(declared)))
 }
 
 fn decode_error(code: usize) -> ArchiveError {
@@ -257,7 +269,16 @@ pub(crate) fn list(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Vec<ArchiveEntry>> {
-    preflight(file, limits, control)?;
+    list_for_output_preflight(file, path, limits, control, false)
+}
+pub(crate) fn list_for_output_preflight(
+    file: &mut File,
+    path: &Path,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    declared_output: bool,
+) -> Result<Vec<ArchiveEntry>> {
+    let (_, declared) = scan(file, limits, control, !declared_output)?;
     let name = path
         .file_stem()
         .and_then(|name| name.to_str())
@@ -275,7 +296,7 @@ pub(crate) fn list(
         display_path: name,
         provenance: NameProvenance::FormatUnicode,
         kind: EntryKind::File,
-        size: None,
+        size: declared_output.then_some(declared).flatten(),
         compressed_size: Some(file.metadata()?.len()),
         method: 0,
         encrypted: false,
@@ -309,6 +330,7 @@ pub(crate) fn extract(
     {
         return Err(ArchiveError::SourceChanged);
     }
+    output.confirm_zip_entry(&snapshot.entries[0], limits)?;
     if let Some(root) = plan.subfolder() {
         output.ensure_directory(root)?;
     }

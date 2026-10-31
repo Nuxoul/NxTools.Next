@@ -1,0 +1,336 @@
+[
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::prepare_for_hide",
+    "result": "PASS",
+    "sha256": "80146ab49e25df58ffbddb67fe079cd0989b8267f9bc2a2292ccf74f79851f56"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::sync_window_content_size",
+    "result": "PASS",
+    "sha256": "496b49e646dd89c8d4fccd8b802ad1680b7b5b686bc990b5beb4a78619279e84"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::schedule_search",
+    "result": "PASS",
+    "sha256": "24ade46e42dd55392a62f6cbc246e99a4968c07055a7e3a0b4daee2b5b79f4fd"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::focus_search",
+    "result": "PASS",
+    "sha256": "3dd6227db543157cc0fffc71e0eb31e37aa55bf5a67ebf352741c5626123a66b"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::exit_recent_directory_mode",
+    "result": "PASS",
+    "sha256": "f314e04d9c7bd2e254995915f0046a4e670a7f193e0429fda037bb3b31003ff7"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::handle_navigation_key",
+    "result": "PASS",
+    "sha256": "a39e843ba20a6f1b5839a026b8065f2301f5b8096d6b6ddfcecbc72965b5a029"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::move_selection",
+    "result": "PASS",
+    "sha256": "64e08922ae5c3fa7e64fea5a7506eaf4d835cf3296d7a42c60d8f7b82fd1a323"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::schedule_keyboard_selection_preview",
+    "result": "PASS",
+    "sha256": "f51973a908183b0258feafc8c69fe83cb37345ade3f58441d849858914017711"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::pointer_moved_result",
+    "result": "PASS",
+    "sha256": "fc9e69f4ad9c8b86e0aaaaa27c0d796df978a11608ffecce6e9b62f2bf76271a"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::dismiss_preview",
+    "result": "PASS",
+    "sha256": "0d33581d66a3767cb5a0eb83f33420a95005748437cb6855a25205ca7e347660"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::reset_presented_results",
+    "result": "PASS",
+    "sha256": "d6df5fe2434276fce8916e82e20d04cf0e91634f131559035cceaebef1579ded"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::update_presented_results",
+    "result": "PASS",
+    "sha256": "a8a57f8bfaff7608229b319ca72a3637079801aba41f2a3b46aafc743af5f007"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::pointer_moved_action",
+    "result": "PASS",
+    "sha256": "e9aea358cb86d5b7f885b21c35aeed12bbce819b45482662d5de5b4162a6f91c"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::select_result",
+    "result": "PASS",
+    "sha256": "b188412655ef69c0879bafed8145e3960dec7c8e57f07eb75177b4f11f220cc5"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::select_action",
+    "result": "PASS",
+    "sha256": "300344a54cb2225b40e92d188527d2dd552f4553ea915d0a6acdbff1cab8b3c3"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::enter_action_mode",
+    "result": "PASS",
+    "sha256": "ac7eb1be6a2b52c95762b6efc3d12ed1c0fb73367f20d89f08c767279a734d9a"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::exit_action_mode",
+    "result": "PASS",
+    "sha256": "8c6744efc9d36a6ccb3cf5d142a64f49f508c98d3db62e71d06df6920e250282"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::reset_after_history_clear",
+    "result": "PASS",
+    "sha256": "5f387093d27b2e91e076f40168394560ee6d9fc17d02050b6eae23ebccdde4fc"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::activate_selected",
+    "result": "PASS",
+    "sha256": "1b1a5004be746ec83444412e467f0caa0ccbc4f199910b1bf5c2a1eb949fc1d6"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::activate_selected_recent_directory",
+    "result": "PASS",
+    "sha256": "f055222d5de389b483cc600f84c694e4e3ba7f42ead33f3929543e849054f428"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::enter_selected_submenu",
+    "result": "PASS",
+    "sha256": "d93bfe1df1f6f6603b3b365f5cfa52383767963f88d5c306ccfb9e4afc6a214e"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::activate_selected_action",
+    "result": "PASS",
+    "sha256": "76b8cacc5838063173b22c3f3067e1ae4536dd19576ccc270e91879a69c5774d"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::apply_shell_actions",
+    "result": "PASS",
+    "sha256": "06259458e3fc7585d749a78e4e0fb60b92e18917244b7bf6277560ed8a7a3ce7"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::close",
+    "result": "PASS",
+    "sha256": "b3bd8dbc925ff20430fbbac6b34de51395792358da307daf02d8e408556a3221"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::should_dismiss_for_foreground",
+    "result": "PASS",
+    "sha256": "965616fa1d7179fb42a81ad8afc7f982a1016a4c3e2345548ddff7508aa30fca"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::should_dismiss_for_pointer",
+    "result": "PASS",
+    "sha256": "8ddaecae6da16dc0b487c9c9bf816935d4365c5164758a10f8f7090e2e54dc4c"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::set_status",
+    "result": "PASS",
+    "sha256": "c7b627e0682676abf953cb10f6ba550aeaae5ddf2e588f3f6ccf76ef7b85eb96"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::notify_operation",
+    "result": "PASS",
+    "sha256": "a9076a9d18434ac6d49baba051f1efb1af8c1810cb4eb8a154377405211d5d49"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::retain_icons_for_results",
+    "result": "PASS",
+    "sha256": "b97b8d474c25ce727cc4123b15002ad2a471dc3b509c8de584e64df1904259a8"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/panel.rs::set_icons",
+    "result": "PASS",
+    "sha256": "b6ee89e1d0010f3ea1de01d3ca8694de4c8e2032eec64ecf2af8e1085059894c"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::builtin",
+    "result": "PASS",
+    "sha256": "7d5d04291d562505d7588379c085df65ada397da5de6052957e9d58050f30f78"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::is_activatable",
+    "result": "PASS",
+    "sha256": "0bbf5d66ce6e574743494e93e1cc482f1e98408e47eaef8918055fa4a71df415"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::switch_directory",
+    "result": "PASS",
+    "sha256": "bae0d9ef5876b81797e3a1f3dcb243b49438202d1f9f246bce6bb81216d9c7b2"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::correlation_id",
+    "result": "PASS",
+    "sha256": "524f063cb8d83cc17122e35757ffc6b7c3eded877af26ffe03ceed0a0e28c05d"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::enter",
+    "result": "PASS",
+    "sha256": "25c168e519b245ba79c3b3ebaf79d90397683ac9f2bc900b7d0ee7cf915d08d7"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::target",
+    "result": "PASS",
+    "sha256": "ba524cab030dd54c82e1ab8bd1d3a5845220af8c1bdacc4b9ddaa35c01e309ef"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::id",
+    "result": "PASS",
+    "sha256": "6356858a88c74a58b0cfe36fc7bd7a2de9b37ace3ea20f1ca22579353f6ca282"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::matches_shell_query",
+    "result": "PASS",
+    "sha256": "9a12f63ef9dbedc6fe55f7a36df555879afbeb172e6d338867d17d0456722198"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::exit",
+    "result": "PASS",
+    "sha256": "e878948380ccdfaca62379fbca542dc79c8c23f87c80fe432aed3ea9f3db3404"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::current_level",
+    "result": "PASS",
+    "sha256": "65f159f7818dcf333235e737de253871e441fd8f87d477b2be3735e605c01a99"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::current_level_mut",
+    "result": "PASS",
+    "sha256": "eb6de98daf376d08913a9c3ee61c0ee666832753e5c9c9f6c095e5cb35710d7e"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::depth",
+    "result": "PASS",
+    "sha256": "8274f434fdd041a21fad446f7c88756bc6f2dd8d15f78cf99a994be9420c6881"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::current_level_id",
+    "result": "PASS",
+    "sha256": "7ae2a32f9d764e0074cd54eca55fdcbf5dac824767ab640801d452e6db64ce18"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::shell_pending",
+    "result": "PASS",
+    "sha256": "cff692367f8257e2283c67073bf6994770ec84e3ba1e83753f56075b931e655f"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::set_filter",
+    "result": "PASS",
+    "sha256": "99e22f0583b44ad934d09071746b91426af20c9f4f0bb86bc575fec7743d0d98"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::visible_actions",
+    "result": "PASS",
+    "sha256": "691bcfb7520f507c0fbd27bbaa14e91be94e177e70ff3490204aa860cced29ba"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::selected",
+    "result": "PASS",
+    "sha256": "78badfbfb68c466b154372b8809fc36b30cb7ec19bef8d53b56fffcdea098742"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::set_selected",
+    "result": "PASS",
+    "sha256": "d064677d1b565cd5a6f8ba9d0ac70a5861d28d4028953020e55deeac1686755c"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::apply_shell_menu",
+    "result": "PASS",
+    "sha256": "112107c6312aa586522b85d0a1de5ca068194842512e00472a1e6b9b55f58f4a"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::push_selected_submenu",
+    "result": "PASS",
+    "sha256": "7864d32e74be4dca687e783a442a37669f4d57b2486a9e8cfda3a4b257fe466a"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::pop_level",
+    "result": "PASS",
+    "sha256": "bb575238adb50136210b7ae65b552133ae677b55e47f4114ea86c351c17337a4"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::move_selection",
+    "result": "PASS",
+    "sha256": "27d7b9bb81bde5d9c33fd61674ce98125f97499a93c1086fdb348047351e398b"
+  },
+  {
+    "name": "unchanged original method rust/apps/nxtools-desktop/src/quick_launch/actions.rs::selected_action",
+    "result": "PASS",
+    "sha256": "d0cbd310795508817ef433be84b13819967aef0a182f6038cecdda6bd512a833"
+  },
+  {
+    "name": "existing QuickLaunch tests exact inverse: container adaptations only, all old assertions unchanged",
+    "result": "PASS",
+    "sha256": "406d8f6805d111e1fcf4ba7715bdd8d726a3af95d5cb89a9ced6ef614d5c5102"
+  },
+  {
+    "name": "extension provider production and old tests unchanged except one fixture conversion",
+    "result": "PASS",
+    "sha256": "c230afb00589fd60c561b3dd3a195c7522a0f0d595c9d0cc0a3a7aa5a26345a9"
+  },
+  {
+    "name": "original application/search generation/preview/native lifecycle owner exact inverse, module registration only",
+    "result": "PASS",
+    "sha256": "55d950208060777298b3118a350966b5a5717f66e8d1de338fc01bf1a89d6e6d"
+  },
+  {
+    "name": "Quick Launch reference exact live-baseline byte prefix",
+    "result": "PASS"
+  },
+  {
+    "name": "unchanged protected owner Cargo.toml",
+    "result": "PASS",
+    "sha256": "fce993344cb099565ff6871e1937a63065f036749e3c6fdc4239efecb7c3c8b6"
+  },
+  {
+    "name": "unchanged protected owner Cargo.lock",
+    "result": "PASS",
+    "sha256": "6c63823a32a7ca18fd89013aa1c3ee96ad6c383320b78857a5be9996e5d37b0f"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/Cargo.toml",
+    "result": "PASS",
+    "sha256": "357da860d57c8131083223e163d992d4d414176c338a2b7b38d6092b7dacd20f"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/quick_launch/search.rs",
+    "result": "PASS",
+    "sha256": "858315de1226d69a716379bfd4152aab917dbb5395a15fb386d9ba3b0f08cd30"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/quick_launch/preview.rs",
+    "result": "PASS",
+    "sha256": "88fbbf9b64b53fc1f89a12fddc3e1877668b204a7f966c373ddde755ebcdbd8c"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/quick_launch/polish_tests.rs",
+    "result": "PASS",
+    "sha256": "fc6956ae3b0e9b8d311b9f31350105d71783f0f91081e91e90a23e68e9054982"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+    "result": "PASS",
+    "sha256": "7725b228baf2a0ed30f99ab63bcd144882d04d50d591c26e2a62ca39777374dc"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/ui/metrics.rs",
+    "result": "PASS",
+    "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/ui/typography.rs",
+    "result": "PASS",
+    "sha256": "a23ca9f2c045cc8d6b2b58661ed28ee0dcd54889871c9b8f806fc71cb4fdee1e"
+  },
+  {
+    "name": "unchanged protected owner tests/architecture/quick-launch-lifecycle.ps1",
+    "result": "PASS",
+    "sha256": "445b2bc2af050378d369ea564cc83d28a8f4a53cf89cf20210eb1d9c64ae6d54"
+  }
+]

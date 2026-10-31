@@ -1,0 +1,7 @@
+﻿{
+    "name":  "global-layout-red",
+    "command":  "cargo test -p nxtools-desktop audit06_pages_global_ordinary -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  196.0087364,
+    "finished":  "2026-10-26T07:34:12.0424874+08:00"
+}

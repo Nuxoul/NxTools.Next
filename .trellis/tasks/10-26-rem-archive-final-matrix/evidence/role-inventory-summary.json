@@ -1,0 +1,26 @@
+{
+  "created_utc": "2026-10-26T01:36:32.620103+00:00",
+  "method": "Lexical source index, not Rust parser or semantic/behavior coverage. Strings/comments masked; exact cfg(test) item ranges and test filenames marked. Expressions can include nonlayout geometry. No zero-px or closure claim. Numeric roles outside px() and indirect consumers remain UNFINISHED_REVIEW.",
+  "source_files": 247,
+  "px_calls": 2882,
+  "classifications": {
+    "TEST_ONLY": 2061,
+    "UNFINISHED_ORDINARY_CANDIDATE": 19,
+    "UNFINISHED_PERSISTED_GEOMETRY": 1,
+    "UNFINISHED_REVIEW": 788,
+    "UNFINISHED_VIEWPORT": 2,
+    "APPROVED_FIXED_LAYOUT": 3,
+    "PROTECTED_NATIVE_CLIENT": 8
+  },
+  "archive_px_calls": 158,
+  "archive_classifications": {
+    "TEST_ONLY": 119,
+    "UNFINISHED_ORDINARY_CANDIDATE": 19,
+    "UNFINISHED_PERSISTED_GEOMETRY": 1,
+    "UNFINISHED_REVIEW": 6,
+    "UNFINISHED_VIEWPORT": 2,
+    "APPROVED_FIXED_LAYOUT": 3,
+    "PROTECTED_NATIVE_CLIENT": 8
+  },
+  "finding06_status": "OPEN_SUBSTANTIVE_ORDINARY_AND_UNREVIEWED_REMAINDERS"
+}

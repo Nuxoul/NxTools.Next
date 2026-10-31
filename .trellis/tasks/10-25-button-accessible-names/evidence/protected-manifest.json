@@ -1,0 +1,26 @@
+[
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+        "SHA256":  "85C4D20A2A5CDD929563359E6E594F832635CBA883A32B18440743CAA3A91ADB"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+        "SHA256":  "7E5AB2DE7CBEA0D829CED2BC73E0EE72360A90791052ED2F70E9C7C3B377F7AB"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+        "SHA256":  "7C2B43E20FE054049EF8CA37A81E51BBB73B798E88E045FCBF061EBF1715CC29"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/history.rs",
+        "SHA256":  "EEA64001C2D5F522FC7FF1DC3EE40EA6F43532E3BA1DB4230C5344313DBF4B39"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/mod.rs",
+        "SHA256":  "ADA7385CFCEB77F353A6933F5593A5A0CAEFBBCD3E52E112214E0D39D8BD64A2"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+        "SHA256":  "614BB8A97AE5046A182DC52673A097915CC0A3185356FA16F20ADC615A1A03D6"
+    }
+]

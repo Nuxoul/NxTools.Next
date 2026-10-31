@@ -1,0 +1,18 @@
+{
+  "path": "docs/reference-code/download.md",
+  "baseline_sha256": "99abefb822f4e7aa1693b62087b2cd081a8e15f6f6e0ace0bffa7e14cd3d64f6",
+  "after_sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6",
+  "operations": [
+    {
+      "kind": "insert",
+      "baseline_start": 2912,
+      "baseline_end": 2912,
+      "after_start": 2912,
+      "after_end": 2937,
+      "baseline_text": "",
+      "after_text": "\n## Audit #5 daily-schedule default-submit prerequisite (2026-10-25)\n\nABDM first: desktop QueueInfoComponent.kt::createConfigurableList148–155/247–301 owns\nindependent start/end schedule flags and nonempty weekdays. app-utils OptionsDialog.kt::\nBaseOptionDialog delegates to Compose DialogWindow visible/modeless/close request, disposes\nits focus-loss listener; AWT/Compose native internals are not inspected. Legacy next:\nSettingsWindow.axaml::SchedulerSection900 and .axaml.cs constructor15 -> animation attach18\n-> OnOpened21/ConfigureForCurrentScope -> SaveButton_Click68/ApplySettingsCommand -> Close;\nOnClosed185 cancels through the original command. WindowAnimationService.Attach13–49 owns\nguarded delayed close; Avalonia native base is unavailable. These are schedule/close owner\nreferences, not proof of a window-wide default Enter implementation.\n\nCurrent Next DownloadScheduleView::save92 -> deferred DownloadApplication::\nset_default_queue_schedule -> original DownloadQueueAction::SetSchedule/engine store -> refresh\nand original close_schedule_window; it is not a new AppConfig write. TimeField/TimeFieldState\nare current production controls, not the old raw-HH:MM Input noted in historical migration.\nExact Base0.8.0 time_field.rs keybindings23–30 own digit/arrow/segment/Tab editing and have no\nEnter action; on_key_down418 handles only unmodified one-character edits. Default Apply may\ntherefore handle an otherwise unconsumed plain Enter only on an enabled focused TimeField,\nwith held/modifier/character/busy/Dialog guards and the original save/defer owner. Other\nButtons and child layers keep their own action/release semantics; no shared keyboard-helper,\nengine/persistence/native/geometry change. Preserve 430x326 fixed client, original input state,\nvalidation/cancel/close and prior audit#1/#9 behavior. New red/green evidence belongs only to\n`.trellis/tasks/10-25-default-submit-keyboard/`, not native/physical/reader/user acceptance.\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

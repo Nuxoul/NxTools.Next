@@ -1,0 +1,143 @@
+--- dirty-baseline/rust/crates/nxtools-protocol/src/archive_job.rs
++++ delivery/rust/crates/nxtools-protocol/src/archive_job.rs
+@@ -582,6 +582,34 @@
+     pub files_done: u64,
+     pub files_total: Option<u64>,
+ }
++/// UI-only immutable decision context. Never use these strings for filesystem authority.
++#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
++#[serde(deny_unknown_fields)]
++pub struct ArchiveJobPromptDisplay {
++    pub incoming_member: Option<String>,
++    pub target: String,
++}
++impl std::fmt::Debug for ArchiveJobPromptDisplay {
++    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
++        f.write_str("ArchiveJobPromptDisplay([PRIVATE])")
++    }
++}
++impl ArchiveJobPromptDisplay {
++    fn valid(&self, kind: ArchiveJobPromptKind) -> bool {
++        let text = |value: &str, limit| {
++            !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
++        };
++        text(&self.target, 65535)
++            && match kind {
++                ArchiveJobPromptKind::Conflict => self
++                    .incoming_member
++                    .as_deref()
++                    .is_some_and(|member| text(member, 32767)),
++                ArchiveJobPromptKind::CreateOverwrite => self.incoming_member.is_none(),
++                _ => false,
++            }
++    }
++}
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(deny_unknown_fields)]
+ pub struct ArchiveJobPrompt {
+@@ -592,6 +620,8 @@
+     pub existing_bytes: Option<u64>,
+     pub incoming_bytes: Option<u64>,
+     pub approved_limit: Option<u64>,
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub display: Option<ArchiveJobPromptDisplay>,
+ }
+ #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+ #[serde(deny_unknown_fields)]
+@@ -674,6 +704,9 @@
+                             && !p.ticket.prompt_id.is_nil()
+                             && p.ticket.generation > 0
+                             && p.attempt <= 3
++                            && p.display
++                                .as_ref()
++                                .is_none_or(|display| display.valid(p.kind))
+                     })
+                     && self.terminal.is_none()
+             }
+@@ -878,3 +911,86 @@
+         );
+     }
+ }
++
++#[cfg(test)]
++mod prompt_display_tests {
++    use super::*;
++    fn event() -> ArchiveJobEvent {
++        let id = Uuid::new_v4();
++        serde_json::from_value(serde_json::json!({
++            "version":1,"operation_id":id,"session_id":Uuid::new_v4(),"generation":1,
++            "kind":"prompt","state":null,"progress":null,"terminal":null,
++            "prompt":{"ticket":{"operation_id":id,"prompt_id":Uuid::new_v4(),"generation":1},
++                "kind":"conflict","error_code":null,"attempt":0,"existing_bytes":10,
++                "incoming_bytes":10,"approved_limit":null}
++        }))
++        .expect("legacy typed prompt event")
++    }
++    #[test]
++    fn audit04_legacy_omission_strict_shape_bounds_and_redacted_debug() {
++        let mut e = event();
++        assert!(e.validate().is_ok());
++        assert!(e.prompt.as_ref().expect("prompt").display.is_none());
++        assert!(
++            serde_json::to_value(&e).expect("legacy event wire")["prompt"]
++                .get("display")
++                .is_none()
++        );
++        let sentinel = "private-prompt-object-资料/同名.txt";
++        e.prompt.as_mut().expect("prompt").display = Some(ArchiveJobPromptDisplay {
++            incoming_member: Some(sentinel.into()),
++            target: format!(r"C:\owned\{sentinel}"),
++        });
++        assert!(e.validate().is_ok());
++        let wire = serde_json::to_value(&e).expect("display event wire");
++        assert_eq!(
++            serde_json::from_value::<ArchiveJobEvent>(wire.clone()).expect("display roundtrip"),
++            e
++        );
++        assert!(!format!("{e:?}").contains(sentinel));
++        for field in ["target", "incoming_member"] {
++            let mut bad = wire.clone();
++            bad["prompt"]["display"][field] = serde_json::json!(5);
++            assert!(serde_json::from_value::<ArchiveJobEvent>(bad).is_err());
++        }
++        let mut unknown = wire;
++        unknown["prompt"]["display"]["authority"] = serde_json::json!(true);
++        assert!(serde_json::from_value::<ArchiveJobEvent>(unknown).is_err());
++        for invalid in [String::new(), "line\nbreak".into(), "x".repeat(65536)] {
++            e.prompt
++                .as_mut()
++                .expect("prompt")
++                .display
++                .as_mut()
++                .expect("display")
++                .target = invalid;
++            assert!(e.validate().is_err());
++        }
++        e.prompt
++            .as_mut()
++            .expect("prompt")
++            .display
++            .as_mut()
++            .expect("display")
++            .target = "x".repeat(65535);
++        assert!(e.validate().is_ok());
++        e.prompt.as_mut().expect("prompt").kind = ArchiveJobPromptKind::Password;
++        assert!(
++            e.validate().is_err(),
++            "non-overwrite prompts cannot carry display"
++        );
++        e.prompt.as_mut().expect("prompt").kind = ArchiveJobPromptKind::CreateOverwrite;
++        assert!(
++            e.validate().is_err(),
++            "create has no incoming archive member"
++        );
++        e.prompt
++            .as_mut()
++            .expect("prompt")
++            .display
++            .as_mut()
++            .expect("display")
++            .incoming_member = None;
++        assert!(e.validate().is_ok());
++    }
++}

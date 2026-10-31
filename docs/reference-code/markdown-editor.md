@@ -12,3 +12,12 @@ Supplemental explicit user approval after independent compilation: Rust1.96.0 re
 
 Closeout2026-10-22: full editor234/Desktop1002green; actualhostMarkdown14/ClipboardUI201/QL153/notification35, strictprojectClippy--no-deps andworkspace--testsgreen. Saveboundary regression reproduced oldcompletionclosingreopeneddraft, fixedinoriginalClipboardPanelusingedit_generation+pendingID+item/draftcheck. Duplicatependingignored; sourceCRLFexactsave andmissingitemfailurekeepdrafttested. Acceptedworkerwriteisnotundonebycancel; retiredUIcannotclose/focusnewdraft. Source64KiBsafeprojectionfallbackalsoappliestoQL's96KiBreadbudget; overbudgetviewremainstext,nofilewrite. UIA KitobservationregistryisnotnativeAccessKittree;actualnativeQuick/Clipboard2eachat96DPIproveclient/noactivate/primaryEditButtononly, notfullMarkdownreaderacceptance.
 UnrestrictedstrictClippystopsatunchangedupstreamsrc/serialize.rs:215clippy::nonminimal_bool. Do not expandapprovedvendorpatchoraddallow; projectpackagesstrict--no-depspassed,upstreamlimitationreportedseparately. No nightly/bootstrap/toolchainchange.
+
+Integration closeout2026-10-22 separately approves ONE logically equivalent list_item expression in
+serialize.rs215 (`spread || bare_nested || !is_list || prev_is_list`) and rustfmt whitespace only in
+that push_str fragment plus element.rs's passive-link if block. This supersedes the immediately
+preceding current-blocker/2file wording only for those exact deltas. Original57file hashes remain;
+the provenance gate reverses the complete serializer fragment to upstreamSHA256, checks all16Boolean
+cases and reverses element whitespace to the approved passive baseline. No lint allow/dependency/
+framework expansion. Clipboard UI source gate follows actual rich/source mounts and scoped save/
+cancel/focus/passive owners, with scratch mutation regressions; compiled/native acceptance separate.

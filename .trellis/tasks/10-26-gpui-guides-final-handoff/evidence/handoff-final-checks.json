@@ -1,0 +1,52 @@
+{
+  "status": "PASS_DOCUMENT_HANDOFF_ONLY",
+  "spec_contracts_exit": 0,
+  "document_scope_exit": 0,
+  "commands": [
+    {
+      "command": "python tests/architecture/spec-contracts.py",
+      "exit": 0,
+      "expected_exit": 0,
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/spec-contracts-handoff-final.log",
+      "sha256": "059d5494dcac55eadf7369becd975bb4ef1d7e20a2158f9dba45ef21a134020d"
+    },
+    {
+      "command": "git diff --check -- docs/audits/2026-10-26-gpui-guides-final-review.md docs/audits/2026-10-26-gpui-guides-summary-zh.md .trellis/tasks/10-26-gpui-guides-final-handoff/outcomes.md",
+      "exit": 0,
+      "expected_exit": 0,
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-scope-handoff-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "command": "git -c core.autocrlf=false diff --no-index --check -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-26-gpui-guides-final-handoff\\outcomes.md",
+      "exit": 1,
+      "expected_exit": 1,
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/handoff-outcome-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "protected_existing_files": 8045,
+  "new_files_only_reports_and_this_task": true,
+  "new_files_at_observation": [
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/baseline.py",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/check-documents.py",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/check-final.py",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/check-preparation-01.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks-final.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/checks.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-structure-final.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-structure.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-diff-names-before.txt",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-no-index-semantics.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-status-after.txt",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/git-status-before.txt",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/index.py",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/source-index.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/verify.py",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/workspace-baseline.json",
+    ".trellis/tasks/10-26-gpui-guides-final-handoff/outcomes.md",
+    "docs/audits/2026-10-26-gpui-guides-final-review.md",
+    "docs/audits/2026-10-26-gpui-guides-summary-zh.md"
+  ],
+  "full_Desktop_Rust_product_native_invocations": 0
+}

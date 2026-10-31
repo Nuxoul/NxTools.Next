@@ -1,0 +1,362 @@
+{
+  "task": "Queue01 Extensions compile-blocker closeout",
+  "created_at": "2026-10-25T23:50:53.054443+08:00",
+  "own_modified_sources": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+      "baseline_sha256": "b49943302b7e8c258496613c3c95640ca901fce134c553f853b8f746e8cc9866",
+      "after_sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+      "added_lines": 56,
+      "old_prefix_unchanged": true
+    }
+  ],
+  "new_documents": [
+    {
+      "path": ".trellis/tasks/10-25-extensions-compile-closeout/prd.md",
+      "sha256": "011390ab6391f56101c397cd1596a9daeca3846c52bb67bde7b0c6385504746a"
+    },
+    {
+      "path": ".trellis/tasks/10-25-extensions-compile-closeout/outcomes.md",
+      "sha256": "39b4e15403d7936e1cbd97aae52b9adbb0bdf2861a25f08106d2c24f0249fe33"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "evidence/baseline-manifest.json",
+      "sha256": "3117f3a0e21d2851834b8e22fb518b645f9e0884d0b4dd1c485f305bef14b515",
+      "bytes": 2998
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__extensions__committed_events.rs.baseline",
+      "sha256": "b49943302b7e8c258496613c3c95640ca901fce134c553f853b8f746e8cc9866",
+      "bytes": 18134
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__extensions__event_history.rs.baseline",
+      "sha256": "0b73805bc60130de2c5b949da72d4ec000948ba6c401d3de3ca49eec2f241b84",
+      "bytes": 3081
+    },
+    {
+      "path": "evidence/baselines/rust__crates__nxtools-extensions__src__api.rs.baseline",
+      "sha256": "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+      "bytes": 2549
+    },
+    {
+      "path": "evidence/baselines/rust__crates__nxtools-extensions__src__lib.rs.baseline",
+      "sha256": "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+      "bytes": 13567
+    },
+    {
+      "path": "evidence/baselines/rust__crates__nxtools-extensions__src__runtime.rs.baseline",
+      "sha256": "a48ca2946023789995005bc31678cc2182c12c43634078b3a3d29ac9b1f6a062",
+      "bytes": 60840
+    },
+    {
+      "path": "evidence/baselines/rust__crates__nxtools-extensions__tests__api_contracts.rs.baseline",
+      "sha256": "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+      "bytes": 3850
+    },
+    {
+      "path": "evidence/baselines/rust__crates__nxtools-extensions__tests__transport_declarations.rs.baseline",
+      "sha256": "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+      "bytes": 7067
+    },
+    {
+      "path": "evidence/baselines/rust__crates__nxtools-extensions__tests__transport_runtime.rs.baseline",
+      "sha256": "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+      "bytes": 15375
+    },
+    {
+      "path": "evidence/check-results.json",
+      "sha256": "a0332d55eb132803f4fe33995703ef6b9cdb74eb5068bd920dceba93268e1933",
+      "bytes": 1075
+    },
+    {
+      "path": "evidence/current/committed_events.rs.current",
+      "sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+      "bytes": 20217
+    },
+    {
+      "path": "evidence/current-event-history.rs",
+      "sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+      "bytes": 3129
+    },
+    {
+      "path": "evidence/current-mapping-compile.log",
+      "sha256": "1ca60820037f84483ae51d2c0b8f2fada1c82e3972c6b836e178eefb04c9b26e",
+      "bytes": 3996
+    },
+    {
+      "path": "evidence/current-mapping-replay.rs",
+      "sha256": "f4f2161bc3d199c283a9d41857ffc7d56680a03f5ad44c2eaa8f4901f5eb7e67",
+      "bytes": 58
+    },
+    {
+      "path": "evidence/current-mapping-test-compile.log",
+      "sha256": "7054ed4144d67430e46afb830538a6c6a1f3a85850015f7e4e6d68d64080d7b9",
+      "bytes": 2962
+    },
+    {
+      "path": "evidence/current-mapping-test.log",
+      "sha256": "e5840f7ffef685d506304a4b77f6b48f8ee02a08829511f10e6c424998cd96c2",
+      "bytes": 390
+    },
+    {
+      "path": "evidence/current-mapping-test.rs",
+      "sha256": "ca16e342e0b8b93fb1e75db9fe6fea71476c0d0f6a43e5c03bd3cd3f8f31c03a",
+      "bytes": 387
+    },
+    {
+      "path": "evidence/desktop-closeout-final.log",
+      "sha256": "4eee88306bb733118683aee2c730ac1530372a5377644be644736a1443acd73e",
+      "bytes": 2184
+    },
+    {
+      "path": "evidence/desktop-closeout.log",
+      "sha256": "f7e8b48b7919b353e438292dc31f95f80f390077fb6e7c9d1f29cc50fcbca472",
+      "bytes": 2222
+    },
+    {
+      "path": "evidence/desktop-committed-events-final.log",
+      "sha256": "f47b8f79aade78642c2a54594c998855cf91f2de37231b7343b87ec4e5bd6313",
+      "bytes": 1654
+    },
+    {
+      "path": "evidence/desktop-strict-clippy.log",
+      "sha256": "8452cac2a6c095fac09c103462474cf67b6e397f5f82a885ebe1d72afc390fe7",
+      "bytes": 1468
+    },
+    {
+      "path": "evidence/event-control-current.rs",
+      "sha256": "8c31702978b3805ffa10e3c7fef4357355eff1402eb8bbea7c885ca880304af7",
+      "bytes": 387
+    },
+    {
+      "path": "evidence/event-control-mutant-compile.log",
+      "sha256": "dec1ab39dc3e9ea938630d616b6b911fefb4a7af854a2834a92e43a1fe4a7f46",
+      "bytes": 10254
+    },
+    {
+      "path": "evidence/event-control-mutant-matched-compile.log",
+      "sha256": "656d96dfd3037b707f468cfb26f6bb90d50e3723e4d026bfc2bd7864568242e1",
+      "bytes": 10254
+    },
+    {
+      "path": "evidence/event-control-mutant.rs",
+      "sha256": "84a40d47b46cbd5a6b05af2dacc004dfa84da38b6914969583d9ff1ea1613d5f",
+      "bytes": 386
+    },
+    {
+      "path": "evidence/event-control-replay-sources.json",
+      "sha256": "93b0603198bd199ebb6cc889fe4aafa99d3bc4d84f01b2fdc0bf6505c46e3b0d",
+      "bytes": 465
+    },
+    {
+      "path": "evidence/extension-contracts-final.log",
+      "sha256": "e0a04d008c1ced4086ab5d309c3a678737ef8b52cca2b2997d692a688914bde6",
+      "bytes": 2308
+    },
+    {
+      "path": "evidence/extension-contracts.log",
+      "sha256": "9d38ff0f9a6f52158a187481c62806790702028bc8191d4e2533b5cc9f735e8a",
+      "bytes": 2308
+    },
+    {
+      "path": "evidence/extensions-strict-clippy.log",
+      "sha256": "e5d12193371d69f00271368946bcffc25cfe4d03b790156be54174ee79c7b400",
+      "bytes": 544
+    },
+    {
+      "path": "evidence/external-observations/extensions_settings.rs.final.snapshot",
+      "sha256": "eff4ab01681f28be4a1d449390ccc9470839a205296356115920524d9fa435e6",
+      "bytes": 135705
+    },
+    {
+      "path": "evidence/external-observations/rust__apps__nxtools-desktop__src__extensions__event_history.rs.snapshot",
+      "sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+      "bytes": 3129
+    },
+    {
+      "path": "evidence/external-observations/rust__crates__nxtools-extensions__src__api.rs.snapshot",
+      "sha256": "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+      "bytes": 2549
+    },
+    {
+      "path": "evidence/external-observations/rust__crates__nxtools-extensions__src__lib.rs.snapshot",
+      "sha256": "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+      "bytes": 13567
+    },
+    {
+      "path": "evidence/external-observations/rust__crates__nxtools-extensions__src__runtime.rs.snapshot",
+      "sha256": "451c80b7037672542784617a6042423e35a8a6efe7299c77c92d51832f395f77",
+      "bytes": 61110
+    },
+    {
+      "path": "evidence/external-observations/rust__crates__nxtools-extensions__tests__api_contracts.rs.snapshot",
+      "sha256": "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+      "bytes": 3850
+    },
+    {
+      "path": "evidence/external-observations/rust__crates__nxtools-extensions__tests__transport_declarations.rs.snapshot",
+      "sha256": "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+      "bytes": 7067
+    },
+    {
+      "path": "evidence/external-observations/rust__crates__nxtools-extensions__tests__transport_runtime.rs.snapshot",
+      "sha256": "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+      "bytes": 15375
+    },
+    {
+      "path": "evidence/final-source-observation.json",
+      "sha256": "197183a58cf3fdaae374381dc79b570ea41b6629ea42f1f1efdd2712f4585bd5",
+      "bytes": 2712
+    },
+    {
+      "path": "evidence/focused-final-results.json",
+      "sha256": "90da3f8be497cd788629ddfa50247fa1984691bd9ae33c6658d44f27685d538a",
+      "bytes": 1200
+    },
+    {
+      "path": "evidence/focused-results.json",
+      "sha256": "e219c97dbf15457758e44366160a6fca62fe65080d33fa8c48a3621ead3ec196",
+      "bytes": 776
+    },
+    {
+      "path": "evidence/format-results.json",
+      "sha256": "be97c164ae3826d067fb16c90b26bf4b1a3c4b58eb516ff56b9bcc18a09eb39d",
+      "bytes": 81
+    },
+    {
+      "path": "evidence/historical-event-history.rs",
+      "sha256": "d8a8fc08c6724aef546b13c00cbeb014a71c64daec699d13a5bf23c7b25bcd62",
+      "bytes": 3012
+    },
+    {
+      "path": "evidence/historical-evidence-references.json",
+      "sha256": "7ad2d72c15537e6c0e7dc47a12d733649df8bee04fae56ccbbfd3c1a59f7fed3",
+      "bytes": 646
+    },
+    {
+      "path": "evidence/historical-mapping-compile.log",
+      "sha256": "1c5a107bffed7a759cb64573bbcf263c2f321a158bf002679a842e95abd53a27",
+      "bytes": 3338
+    },
+    {
+      "path": "evidence/historical-mapping-replay.rs",
+      "sha256": "03f3e23647cf60163f2c6cab12f814b53adf70d90ecbc14731042e242037749b",
+      "bytes": 61
+    },
+    {
+      "path": "evidence/isolated-committed-events.rs",
+      "sha256": "9fc7759209762c095a4c451e0b2a0d4fc69735c05fcc3d822f41348d4e76fad5",
+      "bytes": 6600
+    },
+    {
+      "path": "evidence/isolated-current-event-history.rs",
+      "sha256": "cc41d822d535807bdb3b8e9d827010c528c533544d95300d1df3a5303b38c981",
+      "bytes": 3211
+    },
+    {
+      "path": "evidence/isolated-mutant-event-history.rs",
+      "sha256": "8b92032e40c33d74dfda9703b1b149e32b7d5e44afd1910fa8e9b969d0c75496",
+      "bytes": 3230
+    },
+    {
+      "path": "evidence/own-delta.json",
+      "sha256": "94edfc257bf9061433a89bffe7fc8cd378f93154030e6026067c7a422d10e0dc",
+      "bytes": 3471
+    },
+    {
+      "path": "evidence/post-focused-observation.json",
+      "sha256": "2b545a88f74b3f18ea4bd4622d42a3f260135d6989313379ec65bb8e1ccc6011",
+      "bytes": 1730
+    },
+    {
+      "path": "evidence/pre-test-source-observation.json",
+      "sha256": "3f240b3c11376356c676339af708235850c460a6cd7ba025f78cdd913466ae43",
+      "bytes": 2256
+    },
+    {
+      "path": "evidence/prepare-event-control-replay.py",
+      "sha256": "7f7c96298154c01f90c508e5c13316a6b247547aabd132b32b73f48f76c9899d",
+      "bytes": 2110
+    },
+    {
+      "path": "evidence/prepare-replay.py",
+      "sha256": "8ed72459bae45098f65890acc2d9fc6ec4a046ffe28aa666863df4b75bc52bc0",
+      "bytes": 1646
+    },
+    {
+      "path": "evidence/replay-dependencies.json",
+      "sha256": "a4b10d4a489048eabdbec8eb8a6d94925cf0b11b26d618b5081999860913dcc4",
+      "bytes": 633
+    },
+    {
+      "path": "evidence/replay-results.json",
+      "sha256": "2e3f3801b85886e7174ac26a545b61d390e5d6978a0df8a0f74fef75fbf6f240",
+      "bytes": 216
+    },
+    {
+      "path": "evidence/replay-sources.json",
+      "sha256": "23eba66d2e6931b16cabfba901141894ec7f324f9c06413d236d3bfba4b13c3d",
+      "bytes": 316
+    },
+    {
+      "path": "evidence/rust__apps__nxtools-desktop__src__extensions__committed_events.rs.post-focused.observed",
+      "sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+      "bytes": 20217
+    },
+    {
+      "path": "evidence/rust__apps__nxtools-desktop__src__extensions__event_history.rs.post-focused.observed",
+      "sha256": "d35e9f0a56a88ac533065f6ffc808d8e44137c1e191084e17e9f9c23a94a99ae",
+      "bytes": 3113
+    },
+    {
+      "path": "evidence/rust__apps__nxtools-desktop__src__main_window__extensions_settings.rs.post-focused.observed",
+      "sha256": "d923d7485cb482a256b1fe0855a7e90dbf249f1cbf20002f80c3bcef300466d6",
+      "bytes": 129963
+    },
+    {
+      "path": "evidence/rust__crates__nxtools-extensions__src__lib.rs.post-focused.observed",
+      "sha256": "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+      "bytes": 13567
+    },
+    {
+      "path": "evidence/rust__crates__nxtools-extensions__src__runtime.rs.post-focused.observed",
+      "sha256": "f08318cd10c36ee205322eea3eca3c571001b616678c259d7e6a5c317dd1e5a3",
+      "bytes": 61061
+    },
+    {
+      "path": "evidence/scoped-fmt-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/scoped-fmt-first.log",
+      "sha256": "96760c8bf9857d0c0258a27157910f5023af7938359dce806c8cf6063156ec0b",
+      "bytes": 1332
+    },
+    {
+      "path": "evidence/source-observations.json",
+      "sha256": "cb62b7c06d039b55cc0400f115c2ac5713c25facff4f9f3aad0e2b3c6ac9f0fb",
+      "bytes": 3985
+    },
+    {
+      "path": "evidence/verify.py",
+      "sha256": "da233c3653a51bba49adb6b6ede4cb734ee95605a80e6393910fe887ab36ce0a",
+      "bytes": 2190
+    },
+    {
+      "path": "evidence/workspace-check.log",
+      "sha256": "889d3a22a0edde0b2f48103ba51d7a429dde901fa2fab4a38d17ad212d77b06b",
+      "bytes": 2018
+    },
+    {
+      "path": "evidence/workspace-fmt-final.log",
+      "sha256": "2a73fd5622cee74086684baa228aa6d9d827fdca90c3597124c0a376df800005",
+      "bytes": 5224
+    }
+  ],
+  "status": "requested compile and strict checks PASS; workspace-wide fmt remains FAIL in external settings source",
+  "full_desktop_runs": 0
+}

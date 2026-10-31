@@ -1,0 +1,203 @@
+{
+  "scope": "Direct application cursor style builder declarations; no aliases/indirect renderer completeness claim. No runtime result.",
+  "all_declarations": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/download_taskbar_overlay.rs",
+      "line": 626,
+      "source": "                        root.cursor_move().on_mouse_down(",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/download_taskbar_overlay.rs",
+      "line": 791,
+      "source": "                                .cursor_e_resize()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+      "line": 1736,
+      "source": "                                        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+      "line": 473,
+      "source": "            .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+      "line": 580,
+      "source": "            .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+      "line": 1142,
+      "source": "            .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+      "line": 1340,
+      "source": "            .when(enabled, |row| row.cursor_pointer())",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+      "line": 39,
+      "source": "        .when(!disabled, |element| element.cursor_pointer())",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+      "line": 231,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/list.rs",
+      "line": 35,
+      "source": "        .cursor_pointer()",
+      "test_only_file": true,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+      "line": 161,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+      "line": 85,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+      "line": 159,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+      "line": 2665,
+      "source": "                    .cursor_default()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+      "line": 2801,
+      "source": "                        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+      "line": 3434,
+      "source": "                    .cursor_e_resize()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    }
+  ],
+  "pointer_declarations": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+      "line": 1736,
+      "source": "                                        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+      "line": 473,
+      "source": "            .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+      "line": 580,
+      "source": "            .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+      "line": 1142,
+      "source": "            .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+      "line": 1340,
+      "source": "            .when(enabled, |row| row.cursor_pointer())",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+      "line": 39,
+      "source": "        .when(!disabled, |element| element.cursor_pointer())",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+      "line": 231,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/list.rs",
+      "line": 35,
+      "source": "        .cursor_pointer()",
+      "test_only_file": true,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+      "line": 161,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+      "line": 85,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+      "line": 159,
+      "source": "        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+      "line": 2801,
+      "source": "                        .cursor_pointer()",
+      "test_only_file": false,
+      "level": "Source declaration, not painted/hit cursor observation"
+    }
+  ]
+}

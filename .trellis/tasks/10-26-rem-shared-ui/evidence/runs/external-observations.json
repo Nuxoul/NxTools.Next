@@ -1,0 +1,8 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service.rs",
+    "baseline_sha256": "5b5651395d967742415536bd6405c2dc6e537a70e34893b0e47d681e6ccfdf71",
+    "current_sha256": "f9361b1a533b8c31875dc47398f0f1650ebccfbcdedb63ef6ed2d7c510832b51",
+    "attribution": "Independent change observed after audit06 final; not edited by Queue07."
+  }
+]

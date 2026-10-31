@@ -1,0 +1,7 @@
+﻿{
+    "name":  "strict-clippy",
+    "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit":  0,
+    "elapsed":  48.1841198,
+    "finished":  "2026-10-26T06:27:20.5229929+08:00"
+}

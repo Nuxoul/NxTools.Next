@@ -1,0 +1,366 @@
+[
+  {
+    "name": "audit04-protected",
+    "command": "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 5.6223101,
+    "finished": "2026-10-26T06:47:12.5023805+08:00",
+    "log": "evidence/runs/audit04-protected.log",
+    "test_summaries": [
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1264 filtered out; finished in 4.32s"
+    ]
+  },
+  {
+    "name": "audit05-protected",
+    "command": "cargo test -p nxtools-desktop audit05_ -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 5.638286,
+    "finished": "2026-10-26T06:47:06.4425141+08:00",
+    "log": "evidence/runs/audit05-protected.log",
+    "test_summaries": [
+      "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 1255 filtered out; finished in 4.31s"
+    ]
+  },
+  {
+    "name": "audit06-final",
+    "command": "cargo test -p nxtools-desktop audit06_ -- --test-threads=1 --nocapture",
+    "exit": 0,
+    "elapsed": 377.61515479999997,
+    "finished": "2026-10-26T06:35:13.0499089+08:00",
+    "log": "evidence/runs/audit06-final.log",
+    "test_summaries": [
+      "test result: ok. 31 passed; 0 failed; 0 ignored; 0 measured; 1237 filtered out; finished in 126.82s"
+    ]
+  },
+  {
+    "name": "command-official-scroll-green",
+    "command": "cargo test -p nxtools-desktop audit06_shared_actual_quick_form -- --test-threads=1 --nocapture",
+    "exit": 0,
+    "elapsed": 255.4933462,
+    "finished": "2026-10-26T06:21:14.5982246+08:00",
+    "log": "evidence/runs/command-official-scroll-green.log",
+    "test_summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1267 filtered out; finished in 2.58s"
+    ]
+  },
+  {
+    "name": "command-scroll-route-probe",
+    "command": "cargo test -p nxtools-desktop audit06_shared_actual_quick_form -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 185.8773819,
+    "finished": "2026-10-26T06:15:30.9386368+08:00",
+    "log": "evidence/runs/command-scroll-route-probe.log",
+    "test_summaries": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1267 filtered out; finished in 2.31s"
+    ]
+  },
+  {
+    "name": "consumers-viewport-diagnosis",
+    "command": "cargo test -p nxtools-desktop main_window::shared_rem_tests -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 259.1368117,
+    "finished": "2026-10-26T05:56:05.4808100+08:00",
+    "log": "evidence/runs/consumers-viewport-diagnosis.log",
+    "test_summaries": [
+      "test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 1264 filtered out; finished in 3.08s"
+    ]
+  },
+  {
+    "name": "downloads-related-after-independent-repair",
+    "command": "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 350.7701727,
+    "finished": "2026-10-26T06:58:14.4237003+08:00",
+    "log": "evidence/runs/downloads-related-after-independent-repair.log",
+    "test_summaries": [
+      "test result: ok. 207 passed; 0 failed; 0 ignored; 0 measured; 1066 filtered out; finished in 164.77s"
+    ]
+  },
+  {
+    "name": "downloads-related",
+    "command": "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+    "exit": 101,
+    "elapsed": 79.3589379,
+    "finished": "2026-10-26T06:38:47.5078113+08:00",
+    "log": "evidence/runs/downloads-related.log",
+    "test_summaries": []
+  },
+  {
+    "name": "editors-layout-red",
+    "command": "cargo test -p nxtools-desktop audit06_shared_editors -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 201.1749523,
+    "finished": "2026-10-26T05:36:34.6041207+08:00",
+    "log": "evidence/runs/editors-layout-red.log",
+    "test_summaries": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1263 filtered out; finished in 0.11s"
+    ]
+  },
+  {
+    "name": "fixed-exceptions-exact-final",
+    "command": "cargo test -p nxtools-desktop audit06_shared_clipboard_fixed -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 204.1288887,
+    "finished": "2026-10-26T07:14:16.2210287+08:00",
+    "log": "evidence/runs/fixed-exceptions-exact-final.log",
+    "test_summaries": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1273 filtered out; finished in 0.56s"
+    ]
+  },
+  {
+    "name": "global-related",
+    "command": "cargo test -p nxtools-desktop network_settings:: -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 195.5381828,
+    "finished": "2026-10-26T06:47:00.3212682+08:00",
+    "log": "evidence/runs/global-related.log",
+    "test_summaries": [
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 1234 filtered out; finished in 7.66s"
+    ]
+  },
+  {
+    "name": "main-related",
+    "command": "cargo test -p nxtools-desktop main_window:: -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 296.1643271,
+    "finished": "2026-10-26T06:43:44.2802805+08:00",
+    "log": "evidence/runs/main-related.log",
+    "test_summaries": [
+      "test result: ok. 191 passed; 0 failed; 0 ignored; 0 measured; 1079 filtered out; finished in 94.08s"
+    ]
+  },
+  {
+    "name": "quick-presentation-final",
+    "command": "cargo test -p nxtools-desktop quick_launch::polish_tests:: -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 2.3096738,
+    "finished": "2026-10-26T07:14:18.9988204+08:00",
+    "log": "evidence/runs/quick-presentation-final.log",
+    "test_summaries": [
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1263 filtered out; finished in 0.41s"
+    ]
+  },
+  {
+    "name": "shared-consumers-exceptions",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 242.37826139999999,
+    "finished": "2026-10-26T06:01:46.1574392+08:00",
+    "log": "evidence/runs/shared-consumers-exceptions.log",
+    "test_summaries": [
+      "test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 1259 filtered out; finished in 3.92s"
+    ]
+  },
+  {
+    "name": "shared-consumers-initial",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 81.0786371,
+    "finished": "2026-10-26T05:45:51.4441659+08:00",
+    "log": "evidence/runs/shared-consumers-initial.log",
+    "test_summaries": []
+  },
+  {
+    "name": "shared-consumers-run",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 253.8944104,
+    "finished": "2026-10-26T05:50:30.3263870+08:00",
+    "log": "evidence/runs/shared-consumers-run.log",
+    "test_summaries": [
+      "test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 1259 filtered out; finished in 2.99s"
+    ]
+  },
+  {
+    "name": "shared-direct-final",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 209.49943069999998,
+    "finished": "2026-10-26T07:07:17.1076190+08:00",
+    "log": "evidence/runs/shared-direct-final.log",
+    "test_summaries": [
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1264 filtered out; finished in 4.54s"
+    ]
+  },
+  {
+    "name": "shared-green-initial",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 0,
+    "elapsed": 200.69691799999998,
+    "finished": "2026-10-26T05:41:54.2399618+08:00",
+    "log": "evidence/runs/shared-green-initial.log",
+    "test_summaries": [
+      "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1259 filtered out; finished in 0.37s"
+    ]
+  },
+  {
+    "name": "shared-layout-red",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 196.53677059999998,
+    "finished": "2026-10-26T05:31:59.3930503+08:00",
+    "log": "evidence/runs/shared-layout-red.log",
+    "test_summaries": [
+      "test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 1259 filtered out; finished in 0.14s"
+    ]
+  },
+  {
+    "name": "shared-lines-scroll-check",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 243.56327159999998,
+    "finished": "2026-10-26T06:06:55.2680121+08:00",
+    "log": "evidence/runs/shared-lines-scroll-check.log",
+    "test_summaries": [
+      "test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 1259 filtered out; finished in 4.22s"
+    ]
+  },
+  {
+    "name": "shared-natural-form-green",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 208.1132384,
+    "finished": "2026-10-26T06:11:11.5162154+08:00",
+    "log": "evidence/runs/shared-natural-form-green.log",
+    "test_summaries": [
+      "test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 1259 filtered out; finished in 4.40s"
+    ]
+  },
+  {
+    "name": "shared-red",
+    "command": "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit": 101,
+    "elapsed": 80.4368609,
+    "finished": "2026-10-26T05:28:14.3203082+08:00",
+    "log": "evidence/runs/shared-red.log",
+    "test_summaries": []
+  },
+  {
+    "name": "strict-clippy",
+    "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit": 0,
+    "elapsed": 48.1841198,
+    "finished": "2026-10-26T06:27:20.5229929+08:00",
+    "log": "evidence/runs/strict-clippy.log",
+    "test_summaries": []
+  },
+  {
+    "name": "strict-production-final",
+    "command": "cargo clippy -p nxtools-desktop -- -D warnings",
+    "exit": 101,
+    "elapsed": 30.0862365,
+    "finished": "2026-10-26T06:59:43.1025246+08:00",
+    "log": "evidence/runs/strict-production-final.log",
+    "test_summaries": []
+  },
+  {
+    "name": "strict-production-import-clean",
+    "command": "cargo clippy -p nxtools-desktop -- -D warnings",
+    "exit": 101,
+    "elapsed": 15.1217209,
+    "finished": "2026-10-26T07:03:14.1401907+08:00",
+    "log": "evidence/runs/strict-production-import-clean.log",
+    "test_summaries": []
+  },
+  {
+    "name": "strict-tests-delivery",
+    "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit": 0,
+    "elapsed": 34.629725199999996,
+    "finished": "2026-10-26T07:14:54.0603327+08:00",
+    "log": "evidence/runs/strict-tests-delivery.log",
+    "test_summaries": []
+  },
+  {
+    "name": "strict-tests-final",
+    "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit": 0,
+    "elapsed": 50.2411551,
+    "finished": "2026-10-26T07:00:33.8525201+08:00",
+    "log": "evidence/runs/strict-tests-final.log",
+    "test_summaries": []
+  },
+  {
+    "name": "strict-tests-import-clean",
+    "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit": 0,
+    "elapsed": 32.4349071,
+    "finished": "2026-10-26T07:03:47.0779832+08:00",
+    "log": "evidence/runs/strict-tests-import-clean.log",
+    "test_summaries": []
+  },
+  {
+    "name": "ui-related-after-independent-repair",
+    "command": "cargo test -p nxtools-desktop ui:: -- --test-threads=1",
+    "exit": 0,
+    "elapsed": 257.8246804,
+    "finished": "2026-10-26T06:52:23.1320003+08:00",
+    "log": "evidence/runs/ui-related-after-independent-repair.log",
+    "test_summaries": [
+      "test result: ok. 237 passed; 0 failed; 0 ignored; 0 measured; 1033 filtered out; finished in 56.41s"
+    ]
+  },
+  {
+    "name": "ui-related",
+    "command": "cargo test -p nxtools-desktop ui:: -- --test-threads=1",
+    "exit": 101,
+    "elapsed": 28.5697026,
+    "finished": "2026-10-26T06:37:27.6553479+08:00",
+    "log": "evidence/runs/ui-related.log",
+    "test_summaries": []
+  },
+  {
+    "name": "workspace-check-delivery",
+    "command": "cargo check --workspace --tests",
+    "exit": 0,
+    "elapsed": 106.2163983,
+    "finished": "2026-10-26T07:16:40.7763142+08:00",
+    "log": "evidence/runs/workspace-check-delivery.log",
+    "test_summaries": []
+  },
+  {
+    "name": "workspace-check-final",
+    "command": "cargo check --workspace --tests",
+    "exit": 0,
+    "elapsed": 67.2567162,
+    "finished": "2026-10-26T07:01:41.5919621+08:00",
+    "log": "evidence/runs/workspace-check-final.log",
+    "test_summaries": []
+  },
+  {
+    "name": "workspace-check",
+    "command": "cargo check --workspace --tests",
+    "exit": 0,
+    "elapsed": 68.6826866,
+    "finished": "2026-10-26T06:28:29.7974353+08:00",
+    "log": "evidence/runs/workspace-check.log",
+    "test_summaries": []
+  },
+  {
+    "name": "workspace-fmt-delivery",
+    "command": "cargo fmt --all -- --check",
+    "exit": 0,
+    "elapsed": 8.395594,
+    "finished": "2026-10-26T07:18:34.2125449+08:00",
+    "log": "evidence/runs/workspace-fmt-delivery.log",
+    "test_summaries": []
+  },
+  {
+    "name": "workspace-fmt-final",
+    "command": "cargo fmt --all -- --check",
+    "exit": 0,
+    "elapsed": 8.631927,
+    "finished": "2026-10-26T07:01:50.6617538+08:00",
+    "log": "evidence/runs/workspace-fmt-final.log",
+    "test_summaries": []
+  },
+  {
+    "name": "workspace-fmt-import-clean",
+    "command": "cargo fmt --all -- --check",
+    "exit": 0,
+    "elapsed": 8.610249399999999,
+    "finished": "2026-10-26T07:07:26.1570546+08:00",
+    "log": "evidence/runs/workspace-fmt-import-clean.log",
+    "test_summaries": []
+  }
+]

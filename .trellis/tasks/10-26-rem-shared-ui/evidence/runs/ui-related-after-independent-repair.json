@@ -1,0 +1,7 @@
+﻿{
+    "name":  "ui-related-after-independent-repair",
+    "command":  "cargo test -p nxtools-desktop ui:: -- --test-threads=1",
+    "exit":  0,
+    "elapsed":  257.8246804,
+    "finished":  "2026-10-26T06:52:23.1320003+08:00"
+}

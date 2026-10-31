@@ -1,0 +1,8 @@
+{
+  "status": "FAILED_BEFORE_SPEC_OR_DIFF_COMMANDS",
+  "script": "check-documents.py",
+  "line": 35,
+  "error": "UnicodeDecodeError: default Windows GBK decoding could not read the UTF-8 report em dash",
+  "effect": "Read-only original-file/index/link checks had not reported movement. No product or report bytes were modified and no spec/diff/Rust/native command had run in this attempt.",
+  "correction": "Use explicit encoding=utf-8 for the English chapter-coverage read, then rerun the same bounded documentation checks."
+}

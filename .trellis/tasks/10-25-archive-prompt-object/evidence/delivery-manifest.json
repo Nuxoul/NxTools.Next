@@ -1,0 +1,587 @@
+{
+  "scope": "audit #4 only; not accepted; no phase advancement",
+  "existing": [
+    {
+      "path": "rust/crates/nxtools-protocol/src/archive_job.rs",
+      "baseline_sha256": "0da449dbcff592e8f0d488a267a477f9fd5f67277e210e190c4eda192bb5de81",
+      "delivery_sha256": "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a",
+      "delta": "rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.json",
+      "operations": 4
+    },
+    {
+      "path": "rust/crates/nxtools-archive/src/worker_conflict.rs",
+      "baseline_sha256": "12c1955296ad9c8f901d09645aa07c35f4d7477df388d7d79c735dc854e77a9d",
+      "delivery_sha256": "c7157a04b08de8b7f41df9851071611db87cdd630e46b81e09a74be6a33199de",
+      "delta": "rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.json",
+      "operations": 4
+    },
+    {
+      "path": "rust/crates/nxtools-archive/src/worker_output.rs",
+      "baseline_sha256": "67204ae8348abfbf9c492b18984ec9c4e933bd6d41c388661d66e541bb2a9dd3",
+      "delivery_sha256": "dc8cf790186065fc9557215c50a9bdd953c7b11501fc260462c6ae2fa7725912",
+      "delta": "rust__crates__nxtools-archive__src__worker_output.rs.own-delta.json",
+      "operations": 5
+    },
+    {
+      "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs",
+      "baseline_sha256": "1207f0043e4db0969baefbb5b1e40a77f034e093daca9c2440d2723909e39731",
+      "delivery_sha256": "20e6dfb7d4329467d1495169d26af5a1360e56133c583468288e3237360df2e3",
+      "delta": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.json",
+      "operations": 1
+    },
+    {
+      "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs",
+      "baseline_sha256": "860d0db31079b56221e03fc9040b285b0018508f9fbdd1d57eb830830a52fb9e",
+      "delivery_sha256": "caa2b3dbdffa3d2d7409bb644fac28410cc7533889be06796c807ba614d4a187",
+      "delta": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.json",
+      "operations": 3
+    },
+    {
+      "path": "csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs",
+      "baseline_sha256": "ca693479c8e4f389ab44ea11a8a4f7e40620fe3b854a6eb47cfc6d11347e3bcc",
+      "delivery_sha256": "b6fb4337b08e82e685026fca1b4853bf631fdcd653c30de89d0f361caa36e7da",
+      "delta": "csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.json",
+      "operations": 2
+    },
+    {
+      "path": "csharp/NxTools.PlatformHost.Tests/ArchiveCreateOverwriteTests.cs",
+      "baseline_sha256": "05e3956547312f9cd0dc07fe2f6f6f100cba4962d79dbb7aea51708e76700d41",
+      "delivery_sha256": "908866e37ffc59210e8e757ef0d15e866bfbb6a75fbccf8211ffa4d0b02cc8a5",
+      "delta": "csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.json",
+      "operations": 1
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+      "baseline_sha256": "dc65157d165ad03dfb8a5ed51ea3821d5178233716e91dc8ce39c15e49ffa052",
+      "delivery_sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+      "delta": "rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+      "operations": 7
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "baseline_sha256": "6c999ab492528c69629cdcc6c50ac8141c57cc65edec150daf80cb16b9548476",
+      "delivery_sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+      "delta": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+      "operations": 2
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/readmission.rs",
+      "baseline_sha256": "cc1585ef9d800d84654f522293edcf0728af7dffd4b3679f32f0ee7fb54d83ed",
+      "delivery_sha256": "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb",
+      "delta": "rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.json",
+      "operations": 1
+    },
+    {
+      "path": "rust/apps/nxtools-cli/src/archive/execution/tests.rs",
+      "baseline_sha256": "12c2e242e5e2a2bf8f26f92bfa613ad6d2dee1f408173e235c7913501abd16c8",
+      "delivery_sha256": "813016f6f592a4c0017548b9e18fa39422da4bfa501b9a721667ab4892465375",
+      "delta": "rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.json",
+      "operations": 2
+    },
+    {
+      "path": "docs/reference-code/archive.md",
+      "baseline_sha256": "c0ef4510ed738d0b9c8b554d6737cb3837380a85fd6ab4075b74305fa3f1479a",
+      "delivery_sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+      "delta": "docs__reference-code__archive.md.own-delta.json",
+      "operations": 1
+    },
+    {
+      "path": "csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs",
+      "baseline_sha256": "a22d8aecbf7d69394add2b98ecc8ba6d6d2885373abd8b638bf3fc98e5b1bcc1",
+      "delivery_sha256": "559bd980b786e394d7d02dc872a7e4c1154dcc3c93c8c03e9fd1692575843068",
+      "delta": "csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.json",
+      "operations": 4
+    }
+  ],
+  "new": [
+    {
+      "path": "rust/crates/nxtools-archive/tests/prompt_display_contract.rs",
+      "sha256": "0684751bf87a5f15294a333b7598c6012e8f370d09c46609254204886c294225"
+    },
+    {
+      "path": ".trellis/tasks/10-25-archive-prompt-object/prd.md",
+      "sha256": "305121445549cb2cffe7a869ef3b731abf5c008f7711848d0ccb7807c79fed08"
+    },
+    {
+      "path": ".trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+      "sha256": "7b83e0caf2547aca5ffcd9c31b3c9aa8944c25ab0705d89fcb8e1c1e2a22eb80"
+    }
+  ],
+  "observed_unmodified": [
+    {
+      "path": "rust/crates/nxtools-archive/src/worker.rs",
+      "sha256": "10ee8a96c06251041473c642df7b2cf3901b8f16479ca508e30f8cbb8fa0c05f"
+    },
+    {
+      "path": "rust/crates/nxtools-archive/tests/worker_wire.rs",
+      "sha256": "274be3fae3e5a1c80d51b66319d4f7a8226134a9c27e2f5212cd6015fd8d5371"
+    }
+  ],
+  "concurrency": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "stage": "own-initial",
+      "artifact": "job_tests.own-initial.json",
+      "before_sha256": "6c999ab492528c69629cdcc6c50ac8141c57cc65edec150daf80cb16b9548476",
+      "after_sha256": "67ecddf97844dd1ff9ad19a1cc1fdf31583e4e7924fdf685f2618a869c421e0f"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "stage": "external-format",
+      "artifact": "job_tests.external-format.json",
+      "before_sha256": "67ecddf97844dd1ff9ad19a1cc1fdf31583e4e7924fdf685f2618a869c421e0f",
+      "after_sha256": "a3bff6c673c1c93d414ea86632645fdb47dd40d762df0868c2527daa2913e176"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+      "stage": "own-after-resume",
+      "artifact": "job_tests.own-after-resume.json",
+      "before_sha256": "a3bff6c673c1c93d414ea86632645fdb47dd40d762df0868c2527daa2913e176",
+      "after_sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e"
+    },
+    {
+      "path": "rust/crates/nxtools-protocol/src/archive_job.rs",
+      "stage": "external-format-observed-live",
+      "artifact": "archive_job.external-format-live.baseline",
+      "sha256": "ba43ca319c8a09494f9684c8d681fe2db0365b6a4eb7c72422bc9a06e431ee7f",
+      "reported_previous_edit_tag": "9325",
+      "observed_live_tag": "EE7F",
+      "note": "Previous intermediate bytes not saved; do not claim an exact isolated formatter delta. Task-start-to-final full exact delta and live-to-final exact resumed delta are included."
+    },
+    {
+      "path": "rust/crates/nxtools-protocol/src/archive_job.rs",
+      "stage": "own-after-resume",
+      "artifact": "archive_job.own-after-resume.json",
+      "before_sha256": "ba43ca319c8a09494f9684c8d681fe2db0365b6a4eb7c72422bc9a06e431ee7f",
+      "after_sha256": "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a"
+    }
+  ],
+  "evidence": [
+    {
+      "file": "archive-clippy-final.log",
+      "sha256": "f49fe7be864bc24a6540323f878752bd23c996478c5164bf2a8489c56300ebf9",
+      "bytes": 1502
+    },
+    {
+      "file": "archive-clippy.log",
+      "sha256": "4a6b5ac0ad9f2d88b17d11a5006a2bba1a7798737e4caa35c7adb951551daeaa",
+      "bytes": 18504
+    },
+    {
+      "file": "archive_job.external-format-live.baseline",
+      "sha256": "ba43ca319c8a09494f9684c8d681fe2db0365b6a4eb7c72422bc9a06e431ee7f",
+      "bytes": 36522
+    },
+    {
+      "file": "archive_job.own-after-resume.json",
+      "sha256": "90dbca43268942bb6404d15949ab577125d194ac36420dfc529498acef6cded4",
+      "bytes": 4711
+    },
+    {
+      "file": "baseline-manifest.json",
+      "sha256": "0c8b608eec0409c687cd5f7c055bf006b81a0740517d5a30556060eba5baf233",
+      "bytes": 5078
+    },
+    {
+      "file": "csharp-build-green.log",
+      "sha256": "a2dfdb2bc85dbf6c9cdbc5840ebe7c19100e7c2d7b4308d7f798dd1c2ee5e615",
+      "bytes": 1008
+    },
+    {
+      "file": "csharp-build.log",
+      "sha256": "5042d9ebc712399cc0793d0403fc41eccf8a1ff1a13dbb22db6ec870a6e4b511",
+      "bytes": 1600
+    },
+    {
+      "file": "csharp-five-fixtures.log",
+      "sha256": "215d07b172e3693c33379713327b7d893b9ad5f9d55ab1494fe00ed88be8bf4d",
+      "bytes": 1438
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.baseline",
+      "sha256": "ca693479c8e4f389ab44ea11a8a4f7e40620fe3b854a6eb47cfc6d11347e3bcc",
+      "bytes": 12158
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.json",
+      "sha256": "fc55b30aa47926aca50ef0fa7edf183ce10a33da392b169c269b523830f6155c",
+      "bytes": 1362
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.txt",
+      "sha256": "64cab784cb7980f1bb6f486df62e9c4a1308e8a165b712438b2a41b7d58ef25f",
+      "bytes": 1984
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.baseline",
+      "sha256": "05e3956547312f9cd0dc07fe2f6f6f100cba4962d79dbb7aea51708e76700d41",
+      "bytes": 9546
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.json",
+      "sha256": "13e8bd763567ccf50c806d42bd50753d3cace28b200fc47ff6c306ee1fc62ca0",
+      "bytes": 1695
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.txt",
+      "sha256": "745203f8df44a34f7d4291e17197c06c992f4913596f036d2895c043d09eec10",
+      "bytes": 1716
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.baseline",
+      "sha256": "a22d8aecbf7d69394add2b98ecc8ba6d6d2885373abd8b638bf3fc98e5b1bcc1",
+      "bytes": 27390
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.json",
+      "sha256": "92112ee9fe08c6caefcc227d74d4a7a4f71f72f56b96431cd81b53c310b27efe",
+      "bytes": 3428
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.txt",
+      "sha256": "e200034195be4714779bd71de4658dcbe5c02b578c68ab052e6cc793e0f9402d",
+      "bytes": 6078
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.baseline",
+      "sha256": "1207f0043e4db0969baefbb5b1e40a77f034e093daca9c2440d2723909e39731",
+      "bytes": 15067
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.json",
+      "sha256": "af2d531abfd0d56be1e2d3c280addade7c486d38055b7c9bf0a61c49949d77fa",
+      "bytes": 1697
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.txt",
+      "sha256": "4bfbd2b0eade323b39f938795480dfcff79ea76eaf70bc4b9be6a2663f75d5c9",
+      "bytes": 1946
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.baseline",
+      "sha256": "860d0db31079b56221e03fc9040b285b0018508f9fbdd1d57eb830830a52fb9e",
+      "bytes": 18122
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.json",
+      "sha256": "9d8af5720f2e097d09a5891d91434663229057821b1bd6168ed5ac7814f608cb",
+      "bytes": 2679
+    },
+    {
+      "file": "csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.txt",
+      "sha256": "1090e9bd4487b4fd31fd37cdb3e87b41cf06ac83a9de3d763908c2e68e783a2d",
+      "bytes": 3363
+    },
+    {
+      "file": "desktop-clippy-final.log",
+      "sha256": "e3913d42545038a378d74d3fe869c65fe80968eea49fde8ad3fa889b6ab77f74",
+      "bytes": 4348
+    },
+    {
+      "file": "desktop-clippy.log",
+      "sha256": "4197cb69a0a074f8bc20726edbc69a7665a25980f8fd4c9ab7b412899b512972",
+      "bytes": 23080
+    },
+    {
+      "file": "desktop-full-once.log",
+      "sha256": "e74d732e05209685c7b93a1536e97fe4a682b10921bbf9c1404ee7008c2df013",
+      "bytes": 261746
+    },
+    {
+      "file": "desktop-object-expanded.log",
+      "sha256": "de96050fe8b5dbe31455ea35f7fd4987987c11c7d82453507e766b5faf01afac",
+      "bytes": 4154
+    },
+    {
+      "file": "desktop-object-final.log",
+      "sha256": "1b56de7e35056abccce40776b4a5c4d6035b8f49402ee68b00745db460a02ea5",
+      "bytes": 5316
+    },
+    {
+      "file": "desktop-object-first-green.log",
+      "sha256": "f04b9efbfaa7a65dddd7baba77a09cd87410a51765a2318c8ac11475642ceba7",
+      "bytes": 3468
+    },
+    {
+      "file": "desktop-object-input-green.log",
+      "sha256": "b79a5f2a33e8bfe5bb4b31339d3a227d6b269fd472c096cc8b4d9a75282b52c9",
+      "bytes": 3968
+    },
+    {
+      "file": "desktop-object-red.log",
+      "sha256": "4bae36bd046b8ca1792afa7b51cdf28e0fa608355c573d3fd1e9ca106a3b1aa5",
+      "bytes": 4738
+    },
+    {
+      "file": "desktop-real-ui-red.log",
+      "sha256": "b06dfa9be9fd5b33359293818f0a3c3771e472e4dd5e4f7f6418ad05cdb64fdd",
+      "bytes": 6002
+    },
+    {
+      "file": "docs__reference-code__archive.md.baseline",
+      "sha256": "c0ef4510ed738d0b9c8b554d6737cb3837380a85fd6ab4075b74305fa3f1479a",
+      "bytes": 60472
+    },
+    {
+      "file": "docs__reference-code__archive.md.own-delta.json",
+      "sha256": "bf6f24652c499c7db58ac9cd48c608ddb8f411514319fad3bc3a0201fde59223",
+      "bytes": 3278
+    },
+    {
+      "file": "docs__reference-code__archive.md.own-delta.txt",
+      "sha256": "da97c3debe4058124abaec6b992f519e3bceda5486dd4cb40f08789c0bd1215a",
+      "bytes": 3200
+    },
+    {
+      "file": "gate-archive-cli.py.log",
+      "sha256": "b81f461138af79acbac458619c2dd2fe0fd71c386c9512c2414048a6a758ce9d",
+      "bytes": 166
+    },
+    {
+      "file": "gate-archive-phase-f-shell.py.log",
+      "sha256": "016e5ed278fd87802a06deb02f9ef194f8351f07952512c9b431651143e0147d",
+      "bytes": 458
+    },
+    {
+      "file": "gate-archive-phase-f-spike.py.log",
+      "sha256": "729fe9263126157c727fd21623b44cbb5508b8268bdb63062a967978f8ba6ba4",
+      "bytes": 466
+    },
+    {
+      "file": "gate-archive-release-chain.ps1.log",
+      "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315",
+      "bytes": 238
+    },
+    {
+      "file": "gate-gpui-component-catalog.py.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "file": "gate-gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "file": "gate-markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "file": "gate-spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "file": "gates-summary.json",
+      "sha256": "bab5ebcc3598eab19e8f16413fe80f0f447cb154c6370be206bc702dc860152e",
+      "bytes": 1624
+    },
+    {
+      "file": "ipc-regressions.log",
+      "sha256": "293cf2f4231e9cc770f93afdf81d109b43ce1ae3faf6c8963b929f6b3e3d9880",
+      "bytes": 9484
+    },
+    {
+      "file": "job_tests.external-format-live.baseline",
+      "sha256": "a3bff6c673c1c93d414ea86632645fdb47dd40d762df0868c2527daa2913e176",
+      "bytes": 34366
+    },
+    {
+      "file": "job_tests.external-format.json",
+      "sha256": "4449633c9c0cf99779120089726f48928d8597ae502d34f8e0f714dd61645a1e",
+      "bytes": 5787
+    },
+    {
+      "file": "job_tests.own-after-resume.json",
+      "sha256": "a2eb3ec11d8549c49074e6b1be9d6bec4a6078dc7c4c9bb2f67d50ad5d07ff53",
+      "bytes": 16497
+    },
+    {
+      "file": "job_tests.own-initial.json",
+      "sha256": "2874a697ad62bf3bdf8df46e650cbf1e7845ec99465b718256bbeb2a6eed8626",
+      "bytes": 3940
+    },
+    {
+      "file": "own-deltas.json",
+      "sha256": "ce07e982cc393e881976240d5cd20900db633bb21db074b278f60bb5b14d277b",
+      "bytes": 51240
+    },
+    {
+      "file": "protected-manifest.json",
+      "sha256": "fd73c73b3407d68d191b6ec950c6ddcf7cfbfb889dab992ef7590374ca97031a",
+      "bytes": 3623
+    },
+    {
+      "file": "protocol-archive-final.log",
+      "sha256": "85eb6c24cea35706cb5aa718fe612ab29c8d87f32e9fab467c6e20556f5f0118",
+      "bytes": 2644
+    },
+    {
+      "file": "protocol-clippy-final.log",
+      "sha256": "7f68e2c2bf51d395e264c66048fcab502db2731bdef97ac7976cb781a127788e",
+      "bytes": 1144
+    },
+    {
+      "file": "protocol-green.log",
+      "sha256": "d92fe0f012802cd3efe2e5f5bf97edeba342ad35f8dda8bc8acd33dd2b6f95c1",
+      "bytes": 16464
+    },
+    {
+      "file": "rust__apps__nxtools-cli__src__archive__execution__tests.rs.baseline",
+      "sha256": "12c2e242e5e2a2bf8f26f92bfa613ad6d2dee1f408173e235c7913501abd16c8",
+      "bytes": 8642
+    },
+    {
+      "file": "rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.json",
+      "sha256": "c1b58e5e93dfbeecb455a7ef7017dec842af387959a03ac48cc5618be2f97247",
+      "bytes": 808
+    },
+    {
+      "file": "rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.txt",
+      "sha256": "1ff83ae0c4c15ae6b25d6e6a9b94bf77876d049a94512c3c9147ed538f7fca96",
+      "bytes": 642
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+      "sha256": "6c999ab492528c69629cdcc6c50ac8141c57cc65edec150daf80cb16b9548476",
+      "bytes": 30811
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+      "sha256": "737d486b0c778f6a417fb1142c0d587a68639f4b4fe945603a7d5fe10f55c0a8",
+      "bytes": 18823
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.txt",
+      "sha256": "f7eb0f3409875eb0da8db977dbd832e50a703508cc410a57b49ceffcafa118d8",
+      "bytes": 18257
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__progress.rs.baseline",
+      "sha256": "dc65157d165ad03dfb8a5ed51ea3821d5178233716e91dc8ce39c15e49ffa052",
+      "bytes": 15569
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+      "sha256": "e91a373f669a31b9612f806dad3334532cd6612ed19390a35f7538be69555778",
+      "bytes": 5389
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.txt",
+      "sha256": "697009604fdf4926c3a31e5e718a41693c37f0b0919180cff26f78bf6beb45c3",
+      "bytes": 8477
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__readmission.rs.baseline",
+      "sha256": "cc1585ef9d800d84654f522293edcf0728af7dffd4b3679f32f0ee7fb54d83ed",
+      "bytes": 7879
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.json",
+      "sha256": "9531dd7e63ec6de46e4f542bfbc68585ea780faa3c76919936f96441d9190443",
+      "bytes": 570
+    },
+    {
+      "file": "rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.txt",
+      "sha256": "b1ba92f2567402ab16f8ec21857f404aba9d31818a9a70451e0bfb159889f07a",
+      "bytes": 458
+    },
+    {
+      "file": "rust__crates__nxtools-archive__src__worker_conflict.rs.baseline",
+      "sha256": "12c1955296ad9c8f901d09645aa07c35f4d7477df388d7d79c735dc854e77a9d",
+      "bytes": 6215
+    },
+    {
+      "file": "rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.json",
+      "sha256": "fed7bc6408b52fdf73b34872d950c671abd7e7eaf6fcb6b897b7ba2ec15cbf6d",
+      "bytes": 2516
+    },
+    {
+      "file": "rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.txt",
+      "sha256": "af8be082f1213ef1975c89cb6781f5af0c62ac9a35845875cbe9c2576557d3d8",
+      "bytes": 2619
+    },
+    {
+      "file": "rust__crates__nxtools-archive__src__worker_output.rs.baseline",
+      "sha256": "67204ae8348abfbf9c492b18984ec9c4e933bd6d41c388661d66e541bb2a9dd3",
+      "bytes": 18421
+    },
+    {
+      "file": "rust__crates__nxtools-archive__src__worker_output.rs.own-delta.json",
+      "sha256": "04f309e337e4da3d2787ac81def8958a88652f25a01fc4ea0780c3dbc8e4515d",
+      "bytes": 2057
+    },
+    {
+      "file": "rust__crates__nxtools-archive__src__worker_output.rs.own-delta.txt",
+      "sha256": "5d1b0055327aa29a16c5ce4a6c5e1201be251348972335d22f460cd78b598cf7",
+      "bytes": 2150
+    },
+    {
+      "file": "rust__crates__nxtools-protocol__src__archive_job.rs.baseline",
+      "sha256": "0da449dbcff592e8f0d488a267a477f9fd5f67277e210e190c4eda192bb5de81",
+      "bytes": 32268
+    },
+    {
+      "file": "rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.json",
+      "sha256": "0939b7129e3f98e9807f1cba235902ba1700126ab73e46f09194e1fb458da91a",
+      "bytes": 5996
+    },
+    {
+      "file": "rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.txt",
+      "sha256": "313522c1f46d40f73f8ea4f8f4270abb1ee83538e2e23638b29bad817d7c791b",
+      "bytes": 5603
+    },
+    {
+      "file": "verification-summary.json",
+      "sha256": "bad26df522f5aba7ff578cb94ed104f4be6b2ae669cbda9ab6cd5ef7929bd148",
+      "bytes": 3236
+    },
+    {
+      "file": "verify.ps1",
+      "sha256": "4f6d87551cdfe667ded856a8b18ef68ce6b544406325bcb81774aae4ee0f3e42",
+      "bytes": 2382
+    },
+    {
+      "file": "worker-direct-regressions.log",
+      "sha256": "f1cd1066788ea704b79c89ca9e54d24d53b6ece70c6912aec0d95ab89714a12d",
+      "bytes": 11246
+    },
+    {
+      "file": "worker-object-matrix.log",
+      "sha256": "ae4cb85d6fb407411396b462ad110d9e951266600333abc4ff23a349b266a885",
+      "bytes": 2138
+    },
+    {
+      "file": "workspace-check.log",
+      "sha256": "e958d80f185bdf7594d790aaf61d6018e6d4a83f477d8255ed2a9ff7b2836fe6",
+      "bytes": 3172
+    },
+    {
+      "file": "workspace-fmt.log",
+      "sha256": "ac243c70b630ec08d9a9dba4f157b7a6203d4b254e5ce45d64fdeff6c03ced48",
+      "bytes": 4334
+    }
+  ],
+  "protected_count": 13,
+  "acceptance": {
+    "typed_red": "0/2 strict wire rejects missing schema",
+    "ui_red": "0/2 actual Dialog missing object after controlled slot removal; restored hash verified",
+    "focused_ui": "6/7; original CreateOverwrite Space failure preserved",
+    "full_desktop_once": "1207/1208; same single failure; 0 ignored",
+    "worker_direct": "39/39",
+    "worker_matrix_runs": 18,
+    "protocol_archive": "6/6",
+    "protocol_full": "79/80 unrelated default-apps failure",
+    "ipc": "42/42",
+    "csharp_fixtures": "RUN5 PASS5 SKIP0",
+    "archive_protocol_clippy": "PASS",
+    "desktop_clippy": "FAIL unrelated shell_integration.rs:256",
+    "workspace_check": "PASS",
+    "scoped_fmt": "PASS",
+    "workspace_fmt": "FAIL unrelated archive_page.rs (own lines subsequently fixed)",
+    "related_gates": "10 PASS",
+    "extra_quick_launch": "FAIL1765 unchanged",
+    "native_physical_reader_visual_user": "NOT RUN/NOT ACCEPTED"
+  }
+}

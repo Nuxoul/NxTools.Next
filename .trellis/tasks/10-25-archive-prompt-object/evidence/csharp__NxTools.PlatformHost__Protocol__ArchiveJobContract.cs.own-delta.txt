@@ -1,0 +1,19 @@
+--- dirty-baseline/csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs
++++ delivery/csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs
+@@ -89,7 +89,15 @@
+ [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+ internal sealed record ArchiveJobOutputShortfall(ArchiveJobOutputBudget Current,ArchiveJobOutputBudget Required,ArchiveJobOutputSource Source);
+ internal sealed record ArchiveJobProgress(string Phase,ulong BytesDone,ulong? BytesTotal,ulong FilesDone,ulong? FilesTotal);
+-internal sealed record ArchiveJobPrompt(ArchiveJobTicket Ticket,string Kind,string? ErrorCode=null,uint Attempt=0,ulong? ExistingBytes=null,ulong? IncomingBytes=null,ulong? ApprovedLimit=null);
++// UI-only values; never pass these strings into native output or authorization APIs.
++[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
++internal sealed record ArchiveJobPromptDisplay(string? IncomingMember,string Target) {
++    private static bool Text(string? value,int limit)=>!string.IsNullOrEmpty(value) && Encoding.UTF8.GetByteCount(value)<=limit && !value.Any(char.IsControl);
++    internal bool Valid(string kind)=>Text(Target,65535) && (kind=="conflict"?Text(IncomingMember,32767):kind=="create_overwrite" && IncomingMember is null);
++    public override string ToString()=>"ArchiveJobPromptDisplay([PRIVATE])";
++}
++internal sealed record ArchiveJobPrompt(ArchiveJobTicket Ticket,string Kind,string? ErrorCode=null,uint Attempt=0,ulong? ExistingBytes=null,ulong? IncomingBytes=null,ulong? ApprovedLimit=null,
++    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobPromptDisplay? Display=null);
+ internal sealed record ArchiveJobCommit(ulong Ordinal,string State,bool Replaced,ulong Bytes,
+     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? NativeIdentity=null,
+     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] bool? Published=null,

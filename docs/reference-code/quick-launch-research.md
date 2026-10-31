@@ -451,8 +451,8 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
     a compacted base is accepted only when its journal ID and cursor still match. One poll schedules
     every oversized volume; one volume can never overwrite another volume's maintenance request.
 26. File search workers partition results into bounded ordered batches. Only the last batch is marked
-    complete; the desktop accumulates matching generations and publishes the merged application/file
-    list when the complete batch arrives, so partial transport does not reintroduce result flicker.
+    complete. The desktop publishes accepted current-generation nonempty batches through the original
+    merge; pending ends only on the terminal batch. Already available results do not wait for it.
 27. Incremental compaction retries are isolated per volume with bounded exponential backoff. The
     retry timer never postpones the shared USN poll; successful rebuild/compaction or new USN
     progress clears that volume's compaction fault.
@@ -1386,3 +1386,72 @@ Rechecked Listary managed SearchWindowBase constructor, ShowWindow -> Show/PutCu
 
 ## Approved unified preview and optional result separation (2026-10-22 prerequisite)
 Rechecked Listary managed SearchWindowBase constructor/key/selection/scroll/showfocus and LauncherSearchWindow base/PreviewPopup/location/workingarea; SwiftList QuickLookManager constructor/owner generations/hide/reuse/provider cleanup. NativeListaryengine remainsopaque. User now requests same Markdown component for bounded QuickLaunch text/Markdown previews plus optional4DIP external resultgap(defaultseparated,continuous0). Read [fixededitorchain](markdown-editor.md). Same previewgeneration/onepassiveHWND/nativehidden-noactivate-bounds-frame-show and fixedsize/searchinputfocus remain; files never rewritten. Plaincode/config rendered literally, no Markdown corruption/implicitlinks/images. uniform_list result/action/recent selection/keys/nativegesture and contentheight remain, actualslotstride changes only by gap outside hitarea; no gapclick/preview/indexservice reconfiguration. Source/compiled/native/visual/physical levels separate.
+
+## Approved2026-10-22 Reveal diagnosis prerequisite
+User-reported directory Reveal timeout is traced to Rust Reveal -> SelectInExplorer -> detached STA ExplorerShellActivation -> ExplorerNativeFolder -> active-view target readback. Rechecked managed Listary Class424/Class342 separate IOpenFolder/IOpenFolderAndSelectFile/IOpenFile; proprietary native implementation unavailable. SwiftList App/Services/ExplorerLocateHelper.cs88–101 explicitly locates parent and selects folders as well as files; entering the folder is not locating it. Current Next directory Open/ObserveTarget enters/accepts directory itself. Add real-entry fake-active-view directory parent/selection regression before repair; preserve drive-root handling, file PIDL lifetime, exact active target and foreground separation. This is a causal synthetic semantic regression, not proof of the user's installed timeout cause; no live Explorer automation/timeout relaxation authorized.
+
+## 2026-10-24 Reveal replacement-host recurrence
+Current runtime logs share native_request_accepted -> observation_browser_interfaces_missing -> target_not_confirmed. Initial read-only .NET8STA probing saw4ShellWindows candidates exposing IServiceProvider but not IWebBrowser2; their QueryService also failed and no Explorer folder root existed. This alone DOES NOT identify an Explorer-version defect. A separately user-authorized synthetic scratch-file Reveal reproduced the actual mismatch: Windows opened Directory Opus13.22, while the confirmation reader accepted Explorer roots only. Existing SwiftList/Next DOpus entry files and invariants above were reread; no legacy NxTools equivalent or proprietary Listary native source is available.
+Official reference https://docs.dopus.com/doku.php?id=reference:dopusrt_reference:retrieving_file_and_folder_information documents `dopusrt.exe /info <output>,paths` and `<output>,listsel,<tab>`. Actual read-only exports show `results command/result`, path text plus lister/tab/active_tab/tab_state, and selected `items path/lister/tab` with item@path. In this13.22fixture active source tab has active_tab=1/tab_state=1, visible dopus.filedisplaycontainer under the same dopus.lister/PID; inactive matching tab is hidden. Preserve strict active-tab/current-parent/exact-selection/nativeidentity proof; display_path is localized and is not filesystem identity. Planned owner DirectoryOpusTargetObservation reuses ExplorerTargetView/ObserveTarget, a same-running-process sibling helper, fresh bounded private XML, no mutation commands, and second paths readback. Helper failure/unknown schema/stale/hidden/wrong selection fail closed; no caller toast masking or timeout expansion. Provider-only Explorer traversal remains separately synthetic-tested hardening, NOT the demonstrated DOpus fix. Layout/focus/placement/native launch and existing8attempts/75ms/onefallback remain.
+
+### Audit #13 retained presentation ownership review (2026-10-26)
+
+- Re-read Listary managed SearchMode.Results/selection and SearchWindowBase event
+  bindings -> ShowWindow/base.Show/Activate/Hide/Close/input focus first. Only the
+  managed application boundary is available, not Listary's proprietary native engine.
+- SwiftList second: current `App/Views/QuickSearchWindow/Helpers/
+  QuickSearchWindowInputHandler.cs` and `QuickSearchWindowLifecycle.cs` preserve
+  original nested action/IME/Escape/show-hide/focus owners. The earlier indexed
+  input handler without Helpers is absent in this source snapshot. WPF/native
+  implementation is not inferred from application sources.
+- GPUI coding guide persistent UI text requires stable SharedString in the original
+  view/entity, cloned by handle in elements; mutable edit/format buffers and original
+  domain/transport/execution payload remain separate. Locked pre0.3.9 StyledText::new
+  accepts Into<SharedString> and retains it; it does not repair repeated String cloning.
+- Next panel new/prepare_for_show/replace_results/recent-directory updates are the
+  result presentation commit boundaries; render_result currently copies long title,
+  subtitle/fallback and a full SearchResult into hover callbacks each frame. Original
+  action-mode levels/items retain display labels/titles separately from executable
+  action/session/path payload and editable filter. Prepare full shared display values
+  at those owners without another cache/search controller or rewriting Finder/IPC data.
+- Preserve exact text, highlight/order, generation/selection, captured preview payload,
+  action stack/query restoration and original release/close/focus/native budgets.
+  Evidence owner: `.trellis/tasks/10-26-quick-retained-text/`; real repeated production
+  render handle identity is distinct from native/DPI/visual/user acceptance.
+
+## 2026-10-28 publication and attached containment repair
+Rechecked Listary managed SearchMode/SearchWindowBase (no proprietary native engine source). Approved invariant45 local-first path still returned nonempty local rows with pending=true, but actual QuickLaunchPanel::run_search->apply_search_update rejected ALL pending updates. Red regression observed false publication; narrow fix retains empty-pending old-list guard while publishing nonempty current local rows. Original65mscoalesce, full index query/generation/IME/execute guards stay. Attached production source-row red measured401DIPwidth/x=-56.5 in288DIProot and36DIProw bottom73 in72DIProot: actual BaseButton centers unbounded intrinsic child. Constrain source row fullwidth/minwidth0 and parentminwidth0, reserve2DIProotborder in native height; retain36DIPsearch/source/32DIPInputGroup/publicKbd and original hiddencreation/deferredPlaceFileDialogSearchWindow/focus. Real regression now checks whole row/root containment, not merely Kbdinsidealreadyoverflowingrow. No framework patch or competing HWND owner. Exact outcomes/remaining native limits belong to10-28-ui-experience-consistency-repair.
+
+## Approved summon-hotkey reset addition (2026-10-28)
+Rechecked SwiftList Core/Settings/UserSettingsModels.cs50–69 bareCtrldefault/doubletap and recorded
+QuickSearchWindowController constructor71–75/ForceForeground51–69 -> nativeShowWindow boundary.
+User-requested reset restores Next Coredefault empty modifiers+Control/doubleCtrl; not Alt+Space or
+a changed summon/focus policy. Existing Next recorded submission requires acknowledged recording;
+reset must admit only fixeddefault via original pending ConfigureQuickLaunch/CommandResult/save,
+not manufacture recording readiness or change native handlers. Changedbinding-only official
+Medium32outline reset sits left of actualshortcut, keeps busy/recording/default absence semantics.
+
+## Search result latency boundary (2026-10-30)
+Rechecked Listary managed SearchMode.cs701–758: default Task.WhenAll, cancellation recheck, rank
+and Results replacement; Launcher/Class293.cs214–260 does not enable incremental by default.
+SearchWindowBase.cs268–348 binds VM Show/Hide/Activate/Close to WPF/native foreground and input.
+This is managed boundary evidence, not access to its native search engine or a measured seconds-long
+Listary delay. SwiftList's current source is Core/Services/Search/SearchService.cs40–147,212–216
+(the older indexed Core/Services/SearchService.cs path is absent): local/network callbacks stream
+before WhenAll terminal. Core/SearchEngine.cs109–185 retains channel cancellation. App/ViewModels/
+Search/SearchExecutionEngine.cs99–134,233–282,293–394 publishes immediate results and Dispatcher
+stream snapshots with cancellation/version checks and one publication in flight. QuickSearchWindow
+constructor41–57 -> Helpers/QuickSearchWindowController.cs160–206,339–367 retains original hidden
+layout/Show/input focus and Hide/restore boundaries. No old NxTools Quick Launch owner was found.
+Next handle_indexer_notification accepted current nonterminal rows into its existing session but
+published only complete batches. The real Input/debounce/service-command/notification regression
+records accepted_indexed_rows=1 with visible_indexed_rows=0 while terminal is withheld. Current
+ordinary service search computes a result set before partitioning transport; Desktop early publication
+does not by itself prove service computation fast. Preserve original ranking, providers, query
+generation, execution freshness, input entity and final pending semantics; no new search controller.
+Async extension batches use the same readiness distinction: accepted current provider rows cannot
+inherit a wait for the indexer. While panel.search_pending denotes retained old rows, exclude those
+ordinary rows from the provider merge; an empty batch retains the old noninteractive display, and
+a nonempty current batch replaces it with usable current rows. Original identity/trust/generation
+checks and execution revalidation remain. Regression extends the actual apply_extension_batch
+to real panel path; no provider runtime, approval or matching policy is changed.

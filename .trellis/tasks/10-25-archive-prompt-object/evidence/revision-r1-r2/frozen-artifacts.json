@@ -1,0 +1,370 @@
+﻿[
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/late-instruction-addendum.md",
+        "sha256":  "2484b5d59e4df5a515975dba6ce5e6e90b3e01acf000f6e9c0b32a8bd0755e79"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/parent-review.md",
+        "sha256":  "a614b00a21d8ec914a5046ddbb17cf037eee9fed768aca2b464ae6025a725637"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/archive-clippy-final.log",
+        "sha256":  "f49fe7be864bc24a6540323f878752bd23c996478c5164bf2a8489c56300ebf9"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/archive-clippy.log",
+        "sha256":  "4a6b5ac0ad9f2d88b17d11a5006a2bba1a7798737e4caa35c7adb951551daeaa"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/archive_job.external-format-live.baseline",
+        "sha256":  "ba43ca319c8a09494f9684c8d681fe2db0365b6a4eb7c72422bc9a06e431ee7f"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/archive_job.own-after-resume.json",
+        "sha256":  "90dbca43268942bb6404d15949ab577125d194ac36420dfc529498acef6cded4"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/baseline-manifest.json",
+        "sha256":  "0c8b608eec0409c687cd5f7c055bf006b81a0740517d5a30556060eba5baf233"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp-build-green.log",
+        "sha256":  "a2dfdb2bc85dbf6c9cdbc5840ebe7c19100e7c2d7b4308d7f798dd1c2ee5e615"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp-build.log",
+        "sha256":  "5042d9ebc712399cc0793d0403fc41eccf8a1ff1a13dbb22db6ec870a6e4b511"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp-five-fixtures.log",
+        "sha256":  "215d07b172e3693c33379713327b7d893b9ad5f9d55ab1494fe00ed88be8bf4d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.baseline",
+        "sha256":  "ca693479c8e4f389ab44ea11a8a4f7e40620fe3b854a6eb47cfc6d11347e3bcc"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.json",
+        "sha256":  "fc55b30aa47926aca50ef0fa7edf183ce10a33da392b169c269b523830f6155c"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.txt",
+        "sha256":  "64cab784cb7980f1bb6f486df62e9c4a1308e8a165b712438b2a41b7d58ef25f"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.baseline",
+        "sha256":  "05e3956547312f9cd0dc07fe2f6f6f100cba4962d79dbb7aea51708e76700d41"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.json",
+        "sha256":  "13e8bd763567ccf50c806d42bd50753d3cace28b200fc47ff6c306ee1fc62ca0"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.txt",
+        "sha256":  "745203f8df44a34f7d4291e17197c06c992f4913596f036d2895c043d09eec10"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.baseline",
+        "sha256":  "a22d8aecbf7d69394add2b98ecc8ba6d6d2885373abd8b638bf3fc98e5b1bcc1"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.json",
+        "sha256":  "92112ee9fe08c6caefcc227d74d4a7a4f71f72f56b96431cd81b53c310b27efe"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.txt",
+        "sha256":  "e200034195be4714779bd71de4658dcbe5c02b578c68ab052e6cc793e0f9402d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.baseline",
+        "sha256":  "1207f0043e4db0969baefbb5b1e40a77f034e093daca9c2440d2723909e39731"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.json",
+        "sha256":  "af2d531abfd0d56be1e2d3c280addade7c486d38055b7c9bf0a61c49949d77fa"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.txt",
+        "sha256":  "4bfbd2b0eade323b39f938795480dfcff79ea76eaf70bc4b9be6a2663f75d5c9"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.baseline",
+        "sha256":  "860d0db31079b56221e03fc9040b285b0018508f9fbdd1d57eb830830a52fb9e"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.json",
+        "sha256":  "9d8af5720f2e097d09a5891d91434663229057821b1bd6168ed5ac7814f608cb"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.txt",
+        "sha256":  "1090e9bd4487b4fd31fd37cdb3e87b41cf06ac83a9de3d763908c2e68e783a2d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/delivery-manifest.json",
+        "sha256":  "bea18e4b467792ba69e46cb825d96b405a63e684634c1638e92ea64d27371924"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-clippy-final.log",
+        "sha256":  "e3913d42545038a378d74d3fe869c65fe80968eea49fde8ad3fa889b6ab77f74"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-clippy.log",
+        "sha256":  "4197cb69a0a074f8bc20726edbc69a7665a25980f8fd4c9ab7b412899b512972"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-full-once.log",
+        "sha256":  "e74d732e05209685c7b93a1536e97fe4a682b10921bbf9c1404ee7008c2df013"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-expanded.log",
+        "sha256":  "de96050fe8b5dbe31455ea35f7fd4987987c11c7d82453507e766b5faf01afac"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-final.log",
+        "sha256":  "1b56de7e35056abccce40776b4a5c4d6035b8f49402ee68b00745db460a02ea5"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-first-green.log",
+        "sha256":  "f04b9efbfaa7a65dddd7baba77a09cd87410a51765a2318c8ac11475642ceba7"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-input-green.log",
+        "sha256":  "b79a5f2a33e8bfe5bb4b31339d3a227d6b269fd472c096cc8b4d9a75282b52c9"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-red.log",
+        "sha256":  "4bae36bd046b8ca1792afa7b51cdf28e0fa608355c573d3fd1e9ca106a3b1aa5"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-real-ui-red.log",
+        "sha256":  "b06dfa9be9fd5b33359293818f0a3c3771e472e4dd5e4f7f6418ad05cdb64fdd"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/docs__reference-code__archive.md.baseline",
+        "sha256":  "c0ef4510ed738d0b9c8b554d6737cb3837380a85fd6ab4075b74305fa3f1479a"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/docs__reference-code__archive.md.own-delta.json",
+        "sha256":  "bf6f24652c499c7db58ac9cd48c608ddb8f411514319fad3bc3a0201fde59223"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/docs__reference-code__archive.md.own-delta.txt",
+        "sha256":  "da97c3debe4058124abaec6b992f519e3bceda5486dd4cb40f08789c0bd1215a"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-cli.py.log",
+        "sha256":  "b81f461138af79acbac458619c2dd2fe0fd71c386c9512c2414048a6a758ce9d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-phase-f-shell.py.log",
+        "sha256":  "016e5ed278fd87802a06deb02f9ef194f8351f07952512c9b431651143e0147d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-phase-f-spike.py.log",
+        "sha256":  "729fe9263126157c727fd21623b44cbb5508b8268bdb63062a967978f8ba6ba4"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-release-chain.ps1.log",
+        "sha256":  "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-gpui-component-catalog.py.log",
+        "sha256":  "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-gpui-release-contracts.py.log",
+        "sha256":  "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-markdown-editor-contracts.py.log",
+        "sha256":  "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-spec-contracts.py.log",
+        "sha256":  "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/gates-summary.json",
+        "sha256":  "bab5ebcc3598eab19e8f16413fe80f0f447cb154c6370be206bc702dc860152e"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/ipc-regressions.log",
+        "sha256":  "293cf2f4231e9cc770f93afdf81d109b43ce1ae3faf6c8963b929f6b3e3d9880"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.external-format-live.baseline",
+        "sha256":  "a3bff6c673c1c93d414ea86632645fdb47dd40d762df0868c2527daa2913e176"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.external-format.json",
+        "sha256":  "4449633c9c0cf99779120089726f48928d8597ae502d34f8e0f714dd61645a1e"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.own-after-resume.json",
+        "sha256":  "a2eb3ec11d8549c49074e6b1be9d6bec4a6078dc7c4c9bb2f67d50ad5d07ff53"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.own-initial.json",
+        "sha256":  "2874a697ad62bf3bdf8df46e650cbf1e7845ec99465b718256bbeb2a6eed8626"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/own-deltas.json",
+        "sha256":  "ce07e982cc393e881976240d5cd20900db633bb21db074b278f60bb5b14d277b"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/protected-manifest.json",
+        "sha256":  "fd73c73b3407d68d191b6ec950c6ddcf7cfbfb889dab992ef7590374ca97031a"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/protocol-archive-final.log",
+        "sha256":  "85eb6c24cea35706cb5aa718fe612ab29c8d87f32e9fab467c6e20556f5f0118"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/protocol-clippy-final.log",
+        "sha256":  "7f68e2c2bf51d395e264c66048fcab502db2731bdef97ac7976cb781a127788e"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/protocol-green.log",
+        "sha256":  "d92fe0f012802cd3efe2e5f5bf97edeba342ad35f8dda8bc8acd33dd2b6f95c1"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-cli__src__archive__execution__tests.rs.baseline",
+        "sha256":  "12c2e242e5e2a2bf8f26f92bfa613ad6d2dee1f408173e235c7913501abd16c8"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.json",
+        "sha256":  "c1b58e5e93dfbeecb455a7ef7017dec842af387959a03ac48cc5618be2f97247"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.txt",
+        "sha256":  "1ff83ae0c4c15ae6b25d6e6a9b94bf77876d049a94512c3c9147ed538f7fca96"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+        "sha256":  "6c999ab492528c69629cdcc6c50ac8141c57cc65edec150daf80cb16b9548476"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+        "sha256":  "737d486b0c778f6a417fb1142c0d587a68639f4b4fe945603a7d5fe10f55c0a8"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.txt",
+        "sha256":  "f7eb0f3409875eb0da8db977dbd832e50a703508cc410a57b49ceffcafa118d8"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.baseline",
+        "sha256":  "dc65157d165ad03dfb8a5ed51ea3821d5178233716e91dc8ce39c15e49ffa052"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+        "sha256":  "e91a373f669a31b9612f806dad3334532cd6612ed19390a35f7538be69555778"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.txt",
+        "sha256":  "697009604fdf4926c3a31e5e718a41693c37f0b0919180cff26f78bf6beb45c3"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__readmission.rs.baseline",
+        "sha256":  "cc1585ef9d800d84654f522293edcf0728af7dffd4b3679f32f0ee7fb54d83ed"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.json",
+        "sha256":  "9531dd7e63ec6de46e4f542bfbc68585ea780faa3c76919936f96441d9190443"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.txt",
+        "sha256":  "b1ba92f2567402ab16f8ec21857f404aba9d31818a9a70451e0bfb159889f07a"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_conflict.rs.baseline",
+        "sha256":  "12c1955296ad9c8f901d09645aa07c35f4d7477df388d7d79c735dc854e77a9d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.json",
+        "sha256":  "fed7bc6408b52fdf73b34872d950c671abd7e7eaf6fcb6b897b7ba2ec15cbf6d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.txt",
+        "sha256":  "af8be082f1213ef1975c89cb6781f5af0c62ac9a35845875cbe9c2576557d3d8"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_output.rs.baseline",
+        "sha256":  "67204ae8348abfbf9c492b18984ec9c4e933bd6d41c388661d66e541bb2a9dd3"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_output.rs.own-delta.json",
+        "sha256":  "04f309e337e4da3d2787ac81def8958a88652f25a01fc4ea0780c3dbc8e4515d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_output.rs.own-delta.txt",
+        "sha256":  "5d1b0055327aa29a16c5ce4a6c5e1201be251348972335d22f460cd78b598cf7"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-protocol__src__archive_job.rs.baseline",
+        "sha256":  "0da449dbcff592e8f0d488a267a477f9fd5f67277e210e190c4eda192bb5de81"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.json",
+        "sha256":  "0939b7129e3f98e9807f1cba235902ba1700126ab73e46f09194e1fb458da91a"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.txt",
+        "sha256":  "313522c1f46d40f73f8ea4f8f4270abb1ee83538e2e23638b29bad817d7c791b"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/verification-summary.json",
+        "sha256":  "bad26df522f5aba7ff578cb94ed104f4be6b2ae669cbda9ab6cd5ef7929bd148"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/verify.ps1",
+        "sha256":  "4f6d87551cdfe667ded856a8b18ef68ce6b544406325bcb81774aae4ee0f3e42"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/worker-direct-regressions.log",
+        "sha256":  "f1cd1066788ea704b79c89ca9e54d24d53b6ece70c6912aec0d95ab89714a12d"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/worker-object-matrix.log",
+        "sha256":  "ae4cb85d6fb407411396b462ad110d9e951266600333abc4ff23a349b266a885"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/workspace-check.log",
+        "sha256":  "e958d80f185bdf7594d790aaf61d6018e6d4a83f477d8255ed2a9ff7b2836fe6"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/workspace-fmt.log",
+        "sha256":  "ac243c70b630ec08d9a9dba4f157b7a6203d4b254e5ce45d64fdeff6c03ced48"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/create-keyboard-unresolved-probe.rs.txt",
+        "sha256":  "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/focused-ui-original-failure.log",
+        "sha256":  "1b56de7e35056abccce40776b4a5c4d6035b8f49402ee68b00745db460a02ea5"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/footer-compare.json",
+        "sha256":  "c34a22c3815c273df14a7b9a40c870ee6cb15b5a803a533ab6fd58b304ab0bd8"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/job_tests.current-readonly.rs.txt",
+        "sha256":  "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/manifest.json",
+        "sha256":  "e4029b9795622785dd6c07b2f22b2a65e11bc29d6096b412d121cbfdf8fa5d88"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/protocol-full-original-failure.log",
+        "sha256":  "d92fe0f012802cd3efe2e5f5bf97edeba342ad35f8dda8bc8acd33dd2b6f95c1"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/protocol-lib.current-readonly.rs.txt",
+        "sha256":  "b19d21a17d720365839374ed51394be717b395d549ea04fc5263f128c24a6384"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/readonly-hashes.json",
+        "sha256":  "f8a9691c3bbebcaa3f9480480d0e101f2c97a56ac265abcb473e0f945555d552"
+    }
+]

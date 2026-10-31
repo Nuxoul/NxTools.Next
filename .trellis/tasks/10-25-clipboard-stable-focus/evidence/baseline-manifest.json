@@ -1,0 +1,46 @@
+[
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/mod.rs",
+        "SHA256":  "6F0170C5055F8663AD9D926028FC46C0BA705B60D457A59C41452F381C7E0C07"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/history.rs",
+        "SHA256":  "1C0BB864F8126A0F562A7D53AEBD3C316A45D9D9E39B056647E891E17460320B"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs",
+        "SHA256":  "610DB1D79F8D2E61D8561B4FC9E50D1FC3731C14BA6C11372DBDC7D637D7CEA2"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs",
+        "SHA256":  "9950BC1317F3A333EA3BEA74E623A4F8D686FE5252B24FB1013AEDCBDA0E5B38"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/polish_tests.rs",
+        "SHA256":  "559DA1A2672D536066930F76CFD1C5E74509A1E230339D34D21EE32ECA6EA666"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/efficiency.rs",
+        "SHA256":  "8D6DE47FFB665803793F0F40504FB0E402151361F591AB4D5F1E37AD463A50B2"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+        "SHA256":  "55BEA700BA6460DC5E4EE35D61C2F3E8F4D345EF041849463404FF9166B9E865"
+    },
+    {
+        "Path":  "docs/reference-code/clipboard.md",
+        "SHA256":  "A6436CC758FE9FF150406D6C455EDCA3381DEF6AD2DBE478029AE521F6C4E6BE"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs",
+        "SHA256":  "F8EEA7E3192996A95F5DB9FBEB1EEFA1AA1D33425AA922245B3E8844EF24553F"
+    },
+    {
+        "Path":  "tests/architecture/clipboard-ui-lifecycle.ps1",
+        "SHA256":  "468B3E3F4E90C56F05D50B4F99A519BCA620A1C626B4C1259FA3FDC1F432F6B0"
+    },
+    {
+        "Path":  "tests/architecture/clipboard-ui-lifecycle.tests.py",
+        "SHA256":  "AEA38793DEBE180AFCC63982FBFD27A450B7D8F10244BEC5040A519A50F975A1"
+    }
+]

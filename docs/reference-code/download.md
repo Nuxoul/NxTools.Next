@@ -2796,3 +2796,415 @@ Next chain DownloadApplication/NewDownloadView -> DownloadEngine probe/resolvero
 ##2026-10-22 probe latency boundary closeout
 Verified local1sslowHEAD red1.0030359s; usableRange/HEAD path now350mscompaniongrace, with delayed200msHEAD-onlyfilename retained and skippedRange never claimingresume. Empty200HEAD regression initiallylost16bytelength; `usable_probe_response` now requireslength/validRange/recognizedmedia before boundedcompanionwait, otherwiseawaitother. No blindfirstsuccesswinner/latebackgroundmetadata oruserfilenameoverwrite. SlowHLS/DASHbodydeadline andactualHTTPstagecancellation use deterministiclocalhostfixtures. HTTP26,resolution15,Downloadlib117,serialengine103 allpass; generation/route/certificate/30sclientcachepolicy unchanged/tested.
 Network3 actualrequesttests verifyDirectoriginform, injectedSystemabsoluteform andManualproxyreceipt, plusimmutablesnapshot. Systemtestinjectsclientresolver/proxyonly, notWindowsregistry/PAC; no systemsettingsread/write. ABDMwasinspectedfirst; FluxDownbehavioronly/noAGPLimplementationcopy; oldNxToolsdownloadsourcewasnotrevisitedinthisslice. NoexternalURLprovided, soexternalresource-discovery/proxycause remainsunreproduced. Existingcorrelatedstageelapsed/route/skipflagsnarrowdiagnostics remainpayloadfree; nobrowser/resolver/globaltimeoutrewrite.
+
+## Filename follow-up prerequisite (2026-10-22)
+User now explicitly requests oldNxToolsfilenamecomparison, superseding priorno-old-download-reread constraint forthisnarrowtopic. ABDMHttpResponseInfo61–76/fileNameExtractor7–29 inspectedfirst(header->URL,plainpercent/MIMEdecode), thenoldDownloadManagerServiceBuildProbeResult1139–1172,ResolveTaskFileName3972–4022,EnsureFileNameExtension4058–4072. Oldservername canreplaceURLauto/nonrealextensionlabel butnotgenuinecustomname; currentNewDownloadView784–793mostlykeepsnonemptyrequest andRustHTTP2250–2260plainparameterraw. Browserold/currentcentralnamefunctionsequivalent; no browserrewritewithoutred. RegressionsmustuseactuallocalHTTP/confirmation andprotectlateuseredit/generation/context/cancel; existing350msmetadata graceretained. Externalusercaseunprovenwithoutsample.
+
+Current follow-up naming repair: bounded realHTTP plainfilename red->green uses existing strict percentUTF8 decoder once, malformed rawfallback/unsafe Windowsname validation retained;8header cases pass. Actual NewDownloadView realprobe/fixedhandoff protects usefulserver-vsURLauto/label/custom policy. New `file_name_edit_generation` increments on original InputEvent::Change, captured at probe start and checked before suggestion: current-value comparison alone failed editA->B->A regression (server-package.zip overwrote url.bin). Actual5probe cases now pass, including lateedit and ABA. Official set_value is silent hydration; replace_all/useredit emits Change. No new input/probe/controller, context/TLS/route/350msgrace or browser production change; diagnostics remain fixed source/correlation/generation only.
+
+## Recurrent download Reveal and compact chooser prerequisite (2026-10-22)
+ABDM CompletedDownloadPage.kt::Actions87–104 and WindowsFileUtils.kt24–39,57–96 reread first; legacy DownloadCompletedWindow constructor17–35/OpenButton/OpenFolder56–75 and MainWindowViewModel.OpenTaskFolder/OpenPathInExplorer1583–1658 reread second. Existing stronger Next observed-target/success-only keyed close remains authoritative. New user request changes chooser presentation only: icon-only official Small outline Button immediately after OpenFile, Tooltip/accessibility retains purpose; existing DialogFooter has no Toolbar.child adaptation. Keep440x184 client and all actions.
+Current common chain: task_window.rs Reveal and main_window/download_page.rs context action -> artifact_actions.rs pending-before-dispatch OpenShellTarget SelectInExplorer -> detached C# ShellTarget -> ExplorerShellActivation -> NativeTargetObservationPlatform.ReadActiveView -> original correlated result/current-window close. Directory Reveal matcher now requires selected directory in parent, but native reader still returns early with empty selection for isDirectory. Add real successful reader regression before repair; prior owned COM test deliberately stops at GetItemObject failure and did not exercise successful selection. File requests need their own success/equivalent-path controls, not inference from a directory-only defect. No process-launch-only success, global timeout increase, new worker, native liveShell launch, framework or download-engine changes.
+Executed recurrence reds before fixes: exact nativeCOM fixture fails selected-path retention for directoryReveal; matcher fixture fails extendedDOS/ordinaryShellpath equivalence. UI actualgeometry red after adding observation-onlyselector is60x24 versus24x24, not merely missingselector. Reader now collects selectedpaths for bothkinds; comparison canonicalizes only explicit extendedDOS/UNC aliases on target/folder/selection, notdevicenames orbasenamefuzzy. C#10exactreviewedfixtures pass at firstrepaircheckpoint; UNC/wrongname negative controls added for finalcheck. Rust has transient peerIPC serde_json compilefailure recorded, now sourcechangedbyitsowner; nopeerdependencyeditbythisslice. Installedusercase remains separate from these syntheticcausalrepairs.
+
+## 2026-10-24 shared Reveal replacement-host recurrence
+ABDM/legacy references and exact-observed-target/current-window-close invariants remain as indexed above; no download-engine/caller semantics change. Initial .NET8probe found service-only ShellWindows objects, but QueryService failed and no Explorer folder root existed: this is not sufficient evidence of an Explorer-version defect. Separately authorized synthetic-file Reveal actually opened Directory Opus13.22. Explorer-only observation explains accepted native request followed by target_not_confirmed despite visible file-manager success. Rechecked current DirectoryOpusFileManagerOperations and indexed SwiftList DOpus sources; official DOpusRT /info paths/listsel API and actual exported HWND/tab/path/selection structure are recorded in quick-launch-research.md#2026-10-24-Reveal-replacement-host-recurrence. New shared native observer validates same-session/PID/starttime dopus.lister, visible current source tab, exact parent/selected filesystem item and fresh path revalidation. No raw payload diagnostics, caller toast masking, mutation commands or increased8attempt/75ms/onefallback. Provider-only Explorer COM test is separate hardening, not actual DOpus acceptance. Native product-entry test now confirms owned scratch file in228ms; separate actual observer accepts exact selection and rejects unselected same-directory synthetic file. Full runtime checks and remaining visual/native limits belong to task10-24-runtime-feedback-reveal-ui.
+
+## Chrome Web Store upload/identity prerequisite (2026-10-23)
+User explicitly limits repair to key-free uploadZIP and exactstoreID NativeMessaging matching; initialuploadfailsbeforestoreIDexists. Reread ABDM BrowserMessageRequest.kt(identity only,noequivalentCRXsigner), thenlegacy BrowserExtensionPackageService.cs ExportCrx/ExportFirefox/CreateCrx3Bytes303–326/LoadOrCreateSigningKey365–404. Preservelocalsigning/sourceidentity andFirefox. Next ExportBrowserExtension stringformat -> C#adapter/dialog -> ExportWithSigningKey -> ZIP/CRX currentlytreatsnonfirefoxasCRX. Add additivechrome_store ZIP path that removesonlymanifestkey in copy,neverreads/writesPEM ormutatessource. Existing Settings Page/Group customcontrol32DIPInput/Smalloutlinedexportaction, originalSaveCancel/fieldmerge; noToolbar.childadaptation.
+Registrationchain: CoreoptionalstoreID -> settingsdraftvalidation/durableDownloadSettingsmerge -> existingEnsureBrowserNativeMessaging configuredID-orlocal -> BrowserNativeMessagingRegistrar command/pinnedmanifest/existingexportedPEM exactunion -> persistedchromiumhostmanifest -> BrowserHost registered_allowed_origins/validate_browser_origin. No IPCnewfield,wildcard,trustpageautoID orsecondregistrationowner. Saved!=nativeapplied; nativefailure/retryguidance required. Existing correlated registration/export events remain fixed/payloadfree. Tests useexplicittempkey/fakeIPC/tempconfigonly,noregistry/browser/productionPEM. ActualstoreID unavailableuntilfirstupload; optionalemptyisvalid anddoesnotblockZIP.
+
+### Published Chrome store identity amendment (2026-10-28)
+User supplied the published Chrome entry `eldfplghejhopcmgfkacimanhaojakph` and explicitly approved removing the manual ID input. Rechecked ABDM `desktop/app/src/main/kotlin/com/abdownloadmanager/desktop/nativemessaging/host/BrowserMessageRequest.kt` (request correlation only, not CRX signing), then legacy `D:\Code\NxTools\Services\BrowserExtensionPackageService.cs::{CreateCrx3Bytes,LoadOrCreateSigningKey,ResolveSigningKeyPath}`. Local per-user PEM reuse, source manifest key and Firefox identity remain unchanged. Next `DownloadSettingsView::new/current_draft/render_setting_control` removes only the ID Input/entity, preserves the legacy serialized value as non-editable draft data, and adds a direct official Small outline Chrome Button using the same Settings/Page/Group/Item slots as Firefox (no Toolbar.child transformation).
+Existing `request_browser_registration` sends the published identity when legacy configuration is empty; `BrowserNativeMessagingRegistrar::ChromiumAllowedOrigins` always unions the exact published origin with command/pinned-source/existing-exported-key origins, deduplicating without wildcard or PEM creation. This also keeps store installs working when a valid old custom value remains. Browser-store actions share the original pending command/result/disconnect/deadline owner and correlated fixed diagnostics; no extra controller, URL/ID logs, new IPC or native registry execution in tests. Original settings Save/Cancel, deferred cross-entity callbacks, native window placement/focus/show/hide and registration failure guidance are unchanged. Tests cover production reconnect for missing/empty/normalized-invalid config, actual settings no-ID render and hidden-value Save/Cancel, original Shell dispatch and isolated exact-origin union; live store/browser/native acceptance remains separate.
+
+## Audit #1 default Enter / schedule child-layer prerequisite (2026-10-24)
+ABDM inspected first: desktop AddDownloadPage.kt::AddDownloadPage/MainActionButtons
+(URL/category/location/name, separate Add/Download/Cancel callbacks, nested queue/extra
+configuration); desktop app-utils OptionsDialog.kt::BaseOptionDialog -> Compose
+DialogWindow visible/modeless/onCloseRequest, focus-loss dismissal and listener disposal.
+Then legacy Views/AddDownloadWindow.axaml URL ParseUrlCommand and confirmed
+AddOnlyCommand/DownloadNowCommand/CloseCommand, .axaml.cs constructor ->
+WindowAnimationService.Attach -> OnOpened/OnClosed -> deferred guarded Window.Close.
+No window-wide Enter handler was found in those legacy entry files. Avalonia/AWT
+native base implementations are unavailable, not inspected native show/hide evidence.
+Existing one-time schedule source remains MainWindowViewModel::TryResolveSchedule,
+as indexed above; the Next anchored draft/commit interaction is retained, not redesigned.
+
+Exact current released boundary: gpui-pre0.3.9 window.rs::dispatch_key_event calls
+window keystroke interceptors before focused actions; KeystrokeEvent has no held flag.
+Base0.8.0 input/base/state.rs::enter propagates single-line Enter; div::capture_key_down
+receives actual KeyDownEvent with held/character preference after unconsumed actions.
+Component0.8.0 Popover delegates to BasePopover; Select::escape/toggle_menu and
+Button's Base focus/activation retain their own single keyboard owner.
+Before this repair NewDownloadView::new intercepted Enter without schedule/focus/IME guards,
+while request reads only committed_schedule and schedule Confirm alone commits the draft.
+Required repair: default Enter only on original outer URL/directory/file-name InputState,
+no active category/schedule child layer or IME/character preference/modifier/repeat/busy/
+native-confirmation gate. Official controls get first refusal; no global Enter swallowing.
+Keep original begin_probe/submit/deferred application effects, fixed client/hidden target/
+source generation/native show and cancel boundaries. No schedule/text/path payload logging.
+Production keyboard red/green and separate acceptance limits belong to task
+`.trellis/tasks/10-24-download-enter-popover/`; no other audit item is authorized here.
+Repair evidence: production keyboard red1/6 -> green8/8; root default Enter now accepts
+only original outer Inputs after official actions, with IME/modifier/held/busy/native
+and child-layer guards. Category-confirm Enter is marked owned before focus return,
+preventing same-key fallthrough. Original request/submit/probe/handoff bodies unchanged.
+Existing schedule lifecycle fixture now actually scrolls clipped late-week dates into
+its124px viewport before pointer clicks; no production calendar/layout change. Downloads
+168/168/strictClippy/workspacecheck/fmt pass. FullDesktop1158pass/2fail in Archive password
+and Extension settings owners; no unrelated repair. No physicalIME/native/DPI/useracceptance.
+Exact own-delta, red/green/failed-run evidence and stop condition are in task outcomes.md.
+
+## Audit #9 directory-picker ownership prerequisite (2026-10-25)
+ABDM inspected first: desktop pages/addDownload/shared/LocationTextField.kt46–83
+binds native picker callback to that field's setText; desktop ui/util/FilePickerUtils.kt
+rememberMyDirectoryPickerLauncher -> FileKit rememberDirectoryPickerLauncher with
+FileKitDialogParent.awt(LocalWindow.current). FileKit/AWT native internals unavailable.
+Then legacy Views/AddDownloadWindow.axaml.cs constructor -> WindowAnimationService.Attach
+-> OnOpened/OnClosed/DetachViewModel; BrowseFolderButton_Click captures the current
+AddDownloadDialogViewModel before awaiting StorageProvider.OpenFolderPickerAsync and
+updates that captured owner, not all windows of a type. SettingsWindow constructor /
+OnOpened / explicit Apply or Cancel / OnClosed and MainWindow.ShowSettingsWindow's
+keyed ShowIndependentSecondaryWindow preserve presentation/draft lifetime. Avalonia
+native base source is unavailable, not claimed as native show/hide evidence.
+
+Next read-only native boundary: WindowsPlatformAdapter.PickDirectory -> DirectoryPicker.Pick
+-> StaDialogRunner.Run -> FolderBrowserDialog.ShowDialog(NativeForegroundWindow), result
+SelectedPath or empty cancellation. Existing Windows adapter/STA/native modal ownership
+and cancellation capability remain unchanged; Rust logical retirement never kills the host.
+Before this repair DownloadApplication.pending_directory_picker stores only ID+target type;
+handle_directory_result broadcasts DirectoryPicked to every same-type subscriber. Type
+separation is insufficient for close/reopen, fixed-stage replacement and late draft edits.
+Exact Base0.8.0 InputState.set_value is silent hydration and clears history; replace_all/
+real edits emit Change. pre0.3.9 App.flush_effects processes queued Emit/Defer in FIFO,
+so final application must allow already-queued Change events to settle and recheck the
+original weak view/window, operation and edit revision (including A->B->A), not just text.
+Preserve one existing pending policy, original outlined Button/Input/Settings/Form geometry,
+save_directory_explicit, validation clearing and explicit Apply/Cancel persistence. No
+protocol/native/engine/vendor/shared-control change; accepted audit#1 keyboard handler frozen.
+Required regression/evidence and final stop gate belong only to task
+`.trellis/tasks/10-25-download-picker-identity/`; no subsequent audit item is authorized.
+Repair delivery: original view+window+UUID+directory Change revision now replace type
+broadcast; one application pending is installed before caller-ID/correlation dispatch.
+Initial and final result application validate the original owner independently; two
+deferred turns allow same-update A->B->A Change effects to settle before the last check.
+Close/removal/fixed-stage replacement/disconnect retire only logical ownership; original
+C#picker, accepted#1keyboard,submit/probe/hydrate/handoff bodies and styled geometry remain.
+RealButton/Input/typedResult/tempconfig regressions: before repair1pass/4fail; final
+14picker+8keyboard22/22, Downloads182/182, strictClippy/workspacecheck/fmt/source gates pass.
+Single fullDesktop1173pass/1fail: originalArchiveUnlockfixture remains unresolved; no
+unrelated owner repair/full-green claim. Synthetic only, no native/physical/DPI/useracceptance.
+Exact own-deltas, failed attempts and acceptance map: task outcomes.md; stop for parent review.
+
+## Audit #2 sortable header keyboard equivalence prerequisite (2026-10-25)
+ABDM checked first: shared/app/src/desktopMain/.../table/customtable/TableUtils.kt::
+MaybeSortableCell178–203 and Table.kt sortable indicator359–375 reverse the active key,
+otherwise initialize the default; original stable-ID table/selection and presentation-only
+queue boundary remain. Legacy next: Views/MainWindow.axaml1101–1120 uses actual Buttons
+bound to SortByCommand; MainWindowViewModel.SortBy1817–1831 reverses same key or chooses
+Name/Status ascending, NotifySortHeaders4616–4635 updates arrow, SortTasks4593–4614 only
+projects order. No queue/transfer/native show/hide behavior change is part of this repair.
+Next download_sort_header_cell pointer path -> set_download_sort(key,true) -> scroll/persist
+is original owner; its ordinary div lacks Tab/keyboard equivalence. Keep menu key,false
+default-direction semantics. Exact Component0.8.0 Button ghost/xsmall/compact, public child
+content/accessibility_label, keyed focus/Tab and original release-click provide the missing
+header capability. Keep original column geometry/inset/text/arrow and readable current sort
+state; no second dispatcher, table replacement, engine/queue/selection/detail/OLE/native work.
+Task .trellis/tasks/10-25-download-sort-keyboard/ records actual MainWindow red-green,
+temporary-config restart and interaction checks; compiled snapshots are not native/reader/
+physical/DPI/visual/user acceptance.
+
+## Audit #5 daily-schedule default-submit prerequisite (2026-10-25)
+
+ABDM first: desktop QueueInfoComponent.kt::createConfigurableList148–155/247–301 owns
+independent start/end schedule flags and nonempty weekdays. app-utils OptionsDialog.kt::
+BaseOptionDialog delegates to Compose DialogWindow visible/modeless/close request, disposes
+its focus-loss listener; AWT/Compose native internals are not inspected. Legacy next:
+SettingsWindow.axaml::SchedulerSection900 and .axaml.cs constructor15 -> animation attach18
+-> OnOpened21/ConfigureForCurrentScope -> SaveButton_Click68/ApplySettingsCommand -> Close;
+OnClosed185 cancels through the original command. WindowAnimationService.Attach13–49 owns
+guarded delayed close; Avalonia native base is unavailable. These are schedule/close owner
+references, not proof of a window-wide default Enter implementation.
+
+Current Next DownloadScheduleView::save92 -> deferred DownloadApplication::
+set_default_queue_schedule -> original DownloadQueueAction::SetSchedule/engine store -> refresh
+and original close_schedule_window; it is not a new AppConfig write. TimeField/TimeFieldState
+are current production controls, not the old raw-HH:MM Input noted in historical migration.
+Exact Base0.8.0 time_field.rs keybindings23–30 own digit/arrow/segment/Tab editing and have no
+Enter action; on_key_down418 handles only unmodified one-character edits. Default Apply may
+therefore handle an otherwise unconsumed plain Enter only on an enabled focused TimeField,
+with held/modifier/character/busy/Dialog guards and the original save/defer owner. Other
+Buttons and child layers keep their own action/release semantics; no shared keyboard-helper,
+engine/persistence/native/geometry change. Preserve 430x326 fixed client, original input state,
+validation/cancel/close and prior audit#1/#9 behavior. New red/green evidence belongs only to
+`.trellis/tasks/10-25-default-submit-keyboard/`, not native/physical/reader/user acceptance.
+
+## Audit #6 ordinary rem-role prerequisite (2026-10-25)
+
+ABDM first: QueueInfoComponent.kt::createConfigurableList148–155/247–331 preserves
+weekdays followed by independent start/stop configuration and enabled-only time editing.
+Table.kt::Table159–183 uses the same keyed LazyColumn render for layout/scroll and fixed
+cell-width alignment with its header. OptionsDialog.kt::BaseOptionDialog delegates native
+visible/modeless/close and UiScaledContent; AWT/Compose native internals were not inspected.
+Legacy next: SettingsWindow.axaml::SchedulerSection900–927 and footer999–1006 retain the
+policy/explanation and explicit Cancel/Save. Its .axaml.cs constructor/OnOpened/OnClosed and
+WindowAnimationService.Attach close chain remain as recorded above; Avalonia native base
+is unavailable. This reference check does not authorize a new native/window lifecycle.
+
+Next open_schedule_window623–699 retains keyed activation,430x326 default/minimum,
+normal client-decorated show, production Root and deferred close-identity cleanup.
+Component0.8.0 root.rs::WindowState::prepare applies Theme.font_size to window rem; actual
+product-theme/Root regression confirms the default16px design base. Form::label_width takes
+Pixels, so resolve the ordinary relative label rail only at this existing layout boundary;
+its controls remain actual Small outlined Toggle/default Switch/default H23 minute TimeField.
+GPUI uniform_list.rs::measure_item invokes the same task-row callback on every measurement;
+row rendering and actual virtual stride must use one relative role, not a second calculator.
+Current ordinary row/header layout ratios can use GPUI scale builders or metrics::ordinary_rem
+against the fixed16 design base. Preserve bitmap20/native fixed clients/titlebar/footer/
+physical edges and all original stable-ID selection/context/OLE/sort callbacks. Exact current
+Switch and XSmall Progress internals remain released fixed-pixel tracks, not custom substitutes.
+Schedule validation keeps its original two-line viewport budget with full text scrollable;
+Tooltip/copy and original submit/save/cancel/failure ownership remain. Evidence belongs only to
+`.trellis/tasks/10-25-rem-role-consistency/`; controlled14/16/18 base-font geometry/paint is not
+native/DPI/reader/visual/user acceptance or a claim that all ordinary px consumers are repaired.
+
+## Audit #6 continuation: New Download ordinary rem prerequisite (2026-10-25)
+
+ABDM first: AddDownloadPage.kt::AddDownloadPage57–193 keeps dominant URL, weighted left
+category/location/name and intrinsic metadata/right actions, with MainActionButtons after
+the flexible spacer. LocationTextField.kt137–209 bounds long location choices with vertical
+scrolling; its original component owns values. Legacy AddDownloadWindow.axaml232–387 uses
+one ScrollViewer around URL/parsed stages and original ViewModel commands. Its .axaml.cs
+constructor20 attaches WindowAnimationService, OnOpened27 adapts native chrome, DataContext
+subscribes RequestClose/PropertyChanged, CloseFromViewModel173 calls Close, and OnClosed34
+detaches/disposes. WindowAnimationService.Attach13 guards delayed Close; AWT/Avalonia native
+framework implementation was not inspected and is not inferred from these managed sources.
+
+Next browser_handoff_impl.rs::open_new_download_window_with_request437 -> original options/
+NewDownloadView/Root keeps native show and focus; create_fixed_confirmation hydrates fresh
+window-bound inputs in a hidden target, then original native apply/commit/old-close owner.
+Current new_download_window_size(true) computes246px from34+44+16+32+8+112, not historical278.
+All size/error/media functions and native placement/readback/generation policy remain fixed.
+Ordinary body/label/guidance/inspector/category/calendar/media ratios may follow verified16px
+Root base through existing GPUI scale or metrics::ordinary_rem. Exact Component0.8.0 Form
+label_width accepts Pixels resolved at Window boundary; Select.menu_width accepts Length;
+Popover p_3 is rem-relative before caller style. Preserve outer schedule304x200/calendar124
+and category320x240 budgets,34caption/44footer, original semantic controls and all callbacks.
+Shared path_picker_shell returns erased AnyElement with fixed32px layout; adapt only the
+original New Download public Input/Button layout locally, not shared unrelated consumers.
+No second keyboard/action/scroll controller or vendor patch is authorized. Test compact and
+confirmed production Root at14/16/18, true scroll-end/footer/hit bounds and child Select/
+Popover keyboard ownership; base-font fixtures do not establish native/DPI/visual acceptance.
+This continuation has separate evidence in `.trellis/tasks/10-25-rem-new-download/`; the prior
+accepted bounded slice and failed complete Desktop run remain immutable history.
+
+## Audit #6 Queue04: basic New Download relative roles (2026-10-26)
+
+The bounded basic slice retains Component0.8.0 Small Form/Field, Medium/default Input and
+outlined paste/directory Buttons, plus original footer variants and callbacks. Native compact
+560x176 and ordinary confirmed560x246 remain fixed (34caption/44footer); the separate278media
+base and all error/media sizing and hidden-target native handoff functions are unchanged.
+Ordinary16/8body insets,72label rail,32control composition,12/18guidance and inspector text,
+13/14vector sizes,120x112ordinary inspector and command gaps now follow the accepted16px
+design base through metrics::ordinary_rem or GPUI scale builders. Form.label_width resolves
+Rems to Pixels at the Window boundary. Released Small Form/Field internal6/4pixel gaps and
+inherited label line metrics remain official; no vendor/theme/font override is added.
+
+One bounded body scrollbar retains intrinsic form/error height. Compact fallback error wraps
+instead of permanently truncating one line; expanded/confirmed errors retain the original
+official Alert through a nonshrinking local layout slot. Actual40-line synthetic error wheel
+scroll reaches its full end while the fixed footer remains available. Long original Inputs
+retain their complete values/entities and accept actual pointer focus,End and tail editing.
+Ordinary path-picker rails are local composition only; media uses the original shared helper,
+and media inspector pixel roles remain for the next slice. Category/calendar/Popover/media
+option internals and all original input/probe/picker/submit/deferred callbacks are preserved.
+
+Evidence lives in `.trellis/tasks/10-26-rem-new-download-basic/`: actual production Root16/14/18,
+paint-time inherited type,default density,scroll-end,public focus sequence and real Cancel
+pointer checks. Controlled base-font variation is not Windows DPI; source/compiled fixtures
+do not establish physical/native/IME/reader/visual/user or installed-release acceptance.
+The earlier compile-only checkpoints and full Desktop failure remain immutable history;
+this bounded slice does not close original audit#6 or authorize a full Desktop/package run.
+
+## Audit #6 Queue05: New Download overlays and media rem roles (2026-10-26)
+
+ABDM first recheck: CategorySelect.kt::CategorySelect/RenderCategory keeps one bounded
+dropdown,original close/selection and an intrinsic icon/name row; AddDownloadPage.kt keeps
+the category/location/name column beside intrinsic metadata and the original footer. Legacy
+AddDownloadWindow.axaml232–387 retains bounded HLS resource lists and complete metadata in
+Tooltip,original commands and ScrollViewer. Its constructor/Attach/OnOpened/RequestClose/
+OnClosed cleanup and WindowAnimationService guarded delayed Close remain the lifecycle
+reference. Neither managed source establishes its unavailable framework-native show/close.
+
+The current bounded slice retains official0.8.0 Popover,ListItem,Input,Small Select,compact
+ghost date Button and RadioGroup/Radio with original callbacks/owners. Category34px two-line
+roles12/18+11/16 and search gap now follow ordinary_rem; fixed320x240 minus actual released
+Popover/ListItem rem padding determines content width. Existing search/highlight/ScrollHandle/
+Enter confirmation/focus-return and full name+path Tooltip remain. Schedule304x200 retains
+the same calendar scrollowner,up to124px; rem-relative header/date/type and66px time rails
+yield within that budget to nonshrinking original actions. Seven ideal40px date columns may
+shrink within available width; default16 remains40x19. Confirmation,clear and overlay cancel
+remain local/deferred,never outer submit. No Calendar/Select controller was replaced.
+
+Media inspector and ordinary HLS/DASH headings,gaps and minimum40px Radio rows follow rem.
+Long Chinese track metadata wraps inside the original official Radio content instead of
+being permanently single-line clipped. Native budgets are still compact176,ordinary246,
+media base278,HLS one/many338/418,DASH353/433 and original38px error reserve. List viewports
+remain at most120px. Exact released scroll/scrollable.rs::render/root_style_from retains a
+caller's max_size on content while copying it to the outer wrapper; using that cap directly
+on a long RadioGroup can leave the actual wheel range unusable. Public Scrollable::id is
+required when the same callsite creates two independent scrollables. One stateless
+NewDownloadMediaViewport resolves ordinary natural height at the existing Window/rem boundary,
+caps its outer layout before parent flow,and hosts the original Scrollable with a stable
+per-list ID. No new state/ScrollHandle/scroll controller or vendor patch. Original RadioGroup
+gap remains released12px/rem; required HLS/video and nullable repeat-to-clear DASH audio
+callbacks/typed request owners are unchanged.
+
+Production Root16/14/18 tests prove actual category wheel-to-last/full-path Tooltip/search/
+Enter,calendar wheel-to-last-date and pointer selection,real Tab to original actions,time
+Select confirmation,Enter confirm/Space clear/Escape cancel and child-no-outer-submit.
+Long HLS/DASH metadata scrolls to its true end and pointer selects the original final item;
+after real Input focus,Tab reaches the selected audio Radio and Space release clears once.
+The original media error geometry remains visible at456px after a red-capable regression
+caught an intermediate oversized parent flow. No prior geometry assertion was weakened.
+Source/compiled fixtures are not physical keyboard,WindowsIME,DPI/reader/visual/user/release
+acceptance. Exact reds,intermediate failures,dirty deltas and protection evidence live in
+`.trellis/tasks/10-26-rem-new-download-overlays/`; Queue04 and earlier full-suite failure
+remain immutable. Original audit#6 overall remains open for later ordinary-role consumers.
+
+## Audit #6 Queue06: Settings/task ordinary-role boundary (2026-10-26)
+
+Reference order rechecked: ABDM DesktopSettingsComponent.kt/SettingsPage selected groups,
+ShowDownloadDialogs keyed task/phase windows and CommonContent/close,ProgressDownloadPage
+bounded tab/detail scrollers,CompletedDownloadPage name/icon/footer actions; then legacy
+SettingsWindow constructor->WindowAnimationService.Attach->OnOpened/ConfigureForCurrentScope,
+SaveButton_Click ApplySettingsCommand and close-only cancellation. DownloadProgressWindow
+constructor subscribes task/completion options,OnOpened syncs,OnClosed detaches; completion
+switches content/footer and calls ResizePreservingCenter. WindowAnimationService guards
+delayed Close. AWT/Avalonia native bases remain unavailable,not inferred or operated.
+
+Current ordinary Settings input/label/control rails,category row minimum/heading,spacing and
+workbench type use accepted ordinary_rem plus public semantic control tiers. Local
+download_settings_input accepts Length,retaining original Input entity and field_shell.
+The original Settings/Page/Group/Item search/navigation/scroll owns the page; category editor
+may scroll inside its existing310px area. Header Textarea120px,error96px,984x650 native
+options/minimum,title/footer,taskbar preview/native/device/hit geometry remain fixed.
+Actual constrained720x480 tests do not change native minimum. Original draft parsing,picker
+identity,Apply/Cancel,deferred section update/rollback/error Notification owner are unchanged.
+
+Task ordinary content insets,gaps,vector badge/icons,identity/name/metric/capability lines and
+DescriptionList label rail follow rem. Original official Progress XSmall owns its tier;
+semantic Table rows follow the same ordinary role while columns retain original40/88/140/140
+proportions inside actual available width. No task data/virtualization/IO/copy ownership
+change. Width440,collapsedprogress/completed184,failed196,expanded280,title34/footer44 and
+phase/retry/reset/close/native handoff functions remain fixed. Content scrolls within those
+clients; failure's original36..40px Alert viewport remains; complete failure text and long
+path/name remain reachable through original scrolling or bounded Tooltip. Required footer
+actions stay outside content scroll. Added path Tooltip/semantic labels retain full values,
+not a new Shell or native action owner. Task snapshot/display-sampler/segment-state semantics
+and every original pointer/key/deferred callback remain unchanged.
+
+Queue06 evidence is `.trellis/tasks/10-26-rem-download-settings-task/`: effective Root14 red
+showed88px input rail beside28px control and fixed16px metric line; new Root16/14/18 fixtures
+exercise long category/error/default+constrained Settings,actual category pointer/Tab/Space,
+original Apply/Cancel with temp config section merge,and task details last segment/phase
+long text/close/cancel. Official Scrollable debug selectors can describe content rather than
+its clipping viewport; real hit assertions use existing outer budget/action bounds. A
+pointer click on released Button may not initialize keyboard focus; fixture initializes the
+public focus sequence before testing actual Tab/KeyUp,not a production focus workaround.
+Core's existing Clipboard normalize forces enabled=true; section-merge evidence uses a
+valid unrelated max_items value,not a forbidden legacy flag. Native/DPI/physical/WindowsIME/
+reader/visual/user/release acceptance is separate; earlier failures/acceptances are immutable.
+
+## Audit #8 command-result naming follow-up (2026-10-26)
+Actual MainWindow header Buttons defer to open_settings_window/open_schedule_window/
+open_new_download_window; task-menu request_task_window opens its original keyed surface.
+These follow-up commands now use one U+2026, with icon Tooltip/a11y sharing the same full purpose.
+Settings directory/FFmpeg and NewDownload directory Buttons retain their original picker/ID/
+focus/deferred owners and complete object names, synchronizing only the ellipsis. Settings
+browser export Buttons -> request_browser_extension_export -> ExportBrowserExtension with
+empty destination -> WindowsPlatformAdapter.ExportBrowserExtension ->
+BrowserExtensionExportDialog.PickDestination -> StaDialogRunner -> SaveFileDialog.ShowDialog.
+Only native cancellation returns success+empty data before package export. The original
+Rust pending/result owner and C# export/signing/picker code are unchanged; no native dialog ran.
+
+Deletion wording follows the real existing policy, not the old static label:
+request_delete_confirmation checks task_removal_deletes_file. False calls remove(task,false)
+directly; true opens original380x178 DeleteDownloadView. Confirm calls remove(task,true),
+Cancel/close only retire that presentation. DownloadEngine::remove_correlated always cleans
+task-owned temporary artifacts and removes the record; it removes final_path only when
+delete_artifact is true. Original Batch Remove passes false; Cancel retains the task record
+and changes task state, not list removal. A read-only application getter projects the SAME
+setting for the menu label (Delete file ellipsis versus Remove from list); no policy or
+capability change. Final confirmation remains the immediate Delete file label without ellipsis.
+Source UI menu content keeps the official ElementItem/Label layout and original handler while
+exposing the same current text as a semantic Label; no second menu or key dispatcher.
+
+ABDM remove/dialog vocabulary and legacy MainWindow BuildTaskContextMenu/SettingsWindow
+constructor->WindowAnimationService.Attach->OnOpened/ApplyCancel/OnClosed were reread.
+Unavailable Compose/Avalonia native internals are not inferred. Actual production label reds,
+pointer/official-menu Enter/Tab+Space cancellation, synthetic record removal retaining a sentinel,
+and original full-object/gesture protections are in .trellis/tasks/10-26-command-naming.
+No actual final-file deletion, external download/export, native/product/release operation;
+strict/broad shared-tree failures and native/physical/reader/visual/user limits remain explicit.
+
+### Audit #11 projection review (2026-10-26)
+
+- Re-read ABDM first: desktop `pages/home/sections/DownloadList.kt::DownloadList`
+  passes task-ID keys and the original LazyListState to shared desktop
+  `ui/widget/table/customtable/Table.kt::Table`; its sortedList feeds LazyColumn
+  itemsIndexed. Shared `pages/home/BaseHomeComponent.kt::downloadList` combines
+  upstream status/category/search, distinctBy ID and original selection reconciliation.
+- Then re-read legacy `MainWindowViewModel::{FilterTasks,SortTasks,SortBy,
+  RebuildVisibleTasks}` and `MainWindow.axaml.cs` constructor/OnOpened/OnClosed,
+  TaskRow_ContextRequested -> SelectTaskForContextMenu -> BuildTaskContextMenu.
+  Native Avalonia/AWT implementation is not inferred from these application sources.
+- Next's original DownloadApplication replaces its entire task Vec at constructor /
+  refresh_snapshot, while progress/icon maps are updated independently by stable ID.
+  The list projection can share that immutable authoritative snapshot and sort source
+  indices, without deep-copying all task requests/progress/icon paths each repaint.
+  A retained index must only address its captured snapshot, never a later refreshed Vec.
+- Published gpui-pre0.3.9 `elements/uniform_list.rs::measure_item` requests one real
+  measurement row; prepaint additionally requests the visible range. Both are legitimate
+  construction work. Keep the existing scroll owner, rem row measurement, ID callbacks,
+  selection/context/OLE/detail lifecycle and deferred cross-entity effects. This is a
+  data-projection optimization, not a DataTable migration or detail-threading change.
+- Regression/evidence owner: `.trellis/tasks/10-26-download-virtual-projection/`.
+  Synthetic construction/access/identity evidence is not native, DPI or visual acceptance.
+
+### Audit #12 selected-detail IO/lifecycle review (2026-10-26)
+
+- ABDM first: ProgressDownloadPage.kt::ProgressDownloadPage/RenderPartInfo consume the
+  original monitor item and scoped BaseSingleDownloadComponent.extraDownloadProgressInfo;
+  scoped close/onDismiss does not imply cancelling the download. Legacy then:
+  DownloadTaskViewModel Header/Cookie/Segment summary projections and AddLog retain300;
+  MainWindow OnOpened/OnClosing/OnClosed and HideToTray retain presentation ownership.
+  Neither application source proves unavailable AWT/Avalonia native implementation.
+- Next's render_downloads -> cx.defer -> DownloadApplication::request_task_detail ->
+  window_support::load_download_task_detail -> DownloadEngine::handle_command(TaskDetail)
+  -> engine/projection.rs::command_task_detail -> task + original store load_transfer_plan
+  and load_task_timeline(300) is synchronous. Both storage methods take Mutex<Connection>.
+  refresh_snapshot also reloads selected detail synchronously. Deferral is not background IO.
+- Preserve that typed command/store/schema and original download runtime. Background blocking
+  work must retain no GPUI lease; install pending before dispatch, scope publication to current
+  task/request generation and retire selection/closed presentation before accepting completion.
+  Cache hits, failures and late replies obey the same boundary. Cancelled IO may physically
+  finish, but must not overwrite newer details or spawn unbounded replacement workers.
+- Evidence owner: `.trellis/tasks/10-26-download-detail-async/`. Real synthetic SQLite mutex
+  contention tests must prove UI progress while the store is still blocked; source defer tokens
+  or helper-only tests do not prove responsiveness. No native/network acceptance is implied.
+
+## User-approved 2026-10-28 row/feedback refinement
+After read-only audit user explicitly changes historical secondary path/error target: filename second line is file size/unknown-size, actual file icon20->40DIP (source Shell extraction24->48). Keep original48DIP virtual rows/selection/transfer/status/sort/filter, no source-domain duplication. Rechecked ABDM desktop/pages/home/sections/DownloadList.kt170-234 Ctrl/single/double/secondary callbacks and TableDownloadItem.kt80-95, then legacy Views/MainWindow.axaml.cs1217-1243 selection and1335-1345 context selection->BuildTaskContextMenu.Open. Selection alone must no longer create detail IO or show dock; explicit originalPopupMenu ViewDetails creates current original detail scope; changed selection/navigation retires it. Original configurable doubleclick/task HWND and C#Shell APIs unchanged. NewDownloadView local submit validation now belongs to existing NotificationCenter like async operation failures; preserve draft/probe/generation/zero-effect and critical/persistent Alerts, not duplicate transient inline banner/window growth. Source/compiled/native evidence in10-28-ui-experience-consistency-repair, not implied by this note.
+
+## Release38 download context-menu order (2026-10-30)
+
+Rechecked ABDM desktop HomeComponent::onRequestOpenDownloadItemOption272-279 and legacy
+NxTools Views/MainWindow.axaml.cs::TaskRow_ContextRequested1335 -> BuildTaskContextMenu1452;
+legacy properties ends the original menu1485. Current Next render_download_task_row builds
+the same original official PopupMenu and deferred open_download_detail callback. User requests
+View Details LAST, keeping its single-selection availability and all existing action groups,
+capability predicates, extension submenu and action-context/focus owner. Append after
+download_task_context_menu; remove the former initial item/separator, not change menu commands.
+Production secondary-click/detail-scope regression asserts the resulting order and same action.

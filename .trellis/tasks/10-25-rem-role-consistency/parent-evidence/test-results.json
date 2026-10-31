@@ -1,0 +1,50 @@
+﻿[
+    {
+        "filter":  "audit06_",
+        "exit":  0,
+        "elapsed":  7.6727628999999995,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\audit06.log"
+    },
+    {
+        "filter":  "downloads::",
+        "exit":  0,
+        "elapsed":  53.3035557,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\downloads.log"
+    },
+    {
+        "filter":  "main_window::download_page::",
+        "exit":  0,
+        "elapsed":  28.9583478,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\main_windowdownload_page.log"
+    },
+    {
+        "filter":  "audit05_",
+        "exit":  0,
+        "elapsed":  6.913416,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\audit05.log"
+    },
+    {
+        "filter":  "history_identity_",
+        "exit":  0,
+        "elapsed":  23.977006,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\history_identity.log"
+    },
+    {
+        "filter":  "accessible_name_",
+        "exit":  0,
+        "elapsed":  2.6710857999999997,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\accessible_name.log"
+    },
+    {
+        "filter":  "sort_keyboard_",
+        "exit":  0,
+        "elapsed":  17.956450099999998,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\sort_keyboard.log"
+    },
+    {
+        "filter":  "audit04_",
+        "exit":  0,
+        "elapsed":  6.9899277,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\item06-parent\\audit04.log"
+    }
+]

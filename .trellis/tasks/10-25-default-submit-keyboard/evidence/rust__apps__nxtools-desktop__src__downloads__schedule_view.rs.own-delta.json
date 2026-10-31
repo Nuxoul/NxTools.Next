@@ -1,0 +1,54 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+  "baseline_sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+  "after_sha256": "9ff0ef94d2e1739132488dbfab8e37c8f610553867f51771633c74b771f0f45e",
+  "operations": [
+    {
+      "kind": "insert",
+      "baseline_start": 1,
+      "baseline_end": 1,
+      "after_start": 1,
+      "after_end": 2,
+      "baseline_text": "",
+      "after_text": "use gpui_kit::component::WindowExt as _;\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 19,
+      "baseline_end": 19,
+      "after_start": 20,
+      "after_end": 22,
+      "baseline_text": "",
+      "after_text": "    default_enter_held: bool,\n    _activation: Subscription,\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 68,
+      "baseline_end": 68,
+      "after_start": 71,
+      "after_end": 74,
+      "baseline_text": "",
+      "after_text": "            default_enter_held: false,\n            _activation: cx\n                .observe_window_activation(window, |this, _, _| this.default_enter_held = false),\n"
+    },
+    {
+      "kind": "insert",
+      "baseline_start": 69,
+      "baseline_end": 69,
+      "after_start": 75,
+      "after_end": 102,
+      "baseline_text": "",
+      "after_text": "    }\n    fn default_enter(\n        &mut self,\n        event: &gpui_kit::KeyDownEvent,\n        window: &mut Window,\n        cx: &mut Context<Self>,\n    ) {\n        if event.keystroke.key != \"enter\" {\n            return;\n        }\n        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {\n            return;\n        }\n        if event.keystroke.modifiers.modified()\n            || event.prefer_character_input\n            || self.saving\n            || window.has_active_dialog(cx)\n        {\n            return;\n        }\n        let start = self.enabled_start && self.start_time.focus_handle(cx).is_focused(window);\n        let stop = self.enabled_stop && self.stop_time.focus_handle(cx).is_focused(window);\n        if !start && !stop {\n            return;\n        }\n        cx.stop_propagation();\n        self.save(window, cx);\n"
+    },
+    {
+      "kind": "replace",
+      "baseline_start": 317,
+      "baseline_end": 329,
+      "after_start": 350,
+      "after_end": 371,
+      "baseline_text": "        dialog_shell(\n            theme,\n            DialogShellIds {\n                root: \"download-schedule-dialog-shell\",\n                titlebar: \"download-schedule-dialog-titlebar\",\n                body: \"download-schedule-dialog-body\",\n                footer: \"download-schedule-dialog-footer\",\n            },\n            titlebar,\n            body,\n            footer,\n        )\n",
+      "after_text": "        div()\n            .id(\"download-schedule-keyboard\")\n            .size_full()\n            .capture_key_down(cx.listener(Self::default_enter))\n            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {\n                if event.keystroke.key == \"enter\" {\n                    this.default_enter_held = false;\n                }\n            }))\n            .child(dialog_shell(\n                theme,\n                DialogShellIds {\n                    root: \"download-schedule-dialog-shell\",\n                    titlebar: \"download-schedule-dialog-titlebar\",\n                    body: \"download-schedule-dialog-body\",\n                    footer: \"download-schedule-dialog-footer\",\n                },\n                titlebar,\n                body,\n                footer,\n            ))\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

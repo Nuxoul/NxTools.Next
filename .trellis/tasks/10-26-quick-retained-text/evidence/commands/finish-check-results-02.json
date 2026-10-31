@@ -1,0 +1,63 @@
+﻿[
+    {
+        "command":  "rustfmt --edition 2024 --config skip_children=true --check [7 scoped files]",
+        "files":  [
+                      "rust/apps/nxtools-desktop/src/quick_launch.rs",
+                      "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+                      "rust/apps/nxtools-desktop/src/quick_launch/actions.rs",
+                      "rust/apps/nxtools-desktop/src/quick_launch/tests.rs",
+                      "rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs",
+                      "rust/apps/nxtools-desktop/src/quick_launch/retained_text.rs",
+                      "rust/apps/nxtools-desktop/src/quick_launch/retained_text_tests.rs"
+                  ],
+        "exit":  0
+    },
+    {
+        "exit":  1,
+        "command":  "cargo fmt --all -- --check"
+    },
+    {
+        "exit":  0,
+        "command":  "git diff --check"
+    },
+    {
+        "exit":  1,
+        "command":  "tests/architecture/quick-launch-lifecycle.ps1"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/desktop-shell-lifecycle.ps1"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/ui-token-boundaries.ps1"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/ui-consistency.ps1"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/ui-state-lifecycle.ps1"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/ui-motion-policy.ps1"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/gpui-component-catalog.py"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/gpui-release-contracts.py"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/markdown-editor-contracts.py"
+    },
+    {
+        "exit":  0,
+        "command":  "tests/architecture/spec-contracts.py"
+    }
+]

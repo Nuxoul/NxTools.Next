@@ -1,0 +1,18 @@
+﻿[
+    {
+        "name":  "spec-contracts.py",
+        "exit_code":  0
+    },
+    {
+        "name":  "gpui-component-catalog.py",
+        "exit_code":  0
+    },
+    {
+        "name":  "gpui-release-contracts.py",
+        "exit_code":  0
+    },
+    {
+        "name":  "markdown-editor-contracts.py",
+        "exit_code":  0
+    }
+]

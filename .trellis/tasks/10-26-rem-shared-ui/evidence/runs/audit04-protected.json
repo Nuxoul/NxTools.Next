@@ -1,0 +1,7 @@
+﻿{
+    "name":  "audit04-protected",
+    "command":  "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+    "exit":  0,
+    "elapsed":  5.6223101,
+    "finished":  "2026-10-26T06:47:12.5023805+08:00"
+}

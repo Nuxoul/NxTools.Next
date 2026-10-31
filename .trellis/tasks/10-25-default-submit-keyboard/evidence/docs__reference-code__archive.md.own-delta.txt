@@ -1,0 +1,36 @@
+--- dirty-baseline/docs/reference-code/archive.md
++++ own-after/docs/reference-code/archive.md
+@@ -768,3 +768,33 @@
+ owners and 560x300/default,480x260/min native client. Task evidence belongs to
+ `.trellis/tasks/10-25-archive-prompt-object/`; source/compiled/synthetic is not physical/native,
+ reader/DPI/visual or user acceptance.
++
++## 2026-10-25 — audit #5 confirmation/default-submit source boundary
++
++Rechecked the allowed Bandizip IDD_ARCHIVE480–494 and IDD_ASK_DUPEFILE579–588 text resources;
++these identify the decision fields/actions, not verified native default-key behavior. Licensed
++Archiver gui/ui/app.slint401–408 uses LineEdit plus a primary create-ok Button;430/442 explicitly
++route LineEdit accepted to find/password actions. gui/src/main.rs::start_create485–508 snapshots
++and validates options, clears/closes the draft then calls the original background spawn;
++::do_extract718–748 snapshots selected source/destination; AppWindow::new115 -> callbacks ->
++ui.run158 is the Slint lifecycle boundary. Framework native internals were not inspected. The old
++NxTools tracked-source investigation did not identify a general archive operation UI.
++
++Exact current Component0.8.0 dialog/footer.rs::DialogAction122–132 has only an outer div click
++dispatcher and a private anchor; it exposes no public Button trigger. Component button/button.rs
++857–865 forwards activation only when Button.on_click exists, while Base Button/div own the real
++keyboard-release boundary. A local composition may use official Button public child/on_click and
++public FocusHandle::dispatch_action with exported dialog::Confirm, exactly one activation source
++feeding the original Dialog on_ok/deferred reply. A zero-size non-Tab child focus node keeps
++pointer activation routed to its own Dialog even when pointer press intentionally preserves focus.
++Do not use an empty click callback, private anchor API, vendor change or second reply controller.
++Base Dialog installs a root Enter Confirm keybinding; CreateOverwrite must additionally require
++this prompt's explicit button activation, not blindly approve when only root/body has focus.
++
++Original OperationForm::submit/capture, busy/pending_format/retirement and deferred submit_form
++remain the admission owner. Default submission is confined to explicitly allowed focused editing
++controls, after child component handling, with IME/modifier/held/busy/layer guards. Existing masked
++password, Textarea, Select and format-discard Dialog keep their local semantics. The original
++form client/scroll/fixed-footer budgets, source/draft/ticket/native identity and diagnostic privacy
++remain unchanged. New task evidence: `.trellis/tasks/10-25-default-submit-keyboard/`; previous
++audit #4's unresolved diagnostic/history stays immutable and is closed only by new #5 evidence.

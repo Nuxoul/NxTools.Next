@@ -2,6 +2,7 @@ use gpui_kit::component::scroll::ScrollableElement;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::{AnyView, App, SharedString, Window, div, prelude::*, px};
 
+use crate::ui::metrics::ordinary_rem;
 use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL, UI_MONO_FONT_FAMILY};
 
 pub(crate) const TOOLTIP_MAX_WIDTH: f32 = 344.0;
@@ -31,8 +32,8 @@ pub(crate) fn bounded_text_tooltip(
                 .when(monospace, |surface| {
                     surface.font_family(UI_MONO_FONT_FAMILY)
                 })
-                .text_size(px(TEXT_LABEL))
-                .line_height(px(LINE_HEIGHT_LABEL))
+                .text_size(ordinary_rem(TEXT_LABEL))
+                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                 .child(message)
         })
         .max_w(px(TOOLTIP_SURFACE_MAX_WIDTH))

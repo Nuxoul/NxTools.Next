@@ -1,0 +1,63 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/downloads/settings_view.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/downloads/settings_view.rs
+@@ -1020,13 +1020,13 @@
+                         icon_action_button(
+                             "download-settings-pick-directory",
+                             MaterialIcon::Folder,
+-                            "选择默认保存目录",
++                            "选择默认保存目录…",
+                         )
+                         .outline()
+                         .on_click(cx.listener(|this, _, window, cx| {
+                             this.request_directory(window, cx);
+                         })),
+-                        "选择默认保存目录",
++                        "选择默认保存目录…",
+                         "download-settings-pick-directory-tooltip",
+                     )),
+             )
+@@ -1541,7 +1541,7 @@
+                         icon_action_button(
+                             "download-settings-pick-ffmpeg-button",
+                             MaterialIcon::Folder,
+-                            "选择 FFmpeg 可执行文件",
++                            "选择 FFmpeg 可执行文件…",
+                         )
+                         .outline()
+                         .on_click(move |_, _, cx| {
+@@ -1553,7 +1553,7 @@
+                                 });
+                             });
+                         }),
+-                        "选择 FFmpeg 可执行文件",
++                        "选择 FFmpeg 可执行文件…",
+                         "download-settings-pick-ffmpeg-tooltip",
+                     )),
+             )
+@@ -1995,7 +1995,7 @@
+                         .child(
+                             action_button(
+                                 "download-settings-extension-export-chrome-button",
+-                                "导出 Chrome / Edge (.crx)",
++                                "导出 Chrome / Edge (.crx)…",
+                             )
+                             .on_click(cx.listener(|this, _, _, cx| {
+                                 let operation_id = uuid::Uuid::new_v4();
+@@ -2032,7 +2032,7 @@
+                         .child(
+                             action_button(
+                                 "download-settings-extension-export-firefox-button",
+-                                "导出 Firefox (.xpi)",
++                                "导出 Firefox (.xpi)…",
+                             )
+                             .on_click(cx.listener(|this, _, _, cx| {
+                                 let operation_id = uuid::Uuid::new_v4();
+@@ -2069,7 +2069,7 @@
+                         .child(
+                             action_button(
+                                 "download-settings-extension-export-store-button",
+-                                "导出 Chrome 商店 (.zip)",
++                                "导出 Chrome 商店 (.zip)…",
+                             )
+                             .outline()
+                             .on_click(cx.listener(|this, _, _, cx| {

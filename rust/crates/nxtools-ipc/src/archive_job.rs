@@ -91,6 +91,7 @@ impl PlatformBridge {
                 PendingCommand {
                     generation,
                     accepted_at: Instant::now(),
+                    timeout: super::PENDING_COMMAND_TIMEOUT,
                     summon_reply: None,
                 },
             );
@@ -261,6 +262,8 @@ mod tests {
                 native_error_code: None,
                 journal: vec![],
                 output_shortfall: None,
+                result_location: None,
+                output_published: None,
             }),
         };
         endpoint.observe_job_cleanup(&PlatformNotification::Event(PlatformEvent::ArchiveJob(

@@ -1,0 +1,10 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust state/layout, GPUI rendering, C# native ownership and deferred entity boundaries"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Pending-before-dispatch, atomic section save, payload-safe bounded diagnostics"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official tile/form/control selection, visible variants and public slots"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop pre-development and owning topic navigation"}
+{"file":".trellis/spec/nxtools-core/backend/index.md","reason":"Dedicated serde-default configuration and persistence owner"}
+{"file":".trellis/spec/nxtools-protocol/backend/index.md","reason":"Typed bounded Rust/C# command/event compatibility"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Native STA/OLE ownership, source HWND identity and safe fixture classification"}
+{"file":"docs/reference-code/assistant.md","reason":"Verified old NxTools behavior and explicitly approved new behavior differences"}
+{"file":".trellis/tasks/10-23-floating-assistant/research/current-next.md","reason":"Current reusable owners and first native receiving feasibility prerequisite"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Current exact release graph and no unapproved framework source changes"}

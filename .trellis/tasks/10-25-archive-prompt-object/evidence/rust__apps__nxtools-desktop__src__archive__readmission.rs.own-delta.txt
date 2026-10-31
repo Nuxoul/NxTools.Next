@@ -1,0 +1,10 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/archive/readmission.rs
++++ delivery/rust/apps/nxtools-desktop/src/archive/readmission.rs
+@@ -145,6 +145,7 @@
+             existing_bytes: Some(required.entry_bytes),
+             incoming_bytes: Some(required.output_bytes),
+             approved_limit: Some(required.output_bytes),
++            display: None,
+         };
+         let Some(record) = self.jobs.records.get_mut(&id) else {
+             return;

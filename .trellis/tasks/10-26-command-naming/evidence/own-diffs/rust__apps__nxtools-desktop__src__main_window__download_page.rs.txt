@@ -1,0 +1,80 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/main_window/download_page.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/main_window/download_page.rs
+@@ -1077,7 +1077,7 @@
+                     ToolbarGroup::new("download-header-command-group")
+                         .label("下载操作")
+                         .child(
+-                            icon_action("download-settings", MaterialIcon::Settings, "下载设置")
++                            icon_action("download-settings", MaterialIcon::Settings, "下载设置…")
+                                 .ghost()
+                                 .on_click(move |_, _, cx| {
+                                     let application = settings_download_application.clone();
+@@ -1089,7 +1089,7 @@
+                                 }),
+                         )
+                         .child(
+-                            icon_action("download-schedule", MaterialIcon::History, "下载计划")
++                            icon_action("download-schedule", MaterialIcon::History, "下载计划…")
+                                 .ghost()
+                                 .on_click(move |_, _, cx| {
+                                     let application = schedule_download_application.clone();
+@@ -1104,7 +1104,7 @@
+                             labelled_icon_action(
+                                 "download-new-task",
+                                 MaterialIcon::Add,
+-                                "新建下载",
++                                "新建下载…",
+                             )
+                             .custom(crate::ui::components::action::primary_button_variant(
+                                 theme, cx,
+@@ -1791,6 +1791,14 @@
+ ) -> PopupMenu {
+     let plan = download_context_menu_plan(&capabilities, task_ids.len());
+     let artifact_task = capabilities.single_artifact;
++    let delete_file_label = if application
++        .read_with(cx, |application, _| application.task_removal_deletes_file())
++        .unwrap_or(false)
++    {
++        "删除文件…"
++    } else {
++        "从列表移除"
++    };
+     let batch_item = |selector: &'static str,
+                       label: &'static str,
+                       action: DownloadBatchAction,
+@@ -1905,7 +1913,7 @@
+             download_popup_item(
+                 theme,
+                 "download-menu-task-window",
+-                "任务窗口",
++                "任务窗口…",
+                 MaterialIcon::Info,
+                 MenuTone::Normal,
+             )
+@@ -1963,7 +1971,7 @@
+         if plan.cancel {
+             menu = menu.item(batch_item(
+                 "download-menu-cancel",
+-                "取消",
++                "取消任务",
+                 DownloadBatchAction::Cancel,
+                 MaterialIcon::Cancel,
+                 capabilities.cancel_targets.clone(),
+@@ -2057,7 +2065,7 @@
+             download_popup_item(
+                 theme,
+                 "download-menu-delete-file",
+-                "删除文件",
++                delete_file_label,
+                 MaterialIcon::Delete,
+                 MenuTone::Danger,
+             )
+@@ -2233,7 +2241,7 @@
+             toolbar.content(batch_action(
+                 "download-batch-cancel",
+                 MaterialIcon::Cancel,
+-                "取消可取消任务",
++                "取消所选可取消任务",
+                 DownloadBatchAction::Cancel,
+                 capabilities.cancel_targets.clone(),
+                 false,

@@ -1,0 +1,9 @@
+# P1 executable design
+
+Inherits parent approved design section2 verbatim in meaning; no new product decision. Add optional omitted validation on Setting (only text/file/folder), bounded TextValidation module and serde-preserving untagged ChoiceOption. Exact regex=1.13.1, existing lock unchanged except direct package edge. No password validation or filesystem probes.
+
+Declaration/state versus readiness: required empty default import/load allowed. Setting.accepts means ready value; accepts_stored admits only explicit unconfigured empty state for a required field. Manifest.settings_ready checks all nonsecret fields using stored value or valid default and unknown keys; original registry.set_settings, settings_transaction before secret operations and runtime before native admission use it. Original Core locked save revalidates current manifest. Invocation uses effective defaults without modifying config. Fixed InvalidSettings runtime error maps original metadata unavailable, UI field-specific text stays UI-only.
+
+UI: original Settings/persistent Input/Select owner. App-local public SelectItem wrapper maps ChoiceOption.value to String and title to label; no new control. Original path subscriptions retained. Explicit invalid selection placeholder/error, no first-option fallback. Official Alert inline feedback in existing SettingField slot after invalid Save; existing footer/draft survives failure. No entity lease across effects, no new HWND/native/focus lifecycle.
+
+Diagnostics remain fixed run terminal/current identity; validation values/keys/labels/patterns are never logged. Existing management accepted/failed and original settings compensation events retain correlation. Tests at parent-approved original seams: ImportPreview/PackageRegistry, save_settings fake secret store, Core locked temp config, ExtensionRuntime no-effect and GPUI original Settings draft. Source/static/compiled fixtures only, native acceptance deferred.

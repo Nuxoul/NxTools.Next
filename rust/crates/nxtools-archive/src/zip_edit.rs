@@ -40,7 +40,7 @@ fn valid_name(name: &str, directory: bool) -> Result<()> {
         name
     })
 }
-fn blocked_container(snapshot: &ArchiveSnapshot) -> bool {
+pub(crate) fn blocked_container(snapshot: &ArchiveSnapshot) -> bool {
     let extension = snapshot
         .revision
         .path
@@ -72,6 +72,51 @@ fn blocked_container(snapshot: &ArchiveSnapshot) -> bool {
                     || name.ends_with(".EC")
                     || name == "META-INF/MANIFEST.MF")
     })
+}
+/// Read-only structural admission; no candidate, native output, payload decode or new authority.
+/// Unknown structures remain unknown, not a guessed SFX/encryption/volume diagnosis.
+pub(crate) fn eligibility(
+    snapshot: &ArchiveSnapshot,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+) -> std::result::Result<(), crate::ArchiveModificationRefusal> {
+    use crate::ArchiveModificationRefusal as Refusal;
+    if snapshot.format != crate::ArchiveFormat::Zip {
+        return Err(Refusal::BackendMissing);
+    }
+    if !snapshot.revision.volumes.is_empty() {
+        return Err(Refusal::Volumes);
+    }
+    if blocked_container(snapshot) {
+        return Err(Refusal::ApplicationContainer);
+    }
+    let mut file = File::open(&snapshot.revision.path).map_err(|_| Refusal::SourceUnavailable)?;
+    let classify = |error| match error {
+        ArchiveError::SourceChanged => Refusal::SourceChanged,
+        ArchiveError::CorruptArchive => Refusal::Corrupt,
+        ArchiveError::UnsupportedEncryption => Refusal::UnsupportedEncryption,
+        ArchiveError::UnsupportedOperation
+        | ArchiveError::UnsupportedMethod
+        | ArchiveError::OutputCollision => Refusal::UnsupportedStructure,
+        _ => Refusal::UnverifiedMetadata,
+    };
+    crate::engine::ensure_revision(&mut file, &snapshot.revision, control).map_err(classify)?;
+    if !snapshot.backend_safe {
+        return Err(Refusal::UnsupportedStructure);
+    }
+    let directory =
+        zip_container::single_directory(&mut file, limits, control).map_err(classify)?;
+    let locals =
+        structure(&mut file, &snapshot.entries, &directory, limits, control).map_err(classify)?;
+    for (row, local) in directory.records.iter().zip(&locals) {
+        // No normalization or speculative metadata support. Candidate planning still owns
+        // the original per-kept-record rule (including deletion of unsupported records).
+        renamed_record(row, local, None).map_err(|error| match error {
+            ArchiveError::UnsupportedOperation => Refusal::UnverifiedMetadata,
+            other => classify(other),
+        })?;
+    }
+    crate::engine::ensure_revision(&mut file, &snapshot.revision, control).map_err(classify)
 }
 /// Per-operation allowlist. These known fields contain no absolute offsets/alignment outside ZIP64.
 /// Unknown records fail before copying kept entries; deleting an unsupported entry is permitted.

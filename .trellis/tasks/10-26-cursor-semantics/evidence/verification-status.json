@@ -1,0 +1,17 @@
+{
+  "audit07": "OPEN_NOT_REPAIRED",
+  "production_paint_hit_cursor_red": "NOT_RUN",
+  "compliant_cursor_observation_seam": "UNFINISHED_INVESTIGATION_NOT_COMPILED",
+  "cursor_only_production_repair": "NOT_IMPLEMENTED",
+  "normal_hover_disabled_link_drag_exception_tests": "NOT_RUN",
+  "ui_quick_launch_downloads_tests": "NOT_RUN",
+  "first_seven_focus_gesture_protections": "NOT_RUN",
+  "strict_production_clippy": "NOT_RUN",
+  "strict_test_clippy": "NOT_RUN",
+  "workspace_check": "NOT_RUN",
+  "scoped_fmt": "NOT_RUN",
+  "workspace_fmt": "NOT_RUN",
+  "rust_invocations": 0,
+  "source_document_gates": "11/11 PASS",
+  "full_desktop_native_physical_user_data_release": "NOT_RUN / NOT_AUTHORIZED"
+}

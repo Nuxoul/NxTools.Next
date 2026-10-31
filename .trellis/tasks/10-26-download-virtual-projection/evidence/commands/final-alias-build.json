@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T07:24:24.4502238Z",
+    "started_utc":  "2026-10-26T07:20:54.0633008Z",
+    "command":  "cargo test -p nxtools-desktop --bin nxtools-desktop --no-run",
+    "exit":  0,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\download-virtual-projection\\final-alias-build.log"
+}

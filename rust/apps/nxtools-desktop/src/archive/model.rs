@@ -1,4 +1,6 @@
 //! Immutable-ID browse projection and its single selection owner. No IO or GPUI state.
+#[path = "model_drag.rs"]
+mod drag;
 use nxtools_protocol::archive_browser::{ArchiveAttributes, ArchiveModifiedTime};
 use nxtools_protocol::archive_read::ArchiveReadEntry;
 use std::collections::{BTreeMap, BTreeSet};
@@ -50,8 +52,17 @@ pub(crate) struct BrowserModel {
     pub selected: BTreeSet<RowId>,
     pub focused: Option<RowId>,
     pub anchor: Option<RowId>,
+    pub show_parent_row: bool,
     rows: Vec<Row>,
 }
+pub(super) fn member_path(name: &str) -> std::borrow::Cow<'_, str> {
+    if name.contains('\\') {
+        std::borrow::Cow::Owned(name.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(name)
+    }
+}
+
 impl BrowserModel {
     pub fn new(snapshot: Uuid, entries: Vec<ArchiveReadEntry>) -> Self {
         let mut m = Self {
@@ -64,6 +75,7 @@ impl BrowserModel {
             selected: BTreeSet::new(),
             focused: None,
             anchor: None,
+            show_parent_row: true,
             rows: vec![],
         };
         m.reproject();
@@ -75,8 +87,8 @@ impl BrowserModel {
     pub fn folders(&self) -> Vec<String> {
         let mut dirs = BTreeSet::new();
         for entry in &self.entries {
-            let parts = entry
-                .name
+            let normalized = member_path(&entry.name);
+            let parts = normalized
                 .trim_end_matches('/')
                 .split('/')
                 .collect::<Vec<_>>();
@@ -103,7 +115,8 @@ impl BrowserModel {
         let mut dirs = BTreeMap::new();
         let mut rows = vec![];
         for e in &self.entries {
-            let path = e.name.trim_end_matches('/');
+            let normalized = member_path(&e.name);
+            let path = normalized.trim_end_matches('/');
             let Some(rest) = path.strip_prefix(&prefix) else {
                 continue;
             };
@@ -203,7 +216,7 @@ impl BrowserModel {
                 order
             }
         });
-        if !self.folder.is_empty() {
+        if self.show_parent_row && !self.folder.is_empty() {
             rows.insert(
                 0,
                 Row {
@@ -316,6 +329,54 @@ impl BrowserModel {
         };
         let id = self.rows[index].id.clone();
         self.select(id, false, shift)
+    }
+    /// Rectangle input shares the original immutable-ID selection/focus/anchor owner.
+    pub fn clear_selection(&mut self) {
+        self.selected.clear();
+        self.focused = None;
+        self.anchor = None;
+    }
+    pub fn select_rectangle(
+        &mut self,
+        baseline: &BTreeSet<RowId>,
+        hits: BTreeSet<RowId>,
+        control: bool,
+    ) {
+        self.selected = if control {
+            baseline.symmetric_difference(&hits).cloned().collect()
+        } else {
+            hits
+        };
+        let valid = self
+            .rows
+            .iter()
+            .filter(|row| !row.parent)
+            .map(|row| row.id.clone())
+            .collect::<BTreeSet<_>>();
+        self.selected.retain(|id| valid.contains(id));
+        self.focused = self
+            .rows
+            .iter()
+            .find(|row| self.selected.contains(&row.id))
+            .map(|row| row.id.clone());
+        self.anchor = self.focused.clone();
+    }
+    pub fn restore_selection(
+        &mut self,
+        selected: BTreeSet<RowId>,
+        focused: Option<RowId>,
+        anchor: Option<RowId>,
+    ) {
+        self.selected = selected;
+        let valid = self
+            .rows
+            .iter()
+            .filter(|row| !row.parent)
+            .map(|row| row.id.clone())
+            .collect::<BTreeSet<_>>();
+        self.selected.retain(|id| valid.contains(id));
+        self.focused = focused.filter(|id| valid.contains(id));
+        self.anchor = anchor.filter(|id| valid.contains(id));
     }
     pub fn select_all(&mut self) {
         self.selected = self

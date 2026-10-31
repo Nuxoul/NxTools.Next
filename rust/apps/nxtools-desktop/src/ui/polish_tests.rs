@@ -338,11 +338,11 @@ impl Render for HistoryKeyboardFixture {
                 list_image: None,
                 source_icon_color: None,
                 text_character_count: None,
+                text_card_max_height: nxtools_core::default_clipboard_text_card_max_height(),
                 open_targets: None,
                 extension_actions: Vec::new(),
                 extension_feedback: None,
             },
-            true,
         ))
     }
 }

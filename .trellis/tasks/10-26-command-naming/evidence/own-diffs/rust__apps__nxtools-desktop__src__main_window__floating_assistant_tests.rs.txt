@@ -1,0 +1,11 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/main_window/floating_assistant_tests.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/main_window/floating_assistant_tests.rs
+@@ -42,7 +42,7 @@
+     assert!(window.debug_bounds("floating-image-pick").is_some());
+     assert!(window.debug_bounds("floating-image-reset").is_some());
+     let nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+-    assert!(nodes.iter().any(|node| node.label() == Some("选择图片")));
++    assert!(nodes.iter().any(|node| node.label() == Some("选择图片…")));
+ }
+ 
+ #[gpui_kit::test]

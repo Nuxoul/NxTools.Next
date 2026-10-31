@@ -1,0 +1,318 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs
+@@ -5,6 +5,7 @@
+ use gpui_kit::component::form::{Field, Form};
+ use gpui_kit::component::input::{Input, InputState};
+ use gpui_kit::component::list::ListItem;
++use gpui_kit::component::scroll::ScrollableElement;
+ use gpui_kit::component::{Sizable, Size};
+ use gpui_kit::{AnyElement, App, Entity, IntoElement, Window, div, prelude::*, px};
+ use nxtools_core::CustomCommandSettings;
+@@ -15,7 +16,7 @@
+     action_button, danger_ghost_button_variant, focusable_content, icon_action,
+     labelled_icon_action, primary_button_variant,
+ };
+-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_8, SPACING_12, SPACING_16};
++use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};
+ use crate::ui::typography::{
+     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+@@ -95,12 +96,12 @@
+         list = list.child(
+             div()
+                 .debug_selector(|| "quick-launch-custom-command-empty".into())
+-                .h(px(COMMAND_MASTER_ROW_HEIGHT))
+-                .px(px(SPACING_12))
++                .h(ordinary_rem(COMMAND_MASTER_ROW_HEIGHT))
++                .px_3()
+                 .flex()
+                 .items_center()
+-                .text_size(px(TEXT_LABEL))
+-                .line_height(px(LINE_HEIGHT_LABEL))
++                .text_size(ordinary_rem(TEXT_LABEL))
++                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                 .text_color(theme.text_muted)
+                 .child("还没有自定义命令"),
+         );
+@@ -114,7 +115,7 @@
+ 
+     let master = div()
+         .debug_selector(|| "quick-launch-custom-command-master".into())
+-        .w(px(COMMAND_MASTER_WIDTH))
++        .w(ordinary_rem(COMMAND_MASTER_WIDTH))
+         .h_full()
+         .min_h_0()
+         .flex_none()
+@@ -124,20 +125,20 @@
+         .flex_col()
+         .child(
+             div()
+-                .h(px(COMMAND_MASTER_HEADER_HEIGHT))
+-                .px(px(SPACING_12))
++                .h(ordinary_rem(COMMAND_MASTER_HEADER_HEIGHT))
++                .px_3()
+                 .flex_none()
+                 .border_b_1()
+                 .border_color(theme.border_subtle)
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     div()
+                         .min_w_0()
+                         .flex_1()
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .child("自定义命令"),
+                 )
+                 .child(bounded_action_slot(
+@@ -167,8 +168,8 @@
+             .flex()
+             .items_center()
+             .justify_center()
+-            .text_size(px(TEXT_LABEL))
+-            .line_height(px(LINE_HEIGHT_LABEL))
++            .text_size(ordinary_rem(TEXT_LABEL))
++            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+             .text_color(theme.text_muted)
+             .child("选择左侧命令后编辑")
+             .into_any_element()
+@@ -222,7 +223,7 @@
+         .selected(selected)
+         .aria_selected(selected)
+         .w_full()
+-        .h(px(COMMAND_MASTER_ROW_HEIGHT))
++        .h(ordinary_rem(COMMAND_MASTER_ROW_HEIGHT))
+         .py_0()
+         .flex_none()
+         .border_b_1()
+@@ -238,10 +239,10 @@
+                 .child(
+                     div()
+                         .debug_selector(move || title_selector.clone())
+-                        .h(px(LINE_HEIGHT_BODY))
++                        .h(ordinary_rem(LINE_HEIGHT_BODY))
+                         .truncate()
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .text_color(if command.enabled {
+                             theme.text
+                         } else {
+@@ -252,11 +253,11 @@
+                 .child(
+                     div()
+                         .debug_selector(move || context_selector.clone())
+-                        .h(px(LINE_HEIGHT_LABEL))
++                        .h(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .truncate()
+                         .font_family(UI_MONO_FONT_FAMILY)
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_muted)
+                         .child(context),
+                 ),
+@@ -330,20 +331,20 @@
+         .flex_col()
+         .child(
+             div()
+-                .h(px(COMMAND_DETAIL_HEADER_HEIGHT))
+-                .px(px(SPACING_16))
++                .h(ordinary_rem(COMMAND_DETAIL_HEADER_HEIGHT))
++                .px_4()
+                 .flex_none()
+                 .border_b_1()
+                 .border_color(theme.border_subtle)
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     div()
+                         .min_w_0()
+                         .flex_1()
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .child("命令详情"),
+                 )
+                 .child(enabled_control)
+@@ -358,79 +359,86 @@
+                 .debug_selector(|| "quick-launch-command-form-scroll".into())
+                 .min_h_0()
+                 .flex_1()
+-                .overflow_y_scroll()
+-                .p(px(SPACING_16))
++                .overflow_hidden()
+                 .child(
+                     div()
+-                        .debug_selector(|| "quick-launch-command-form".into())
+-                        .w_full()
++                        .size_full()
++                        .p_4()
+                         .child(
+-                            Form::new()
+-                                .columns(2)
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-keyword",
+-                                    "关键词",
+-                                    &inputs.keyword,
+-                                ))
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-title",
+-                                    "显示名称",
+-                                    &inputs.title,
+-                                ))
++                            div()
++                                .debug_selector(|| "quick-launch-command-form".into())
++                                .w_full()
+                                 .child(
+-                                    Field::new().label("程序").col_span(2).child(
+-                                        div()
+-                                            .w_full()
+-                                            .flex()
+-                                            .items_center()
+-                                            .gap_2()
+-                                            .child(
++                                    Form::new()
++                                        .columns(2)
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-keyword",
++                                            "关键词",
++                                            &inputs.keyword,
++                                        ))
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-title",
++                                            "显示名称",
++                                            &inputs.title,
++                                        ))
++                                        .child(
++                                            Field::new().label("程序").col_span(2).child(
+                                                 div()
+-                                                    .debug_selector(|| {
+-                                                        "quick-launch-command-field-program".into()
+-                                                    })
+-                                                    .flex_1()
+-                                                    .min_w_0()
++                                                    .w_full()
++                                                    .flex()
++                                                    .items_center()
++                                                    .gap_2()
+                                                     .child(
+-                                                        Input::new(&inputs.program)
+-                                                            .aria_label("程序"),
+-                                                    ),
+-                                            )
+-                                            .child(bounded_action_slot(
+-                                                "quick-launch-pick-command-program",
+-                                                picker_action.into_any_element(),
+-                                            )),
+-                                    ),
+-                                )
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-arguments",
+-                                    "参数模板",
+-                                    &inputs.arguments,
+-                                ))
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-working-directory",
+-                                    "工作目录",
+-                                    &inputs.working_directory,
+-                                ))
+-                                .child(
+-                                    Field::new().col_span(2).child(
+-                                        div()
+-                                            .flex()
+-                                            .items_center()
+-                                            .gap_4()
+-                                            .child(admin)
+-                                            .child(silent),
+-                                    ),
+-                                )
+-                                .footer(bounded_action_slot(
+-                                    "quick-launch-save-custom-command",
+-                                    save_action.into_any_element(),
+-                                )),
+-                        ),
++                                                        div()
++                                                            .debug_selector(|| {
++                                                                "quick-launch-command-field-program"
++                                                                    .into()
++                                                            })
++                                                            .flex_1()
++                                                            .min_w_0()
++                                                            .child(
++                                                                Input::new(&inputs.program)
++                                                                    .aria_label("程序"),
++                                                            ),
++                                                    )
++                                                    .child(bounded_action_slot(
++                                                        "quick-launch-pick-command-program",
++                                                        picker_action.into_any_element(),
++                                                    )),
++                                            ),
++                                        )
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-arguments",
++                                            "参数模板",
++                                            &inputs.arguments,
++                                        ))
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-working-directory",
++                                            "工作目录",
++                                            &inputs.working_directory,
++                                        ))
++                                        .child(
++                                            Field::new().col_span(2).child(
++                                                div()
++                                                    .flex()
++                                                    .items_center()
++                                                    .gap_4()
++                                                    .child(admin)
++                                                    .child(silent),
++                                            ),
++                                        )
++                                        .footer(bounded_action_slot(
++                                            "quick-launch-save-custom-command",
++                                            save_action.into_any_element(),
++                                        )),
++                                ),
++                        )
++                        .overflow_y_scrollbar()
++                        .id("quick-launch-command-detail-scroll"),
+                 ),
+         )
+         .into_any_element()
+@@ -459,7 +467,7 @@
+ ) -> AnyElement {
+     div()
+         .debug_selector(move || selector.into())
+-        .h(px(CONTROL_HEIGHT_INPUT))
++        .h_8()
+         .flex_none()
+         .flex()
+         .items_center()
+@@ -475,7 +483,7 @@
+ fn bounded_action_slot(selector: &'static str, action: AnyElement) -> AnyElement {
+     div()
+         .debug_selector(move || selector.into())
+-        .h(px(CONTROL_HEIGHT_INPUT))
++        .h_8()
+         .flex_none()
+         .flex()
+         .items_center()

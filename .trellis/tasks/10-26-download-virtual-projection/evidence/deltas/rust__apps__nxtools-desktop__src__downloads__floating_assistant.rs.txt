@@ -1,0 +1,20 @@
+--- live-dirty-baseline/rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs
++++ own-current/rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs
+@@ -6,7 +6,7 @@
+     pub(crate) fn floating_assistant_projection(&self) -> DownloadProjection {
+         let mut projection = DownloadProjection::default();
+         let (mut downloaded, mut total) = (0_u64, Some(0_u64));
+-        for entry in &self.tasks {
++        for entry in self.tasks.iter() {
+             let status = entry.task.status();
+             if !matches!(
+                 status,
+@@ -239,7 +239,7 @@
+             app.latest_progress
+                 .insert(second.task.id(), progress(&second, 100, None, 11));
+             // Remove the stored known size as well: unknown cannot be represented as 100%.
+-            app.tasks[1].total_bytes = None;
++            Rc::make_mut(&mut app.tasks)[1].total_bytes = None;
+             assert_eq!(app.floating_assistant_projection().progress, None);
+             app.replace_tasks_for_test(vec![finished]);
+             assert_eq!(

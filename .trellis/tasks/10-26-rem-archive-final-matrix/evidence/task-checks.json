@@ -1,0 +1,52 @@
+{
+  "exit": 0,
+  "scope": "Five new task/verifier files; not Rust fmt",
+  "text_checks": [
+    {
+      "path": "prd.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "interpretation": "Git no-index difference exit; only exact observed line-ending warning allowed; explicit whitespace scan independently passed"
+    },
+    {
+      "path": "role-matrix.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "interpretation": "Git no-index difference exit; only exact observed line-ending warning allowed; explicit whitespace scan independently passed"
+    },
+    {
+      "path": "file-role-index.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "warning: in the working copy of 'D:\\Code\\NxTools.Next-main\\.trellis\\tasks\\10-26-rem-archive-final-matrix\\file-role-index.md', CRLF will be replaced by LF the next time Git touches it\n",
+      "interpretation": "Git no-index difference exit; only exact observed line-ending warning allowed; explicit whitespace scan independently passed"
+    },
+    {
+      "path": "outcomes.md",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "interpretation": "Git no-index difference exit; only exact observed line-ending warning allowed; explicit whitespace scan independently passed"
+    },
+    {
+      "path": "evidence/verify.py",
+      "trailing_whitespace_lines": [],
+      "one_final_newline": true,
+      "git_raw_exit": 1,
+      "git_stdout": "",
+      "git_stderr": "",
+      "interpretation": "Git no-index difference exit; only exact observed line-ending warning allowed; explicit whitespace scan independently passed"
+    }
+  ],
+  "verify_python_ast": "PASS"
+}

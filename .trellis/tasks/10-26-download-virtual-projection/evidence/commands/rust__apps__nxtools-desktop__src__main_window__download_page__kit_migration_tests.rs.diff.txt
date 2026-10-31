@@ -1,0 +1,29 @@
+--- baseline/rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs
++++ current/rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs
+@@ -1184,7 +1184,7 @@
+         mounted.sort_by(|left, right| left.0.as_f32().total_cmp(&right.0.as_f32()));
+         let expected_ids = download_tasks_for_view(&tasks, DownloadTaskFilter::All, "", expected)
+             .iter()
+-            .map(|task| task.task.id())
++            .map(|index| tasks[*index].task.id())
+             .collect::<Vec<_>>();
+         assert_eq!(
+             mounted.into_iter().map(|(_, id)| id).collect::<Vec<_>>(),
+@@ -1476,7 +1476,7 @@
+             view.download_sort,
+         )
+         .into_iter()
+-        .map(|task| task.task.id())
++        .map(|index| downloads.read(cx).tasks()[index].task.id())
+         .collect::<Vec<_>>()
+     });
+     let last_id = *ordered.last().expect("last immutable task");
+@@ -1556,7 +1556,7 @@
+                 selected: true,
+                 visible_task_ids: Arc::new(vec![self.task.task.id()]),
+             },
+-            self.task.clone(),
++            &self.task,
+             None,
+             Some(self.icon.clone()),
+         ))

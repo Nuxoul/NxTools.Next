@@ -1,0 +1,74 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+    "baseline_sha256": "b49943302b7e8c258496613c3c95640ca901fce134c553f853b8f746e8cc9866",
+    "observed_sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+    "changed_from_baseline": true,
+    "own_source_edit": true,
+    "snapshot": "evidence/current/committed_events.rs.current"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+    "baseline_sha256": "0b73805bc60130de2c5b949da72d4ec000948ba6c401d3de3ca49eec2f241b84",
+    "observed_sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+    "changed_from_baseline": true,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__apps__nxtools-desktop__src__extensions__event_history.rs.snapshot"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/api.rs",
+    "baseline_sha256": "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+    "observed_sha256": "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+    "changed_from_baseline": false,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__crates__nxtools-extensions__src__api.rs.snapshot"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/lib.rs",
+    "baseline_sha256": "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+    "observed_sha256": "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+    "changed_from_baseline": false,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__crates__nxtools-extensions__src__lib.rs.snapshot"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/runtime.rs",
+    "baseline_sha256": "a48ca2946023789995005bc31678cc2182c12c43634078b3a3d29ac9b1f6a062",
+    "observed_sha256": "451c80b7037672542784617a6042423e35a8a6efe7299c77c92d51832f395f77",
+    "changed_from_baseline": true,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__crates__nxtools-extensions__src__runtime.rs.snapshot"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/tests/api_contracts.rs",
+    "baseline_sha256": "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+    "observed_sha256": "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+    "changed_from_baseline": false,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__crates__nxtools-extensions__tests__api_contracts.rs.snapshot"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/tests/transport_declarations.rs",
+    "baseline_sha256": "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+    "observed_sha256": "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+    "changed_from_baseline": false,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__crates__nxtools-extensions__tests__transport_declarations.rs.snapshot"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/tests/transport_runtime.rs",
+    "baseline_sha256": "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+    "observed_sha256": "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+    "changed_from_baseline": false,
+    "own_source_edit": false,
+    "snapshot": "evidence/external-observations/rust__crates__nxtools-extensions__tests__transport_runtime.rs.snapshot"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+    "observed_sha256": "eff4ab01681f28be4a1d449390ccc9470839a205296356115920524d9fa435e6",
+    "own_source_edit": false,
+    "task_start_baseline_available": false,
+    "snapshot": "evidence/external-observations/extensions_settings.rs.final.snapshot",
+    "note": "external transient SharedString import compile failure and later repair; not task modification"
+  }
+]

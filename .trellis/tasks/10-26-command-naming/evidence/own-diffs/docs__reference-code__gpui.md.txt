@@ -1,0 +1,23 @@
+--- live-task-start/docs/reference-code/gpui.md
++++ own-delivery/docs/reference-code/gpui.md
+@@ -322,3 +322,20 @@
+ entries,immutablelogs and preparedtests: `.trellis/tasks/10-26-rem-pages-global-tools/`.
+ No completeDesktop/native/userdata/system/registry/Host/service/package/install/commit or
+ physical/DPI/IME/provider/visual/useracceptance;controlledRootfontvariation is notWindowsDPI.
++
++## Audit #8 command labels and semantic synchronization (2026-10-26)
++Rechecked original design-guide command-result/ellipsis rules and exact Component0.8.0
++Button::render label/accessibility_label fallback, PopupMenu ElementItem::a11y_label and
++Label public content. Toolbar child variant adaptation is unchanged; this slice does not
++restyle controls. Real Tools Configure Buttons (link detector/currency/floating assistant)
++stop propagation then call original open_tool_settings_window, which raises/reuses the keyed
++window or creates one original460x320 Root; close is presentation-only. They use Configure
++ellipsis, never rename the immediate card-body enable toggle. Floating image Pick uses the
++original application PickImage command, so its idle label has ellipsis; Restore default is
++immediate and retains no ellipsis. No picker/controller/window/callback/permission changed.
++Actual default/minimum MainWindow labels, same keyed-window reuse, existing no-bubble pointer/
++keyboard and last-control tests, plus exact old callback/prefix protections are recorded in
++.trellis/tasks/10-26-command-naming. Menu custom content adds only its existing text as a named
++Label under the same official MenuItem; pointer/keyboard action ownership remains official.
++Source/compiled synthetic results do not grant physical/native/DPI/reader/visual/user acceptance;
++current strict/broad shared-tree failures remain disclosed, not erased by focused green.

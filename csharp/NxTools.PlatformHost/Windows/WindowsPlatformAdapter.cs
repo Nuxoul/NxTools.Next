@@ -947,6 +947,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult CancelContextMenu(CancelContextMenuCommand command) =>
         _contextMenus.Cancel(command.SessionId);
 
+    public WindowsCommandResult OpenDefaultAppsSettings(
+        OpenDefaultAppsSettingsCommand command, Guid correlationId, CancellationToken cancellationToken) =>
+        new DefaultAppsSettingsOpener(_log).Open(command, correlationId, cancellationToken);
+
     public Task<WindowsCommandResult> OpenShellTargetAsync(
         OpenShellTargetCommand command,
         Guid diagnosticCorrelationId,
@@ -1057,12 +1061,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     {
         cancellationToken.ThrowIfCancellationRequested();
         var started = Stopwatch.GetTimestamp();
-        var format = string.Equals(
-            command.Format,
-            BrowserExtensionPackageService.FirefoxFormat,
-            StringComparison.OrdinalIgnoreCase)
-            ? BrowserExtensionPackageService.FirefoxFormat
-            : BrowserExtensionPackageService.ChromeFormat;
+        var format = BrowserExtensionPackageService.NormalizeFormat(command.Format);
         var destination = command.Destination;
         if (string.IsNullOrWhiteSpace(destination))
         {
@@ -1342,6 +1341,23 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         EnsureBrowserNativeMessagingCommand command,
         Guid correlationId) =>
         BrowserNativeMessagingRegistrar.Ensure(command, _log, correlationId);
+
+    /// <summary>
+    /// P206 explicit Apply/Revert/Status. The result payload is the observed state; a
+    /// gated or failed apply is a successful transport reply carrying a non-applied state.
+    /// </summary>
+    public WindowsCommandResult ArchiveShellIntegration(
+        Archive.ArchiveShellIntegrationCommand command,
+        Guid correlationId,
+        CancellationToken cancellation = default)
+    {
+        var service = LazyInitializer.EnsureInitialized(ref _archiveIntegration,
+            () => Archive.ArchiveIntegrationService.CreateProduct(_log));
+        var result = service.ExecuteBounded(command, correlationId, cancellation);
+        return new WindowsCommandResult(true, Data: Archive.ArchiveIntegrationService.Serialize(result));
+    }
+
+    private Archive.ArchiveIntegrationService? _archiveIntegration;
 
     internal static string? ResolveApprovedDesktopExecutablePath()
         => ResolveApprovedDesktopExecutablePath(

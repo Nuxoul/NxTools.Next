@@ -1,0 +1,32 @@
+{
+  "id": "extensions-progress-blobs",
+  "name": "extensions-progress-blobs",
+  "title": "P2 — Progress and bounded blob transport",
+  "description": "R2/A2 and R0 shared v2 leases, chunks and progress",
+  "status": "source_completed_acceptance_pending",
+  "dev_type": "fullstack",
+  "scope": "Approved R2/A2 and R0 shared bounded v2 blob/progress plane",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-25",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-25-extensions-capability-expansion",
+  "relatedFiles": [],
+  "notes": "P2 source and isolated boundary verification complete; see outcomes.md. Canonical next P3. No native UI/deployment/commit/archive authority.",
+  "meta": {
+    "implementation_approved": true,
+    "native_ui_authorized": false,
+    "source_completed": true,
+    "deployed": false,
+    "outcomes": "outcomes.md"
+  }
+}

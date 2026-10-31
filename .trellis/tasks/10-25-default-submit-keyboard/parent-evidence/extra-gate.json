@@ -1,0 +1,5 @@
+﻿{
+    "name":  "quick-launch-lifecycle.ps1",
+    "exit":  1,
+    "scope":  "Extra pre-existing gate; no source changes"
+}

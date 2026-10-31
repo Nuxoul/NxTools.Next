@@ -29,7 +29,6 @@ use crate::ui::components::action::{SegmentedOption, action_button, primary_acti
 use crate::ui::components::field::inline_error;
 use crate::ui::components::settings::{SettingsShellIds, dialog_footer, settings_shell};
 use crate::ui::components::titlebar::client_titlebar;
-use crate::ui::metrics::SPACING_8;
 use gpui_kit::component::form::{Field, Form};
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, SettingPage, Settings};
@@ -42,6 +41,9 @@ mod kit_migration_tests;
 #[cfg(test)]
 #[path = "network_settings/notification_tests.rs"]
 mod notification_tests;
+mod system_proxy;
+#[path = "network_settings/theme_chooser.rs"]
+mod theme_chooser;
 #[cfg(debug_assertions)]
 pub(crate) mod visual_preview;
 
@@ -71,6 +73,7 @@ pub(crate) struct NetworkSettingsApplication {
     settings_view: Option<Entity<NetworkSettingsView>>,
     pending_apply: Option<PendingGlobalSettingsApply>,
     hidden_startup: bool,
+    pending_proxy_snapshot: Option<system_proxy::PendingProxySnapshot>,
 }
 
 struct PendingGlobalSettingsApply {
@@ -141,6 +144,7 @@ impl NetworkSettingsApplication {
             #[cfg(test)]
             settings_view: None,
             pending_apply: None,
+            pending_proxy_snapshot: None,
             hidden_startup,
         }
     }
@@ -505,6 +509,39 @@ impl NetworkSettingsApplication {
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        match &notification {
+            PlatformNotification::CommandResult {
+                correlation_id,
+                result,
+            } if self
+                .pending_proxy_snapshot
+                .as_ref()
+                .is_some_and(|pending| pending.id == *correlation_id) =>
+            {
+                let snapshot = result
+                    .success
+                    .then(|| {
+                        result
+                            .data
+                            .as_deref()
+                            .filter(|data| data.len() <= 8192)
+                            .and_then(|data| serde_json::from_str(data).ok())
+                    })
+                    .flatten();
+                self.complete_system_proxy(*correlation_id, snapshot, cx);
+                return;
+            }
+            PlatformNotification::Disconnected { .. } => {
+                if let Some(id) = self
+                    .pending_proxy_snapshot
+                    .as_ref()
+                    .map(|pending| pending.id)
+                {
+                    self.complete_system_proxy(id, None, cx);
+                }
+            }
+            _ => {}
+        }
         match notification {
             PlatformNotification::Connected => {
                 let settings = self.config.system.clone();
@@ -762,6 +799,11 @@ struct NetworkSettingsView {
     _duration_step: gpui_kit::Subscription,
     host: Entity<InputState>,
     port: Entity<InputState>,
+    proxy_snapshot: Option<nxtools_protocol::system_proxy::SystemProxySnapshot>,
+    proxy_rows: Vec<(String, Entity<InputState>, Entity<InputState>)>,
+    proxy_generation: u64,
+    proxy_loading: bool,
+    proxy_read_failed: bool,
     tab: GlobalSettingsTab,
     rules: Vec<ProcessBlacklistRule>,
     process_input: Entity<InputState>,
@@ -830,6 +872,13 @@ impl NetworkSettingsView {
                 });
             },
         );
+        if settings.proxy.mode == NetworkProxyMode::System {
+            let application = application.clone();
+            let view = cx.entity().downgrade();
+            cx.defer(move |cx| {
+                application.update(cx, |owner, cx| owner.request_system_proxy(view, 0, cx))
+            });
+        }
         Self {
             theme: Theme::zed_dark(),
             application,
@@ -842,6 +891,11 @@ impl NetworkSettingsView {
             _duration_step: duration_step,
             host,
             port,
+            proxy_snapshot: None,
+            proxy_rows: Vec::new(),
+            proxy_generation: 0,
+            proxy_loading: settings.proxy.mode == NetworkProxyMode::System,
+            proxy_read_failed: false,
             tab: GlobalSettingsTab::General,
             rules: blacklist.entries(),
             process_input,
@@ -965,6 +1019,7 @@ impl NetworkSettingsView {
     fn render_setting_control(
         &mut self,
         slot: usize,
+        window: &Window,
         cx: &mut Context<Self>,
     ) -> gpui_kit::AnyElement {
         match slot {
@@ -1024,9 +1079,7 @@ impl NetworkSettingsView {
                             label,
                             cx.listener(move |this, _, _, cx| {
                                 if !this.saving {
-                                    this.mode = mode;
-                                    this.error = None;
-                                    cx.notify();
+                                    this.select_proxy_mode(mode, cx);
                                 }
                             }),
                         )
@@ -1037,6 +1090,9 @@ impl NetworkSettingsView {
                 .into_any_element()
             }
             3 => {
+                if self.mode == NetworkProxyMode::System {
+                    return self.render_system_proxy();
+                }
                 let disabled = self.mode != NetworkProxyMode::ManualHttp || self.saving;
                 Form::vertical()
                     .small()
@@ -1067,38 +1123,9 @@ impl NetworkSettingsView {
                     )
                     .into_any_element()
             }
-            4 => self.render_blacklist_table(cx),
+            4 => self.render_blacklist_table(window, cx),
             5 => self.render_blacklist_editor(cx),
-            6 => {
-                let view = cx.entity().downgrade();
-                let selected = self.theme_preference;
-                action_button("global-theme-mode", selected.label())
-                    .disabled(self.saving)
-                    .dropdown_menu(move |menu, _, _| {
-                        nxtools_core::ThemePreference::ALL.into_iter().fold(
-                            menu.min_w(px(224.0)),
-                            |menu, preference| {
-                                let view = view.clone();
-                                menu.item(
-                                    PopupMenuItem::new(preference.label())
-                                        .checked(preference == selected)
-                                        .on_click(move |_, _, cx| {
-                                            let view = view.clone();
-                                            cx.defer(move |cx| {
-                                                let _ = view.update(cx, |this, cx| {
-                                                    if !this.saving {
-                                                        this.theme_preference = preference;
-                                                        cx.notify();
-                                                    }
-                                                });
-                                            });
-                                        }),
-                                )
-                            },
-                        )
-                    })
-                    .into_any_element()
-            }
+            6 => self.render_theme_chooser(cx),
             7 => {
                 let view = cx.entity().downgrade();
                 let selected = self.notification_position;
@@ -1106,9 +1133,12 @@ impl NetworkSettingsView {
                     .outline()
                     .with_size(gpui_kit::component::Size::Medium)
                     .disabled(self.saving)
-                    .dropdown_menu(move |menu, _, _| {
+                    .dropdown_menu(move |menu, window, _| {
                         nxtools_core::NotificationPosition::ALL.into_iter().fold(
-                            menu.min_w(px(160.0)),
+                            menu.min_w(
+                                crate::ui::metrics::ordinary_rem(160.0)
+                                    .to_pixels(window.rem_size()),
+                            ),
                             |menu, position| {
                                 let view = view.clone();
                                 menu.item(
@@ -1134,7 +1164,7 @@ impl NetworkSettingsView {
             8 => div()
                 .id("global-notification-duration")
                 .debug_selector(|| "global-notification-duration".into())
-                .w(px(168.0))
+                .w(crate::ui::metrics::ordinary_rem(168.0))
                 .child(
                     NumberInput::new(&self.notification_duration)
                         .w_full()
@@ -1155,16 +1185,18 @@ impl Render for NetworkSettingsView {
         let owner = cx.entity().downgrade();
         let ordinary = |slot: usize, title: &'static str, help: &'static str| {
             let owner = owner.clone();
-            SettingItem::render(move |_, _, app| {
+            SettingItem::render(move |_, window, app| {
                 let control = owner
-                    .update(app, |view, cx| view.render_setting_control(slot, cx))
+                    .update(app, |view, cx| {
+                        view.render_setting_control(slot, window, cx)
+                    })
                     .unwrap_or_else(|_| div().into_any_element());
                 crate::ui::components::settings::aligned_setting_row(
                     format!("global-setting-{slot}"),
                     title,
                     help,
                     format!("global-setting-{slot}-help"),
-                    332.0,
+                    crate::ui::metrics::ordinary_rem(332.0),
                     control,
                 )
             })
@@ -1172,9 +1204,11 @@ impl Render for NetworkSettingsView {
         };
         let complex = |slot: usize, keywords: &'static str| {
             let owner = owner.clone();
-            SettingItem::render(move |_, _, app| {
+            SettingItem::render(move |_, window, app| {
                 let control = owner
-                    .update(app, |view, cx| view.render_setting_control(slot, cx))
+                    .update(app, |view, cx| {
+                        view.render_setting_control(slot, window, cx)
+                    })
                     .unwrap_or_else(|_| div().into_any_element());
                 div()
                     .w_full()
@@ -1188,7 +1222,6 @@ impl Render for NetworkSettingsView {
             SettingPage::new("常规").resettable(false).group(SettingGroup::new().items([
                 ordinary(0, "开机静默启动", "登录 Windows 后在后台启动，不主动弹出主窗口"),
                 ordinary(1, "关闭到托盘", "关闭主窗口时继续在后台运行；托盘左键恢复，右键可退出"),
-                ordinary(6, "主题", "统一应用于主窗口、设置和辅助窗口；保存后生效"),
                 ordinary(7, "通知位置", "通知相对操作所在屏幕的工作区显示在左上、上中、右上、左下、下中或右下；保存后生效"),
                 ordinary(8, "通知停留时间", "1–60 秒，默认 6 秒；仅影响新通知。鼠标悬停任一通知时暂停整个通知列表的剩余时间，移开后继续倒计时"),
             ])),
@@ -1200,8 +1233,11 @@ impl Render for NetworkSettingsView {
                     .keywords(["支持 HTTP PAC 密码"]),
             ])),
             SettingPage::new("应用黑名单").resettable(false).group(SettingGroup::new().items([
-                complex(4, "应用黑名单 进程 禁用剪贴板 禁用速启 应用规则"),
                 complex(5, "添加应用 编辑应用 进程名 更新"),
+                complex(4, "应用黑名单 进程 禁用剪贴板 禁用速启 应用规则"),
+            ])),
+            SettingPage::new("外观").resettable(false).group(SettingGroup::new().items([
+                complex(6, "主题 浅色 深色 Latte Frappe Catppuccin Gruvbox Solarized 跟随系统"),
             ])),
         ];
         let application = self.application.clone();
@@ -1272,7 +1308,7 @@ impl Render for NetworkSettingsView {
         let footer_actions = div()
             .flex()
             .items_center()
-            .gap(px(SPACING_8))
+            .gap_2()
             .child(
                 div()
                     .debug_selector(|| "network-settings-cancel".into())
@@ -1294,6 +1330,7 @@ impl Render for NetworkSettingsView {
                     .child(
                         primary_action_button(
                             "network-settings-save-button",
+                            "应用全局设置",
                             if self.saving {
                                 "正在应用…"
                             } else {
@@ -1905,7 +1942,7 @@ mod tests {
         let titlebar = window
             .debug_bounds("network-settings-titlebar")
             .expect("shared settings titlebar");
-        assert_eq!(titlebar.size.height, px(36.0));
+        assert_eq!(titlebar.size.height, px(34.0));
         let content = window
             .debug_bounds("network-settings-content")
             .expect("shared settings content");
@@ -2435,7 +2472,13 @@ mod tests {
         let close = window
             .debug_bounds("network-settings-close")
             .expect("shared titlebar close action");
-        assert_eq!(close.size, size(px(24.0), px(24.0)));
+        assert_eq!(
+            close.size,
+            size(
+                px(crate::ui::metrics::TITLEBAR_HEIGHT),
+                px(crate::ui::metrics::TITLEBAR_HEIGHT - 1.0)
+            )
+        );
         window.simulate_click(close.center(), Modifiers::default());
         window.run_until_parked();
         assert!(cx.read(|cx| application.read(cx).window.is_none()));
@@ -2498,7 +2541,10 @@ mod tests {
                 table.size.height <= px(202.0),
                 "rows scroll inside the bounded table"
             );
-            assert!(table.bottom() < field.top() && field.bottom() < footer.top());
+            assert!(
+                field.bottom() < table.top() && table.bottom() < footer.top(),
+                "field={field:?} table={table:?} footer={footer:?}"
+            );
             assert!(
                 field.size.width >= px(200.0),
                 "input remains usable without window inflation"
@@ -2637,3 +2683,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(directory);
     }
 }
+
+#[cfg(test)]
+mod page_rem_tests;

@@ -1,0 +1,16 @@
+[
+  {
+    "case": "clean",
+    "exit": 1,
+    "output": "",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "command": "git -c core.autocrlf=false diff --no-index --check -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\clean-diff-fixture.txt"
+  },
+  {
+    "case": "bad",
+    "exit": 3,
+    "output": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\bad-diff-fixture.txt:1: trailing whitespace.\n+controlled trailing space \n",
+    "sha256": "588c60c37d3c5bc8fc9aa7141e4355a93b494e907e8c64e19a285fb0f1204eca",
+    "command": "git -c core.autocrlf=false diff --no-index --check -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\bad-diff-fixture.txt"
+  }
+]

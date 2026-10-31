@@ -1,0 +1,37 @@
+--- task-start
++++ independent-observed
+@@ -16,6 +16,8 @@
+ mod import_confirmation;
+ #[path = "extensions_page/removal.rs"]
+ mod removal;
++#[path = "extensions_page/storage.rs"]
++mod storage;
+ #[path = "extensions_page/trust_confirmation.rs"]
+ mod trust_confirmation;
+ #[path = "extensions_page/usage.rs"]
+@@ -42,6 +44,7 @@
+     settings_draft: Option<PackageSettingsDraft>,
+     parked_settings: std::collections::HashMap<String, PackageSettingsDraft>,
+     seen_commit_revision: u64,
++    storage_open: bool,
+     environment: Option<environment::EnvironmentDraft>,
+     runtime_path: Entity<InputState>,
+     trust_target: Option<String>,
+@@ -92,6 +95,7 @@
+             parked_settings: Default::default(),
+             environment: None,
+             seen_commit_revision,
++            storage_open: false,
+             runtime_path,
+             trust_target: None,
+             trust_dialog: None,
+@@ -144,6 +148,9 @@
+     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+         self.reconcile_import_dialog(window, cx);
+         self.reconcile_trust_dialog(window, cx);
++        if self.storage_open {
++            return self.render_storage(cx);
++        }
+         if self.environment.is_some() {
+             return self.render_environment(cx);
+         }

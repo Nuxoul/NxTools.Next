@@ -1,0 +1,19 @@
+﻿{
+    "args":  [
+                 "audit11_",
+                 "--test-threads=1",
+                 "--nocapture"
+             ],
+    "executable":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-bc43045ce72e2830.exe",
+    "process_id":  95072,
+    "started_utc":  "2026-10-26T06:55:13.4282716Z",
+    "completed":  true,
+    "exit":  101,
+    "finished_utc":  "2026-10-26T06:55:14.7935342Z",
+    "watchdog_seconds":  30,
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    }
+}

@@ -1,0 +1,2045 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application.rs",
+    "sha256": "e9b6ecef70e8d785d0dce783a65793a76d7aea912a30ac3c150864b591dea458",
+    "px_calls": 8,
+    "classification_counts": {
+      "PROTECTED_NATIVE_CLIENT": 8
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+    "sha256": "c5ac905305a6c1f2b18850e55b234f27c4b47add63e9c1803e7141a3ba3b6162",
+    "px_calls": 18,
+    "classification_counts": {
+      "TEST_ONLY": 18
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser.rs",
+    "sha256": "b00bcc000f0406d545e63ba64eb70f186b96331916241cfac596698b04622bba",
+    "px_calls": 31,
+    "classification_counts": {
+      "UNFINISHED_PERSISTED_GEOMETRY": 4,
+      "UNFINISHED_ORDINARY_CANDIDATE": 20,
+      "UNFINISHED_REVIEW": 3,
+      "UNFINISHED_VIEWPORT": 1,
+      "APPROVED_FIXED_LAYOUT": 3
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag.rs",
+    "sha256": "26708659a1c4a4035ccacfff90727be8e96e63d1a1e5721f18e493fa2cbe507f",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs",
+    "sha256": "2b70bf369510460311b11b3340d17bf91bfc442f11b232c72df190ecce61e751",
+    "px_calls": 6,
+    "classification_counts": {
+      "TEST_ONLY": 6
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/browser_tests.rs",
+    "sha256": "8da2902f2d854dbd970235220b0c04828070bcf64d0afa91e72a8730e80ec7c3",
+    "px_calls": 48,
+    "classification_counts": {
+      "TEST_ONLY": 48
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/draft.rs",
+    "sha256": "4442707c8cf10643a01794170f220aed12a7f8a59632e7256d2f172e90e29274",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/draft_tests.rs",
+    "sha256": "3ce45cfe8c481a1c1bcf1c3b9d589ac988a5d9079a769f6d61056e4533e4b9a4",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/entry.rs",
+    "sha256": "fc55094060ce7b640ab0d60ec347284471c7fd51ccc9de38cc695299d6d06e69",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/entry_tests.rs",
+    "sha256": "b1eb168f96a5bcfe60f81e4d051347845c24a697dbc22eb1d07d83dd8d365bda",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2",
+    "px_calls": 3,
+    "classification_counts": {
+      "UNFINISHED_ORDINARY_CANDIDATE": 2,
+      "UNFINISHED_VIEWPORT": 1
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391",
+    "px_calls": 16,
+    "classification_counts": {
+      "TEST_ONLY": 16
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3",
+    "px_calls": 14,
+    "classification_counts": {
+      "TEST_ONLY": 14
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/jobs.rs",
+    "sha256": "eec77c96fa9ce8ba34cfe58dc07a1cd15cc04d0e50c55d194f3fd24f95e6913a",
+    "px_calls": 8,
+    "classification_counts": {
+      "PROTECTED_NATIVE_CLIENT": 8
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/launch_entry.rs",
+    "sha256": "bd62aaa1f2b289cd92701de773f9782ff08cbeaec1bca0a8b2e7652ca1dec43e",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/model.rs",
+    "sha256": "b390b3fc3b62720b101b19d5f3b880fdf335d23a259249bb6f0184383b19c7e9",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/model_drag.rs",
+    "sha256": "4717eb73e73d0268f7b03a360329f25ba303809eb47a9e641c1848d9535caf7f",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/model_tests.rs",
+    "sha256": "86e3343f401d032b21e1ef12cfe765650a705d1c83a914f7180e05c0bf73f3dc",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/password.rs",
+    "sha256": "db1cbc9896b94b7dde06640d366be9de6ea78b05e9f88344695b1de18c1ae312",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+    "sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/queue.rs",
+    "sha256": "dc3e5b39a0166e0ded934e97b18e866d6e6410228e5263310fc8f4f18f66d691",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/queue_tests.rs",
+    "sha256": "b06917cb4418e2566552f3fce8e9cbf5d7afcba5dcb8b91e3b84b4ec2679889a",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/readmission.rs",
+    "sha256": "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/shell_integration.rs",
+    "sha256": "31ccbea07e93986a3e62233afc7b20126b385f884d4a9b2ce1b0131ec5871024",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/ui_state.rs",
+    "sha256": "ab16d263001bd96cee9f905ea8e05e0af4696ccd65df38363b93bc16c710838b",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/virtual_drag_spike.rs",
+    "sha256": "d75691c8833c1789320de9aa9d3fd501a4e82cf03f1d13aa9404c84532d6d1ac",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive.rs",
+    "sha256": "c3be81620df630917669577be51225df1ae904792863c318a5f92545d52f5f23",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive_component_spike.rs",
+    "sha256": "af9b8e67b998d38326cbd60c0f2d5058717579807a8725ff57378e3dcf64c5f8",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive_launch.rs",
+    "sha256": "0c0adff7936d6c90affd99fe9f98292bab370dc5c3bd6fc6a79050b8ffe92ed3",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive_launch_tests.rs",
+    "sha256": "d3f1d21d99ab12cb9a15f8c60ca78a570908252a51289d0fd18d6dad82fe6978",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/assets.rs",
+    "sha256": "d3e2dfb5edd6bb3ca905f2d3dc68156ba335f64daafc4d9b783b0f94477413a7",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard/capture_pause.rs",
+    "sha256": "ed6e0647da5af847bf9fe8e37d2cbef61b3329d2ec698c362c6e1bd26e7eb751",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard/currency_tests.rs",
+    "sha256": "08275d408e12c84a64de326a02bf7e093c5fc25bd4087cea1053838ea0b7bf3b",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard/currency_tool.rs",
+    "sha256": "73ca8b3715020df1d03e4c4dc684d5ba83c71c477ab3cf179abc4f18c957727e",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard/extension_adapter.rs",
+    "sha256": "7e952887602443840afa239b16b8f80b364b1ed2d981e211ce97d38e53d784ad",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard/popup_activation.rs",
+    "sha256": "1ed9bf519ad61fdb35ddf9bbfc066cdd6cd126b1a9c5eb99bd9e6d284a933003",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard.rs",
+    "sha256": "f267e5b76cf3e746b4b0487872292e699ee21291c17db813ff84fb90de2e1097",
+    "px_calls": 49,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 16,
+      "TEST_ONLY": 33
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard_preview_presentation.rs",
+    "sha256": "f99db2a099aefe01727d29b5099551af23b7e089fb0fb447e16e60ea6a93cdd4",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard_preview_presentation_tests.rs",
+    "sha256": "529f21b69fb5090bbaba44146e133e6698d070896690c29c93a272a4956b8899",
+    "px_calls": 17,
+    "classification_counts": {
+      "TEST_ONLY": 17
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard_resize_tests.rs",
+    "sha256": "711cd26690750c21873ca337e4b1bac8c66a91c36865dcb21d757dcf9dd2915f",
+    "px_calls": 22,
+    "classification_counts": {
+      "TEST_ONLY": 22
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard_worker/icon_colors.rs",
+    "sha256": "131340529b84c107749d114e0e41521e56e75c9286de2bbb6f5db2e6ffa26bfc",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard_worker/thumbnails.rs",
+    "sha256": "a2cf049f2c5cb04a51fc85435687fc0f2603edfff6f13a7e437c02213e3fb0de",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/clipboard_worker.rs",
+    "sha256": "cd326875e5943a24cfd8c7dc303ab930870868ed13faf2b849a61416ea05dd36",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/completion_actions.rs",
+    "sha256": "fbf9ce1fb325d90039085a21275c4ebeb7de28114f051f0d2b4d710c341fc10f",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/download_taskbar_overlay.rs",
+    "sha256": "a5268e650fc198ff627aaaa48910a588d36738ee6e7c4e47ab1c40d2228c6983",
+    "px_calls": 19,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 19
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/download_window_lifecycle.rs",
+    "sha256": "56996f44eece67c33ab235cf6d58fd1a48febb4c979af3db410de33a1b694240",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/artifact_actions.rs",
+    "sha256": "c8a9ed36aaaf2a38c641f7aefb256b3eccb3ba71e40e7b761d8a21407e7423b3",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/auxiliary_theme_tests.rs",
+    "sha256": "4e3dec626a7eb52baaa62c4c7e3ea7977a54e3738eeb656756ab2bbb9fe4e953",
+    "px_calls": 10,
+    "classification_counts": {
+      "TEST_ONLY": 10
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs",
+    "sha256": "8637516874396f5f2f542ae7ab945df2b6d81b8cf957fbef7c570e26516395a6",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/completion_shutdown_impl.rs",
+    "sha256": "168285c3c031246943850b920f89079efcd9986580301d65e1b3d0f8615206be",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/completion_transition_preview.rs",
+    "sha256": "c5faa87f9d786bd03d2c4805bbba4b49dd527e4e4ba4caf49e54d6521d4e9338",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/delete_confirmation.rs",
+    "sha256": "2d1477b2dde1d1d41e6243dfaa717551c985079db50b34bdc9133c555685d565",
+    "px_calls": 6,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 6
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+    "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+    "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/fixed_transition_preview.rs",
+    "sha256": "b22c08df72ee38234b51a9c809aa9251be9185994248459976f5c1d70e5e4e41",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs",
+    "sha256": "f1fcc8d208ec51d2b6c234edffc0b46effb3f7425bda9df31cef340d5031dcc2",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+    "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29",
+    "px_calls": 1,
+    "classification_counts": {
+      "TEST_ONLY": 1
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_overlay_rem_tests.rs",
+    "sha256": "94ea1422a60e1e0091b6b3a5c02b060ad38d5ff618fa06b3b758041de787c715",
+    "px_calls": 39,
+    "classification_counts": {
+      "TEST_ONLY": 39
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+    "sha256": "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680",
+    "px_calls": 34,
+    "classification_counts": {
+      "TEST_ONLY": 34
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "sha256": "1e642d827362c0f84a229b463983653c52c021117ff72fff79ac7421bd687ce3",
+    "px_calls": 32,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 32
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+    "sha256": "272bc26198986a050f53588c82cc8859a3e514cb286691cd541865054d4c4062",
+    "px_calls": 123,
+    "classification_counts": {
+      "TEST_ONLY": 123
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/progress_display.rs",
+    "sha256": "6103eb8c0846382bc2b8b5f5d00a2b9f6c16e75b7a6bbaefdcd9b398a7c55268",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a",
+    "px_calls": 1,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 1
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs",
+    "sha256": "d818ffccb431cc998dd8074e28f2532c10ebf249f4cfffe47264b47ad8b8d5d3",
+    "px_calls": 39,
+    "classification_counts": {
+      "TEST_ONLY": 39
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "sha256": "2879b065d0c558ca7dd3498f3ce0aa6dd0acb308185aedbbd652d386e36f1170",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4,
+      "TEST_ONLY": 8
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/shutdown_window.rs",
+    "sha256": "5118433f736bbfeca3d40c52e9a19c33c5f13a51045ded3422a1d193c7bf4143",
+    "px_calls": 11,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 11
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+    "sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4",
+    "px_calls": 17,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 17
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs",
+    "sha256": "c56f29eae6514f1dc6aa1dfef88e6b74ed41da0b7ebb66330a4749552188fd7a",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+    "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783",
+    "px_calls": 95,
+    "classification_counts": {
+      "TEST_ONLY": 95
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/visual_preview.rs",
+    "sha256": "b5f110c310826664a1dd362e26d20ac4a0017f70ffd0848cd2cef44fac1ff4f5",
+    "px_calls": 5,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 5
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+    "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+    "px_calls": 9,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 9
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads.rs",
+    "sha256": "badd97e84410b64e9b6b155ebce6d94615fd0b29eb2ee7d8bc2408a168a7499f",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+    "sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/directory/tests.rs",
+    "sha256": "22161069771f59d71ec859b2fcfa671bd876aefe2f0dce816b9a43033e32b49d",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/directory.rs",
+    "sha256": "627effa25deceb14b9dce9e9c6affbb3f068642f07dce499e2ddb4a794588c3c",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/download_resolver.rs",
+    "sha256": "bb5f9f91c91a77d5d19a2ad28deb196dd5e62db167e0452f74f8616f726bd4a5",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+    "sha256": "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/feature_adapters.rs",
+    "sha256": "2fcc87547e00ecf1251899f01b5f263e4dd9041ace189284a978448c0fedcaba",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/manual_actions.rs",
+    "sha256": "645aa48108347ccc7835094c94cf0249de4bf27e2f162c8419d8ac8996089d1a",
+    "px_calls": 45,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3,
+      "TEST_ONLY": 42
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/manual_feedback.rs",
+    "sha256": "a9b0baaab45d14c50e1fce93a50a263e353fc06c32d069fd1fcf85039d982b9c",
+    "px_calls": 3,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/manual_notifications.rs",
+    "sha256": "90db1d5f1058a7a972ec9b4ccdc977161112d867bf504181bf71d1a4dbfff292",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/manual_runs.rs",
+    "sha256": "6510586db300103e113998b3fdee887dec1c237b817263d8de9958ceed2a5bdf",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/pages.rs",
+    "sha256": "3d7fcf6977c2bf08043316791f674466ffa4aa3185fbb9cccc2ad918b18b03d9",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/pages_tests.rs",
+    "sha256": "03be560c6d5e518c38d617b6ad5a4c6c799a0bf359247144319d623c2c1ecffa",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/runtime_environment.rs",
+    "sha256": "31a01d6561505cf1a4f6b13783d10594a19b17d9043c597c4c41e632d6805b28",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service.rs",
+    "sha256": "ae259e03ae9c384a969441a2e1af14a1e5246c5e9cf7e59e0c9dec84b5da92e3",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service_storage.rs",
+    "sha256": "8a8fc2a4d8ab94b558831ebf8c2b6fcdc9fca5ea49c5c470425ff35bae3b3dd7",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs",
+    "sha256": "b13dacdb750d8ebbae8bda9d94f917d4d247d09d7b4319e21c482d57ef0e2d9e",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/storage_management.rs",
+    "sha256": "0826ca29765d6873534cc3923d0e7a73fb225c0c0ac8c84e268add589864e253",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/ui_host.rs",
+    "sha256": "6c9899d7b9c01bb820d81270ba03fbbccb8522d28b1b4262e848dc03b68c9164",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions.rs",
+    "sha256": "53dde88e1c29a5fee4062ac5385c1c85727ffd866001c86d3f40bf6b45a359fb",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/icons.rs",
+    "sha256": "9e490d1f0abc38b3cc0c08e7676fc04278275e199dd01abe9689fec92f23dcb5",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main.rs",
+    "sha256": "c7c1bedb3e71ecd52f9585e687f4ed83a75825997b70ee97406b22554a9eabf2",
+    "px_calls": 16,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 6,
+      "TEST_ONLY": 10
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+    "sha256": "935b46db9ceef4e95aea1a102e9236d845095c117fb7dc1b0263e241562aec2f",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_ORDINARY_CANDIDATE": 1,
+      "UNFINISHED_REVIEW": 3
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+    "sha256": "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d",
+    "px_calls": 18,
+    "classification_counts": {
+      "TEST_ONLY": 18
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_temp_settings.rs",
+    "sha256": "d5736bb1de9c6e3055b167c39760e84e66cb8228a07072dcb58eb3209d6814c2",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page/kit_migration_tests.rs",
+    "sha256": "2c0b589ddcf665dc647aa6458164e209bcf11991f96944f78a6c42dc664b027b",
+    "px_calls": 32,
+    "classification_counts": {
+      "TEST_ONLY": 32
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+    "sha256": "8a11213b56cc121917825198f54f73d42eb542a0c6efe59fea961020ea151b45",
+    "px_calls": 9,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 9
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/currency_tests.rs",
+    "sha256": "abb0f820bc8a3dfd782b730d8d3729d45fcca7a85c1680d5393d22603d6a5f9c",
+    "px_calls": 14,
+    "classification_counts": {
+      "TEST_ONLY": 14
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs",
+    "sha256": "855dde5e45f3cc204fcb266969ab2d7d68cfd9aefdd59fc9ed56c0ef416275ed",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+    "sha256": "d443ed923241e37c5670a680473a9c1a9982c59f75eccaeeb1232ab4c5cdfe4a",
+    "px_calls": 84,
+    "classification_counts": {
+      "TEST_ONLY": 84
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "sha256": "b797e668770db50515049007c5070edb2ab9d46955b34936cf5d7bbf9f4c9191",
+    "px_calls": 69,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 69
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/activity.rs",
+    "sha256": "db895acbc96b4816d233ec3e70a092ede1deb219cd1abfcca7e58fe2ad5eb078",
+    "px_calls": 5,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 5
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/catalog.rs",
+    "sha256": "625e64650794793c4fa1099dd4e22d340dd26f94dcb668ecafc793baac709bbd",
+    "px_calls": 5,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 5
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/environment.rs",
+    "sha256": "470e241dfc24723860b9142e23ef69f2489c22a2cb946279ae5c745c27ecf0b4",
+    "px_calls": 6,
+    "classification_counts": {
+      "TEST_ONLY": 6
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/import_confirmation.rs",
+    "sha256": "31422d8d9c5ad3860260568caac2111457ed51a624a4619b6d99180dbeed2202",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3,
+      "TEST_ONLY": 9
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs",
+    "sha256": "b77f4f81a0d94df296d1c5f92a990efbc15ee3ae1320fb4d7ea3919cbcd0fe7c",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs",
+    "sha256": "26949f26a7c7806ebbac35fe0f2c8f11b31bf25c26a220a9e8be292b9dc49afd",
+    "px_calls": 4,
+    "classification_counts": {
+      "TEST_ONLY": 4
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/setting_paths.rs",
+    "sha256": "bf1d8ff6a79645293702b65407a1f829f62f7a15c2150e0eeea9da65d4d9a622",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs",
+    "sha256": "9bfcc3336902f92d922e7b87c3ad95b4bd9bd3dc9f5f4b13d5b929cf11c17f45",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/trust_confirmation.rs",
+    "sha256": "6afbfae6e36a6ca22f17eb4a54da06fc21e38bf6e2099f0f70d4b4ca3c384674",
+    "px_calls": 10,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3,
+      "TEST_ONLY": 7
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/usage.rs",
+    "sha256": "90ac142cf4556b1d60b24bbef6870351ecb85b38b6f9ed680e5fd54279ce1b60",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs",
+    "sha256": "b64cbd2613239947d0b52dc4bd49c2b6545e848eda1eebc6bfd3f173be6fac90",
+    "px_calls": 1,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 1
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+    "sha256": "7d6f3ac300b7e043c3267df860898c9e2b5576dfdbd87945a9d1626315b121ad",
+    "px_calls": 18,
+    "classification_counts": {
+      "TEST_ONLY": 18
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+    "sha256": "db6e9b6cf27477455d05b3be0d13445deca273b0505f1479ffa7ec0804f4a0dd",
+    "px_calls": 49,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3,
+      "TEST_ONLY": 46
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/floating_assistant_tests.rs",
+    "sha256": "c061fcdf3226c332481d94171bf8f6d03b11abc03e3c8967e475d4e22622db33",
+    "px_calls": 16,
+    "classification_counts": {
+      "TEST_ONLY": 16
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/kit_foundation_tests.rs",
+    "sha256": "9144af2fafc9589c27b2ca4f4913c08afd30ccf29091df44657a07d4029f6483",
+    "px_calls": 72,
+    "classification_counts": {
+      "TEST_ONLY": 72
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/notifications.rs",
+    "sha256": "407c59ee472a52f9052383b8be3d5b367be8880f4032bbe2290482020f91e03c",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs",
+    "sha256": "f2edacc61ec3ac99a5069b60b7f1119539286f015962e8e7a1223ab0914eb4b5",
+    "px_calls": 27,
+    "classification_counts": {
+      "TEST_ONLY": 27
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/quick_launch_page/settings_compatibility_tests.rs",
+    "sha256": "aa0a02399902cd75209825db1fb969cafdb993a065738163a2b1f9ca610848a6",
+    "px_calls": 13,
+    "classification_counts": {
+      "TEST_ONLY": 13
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs",
+    "sha256": "a8e3ee75a776b23ce04e359c5d2fc1756ccf5a947464b6d627b575db9ea830f1",
+    "px_calls": 17,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2,
+      "TEST_ONLY": 15
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs",
+    "sha256": "5b892c83db1ed8941d39df20fe3482b1252fe51464e32270cc2d377088921ccc",
+    "px_calls": 31,
+    "classification_counts": {
+      "TEST_ONLY": 31
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+    "sha256": "1926b1c486ccf69b351673910a2d8bccdb3a5a88927a7dd9057ddd2c2aca2a21",
+    "px_calls": 10,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 10
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tests.rs",
+    "sha256": "a75743c4fbb201ca43bf5a3acf7ac4adbc81d84f6102cf60e65850a99409b02b",
+    "px_calls": 186,
+    "classification_counts": {
+      "TEST_ONLY": 186
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+    "sha256": "7ba97edf433bbbf2dde3054e5876283c6583bee2ddf7f037e715a3618a5b0782",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+    "sha256": "653c71ee42465619291ca7367a7f72e4a1150f40f29a7a9ab4e41e0a6241a75a",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+    "sha256": "efd78174d06ffbb917c5c3d7e2760dec38dc8025f5bc1622b5b993372a64f2b2",
+    "px_calls": 10,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 10
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/visual_preview/archive.rs",
+    "sha256": "1b6606ead20796d4d8a9559e02f25bfb36c617b8bb153460dc3cf9cb2f406239",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/visual_preview/extensions.rs",
+    "sha256": "6887520159c4c9d3aa6eebd1377dc071807dd86dca253f03e19ccb30426a00b7",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/visual_preview/final_gallery.rs",
+    "sha256": "81a225bbc76adb1c2be0655818336ae7e991307c28ac845c50fe2f1825443ded",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/visual_preview/notification_positions.rs",
+    "sha256": "661a785c48ef408c11b67c9db697f78accbed12dc0e55ff48c77f2ad55155aff",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/visual_preview/quick_settings.rs",
+    "sha256": "e81d22827112104f741d5551d25c51dafd6f51ea4ae7fef3d12ced5746648c8c",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/visual_preview.rs",
+    "sha256": "eab370e9687551f4909e5f8a68cb1862dec17b68f3bc3f39412a47e9212f397e",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+    "sha256": "6fb1e7172c4386477b3425cb5c5d3e9da418bf4a4c5842c23968362d3dd9eac8",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+    "sha256": "b789126ec66823ce3d3e8adbbdc8967905d8e9f38c37c881288d420ec4b45f9b",
+    "px_calls": 1,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 1
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+    "sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e",
+    "px_calls": 28,
+    "classification_counts": {
+      "TEST_ONLY": 28
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/notification_tests.rs",
+    "sha256": "aa4bd6dbb1af53f040a321188865ce55c7963976f3391a7450e5936dce4fc8c4",
+    "px_calls": 4,
+    "classification_counts": {
+      "TEST_ONLY": 4
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs",
+    "sha256": "2d26dbde4a22c40de6236fcfc3ce0538b0e5006b424560ffb114c390f9d23233",
+    "px_calls": 17,
+    "classification_counts": {
+      "TEST_ONLY": 17
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/system_proxy.rs",
+    "sha256": "5f6c4f3c30bcca1b4ecddd576ea70a23ab58e9025f98b86b80b6aa0606accc56",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/theme_chooser.rs",
+    "sha256": "cca95842b8e5eb7e7bf6a313c91d0d411fd29cec2c2cd473480e471f1d7cd202",
+    "px_calls": 10,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 10
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/visual_preview.rs",
+    "sha256": "091ece842b8e7a682db63c1487c2e1cc24e17025855678fb8a102ade307a6ae5",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da",
+    "px_calls": 37,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 6,
+      "TEST_ONLY": 31
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/copy.rs",
+    "sha256": "eab44b471bccda4caeb6ae9663fe0a72a1100764e26d7cb85f8b99058844fdb2",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/copy_tests.rs",
+    "sha256": "891c703caedd28f017009b4781e97ede7d81b5439e1cd8518cabe491c32fc0d8",
+    "px_calls": 3,
+    "classification_counts": {
+      "TEST_ONLY": 3
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/expiry_tests.rs",
+    "sha256": "628502f82773efffe8f092027c07ee6a7ee8ed17ff98dff8961a0b5e62ec4a2a",
+    "px_calls": 4,
+    "classification_counts": {
+      "TEST_ONLY": 4
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/presentation.rs",
+    "sha256": "fd69248af812b182f9301fde4cd938f7efbbc71f58feaac098fddbc7043b5acc",
+    "px_calls": 11,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 11
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/presentation_tests.rs",
+    "sha256": "20b4235571d47bf35ed73ebead0764a90a8f52f9fb5dcce07b123e23ff584c49",
+    "px_calls": 47,
+    "classification_counts": {
+      "TEST_ONLY": 47
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/screen/preview.rs",
+    "sha256": "11f3ebc27828694a936a1fb4dc40762e6e4855019ffd9a2c4c29a1eb63cd6db4",
+    "px_calls": 8,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 8
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/screen/preview_cadence.rs",
+    "sha256": "b6d8e83717dc56e01856a3b88e660fdbce3107e0a7b4603c96f29c0e05e0a449",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/screen/tests.rs",
+    "sha256": "aa4861aba2c11d16b38ef1e12b2f11569e4d1c2ac95e01acc8bd3454a91f355c",
+    "px_calls": 27,
+    "classification_counts": {
+      "TEST_ONLY": 27
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications/screen.rs",
+    "sha256": "b2b7681376b6e684c41a2448e5dbbe480404a4c4bd6802c84671826c85aa0b73",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/notifications.rs",
+    "sha256": "8b127e9a51f1f0fcad0fa5536631981c25466f63f815843697d0bd05c4ba3957",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/platform_events/main_preparation/tests.rs",
+    "sha256": "13cd102e2adaf5c72c143dcbfca5b0a40596e86936840ebef14182ef60be6989",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/platform_events/main_preparation.rs",
+    "sha256": "5e3ca66a3064dededdf941058afc1be9ecc6847aa902fd1d29ce484d13f969ce",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/platform_events.rs",
+    "sha256": "25460cf99f0b0d0b0c2d2a3bac5c6533c7b6ae5618205de9237a339daf95b0b6",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/popup_lifecycle.rs",
+    "sha256": "0e75ac7d3b822b96f45c9926e09264a6001e0c50d72d324e98cd5eada416c5fa",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/actions.rs",
+    "sha256": "e10429556f048887cc01dec83fcce5e4970e5a5eaeeee2e93b17a2e2224593d7",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/archive_open.rs",
+    "sha256": "952a5e2c0e359bf41f865611247692b01fc5bcd7db1a37ff9a93fc4b79e60dd0",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/auxiliary_theme_tests.rs",
+    "sha256": "87108c68e510cf242461deb325100d5082f8ff9722a58848dddceaa6ab3d3dfc",
+    "px_calls": 4,
+    "classification_counts": {
+      "TEST_ONLY": 4
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs",
+    "sha256": "c230afb00589fd60c561b3dd3a195c7522a0f0d595c9d0cc0a3a7aa5a26345a9",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs",
+    "sha256": "7725b228baf2a0ed30f99ab63bcd144882d04d50d591c26e2a62ca39777374dc",
+    "px_calls": 60,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 39,
+      "TEST_ONLY": 21
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/floating_assistant.rs",
+    "sha256": "64c0057249ca291a334c6ec6a4b79abd51f637a7c52c01b0502a5cd3696429ad",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/icon.rs",
+    "sha256": "e2097d842ff76918e1bbd8cb6145eee773d2ba3f7f3b5075ddeaef94d005b1a5",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+    "sha256": "22f7cb1b9973fc5b8c4cb71ed420dbc86f944982c619dae6834f725e1ed465b9",
+    "px_calls": 95,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 95
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/polish_tests.rs",
+    "sha256": "fc6956ae3b0e9b8d311b9f31350105d71783f0f91081e91e90a23e68e9054982",
+    "px_calls": 66,
+    "classification_counts": {
+      "TEST_ONLY": 66
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/preview.rs",
+    "sha256": "88fbbf9b64b53fc1f89a12fddc3e1877668b204a7f966c373ddde755ebcdbd8c",
+    "px_calls": 31,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 31
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/search.rs",
+    "sha256": "858315de1226d69a716379bfd4152aab917dbb5395a15fb386d9ba3b0f08cd30",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/tests.rs",
+    "sha256": "406d8f6805d111e1fcf4ba7715bdd8d726a3af95d5cb89a9ced6ef614d5c5102",
+    "px_calls": 97,
+    "classification_counts": {
+      "TEST_ONLY": 97
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/visual_preview.rs",
+    "sha256": "39d0659579319b2b0808e112cb4176739fc3c5f7e0f0af7ba88a2d609d6d58cf",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 12
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch.rs",
+    "sha256": "55d950208060777298b3118a350966b5a5717f66e8d1de338fc01bf1a89d6e6d",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 12
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/runtime.rs",
+    "sha256": "1301a6c28e13252868b624f92c41552658ff0401d834d3287e51dcd324771b28",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/shell.rs",
+    "sha256": "7aaa1fa65aa462a10d30bff856f7fe9100d4d2f41ae8d510c06a7ea3808fee37",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/startup_failure.rs",
+    "sha256": "0c58c76605b114f16282dad9d8b7bb4c574da3dd80d6a9adb4205897b86d7a5f",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/theme.rs",
+    "sha256": "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c",
+    "px_calls": 1,
+    "classification_counts": {
+      "TEST_ONLY": 1
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/theme_graphite_tests.rs",
+    "sha256": "3db1c00baedb8d15512088ca7d3f756bf933528f27f6b50c947af0527eb35e2d",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/currency.rs",
+    "sha256": "5eeb1274a5b2cbb58f288e6ce4b9611c3f6930cab77ae94b513824fc0cd5c895",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/currency_tests.rs",
+    "sha256": "203dc4dfac348b8f8e135ed869e7d97f1aaeea71232eb1431e243d802096fae3",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/actions.rs",
+    "sha256": "0d184e3a52d10f8ae980bf58a0f29e1108aaa29ad342181524dfbc3cfa3e71b6",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/application/tests.rs",
+    "sha256": "f4fcf36291d13bc2a5178e205611b1b0b646b7163eb1b26714cdb7034f828670",
+    "px_calls": 4,
+    "classification_counts": {
+      "TEST_ONLY": 4
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/application.rs",
+    "sha256": "5b8c2cdab508acadd6b4b6eab6f00564123fa289180603cb927188b8363e6c33",
+    "px_calls": 4,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/lifecycle.rs",
+    "sha256": "0771eacaeef179fd8e0d3d8ca8afb98efe9a3460cf4a1411ee93679361873e6b",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/media.rs",
+    "sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/mod.rs",
+    "sha256": "16cfe42d74f8f76d70acea0250893979539ecb5ab29327c3ba7ecfff1b78bd14",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/playback.rs",
+    "sha256": "0754f335078d29637232c8a14e015ba704e85e85e6b8bec95db5c6e10647c0f3",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/view.rs",
+    "sha256": "da18f3378a5f3b48342732fc93cd5ce2783097c5375c627ba84e1937557c134a",
+    "px_calls": 5,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 5
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/link_detector.rs",
+    "sha256": "b6fd9c7c83d5a0e941d8e128364d08242529516127b8af6278fff69a30b58fb6",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/link_panel.rs",
+    "sha256": "d22d62b170e07c680a920a3f6b39c4be470d3702575b05144006a8b804cca485",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 12
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/mod.rs",
+    "sha256": "ab5be4a91e94c5e16fe4b108bc6d33f32420cab3192abf34661140de4f04cb69",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/tools/polish_tests.rs",
+    "sha256": "80ef557912e964755959b32277dd502c280a8155415bf118776c3cc794a800fd",
+    "px_calls": 30,
+    "classification_counts": {
+      "TEST_ONLY": 30
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/auxiliary_theme_tests.rs",
+    "sha256": "65b844a499f30e9f543954e09ee277760ac7d2663fbd8727dde8cb839589808f",
+    "px_calls": 6,
+    "classification_counts": {
+      "TEST_ONLY": 6
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/capture_controls.rs",
+    "sha256": "78356ba36a7f1514c4260d1fb2ff71b1240397a6d03e3406ccd5be1a0ee495fe",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b",
+    "px_calls": 6,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 1,
+      "TEST_ONLY": 5
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs",
+    "sha256": "2af2a15d7ba36b48ec397a19abb54fa9470bad44b3ab1b1a3c0629dc1bbe13e3",
+    "px_calls": 3,
+    "classification_counts": {
+      "TEST_ONLY": 3
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+    "sha256": "535236eca6630d5aaf0e38e75986988d7b2e07b33c48337c3227ede6e5047fda",
+    "px_calls": 6,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2,
+      "TEST_ONLY": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/dialog.rs",
+    "sha256": "84f7b0829aac03b859fc38e54450488334e88067290ed12eb960adf1ace422ea",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+    "sha256": "0d6d712991d10eccccbc377e6e387a4b62dc3741453cb1bb506191d59387841e",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/hotkey.rs",
+    "sha256": "7ed87d7f8b6bcd632485adf4385e6718310780fff9d9e51dcbad58cc3134511f",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/kit_adoption_tests.rs",
+    "sha256": "8ae9b887386ebf781e31770e48d795153cf24060b4397700b31ef63a6d0c801d",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/list.rs",
+    "sha256": "291ba00a4e29c94fcc3dac9137a3c0884e9ae04daa187bbcdfca946533d6aa4b",
+    "px_calls": 14,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 10,
+      "TEST_ONLY": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/menu.rs",
+    "sha256": "47fd5db7f4b5b9450439f1da4700e1e37ee53169d38b2dc95612333bc78ce56f",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/mod.rs",
+    "sha256": "a22684b6c84965f7ae484d13e28fe9670b55a7f52f1acebdf74f3a5ca91a5d1c",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/native_context_menu.rs",
+    "sha256": "fa7dfb41aebf81f96db52a7d1131141788a3e3f533f365f378ca8a4d4eaac584",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/native_context_menu_preview.rs",
+    "sha256": "33bc8f0f11569ce7947f7f3b2048b373db0f4ae163f406a6c8f86a34b2a992f5",
+    "px_calls": 6,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 6
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/native_context_menu_tests.rs",
+    "sha256": "aa4452863eab23e9b7746832d2da293b21444eecd19220722125ade25d9ac8ba",
+    "px_calls": 6,
+    "classification_counts": {
+      "TEST_ONLY": 6
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs",
+    "sha256": "204df982153115bb296535339bea7b0c96f1160948a58a52ee8689139ea15c32",
+    "px_calls": 23,
+    "classification_counts": {
+      "TEST_ONLY": 23
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+    "sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 6,
+      "TEST_ONLY": 6
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/popover.rs",
+    "sha256": "0a02df9078a1b6870209d4a53a4fe7cfaa8622328672721cdcde67555fd42325",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/project_menu.rs",
+    "sha256": "cfb939b65cad9bc3cac5ded75ae800e5e4183e6250057a2ce108a9c96ba238fc",
+    "px_calls": 30,
+    "classification_counts": {
+      "TEST_ONLY": 4,
+      "UNFINISHED_REVIEW": 26
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/project_menu_tests.rs",
+    "sha256": "98f7643e655b68192e59a6ed6923e9701316c59f1d14f3aea4b3a0dd92f9f1f4",
+    "px_calls": 17,
+    "classification_counts": {
+      "TEST_ONLY": 17
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs",
+    "sha256": "1deca08ac288f5a26c5cb64b3d31dbb3220fc2e100439f7d7c4d9e746149ec44",
+    "px_calls": 4,
+    "classification_counts": {
+      "TEST_ONLY": 4
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+    "sha256": "e19bba4be4acb11da7dab5213401aebccad224440b0ba88c518d6be3bc1f152e",
+    "px_calls": 13,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2,
+      "TEST_ONLY": 11
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/shortcut.rs",
+    "sha256": "7cee7cd8db83164ab677fecedfe88a25da3e319166e82469fc25d4116cbf36b7",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/state.rs",
+    "sha256": "4b2bd86123cdaf7bb9d4e6fe7aaf0ecd0e4ae66de7ee1691d2b5903fe2fcd4c2",
+    "px_calls": 6,
+    "classification_counts": {
+      "TEST_ONLY": 6
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/styled_menu_surface.rs",
+    "sha256": "f95e033190504e6f40ddef13a31779a9f495074df5ab72635f3b5f74863bcf22",
+    "px_calls": 13,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 13
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/styled_menu_surface_tests.rs",
+    "sha256": "71f1eb60dd41e21710575a9b3a40806b17df3cd19504b46090b3c608a8a7d811",
+    "px_calls": 7,
+    "classification_counts": {
+      "TEST_ONLY": 7
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/support_migration_tests.rs",
+    "sha256": "33987c92f950a10f6641499dfe6eccbb1a0c16fc74165a226f14594e02d53d36",
+    "px_calls": 19,
+    "classification_counts": {
+      "TEST_ONLY": 19
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/titlebar.rs",
+    "sha256": "e15e7221897038988dd8c88f40dd5fdb970e06e02896eeb6d3b3903b4f54209f",
+    "px_calls": 2,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/tooltip.rs",
+    "sha256": "6d60db37be16092d76e1f38904580a49884f82e0f1a214b4568c414bd870ff9c",
+    "px_calls": 13,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 5,
+      "TEST_ONLY": 8
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+    "sha256": "b2108299ed569d7d0c31db779e32f5f348ba4adddecf041ad72025948ee546a6",
+    "px_calls": 3,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 1,
+      "TEST_ONLY": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/efficiency.rs",
+    "sha256": "8d6de47ffb665803793f0f40504fb0e402151361f591ab4d5f1e37ad463a50b2",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs",
+    "sha256": "512db11d2fe9178766c0e72f32556b953af80e6a5fde554e57d76ca23aba977f",
+    "px_calls": 81,
+    "classification_counts": {
+      "TEST_ONLY": 81
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/extension_feedback.rs",
+    "sha256": "525353c423ecc4aeb9efe34c40f7dd1a19046f39f260c8d9e57985fc6f6b2389",
+    "px_calls": 6,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 6
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/final_gallery.rs",
+    "sha256": "143e2cf81930bd92123f641b253352ba7d2a98c974f8b4ba79860aed8e769b21",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+    "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+    "px_calls": 46,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 46
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs",
+    "sha256": "48d69994a59f0c21e193148014d0ef9ec5e0fcbd79c60390ee021e395d8b206e",
+    "px_calls": 26,
+    "classification_counts": {
+      "TEST_ONLY": 26
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+    "sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6",
+    "px_calls": 7,
+    "classification_counts": {
+      "TEST_ONLY": 7
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs",
+    "sha256": "590cd0e831172bd049422f9967afdbaf73d2e53d3a63912b44db20429afc926f",
+    "px_calls": 13,
+    "classification_counts": {
+      "TEST_ONLY": 13
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs",
+    "sha256": "9a7ea27199d7d60e7b3b0fe89de7c4525e57355e6a311539932981333c20fc0b",
+    "px_calls": 5,
+    "classification_counts": {
+      "TEST_ONLY": 5
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/icon_colors.rs",
+    "sha256": "7c936d6aa4b46084758131f6e90393e2b2aa789224a7f2d0b619030d29e542b1",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/kit_migration_tests.rs",
+    "sha256": "1955f224fecfdb198f94e6e320cb522301aedf88b5fe32df212ea05e73f55ec3",
+    "px_calls": 29,
+    "classification_counts": {
+      "TEST_ONLY": 29
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/markdown_document.rs",
+    "sha256": "fa4ab5fee037165402bf8665b790f5aacaf6933ae30796920e319ae957d4a1b1",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/markdown_edit.rs",
+    "sha256": "e7f6a6a96d3f73583fd1eb96b7ae088b7542c1ae2c0c0d7ec94b042753ec2d38",
+    "px_calls": 3,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/metrics.rs",
+    "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+    "sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+    "px_calls": 72,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 72
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/motion.rs",
+    "sha256": "32d23462db1ac1d0d894ae11c0f3531dde092ba40e2b4da261afed5051bedb6c",
+    "px_calls": 8,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 1,
+      "TEST_ONLY": 7
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/native_acceptance.rs",
+    "sha256": "aff24b13dcf4294369845b1dd06137af1d5a457b989462a1f8e420495d98d353",
+    "px_calls": 12,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 12
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/notification_tests.rs",
+    "sha256": "ab4fc1a5937fe06bfa8081d1dbc91c18eafa11ae1e4ec8379bdb828a99bdd5a5",
+    "px_calls": 2,
+    "classification_counts": {
+      "TEST_ONLY": 2
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/polish_tests.rs",
+    "sha256": "a0f92a727c0b810b6ab4a3f54f929b0dca19b5795dbe4cc078001fa365261a60",
+    "px_calls": 58,
+    "classification_counts": {
+      "TEST_ONLY": 58
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/preview.rs",
+    "sha256": "7b89fc1bbe05da139e0f8650e92ae6b165ab6325d06dd2a6b9e84451f8d55212",
+    "px_calls": 67,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 25,
+      "TEST_ONLY": 42
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/preview_image.rs",
+    "sha256": "4cd1f2abe46c89eb56d5a131f00608f2b311438e50a251596bc8028899fdc26b",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/preview_rich.rs",
+    "sha256": "97a43a26f3c93836d35924c690feb07c8839718a7402b6edc260b1a85a824815",
+    "px_calls": 3,
+    "classification_counts": {
+      "UNFINISHED_REVIEW": 3
+    },
+    "status": "UNFINISHED_REVIEW_OR_PRIOR_BOUNDED_EVIDENCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/preview_text.rs",
+    "sha256": "e88783401f55237d7b7ebf7d80d2fc921c6d8290b5613cd92ab5064cddd40a57",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/search_input.rs",
+    "sha256": "1dbc0074994740d96b2c798c923c25d16c0cd8e1dedbe1d1df50ccef72763fa1",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/summary_targets.rs",
+    "sha256": "2de5cb2f8fc37727de0a6f653993be884ea61e21507ddef098135a0caa5efaa7",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/tests.rs",
+    "sha256": "1c3a4bafedd4246d206c7591cb869f2a827be25137e36204edf2aaadba113629",
+    "px_calls": 54,
+    "classification_counts": {
+      "TEST_ONLY": 54
+    },
+    "status": "TEST_ONLY"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/typography.rs",
+    "sha256": "a23ca9f2c045cc8d6b2b58661ed28ee0dcd54889871c9b8f806fc71cb4fdee1e",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/windows_icon.rs",
+    "sha256": "edb01320e1989cd93ea191e50265fb54c7e795aa40e27f47a26725bbf50e6df6",
+    "px_calls": 0,
+    "classification_counts": {},
+    "status": "NO_DIRECT_PX_CALLS_NOT_SEMANTIC_CLEARANCE"
+  }
+]

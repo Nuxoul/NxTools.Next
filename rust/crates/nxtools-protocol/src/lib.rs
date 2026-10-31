@@ -3,7 +3,14 @@ pub mod archive_job;
 pub mod archive_password;
 pub mod archive_picker;
 pub mod archive_read;
+pub mod archive_recovery;
+pub mod archive_shell_integration;
+pub mod archive_space;
+pub mod archive_virtual_drag;
 pub mod desktop_archive_intent;
+pub mod floating_assistant;
+pub mod main_window;
+pub mod system_proxy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -115,7 +122,9 @@ pub enum PlatformEvent {
     ArchiveRead(archive_read::ArchiveReadEvent),
     ArchivePassword(archive_password::ArchivePasswordPrompt),
     ArchiveJob(Box<archive_job::ArchiveJobEvent>),
+    ArchiveVirtualDragProgress(Box<archive_virtual_drag::ArchiveVirtualDragProgress>),
     ArchivePicker(archive_picker::ArchivePickerResult),
+    FloatingAssistant(floating_assistant::FloatingAssistantEvent),
     TrayActionRequested(TrayActionRequest),
     SystemMotionPreferenceChanged(SystemMotionPreferenceChanged),
     SystemThemePreferenceChanged(SystemThemePreferenceChanged),
@@ -411,10 +420,15 @@ pub struct IndexSearchItem {
 pub enum PlatformCommand {
     ArchiveRead(archive_read::ArchiveReadCommand),
     ArchiveEntry(archive_browser::ArchiveEntryCommand),
+    ArchiveVirtualDrag(Box<archive_virtual_drag::ArchiveVirtualDragCommand>),
+    ArchiveVirtualDragSpike(Box<archive_virtual_drag::ArchiveVirtualDragCommand>),
     ArchiveBrowserRead(archive_read::ArchiveReadCommand),
     ArchivePasswordReply(archive_password::ArchivePasswordReply),
     ArchiveJob(Box<archive_job::ArchiveJobCommand>),
     ArchivePicker(archive_picker::ArchivePickerCommand),
+    ArchiveSpace(archive_space::ArchiveSpaceCommand),
+    ArchiveRecoveryInspect(archive_recovery::ArchiveRecoveryInspectCommand),
+    PrepareMainWindow(main_window::PrepareMainWindowCommand),
     ConfigureDesktopShell(ConfigureDesktopShellCommand),
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
@@ -432,6 +446,7 @@ pub enum PlatformCommand {
     SetWindowBoundsCentered(SetWindowBoundsCenteredCommand),
     PresentFixedWindowOverAnchor(PresentFixedWindowOverAnchorCommand),
     PrepareNotificationWindow(PrepareNotificationWindowCommand),
+    FloatingAssistant(floating_assistant::FloatingAssistantCommand),
     StashWindowBounds(StashWindowBoundsCommand),
     MoveWindowCenteredOverKey(MoveWindowCenteredOverKeyCommand),
     SetTaskbarProgress(SetTaskbarProgressCommand),
@@ -451,6 +466,8 @@ pub enum PlatformCommand {
     CancelContextMenu(CancelContextMenuCommand),
     OpenShellTarget(OpenShellTargetCommand),
     PlaySystemNotificationSound,
+    ReadSystemProxy,
+    OpenDefaultAppsSettings(OpenDefaultAppsSettingsCommand),
     ShutdownSystem(ShutdownSystemCommand),
     ExportBrowserExtension(ExportBrowserExtensionCommand),
     LaunchProcess(LaunchProcessCommand),
@@ -467,9 +484,38 @@ pub enum PlatformCommand {
     PickProgram(PickProgramCommand),
     PickExtensionManifest(PickExtensionManifestCommand),
     PickExtensionRuntime(PickExtensionRuntimeCommand),
+    PickExtensionSettingPath(PickExtensionSettingPathCommand),
     InspectExtensionRuntime(InspectExtensionRuntimeCommand),
     EnsureIndexerService,
     EnsureBrowserNativeMessaging(EnsureBrowserNativeMessagingCommand),
+    ArchiveShellIntegration(archive_shell_integration::ArchiveShellIntegrationCommand),
+}
+
+/// Fixed Windows default-apps page. There is deliberately no target/URI/path authority.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct OpenDefaultAppsSettingsCommand {}
+impl<'de> Deserialize<'de> for OpenDefaultAppsSettingsCommand {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct EmptyObject;
+        impl<'de> serde::de::Visitor<'de> for EmptyObject {
+            type Value = OpenDefaultAppsSettingsCommand;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an empty object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                if map.next_key::<String>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "default apps request accepts no fields",
+                    ));
+                }
+                Ok(OpenDefaultAppsSettingsCommand {})
+            }
+        }
+        deserializer.deserialize_map(EmptyObject)
+    }
 }
 
 /// Source-client device pixels; Windows adapter owns screen conversion and popup placement.
@@ -601,6 +647,16 @@ pub struct PickExtensionManifestCommand {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickExtensionRuntimeCommand {
     pub program: String,
+    pub current_path: String,
+}
+
+/// Human-driven settings path selection; native owner validates authenticated source HWND.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PickExtensionSettingPathCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
+    pub kind: String,
     pub current_path: String,
 }
 
@@ -979,6 +1035,7 @@ pub enum ClipboardArchivePickerMode {
 #[serde(rename_all = "snake_case")]
 pub enum ShellOpenAction {
     Open,
+    OpenInExplorer,
     SelectInExplorer,
     OpenWith,
     RunElevated,
@@ -2277,6 +2334,32 @@ mod capture_pause_tests {
             assert!(
                 serde_json::from_value::<PlatformCommand>(
                     serde_json::json!({"command":"set_clipboard_capture_paused","data":data})
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod default_apps_command_tests {
+    use super::*;
+    #[test]
+    fn default_apps_fixed_empty_payload_rejects_arbitrary_targets() {
+        let command = PlatformCommand::OpenDefaultAppsSettings(OpenDefaultAppsSettingsCommand {});
+        assert_eq!(
+            serde_json::to_value(&command).expect("encode"),
+            serde_json::json!({"command":"open_default_apps_settings","data":{}})
+        );
+        for data in [
+            serde_json::json!({"uri":"ms-settings:privacy"}),
+            serde_json::json!({"path":"C:\\x"}),
+            serde_json::Value::Null,
+            serde_json::json!([]),
+        ] {
+            assert!(
+                serde_json::from_value::<PlatformCommand>(
+                    serde_json::json!({"command":"open_default_apps_settings","data":data})
                 )
                 .is_err()
             );

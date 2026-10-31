@@ -1,0 +1,10 @@
+[
+    {
+        "check":  "sort-keyboard",
+        "exit":  0
+    },
+    {
+        "check":  "main-window",
+        "exit":  0
+    }
+]

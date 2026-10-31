@@ -1,0 +1,66 @@
+[
+    {
+        "name":  "audit05-settled",
+        "command":  "cargo test -p nxtools-desktop audit05_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:49:56.0135597+08:00",
+        "end":  "2026-10-26T04:54:10.1894809+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\audit05-settled.log"
+    },
+    {
+        "name":  "identity-final",
+        "command":  "cargo test -p nxtools-desktop history_identity_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:54:10.3104529+08:00",
+        "end":  "2026-10-26T04:54:31.7002059+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\identity-final.log"
+    },
+    {
+        "name":  "names-final",
+        "command":  "cargo test -p nxtools-desktop accessible_name_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:54:31.7351555+08:00",
+        "end":  "2026-10-26T04:54:34.1294366+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\names-final.log"
+    },
+    {
+        "name":  "sort-final",
+        "command":  "cargo test -p nxtools-desktop sort_keyboard_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:54:34.1686104+08:00",
+        "end":  "2026-10-26T04:54:50.2566006+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\sort-final.log"
+    },
+    {
+        "name":  "display-final",
+        "command":  "cargo test -p nxtools-desktop audit04_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:54:50.2869050+08:00",
+        "end":  "2026-10-26T04:54:55.7995383+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\display-final.log"
+    },
+    {
+        "name":  "download-page-final",
+        "command":  "cargo test -p nxtools-desktop main_window::download_page::kit_migration_tests -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:54:55.8301274+08:00",
+        "end":  "2026-10-26T04:55:17.9762348+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\download-page-final.log"
+    },
+    {
+        "name":  "desktop-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  101,
+        "start":  "2026-10-26T04:55:18.0093999+08:00",
+        "end":  "2026-10-26T04:55:22.9920570+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\desktop-clippy.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "start":  "2026-10-26T04:55:23.0373520+08:00",
+        "end":  "2026-10-26T04:56:27.7735111+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\workspace-check.log"
+    }
+]

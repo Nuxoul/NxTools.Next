@@ -1,0 +1,511 @@
+--- live dirty baseline/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
++++ own final/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
+@@ -1364,8 +1364,8 @@
+                                 .size_full()
+                                 .flex()
+                                 .flex_col()
+-                                .gap(px(SPACING_4))
+-                                .child(div().id("download-new-schedule-calendar-scroll").h(px(124.0)).flex_none().overflow_y_scroll().child(delayed_start_calendar(
++                                .gap_1()
++                                .child(div().id("download-new-schedule-calendar-scroll").debug_selector(|| "download-new-schedule-calendar-scroll".into()).h(px(124.0)).min_h_0().flex_shrink_1().overflow_y_scroll().child(delayed_start_calendar(
+                                     theme,
+                                     schedule_month,
+                                     schedule_date,
+@@ -1376,34 +1376,34 @@
+                                     div()
+                                         .debug_selector(|| "download-new-schedule-time-row".into())
+                                         .flex_none()
+-                                        .pt(px(SPACING_4))
++                                        .pt_1()
+                                         .border_t_1()
+                                         .border_color(theme.border_subtle)
+                                         .flex()
+                                         .items_center()
+-                                        .gap(px(SPACING_8))
++                                        .gap_2()
+                                         .child(
+                                             div()
+-                                                .mr(px(SPACING_4))
+-                                                .text_size(px(TEXT_LABEL))
+-                                                .line_height(px(LINE_HEIGHT_LABEL))
++                                                .mr_1()
++                                                .text_size(ordinary_rem(TEXT_LABEL))
++                                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                                 .text_color(theme.text_secondary)
+                                                 .child("时间"),
+                                         )
+-                                        .child(div().w(px(66.0)).child(
++                                        .child(div().debug_selector(|| "download-new-schedule-hour-rail".into()).w(ordinary_rem(66.0)).child(
+                                             Select::new(&schedule_hour)
+-                                                .menu_width(px(66.0))
++                                                .menu_width(ordinary_rem(66.0))
+                                                 .small(),
+                                         ))
+                                         .child(
+                                             div()
+-                                                .text_size(px(TEXT_LABEL))
++                                                .text_size(ordinary_rem(TEXT_LABEL))
+                                                 .text_color(theme.text_muted)
+                                                 .child(":"),
+                                         )
+-                                        .child(div().w(px(66.0)).child(
++                                        .child(div().debug_selector(|| "download-new-schedule-minute-rail".into()).w(ordinary_rem(66.0)).child(
+                                             Select::new(&schedule_minute)
+-                                                .menu_width(px(66.0))
++                                                .menu_width(ordinary_rem(66.0))
+                                                 .small(),
+                                         )),
+                                 )
+@@ -1412,8 +1412,8 @@
+                                         .debug_selector(|| "download-new-schedule-action-row".into())
+                                         .w_full()
+                                         .flex_none()
+-                                        .px(px(SPACING_8))
+-                                        .pt(px(SPACING_4))
++                                        .px_2()
++                                        .pt_1()
+                                         .border_t_1()
+                                         .border_color(theme.border_subtle)
+                                         .flex()
+@@ -1652,7 +1652,9 @@
+                             .w_full()
+                             .with_size(gpui_kit::component::Size::Medium),
+                     )
+-                    .content(move |_, _, cx| {
++                    .content(move |_, window, cx| {
++                        let category_content_width = px(CATEGORY_POPOVER_WIDTH)
++                            - ordinary_rem(48.0).to_pixels(window.rem_size());
+                         let theme = Theme::active(cx);
+                         let mut rows = Vec::with_capacity(categories.len() + 1);
+                         if category_query.is_empty() {
+@@ -1663,20 +1665,20 @@
+                                     .selected(category_highlighted_index == 0)
+                                     .secondary_selected(selected_category_id_for_menu.is_none())
+                                     .accessibility_label("自动匹配分类")
+-                                    .w_full().h(px(CATEGORY_ROW_HEIGHT)).py_0()
+-                                    .child(div().w(px(CATEGORY_ROW_CONTENT_WIDTH)).min_w_0().overflow_hidden().flex().flex_col()
++                                    .w_full().h(ordinary_rem(CATEGORY_ROW_HEIGHT)).py_0()
++                                    .child(div().w(category_content_width).min_w_0().overflow_hidden().flex().flex_col()
+                                     .child(
+                                         div()
+-                                            .w_full().min_w_0().truncate().text_size(px(TEXT_BODY))
+-                                            .line_height(px(LINE_HEIGHT_BODY))
++                                            .w_full().min_w_0().truncate().text_size(ordinary_rem(TEXT_BODY))
++                                            .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                             .font_weight(FontWeight::MEDIUM)
+                                             .text_color(theme.text)
+                                             .child("自动匹配"),
+                                     )
+                                     .child(
+                                         div()
+-                                            .w_full().min_w_0().truncate().text_size(px(TEXT_LABEL))
+-                                            .line_height(px(LINE_HEIGHT_LABEL))
++                                            .w_full().min_w_0().truncate().text_size(ordinary_rem(TEXT_LABEL))
++                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                             .text_color(theme.text_muted)
+                                             .child("按文件名、扩展名和 URL 规则选择"),
+                                     ))
+@@ -1725,14 +1727,14 @@
+                                         .debug_selector(move || format!("download-new-category-option-{index}"))
+                                         .selected(highlighted).secondary_selected(selected)
+                                         .accessibility_label(format!("{category_name} · {directory_label}"))
+-                                        .w_full().h(px(CATEGORY_ROW_HEIGHT)).py_0()
++                                        .w_full().h(ordinary_rem(CATEGORY_ROW_HEIGHT)).py_0()
+                                         .tooltip(bounded_text_tooltip(
+                                             format!("download-new-category-option-tooltip-{index}"),
+                                             directory_tooltip,
+                                             true,
+                                         ))
+                                         .cursor_pointer()
+-                                        .child(div().w(px(CATEGORY_ROW_CONTENT_WIDTH)).min_w_0().overflow_hidden().flex().flex_col()
++                                        .child(div().w(category_content_width).min_w_0().overflow_hidden().flex().flex_col()
+                                         .child(
+                                             div()
+                                                 .debug_selector(move || {
+@@ -1743,8 +1745,8 @@
+                                                 .w_full()
+                                                 .min_w_0()
+                                                 .truncate()
+-                                                .text_size(px(TEXT_BODY))
+-                                                .line_height(px(LINE_HEIGHT_BODY))
++                                                .text_size(ordinary_rem(TEXT_BODY))
++                                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                                 .font_weight(FontWeight::MEDIUM)
+                                                 .text_color(theme.text)
+                                                 .child(category_name),
+@@ -1759,8 +1761,8 @@
+                                                 .w_full()
+                                                 .min_w_0()
+                                                 .truncate()
+-                                                .text_size(px(TEXT_LABEL))
+-                                                .line_height(px(LINE_HEIGHT_LABEL))
++                                                .text_size(ordinary_rem(TEXT_LABEL))
++                                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                                 .text_color(theme.text_muted)
+                                                 .child(directory_label),
+                                         ))
+@@ -1784,11 +1786,11 @@
+                             rows.push(
+                                 div()
+                                     .w_full()
+-                                    .h(px(42.0))
++                                    .h(ordinary_rem(42.0))
+                                     .flex()
+                                     .items_center()
+                                     .justify_center()
+-                                    .text_size(px(TEXT_LABEL))
++                                    .text_size(ordinary_rem(TEXT_LABEL))
+                                     .text_color(theme.text_muted)
+                                     .child("没有匹配的分类")
+                                     .into_any_element(),
+@@ -1800,7 +1802,7 @@
+                                 .min_h_0()
+                                 .flex()
+                                 .flex_col()
+-                                .gap(px(SPACING_4))
++                                .gap_1()
+                                 .child(div().flex_none().w_full().child(field_shell(
+                                     theme,
+                                     "download-new-category-search",
+@@ -2205,7 +2207,6 @@
+ // Released Popover has 12px padding + 1px border per edge, and ListItem
+ // owns 12px horizontal padding. Bound the public child slot, not its internals.
+ const CATEGORY_POPOVER_WIDTH: f32 = 320.0;
+-const CATEGORY_ROW_CONTENT_WIDTH: f32 = CATEGORY_POPOVER_WIDTH - 24.0 - 24.0;
+ const CATEGORY_ROW_HEIGHT: f32 = LINE_HEIGHT_BODY + LINE_HEIGHT_LABEL;
+ 
+ pub(crate) const NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH: f32 = 120.0;
+@@ -2251,14 +2252,7 @@
+         "单连接传输".into()
+     };
+ 
+-    // Media internals keep their existing pixel roles for the next bounded slice.
+-    let measure = |value| -> gpui_kit::AbsoluteLength {
+-        if probe.media.is_none() {
+-            ordinary_rem(value).into()
+-        } else {
+-            px(value).into()
+-        }
+-    };
++    let measure = ordinary_rem;
+     let inspector = div()
+         .debug_selector(|| "download-new-probe-inspector".into())
+         .w(measure(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))
+@@ -2395,6 +2389,40 @@
+     }
+ }
+ 
++/// Stateless layout only: cap the viewport after resolving ordinary roles at the Window boundary.
++#[derive(gpui_kit::IntoElement)]
++struct NewDownloadMediaViewport {
++    selector: &'static str,
++    row_count: usize,
++    content: AnyElement,
++}
++
++impl gpui_kit::RenderOnce for NewDownloadMediaViewport {
++    fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
++        let height = ordinary_rem(
++            self.row_count as f32 * SETTINGS_ROW_MIN_HEIGHT
++                + self.row_count.saturating_sub(1) as f32 * SPACING_12,
++        )
++        .to_pixels(window.rem_size())
++        .min(px(SETTINGS_ROW_MIN_HEIGHT * 3.0));
++        let selector = self.selector;
++        div()
++            .debug_selector(move || selector.into())
++            .w_full()
++            .h(height)
++            .flex_none()
++            .child(
++                div()
++                    .size_full()
++                    .overflow_y_scrollbar()
++                    .id(selector)
++                    .flex()
++                    .flex_col()
++                    .child(self.content),
++            )
++    }
++}
++
+ pub(crate) fn hls_quality_options(
+     theme: Theme,
+     variants: &[nxtools_download::HlsVariantProbe],
+@@ -2411,9 +2439,10 @@
+     div()
+         .debug_selector(|| "download-hls-quality-options".into())
+         .w_full()
++        .flex_none()
+         .flex()
+         .flex_col()
+-        .gap(px(SPACING_4))
++        .gap_1()
+         .child(
+             div()
+                 .flex()
+@@ -2421,42 +2450,38 @@
+                 .child(
+                     div()
+                         .flex_1()
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_muted)
+                         .child("HLS 清晰度"),
+                 )
+                 .child(
+                     div()
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_muted)
+                         .child("支持未加密点播分片传输"),
+                 ),
+         )
+-        .child(
+-            div()
+-                .max_h(px(SETTINGS_ROW_MIN_HEIGHT * 3.0))
+-                .overflow_y_scrollbar()
+-                .flex()
+-                .flex_col()
+-                .child(
+-                    RadioGroup::new("download-hls-quality-group")
+-                        .selected_index(Some(selected))
+-                        .children(rows)
+-                        .on_change(move |index, _, cx| {
+-                            let index = *index;
+-                            let view = view.clone();
+-                            cx.defer(move |cx| {
+-                                let _ = view.update(cx, |view, cx| {
+-                                    view.selected_hls_variant = Some(index);
+-                                    view.error = None;
+-                                    cx.notify();
+-                                });
+-                            });
+-                        }),
+-                ),
+-        )
++        .child(NewDownloadMediaViewport {
++            selector: "download-hls-quality-scroll",
++            row_count: variants.len(),
++            content: RadioGroup::new("download-hls-quality-group")
++                .selected_index(Some(selected))
++                .children(rows)
++                .on_change(move |index, _, cx| {
++                    let index = *index;
++                    let view = view.clone();
++                    cx.defer(move |cx| {
++                        let _ = view.update(cx, |view, cx| {
++                            view.selected_hls_variant = Some(index);
++                            view.error = None;
++                            cx.notify();
++                        });
++                    });
++                })
++                .into_any_element(),
++        })
+         .into_any_element()
+ }
+ 
+@@ -2528,33 +2553,34 @@
+             .flex_1()
+             .flex()
+             .flex_col()
+-            .gap(px(SPACING_4))
++            .gap_1()
+             .child(
+                 div()
+-                    .text_size(px(TEXT_LABEL))
+-                    .line_height(px(LINE_HEIGHT_LABEL))
++                    .text_size(ordinary_rem(TEXT_LABEL))
++                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                     .text_color(theme.text_muted)
+                     .child(label),
+             )
+-            .child(
+-                div()
+-                    .max_h(px(SETTINGS_ROW_MIN_HEIGHT * 3.0))
+-                    .overflow_y_scrollbar()
+-                    .flex()
+-                    .flex_col()
+-                    .child(
+-                        RadioGroup::new(label)
+-                            .selected_index(selected)
+-                            .children(rows),
+-                    ),
+-            )
++            .child(NewDownloadMediaViewport {
++                selector: if label == "视频" {
++                    "download-dash-video-scroll"
++                } else {
++                    "download-dash-audio-scroll"
++                },
++                row_count: rows.len(),
++                content: RadioGroup::new(label)
++                    .selected_index(selected)
++                    .children(rows)
++                    .into_any_element(),
++            })
+     };
+     div()
+         .debug_selector(|| "download-dash-track-options".into())
+         .w_full()
++        .flex_none()
+         .flex()
+         .flex_col()
+-        .gap(px(SPACING_4))
++        .gap_1()
+         .child(
+             div()
+                 .flex()
+@@ -2562,15 +2588,15 @@
+                 .child(
+                     div()
+                         .flex_1()
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_muted)
+                         .child("DASH 轨道"),
+                 )
+                 .child(
+                     div()
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_muted)
+                         .child("音频可再次点击取消 · 双轨用 FFmpeg 无损封装"),
+                 ),
+@@ -2579,7 +2605,7 @@
+             div()
+                 .w_full()
+                 .flex()
+-                .gap(px(8.0))
++                .gap_2()
+                 .child(column("视频", video_rows.collect(), selected_video))
+                 .child(column("音频", audio_rows.collect(), selected_audio)),
+         )
+@@ -2674,7 +2700,8 @@
+         .gap(px(0.0))
+         .child(
+             div()
+-                .h(px(28.0))
++                .h(ordinary_rem(28.0))
++                .flex_none()
+                 .flex()
+                 .items_center()
+                 .child(
+@@ -2704,7 +2731,7 @@
+                         .debug_selector(|| "download-new-schedule-month-title".into())
+                         .flex_1()
+                         .text_center()
+-                        .text_size(px(TEXT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
+                         .font_weight(FontWeight::SEMIBOLD)
+                         .text_color(theme.text)
+                         .child(delayed_start_calendar_title(month)),
+@@ -2734,25 +2761,26 @@
+         )
+         .child(
+             div()
+-                .h(px(14.0))
++                .h(ordinary_rem(14.0))
++                .flex_none()
+                 .flex()
+                 .children(weekdays.into_iter().map(|weekday| {
+                     div()
+-                        .w(px(40.0))
++                        .w(ordinary_rem(40.0))
++                        .flex_shrink_1()
++                        .min_w_0()
+                         .h_full()
+                         .flex()
+                         .items_center()
+                         .justify_center()
+-                        .text_size(px(TEXT_META))
++                        .text_size(ordinary_rem(TEXT_META))
+                         .text_color(theme.text_muted)
+                         .child(weekday)
+                 })),
+         )
+         .children((0..6).map(|row| {
+-            div()
+-                .h(px(19.0))
+-                .flex()
+-                .children(days[row * 7..row * 7 + 7].iter().copied().map(|date| {
++            div().h(ordinary_rem(19.0)).flex_none().flex().children(
++                days[row * 7..row * 7 + 7].iter().copied().map(|date| {
+                     let disabled = date < today;
+                     let selected = date == selected_date;
+                     let current_month = date.month() == month.month();
+@@ -2771,12 +2799,17 @@
+                         .when(date == today, |cell| {
+                             cell.debug_selector(|| "download-new-schedule-today".into())
+                         })
++                        .when(date == days[41], |cell| {
++                            cell.debug_selector(|| "download-new-schedule-last-day".into())
++                        })
+                         .when(disabled, |cell| cell.opacity(0.32))
+-                        .w(px(40.0))
+-                        .h(px(19.0))
++                        .w(ordinary_rem(40.0))
++                        .flex_shrink_1()
++                        .min_w_0()
++                        .h(ordinary_rem(19.0))
+                         .px(px(0.0))
+                         .rounded(px(RADIUS_CONTROL))
+-                        .text_size(px(TEXT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
+                         .text_color(if selected {
+                             theme.accent_text
+                         } else if current_month {
+@@ -2800,7 +2833,8 @@
+                                 });
+                             });
+                         })
+-                }))
++                }),
++            )
+         }))
+         .into_any_element()
+ }
+@@ -3198,22 +3232,21 @@
+         .small()
+         .debug_selector(move || selector.clone())
+         .w_full()
+-        .h(px(SETTINGS_ROW_MIN_HEIGHT))
++        .min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))
++        .flex_none()
+         .accessibility_label(format!("{title} · {detail}"))
+         .child(
+             div()
+                 .debug_selector(move || title_selector.clone())
+                 .min_w_0()
+-                .overflow_hidden()
+-                .whitespace_nowrap()
++                .whitespace_normal()
+                 .child(title),
+         )
+         .child(
+             div()
+                 .debug_selector(move || detail_selector.clone())
+                 .min_w_0()
+-                .overflow_hidden()
+-                .whitespace_nowrap()
++                .whitespace_normal()
+                 .text_xs()
+                 .child(detail),
+         )
+@@ -3226,3 +3259,7 @@
+ #[cfg(test)]
+ #[path = "new_download_rem_tests.rs"]
+ mod rem_tests;
++
++#[cfg(test)]
++#[path = "new_download_overlay_rem_tests.rs"]
++mod overlay_rem_tests;

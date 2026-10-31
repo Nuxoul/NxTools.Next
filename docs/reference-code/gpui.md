@@ -263,3 +263,79 @@ owner; nativeclienttitle36/draghost retained, closeSmall24 removes duplicatehove
 Original nativeDialog/OLE/passive/Settings/Form/Footer owners unchanged. Exact tests,
 consumer classification/limits and pending decision: owning ui-queue-outcomes.md10.
 615Desktop/strictchecks/11sourcegates are not visual/native/physical/DPI/reader acceptance.
+
+## Queue07 ordinary shared roles and nested Form scrolling (2026-10-26)
+Read current0.8.0 authority before historical numbers. Shared unit/consumer inventory and fixed
+exceptions are in `.trellis/tasks/10-26-rem-shared-ui/prd.md`; typography/metrics values, palette,
+basefont and vendor remain unchanged. `ordinary_rem` consumes design-base16 roles; official
+Small/Medium/scale builders remain the first choice. Native caption/footer/client/readback,
+Tools180x160, Clipboard configured text cap/image190/file62/gap8/source24/feather14/shadow remain
+separate physical/bounded roles. Tooltip/menu maxima and command editor360 are viewport budgets.
+
+Reference recheck: ABDM LocationTextField.kt field/picker callback and bounded suggestions plus
+SettingsPage.kt original page owner; legacy SettingsWindow.axaml.cs constructor ->
+WindowAnimationService.Attach -> OnOpened/ConfigureForCurrentScope -> Apply/Cancel/Close ->
+OnClosed and animation Closing cancellation/final Close; MainWindow constructor/Open/close-to-tray/
+final close. Avalonia/AWT native internals are unavailable, not inferred. Zed ButtonLike/ListItem
+one-action presentation and SwiftList Plugins/Templates master-detail remain references only.
+
+Newly verified exact released call chain: Component setting/page.rs::render wraps its original
+ListState list in Base ScrollBounce; Base0.8.0 scroll_bounce.rs claims nested wheel ownership in
+capture and handles the winning owner before bubbling. A naked GPUI overflow_y_scroll div does
+not join that arbitration. Actual MainWindow920x480/Root18 reproduced Save bottom475 while its
+detail viewport ended461; the input entity/value was correct and pointer Save did not persist.
+Changing flex/nonshrinking content did not repair it and was removed. The existing detail viewport
+now composes public Component ScrollableElement::overflow_y_scrollbar with explicit stable ID;
+its original Form/inputs/Save callbacks and360 allocation remain. Real wheel -> current Button
+inside detail clip -> original temporary-config persistence is the regression, not cached bounds
+inside the window alone. No custom capture dispatcher, new business/scroll controller, source
+payload/native/placement/focus policy changes or vendor edits. Controlled Root16/14/18 compiled
+evidence is not Windows DPI, screenshot/user, physical/native/provider or release acceptance.
+
+## Queue08 partial ordinary-page checkpoint (2026-10-26)
+This is a blocked checkpoint,not completed consumer or visual acceptance. ActualRoot16/14/18
+red→green covers shell ordinarybrand/moduletext,Tools workspaceinsets and linkToolForm label/
+controlcoordination inside original1060x650/min920x480 and460x320clients. Nativecaption36,
+windowcontrols36x36,176rail,18bitmap and180x160Tools tiles remain fixed. Form.label_width
+requiresPixels: one small existingWindow-bound Tool labelallocation yields ordinary264target
+to an ordinary168controlreserve after actualclientinsets and released4pxFieldgap. Samepublic
+Form/Field/NumberInput/Select/Switch/actions; no geometryinflation or palette/vendorchange.
+
+Global actual720x480Root14 red: NumberInputheight28 beside fixed168width,and rule40 instead35.
+Ordinaryinput/rows/column/checkboxcontainers now userelativeunits while128rail/48footer and
+120listcap stayfixed. Actual24longCJKrules wheel-to-last/edit/controlledCheckbox/Tab+Space/
+Cancel and originalApplypersistencefailure→retainedInputdraft→retrysectionmerge pass. Released
+Scrollable copies source max_size to its wrapper but retains that max on content; directmax_h120
+constrained scrollcontent and leftlastrowy1194. Resolve naturalrows at originalWindow rem,
+allocate cappedparentheight≤120,and host originalpublicScrollable/stableID with unconstrained
+naturalrowcontent. No newscrollhandle/businesscontroller/capturedispatcher;sourcecallback and
+originalsavetransaction remain. ExistingSectionwriter/native/deferredownership unchanged.
+
+ABDM ProxyConfigurableRenderer localdraft/canSave first,then legacySettingsWindow constructor
+→WindowAnimationService.Attach→OnOpened/Configure→ApplyCancel/Close→OnClosed and delayed
+closingcancellation/finalClose rechecked;MainWindow show/activate/traypreservingclose unchanged.
+Avalonia/AWTnativebase unavailable,not inferred. Currentnative/windowallocation is unchanged.
+Currency/floatingconsumer adaptations compiled but newall-remconsumer tests remain unexecuted;
+Extensions icon28/DescriptionList80/88 preparation didnotcompile/run and productionobservability
+wrappers were exactly removed. Finalstrict/check/fmt/relatedsuites are blocked by naturalRust
+idle unavailable (independentexpansion_storage_retained test),not claimedgreen. Exactremaining
+entries,immutablelogs and preparedtests: `.trellis/tasks/10-26-rem-pages-global-tools/`.
+No completeDesktop/native/userdata/system/registry/Host/service/package/install/commit or
+physical/DPI/IME/provider/visual/useracceptance;controlledRootfontvariation is notWindowsDPI.
+
+## Audit #8 command labels and semantic synchronization (2026-10-26)
+Rechecked original design-guide command-result/ellipsis rules and exact Component0.8.0
+Button::render label/accessibility_label fallback, PopupMenu ElementItem::a11y_label and
+Label public content. Toolbar child variant adaptation is unchanged; this slice does not
+restyle controls. Real Tools Configure Buttons (link detector/currency/floating assistant)
+stop propagation then call original open_tool_settings_window, which raises/reuses the keyed
+window or creates one original460x320 Root; close is presentation-only. They use Configure
+ellipsis, never rename the immediate card-body enable toggle. Floating image Pick uses the
+original application PickImage command, so its idle label has ellipsis; Restore default is
+immediate and retains no ellipsis. No picker/controller/window/callback/permission changed.
+Actual default/minimum MainWindow labels, same keyed-window reuse, existing no-bubble pointer/
+keyboard and last-control tests, plus exact old callback/prefix protections are recorded in
+.trellis/tasks/10-26-command-naming. Menu custom content adds only its existing text as a named
+Label under the same official MenuItem; pointer/keyboard action ownership remains official.
+Source/compiled synthetic results do not grant physical/native/DPI/reader/visual/user acceptance;
+current strict/broad shared-tree failures remain disclosed, not erased by focused green.

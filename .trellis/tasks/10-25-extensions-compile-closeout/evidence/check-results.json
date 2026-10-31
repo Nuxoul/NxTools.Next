@@ -1,0 +1,23 @@
+﻿[
+    {
+        "name":  "desktop-strict-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  0,
+        "elapsed_seconds":  43.6456537,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\desktop-strict-clippy.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "elapsed_seconds":  61.180333899999994,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\workspace-check.log"
+    },
+    {
+        "name":  "extensions-strict-clippy",
+        "command":  "cargo clippy -p nxtools-extensions --tests -- -D warnings",
+        "exit":  0,
+        "elapsed_seconds":  9.2322744999999991,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\extensions-strict-clippy.log"
+    }
+]

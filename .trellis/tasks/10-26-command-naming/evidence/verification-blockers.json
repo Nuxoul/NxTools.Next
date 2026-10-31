@@ -1,0 +1,62 @@
+{
+  "strict": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/extensions/storage_management.rs",
+      "baseline_sha256": "0826ca29765d6873534cc3923d0e7a73fb225c0c0ac8c84e268add589864e253",
+      "current_sha256": "0b1e6bc7fcae535bc6ed3b8948c28837f485ddbf505936a6fe3035d1aee3a6fe",
+      "whole_file_baseline_identical": false,
+      "note": "No task edit; independent/current or task-start-identical blocker, not suppressed"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/media.rs",
+      "baseline_sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f",
+      "current_sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f",
+      "whole_file_baseline_identical": true,
+      "note": "No task edit; independent/current or task-start-identical blocker, not suppressed"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+      "baseline_sha256": "6fb1e7172c4386477b3425cb5c5d3e9da418bf4a4c5842c23968362d3dd9eac8",
+      "current_sha256": "f71cc50372f9e73ece8cdd14b453e4dfcd4ba5807ad41617f5c76525a5067c61",
+      "whole_file_baseline_identical": false,
+      "note": "main_window.rs owns only cfg(test) module append; its unused SPACING_12 import is exact task-start source. Original production import was not modified."
+    }
+  ],
+  "main_window_failed": "206 PASS /6 FAIL resource-limit admission in independent Extensions storage fixtures, retained original log",
+  "workspace_fmt_failed_files": [
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:6:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:20:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:29:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:37:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:55:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:72:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:88:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:96:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\shell.rs:1:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\shell.rs:5:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:1:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:5:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:94:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:224:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:5:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:12:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:19:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:30:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:38:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:46:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:59:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:68:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:75:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:94:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:105:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:113:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:117:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:123:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:127:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:136:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:143:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1135:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1184:",
+    "\\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1201:"
+  ]
+}

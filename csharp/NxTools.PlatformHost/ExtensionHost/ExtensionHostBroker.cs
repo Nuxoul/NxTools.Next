@@ -47,8 +47,17 @@ internal static class ExtensionHostBroker
             var bytes = JsonSerializer.SerializeToUtf8Bytes(value, ExtensionProcessProtocol.Json);
             if (bytes.Length + 1 > ExtensionProcessProtocol.FrameLimit || !outgoing.Writer.TryWrite(bytes)) stop.Cancel();
         }
+        async Task PublishData(ExtensionProcessEvent value)
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(value, ExtensionProcessProtocol.Json);
+            if (bytes.Length + 1 > ExtensionProcessProtocol.FrameLimit) throw new ExtensionFailure("broker_output_frame_limit");
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+            deadline.CancelAfter(2000);
+            try { await outgoing.Writer.WriteAsync(bytes, deadline.Token); }
+            catch (OperationCanceledException) { throw new ExtensionFailure("stdout_backpressure_timeout"); }
+        }
         using var credentials = new CredentialDispatcher(new CredentialAdapter(credentialStore ?? new CredentialWindowsStore(), log), PublishCredential);
-        using var runner = new ExtensionProcessRunner(Publish, log);
+        using var runner = new ExtensionProcessRunner(Publish, log, publishData: PublishData);
         ExtensionKernelHandle? parent = null;
         Task monitor = Task.CompletedTask;
         var writer = Task.Run(async () =>

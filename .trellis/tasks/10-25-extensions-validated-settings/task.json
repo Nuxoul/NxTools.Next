@@ -1,0 +1,33 @@
+{
+  "id": "extensions-validated-settings",
+  "name": "extensions-validated-settings",
+  "title": "P1 — Validated settings",
+  "description": "R1/A1 richer validation and label/value choices",
+  "status": "source_completed_acceptance_pending",
+  "dev_type": "fullstack",
+  "scope": "Approved R1/A1 settings validators and value-label choices through original owners",
+  "package": "nxtools-desktop",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-10-25",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-25-extensions-capability-expansion",
+  "relatedFiles": [],
+  "notes": "Source completed; Extensions77/Settings25/Corelocked1 PASS, strict scopedlint/workspace PASS. Corefull88/1 unrelated Archive failure retained. NativeUI/installed deferred. Parent continues P2 without archive/commit/deployment.",
+  "meta": {
+    "implementation_approved": true,
+    "native_ui_authorized": false,
+    "source_completed": true,
+    "deployed": false,
+    "integration_failure": "Core archive_tests::present_invalid_archive_sections_and_missing_required_fields_are_rejected:83;88PASS/1FAIL",
+    "outcomes": "outcomes.md"
+  }
+}

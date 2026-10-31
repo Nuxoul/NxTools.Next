@@ -1,0 +1,38 @@
+[
+  {
+    "path": "rust/crates/nxtools-extensions/src/blobs.rs",
+    "observed_sha256": "b65eda62fd66fc528de65c68ee6e22160ba61eb135c9a23a4e6ad714476dcb5f",
+    "owned_edit": false,
+    "task_start_baseline_available": false
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/blob_calls.rs",
+    "observed_sha256": "533b96b7249e08a556dda84bc36436872624e50c8b2aabadc7b5e04d6188babb",
+    "owned_edit": false,
+    "task_start_baseline_available": false
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/session.rs",
+    "observed_sha256": "5f14dae6dff82453d06fd2516b4e27dbff529d3286ef6ad9af28171064008ab2",
+    "owned_edit": false,
+    "task_start_baseline_available": false
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/extensions/manual_runs.rs",
+    "observed_sha256": "6510586db300103e113998b3fdee887dec1c237b817263d8de9958ceed2a5bdf",
+    "owned_edit": false,
+    "task_start_baseline_available": false
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/runtime.rs",
+    "observed_sha256": "3f05c6d9bb0e872a085cd7fa7d24b54f1c7433c0caf58c8a86f8ca5f7202ecd8",
+    "owned_edit": false,
+    "task_start_baseline_available": false
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/tests/transport_runtime.rs",
+    "observed_sha256": "638abbde99e8f74fd5f473c823aeb39800ccaec8cfad12afec9e0ea206c2c151",
+    "owned_edit": false,
+    "task_start_baseline_available": false
+  }
+]

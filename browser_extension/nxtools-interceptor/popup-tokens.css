@@ -1,5 +1,6 @@
 /* Browser workbench semantic tokens. Shared with shadow-styles.js.
- * User-authorized2026-10-12 neutral redesign; no desktop theme mutation. */
+ * User-authorized 2026-10-12 neutral redesign, refined 2026-10-22 (direction A):
+ * same graphite palette plus one low-saturation success tone. No desktop theme mutation. */
 :root {
   --nt-canvas: #18181b;
   --nt-surface: #1f1f23;
@@ -15,6 +16,8 @@
   --nt-accent: #bfc0c4;
   --nt-accent-soft: #353539;
   --nt-accent-text: #18181b;
+  --nt-success: #7fbf9a;
+  --nt-success-soft: #22302a;
   --nt-warning: #d6a85f;
   --nt-danger: #ff6b78;
   --nt-danger-soft: #35252a;

@@ -1,0 +1,13 @@
+{
+  "own_existing_files": 8,
+  "new_task_docs": 2,
+  "observed_baselined_unmodified": "downloads/tests.rs",
+  "old_test_prefixes_byte_identical": 3,
+  "restored_original_probe": true,
+  "old_item04_artifacts_unchanged": 124,
+  "protected_production_unchanged": 13,
+  "original_submit_save_and_display_helpers": "whitespace-normalizedequal;owner-invariants.json",
+  "archive_reference_external_append": "separated;own30/external34",
+  "product_csharp_protocol_worker_dependency_vendor_modification": false,
+  "complete_desktop_runs_this_item": 1
+}

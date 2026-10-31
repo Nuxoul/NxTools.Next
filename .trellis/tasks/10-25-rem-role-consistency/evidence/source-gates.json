@@ -1,0 +1,67 @@
+﻿[
+    {
+        "name":  "ui-token-boundaries.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-ui-token-boundaries.ps1.log"
+    },
+    {
+        "name":  "ui-consistency.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-ui-consistency.ps1.log"
+    },
+    {
+        "name":  "ui-state-lifecycle.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-ui-state-lifecycle.ps1.log"
+    },
+    {
+        "name":  "ui-preview-isolation.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-ui-preview-isolation.ps1.log"
+    },
+    {
+        "name":  "download-ui-lifecycle.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-download-ui-lifecycle.ps1.log"
+    },
+    {
+        "name":  "clipboard-ui-lifecycle.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-clipboard-ui-lifecycle.ps1.log"
+    },
+    {
+        "name":  "clipboard-lifecycle.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-clipboard-lifecycle.ps1.log"
+    },
+    {
+        "name":  "archive-release-chain.ps1",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-archive-release-chain.ps1.log"
+    },
+    {
+        "name":  "quick-launch-lifecycle.ps1",
+        "exit_code":  1,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-quick-launch-lifecycle.ps1.log"
+    },
+    {
+        "name":  "gpui-component-catalog.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-gpui-component-catalog.py.log"
+    },
+    {
+        "name":  "gpui-release-contracts.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-gpui-release-contracts.py.log"
+    },
+    {
+        "name":  "markdown-editor-contracts.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-markdown-editor-contracts.py.log"
+    },
+    {
+        "name":  "spec-contracts.py",
+        "exit_code":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\gate-spec-contracts.py.log"
+    }
+]

@@ -1,0 +1,42 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+        "baseline_sha256":  "b5d4ffb0f541346f41b66b875c864d0c9d38eaf54b087d8293b7476a533865d8",
+        "observed_sha256":  "c8603f33f60281851632e25017d2038114678e5db4211136d9ca1abce28c5cc8"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/extensions_page/import_confirmation.rs",
+        "baseline_sha256":  "31422d8d9c5ad3860260568caac2111457ed51a624a4619b6d99180dbeed2202",
+        "observed_sha256":  "31422d8d9c5ad3860260568caac2111457ed51a624a4619b6d99180dbeed2202"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs",
+        "baseline_sha256":  "d84c2d6a5d6d1c40d7da48797c0c59a13b04deff6ed18bf2905f90fe005fd772",
+        "observed_sha256":  "d84c2d6a5d6d1c40d7da48797c0c59a13b04deff6ed18bf2905f90fe005fd772"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions.rs",
+        "baseline_sha256":  "e15c7289e0e633a7f1120fa86d555b7d035b76715453a40ad0e2b3475ecaf10d",
+        "observed_sha256":  "e15c7289e0e633a7f1120fa86d555b7d035b76715453a40ad0e2b3475ecaf10d"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/theme.rs",
+        "baseline_sha256":  "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c",
+        "observed_sha256":  "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c"
+    },
+    {
+        "path":  "vendor/gpui-component-080/src/button/button.rs",
+        "baseline_sha256":  "fdd2ed48d6ba0efe6945e7ea041b46738e3e266556d1adc91276d79ade158174",
+        "observed_sha256":  "fdd2ed48d6ba0efe6945e7ea041b46738e3e266556d1adc91276d79ade158174"
+    },
+    {
+        "path":  "vendor/gpui-component-080/src/dialog/footer.rs",
+        "baseline_sha256":  "ea3f8401c3455f0aced322f3ea6b9479c60b36d5213a624998a0e159f7d96e90",
+        "observed_sha256":  "ea3f8401c3455f0aced322f3ea6b9479c60b36d5213a624998a0e159f7d96e90"
+    },
+    {
+        "path":  "vendor/gpui-component-080/src/root.rs",
+        "baseline_sha256":  "392cd7259b1ae87eb4ac7699dc54778bc98297ce3bc1f5db18dca857c663d997",
+        "observed_sha256":  "392cd7259b1ae87eb4ac7699dc54778bc98297ce3bc1f5db18dca857c663d997"
+    }
+]

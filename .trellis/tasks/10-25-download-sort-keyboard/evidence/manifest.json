@@ -1,0 +1,213 @@
+{
+  "scope": "original audit #2 only, sortable-header keyboard equivalence; parent review pending",
+  "baseline": "task-start per-file dirty baseline, not HEAD",
+  "files": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+      "baseline_sha256": "0268656b9019ef75cd3e2557b55b9527116ba3ca054a63f6212f90159278ddc3",
+      "delivery_sha256": "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d",
+      "added": 35,
+      "removed": 19
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+      "baseline_sha256": "e9d7c81998b9c05599b4bafdc5ecf5397803c36dce41202566dfcce082ef56a2",
+      "delivery_sha256": "d11a415c105b5858cafd3a64a21111b67b3554c7f5e6589d261c998a4ab2bddf",
+      "added": 361,
+      "removed": 0
+    },
+    {
+      "path": "docs/reference-code/download.md",
+      "baseline_sha256": "2e9d7815c04397dc785fd81069fd45bdd12109491e921f508edd81cb80cc63a3",
+      "delivery_sha256": "99abefb822f4e7aa1693b62087b2cd081a8e15f6f6e0ace0bffa7e14cd3d64f6",
+      "added": 18,
+      "removed": 0
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/prd.md",
+      "new_file_sha256": "2ebd40907b8b12b510e0e7f22f4d06caa2379c76958d296932f4b274fc708f46",
+      "lines": 46
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/outcomes.md",
+      "new_file_sha256": "4aad88a6f20db706cb77d17033b7e2645af467b3000fe1b676e9eaf66768afa3",
+      "lines": 153
+    }
+  ],
+  "evidence": [
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/baseline-manifest.json",
+      "sha256": "6f703c3993ac76c08d59ee0bb7fb5dc6519b833b2ba6b99c493e25e9f0ec4bfe",
+      "bytes": 718
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clipboard-lifecycle.ps1.log",
+      "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b",
+      "bytes": 268
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clipboard-ui-lifecycle.ps1.log",
+      "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f",
+      "bytes": 1346
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clipboard-ui-lifecycle.tests.py.log",
+      "sha256": "52d5c58716c7b0fed9e7b9e96c18002ad48f5f8a66e1f4d4b25e0364e84174e0",
+      "bytes": 848
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clippy-final.log",
+      "sha256": "99f3d027a324ba41ff9b3ae128061cd274df7cd4ef048477345ad1b047f25c15",
+      "bytes": 148
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/compiled-results.json",
+      "sha256": "4154c8e3db8e8e37f7fd96a71813f95df083cc685e2e08536b7dabc664b552a7",
+      "bytes": 558
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/desktop-full.log",
+      "sha256": "c210ac61b71f9c9cad6176e1d1bc11ca29e92b312f0fd98690331bcd03e54434",
+      "bytes": 256628
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/desktop-shell-lifecycle.ps1.log",
+      "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283",
+      "bytes": 336
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/download-ui-lifecycle.ps1.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/downloads-final.log",
+      "sha256": "a87f9fa1cca789556c86c03a4aaf1d11ad8eedce8ea3ff7e7ed8b1bb5d57f7de",
+      "bytes": 38760
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/focused-results.json",
+      "sha256": "102c0229b041c6e0196e58954314ef1c41d44234aea772192c1dd20d93fd9e6a",
+      "bytes": 145
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/main-window-final.log",
+      "sha256": "e7d2a16b07b87c93c300d60d5e53d3360c1e32d06366f780b5e0530b892bd66e",
+      "bytes": 42176
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/main-window.log",
+      "sha256": "1c013a07728fd3e5291c6e0efa3c3d2dc8f81eda7910d8f54fc8ba3f7e274cdd",
+      "bytes": 42494
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/own-delta.json",
+      "sha256": "de6a4b6a474635ad01a4a22664f48ee87e5f5a843fb4daf7593d33f6f087aae3",
+      "bytes": 20480
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/protected-checks.json",
+      "sha256": "cc0dc8f57fbd9d0cedf31e836154de4dfe482cce9a6e971a87c0d2c937c5a0f3",
+      "bytes": 3700
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/protected-manifest.json",
+      "sha256": "7df93188641954fb8c0c81e39ec3f569f1bfc99dfd100cf7937cb015b394a536",
+      "bytes": 1812
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/quick-launch-lifecycle.ps1.log",
+      "sha256": "d35db2d2db01ae26ad7b22f6fac92ab75f92452b8a55ec09ddd34c0c985b884f",
+      "bytes": 6140
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-final.log",
+      "sha256": "5bcf2e9254af59a1663b8484cac0b03dd7470abbe4fb9ad594f27fb2121665cd",
+      "bytes": 1410
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-focus-start.log",
+      "sha256": "7beb065b226c4eb9885b901ad8fa6ab630aef14cd97ea0bace8aa77b9dc2b124",
+      "bytes": 3098
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-green-final.log",
+      "sha256": "7e38550192f611cc0e698c16ac86baff4d056db9c516430dba35319df3aa265a",
+      "bytes": 1594
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-green-initial.log",
+      "sha256": "3c4e0a7e1917685ab61b92ec85a5753ef15ba59e4ae4836a29175f54bb8396bb",
+      "bytes": 5468
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-green.log",
+      "sha256": "426975c60b902cdcd546204d2f8ba431b81024d04c176db79d428fa0103e8980",
+      "bytes": 3102
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-red.log",
+      "sha256": "763b7ae134495eedec6d2c7690ebb4769fcf82f681108b49f1f9a60878249fc0",
+      "bytes": 5204
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/static-results.json",
+      "sha256": "0ae3cb1ec08937cdd194e50d2fbaff89db393544c15cd72f4e0a9787f06ba07f",
+      "bytes": 1125
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/ui-final.log",
+      "sha256": "8270ef27a389242da3d842616beaed89a37e56cdac9e79f443a045fce217e601",
+      "bytes": 47876
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/ui-state-lifecycle.ps1.log",
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f",
+      "bytes": 108
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/ui-token-boundaries.ps1.log",
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1",
+      "bytes": 92
+    },
+    {
+      "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/workspace-check.log",
+      "sha256": "30533c0dfaf82cc3730c939cec815c5bbf429a44f96b0babffeb3dbd5389cb23",
+      "bytes": 148
+    }
+  ],
+  "verification": {
+    "sort_keyboard": "3/3 PASS",
+    "main_window": "177/177 PASS",
+    "downloads": "185/185 PASS",
+    "ui": "231/231 PASS",
+    "strict_clippy": "PASS",
+    "workspace_tests_check": "PASS",
+    "fmt_all_check": "PASS",
+    "single_full_desktop": "1196/1196 PASS on current shared working tree; no Archive edit/claim",
+    "prior_slices": "keyboard8/picker14/identity11/names7 PASS",
+    "static_gates": "10 PASS / 1 FAIL extra Quick Launch lifecycle source gate",
+    "protected_checks": "15/15 exact byte/hash checks PASS",
+    "native_visual_reader_user": "NOT RUN / NOT ACCEPTED"
+  }
+}

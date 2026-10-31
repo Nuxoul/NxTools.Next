@@ -1,0 +1,7 @@
+﻿{
+    "name":  "shared-natural-form-green",
+    "command":  "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  208.1132384,
+    "finished":  "2026-10-26T06:11:11.5162154+08:00"
+}

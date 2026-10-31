@@ -1,0 +1,73 @@
+[
+  {
+    "name": "row owned display/callback/layout body",
+    "sha256": "f78df8e7ac516cd6f4a3a41e83a4917f14db83a8933cb3131bb9e8bb20de376f",
+    "result": "PASS"
+  },
+  {
+    "name": "all context/batch/detail/header/persist functions",
+    "sha256": "8297fc999710cf3f2b49fe36d68237e3ec63e49ebc2e145bf0ef5d644a129958",
+    "result": "PASS"
+  },
+  {
+    "name": "selected detail deferred lifecycle",
+    "sha256": "9d5ea6615001b094cdf10041d3d8c35fb80d362803a09bb3168c6b4fa8aedf4a",
+    "result": "PASS"
+  },
+  {
+    "name": "production controls/list/footer geometry",
+    "sha256": "404dd0a32f29e44b6ed22384d0cd720faff4d7f1368ed803d8a91bad91fa3b05",
+    "result": "PASS"
+  },
+  {
+    "name": "download_task_matches_search",
+    "sha256": "159e80b380bac8fc2b471443a4c45397adf52f19e200828ab2e2f6f836ebb69e",
+    "result": "PASS"
+  },
+  {
+    "name": "download_status_sort_rank",
+    "sha256": "5c40e014c682008e2194cebe7a8580a7b892f81de1d327d66bbf4573a4906e4b",
+    "result": "PASS"
+  },
+  {
+    "name": "reconcile_download_selection",
+    "sha256": "d5e08bd0e38754132a23674ce640f24efab065bafae23551940f85b57d184c1c",
+    "result": "PASS"
+  },
+  {
+    "name": "update_download_selection",
+    "sha256": "50dc80cf3558dcaf5fe1403d20b35d01f57f044bb6e672a3d36601b79df8213d",
+    "result": "PASS"
+  },
+  {
+    "name": "prepare_download_context_selection",
+    "sha256": "b183e8db61e3fb07d3b1d5650f9bf0f2e43e68daa657daaa67ee50931ab554d3",
+    "result": "PASS"
+  },
+  {
+    "name": "download_context_capabilities",
+    "sha256": "44df157da1c2faf27a2ecaea9df92f2f9ed3c271b852750ee623a9179f92af8c",
+    "result": "PASS"
+  },
+  {
+    "name": "download_queue_placement_capabilities",
+    "sha256": "372aaf934e79a0ae6cffb76132ed6b7bc9bb1c9269034707b7b6289f2c946fb4",
+    "result": "PASS"
+  },
+  {
+    "name": "reference append-only baseline prefix",
+    "result": "PASS"
+  },
+  {
+    "name": "existing assertion count retained rust/apps/nxtools-desktop/src/main_window/tests.rs",
+    "result": "PASS"
+  },
+  {
+    "name": "existing assertion count retained rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+    "result": "PASS"
+  },
+  {
+    "name": "existing assertion count retained rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs",
+    "result": "PASS"
+  }
+]

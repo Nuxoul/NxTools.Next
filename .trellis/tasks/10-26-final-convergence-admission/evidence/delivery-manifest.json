@@ -1,0 +1,71 @@
+{
+  "created_utc": "2026-10-26T10:58:17.773346+00:00",
+  "status": "NOT_ADMITTED_INCOMPLETE_PREREQUISITE_REMEDIATION",
+  "files": [
+    {
+      "path": "evidence/admission-result.json",
+      "sha256": "70f5d3a0a9ff5195486bba55d7e1aec6e321c9fe663f7ff550742de8a3d86390",
+      "bytes": 1237
+    },
+    {
+      "path": "evidence/capture.py",
+      "sha256": "a1a1f454b76e4bb5409be78d56f25ce5901a8be39fd1ba65a2ade5068eff7066",
+      "bytes": 5616
+    },
+    {
+      "path": "evidence/command-results.json",
+      "sha256": "e565026a5e7a8159275b34a60b2bcf88c5cd793815818211f0cc85e186eb5799",
+      "bytes": 839
+    },
+    {
+      "path": "evidence/diff-check.log",
+      "sha256": "34fbf49db0d6230d66e068386ab64f2171b93b5462502364d3388a2edabc6e3f",
+      "bytes": 1187
+    },
+    {
+      "path": "evidence/document-checks.ps1",
+      "sha256": "a5e0b987bb6e1c1a6af5fe27bc514912a92e8fd8571340504a6330c02ac462ca",
+      "bytes": 1102
+    },
+    {
+      "path": "evidence/failure-log-hashes.json",
+      "sha256": "7916b0c880932601ed73df81172b660d597d380f18d80d8b6510e3310af8fe96",
+      "bytes": 12566
+    },
+    {
+      "path": "evidence/git-status.txt",
+      "sha256": "d09af25a2357ae8947bab2adf00fbd2de24a52c9a482fe7104627045ecfbd1ae",
+      "bytes": 33659
+    },
+    {
+      "path": "evidence/historical-protection.json",
+      "sha256": "8a0aad9de354fccb2a9e0a5ada8f4fe96836adc1d3b62840b6afbf0356ea344e",
+      "bytes": 1347330
+    },
+    {
+      "path": "evidence/process-observation.json",
+      "sha256": "fd5bd7befea918a96f3f6eb9cc5638df2149fb6d24cb819c18ef1c397a8d5c18",
+      "bytes": 219
+    },
+    {
+      "path": "evidence/source-baseline.json",
+      "sha256": "81428ae71492b198d0bd41376ad8d03f79fc01bf7e042cf0e12b0d479e8d2b8e",
+      "bytes": 124558
+    },
+    {
+      "path": "evidence/spec-contracts.log",
+      "sha256": "059d5494dcac55eadf7369becd975bb4ef1d7e20a2158f9dba45ef21a134020d",
+      "bytes": 175
+    },
+    {
+      "path": "evidence/verify.py",
+      "sha256": "872a07fc4f396f768186f2bd9abc03b27551986f1655bf84d5a46c57efc33e2d",
+      "bytes": 2287
+    },
+    {
+      "path": "outcomes.md",
+      "sha256": "eab7a661e8d364f600f75d5f41b8db4076e2500f92cdd3b95e2004d25af5df0c",
+      "bytes": 12858
+    }
+  ]
+}

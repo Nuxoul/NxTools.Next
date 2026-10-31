@@ -1,0 +1,11 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/downloads/settings_view.rs
++++ queue07/rust/apps/nxtools-desktop/src/downloads/settings_view.rs
+@@ -2315,7 +2315,7 @@
+                         title,
+                         help,
+                         format!("download-settings-{title}-help"),
+-                        ordinary_rem(440.0).to_pixels(window.rem_size()).as_f32(),
++                        ordinary_rem(440.0),
+                         content(options, window, cx).into_any_element(),
+                     )
+                 })

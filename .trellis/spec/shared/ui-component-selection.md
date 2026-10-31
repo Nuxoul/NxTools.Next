@@ -67,3 +67,9 @@ Run `python tests/architecture/gpui-component-catalog.py`, `python tests/archite
 
 ## Explicit2026-10-22 scope amendment
 The approved six-item plan adds a pinned unified Markdown document/editor backend and project Graphite Light/Dark defaults through public Kit APIs. This is an explicit exception to historical no-new-editor/built-in-palette-only wording, not permission for further vendor edits or controls painted as substitutes. Settings remain official32DIP dropdown fields, edit modes Small outlined Buttons outside Toolbar.child adaptations. Framework patches remain exactly notification.rs/events.rs; separate editor provenance permits only element.rs passive mode and3cull.rs stable lowbits. See [current contracts](../nxtools-desktop/backend/ui-experience-contracts.md), [editor](../../../docs/reference-code/markdown-editor.md) and [theme](../../../docs/reference-code/graphite-theme.md).
+The later integration-closeout amendment additionally authorizes only one equivalent serializer
+expression and rustfmt in that fragment/passive-link if; exact reverse-hash checks enforce this
+boundary. See the current editor reference; no full-vendor formatting or further source permission.
+
+## Explicit2026-10-23 notification header amendment
+User approves optional generic `Notification::header_action` within existing notification.rs only, to place actual XSmall ghost Copy before original Close. Same officialtoolbar/list/clock/exit/nativeowners; headerfocus keeps controls visible across GPUI keyboard-modality hover suppression. No globalCtrlC/customkeydispatcher/newclipboardengine or further vendorfile. Duration and header APIs are preserved at https://github.com/Nuxoul/gpui-kit, not an automatic dependency switch. Exact behavior/tests: [notification contract](../nxtools-desktop/backend/ui-experience-contracts.md); current [release delta](../../../docs/reference-code/gpui-kit-080.md).

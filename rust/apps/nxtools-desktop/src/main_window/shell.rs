@@ -1,4 +1,5 @@
 use super::*;
+use crate::ui::metrics::ordinary_rem;
 use gpui_kit::component::sidebar::{Sidebar, SidebarGroup, SidebarItem};
 use gpui_kit::component::{Collapsible, Selectable};
 use gpui_kit::{ClickEvent, ElementId, RenderOnce};
@@ -61,7 +62,7 @@ impl MainWindow {
         let global_settings_action = div()
             .id("global-network-settings")
             .debug_selector(|| "global-network-settings".into())
-            .h(px(CONTROL_HEIGHT_ACTION))
+            .h_7()
             .flex()
             .items_center()
             .child(
@@ -82,140 +83,162 @@ impl MainWindow {
                     });
                 }),
             );
-        div()
-            .id("main-titlebar")
-            .debug_selector(|| "main-titlebar".into())
-            .h(px(TITLEBAR_HEIGHT))
-            .w_full()
-            .flex()
-            .items_center()
-            .border_b_1()
-            .border_color(theme.border_subtle)
-            .bg(theme.canvas)
-            .child(
-                div()
-                    .id("main-titlebar-drag-region")
-                    .debug_selector(|| "main-titlebar-drag-region".into())
-                    .h_full()
-                    .flex_1()
-                    .on_mouse_down(MouseButton::Left, {
-                        let platform = self.platform.clone();
-                        let window_handle = self.native_window_handle;
-                        move |_, _, cx| {
-                            if window_handle == 0 {
-                                return;
+        crate::ui::components::titlebar::caption_shell(
+            "main-titlebar",
+            div()
+                .size_full()
+                .flex()
+                .items_center()
+                .child(
+                    div()
+                        .id("main-titlebar-drag-region")
+                        .debug_selector(|| "main-titlebar-drag-region".into())
+                        .h_full()
+                        .flex_1()
+                        .on_mouse_down(MouseButton::Left, {
+                            let platform = self.platform.clone();
+                            let window_handle = self.native_window_handle;
+                            move |event, _, cx| {
+                                if window_handle == 0 {
+                                    return;
+                                }
+                                if let Some(platform) = platform.as_ref() {
+                                    let command = if event.click_count == 2 {
+                                        PlatformCommand::ToggleWindowMaximized(
+                                            ToggleWindowMaximizedCommand { window_handle },
+                                        )
+                                    } else {
+                                        PlatformCommand::BeginWindowMove(BeginWindowMoveCommand {
+                                            window_handle,
+                                        })
+                                    };
+                                    let _ = platform.send_command(command);
+                                }
+                                cx.stop_propagation();
                             }
-                            if let Some(platform) = platform.as_ref() {
-                                let _ = platform.send_command(PlatformCommand::BeginWindowMove(
-                                    BeginWindowMoveCommand { window_handle },
-                                ));
-                            }
-                            cx.stop_propagation();
-                        }
-                    })
-                    .flex()
-                    .items_center()
-                    .gap(px(SPACING_8))
-                    .pl(px(SPACING_12))
-                    .child(
-                        div()
-                            .id("main-brand-icon")
-                            .debug_selector(|| "main-brand-icon".into())
-                            .size(px(18.0))
-                            .rounded(px(RADIUS_CONTROL))
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .child(
-                                img("brand/nxtools.png")
-                                    .size(px(18.0))
-                                    .object_fit(ObjectFit::Contain),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .debug_selector(|| "main-brand-title".into())
-                            .h(px(LINE_HEIGHT_PAGE_TITLE))
-                            .text_size(px(TEXT_PAGE_TITLE))
-                            .line_height(px(LINE_HEIGHT_PAGE_TITLE))
-                            .font_weight(gpui_kit::FontWeight::SEMIBOLD)
-                            .text_color(theme.text)
-                            .child("NxTools"),
-                    )
-                    .child(
-                        div()
-                            .debug_selector(|| "main-active-module".into())
-                            .h(px(LINE_HEIGHT_LABEL))
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_secondary)
-                            .child(format!("· {}", self.shell.active_module().label())),
-                    ),
-            )
-            .child(
-                div()
-                    .debug_selector(|| "main-titlebar-utilities".into())
-                    .h_full()
-                    .flex()
-                    .items_center()
-                    .gap(px(SPACING_4))
-                    .child(global_settings_action)
-                    .child(
-                        div()
-                            .debug_selector(|| "main-window-controls".into())
-                            .h_full()
-                            .flex()
-                            .child(self.window_control(MainWindowControl::Minimize, theme))
-                            .child(
-                                self.window_control(maximize_control(window.is_maximized()), theme),
-                            )
-                            .child(self.window_control(MainWindowControl::Close, theme)),
-                    ),
-            )
-            .into_any_element()
+                        })
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .pl_3()
+                        .child(
+                            div()
+                                .id("main-brand-icon")
+                                .debug_selector(|| "main-brand-icon".into())
+                                .size(px(18.0))
+                                .rounded(px(RADIUS_CONTROL))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    img("brand/nxtools.png")
+                                        .size(px(18.0))
+                                        .object_fit(ObjectFit::Contain),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "main-brand-title".into())
+                                .h(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))
+                                .text_size(ordinary_rem(TEXT_PAGE_TITLE))
+                                .line_height(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))
+                                .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                                .text_color(theme.text)
+                                .child("NxTools"),
+                        )
+                        .child(
+                            div()
+                                .debug_selector(|| "main-active-module".into())
+                                .h(ordinary_rem(LINE_HEIGHT_LABEL))
+                                .text_size(ordinary_rem(TEXT_LABEL))
+                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                .text_color(theme.text_secondary)
+                                .child(format!("· {}", self.shell.active_module().label())),
+                        ),
+                )
+                .child(
+                    div()
+                        .debug_selector(|| "main-titlebar-utilities".into())
+                        .h_full()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(global_settings_action)
+                        .child(
+                            div()
+                                .debug_selector(|| "main-window-controls".into())
+                                .h_full()
+                                .flex()
+                                .child(self.window_control(MainWindowControl::Minimize, theme))
+                                .child(
+                                    self.window_control(
+                                        maximize_control(window.is_maximized()),
+                                        theme,
+                                    ),
+                                )
+                                .child(self.window_control(MainWindowControl::Close, theme)),
+                        ),
+                )
+                .into_any_element(),
+        )
+        .into_any_element()
     }
 
     pub(crate) fn window_control(&self, control: MainWindowControl, theme: Theme) -> AnyElement {
         let platform = self.platform.clone();
         let window_handle = self.native_window_handle;
         let system_settings = Rc::clone(&self.system_settings);
-        window_control(control, theme, move |_, window, cx| match control {
-            MainWindowControl::Minimize if window_handle != 0 => {
-                if let Some(platform) = platform.as_ref() {
-                    let _ = platform.send_command(PlatformCommand::SetWindowMinimized(
-                        SetWindowMinimizedCommand { window_handle },
-                    ));
-                }
-            }
-            MainWindowControl::Maximize | MainWindowControl::Restore if window_handle != 0 => {
-                if let Some(platform) = platform.as_ref() {
-                    let _ = platform.send_command(PlatformCommand::ToggleWindowMaximized(
-                        ToggleWindowMaximizedCommand { window_handle },
-                    ));
-                }
-            }
-            MainWindowControl::Minimize => window.minimize_window(),
-            MainWindowControl::Maximize | MainWindowControl::Restore => window.zoom_window(),
-            MainWindowControl::Close
-                if system_settings.borrow().close_to_tray && window_handle != 0 =>
+        let detail_owner = self.downloads.clone();
+        let detail_scope = self.download_detail_scope.clone();
+        window_control(control, theme, move |_, window, cx| {
+            if matches!(control, MainWindowControl::Close)
+                && let Some(scope) = detail_scope.as_ref()
             {
-                if let Some(platform) = platform.as_ref() {
-                    if platform
-                        .send_command(PlatformCommand::SetWindowVisibility(
-                            SetWindowVisibilityCommand {
-                                window_handle,
-                                visible: false,
-                            },
-                        ))
-                        .is_err()
-                    {
+                scope.retire();
+                let application = detail_owner.clone();
+                let scope = scope.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |app, _| app.retire_task_detail_scope(&scope));
+                });
+            }
+            match control {
+                MainWindowControl::Minimize if window_handle != 0 => {
+                    if let Some(platform) = platform.as_ref() {
+                        let _ = platform.send_command(PlatformCommand::SetWindowMinimized(
+                            SetWindowMinimizedCommand { window_handle },
+                        ));
+                    }
+                }
+                MainWindowControl::Maximize | MainWindowControl::Restore if window_handle != 0 => {
+                    if let Some(platform) = platform.as_ref() {
+                        let _ = platform.send_command(PlatformCommand::ToggleWindowMaximized(
+                            ToggleWindowMaximizedCommand { window_handle },
+                        ));
+                    }
+                }
+                MainWindowControl::Minimize => window.minimize_window(),
+                MainWindowControl::Maximize | MainWindowControl::Restore => window.zoom_window(),
+                MainWindowControl::Close
+                    if system_settings.borrow().close_to_tray && window_handle != 0 =>
+                {
+                    if let Some(platform) = platform.as_ref() {
+                        if platform
+                            .send_command(PlatformCommand::SetWindowVisibility(
+                                SetWindowVisibilityCommand {
+                                    window_handle,
+                                    visible: false,
+                                },
+                            ))
+                            .is_err()
+                        {
+                            cx.quit();
+                        }
+                    } else {
                         cx.quit();
                     }
-                } else {
-                    cx.quit();
                 }
+                MainWindowControl::Close => cx.quit(),
             }
-            MainWindowControl::Close => cx.quit(),
         })
         .into_any_element()
     }
@@ -250,6 +273,9 @@ impl MainWindow {
                                         owner.update(cx, |app, cx| app.retire_import_preview(cx));
                                 }
                             });
+                        }
+                        if module != MainModule::Downloads {
+                            this.retire_download_detail_scope(cx);
                         }
                         this.shell.activate(module);
                         // Unmounting a page must release its orphaned menu focus.
@@ -390,12 +416,13 @@ impl MainWindowControl {
         }
     }
 
-    pub(crate) fn icon(self) -> CaptionIcon {
+    pub(crate) fn icon(self) -> gpui_kit::component::IconName {
+        use gpui_kit::component::IconName;
         match self {
-            Self::Minimize => CaptionIcon::Minimize,
-            Self::Maximize => CaptionIcon::Maximize,
-            Self::Restore => CaptionIcon::Restore,
-            Self::Close => CaptionIcon::Close,
+            Self::Minimize => IconName::WindowMinimize,
+            Self::Maximize => IconName::WindowMaximize,
+            Self::Restore => IconName::WindowRestore,
+            Self::Close => IconName::WindowClose,
         }
     }
 
@@ -419,54 +446,14 @@ pub(crate) fn maximize_control(is_maximized: bool) -> MainWindowControl {
 
 pub(crate) fn window_control(
     control: MainWindowControl,
-    theme: Theme,
+    _theme: Theme,
     on_click: impl Fn(&gpui_kit::ClickEvent, &mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
-    let close = matches!(control, MainWindowControl::Close);
-    let id = control.id();
-    let icon_selector = format!("{id}-icon");
-    let tooltip_selector = format!("{id}-tooltip");
-    let icon = Icon::new(control.icon()).size(px(12.0));
-    let tooltip = control.tooltip();
-    div()
-        .id(id)
-        .debug_selector(move || id.into())
-        .w(px(TITLEBAR_HEIGHT))
-        .h_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_color(theme.text_secondary)
-        .hover(move |style| {
-            if close {
-                style.bg(theme.danger).text_color(gpui_kit::white())
-            } else {
-                style.bg(theme.surface_hover).text_color(theme.text)
-            }
-        })
-        .tooltip(move |window, cx| {
-            let tooltip_selector = tooltip_selector.clone();
-            Tooltip::element(move |_, _| {
-                let debug_selector = tooltip_selector.clone();
-                div()
-                    .debug_selector(move || debug_selector.clone())
-                    .child(tooltip)
-            })
-            .build(window, cx)
-        })
-        .child(
-            Button::new(id)
-                .debug_selector(move || format!("{id}-keyboard-target"))
-                .ghost()
-                .w_full()
-                .h_full()
-                .rounded(px(crate::ui::metrics::RADIUS_NONE))
-                .on_click(on_click)
-                .child(
-                    div()
-                        .debug_selector(move || icon_selector.clone())
-                        .size(px(12.0))
-                        .child(icon),
-                ),
-        )
+    crate::ui::components::titlebar::caption_action(
+        control.id(),
+        control.icon(),
+        control.tooltip(),
+        matches!(control, MainWindowControl::Close),
+        on_click,
+    )
 }

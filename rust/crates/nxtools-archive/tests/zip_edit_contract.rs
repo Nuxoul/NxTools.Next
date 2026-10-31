@@ -400,3 +400,203 @@ fn tiny_forced_zip64_local_record_survives_rename_and_comment() {
         10
     );
 }
+
+#[test]
+fn capability_foundation_opened_zip_reports_implemented_reads_and_edits_not_suffix() {
+    let root = tempfile::tempdir().expect("owned fixture");
+    let path = root.path().join("content-not-extension.tar");
+    fs::copy(fixture("stored.zip"), &path).expect("independent ZIP");
+    let snapshot = ArchiveEngine::default()
+        .open(OpenRequest::new(&path), &OperationControl::default())
+        .expect("content-detected ZIP");
+    assert!(
+        snapshot.capabilities().extract,
+        "implemented ZIP extraction is independent of editing"
+    );
+    assert!(
+        snapshot.capabilities().modify,
+        "ordinary opened ZIP uses its implemented record editor, not its suffix"
+    );
+}
+
+#[test]
+fn capability_foundation_independent_operation_matrix_and_truthful_refusals() {
+    use nxtools_archive::{
+        ArchiveCapabilities, ArchiveFormat as F, ArchiveModificationRefusal as R,
+        ArchiveOperation as O,
+    };
+    for format in [
+        F::Zip,
+        F::SevenZ,
+        F::Rar4,
+        F::Rar5,
+        F::Tar,
+        F::TarGz,
+        F::TarBz2,
+        F::TarXz,
+        F::TarZstd,
+        F::Gzip,
+        F::Bzip2,
+        F::Xz,
+        F::Zstd,
+    ] {
+        let caps = ArchiveCapabilities::opened(format, None);
+        for op in [O::Browse, O::Extract, O::Preview] {
+            assert_eq!(caps.admit(op), Ok(()));
+        }
+        for op in [
+            O::Add,
+            O::Delete,
+            O::RenameFile,
+            O::RenameDirectorySubtree,
+            O::NewDirectory,
+            O::Comment,
+        ] {
+            assert_eq!(
+                caps.admit(op),
+                if format == F::Zip
+                    || matches!(format, F::SevenZ | F::Tar | F::TarGz | F::TarXz)
+                        && op != O::Comment
+                {
+                    Ok(())
+                } else {
+                    Err(R::BackendMissing)
+                }
+            );
+        }
+        assert_eq!(
+            caps.admit(O::ReplaceContent),
+            if matches!(format, F::SevenZ | F::Tar | F::TarGz | F::TarXz) {
+                Ok(())
+            } else {
+                Err(R::BackendMissing)
+            }
+        );
+        assert!(
+            !caps.create,
+            "an opened archive is not a create-format registry"
+        );
+    }
+    for refusal in [
+        R::SnapshotNotReady,
+        R::SourceChanged,
+        R::Volumes,
+        R::SelfExtracting,
+        R::ApplicationContainer,
+        R::UnsupportedEncryption,
+        R::UnsupportedStructure,
+        R::Corrupt,
+        R::UnverifiedMetadata,
+        R::SourceUnavailable,
+    ] {
+        let caps = ArchiveCapabilities::opened(F::Zip, Some(refusal));
+        assert_eq!(caps.admit(O::Add), Err(refusal));
+        assert_eq!(
+            caps.admit(O::Browse),
+            Ok(()),
+            "write refusal never globally breaks reading"
+        );
+    }
+}
+
+#[test]
+fn capability_foundation_unknown_metadata_stale_revision_and_positive_original_zip() {
+    use nxtools_archive::{ArchiveModificationRefusal as R, ArchiveOperation as O};
+    let root = tempfile::tempdir().expect("owned fixture");
+    let path = root.path().join("fixture.zip");
+    raw_metadata_zip(&path, false);
+    let control = OperationControl::default();
+    let engine = ArchiveEngine::default();
+    let snapshot = engine
+        .open(OpenRequest::new(&path), &control)
+        .expect("known metadata");
+    assert_eq!(snapshot.capabilities().admit(O::Add), Ok(()));
+    let metadata = fs::metadata(&path).expect("version");
+    let binding = nxtools_protocol::archive_browser::ArchiveSourceBinding {
+        native: "v1:fixture".into(),
+        digest: Sha256::digest(fs::read(&path).expect("bytes")).into(),
+        size: metadata.len(),
+        modified_unix_ns: metadata
+            .modified()
+            .expect("mtime")
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("unix")
+            .as_nanos() as u64,
+    };
+    assert_eq!(
+        engine.inspect_modification_source(OpenRequest::new(&path), &binding, &control),
+        Ok(())
+    );
+    raw_metadata_zip(&path, true);
+    assert_eq!(
+        engine.modification_eligibility(&snapshot, &control),
+        Err(R::SourceChanged)
+    );
+    assert_eq!(
+        engine.inspect_modification_source(OpenRequest::new(&path), &binding, &control),
+        Err(R::SourceChanged)
+    );
+    let unknown = engine
+        .open(OpenRequest::new(&path), &control)
+        .expect("unknown metadata browsable");
+    assert_eq!(
+        unknown.capabilities().admit(O::Add),
+        Err(R::UnverifiedMetadata)
+    );
+    assert!(
+        unknown.capabilities().browse
+            && unknown.capabilities().extract
+            && unknown.capabilities().preview
+    );
+    let before = fs::read(&path).expect("before");
+    assert!(matches!(
+        engine.zip_edit_candidate(
+            &unknown,
+            &[ZipEdit::Comment { text: "x".into() }],
+            None,
+            &control
+        ),
+        Err(ArchiveError::UnsupportedOperation)
+    ));
+    assert_eq!(fs::read(&path).expect("retained"), before);
+}
+
+#[test]
+fn capability_foundation_delete_unknown_record_preserves_original_zip_edit_compatibility() {
+    let root = tempfile::tempdir().expect("owned");
+    let path = root.path().join("unknown.zip");
+    raw_metadata_zip(&path, true);
+    let engine = ArchiveEngine::default();
+    let control = OperationControl::default();
+    let snapshot = engine
+        .open(OpenRequest::new(&path), &control)
+        .expect("readable ZIP");
+    assert_eq!(
+        snapshot
+            .capabilities()
+            .admit(nxtools_archive::ArchiveOperation::Delete),
+        Ok(()),
+        "metadata policy must not downgrade original delete-all-unsupported path"
+    );
+    let original = fs::read(&path).expect("source");
+    let candidate = engine
+        .zip_edit_candidate(
+            &snapshot,
+            &[ZipEdit::Delete {
+                entries: vec![snapshot.entries()[0].id()],
+            }],
+            None,
+            &control,
+        )
+        .expect("existing record-preserving delete");
+    let target = root.path().join("deleted.zip");
+    save(candidate, &target);
+    assert!(
+        engine
+            .open(OpenRequest::new(target), &control)
+            .expect("valid empty result")
+            .entries()
+            .is_empty()
+    );
+    assert_eq!(fs::read(path).expect("retained source"), original);
+}

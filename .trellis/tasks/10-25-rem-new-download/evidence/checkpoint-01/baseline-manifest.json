@@ -1,0 +1,14 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06-new\\rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.baseline",
+    "bytes": 137203
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "sha256": "135970f15de5e95754e9873ffb294b156068a2dc4267339950bf628671a558ca",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06-new\\docs__reference-code__download.md.baseline",
+    "bytes": 265083
+  }
+]

@@ -1,0 +1,408 @@
+--- live dirty task baseline/rust/apps/nxtools-desktop/src/downloads/settings_view.rs
++++ own final/rust/apps/nxtools-desktop/src/downloads/settings_view.rs
+@@ -1,5 +1,6 @@
+ use super::*;
+ use crate::ui::components::tooltip::bounded_text_tooltip;
++use crate::ui::metrics::ordinary_rem;
+ use crate::ui::typography::{
+     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+@@ -1000,15 +1001,17 @@
+         // The released Settings mounts only the requested field; draft ownership stays here.
+         let current_directory = self.directory.read(cx).value().to_string();
+         let directory_control = div()
+-            .w(px(286.0))
++            .w(ordinary_rem(286.0))
++            .max_w_full()
++            .min_w_0()
+             .flex()
+             .items_center()
+-            .gap(px(SPACING_8))
++            .gap_2()
+             .child(download_settings_input(
+                 theme,
+                 "download-settings-default-directory-field",
+                 &self.directory,
+-                px(250.0),
++                ordinary_rem(250.0),
+             ))
+             .child(
+                 div()
+@@ -1112,7 +1115,7 @@
+                     .selected(selected)
+                     .aria_selected(selected)
+                     .accessibility_label(presentation.name.clone())
+-                    .h(px(40.0))
++                    .min_h(ordinary_rem(40.0))
+                     .py_0()
+                     .w_full()
+                     .tooltip(move |window, cx| {
+@@ -1170,9 +1173,10 @@
+         );
+         let category_list = div()
+             .debug_selector(|| "download-settings-category-master".into())
+-            .w(px(228.0))
++            .w(ordinary_rem(228.0))
+             .h_full()
+-            .flex_none()
++            .flex_shrink_1()
++            .min_w_0()
+             .rounded(px(RADIUS_CONTROL))
+             .border_1()
+             .border_color(theme.border_subtle)
+@@ -1194,7 +1198,8 @@
+                 div()
+                     .debug_selector(|| "download-settings-category-add".into())
+                     .w_full()
+-                    .p(px(SPACING_8))
++                    .p_2()
++                    .flex_none()
+                     .border_t_1()
+                     .border_color(theme.border_subtle)
+                     .child(
+@@ -1274,12 +1279,13 @@
+                     .h_full()
+                     .flex()
+                     .flex_col()
+-                    .gap(px(SPACING_8))
++                    .gap_2()
+                     .child(
+                         div()
+                             .debug_selector(|| "download-settings-category-heading".into())
+                             .w_full()
+-                            .h(px(CONTROL_HEIGHT_INPUT))
++                            .min_h(ordinary_rem(CONTROL_HEIGHT_INPUT))
++                            .flex_none()
+                             .border_b_1()
+                             .border_color(theme.border_subtle)
+                             .flex()
+@@ -1290,15 +1296,15 @@
+                                     .min_w_0()
+                                     .flex()
+                                     .items_center()
+-                                    .gap(px(SPACING_8))
++                                    .gap_2()
+                                     .child(
+                                         div()
+                                             .debug_selector(|| {
+                                                 "download-settings-category-heading-title".into()
+                                             })
+                                             .flex_none()
+-                                            .text_size(px(TEXT_BODY))
+-                                            .line_height(px(LINE_HEIGHT_BODY))
++                                            .text_size(ordinary_rem(TEXT_BODY))
++                                            .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                             .font_weight(FontWeight::MEDIUM)
+                                             .text_color(theme.text)
+                                             .child("分类规则"),
+@@ -1307,8 +1313,8 @@
+                                         div()
+                                             .min_w_0()
+                                             .truncate()
+-                                            .text_size(px(TEXT_LABEL))
+-                                            .line_height(px(LINE_HEIGHT_LABEL))
++                                            .text_size(ordinary_rem(TEXT_LABEL))
++                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                             .text_color(theme.text_muted)
+                                             .child(if enabled {
+                                                 "参与自动匹配"
+@@ -1322,11 +1328,11 @@
+                                     .flex_none()
+                                     .flex()
+                                     .items_center()
+-                                    .gap(px(SPACING_8))
++                                    .gap_2()
+                                     .child(
+                                         div()
+-                                            .text_size(px(TEXT_LABEL))
+-                                            .line_height(px(LINE_HEIGHT_LABEL))
++                                            .text_size(ordinary_rem(TEXT_LABEL))
++                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                             .text_color(theme.text_secondary)
+                                             .child("启用"),
+                                     )
+@@ -1371,7 +1377,8 @@
+                         div()
+                             .debug_selector(|| "download-settings-category-action-toolbar".into())
+                             .w_full()
+-                            .pt(px(SPACING_8))
++                            .pt_2()
++                            .flex_none()
+                             .border_t_1()
+                             .border_color(theme.border_subtle)
+                             .flex()
+@@ -1384,7 +1391,7 @@
+                                     })
+                                     .flex()
+                                     .items_center()
+-                                    .gap(px(SPACING_4))
++                                    .gap_1()
+                                     .child(
+                                         div()
+                                             .debug_selector(|| {
+@@ -1470,8 +1477,8 @@
+             })
+             .unwrap_or_else(|| {
+                 div()
+-                    .text_size(px(TEXT_LABEL))
+-                    .line_height(px(LINE_HEIGHT_LABEL))
++                    .text_size(ordinary_rem(TEXT_LABEL))
++                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                     .text_color(theme.text_muted)
+                     .child("暂无分类；可新增自定义规则")
+                     .into_any_element()
+@@ -1481,14 +1488,17 @@
+             .h(px(310.0))
+             .flex()
+             .items_start()
+-            .gap(px(SPACING_12))
++            .gap_3()
+             .child(category_list)
+             .child(
+                 div()
+                     .min_w_0()
+                     .flex_1()
+                     .h_full()
+-                    .pl(px(SPACING_12))
++                    .id("download-settings-category-editor-scroll")
++                    .min_h_0()
++                    .overflow_y_scroll()
++                    .pl_3()
+                     .border_l_1()
+                     .border_color(theme.border_subtle)
+                     .child(category_editor),
+@@ -1518,7 +1528,7 @@
+             .min_w_0()
+             .flex()
+             .items_center()
+-            .gap(px(SPACING_8))
++            .gap_2()
+             .child(div().flex_1().min_w_0().child(field_shell(
+                 theme,
+                 "download-settings-ffmpeg-field",
+@@ -1603,7 +1613,7 @@
+             .w_full()
+             .flex()
+             .items_center()
+-            .gap(px(SPACING_8))
++            .gap_2()
+             .child(
+                 div()
+                     .debug_selector(|| "download-settings-ffmpeg-install".into())
+@@ -1656,7 +1666,7 @@
+             .w_full()
+             .flex()
+             .items_center()
+-            .gap(px(SPACING_8))
++            .gap_2()
+             .child(
+                 div()
+                     .debug_selector(|| "download-settings-ffmpeg-gyan".into())
+@@ -1700,21 +1710,21 @@
+             theme,
+             "download-settings-connection-limit-field",
+             &self.connection_limit,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let adaptive_max_control = download_settings_input(
+             theme,
+             "download-settings-adaptive-max-field",
+             &self.adaptive_segment_max_segments,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let adaptive_min_control = download_settings_input(
+             theme,
+             "download-settings-adaptive-min-field",
+             &self.adaptive_segment_min_mib,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let adaptive_toggle = settings_toggle(
+@@ -1731,14 +1741,14 @@
+             theme,
+             "download-settings-concurrent-tasks-field",
+             &self.concurrent_tasks,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let speed_control = download_settings_input(
+             theme,
+             "download-settings-speed-limit-field",
+             &self.speed_limit_kib,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let progress_toggle = settings_toggle(
+@@ -1822,28 +1832,28 @@
+             theme,
+             "download-settings-taskbar-x-field",
+             &self.taskbar_overlay_offset_x,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let taskbar_offset_y = download_settings_input(
+             theme,
+             "download-settings-taskbar-y-field",
+             &self.taskbar_overlay_offset_y,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let taskbar_width = download_settings_input(
+             theme,
+             "download-settings-taskbar-width-field",
+             &self.taskbar_overlay_width,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let taskbar_height = download_settings_input(
+             theme,
+             "download-settings-taskbar-height-field",
+             &self.taskbar_overlay_height,
+-            px(88.0),
++            ordinary_rem(88.0),
+         )
+         .into_any_element();
+         let taskbar_progress_mode = download_settings_progress_mode(
+@@ -2098,7 +2108,7 @@
+                 theme,
+                 "download-settings-chrome-store-id",
+                 &self.chrome_web_store_extension_id,
+-                px(286.0),
++                ordinary_rem(286.0),
+             )
+             .into_any_element(),
+             (DownloadSettingsPage::General, 7) => {
+@@ -2194,7 +2204,8 @@
+             ),
+             (DownloadSettingsPage::Transfer, 10) => div()
+                 .debug_selector(|| "download-settings-background-limit-field".into())
+-                .w(px(120.0))
++                .w(ordinary_rem(120.0))
++                .max_w_full()
+                 .child(
+                     Input::new(&self.background_speed_limit_kib)
+                         .aria_label("后台限速 KiB/s")
+@@ -2304,7 +2315,7 @@
+                         title,
+                         help,
+                         format!("download-settings-{title}-help"),
+-                        440.0,
++                        ordinary_rem(440.0).to_pixels(window.rem_size()).as_f32(),
+                         content(options, window, cx).into_any_element(),
+                     )
+                 })
+@@ -2343,7 +2354,7 @@
+             .child(
+                 div().flex_1().min_h_0().w_full().child(
+                     Settings::new("download-settings-kit")
+-                        .sidebar_width(px(164.0))
++                        .sidebar_width(ordinary_rem(164.0).to_pixels(window.rem_size()))
+                         .default_selected_index(SelectIndex {
+                             page_ix: self.page.index(),
+                             group_ix: None,
+@@ -2367,7 +2378,7 @@
+         let footer_actions = div()
+             .flex()
+             .items_center()
+-            .gap(px(SPACING_8))
++            .gap_2()
+             .child(
+                 div()
+                     .debug_selector(|| "download-settings-cancel".into())
+@@ -2440,10 +2451,13 @@
+     theme: Theme,
+     selector: &'static str,
+     input: &Entity<InputState>,
+-    width: gpui_kit::Pixels,
++    width: impl Into<gpui_kit::Length>,
+ ) -> impl IntoElement {
++    let width: gpui_kit::Length = width.into();
+     div()
+         .w(width)
++        .max_w_full()
++        .min_w_0()
+         .child(field_shell(theme, selector, Input::new(input)))
+ }
+ 
+@@ -2590,7 +2604,7 @@
+     let copy_application = application.clone();
+     let copy_action = div()
+         .debug_selector(move || format!("download-settings-path-{key}-copy"))
+-        .size(px(CONTROL_HEIGHT_ACTION))
++        .size(ordinary_rem(CONTROL_HEIGHT_ACTION))
+         .child(icon_action_tooltip_surface(
+             icon_action_button(
+                 presentation.copy_button_id,
+@@ -2615,7 +2629,7 @@
+         ));
+     let open_action = div()
+         .debug_selector(move || format!("download-settings-path-{key}-open"))
+-        .size(px(CONTROL_HEIGHT_ACTION))
++        .size(ordinary_rem(CONTROL_HEIGHT_ACTION))
+         .child(icon_action_tooltip_surface(
+             icon_action_button(
+                 presentation.open_button_id,
+@@ -2642,19 +2656,19 @@
+         .debug_selector(move || format!("download-settings-path-{label}"))
+         .w_full()
+         .min_w_0()
+-        .min_h(px(SETTINGS_ROW_MIN_HEIGHT))
+-        .px(px(SPACING_8))
++        .min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))
++        .px_2()
+         .border_b_1()
+         .border_color(theme.border_subtle)
+         .flex()
+         .items_center()
+-        .gap(px(SPACING_8))
++        .gap_2()
+         .child(
+             div()
+-                .w(px(36.0))
++                .w(ordinary_rem(36.0))
+                 .flex_none()
+-                .text_size(px(TEXT_LABEL))
+-                .line_height(px(LINE_HEIGHT_LABEL))
++                .text_size(ordinary_rem(TEXT_LABEL))
++                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                 .text_color(theme.text_muted)
+                 .child(label),
+         )
+@@ -2668,8 +2682,8 @@
+                 .whitespace_nowrap()
+                 .line_clamp(1)
+                 .font_family(UI_MONO_FONT_FAMILY)
+-                .text_size(px(TEXT_LABEL))
+-                .line_height(px(LINE_HEIGHT_LABEL))
++                .text_size(ordinary_rem(TEXT_LABEL))
++                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                 .text_color(theme.text_secondary)
+                 .tooltip(bounded_text_tooltip(
+                     value_tooltip_selector,
+@@ -2684,7 +2698,7 @@
+                 .flex_none()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_4))
++                .gap_1()
+                 .child(copy_action)
+                 .child(open_action),
+         )
+@@ -3028,3 +3042,7 @@
+         let _ = std::fs::remove_dir_all(directory);
+     }
+ }
++
++#[cfg(test)]
++#[path = "settings_task_rem_tests.rs"]
++mod settings_task_rem_tests;

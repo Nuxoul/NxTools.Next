@@ -1,0 +1,1355 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "kind": "existing",
+    "baseline": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__settings_view.rs.baseline",
+    "snapshot": "evidence/current/rust__apps__nxtools-desktop__src__downloads__settings_view.rs.current",
+    "baseline_sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+    "after_sha256": "fa113dfa10cdacd2e257bc9f938263c81199409d2e38418a10f780ee1a97f3d7",
+    "operations": [
+      {
+        "kind": "insert",
+        "before_start": 2,
+        "before_end": 2,
+        "after_start": 2,
+        "after_end": 3,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1002,
+        "before_end": 1003,
+        "after_start": 1003,
+        "after_end": 1006,
+        "before_lines": [
+          "            .w(px(286.0))\n"
+        ],
+        "after_lines": [
+          "            .w(ordinary_rem(286.0))\n",
+          "            .max_w_full()\n",
+          "            .min_w_0()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1005,
+        "before_end": 1006,
+        "after_start": 1008,
+        "after_end": 1009,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1010,
+        "before_end": 1011,
+        "after_start": 1013,
+        "after_end": 1014,
+        "before_lines": [
+          "                px(250.0),\n"
+        ],
+        "after_lines": [
+          "                ordinary_rem(250.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1114,
+        "before_end": 1115,
+        "after_start": 1117,
+        "after_end": 1118,
+        "before_lines": [
+          "                    .h(px(40.0))\n"
+        ],
+        "after_lines": [
+          "                    .min_h(ordinary_rem(40.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1172,
+        "before_end": 1173,
+        "after_start": 1175,
+        "after_end": 1176,
+        "before_lines": [
+          "            .w(px(228.0))\n"
+        ],
+        "after_lines": [
+          "            .w(ordinary_rem(228.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1174,
+        "before_end": 1175,
+        "after_start": 1177,
+        "after_end": 1179,
+        "before_lines": [
+          "            .flex_none()\n"
+        ],
+        "after_lines": [
+          "            .flex_shrink_1()\n",
+          "            .min_w_0()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1196,
+        "before_end": 1197,
+        "after_start": 1200,
+        "after_end": 1202,
+        "before_lines": [
+          "                    .p(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                    .p_2()\n",
+          "                    .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1276,
+        "before_end": 1277,
+        "after_start": 1281,
+        "after_end": 1282,
+        "before_lines": [
+          "                    .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                    .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1281,
+        "before_end": 1282,
+        "after_start": 1286,
+        "after_end": 1288,
+        "before_lines": [
+          "                            .h(px(CONTROL_HEIGHT_INPUT))\n"
+        ],
+        "after_lines": [
+          "                            .min_h(ordinary_rem(CONTROL_HEIGHT_INPUT))\n",
+          "                            .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1292,
+        "before_end": 1293,
+        "after_start": 1298,
+        "after_end": 1299,
+        "before_lines": [
+          "                                    .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                                    .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1299,
+        "before_end": 1301,
+        "after_start": 1305,
+        "after_end": 1307,
+        "before_lines": [
+          "                                            .text_size(px(TEXT_BODY))\n",
+          "                                            .line_height(px(LINE_HEIGHT_BODY))\n"
+        ],
+        "after_lines": [
+          "                                            .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                                            .line_height(ordinary_rem(LINE_HEIGHT_BODY))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1309,
+        "before_end": 1311,
+        "after_start": 1315,
+        "after_end": 1317,
+        "before_lines": [
+          "                                            .text_size(px(TEXT_LABEL))\n",
+          "                                            .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                            .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1324,
+        "before_end": 1325,
+        "after_start": 1330,
+        "after_end": 1331,
+        "before_lines": [
+          "                                    .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                                    .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1327,
+        "before_end": 1329,
+        "after_start": 1333,
+        "after_end": 1335,
+        "before_lines": [
+          "                                            .text_size(px(TEXT_LABEL))\n",
+          "                                            .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                            .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1373,
+        "before_end": 1374,
+        "after_start": 1379,
+        "after_end": 1381,
+        "before_lines": [
+          "                            .pt(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                            .pt_2()\n",
+          "                            .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1386,
+        "before_end": 1387,
+        "after_start": 1393,
+        "after_end": 1394,
+        "before_lines": [
+          "                                    .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                                    .gap_1()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1472,
+        "before_end": 1474,
+        "after_start": 1479,
+        "after_end": 1481,
+        "before_lines": [
+          "                    .text_size(px(TEXT_LABEL))\n",
+          "                    .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                    .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1483,
+        "before_end": 1484,
+        "after_start": 1490,
+        "after_end": 1491,
+        "before_lines": [
+          "            .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "            .gap_3()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1490,
+        "before_end": 1491,
+        "after_start": 1497,
+        "after_end": 1501,
+        "before_lines": [
+          "                    .pl(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                    .id(\"download-settings-category-editor-scroll\")\n",
+          "                    .min_h_0()\n",
+          "                    .overflow_y_scroll()\n",
+          "                    .pl_3()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1520,
+        "before_end": 1521,
+        "after_start": 1530,
+        "after_end": 1531,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1605,
+        "before_end": 1606,
+        "after_start": 1615,
+        "after_end": 1616,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1658,
+        "before_end": 1659,
+        "after_start": 1668,
+        "after_end": 1669,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1702,
+        "before_end": 1703,
+        "after_start": 1712,
+        "after_end": 1713,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1709,
+        "before_end": 1710,
+        "after_start": 1719,
+        "after_end": 1720,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1716,
+        "before_end": 1717,
+        "after_start": 1726,
+        "after_end": 1727,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1733,
+        "before_end": 1734,
+        "after_start": 1743,
+        "after_end": 1744,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1740,
+        "before_end": 1741,
+        "after_start": 1750,
+        "after_end": 1751,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1824,
+        "before_end": 1825,
+        "after_start": 1834,
+        "after_end": 1835,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1831,
+        "before_end": 1832,
+        "after_start": 1841,
+        "after_end": 1842,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1838,
+        "before_end": 1839,
+        "after_start": 1848,
+        "after_end": 1849,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1845,
+        "before_end": 1846,
+        "after_start": 1855,
+        "after_end": 1856,
+        "before_lines": [
+          "            px(88.0),\n"
+        ],
+        "after_lines": [
+          "            ordinary_rem(88.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2100,
+        "before_end": 2101,
+        "after_start": 2110,
+        "after_end": 2111,
+        "before_lines": [
+          "                px(286.0),\n"
+        ],
+        "after_lines": [
+          "                ordinary_rem(286.0),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2196,
+        "before_end": 2197,
+        "after_start": 2206,
+        "after_end": 2208,
+        "before_lines": [
+          "                .w(px(120.0))\n"
+        ],
+        "after_lines": [
+          "                .w(ordinary_rem(120.0))\n",
+          "                .max_w_full()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2306,
+        "before_end": 2307,
+        "after_start": 2317,
+        "after_end": 2318,
+        "before_lines": [
+          "                        440.0,\n"
+        ],
+        "after_lines": [
+          "                        ordinary_rem(440.0).to_pixels(window.rem_size()).as_f32(),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2345,
+        "before_end": 2346,
+        "after_start": 2356,
+        "after_end": 2357,
+        "before_lines": [
+          "                        .sidebar_width(px(164.0))\n"
+        ],
+        "after_lines": [
+          "                        .sidebar_width(ordinary_rem(164.0).to_pixels(window.rem_size()))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2369,
+        "before_end": 2370,
+        "after_start": 2380,
+        "after_end": 2381,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2442,
+        "before_end": 2443,
+        "after_start": 2453,
+        "after_end": 2454,
+        "before_lines": [
+          "    width: gpui_kit::Pixels,\n"
+        ],
+        "after_lines": [
+          "    width: impl Into<gpui_kit::Length>,\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 2444,
+        "before_end": 2444,
+        "after_start": 2455,
+        "after_end": 2456,
+        "before_lines": [],
+        "after_lines": [
+          "    let width: gpui_kit::Length = width.into();\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 2446,
+        "before_end": 2446,
+        "after_start": 2458,
+        "after_end": 2460,
+        "before_lines": [],
+        "after_lines": [
+          "        .max_w_full()\n",
+          "        .min_w_0()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2592,
+        "before_end": 2593,
+        "after_start": 2606,
+        "after_end": 2607,
+        "before_lines": [
+          "        .size(px(CONTROL_HEIGHT_ACTION))\n"
+        ],
+        "after_lines": [
+          "        .size(ordinary_rem(CONTROL_HEIGHT_ACTION))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2617,
+        "before_end": 2618,
+        "after_start": 2631,
+        "after_end": 2632,
+        "before_lines": [
+          "        .size(px(CONTROL_HEIGHT_ACTION))\n"
+        ],
+        "after_lines": [
+          "        .size(ordinary_rem(CONTROL_HEIGHT_ACTION))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2644,
+        "before_end": 2646,
+        "after_start": 2658,
+        "after_end": 2660,
+        "before_lines": [
+          "        .min_h(px(SETTINGS_ROW_MIN_HEIGHT))\n",
+          "        .px(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "        .min_h(ordinary_rem(SETTINGS_ROW_MIN_HEIGHT))\n",
+          "        .px_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2650,
+        "before_end": 2651,
+        "after_start": 2664,
+        "after_end": 2665,
+        "before_lines": [
+          "        .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "        .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2653,
+        "before_end": 2654,
+        "after_start": 2667,
+        "after_end": 2668,
+        "before_lines": [
+          "                .w(px(36.0))\n"
+        ],
+        "after_lines": [
+          "                .w(ordinary_rem(36.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2655,
+        "before_end": 2657,
+        "after_start": 2669,
+        "after_end": 2671,
+        "before_lines": [
+          "                .text_size(px(TEXT_LABEL))\n",
+          "                .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2670,
+        "before_end": 2672,
+        "after_start": 2684,
+        "after_end": 2686,
+        "before_lines": [
+          "                .text_size(px(TEXT_LABEL))\n",
+          "                .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 2686,
+        "before_end": 2687,
+        "after_start": 2700,
+        "after_end": 2701,
+        "before_lines": [
+          "                .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                .gap_1()\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 3030,
+        "before_end": 3030,
+        "after_start": 3044,
+        "after_end": 3048,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[cfg(test)]\n",
+          "#[path = \"settings_task_rem_tests.rs\"]\n",
+          "mod settings_task_rem_tests;\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+    "kind": "existing",
+    "baseline": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__task_window.rs.baseline",
+    "snapshot": "evidence/current/rust__apps__nxtools-desktop__src__downloads__task_window.rs.current",
+    "baseline_sha256": "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+    "after_sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4",
+    "operations": [
+      {
+        "kind": "insert",
+        "before_start": 3,
+        "before_end": 3,
+        "after_start": 3,
+        "after_end": 4,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 304,
+        "before_end": 304,
+        "after_start": 305,
+        "after_end": 306,
+        "before_lines": [],
+        "after_lines": [
+          "                    .id(\"download-complete-content-scroll\")\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 305,
+        "before_end": 307,
+        "after_start": 307,
+        "after_end": 310,
+        "before_lines": [
+          "                    .px(px(SPACING_16))\n",
+          "                    .py(px(8.0))\n"
+        ],
+        "after_lines": [
+          "                    .overflow_y_scroll()\n",
+          "                    .px_4()\n",
+          "                    .py_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 309,
+        "before_end": 310,
+        "after_start": 312,
+        "after_end": 313,
+        "before_lines": [
+          "                    .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                    .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 312,
+        "before_end": 313,
+        "after_start": 315,
+        "after_end": 316,
+        "before_lines": [
+          "                            .size(px(34.0))\n"
+        ],
+        "after_lines": [
+          "                            .size(ordinary_rem(34.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 321,
+        "before_end": 322,
+        "after_start": 324,
+        "after_end": 325,
+        "before_lines": [
+          "                                    .size(px(18.0))\n"
+        ],
+        "after_lines": [
+          "                                    .size(ordinary_rem(18.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 332,
+        "before_end": 333,
+        "after_start": 335,
+        "after_end": 336,
+        "before_lines": [
+          "                            .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                            .gap_1()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 341,
+        "before_end": 343,
+        "after_start": 344,
+        "after_end": 346,
+        "before_lines": [
+          "                                    .text_size(px(TEXT_LABEL))\n",
+          "                                    .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                    .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 352,
+        "before_end": 352,
+        "after_start": 355,
+        "after_end": 356,
+        "before_lines": [],
+        "after_lines": [
+          "                                    .id(\"download-complete-path\")\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 354,
+        "before_end": 356,
+        "after_start": 358,
+        "after_end": 360,
+        "before_lines": [
+          "                                    .text_size(px(TEXT_LABEL))\n",
+          "                                    .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                    .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 358,
+        "before_end": 358,
+        "after_start": 362,
+        "after_end": 368,
+        "before_lines": [],
+        "after_lines": [
+          "                                    .aria_label(final_path.clone())\n",
+          "                                    .tooltip(bounded_text_tooltip(\n",
+          "                                        \"download-complete-path-tooltip\",\n",
+          "                                        final_path.clone(),\n",
+          "                                        true,\n",
+          "                                    ))\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 454,
+        "before_end": 454,
+        "after_start": 464,
+        "after_end": 465,
+        "before_lines": [],
+        "after_lines": [
+          "                    .id(\"download-failed-content-scroll\")\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 455,
+        "before_end": 457,
+        "after_start": 466,
+        "after_end": 469,
+        "before_lines": [
+          "                    .px(px(16.0))\n",
+          "                    .py(px(8.0))\n"
+        ],
+        "after_lines": [
+          "                    .overflow_y_scroll()\n",
+          "                    .px_4()\n",
+          "                    .py_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 459,
+        "before_end": 460,
+        "after_start": 471,
+        "after_end": 472,
+        "before_lines": [
+          "                    .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                    .gap_1()\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 463,
+        "before_end": 463,
+        "after_start": 475,
+        "after_end": 476,
+        "before_lines": [],
+        "after_lines": [
+          "                            .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 464,
+        "before_end": 465,
+        "after_start": 477,
+        "after_end": 478,
+        "before_lines": [
+          "                            .gap(px(8.0))\n"
+        ],
+        "after_lines": [
+          "                            .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 467,
+        "before_end": 468,
+        "after_start": 480,
+        "after_end": 481,
+        "before_lines": [
+          "                                    .size(px(16.0))\n"
+        ],
+        "after_lines": [
+          "                                    .size(ordinary_rem(16.0))\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 486,
+        "before_end": 486,
+        "after_start": 499,
+        "after_end": 500,
+        "before_lines": [],
+        "after_lines": [
+          "                            .flex_none()\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 498,
+        "before_end": 498,
+        "after_start": 512,
+        "after_end": 513,
+        "before_lines": [],
+        "after_lines": [
+          "                            .id(\"download-window-failed-path\")\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 500,
+        "before_end": 502,
+        "after_start": 515,
+        "after_end": 517,
+        "before_lines": [
+          "                            .text_size(px(TEXT_LABEL))\n",
+          "                            .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                            .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 504,
+        "before_end": 504,
+        "after_start": 519,
+        "after_end": 526,
+        "before_lines": [],
+        "after_lines": [
+          "                            .flex_none()\n",
+          "                            .aria_label(destination.clone())\n",
+          "                            .tooltip(bounded_text_tooltip(\n",
+          "                                \"download-failed-path-tooltip\",\n",
+          "                                destination.clone(),\n",
+          "                                true,\n",
+          "                            ))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 600,
+        "before_end": 601,
+        "after_start": 622,
+        "after_end": 623,
+        "before_lines": [
+          "                .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 652,
+        "before_end": 653,
+        "after_start": 674,
+        "after_end": 675,
+        "before_lines": [
+          "                    .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "                    .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "insert",
+        "before_start": 721,
+        "before_end": 721,
+        "after_start": 743,
+        "after_end": 744,
+        "before_lines": [],
+        "after_lines": [
+          "                .id(\"download-progress-content-scroll\")\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 722,
+        "before_end": 725,
+        "after_start": 745,
+        "after_end": 749,
+        "before_lines": [
+          "                .px(px(16.0))\n",
+          "                .pt(px(SPACING_4))\n",
+          "                .pb(px(0.0))\n"
+        ],
+        "after_lines": [
+          "                .overflow_y_scroll()\n",
+          "                .px_4()\n",
+          "                .pt_1()\n",
+          "                .pb_0()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 733,
+        "before_end": 734,
+        "after_start": 757,
+        "after_end": 758,
+        "before_lines": [
+          "                        .h(px(32.0))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(32.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 737,
+        "before_end": 738,
+        "after_start": 761,
+        "after_end": 762,
+        "before_lines": [
+          "                        .gap(px(8.0))\n"
+        ],
+        "after_lines": [
+          "                        .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 740,
+        "before_end": 741,
+        "after_start": 764,
+        "after_end": 765,
+        "before_lines": [
+          "                                .size(px(16.0))\n"
+        ],
+        "after_lines": [
+          "                                .size(ordinary_rem(16.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 760,
+        "before_end": 761,
+        "after_start": 784,
+        "after_end": 785,
+        "before_lines": [
+          "                                    .size(px(16.0)),\n"
+        ],
+        "after_lines": [
+          "                                    .size(ordinary_rem(16.0)),\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 813,
+        "before_end": 814,
+        "after_start": 837,
+        "after_end": 838,
+        "before_lines": [
+          "                        .h(px(16.0))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(16.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 817,
+        "before_end": 818,
+        "after_start": 841,
+        "after_end": 842,
+        "before_lines": [
+          "                        .gap(px(8.0))\n"
+        ],
+        "after_lines": [
+          "                        .gap_2()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 823,
+        "before_end": 824,
+        "after_start": 847,
+        "after_end": 848,
+        "before_lines": [
+          "                                .h(px(4.0))\n"
+        ],
+        "after_lines": [
+          "                                .h_1()\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 835,
+        "before_end": 837,
+        "after_start": 859,
+        "after_end": 861,
+        "before_lines": [
+          "                                .text_size(px(TEXT_BODY))\n",
+          "                                .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                                .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 851,
+        "before_end": 852,
+        "after_start": 875,
+        "after_end": 876,
+        "before_lines": [
+          "                                .label_width(px(44.0))\n"
+        ],
+        "after_lines": [
+          "                                .label_width(ordinary_rem(44.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 888,
+        "before_end": 889,
+        "after_start": 912,
+        "after_end": 913,
+        "before_lines": [
+          "                        .h(px(16.0))\n"
+        ],
+        "after_lines": [
+          "                        .h(ordinary_rem(16.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 890,
+        "before_end": 892,
+        "after_start": 914,
+        "after_end": 916,
+        "before_lines": [
+          "                        .text_size(px(TEXT_BODY))\n",
+          "                        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 909,
+        "before_end": 910,
+        "after_start": 933,
+        "after_end": 935,
+        "before_lines": [
+          "                            .pt(px(4.0))\n"
+        ],
+        "after_lines": [
+          "                            .pt_1()\n",
+          "                            .min_h(ordinary_rem(24.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 995,
+        "before_end": 996,
+        "after_start": 1020,
+        "after_end": 1021,
+        "before_lines": [
+          "        .max_h(px(32.0))\n"
+        ],
+        "after_lines": [
+          "        .max_h(ordinary_rem(32.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 997,
+        "before_end": 999,
+        "after_start": 1022,
+        "after_end": 1024,
+        "before_lines": [
+          "        .text_size(px(TEXT_BODY))\n",
+          "        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1018,
+        "before_end": 1021,
+        "after_start": 1043,
+        "after_end": 1046,
+        "before_lines": [
+          "        .h(px(16.0))\n",
+          "        .text_size(px(TEXT_BODY))\n",
+          "        .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(16.0))\n",
+          "        .text_size(ordinary_rem(TEXT_BODY))\n",
+          "        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1065,
+        "before_end": 1066,
+        "after_start": 1090,
+        "after_end": 1091,
+        "before_lines": [
+          "                    .w(px(width))\n"
+        ],
+        "after_lines": [
+          "                    .w(gpui_kit::relative(width / 408.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1067,
+        "before_end": 1068,
+        "after_start": 1092,
+        "after_end": 1093,
+        "before_lines": [
+          "                    .h(px(24.0))\n"
+        ],
+        "after_lines": [
+          "                    .h(ordinary_rem(24.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1086,
+        "before_end": 1087,
+        "after_start": 1111,
+        "after_end": 1112,
+        "before_lines": [
+          "                    .w(px(width))\n"
+        ],
+        "after_lines": [
+          "                    .w(gpui_kit::relative(width / 408.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1088,
+        "before_end": 1089,
+        "after_start": 1113,
+        "after_end": 1114,
+        "before_lines": [
+          "                    .h(px(24.0))\n"
+        ],
+        "after_lines": [
+          "                    .h(ordinary_rem(24.0))\n"
+        ]
+      },
+      {
+        "kind": "replace",
+        "before_start": 1119,
+        "before_end": 1121,
+        "after_start": 1144,
+        "after_end": 1146,
+        "before_lines": [
+          "                    .text_size(px(TEXT_BODY))\n",
+          "                    .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                    .text_size(ordinary_rem(TEXT_BODY))\n",
+          "                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs",
+    "kind": "new",
+    "after_sha256": "d818ffccb431cc998dd8074e28f2532c10ebf249f4cfffe47264b47ad8b8d5d3",
+    "snapshot": "evidence/current/rust__apps__nxtools-desktop__src__downloads__settings_task_rem_tests.rs.current"
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "kind": "existing",
+    "baseline": "evidence/baselines/docs__reference-code__download.md.baseline",
+    "snapshot": "evidence/current/docs__reference-code__download.md.current",
+    "baseline_sha256": "315db7a617756cd301825aaebfc8753e9ac179b4a63a740c39a775d7b98804fe",
+    "after_sha256": "cf28aa0891965c5f75b1395f6a4d4659c015248074a86412d885bfa850ff660e",
+    "operations": [
+      {
+        "kind": "insert",
+        "before_start": 3070,
+        "before_end": 3070,
+        "after_start": 3070,
+        "after_end": 3114,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "## Audit #6 Queue06: Settings/task ordinary-role boundary (2026-10-26)\n",
+          "\n",
+          "Reference order rechecked: ABDM DesktopSettingsComponent.kt/SettingsPage selected groups,\n",
+          "ShowDownloadDialogs keyed task/phase windows and CommonContent/close,ProgressDownloadPage\n",
+          "bounded tab/detail scrollers,CompletedDownloadPage name/icon/footer actions; then legacy\n",
+          "SettingsWindow constructor->WindowAnimationService.Attach->OnOpened/ConfigureForCurrentScope,\n",
+          "SaveButton_Click ApplySettingsCommand and close-only cancellation. DownloadProgressWindow\n",
+          "constructor subscribes task/completion options,OnOpened syncs,OnClosed detaches; completion\n",
+          "switches content/footer and calls ResizePreservingCenter. WindowAnimationService guards\n",
+          "delayed Close. AWT/Avalonia native bases remain unavailable,not inferred or operated.\n",
+          "\n",
+          "Current ordinary Settings input/label/control rails,category row minimum/heading,spacing and\n",
+          "workbench type use accepted ordinary_rem plus public semantic control tiers. Local\n",
+          "download_settings_input accepts Length,retaining original Input entity and field_shell.\n",
+          "The original Settings/Page/Group/Item search/navigation/scroll owns the page; category editor\n",
+          "may scroll inside its existing310px area. Header Textarea120px,error96px,984x650 native\n",
+          "options/minimum,title/footer,taskbar preview/native/device/hit geometry remain fixed.\n",
+          "Actual constrained720x480 tests do not change native minimum. Original draft parsing,picker\n",
+          "identity,Apply/Cancel,deferred section update/rollback/error Notification owner are unchanged.\n",
+          "\n",
+          "Task ordinary content insets,gaps,vector badge/icons,identity/name/metric/capability lines and\n",
+          "DescriptionList label rail follow rem. Original official Progress XSmall owns its tier;\n",
+          "semantic Table rows follow the same ordinary role while columns retain original40/88/140/140\n",
+          "proportions inside actual available width. No task data/virtualization/IO/copy ownership\n",
+          "change. Width440,collapsedprogress/completed184,failed196,expanded280,title34/footer44 and\n",
+          "phase/retry/reset/close/native handoff functions remain fixed. Content scrolls within those\n",
+          "clients; failure's original36..40px Alert viewport remains; complete failure text and long\n",
+          "path/name remain reachable through original scrolling or bounded Tooltip. Required footer\n",
+          "actions stay outside content scroll. Added path Tooltip/semantic labels retain full values,\n",
+          "not a new Shell or native action owner. Task snapshot/display-sampler/segment-state semantics\n",
+          "and every original pointer/key/deferred callback remain unchanged.\n",
+          "\n",
+          "Queue06 evidence is `.trellis/tasks/10-26-rem-download-settings-task/`: effective Root14 red\n",
+          "showed88px input rail beside28px control and fixed16px metric line; new Root16/14/18 fixtures\n",
+          "exercise long category/error/default+constrained Settings,actual category pointer/Tab/Space,\n",
+          "original Apply/Cancel with temp config section merge,and task details last segment/phase\n",
+          "long text/close/cancel. Official Scrollable debug selectors can describe content rather than\n",
+          "its clipping viewport; real hit assertions use existing outer budget/action bounds. A\n",
+          "pointer click on released Button may not initialize keyboard focus; fixture initializes the\n",
+          "public focus sequence before testing actual Tab/KeyUp,not a production focus workaround.\n",
+          "Core's existing Clipboard normalize forces enabled=true; section-merge evidence uses a\n",
+          "valid unrelated max_items value,not a forbidden legacy flag. Native/DPI/physical/WindowsIME/\n",
+          "reader/visual/user/release acceptance is separate; earlier failures/acceptances are immutable.\n"
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,36 @@
+--- dirty-baseline/docs/reference-code/download.md
++++ checkpoint-01/docs/reference-code/download.md
+@@ -2964,3 +2964,33 @@
+ Tooltip/copy and original submit/save/cancel/failure ownership remain. Evidence belongs only to
+ `.trellis/tasks/10-25-rem-role-consistency/`; controlled14/16/18 base-font geometry/paint is not
+ native/DPI/reader/visual/user acceptance or a claim that all ordinary px consumers are repaired.
++
++## Audit #6 continuation: New Download ordinary rem prerequisite (2026-10-25)
++
++ABDM first: AddDownloadPage.kt::AddDownloadPage57–193 keeps dominant URL, weighted left
++category/location/name and intrinsic metadata/right actions, with MainActionButtons after
++the flexible spacer. LocationTextField.kt137–209 bounds long location choices with vertical
++scrolling; its original component owns values. Legacy AddDownloadWindow.axaml232–387 uses
++one ScrollViewer around URL/parsed stages and original ViewModel commands. Its .axaml.cs
++constructor20 attaches WindowAnimationService, OnOpened27 adapts native chrome, DataContext
++subscribes RequestClose/PropertyChanged, CloseFromViewModel173 calls Close, and OnClosed34
++detaches/disposes. WindowAnimationService.Attach13 guards delayed Close; AWT/Avalonia native
++framework implementation was not inspected and is not inferred from these managed sources.
++
++Next browser_handoff_impl.rs::open_new_download_window_with_request437 -> original options/
++NewDownloadView/Root keeps native show and focus; create_fixed_confirmation hydrates fresh
++window-bound inputs in a hidden target, then original native apply/commit/old-close owner.
++Current new_download_window_size(true) computes246px from34+44+16+32+8+112, not historical278.
++All size/error/media functions and native placement/readback/generation policy remain fixed.
++Ordinary body/label/guidance/inspector/category/calendar/media ratios may follow verified16px
++Root base through existing GPUI scale or metrics::ordinary_rem. Exact Component0.8.0 Form
++label_width accepts Pixels resolved at Window boundary; Select.menu_width accepts Length;
++Popover p_3 is rem-relative before caller style. Preserve outer schedule304x200/calendar124
++and category320x240 budgets,34caption/44footer, original semantic controls and all callbacks.
++Shared path_picker_shell returns erased AnyElement with fixed32px layout; adapt only the
++original New Download public Input/Button layout locally, not shared unrelated consumers.
++No second keyboard/action/scroll controller or vendor patch is authorized. Test compact and
++confirmed production Root at14/16/18, true scroll-end/footer/hit bounds and child Select/
++Popover keyboard ownership; base-font fixtures do not establish native/DPI/visual acceptance.
++This continuation has separate evidence in `.trellis/tasks/10-25-rem-new-download/`; the prior
++accepted bounded slice and failed complete Desktop run remain immutable history.

@@ -1,0 +1,5 @@
+# Extensions structure
+
+Evidence: `repo:rust/crates/nxtools-extensions/src/lib.rs`, `repo:rust/crates/nxtools-extensions/src/registry.rs`, `repo:rust/crates/nxtools-extensions/src/command_template.rs`.
+
+lib/registry/command_template own declarative manifest, registry and existing Windows command grammar. script/strict_json/bundle/trust own typed settings, strict bounded staging/content/runtime identity; invocation/runtime/broker own host-neutral one-shot state and private demand transport; settings_transaction/credential_transport own compensated secret transaction/private C# adapter; result_merge/resolver_routing/events own stable projection/chain/causal contracts. No GPUI/Core/Finder/Download dependency cycle or Rust Windows API implementation. Core composes atomic registry config; Finder prepares/ranks typed actions; Desktop ExtensionService composes GUI/headless feature owners and rendering; C# owns native picker/process/credentials. Never expose raw entities/HWNDs/DB access or introduce competing feature stores/readers.

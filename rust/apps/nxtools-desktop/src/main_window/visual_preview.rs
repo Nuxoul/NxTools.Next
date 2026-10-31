@@ -60,6 +60,13 @@ fn run_isolated() {
                 }
                 Err(_) => {}
             }
+            if std::env::var_os("NXTOOLS_PREVIEW_ARCHIVE_FLOW").is_some() {
+                if crate::archive::visual_preview::open(cx).is_err() {
+                    eprintln!("ui.preview.failed stage=archive_flow");
+                    cx.quit();
+                }
+                return;
+            }
             if std::env::var_os("NXTOOLS_PREVIEW_ARCHIVE_SETTINGS").is_some() {
                 if archive::open(cx).is_err() {
                     eprintln!("ui.preview.failed stage=archive_settings");

@@ -1,0 +1,551 @@
+{
+  "task": "Queue06 Download Settings/task ordinary rem",
+  "created_at": "2026-10-26T05:12:25.894757+08:00",
+  "status": "bounded implementation/tests/strict lint/check PASS; latest external workspace fmt FAIL; original audit6 OPEN",
+  "full_desktop_runs": 0,
+  "sources": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+      "sha256": "fa113dfa10cdacd2e257bc9f938263c81199409d2e38418a10f780ee1a97f3d7"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+      "sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4"
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs",
+      "sha256": "d818ffccb431cc998dd8074e28f2532c10ebf249f4cfffe47264b47ad8b8d5d3"
+    },
+    {
+      "path": "docs/reference-code/download.md",
+      "sha256": "cf28aa0891965c5f75b1395f6a4d4659c015248074a86412d885bfa850ff660e"
+    }
+  ],
+  "documents": [
+    {
+      "path": ".trellis/tasks/10-26-rem-download-settings-task/prd.md",
+      "sha256": "71435b405eef14ad38b8d87803f2bddafc254073715057b29c0ac8ef644fba5b"
+    },
+    {
+      "path": ".trellis/tasks/10-26-rem-download-settings-task/outcomes.md",
+      "sha256": "d72c61a43297a852825a2ee56c99211372ee5b8eb74fd967b750149fb0b235bf"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "evidence/audit05-final.log",
+      "sha256": "3610a4db8322f3b9d8ba3cc60ec5e4f7df053c0cd3caf48a0e9422ab993ca958",
+      "bytes": 1566
+    },
+    {
+      "path": "evidence/audit05-resume-final.log",
+      "sha256": "24048774d9bc217e9222437dc51355fd07a5bbe82771c21381b80568927cca24",
+      "bytes": 2068
+    },
+    {
+      "path": "evidence/audit05-settled.log",
+      "sha256": "e13d00f94df6705a9b93fdfcfcf2ad42aff0e10027655eb9909f77e16a3ac70a",
+      "bytes": 6246
+    },
+    {
+      "path": "evidence/audit06-final.log",
+      "sha256": "bccfd9e8b89348e84b281319ce6c112c7e1d5f637954e437490115b3d3737000",
+      "bytes": 5924
+    },
+    {
+      "path": "evidence/audit06_aux_-first-green.log",
+      "sha256": "4f4e22fa7d18bb85bae805bee69da4390a84ed6ea468e750d8bb0b22a890e00e",
+      "bytes": 6728
+    },
+    {
+      "path": "evidence/audit06_aux_-second.log",
+      "sha256": "4f2403491194183c6356fe765140f703e4d845008fb8acbe86cdd9e318e5917b",
+      "bytes": 1292
+    },
+    {
+      "path": "evidence/aux-final-resume.log",
+      "sha256": "5dc5a62ea4c6a222818c84fb5d50894364c3596e50c9ca90a68556333ace4d4c",
+      "bytes": 3506
+    },
+    {
+      "path": "evidence/aux-final.log",
+      "sha256": "656fc1253acf5f7cbf1bdb6daaff5bf5bbd98ca2da366e4bfac6dd2d4bb2b9d2",
+      "bytes": 1888
+    },
+    {
+      "path": "evidence/aux-lint-clean-final.log",
+      "sha256": "6c5d30684266d0554ec37c25a1092d4e3a074a7ee90f5873aaac71be70e8257d",
+      "bytes": 3506
+    },
+    {
+      "path": "evidence/baseline-manifest.json",
+      "sha256": "165d6d5bc5cf5396ac5baed11f73c28e5228dc446c6b427a3634b265bae5daee",
+      "bytes": 6853
+    },
+    {
+      "path": "evidence/baselines/docs__reference-code__download.md.baseline",
+      "sha256": "315db7a617756cd301825aaebfc8753e9ac179b4a63a740c39a775d7b98804fe",
+      "bytes": 273376
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__directory_picker.rs.baseline",
+      "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+      "bytes": 11375
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__directory_picker_tests.rs.baseline",
+      "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab",
+      "bytes": 30309
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_keyboard_tests.rs.baseline",
+      "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29",
+      "bytes": 15831
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_overlay_rem_tests.rs.baseline",
+      "sha256": "94ea1422a60e1e0091b6b3a5c02b060ad38d5ff618fa06b3b758041de787c715",
+      "bytes": 24925
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_rem_tests.rs.baseline",
+      "sha256": "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680",
+      "bytes": 23416
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__new_download_view.rs.baseline",
+      "sha256": "1e642d827362c0f84a229b463983653c52c021117ff72fff79ac7421bd687ce3",
+      "bytes": 142964
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.baseline",
+      "sha256": "272bc26198986a050f53588c82cc8859a3e514cb286691cd541865054d4c4062",
+      "bytes": 155030
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.baseline",
+      "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a",
+      "bytes": 22341
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__settings_view.rs.baseline",
+      "sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+      "bytes": 130653
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__task_window.rs.baseline",
+      "sha256": "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+      "bytes": 48325
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__task_windows_impl.rs.baseline",
+      "sha256": "c56f29eae6514f1dc6aa1dfef88e6b74ed41da0b7ebb66330a4749552188fd7a",
+      "bytes": 26517
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__tests.rs.baseline",
+      "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783",
+      "bytes": 335038
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__downloads__window_support.rs.baseline",
+      "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+      "bytes": 14536
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__main_window__download_page.rs.baseline",
+      "sha256": "b797e668770db50515049007c5070edb2ab9d46955b34936cf5d7bbf9f4c9191",
+      "bytes": 131304
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.baseline",
+      "sha256": "d443ed923241e37c5670a680473a9c1a9982c59f75eccaeeb1232ab4c5cdfe4a",
+      "bytes": 62340
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__ui__components__field.rs.baseline",
+      "sha256": "5de208e485ea894dfd6687a7d3c8c103603fe27c035a3c10d213a6e0da722c6f",
+      "bytes": 1664
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__ui__components__settings.rs.baseline",
+      "sha256": "292a9cb577521aa6c5b36ba19f205a4d30b28c7117fc1e8c5e466f1f66e34f71",
+      "bytes": 20407
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__ui__metrics.rs.baseline",
+      "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420",
+      "bytes": 3774
+    },
+    {
+      "path": "evidence/clean-final-results.json",
+      "sha256": "78e4aae7f9060ae5e670cf19917496e98f3587ced2f4d18b121d5dc0a993def1",
+      "bytes": 1710
+    },
+    {
+      "path": "evidence/compiled-test-summaries.json",
+      "sha256": "eaa6af0622c55bde6047a2fe4955aaf6cc186d355dc8ec1475d8d75ed5e968db",
+      "bytes": 2920
+    },
+    {
+      "path": "evidence/core-extensions.external-blocker.rs.txt",
+      "sha256": "537eddea8f2b9e5ee351fb3e81132d02c19437191aae6b6aacdb5b3e15b619de",
+      "bytes": 54343
+    },
+    {
+      "path": "evidence/current/docs__reference-code__download.md.current",
+      "sha256": "cf28aa0891965c5f75b1395f6a4d4659c015248074a86412d885bfa850ff660e",
+      "bytes": 276876
+    },
+    {
+      "path": "evidence/current/rust__apps__nxtools-desktop__src__downloads__settings_task_rem_tests.rs.current",
+      "sha256": "d818ffccb431cc998dd8074e28f2532c10ebf249f4cfffe47264b47ad8b8d5d3",
+      "bytes": 31812
+    },
+    {
+      "path": "evidence/current/rust__apps__nxtools-desktop__src__downloads__settings_view.rs.current",
+      "sha256": "fa113dfa10cdacd2e257bc9f938263c81199409d2e38418a10f780ee1a97f3d7",
+      "bytes": 131475
+    },
+    {
+      "path": "evidence/current/rust__apps__nxtools-desktop__src__downloads__task_window.rs.current",
+      "sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4",
+      "bytes": 49831
+    },
+    {
+      "path": "evidence/delivery-verification-summary.json",
+      "sha256": "a7ad34222e5d9caa15d742fe0471f7ec304757d0bfc5bf470adc561f905b28dc",
+      "bytes": 552
+    },
+    {
+      "path": "evidence/desktop-clippy-after-external-repair.log",
+      "sha256": "4c86c048770be7034ee7b6c6be495031d3cf3a8454b3cd98bc062d943def3dc9",
+      "bytes": 3332
+    },
+    {
+      "path": "evidence/desktop-clippy-clean-final.log",
+      "sha256": "1a2375620fb91ad02e9dc2c0d3ce0022e7e02d5436d17e898689e09a7aecac61",
+      "bytes": 1270
+    },
+    {
+      "path": "evidence/desktop-clippy.log",
+      "sha256": "117fb38e27e949e25e709f35ede0812fef97f163e92a8c43e39995216d93861a",
+      "bytes": 1342
+    },
+    {
+      "path": "evidence/display-final.log",
+      "sha256": "bd97ff6162dca293f911951bc5fc37b065d801d61e5289697d0f8e0411cbda27",
+      "bytes": 2932
+    },
+    {
+      "path": "evidence/docs__reference-code__download.md.own-diff.txt",
+      "sha256": "51cb32c556c7ef5508baf3570e0a773cbfc3307b50cbb63395fb0d01c3023b99",
+      "bytes": 3998
+    },
+    {
+      "path": "evidence/download-page-final.log",
+      "sha256": "408606b561eada9e7034b1f9e606ba9a87456bd22702dfb5311bc755dcceb1cf",
+      "bytes": 6156
+    },
+    {
+      "path": "evidence/download-ui-lifecycle.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "path": "evidence/downloads-final.log",
+      "sha256": "090cb33423ccdeed95b49eccc1b93c52b75dbddcf939ef5dce7d822d04a12225",
+      "bytes": 45742
+    },
+    {
+      "path": "evidence/downloads__-second.log",
+      "sha256": "70b1e7fc585c583a9e1727a8677b77f9068a1ce5e6afbbacd216cba6acfc6026",
+      "bytes": 44466
+    },
+    {
+      "path": "evidence/external-delivery-observations.json",
+      "sha256": "de18c0fa031a770808d503d435c3f848e0ca1bc56a45777836ec6edb44f67a37",
+      "bytes": 2225
+    },
+    {
+      "path": "evidence/gpui-component-catalog.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "path": "evidence/gpui-release-contracts.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": "evidence/historical-record-hashes.json",
+      "sha256": "9968d9bdd49fdf91a8269c63c4498253365847bdb361106a44532b553e24de76",
+      "bytes": 1255
+    },
+    {
+      "path": "evidence/identity-final.log",
+      "sha256": "cffabd090b169bd7b78b3d0b1a347fd3b308f69fab892b888c9ef18ff0ce9665",
+      "bytes": 4072
+    },
+    {
+      "path": "evidence/initial-red.log",
+      "sha256": "7a2a61ab186809eeec41023614b090159081286ae762d1825924d0e9ec16867a",
+      "bytes": 4642
+    },
+    {
+      "path": "evidence/inspect.py",
+      "sha256": "3b78bb81982e620b67e37da8ae574e1e5f41f66997626626ad9e0470b22a6ea5",
+      "bytes": 5075
+    },
+    {
+      "path": "evidence/inspected-local-source-hashes.json",
+      "sha256": "5ac4287d5ef231f7dd29244b9d779254827749e91fd09e83b5ed189b420f5e85",
+      "bytes": 1580
+    },
+    {
+      "path": "evidence/inspected-reference-observations.json",
+      "sha256": "c4d80735a1b936f66a24df951dc66021ecbd2955560e08439b8dbd8bd617bb03",
+      "bytes": 2541
+    },
+    {
+      "path": "evidence/keyboard-picker-results.json",
+      "sha256": "71e0452c00f0d811adf33e051d72169fef5ab2e6725ccc2d9ebeb7e21d2de945",
+      "bytes": 2939
+    },
+    {
+      "path": "evidence/markdown-editor-contracts.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": "evidence/names-final.log",
+      "sha256": "766d6b16480e4904511ae194aaad505e60e343ed3ec2cbdf92c7561e32366fa3",
+      "bytes": 3106
+    },
+    {
+      "path": "evidence/own-deltas.json",
+      "sha256": "cde3e0bb9e82294971b4bdc22621c7fa14d29f75d690b66be153399308caecea",
+      "bytes": 43048
+    },
+    {
+      "path": "evidence/owner-checks-clean-final.log",
+      "sha256": "75bf2c00ade28cca6e0b043bb5df49bdbcfc1a3a5e8d6817ae7fcf3f57c573ec",
+      "bytes": 33994
+    },
+    {
+      "path": "evidence/owner-checks-delivery.log",
+      "sha256": "75bf2c00ade28cca6e0b043bb5df49bdbcfc1a3a5e8d6817ae7fcf3f57c573ec",
+      "bytes": 33994
+    },
+    {
+      "path": "evidence/owner-checks-final.log",
+      "sha256": "75bf2c00ade28cca6e0b043bb5df49bdbcfc1a3a5e8d6817ae7fcf3f57c573ec",
+      "bytes": 33994
+    },
+    {
+      "path": "evidence/owner-checks-freeze.log",
+      "sha256": "75bf2c00ade28cca6e0b043bb5df49bdbcfc1a3a5e8d6817ae7fcf3f57c573ec",
+      "bytes": 33994
+    },
+    {
+      "path": "evidence/owner-checks.log",
+      "sha256": "75bf2c00ade28cca6e0b043bb5df49bdbcfc1a3a5e8d6817ae7fcf3f57c573ec",
+      "bytes": 33994
+    },
+    {
+      "path": "evidence/owner-invariants.json",
+      "sha256": "2c5ac1a71e96530eaa6cd3c0739d3346b7e76873a412c697479745aaa3bc57c4",
+      "bytes": 16888
+    },
+    {
+      "path": "evidence/registry.external-blocker.rs.txt",
+      "sha256": "db0623f8ff92e0ca71b880247a19076b4f4a08994348685cb2dd53abfd553607",
+      "bytes": 25557
+    },
+    {
+      "path": "evidence/remaining-verification-results.json",
+      "sha256": "365efe20e43bb00acb1e0fe03c0bb09ffa648bfd018447c2d10735aff32c5d69",
+      "bytes": 410
+    },
+    {
+      "path": "evidence/runtime-clippy-external-delta.txt",
+      "sha256": "3c3b6de31a9c066f541631eb57019ba54da773ab838c763f950b67406ae633c7",
+      "bytes": 5234
+    },
+    {
+      "path": "evidence/runtime.external-clippy-blocker.rs.txt",
+      "sha256": "68cf2c9d6e6b73a8fcd8e767afe51c8c192424fb9bd9dbb9ee25b24add43f99f",
+      "bytes": 74218
+    },
+    {
+      "path": "evidence/runtime_storage.external-blocker.rs.txt",
+      "sha256": "3f08462d9de14eef4673a2d9f701e93394deadf6e15d89ec4b6c0ebaacc5874d",
+      "bytes": 5680
+    },
+    {
+      "path": "evidence/rust__apps__nxtools-desktop__src__downloads__settings_view.rs.own-diff.txt",
+      "sha256": "b11c544617bfae34269e95cc0742f0507859ba042496e7242d01a59b70819a59",
+      "bytes": 16495
+    },
+    {
+      "path": "evidence/rust__apps__nxtools-desktop__src__downloads__task_window.rs.own-diff.txt",
+      "sha256": "2e5530674a7a3bbecca6b1b52d3745d0fc4109df119db0054216d04c30cff947",
+      "bytes": 14943
+    },
+    {
+      "path": "evidence/scoped-diff-delivery.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/scoped-diff-freeze.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/scoped-fmt-delivery.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/scoped-fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/settings-own-current.txt",
+      "sha256": "e904d48655f0b5d67911e329d3c39ae7dec4a33544a3d8b55d84ed82f0398e0d",
+      "bytes": 34934
+    },
+    {
+      "path": "evidence/settings-working-diff.txt",
+      "sha256": "9a4ff69865a0cc4d525750b77b7cf55da64fd269af38117786c793c8d04923bc",
+      "bytes": 34834
+    },
+    {
+      "path": "evidence/settled-verification-results.json",
+      "sha256": "43155521bc5c00fa8e84acfcb624e0a3d524e8660773c9f2ca256e5f6c7a61bf",
+      "bytes": 3444
+    },
+    {
+      "path": "evidence/six-first.log",
+      "sha256": "e8d13b204ff2d3d62ca2a04598de2c87e4660757492a4121d96a3440ec5c908b",
+      "bytes": 4412
+    },
+    {
+      "path": "evidence/six-fourth.log",
+      "sha256": "6bc0c1472638c473d94a5d3489907829d725e78469a6ba9748cfd7914a62fab7",
+      "bytes": 2370
+    },
+    {
+      "path": "evidence/six-second.log",
+      "sha256": "db6e26b5eb305d53b1d7beb626de0388648d15f05ad947ceed1be30831e00929",
+      "bytes": 5398
+    },
+    {
+      "path": "evidence/six-third.log",
+      "sha256": "83c875902b35791396139a13b3a3842f9562f0b816b5ba5a4ae96bfaf9ccdd34",
+      "bytes": 5184
+    },
+    {
+      "path": "evidence/sort-final.log",
+      "sha256": "4952e47916c84c1d58fdfcf6458880bb3a342e0667a8deae9a62ee8bce032fae",
+      "bytes": 2380
+    },
+    {
+      "path": "evidence/source-gates-delivery.json",
+      "sha256": "3f66d14420caf20b41b5283038491f7a550c235ec2f8b6acba66c10fe3e9a1ce",
+      "bytes": 1225
+    },
+    {
+      "path": "evidence/source-gates.json",
+      "sha256": "244870fb4324f5a2c399ffa7f438ed58a1001e5b6b65d9fc34f7c27cb746a2ba",
+      "bytes": 2341
+    },
+    {
+      "path": "evidence/spec-contracts-delivery.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": "evidence/spec-contracts-freeze.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": "evidence/spec-contracts.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": "evidence/storage.external-blocker.rs.txt",
+      "sha256": "3f6143a07c56d81f42d16772a0c542ee4b552a35140d0791a6820d252734e724",
+      "bytes": 38399
+    },
+    {
+      "path": "evidence/storage_calls.external-blocker.rs.txt",
+      "sha256": "45909d848c04881aed8c94767866e1e4fdb5f4344ff99530144f168f03c64efa",
+      "bytes": 3564
+    },
+    {
+      "path": "evidence/task-own-current.txt",
+      "sha256": "0a34a48764f0bb8f0b68d852b018d04fefda510c6e89fd7d932be50757117edc",
+      "bytes": 31528
+    },
+    {
+      "path": "evidence/ui-consistency.log",
+      "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a",
+      "bytes": 86
+    },
+    {
+      "path": "evidence/ui-motion-policy.log",
+      "sha256": "adc8f86392baa2b036578585fbd28130f9b9ed0214d79d6f01ed5c1d9458e6b6",
+      "bytes": 168
+    },
+    {
+      "path": "evidence/ui-state-lifecycle.log",
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f",
+      "bytes": 108
+    },
+    {
+      "path": "evidence/ui-token-boundaries.log",
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1",
+      "bytes": 92
+    },
+    {
+      "path": "evidence/verification-results.json",
+      "sha256": "64e81e23c18838d03ccb83a45a97e141c2a4294757627984ba7ed5315c4964ea",
+      "bytes": 392
+    },
+    {
+      "path": "evidence/verification-resume-results.json",
+      "sha256": "1418a0f7e5dc5d32c7de28a3643e1212d885a03ce214f472213abf0913d3c270",
+      "bytes": 1732
+    },
+    {
+      "path": "evidence/verify.py",
+      "sha256": "e0a15ffa88e3086a6afcda8fb43f394e80429b5aeb390081fbe1727ee22f9943",
+      "bytes": 1730
+    },
+    {
+      "path": "evidence/workspace-check-clean-final.log",
+      "sha256": "69792e5206396accc958b872667d7aba794157638cc407f4df1e4b014a16cfaf",
+      "bytes": 2018
+    },
+    {
+      "path": "evidence/workspace-check.log",
+      "sha256": "cb6a33ee6d03ad2168f92ab4de1ef8c97d2803047d12529089b4b72539224ea9",
+      "bytes": 2988
+    },
+    {
+      "path": "evidence/workspace-fmt-clean-final.log",
+      "sha256": "00fe1a8beef1ba7554ca70365e36c78971424e3fea2513a6eedc2d31ee594515",
+      "bytes": 6640
+    },
+    {
+      "path": "evidence/workspace-fmt-observed.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    }
+  ]
+}

@@ -2,24 +2,33 @@
 //! Create 680 / extract 560 starting widths belong to the parent window. One scroll body,
 //! fixed Medium (32px) primary/outline footer; no Toolbar.child variant coercion or extra Root.
 //! Native picker, admission, settings persistence and jobs remain ArchiveApplication's owners.
+#[path = "forms_layout.rs"]
+mod layout;
+#[path = "forms_recovery.rs"]
+mod recovery;
+#[path = "forms_space.rs"]
+mod space_view;
 use super::{
     ArchiveApplication,
     draft::{self, CreateDraft, DraftSelection, DraftSource, ExtractDraft, ModifyDraft},
 };
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::{
-    ActiveTheme, Disableable, IndexPath, Sizable, Size, TitleBar, WindowExt,
+    ActiveTheme, Disableable, IndexPath, Sizable, Size, WindowExt,
     alert::Alert,
     button::{Button, ButtonVariants},
     checkbox::Checkbox,
+    description_list::DescriptionList,
     dialog::{DialogAction, DialogClose, DialogFooter},
     form::{Field, Form},
     input::{Input, InputEvent, InputGroup, InputState, Textarea, TextareaState},
     radio::{Radio, RadioGroup},
+    scroll::ScrollableElement,
     select::{Select, SelectEvent, SelectState},
 };
 use gpui_kit::{
-    App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent,
-    ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,
+    App, AppContext, Context, Entity, EntityInputHandler, FocusHandle, Focusable, IntoElement,
+    KeyDownEvent, ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,
 };
 use nxtools_core::archive::{
     ArchiveCompressionLevel, ArchiveConflictPolicy, ArchiveCreateFormat, ArchiveDestination,
@@ -42,6 +51,8 @@ const FORMATS: &[&str] = &["ZIP", "7Z", "TAR", "TGZ", "TXZ", "GZ", "XZ"];
 const LEVELS: &[&str] = &["仅存储", "快速", "标准", "最大"];
 const STRATEGIES: &[&str] = &["自定义目标", "智能解压", "当前文件夹", "压缩包名称文件夹"];
 const CONFLICTS: &[&str] = &["询问", "覆盖", "跳过", "自动重命名"];
+const SEVENZ_EDIT_COST: &str = "7z 编辑会完整解码并重编码为非固实 LZMA2；保留支持的内容、时间、属性与加密设置。需要原归档与候选并存空间；无法准确估算时为未知。";
+const TAR_EDIT_COST: &str = "TAR 编辑会完整重写；tar.gz / tar.xz 会完整解码与重编码。保留已确认的内容与原成员元数据；新增项使用 uid/gid/mtime=0、文件0644/目录0755，不复制 ACL/ADS。gzip 保留可支持头属性，压缩级别按 XFL 映射；xz 使用 LZMA2 fast，保留校验类型，压缩参数和布局可能变化。需要原件、候选及有限匿名 spool 并存空间，估算未知，不计源删除收益。TAR 没有内容校验和；提交前另做完整内容比较。";
 type Choice = Entity<SelectState<Vec<&'static str>>>;
 
 #[derive(Default)]
@@ -49,6 +60,7 @@ pub(super) struct FormCompletion {
     pub(super) open_after: bool,
     pub(super) keep_open: bool,
     pub(super) remember: Option<ArchiveSettings>,
+    pub(super) remember_baseline: Option<ArchiveSettings>,
     /// Parent admits this batch atomically, or rejects the entire form without starting any job.
     pub(super) additional_requests: Vec<ArchiveJobRequest>,
 }
@@ -73,6 +85,8 @@ enum Flag {
     Open,
     Keep,
     Remember,
+    RememberDestination,
+    Reclamation,
 }
 
 pub(crate) struct OperationForm {
@@ -81,11 +95,17 @@ pub(crate) struct OperationForm {
     owner: WeakEntity<ArchiveApplication>,
     settings: ArchiveSettings,
     draft: Draft,
+    modify_objects: Vec<String>,
+    source_bound: bool,
     destination: Entity<InputState>,
+    source: Entity<InputState>,
     name: Entity<InputState>,
     password: Entity<InputState>,
     confirm: Entity<InputState>,
+    recovery_id: Entity<InputState>,
     exclusions: Entity<TextareaState>,
+    create_exclusions: Vec<Entity<TextareaState>>,
+    create_rule_subscriptions: Vec<Subscription>,
     volume: Entity<InputState>,
     format: Choice,
     level: Choice,
@@ -101,14 +121,37 @@ pub(crate) struct OperationForm {
     validation: Option<String>,
     submitted: bool,
     submit_epoch: u64,
+    default_enter_held: bool,
+    reclamation_confirmation_pending: bool,
+    reclamation_acknowledged: bool,
     pub(in crate::archive) retired: bool,
     open_after: bool,
     keep_open: bool,
     remember: bool,
     focus: FocusHandle,
     _subscriptions: Vec<Subscription>,
+    space: super::space::FormState,
+    recovery: recovery::RecoveryState,
     #[cfg(test)]
     submit_count: usize,
+}
+#[cfg(test)]
+impl OperationForm {
+    pub(in crate::archive) fn confirmation_strategy_for_test(&self) -> Option<ArchiveDestination> {
+        match &self.draft {
+            Draft::Extract(draft) => Some(draft.strategy),
+            _ => None,
+        }
+    }
+}
+#[cfg(test)]
+impl OperationForm {
+    pub(in crate::archive) fn arm_picker_for_test(&mut self, operation: Uuid) {
+        self.pending_picker = Some(PendingPicker {
+            operation: Some(operation),
+            purpose: ArchivePickerPurpose::Destination,
+        });
+    }
 }
 impl OperationForm {
     pub(super) fn create(
@@ -132,6 +175,45 @@ impl OperationForm {
         let draft = ExtractDraft::new(&settings, source, selection);
         Self::new(settings, Draft::Extract(draft), owner, window, cx)
     }
+    pub(super) fn continue_reclamation(
+        settings: ArchiveSettings,
+        source: PathBuf,
+        destination: Option<PathBuf>,
+        owner: WeakEntity<ArchiveApplication>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let destination = destination.map(|path| path.to_string_lossy().into_owned());
+        let mut draft = ExtractDraft::continue_reclamation(&settings, source);
+        draft.destination = destination.clone().unwrap_or_default();
+        let mut form = Self::new(settings, Draft::Extract(draft), owner, window, cx);
+        form.begin_recovery(destination, window, cx);
+        form
+    }
+    pub(super) fn extract_with_strategy(
+        settings: ArchiveSettings,
+        extract: (PathBuf, Option<DraftSelection>, Option<ArchiveDestination>),
+        owner: WeakEntity<ArchiveApplication>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let (source, selection, strategy) = extract;
+        if strategy.is_none() {
+            return Self::extract(settings, source, selection, owner, window, cx);
+        }
+        let mut draft = ExtractDraft::new(&settings, source, selection);
+        if let Some(strategy) = strategy {
+            draft.strategy = strategy;
+            if strategy == ArchiveDestination::Here {
+                draft.destination = draft
+                    .source
+                    .parent()
+                    .map(|parent| parent.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+            }
+        }
+        Self::new(settings, Draft::Extract(draft), owner, window, cx)
+    }
     pub(super) fn modify(
         settings: ArchiveSettings,
         draft: ModifyDraft,
@@ -148,36 +230,68 @@ impl OperationForm {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let (destination_value, name_value, exclusions_value, volume_value) = match &draft {
-            Draft::Create(d) => (
-                d.destination.clone(),
-                d.name.clone(),
-                d.exclusions.join("\n"),
-                d.volume_mib.clone(),
-            ),
-            Draft::Extract(d) => (
-                d.destination.clone(),
-                String::new(),
-                String::new(),
-                String::new(),
-            ),
-            Draft::Modify(d) => (
-                String::new(),
-                d.value.clone().unwrap_or_default(),
-                d.value.clone().unwrap_or_default(),
-                String::new(),
-            ),
+        let source_bound =
+            matches!(&draft, Draft::Extract(draft) if !draft.source.as_os_str().is_empty());
+        let source_value = match &draft {
+            Draft::Extract(draft) => draft.source.to_string_lossy().into_owned(),
+            Draft::Modify(draft) => draft.source.to_string_lossy().into_owned(),
+            Draft::Create(_) => String::new(),
         };
+        let (destination_value, name_value, exclusions_value, volume_value, recovery_id_value) =
+            match &draft {
+                Draft::Create(d) => (
+                    d.destination.clone(),
+                    d.name.clone(),
+                    String::new(),
+                    d.volume_mib.clone(),
+                    String::new(),
+                ),
+                Draft::Extract(d) => (
+                    d.destination.clone(),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                    d.recovery_id.clone(),
+                ),
+                Draft::Modify(d) => (
+                    String::new(),
+                    d.value.clone().unwrap_or_default(),
+                    d.value.clone().unwrap_or_default(),
+                    String::new(),
+                    String::new(),
+                ),
+            };
         let destination = input(&destination_value, false, window, cx);
+        let source = input(&source_value, false, window, cx);
         let name = input(&name_value, false, window, cx);
         let password = input("", true, window, cx);
         let confirm = input("", true, window, cx);
         let volume = input(&volume_value, false, window, cx);
+        let recovery_id = input(&recovery_id_value, false, window, cx);
         let exclusions = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx);
             state.set_value(exclusions_value, window, cx);
             state
         });
+        let create_exclusions: Vec<_> = match &draft {
+            Draft::Create(draft) => draft
+                .exclusions
+                .iter()
+                .map(|pattern| {
+                    cx.new(|cx| {
+                        let mut state = TextareaState::new(window, cx);
+                        state.set_value(pattern.clone(), window, cx);
+                        state
+                    })
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        let (open_after, keep_open) = match &draft {
+            Draft::Extract(draft) => (draft.open_after, draft.keep_open),
+            Draft::Create(_) => (true, settings.keep_create_progress_open),
+            Draft::Modify(_) => (false, false),
+        };
         let (initial_format, initial_level) = match &draft {
             Draft::Create(draft) => (draft.format, draft.level),
             Draft::Extract(_) | Draft::Modify(_) => {
@@ -206,20 +320,25 @@ impl OperationForm {
             window,
             cx,
         );
-        let strategy = choice(
-            STRATEGIES,
-            strategy_index(settings.default_destination),
-            window,
-            cx,
-        );
-        let conflict = choice(
-            CONFLICTS,
-            conflict_index(settings.conflict_policy),
-            window,
-            cx,
-        );
+        let initial_strategy = match &draft {
+            Draft::Extract(draft) => draft.strategy,
+            _ => settings.default_destination,
+        };
+        let initial_conflict = match &draft {
+            Draft::Extract(draft) => draft.conflict,
+            _ => settings.conflict_policy,
+        };
+        let strategy = choice(STRATEGIES, strategy_index(initial_strategy), window, cx);
+        let conflict = choice(CONFLICTS, conflict_index(initial_conflict), window, cx);
         let mut subscriptions = Vec::new();
-        for state in [&destination, &name, &password, &confirm, &volume] {
+        for state in [
+            &destination,
+            &name,
+            &password,
+            &confirm,
+            &volume,
+            &recovery_id,
+        ] {
             subscriptions.push(cx.subscribe_in(
                 state,
                 window,
@@ -239,6 +358,18 @@ impl OperationForm {
                 }
             },
         ));
+        let mut create_rule_subscriptions = Vec::new();
+        for rule in &create_exclusions {
+            create_rule_subscriptions.push(cx.subscribe_in(
+                rule,
+                window,
+                |_, _, event: &InputEvent, window, cx| {
+                    if matches!(event, InputEvent::Change) {
+                        cx.defer_in(window, |this, _, cx| this.revalidate(cx));
+                    }
+                },
+            ));
+        }
         subscriptions.push(cx.subscribe_in(
             &format,
             window,
@@ -374,6 +505,9 @@ impl OperationForm {
                 draft.clear_secrets();
             }
         }));
+        subscriptions.push(cx.observe_window_activation(window, |this, _, _| {
+            this.default_enter_held = false;
+        }));
         let focus = cx.focus_handle();
         focus.focus(window, cx);
         let mut form = Self {
@@ -382,12 +516,18 @@ impl OperationForm {
             owner,
             settings,
             draft,
+            modify_objects: Vec::new(),
             destination,
+            source,
+            source_bound,
             name,
             password,
             confirm,
+            recovery_id,
             volume,
             exclusions,
+            create_exclusions,
+            create_rule_subscriptions,
             format,
             level,
             method,
@@ -402,26 +542,64 @@ impl OperationForm {
             validation: None,
             submitted: false,
             submit_epoch: 0,
+            default_enter_held: false,
+            reclamation_confirmation_pending: false,
+            reclamation_acknowledged: false,
             retired: false,
-            open_after: true,
-            keep_open: false,
+            open_after,
+            keep_open,
             remember: false,
             focus,
             _subscriptions: subscriptions,
+            space: Default::default(),
+            recovery: Default::default(),
             #[cfg(test)]
             submit_count: 0,
         };
         form.revalidate(cx);
         form
     }
-    fn busy(&self) -> bool {
+    fn default_enter(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if event.keystroke.key != "enter" {
+            return;
+        }
+        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {
+            return;
+        }
+        if event.keystroke.modifiers.modified()
+            || event.prefer_character_input
+            || self.busy()
+            || window.has_active_dialog(cx)
+        {
+            return;
+        }
+        let Some(input) = [&self.source, &self.name, &self.destination, &self.volume]
+            .into_iter()
+            .find(|input| input.focus_handle(cx).is_focused(window))
+            .cloned()
+        else {
+            return;
+        };
+        if input.update(cx, |input, cx| {
+            input.marked_text_range(window, cx).is_some()
+        }) {
+            return;
+        }
+        cx.stop_propagation();
+        self.submit(window, cx);
+    }
+    pub(super) fn busy(&self) -> bool {
         self.retired
             || self.submitted
             || self.enumerating
             || self.pending_picker.is_some()
             || self.pending_format.is_some()
+            || self.recovery.pending
+            || self.reclamation_confirmation_pending
     }
     fn sync_inputs(&mut self, cx: &App) {
+        let recovery_facts = self.recovery_facts();
+        let recovery_candidate = self.recovery.candidate_destination.clone();
         match &mut self.draft {
             Draft::Create(draft) => {
                 draft.name = self.name.read(cx).value().to_string();
@@ -430,15 +608,26 @@ impl OperationForm {
                 draft.confirm = self.confirm.read(cx).value().to_string();
                 draft.volume_mib = self.volume.read(cx).value().to_string();
                 draft.exclusions = self
-                    .exclusions
-                    .read(cx)
-                    .value()
-                    .lines()
-                    .map(str::to_owned)
+                    .create_exclusions
+                    .iter()
+                    .map(|rule| rule.read(cx).value().to_string())
                     .collect();
             }
             Draft::Extract(draft) => {
-                draft.destination = self.destination.read(cx).value().to_string();
+                if draft.continue_reclamation {
+                    if let Some((destination, recovery_id, copy_motw)) = &recovery_facts {
+                        draft.destination = destination.clone();
+                        draft.recovery_id = recovery_id.clone();
+                        draft.copy_motw = *copy_motw;
+                    } else {
+                        draft.destination = recovery_candidate.clone().unwrap_or_default();
+                        draft.recovery_id.clear();
+                        draft.copy_motw = false;
+                    }
+                } else {
+                    draft.destination = self.destination.read(cx).value().to_string();
+                    draft.recovery_id = self.recovery_id.read(cx).value().to_string();
+                }
                 draft.open_after = self.open_after;
                 draft.keep_open = self.keep_open;
                 draft.remember = self.remember;
@@ -457,6 +646,7 @@ impl OperationForm {
     }
     fn capture(&mut self, cx: &App) -> Result<(Vec<ArchiveJobRequest>, FormCompletion), String> {
         self.sync_inputs(cx);
+        self.require_recovery_ready()?;
         let mut remembered = self.settings.clone();
         let result = match &mut self.draft {
             Draft::Create(draft) => {
@@ -469,17 +659,31 @@ impl OperationForm {
                 remembered.strip_single_root = draft.strip_single_root;
                 remembered.exclude_patterns = draft.exclusions.clone();
                 remembered.test_after_create = draft.test_after_create;
+                remembered.keep_create_progress_open = self.keep_open;
                 requests
             }
             Draft::Extract(draft) => {
                 remembered.default_destination = draft.strategy;
                 remembered.conflict_policy = draft.conflict;
                 remembered.copy_motw = draft.copy_motw;
+                remembered.open_after_extract = draft.open_after;
+                remembered.keep_extract_progress_open = draft.keep_open;
+                remembered.smart_single_file_folder = draft.single_file_folder;
+                remembered.extract_custom_destination = if draft.remember_destination {
+                    if draft.strategy == ArchiveDestination::Here {
+                        self.settings.extract_custom_destination.clone()
+                    } else {
+                        Some(draft.destination.clone())
+                    }
+                } else {
+                    None
+                };
                 draft.request(&self.settings).map(|request| vec![request])
             }
             Draft::Modify(draft) => draft.request().map(|request| vec![request]),
         }?;
-        if self.remember {
+        let reclamation = matches!(&self.draft, Draft::Extract(draft) if draft.reclamation);
+        if self.remember && !reclamation {
             remembered.validate()?;
         }
         Ok((
@@ -487,8 +691,11 @@ impl OperationForm {
             FormCompletion {
                 open_after: self.open_after,
                 keep_open: self.keep_open,
-                remember: (!matches!(self.draft, Draft::Modify(_)) && self.remember)
+                remember: (!reclamation
+                    && !matches!(self.draft, Draft::Modify(_))
+                    && self.remember)
                     .then_some(remembered),
+                remember_baseline: (!reclamation && self.remember).then(|| self.settings.clone()),
                 additional_requests: Vec::new(),
             },
         ))
@@ -500,12 +707,30 @@ impl OperationForm {
         if self.submitted {
             return;
         }
+        self.reclamation_acknowledged = false;
         self.validation = self.capture(cx).err();
         self.error = None;
+        if let Draft::Extract(draft) = &self.draft {
+            if draft.continue_reclamation {
+                self.space.invalidate(None);
+                self.space.pending = false;
+                self.space.waiting = false;
+                self.space.plan = None;
+                self.space.error = None;
+            } else {
+                let initial = self.space.invalidate(draft.request(&self.settings).ok());
+                if initial && self.space.key.is_some() {
+                    let entity = cx.entity().downgrade();
+                    cx.defer(move |cx| {
+                        let _ = entity.update(cx, |form, cx| form.refresh_space(cx));
+                    });
+                }
+            }
+        }
         cx.notify();
     }
     fn submit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() {
+        if self.busy() || !self.recovery_submit_ready() {
             return;
         }
         let (mut requests, mut completion) = match self.capture(cx) {
@@ -517,6 +742,16 @@ impl OperationForm {
                 return;
             }
         };
+        let destructive_reclamation = requests.first().is_some_and(|request| {
+            request
+                .extract
+                .as_ref()
+                .is_some_and(|extract| extract.reclamation.is_some())
+        });
+        if destructive_reclamation && !self.reclamation_acknowledged {
+            self.show_reclamation_confirmation(window, cx);
+            return;
+        }
         let request = requests.remove(0);
         completion.additional_requests = requests;
         self.submitted = true;
@@ -565,6 +800,91 @@ impl OperationForm {
         });
         cx.notify();
     }
+    fn show_reclamation_confirmation(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.reclamation_confirmation_pending {
+            return;
+        }
+        self.reclamation_confirmation_pending = true;
+        let confirm = cx.entity().downgrade();
+        let cancel = confirm.clone();
+        let close = confirm.clone();
+        let correlation_id = self.id;
+        tracing::info!(event="archive.reclamation.confirmation_shown", %correlation_id, "destructive reclamation acknowledgement requested");
+        window.open_dialog(cx, move |dialog, _, _| {
+            let confirm = confirm.clone();
+            let cancel = cancel.clone();
+            let close = close.clone();
+            dialog
+                .title("确认永久消耗原压缩包数据")
+                .child(
+                    Alert::warning(
+                        "archive-reclamation-confirmation-warning",
+                        "原压缩包中的文件数据会在解压核验并保存恢复记录后逐步释放，不能撤销，也不会进入回收站。中断后请保留原压缩包、恢复记录和已解压文件，使用“继续空间回收解压”。本版本只能继续剩余解压，不能重建剩余归档或恢复完整原压缩包。当前文件完整输出所需的空间仍必须足够。",
+                    )
+                    .with_size(Size::Small),
+                )
+                .footer(
+                    DialogFooter::new()
+                        .child(DialogClose::new().trigger(|button| {
+                            button
+                                .label("保留原压缩包，不开始")
+                                .outline()
+                                .with_size(Size::Medium)
+                        }))
+                        .child(DialogAction::new().child(
+                            Button::new("archive-reclamation-confirm")
+                                .debug_selector(|| "archive-reclamation-confirm".into())
+                                .label("我已了解，开始消耗原压缩包")
+                                .outline()
+                                .with_size(Size::Medium),
+                        )),
+                )
+                .on_ok(move |_, window, cx| {
+                    let confirm = confirm.clone();
+                    window.defer(cx, move |window, cx| {
+                        let _ = confirm.update(cx, |form, cx| {
+                            form.resolve_reclamation_confirmation(true, window, cx)
+                        });
+                    });
+                    true
+                })
+                .on_cancel(move |_, window, cx| {
+                    let cancel = cancel.clone();
+                    window.defer(cx, move |window, cx| {
+                        let _ = cancel.update(cx, |form, cx| {
+                            form.resolve_reclamation_confirmation(false, window, cx)
+                        });
+                    });
+                    true
+                })
+                .on_close(move |_, window, cx| {
+                    let close = close.clone();
+                    window.defer(cx, move |window, cx| {
+                        let _ = close.update(cx, |form, cx| {
+                            form.resolve_reclamation_confirmation(false, window, cx)
+                        });
+                    });
+                })
+        });
+        cx.notify();
+    }
+    fn resolve_reclamation_confirmation(
+        &mut self,
+        accepted: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !std::mem::replace(&mut self.reclamation_confirmation_pending, false) || self.retired {
+            return;
+        }
+        if accepted {
+            self.reclamation_acknowledged = true;
+            tracing::info!(event="archive.reclamation.acknowledged", correlation_id=%self.id, "destructive reclamation acknowledged");
+            self.submit(window, cx);
+        } else {
+            cx.notify();
+        }
+    }
     pub(super) fn fail_submit(
         &mut self,
         message: String,
@@ -593,9 +913,14 @@ impl OperationForm {
             return;
         }
         self.retired = true;
+        self.retire_recovery();
+        self.space.pending = false;
+        self.space.epoch = self.space.epoch.wrapping_add(1);
+        self.space.plan = None;
         self.generation = self.generation.wrapping_add(1).max(1);
         self.pending_picker = None;
         self.pending_format = None;
+        self.reclamation_confirmation_pending = false;
         self.enumeration_cancel.store(true, Ordering::Release);
         tracing::info!(event="archive.form.retired",correlation_id=%self.id,generation=self.generation,"archive draft retired without source mutation");
         if let Draft::Create(draft) = &mut self.draft {
@@ -608,6 +933,14 @@ impl OperationForm {
     }
     pub(super) fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.retire(window, cx);
+        let owner = self.owner.clone();
+        let id = self.id;
+        cx.defer(move |cx| {
+            let _ = owner.update(cx, |app, cx| {
+                app.retire_form(id);
+                app.refresh_all_batch_views(cx);
+            });
+        });
         window.remove_window();
     }
     fn change_format(
@@ -741,7 +1074,7 @@ impl OperationForm {
         self.revalidate(cx);
     }
     fn pick(&mut self, purpose: ArchivePickerPurpose, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy() {
+        if self.busy() || (purpose == ArchivePickerPurpose::Files && self.source_bound) {
             return;
         }
         self.pending_picker = Some(PendingPicker {
@@ -754,8 +1087,15 @@ impl OperationForm {
         let id = self.id;
         let generation = self.generation;
         let source = window.window_handle();
-        let directory = self.destination.read(cx).value().to_string();
-        let directory = (!directory.is_empty()).then_some(directory);
+        let directory =
+            if purpose == ArchivePickerPurpose::Files && matches!(&self.draft, Draft::Extract(_)) {
+                std::path::Path::new(self.source.read(cx).value().as_ref())
+                    .parent()
+                    .map(|p| p.to_string_lossy().into_owned())
+            } else {
+                Some(self.destination.read(cx).value().to_string())
+            };
+        let directory = directory.filter(|path| !path.is_empty() && valid_job_path(path));
         let suggested =
             (purpose == ArchivePickerPurpose::Save).then(|| self.name.read(cx).value().to_string());
         cx.defer(move |cx| {
@@ -792,6 +1132,30 @@ impl OperationForm {
         });
         cx.notify();
     }
+    pub(super) fn picker_receipt_failure(
+        &mut self,
+        operation: Uuid,
+        message: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.retired
+            || self
+                .pending_picker
+                .as_ref()
+                .is_none_or(|pending| pending.operation != Some(operation))
+        {
+            return;
+        }
+        self.pending_picker = None;
+        self.error = Some(message.into());
+        cx.notify();
+    }
+    pub(super) fn picker_disconnected(&mut self, cx: &mut Context<Self>) {
+        if !self.retired && self.pending_picker.take().is_some() {
+            self.error = Some("选择器连接已断开，请重试。".into());
+            cx.notify();
+        }
+    }
     pub(super) fn picker_result(
         &mut self,
         result: ArchivePickerResult,
@@ -812,6 +1176,7 @@ impl OperationForm {
         let Some(pending) = self.pending_picker.take() else {
             return;
         };
+        self.error = None;
         let purpose = pending.purpose;
         if result.cancelled {
             cx.notify();
@@ -839,6 +1204,9 @@ impl OperationForm {
         }
         match purpose {
             ArchivePickerPurpose::Files | ArchivePickerPurpose::Folders => match &mut self.draft {
+                Draft::Extract(_) if self.source_bound => {
+                    self.error = Some("当前压缩包已固定，不能替换来源。".into());
+                }
                 Draft::Extract(draft) => {
                     if result.paths.len() != 1 {
                         self.error = Some("解压表单一次只接受一个归档；本次未更改来源。".into());
@@ -846,10 +1214,27 @@ impl OperationForm {
                         draft.source = PathBuf::from(&result.paths[0]);
                         draft.selection = None;
                         draft.selected_only = false;
+                        if draft.strategy == ArchiveDestination::Here {
+                            let parent = draft
+                                .source
+                                .parent()
+                                .map(|parent| parent.to_string_lossy().into_owned())
+                                .unwrap_or_default();
+                            self.destination
+                                .update(cx, |input, cx| input.set_value(parent, window, cx));
+                        }
                         self.revalidate(cx);
                     }
                 }
                 Draft::Create(_) => self.enumerate_sources(result.paths, cx),
+                Draft::Modify(draft) if draft.action == ArchiveJobModifyAction::ReplaceContent => {
+                    if purpose != ArchivePickerPurpose::Files || result.paths.len() != 1 {
+                        self.error =
+                            Some("替换内容必须选择一个普通文件，不能选择文件夹或多个来源。".into());
+                    } else {
+                        self.enumerate_sources(result.paths, cx);
+                    }
+                }
                 Draft::Modify(draft) => {
                     let mut unique = std::collections::HashSet::new();
                     if draft.action != ArchiveJobModifyAction::Add
@@ -870,6 +1255,8 @@ impl OperationForm {
             ArchivePickerPurpose::Destination => {
                 if result.paths.len() != 1 {
                     self.error = Some("请选择一个目标文件夹。".into());
+                } else if self.is_continuation() {
+                    self.begin_recovery(Some(result.paths[0].clone()), window, cx);
                 } else {
                     self.destination.update(cx, |state, cx| {
                         state.set_value(result.paths[0].clone(), window, cx)
@@ -903,12 +1290,22 @@ impl OperationForm {
         cx.notify();
     }
     fn enumerate_sources(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
-        let Draft::Create(draft) = &self.draft else {
-            return;
+        let within_limit = match &self.draft {
+            Draft::Create(draft) => draft.sources.len() + paths.len() <= 32,
+            Draft::Modify(draft) if draft.action == ArchiveJobModifyAction::ReplaceContent => {
+                paths.len() == 1
+            }
+            _ => return,
         };
-        if draft.sources.len() + paths.len() > 32 {
-            self.error =
-                Some("最多选择 32 个来源；本次未添加任何来源，未静默截断。请分批选择。".into());
+        if !within_limit {
+            self.error = Some(
+                if matches!(self.draft, Draft::Create(_)) {
+                    "最多选择 32 个来源；本次未添加任何来源，未静默截断。请分批选择。"
+                } else {
+                    "替换内容只能选择一个普通文件；未更改任何来源。"
+                }
+                .into(),
+            );
             return;
         }
         self.enumeration_cancel.store(true, Ordering::Release);
@@ -933,6 +1330,17 @@ impl OperationForm {
                             if duplicate {form.error=Some("本次选择包含已有来源；未添加任何重复输入。".into());}
                             else {draft.sources.extend(sources);form.revalidate(cx);}
                         }
+                        else if let Draft::Modify(draft) = &mut form.draft {
+                            if draft.action == ArchiveJobModifyAction::ReplaceContent && sources.len() == 1
+                                && !sources[0].directory
+                                && !sources[0].path.to_string_lossy().eq_ignore_ascii_case(&draft.source.to_string_lossy())
+                            {
+                                draft.added = vec![sources[0].path.to_string_lossy().into_owned()];
+                                form.revalidate(cx);
+                            } else {
+                                form.error = Some("替换内容必须选择一个不同于原归档的普通文件；原选择保持不变。".into());
+                            }
+                        }
                         tracing::info!(event="archive.form.sources.finished",correlation_id=%id,generation,elapsed_ms=started.elapsed().as_millis() as u64,"archive source metadata completed");
                     }
                     Err(message) => {form.error=Some(message);tracing::warn!(event="archive.form.sources.failed",correlation_id=%id,generation,elapsed_ms=started.elapsed().as_millis() as u64,"archive source metadata failed");}
@@ -944,6 +1352,12 @@ impl OperationForm {
     fn flag(&mut self, flag: Flag, value: bool, cx: &mut Context<Self>) {
         if self.busy() {
             return;
+        }
+        if matches!(flag, Flag::RememberDestination) {
+            tracing::info!(event="archive.form.destination_preference_changed", correlation_id=%self.id, value, "archive destination persistence opt-in changed");
+        }
+        if matches!(flag, Flag::Reclamation) {
+            tracing::info!(event="archive.reclamation.choice_changed", correlation_id=%self.id, enabled=value, "archive reclamation explicit choice changed");
         }
         match flag {
             Flag::Open => self.open_after = value,
@@ -961,6 +1375,8 @@ impl OperationForm {
                 Draft::Extract(draft) => match flag {
                     Flag::SingleFile => draft.single_file_folder = value,
                     Flag::Motw => draft.copy_motw = value,
+                    Flag::RememberDestination => draft.remember_destination = value,
+                    Flag::Reclamation if !draft.continue_reclamation => draft.reclamation = value,
                     _ => {}
                 },
                 Draft::Modify(_) => {}
@@ -978,6 +1394,7 @@ impl OperationForm {
         cx: &Context<Self>,
     ) -> Checkbox {
         Checkbox::new(id)
+            .debug_selector(move || id.into())
             .label(label)
             .checked(value)
             .disabled(disabled || self.busy())
@@ -991,196 +1408,74 @@ impl OperationForm {
         cx: &Context<Self>,
     ) -> Button {
         Button::new(id)
+            .debug_selector(move || id.into())
             .label(label)
             .outline()
             .with_size(Size::Medium)
             .disabled(self.busy())
             .on_click(cx.listener(move |this, _, window, cx| this.pick(purpose, window, cx)))
     }
-    fn create_fields(&self, cx: &Context<Self>) -> Form {
-        let Draft::Create(draft) = &self.draft else {
-            return Form::vertical();
-        };
-        let busy = self.busy();
-        let stream = matches!(
-            draft.format,
-            ArchiveCreateFormat::Gz | ArchiveCreateFormat::Xz
-        );
-        let mut sources = div().flex().flex_col().gap_2();
-        for (index, source) in draft.sources.iter().enumerate() {
-            let text = format!(
-                "{} · {}",
-                source.path.display(),
-                if source.directory {
-                    "文件夹（大小未扫描）".into()
-                } else {
-                    source
-                        .bytes
-                        .map(|bytes| format!("{bytes} 字节"))
-                        .unwrap_or_else(|| "大小未知".into())
-                }
-            );
-            sources = sources.child(
+    fn exclusion_fields(&self, cx: &Context<Self>) -> gpui_kit::Div {
+        let mut rows = div().w_full().flex().flex_col().gap_2();
+        for (index, rule) in self.create_exclusions.iter().enumerate() {
+            rows = rows.child(
                 div()
                     .flex()
-                    .items_center()
+                    .items_start()
                     .gap_2()
-                    .child(div().flex_1().min_w_0().child(text))
                     .child(
-                        Button::new(("archive-remove-source", index))
-                            .label("移除")
+                        div().flex_1().min_w_0().child(
+                            Textarea::new(rule)
+                                .aria_label(format!("创建排除规则 {}", index + 1))
+                                .h(px(48.))
+                                .disabled(self.busy()),
+                        ),
+                    )
+                    .child(
+                        Button::new(("archive-create-rule-remove", index))
+                            .debug_selector(move || format!("archive-create-rule-remove-{index}"))
+                            .label("删除")
                             .outline()
-                            .disabled(busy)
+                            .with_size(Size::Small)
+                            .disabled(self.busy())
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                if this.busy() {
-                                    return;
+                                if !this.busy() && index < this.create_exclusions.len() {
+                                    this.create_exclusions.remove(index);
+                                    drop(this.create_rule_subscriptions.remove(index));
+                                    this.revalidate(cx);
                                 }
-                                if let Draft::Create(draft) = &mut this.draft
-                                    && index < draft.sources.len()
-                                {
-                                    draft.sources.remove(index);
-                                }
-                                this.revalidate(cx);
                             })),
                     ),
             );
         }
-        let known = draft
-            .sources
-            .iter()
-            .filter_map(|source| source.bytes)
-            .fold(0_u64, u64::saturating_add);
-        let unknown = draft
-            .sources
-            .iter()
-            .any(|source| source.bytes.is_none() || source.directory);
-        let mut form = Form::vertical()
-            .child(
-                Field::new()
-                    .label(format!(
-                        "来源（{} / 32）· 已知 {known} 字节{}",
-                        draft.sources.len(),
-                        if unknown {
-                            "；目录总量由工作进程统计"
-                        } else {
-                            ""
-                        }
-                    ))
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .flex_wrap()
-                            .child(self.picker_button(
-                                "archive-add-files",
-                                "添加文件…",
-                                ArchivePickerPurpose::Files,
-                                cx,
-                            ))
-                            .child(self.picker_button(
-                                "archive-add-folders",
-                                "添加文件夹…",
-                                ArchivePickerPurpose::Folders,
-                                cx,
-                            )),
-                    )
-                    .child(sources),
-            )
-            .child(
-                Field::new()
-                    .label("压缩包名称")
-                    .required(true)
-                    .description(if draft.separately {
-                        "分别压缩时按每个来源名称生成；同名输出会明确拒绝。"
-                    } else if !valid_job_name(self.name.read(cx).value().as_ref()) {
-                        "名称无效：不能包含路径、保留设备名、非法字符或尾随点/空格。"
-                    } else {
-                        "名称扩展名必须与格式一致；不会自动隐藏不匹配。"
-                    })
-                    .child(
-                        Input::new(&self.name)
-                            .aria_label("压缩包名称")
-                            .disabled(busy || draft.separately),
-                    )
-                    .child(self.picker_button(
-                        "archive-save-picker",
-                        "另存为…",
-                        ArchivePickerPurpose::Save,
-                        cx,
-                    )),
-            )
-            .child(
-                Field::new().label("格式").child(
-                    Select::new(&self.format)
-                        .accessibility_label("压缩格式")
-                        .disabled(busy),
-                ),
-            )
-            .child(
-                Field::new()
-                    .label("压缩等级")
-                    .visible(draft.format != ArchiveCreateFormat::Tar)
-                    .child(
-                        Select::new(&self.level)
-                            .accessibility_label("语义压缩等级")
-                            .disabled(busy),
-                    ),
-            )
-            .child(
-                Field::new()
-                    .label("ZIP 方法")
-                    .visible(draft.format == ArchiveCreateFormat::Zip)
-                    .description("设置密码时使用 AES-256；仅存储等级与 Store 方法同步。")
-                    .child(
-                        Select::new(&self.method)
-                            .accessibility_label("ZIP 方法")
-                            .disabled(busy),
-                    ),
-            );
-        if draft::encrypted(draft.format) {
-            form = form
-                .child(
-                    Field::new()
-                        .label("密码（可选）")
-                        .description("密码仅用于本次操作，不会保存到默认设置。")
-                        .child(
-                            Input::new(&self.password)
-                                .aria_label("创建密码")
-                                .mask_toggle()
-                                .disabled(busy),
-                        ),
-                )
-                .child(
-                    Field::new()
-                        .label("确认密码")
-                        .description(
-                            if self.password.read(cx).value() != self.confirm.read(cx).value() {
-                                "两次输入的密码不一致。"
-                            } else {
-                                "与上方密码一致；各输入框眼睛按钮可独立显示或隐藏。"
-                            },
-                        )
-                        .child(
-                            Input::new(&self.confirm)
-                                .aria_label("确认创建密码")
-                                .mask_toggle()
-                                .disabled(busy),
-                        ),
-                );
-        }
-        form.child(Field::new().label("7Z 选项").visible(draft.format==ArchiveCreateFormat::SevenZ)
-                .child(self.check("archive-solid","固实压缩",draft.solid,Flag::Solid,false,cx))
-                .child(self.check("archive-header","加密文件名（需要密码）",draft.encrypt_header,Flag::Header,false,cx)))
-            .child(Field::new().label("来源与验证")
-                .child(self.check("archive-separately","分别压缩每个来源",draft.separately,Flag::Separately,false,cx))
-                .child(self.check("archive-strip","单个文件夹不保留根目录",draft.strip_single_root,Flag::Strip,stream||draft.sources.len()!=1||!draft.sources.first().is_some_and(|s|s.directory),cx))
-                .child(self.check("archive-test","创建后再测试一次",draft.test_after_create,Flag::Test,false,cx))
-                .description("提交前的安全校验始终执行；此选项只控制创建完成后的额外完整测试。GZ / XZ 只接受普通文件，可分别压缩。"))
-            .child(Field::new().label("分卷大小（MiB，可选）")
-                .description("仅 ZIP / 7Z；只创建全新的目标分卷组，不覆盖已有压缩包或分卷。")
-                .child(Input::new(&self.volume).aria_label("分卷大小 MiB").disabled(busy)))
-            .child(Field::new().label("排除规则").visible(!stream).description("每行一条，最多 32 条相对路径 glob；不会在界面线程扫描目录。")
-                .child(Textarea::new(&self.exclusions).aria_label("排除规则（每行一条）").h(px(80.)).disabled(busy)))
+        rows.child(
+            Button::new("archive-create-rule-add")
+                .debug_selector(|| "archive-create-rule-add".into())
+                .label("增加规则")
+                .outline()
+                .with_size(Size::Small)
+                .disabled(self.busy() || self.create_exclusions.len() >= 32)
+                .on_click(cx.listener(|this, _, window, cx| {
+                    if this.busy() || this.create_exclusions.len() >= 32 {
+                        return;
+                    }
+                    let rule = cx.new(|cx| TextareaState::new(window, cx));
+                    this.create_rule_subscriptions.push(cx.subscribe_in(
+                        &rule,
+                        window,
+                        |_, _, event: &InputEvent, window, cx| {
+                            if matches!(event, InputEvent::Change) {
+                                cx.defer_in(window, |this, _, cx| this.revalidate(cx));
+                            }
+                        },
+                    ));
+                    this.create_exclusions.push(rule);
+                    this.revalidate(cx);
+                })),
+        )
+    }
+    pub(super) fn set_modify_objects(&mut self, objects: Vec<String>) {
+        self.modify_objects = objects;
     }
     fn modify_fields(&self, cx: &Context<Self>) -> Form {
         let Draft::Modify(draft) = &self.draft else {
@@ -1196,15 +1491,74 @@ impl OperationForm {
                 .child(Field::new().label("源快照").description(
                     "编辑绑定当前读取的原始版本和条目 ID；提交前由工作进程再次验证。",
                 ));
+        if !self.modify_objects.is_empty() {
+            form = form.child(Field::new().label("本次归档内对象（仅供核对）").child(
+                div().flex().flex_col().gap_1().children(
+                    self.modify_objects.iter().enumerate().map(|(index, name)| {
+                        div()
+                            .id(gpui_kit::SharedString::from(format!(
+                                "archive-edit-object-{index}"
+                            )))
+                            .role(gpui_kit::Role::Label)
+                            .aria_label(name.clone())
+                            .test_support()
+                            .child(
+                                gpui_kit::component::label::Label::new(name.clone())
+                                    .whitespace_normal(),
+                            )
+                    }),
+                ),
+            ));
+        }
+        if draft.browser.format == "SevenZ" {
+            form = form.child(
+                Field::new().label("7z 编辑成本与格式变化").child(
+                    div()
+                        .id("archive-sevenz-cost")
+                        .role(gpui_kit::Role::Note)
+                        .aria_label(SEVENZ_EDIT_COST)
+                        .debug_selector(|| "archive-sevenz-cost".into())
+                        .child(
+                            Alert::warning("archive-sevenz-reencode", SEVENZ_EDIT_COST)
+                                .with_size(Size::Small),
+                        ),
+                ),
+            );
+        }
+        if matches!(draft.browser.format.as_str(), "Tar" | "TarGz" | "TarXz") {
+            form = form.child(
+                Field::new().label("TAR 编辑成本与保真范围").child(
+                    div()
+                        .id("archive-tar-cost")
+                        .role(gpui_kit::Role::Note)
+                        .aria_label(TAR_EDIT_COST)
+                        .debug_selector(|| "archive-tar-cost".into())
+                        .child(
+                            Alert::warning("archive-tar-reencode", TAR_EDIT_COST)
+                                .with_size(Size::Small),
+                        ),
+                ),
+            );
+        }
         match draft.action {
             ArchiveJobModifyAction::Add => {
+                let target = draft.value.as_deref().unwrap_or("/").to_owned();
+                form = form.child(Field::new().label("归档内目标目录").child(
+                    div().id("archive-edit-target-folder").role(gpui_kit::Role::Label).aria_label(target.clone()).test_support().child(gpui_kit::component::label::Label::new(target).whitespace_normal()),
+                )).child(Field::new().label("同名处理").child(
+                    div().id("archive-edit-conflict-policy").role(gpui_kit::Role::Note).aria_label("逐项询问；仅当前任务可选择应用到后续冲突。不同类型或改名目标冲突会拒绝，不会先删除再提交。")
+                        .test_support().child("逐项询问；仅当前任务可选择应用到后续冲突。不同类型或改名目标冲突会拒绝，不会先删除再提交。"),
+                ));
                 form = form.child(
                     Field::new()
                         .label("添加文件或文件夹")
-                        .description(format!(
-                            "已选 {} / 31 个来源；仅添加到当前目录。新增文件使用 Deflate，不加密；原有条目的压缩与加密记录保持不变。",
-                            draft.added.len()
-                        ))
+                        .description(if draft.browser.format == "SevenZ" {
+                            format!("已选 {} / 31 个来源；仅添加到当前目录，保留原归档支持的加密设置。", draft.added.len())
+                        } else if matches!(draft.browser.format.as_str(), "Tar" | "TarGz" | "TarXz") {
+                            format!("已选 {} / 31 个来源；仅添加到当前目录。新增项使用上方说明的规范化元数据，不加密。", draft.added.len())
+                        } else {
+                            format!("已选 {} / 31 个来源；仅添加到当前目录。新增文件使用 Deflate，不加密；原有条目的压缩与加密记录保持不变。", draft.added.len())
+                        })
                         .child(
                             div()
                                 .flex()
@@ -1230,9 +1584,16 @@ impl OperationForm {
                         ),
                 );
             }
+            ArchiveJobModifyAction::ReplaceContent => {
+                form = form.child(Field::new()
+                    .label("替换选中文件的内容")
+                    .description("仅一个原始文件条目；保留原条目名称、时间与属性。请选择一个普通文件，不能添加条目或替换目录；原生提交前再次保护并验证来源。")
+                    .child(self.picker_button("archive-edit-replacement-file", "选择替换文件…", ArchivePickerPurpose::Files, cx))
+                    .child(div().children(draft.added.iter().cloned())));
+            }
             ArchiveJobModifyAction::Delete => {
                 form = form.child(Field::new().label("删除选中条目").description(format!(
-                    "从压缩包删除 {} 个条目及所选目录的内容。原文件在提交前保持不变。",
+                    "从压缩包删除 {} 个原始条目（所选目录后代已去重）。删除全部会生成经校验的合法空归档，不会删除归档文件；取消不提交。原文件在提交前保持不变。",
                     draft.ordinals.len()
                 )));
             }
@@ -1245,7 +1606,7 @@ impl OperationForm {
                             "新文件夹"
                         })
                         .required(true)
-                        .description("相对归档路径；文件夹以 / 结尾。非法路径不可提交。")
+                        .description("相对归档路径；文件夹以 / 结尾。非法路径、目标占用或移入自身会拒绝，不会先删除冲突成员。")
                         .child(
                             Input::new(&self.name)
                                 .aria_label("编辑归档目标名称")
@@ -1269,108 +1630,6 @@ impl OperationForm {
         }
         form
     }
-    fn extract_fields(&self, cx: &Context<Self>) -> Form {
-        let Draft::Extract(draft) = &self.draft else {
-            return Form::vertical();
-        };
-        let selected = draft.selection.as_ref().map_or(0, |s| s.ordinals.len());
-        let preview = match draft.strategy {
-            ArchiveDestination::Name => format!(
-                "{}\\{}（发生冲突时生成唯一名称）",
-                self.destination.read(cx).value(),
-                draft::archive_stem(
-                    &draft
-                        .source
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                )
-            ),
-            ArchiveDestination::Smart => format!(
-                "{} · 单一顶层项直接解压，多个顶层项使用压缩包名称文件夹；最终路径由工作进程预检确认",
-                self.destination.read(cx).value()
-            ),
-            _ => self.destination.read(cx).value().to_string(),
-        };
-        Form::vertical()
-            .child(
-                Field::new()
-                    .label("压缩包")
-                    .description(draft.source.to_string_lossy().into_owned())
-                    .child(self.picker_button(
-                        "archive-extract-source",
-                        "选择压缩包…",
-                        ArchivePickerPurpose::Files,
-                        cx,
-                    )),
-            )
-            .child(
-                Field::new()
-                    .label("文件范围")
-                    .description(format!(
-                        "选定 {selected} 个条目；保留原始会话、修订和条目 ID。"
-                    ))
-                    .child(
-                        RadioGroup::horizontal("archive-extract-range")
-                            .selected_index(Some(usize::from(draft.selected_only)))
-                            .disabled(self.busy())
-                            .child(Radio::new("all").label("全部文件"))
-                            .child(
-                                Radio::new("selected")
-                                    .label("选定文件")
-                                    .disabled(selected == 0),
-                            )
-                            .on_change(cx.listener(|this, index, _, cx| {
-                                if this.busy() {
-                                    return;
-                                }
-                                if let Draft::Extract(draft) = &mut this.draft {
-                                    draft.selected_only = *index == 1
-                                        && draft
-                                            .selection
-                                            .as_ref()
-                                            .is_some_and(|s| !s.ordinals.is_empty());
-                                }
-                                this.revalidate(cx);
-                            })),
-                    ),
-            )
-            .child(
-                Field::new().label("目标策略").child(
-                    Select::new(&self.strategy)
-                        .accessibility_label("解压目标策略")
-                        .disabled(self.busy()),
-                ),
-            )
-            .child(Field::new().label("目标预览").description(preview))
-            .child(
-                Field::new().label("冲突处理").child(
-                    Select::new(&self.conflict)
-                        .accessibility_label("同名文件处理")
-                        .disabled(self.busy()),
-                ),
-            )
-            .child(
-                Field::new()
-                    .label("安全与结构")
-                    .child(self.check(
-                        "archive-single-file-folder",
-                        "智能解压时单个文件也创建文件夹",
-                        draft.single_file_folder,
-                        Flag::SingleFile,
-                        draft.strategy != ArchiveDestination::Smart,
-                        cx,
-                    ))
-                    .child(self.check(
-                        "archive-motw",
-                        "保留下载来源标记（Mark-of-the-Web）",
-                        draft.copy_motw,
-                        Flag::Motw,
-                        false,
-                        cx,
-                    )),
-            )
-    }
 }
 impl Focusable for OperationForm {
     fn focus_handle(&self, _: &App) -> FocusHandle {
@@ -1381,79 +1640,17 @@ impl Render for OperationForm {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let create = matches!(&self.draft, Draft::Create(_));
         let modify = matches!(&self.draft, Draft::Modify(_));
-        let here =
-            matches!(&self.draft,Draft::Extract(draft) if draft.strategy==ArchiveDestination::Here);
+        let reclamation = matches!(&self.draft, Draft::Extract(draft) if draft.reclamation);
+        let continuation =
+            matches!(&self.draft, Draft::Extract(draft) if draft.continue_reclamation);
         let form = if create {
             self.create_fields(cx)
         } else if modify {
-            self.modify_fields(cx)
+            self.modify_fields(cx).into_any_element()
+        } else if continuation {
+            self.continuation_fields(cx)
         } else {
             self.extract_fields(cx)
-        };
-        let form = if modify {
-            form
-        } else {
-            form.child(
-                Field::new()
-                    .label("目标文件夹")
-                    .required(true)
-                    .child(
-                        InputGroup::new("archive-destination-group")
-                            .input(Input::new(&self.destination).aria_label("目标文件夹"))
-                            .readonly(here)
-                            .disabled(self.busy()),
-                    )
-                    .child(
-                        self.picker_button(
-                            "archive-destination-picker",
-                            "浏览目标…",
-                            ArchivePickerPurpose::Destination,
-                            cx,
-                        )
-                        .disabled(self.busy() || here),
-                    ),
-            )
-            .child(
-                Field::new()
-                    .label("完成后")
-                    .child(self.check(
-                        "archive-open-after",
-                        "打开目标文件夹",
-                        self.open_after,
-                        Flag::Open,
-                        false,
-                        cx,
-                    ))
-                    .child(self.check(
-                        "archive-keep-open",
-                        "完成后保留进度窗口",
-                        self.keep_open,
-                        Flag::Keep,
-                        false,
-                        cx,
-                    ))
-                    .child(self.check(
-                        "archive-remember",
-                        "记住本表单支持的默认设置",
-                        self.remember,
-                        Flag::Remember,
-                        false,
-                        cx,
-                    )),
-            )
-            .child(
-                Field::new()
-                    .label("来源保护")
-                    .child(
-                        Checkbox::new("archive-delete-unavailable")
-                            .label("完成后删除来源（当前不可用）")
-                            .checked(false)
-                            .disabled(true),
-                    )
-                    .description(
-                        "原始对象回收尚未通过验收；来源始终保留，不会永久删除，也不会执行回收。",
-                    ),
-            )
         };
         div()
             .size_full()
@@ -1464,39 +1661,59 @@ impl Render for OperationForm {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::default_enter))
+            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {
+                if event.keystroke.key == "enter" {
+                    this.default_enter_held = false;
+                }
+            }))
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
-                if event.keystroke.key == "escape" && this.pending_format.is_none() {
+                if event.keystroke.key == "escape"
+                    && this.pending_format.is_none()
+                    && !this.reclamation_confirmation_pending
+                {
                     this.close(window, cx);
                     cx.stop_propagation();
                 }
             }))
-            .child(TitleBar::new().child(if create {
-                "新建压缩包"
-            } else if modify {
-                "编辑 ZIP"
-            } else {
-                "解压压缩包"
-            }))
+            .child(crate::ui::components::titlebar::controlled_titlebar(
+                "archive-form-titlebar",
+                "archive-form-close",
+                if create {
+                    "新建压缩包"
+                } else if modify {
+                    if matches!(&self.draft, Draft::Modify(draft) if draft.browser.format == "SevenZ") { "编辑 7z" } else if matches!(&self.draft, Draft::Modify(draft) if matches!(draft.browser.format.as_str(), "Tar" | "TarGz" | "TarXz")) { "编辑 TAR" } else { "编辑 ZIP" }
+                } else if continuation {
+                    "继续空间回收解压"
+                } else {
+                    "解压压缩包"
+                },
+                crate::ui::components::titlebar::CaptionCapabilities::RESIZABLE,
+                cx.listener(|this, _, window, cx| this.close(window, cx)),
+            ))
             .child(
                 div()
-                    .id("archive-form-body")
+                    .id("archive-form-viewport")
+                    .debug_selector(|| "archive-form-body".into())
                     .flex_1()
                     .min_h_0()
                     .min_w_0()
-                    .overflow_y_scroll()
-                    .p_4()
-                    .child(form),
+                    .overflow_hidden()
+                    .child(div().id("archive-form-body").size_full()
+                        .overflow_y_scrollbar()
+                        .child(div().p_4().child(form))),
             )
             .child(
                 div()
                     .id("archive-form-footer")
+                    .debug_selector(|| "archive-form-footer".into())
                     .flex_none()
                     .flex()
                     .flex_col()
                     .gap_2()
                     .p_4()
                     .when_some(
-                        self.error.clone().or_else(|| self.validation.clone()),
+                        self.error.clone(),
                         |footer, message| {
                             footer.child(
                                 div()
@@ -1507,8 +1724,13 @@ impl Render for OperationForm {
                             )
                         },
                     )
+                    .when_some(self.validation.clone().filter(|_| self.error.is_none()).filter(|_| !continuation).filter(|_| match &self.draft {
+                        Draft::Create(draft) => !draft.sources.is_empty(),
+                        Draft::Extract(draft) => !draft.source.as_os_str().is_empty(),
+                        Draft::Modify(_) => true,
+                    }), |footer, message| footer.child(div().text_sm().text_color(cx.theme().muted_foreground).child(message)))
                     .when(self.enumerating, |footer| {
-                        footer.child("正在读取来源元数据…（不递归扫描）")
+                        footer.child("正在读取来源信息")
                     })
                     .child(
                         div()
@@ -1531,13 +1753,22 @@ impl Render for OperationForm {
                                         "创建"
                                     } else if modify {
                                         "应用编辑"
+                                    } else if continuation {
+                                        "继续空间回收解压"
+                                    } else if reclamation {
+                                        "确认并开始"
                                     } else {
                                         "解压"
                                     })
-                                    .primary()
+                                    .when(reclamation, |button| button.outline())
+                                    .when(!reclamation, |button| button.primary())
                                     .with_size(Size::Medium)
                                     .debug_selector(|| "archive-form-submit".into())
-                                    .disabled(self.busy() || self.validation.is_some())
+                                    .disabled(
+                                        self.busy()
+                                            || self.validation.is_some()
+                                            || !self.recovery_submit_ready(),
+                                    )
                                     .loading(self.submitted)
                                     .on_click(
                                         cx.listener(|this, _, window, cx| this.submit(window, cx)),

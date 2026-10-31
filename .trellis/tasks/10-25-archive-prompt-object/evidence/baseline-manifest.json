@@ -1,0 +1,77 @@
+[
+  {
+    "path": "rust/crates/nxtools-protocol/src/archive_job.rs",
+    "sha256": "0da449dbcff592e8f0d488a267a477f9fd5f67277e210e190c4eda192bb5de81",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__crates__nxtools-protocol__src__archive_job.rs.baseline"
+  },
+  {
+    "path": "rust/crates/nxtools-archive/src/worker_conflict.rs",
+    "sha256": "12c1955296ad9c8f901d09645aa07c35f4d7477df388d7d79c735dc854e77a9d",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__crates__nxtools-archive__src__worker_conflict.rs.baseline"
+  },
+  {
+    "path": "rust/crates/nxtools-archive/src/worker_output.rs",
+    "sha256": "67204ae8348abfbf9c492b18984ec9c4e933bd6d41c388661d66e541bb2a9dd3",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__crates__nxtools-archive__src__worker_output.rs.baseline"
+  },
+  {
+    "path": "rust/crates/nxtools-archive/src/worker.rs",
+    "sha256": "10ee8a96c06251041473c642df7b2cf3901b8f16479ca508e30f8cbb8fa0c05f",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__crates__nxtools-archive__src__worker.rs.baseline"
+  },
+  {
+    "path": "rust/crates/nxtools-archive/tests/worker_wire.rs",
+    "sha256": "274be3fae3e5a1c80d51b66319d4f7a8226134a9c27e2f5212cd6015fd8d5371",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__crates__nxtools-archive__tests__worker_wire.rs.baseline"
+  },
+  {
+    "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs",
+    "sha256": "1207f0043e4db0969baefbb5b1e40a77f034e093daca9c2440d2723909e39731",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.baseline"
+  },
+  {
+    "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs",
+    "sha256": "860d0db31079b56221e03fc9040b285b0018508f9fbdd1d57eb830830a52fb9e",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.baseline"
+  },
+  {
+    "path": "csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs",
+    "sha256": "ca693479c8e4f389ab44ea11a8a4f7e40620fe3b854a6eb47cfc6d11347e3bcc",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.baseline"
+  },
+  {
+    "path": "csharp/NxTools.PlatformHost.Tests/ArchiveCreateOverwriteTests.cs",
+    "sha256": "05e3956547312f9cd0dc07fe2f6f6f100cba4962d79dbb7aea51708e76700d41",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.baseline"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+    "sha256": "dc65157d165ad03dfb8a5ed51ea3821d5178233716e91dc8ce39c15e49ffa052",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__apps__nxtools-desktop__src__archive__progress.rs.baseline"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "sha256": "6c999ab492528c69629cdcc6c50ac8141c57cc65edec150daf80cb16b9548476",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/readmission.rs",
+    "sha256": "cc1585ef9d800d84654f522293edcf0728af7dffd4b3679f32f0ee7fb54d83ed",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__apps__nxtools-desktop__src__archive__readmission.rs.baseline"
+  },
+  {
+    "path": "rust/apps/nxtools-cli/src/archive/execution/tests.rs",
+    "sha256": "12c2e242e5e2a2bf8f26f92bfa613ad6d2dee1f408173e235c7913501abd16c8",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\rust__apps__nxtools-cli__src__archive__execution__tests.rs.baseline"
+  },
+  {
+    "path": "docs/reference-code/archive.md",
+    "sha256": "c0ef4510ed738d0b9c8b554d6737cb3837380a85fd6ab4075b74305fa3f1479a",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\docs__reference-code__archive.md.baseline"
+  },
+  {
+    "path": "csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs",
+    "sha256": "a22d8aecbf7d69394add2b98ecc8ba6d6d2885373abd8b638bf3fc98e5b1bcc1",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.baseline"
+  }
+]

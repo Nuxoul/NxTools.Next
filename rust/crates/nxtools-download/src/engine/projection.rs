@@ -79,6 +79,45 @@ impl DownloadEngine {
         Ok(snapshot)
     }
 
+    /// Stable read-only keyset page. Retains at most33 candidate references and does not
+    /// clone the entire task catalog. Newer inserts are excluded after the first key.
+    pub fn tasks_page_after(
+        &self,
+        before: Option<(i64, DownloadTaskId)>,
+        statuses: &[crate::DownloadStatus],
+        limit: usize,
+    ) -> Result<Vec<DownloadEngineTask>, DownloadEngineError> {
+        let limit = limit.clamp(1, 33);
+        let tasks = self.inner.lock_tasks()?;
+        let after = before.map(|(time, id)| (std::cmp::Reverse(time), *id.as_uuid()));
+        let mut selected: Vec<&EngineTaskState> = Vec::with_capacity(limit);
+        for state in tasks.values() {
+            if !statuses.is_empty() && !statuses.contains(&state.task.status()) {
+                continue;
+            }
+            let key = (
+                std::cmp::Reverse(state.task.created_at_unix_ms()),
+                *state.task.id().as_uuid(),
+            );
+            if after.is_some_and(|after| key <= after) {
+                continue;
+            }
+            let index = selected.partition_point(|item| {
+                (
+                    std::cmp::Reverse(item.task.created_at_unix_ms()),
+                    *item.task.id().as_uuid(),
+                ) < key
+            });
+            if index < limit {
+                selected.insert(index, state);
+                if selected.len() > limit {
+                    selected.pop();
+                }
+            }
+        }
+        Ok(selected.into_iter().map(snapshot_from_state).collect())
+    }
+
     pub fn tasks(&self) -> Result<Vec<DownloadEngineTask>, DownloadEngineError> {
         let queue_order = self.inner.store.load_queue_order("default")?;
         let queue_positions = queue_order
@@ -264,6 +303,46 @@ impl DownloadEngine {
             task_details: Vec::new(),
             task_summaries: summaries,
         })
+    }
+
+    /// Uses the existing runtime and original TaskDetail command/store chain.
+    /// The UI owner bounds admission and rejects obsolete replies.
+    pub fn request_task_detail_background(
+        &self,
+        task_id: DownloadTaskId,
+        correlation_id: uuid::Uuid,
+    ) -> Result<
+        async_channel::Receiver<Result<DownloadTaskDetail, crate::DownloadFault>>,
+        crate::DownloadFault,
+    > {
+        let runtime = super::download_runtime().map_err(|error| error.fault())?;
+        let engine = self.clone();
+        let (sender, receiver) = async_channel::bounded(1);
+        runtime.spawn_blocking(move || {
+            let result = engine.handle_command(crate::DownloadCommandEnvelope {
+                protocol_version: crate::DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+                request_id: correlation_id,
+                origin: crate::RequestOrigin::Ui,
+                command: crate::DownloadCommand::TaskDetail { task_id },
+            });
+            let detail = match result.outcome {
+                crate::DownloadCommandOutcome::TaskDetail(detail) => Ok(*detail),
+                crate::DownloadCommandOutcome::Rejected { fault } => Err(fault),
+                _ => Err(crate::DownloadFault {
+                    code: crate::DownloadFaultCode::Internal,
+                    message: "下载引擎返回了无效的任务详情结果".into(),
+                    retryable: true,
+                }),
+            };
+            let _ = sender.try_send(detail);
+        });
+        Ok(receiver)
+    }
+
+    /// Test-only contention seam; queries still use the real command/store chain.
+    #[cfg(feature = "test-support")]
+    pub fn with_storage_lock_for_test<R>(&self, operation: impl FnOnce() -> R) -> R {
+        self.inner.store.with_connection_lock_for_test(operation)
     }
 
     pub(super) fn command_task_detail(

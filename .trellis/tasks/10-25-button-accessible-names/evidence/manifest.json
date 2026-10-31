@@ -1,0 +1,271 @@
+{
+  "scope": "original audit #3 actual Button names only; parent review pending",
+  "baseline": "per-file current dirty baseline, not git HEAD",
+  "files": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+      "baseline_sha256": "55bea700ba6460dc5e4ee35d61c2f3e8f4d345ef041849463404ff9166b9e865",
+      "delivery_sha256": "7f964075086b1883612e50641fdd30396d2697a20a1a745b97d5db8d84206237",
+      "added": 16,
+      "removed": 4
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+      "baseline_sha256": "99f06d7e2ea942263138e2889327e7e57c8bcfdbed294bdd0cd84eba15f1ba6b",
+      "delivery_sha256": "ea24f392ccdb31a4e50bd9f22fc1bf4dff5f658b3a4811eee895320c54c7f949",
+      "added": 39,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+      "baseline_sha256": "14e0330f998bfada1b30a3e4ca7cc9b717c663e5fbe8f91b310ca18e43f1a80d",
+      "delivery_sha256": "f98f74fa4023e5e5b72d807c05299a2ca6312a2ad0d6810a10f55f0dcc050557",
+      "added": 43,
+      "removed": 26
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+      "baseline_sha256": "6e211ab826784e0ae613516478bb3601f62d39e624106dba50c36bdb4278b445",
+      "delivery_sha256": "9e75a5a9b101fc165020b8f5a35db66238ed0ecb22f336cda19389e09428401e",
+      "added": 17,
+      "removed": 7
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+      "baseline_sha256": "472851fb3b268b7ccaf8604264b29e6f912e86c03d2f2b1cb9be0aa4ec71d7c7",
+      "delivery_sha256": "725e9c4523096ece194d771959d8958d19ce7ae361fa980b6aed2b71f9a22de4",
+      "added": 7,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+      "baseline_sha256": "19a09ffda2c788a77ad116eed676adea94b9e08acca0918834f292d533efecfd",
+      "delivery_sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+      "added": 1,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+      "baseline_sha256": "293ababb6e290567a89cf2604866ded43848192b991d83608e7926d00a976d48",
+      "delivery_sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+      "added": 2,
+      "removed": 1
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+      "baseline_sha256": "dc60dc4f74dee163de700e3bf96e5a5aa1be3171e67fe7a009189055d17a7f25",
+      "delivery_sha256": "0b6274bd695f6b224361ba1834fa21724fba02ef0f864abee1cd3abbea79286a",
+      "added": 1,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+      "baseline_sha256": "7b73db0a61a6e7de8996ce5bd071ecb83d8522ef7d1f084b4cfb34de8719274a",
+      "delivery_sha256": "c23e7f6dd605026b6d646bd8621d45ed8033c3693c98f70cb4c23eb56952d0c6",
+      "added": 32,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+      "baseline_sha256": "d5f0122bd6638702c361e3c6d71f70dfa6c898c85071204a34df608bbea18d75",
+      "delivery_sha256": "a8b02fd12f4e0e24976f1e85f0135433924248dc578ba4b808c735767e7dd356",
+      "added": 139,
+      "removed": 0
+    },
+    {
+      "path": "docs/reference-code/gpui-kit-080.md",
+      "baseline_sha256": "126fb2f69f00a5315e202d0f5f83154cb448d595f93bc747b6c51e2a12641093",
+      "delivery_sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c",
+      "added": 18,
+      "removed": 0
+    },
+    {
+      "path": "tests/architecture/download-ui-lifecycle.ps1",
+      "baseline_sha256": "5d37115d404e6969d47d0994423f085c0f6f2683b64914c5628b9fe6cdbc8f48",
+      "delivery_sha256": "dc6c0541e3319bfd3273ef1fb3e1cd961a8493e37ced01347f9a525688d8eea3",
+      "added": 1,
+      "removed": 1
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs",
+      "new_file_sha256": "2af2a15d7ba36b48ec397a19abb54fa9470bad44b3ab1b1a3c0629dc1bbe13e3",
+      "lines": 197
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/prd.md",
+      "new_file_sha256": "ecb0e0c718609181dd91d55c27da424fc39b259976dc9a9baf9604716ebe9aa5",
+      "lines": 46
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/outcomes.md",
+      "new_file_sha256": "bf301273282ca3057b3497e547cc396d4d08dd97998a57ce447ba083d74d0460",
+      "lines": 171
+    }
+  ],
+  "evidence": [
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/baseline-manifest.json",
+      "sha256": "e63f74c8da2266acb0087d48e43f5a5a9653e28d8953cd02bb5ca8309baa0d2a",
+      "bytes": 2137
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clipboard-lifecycle.ps1.log",
+      "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b",
+      "bytes": 268
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clipboard-ui-lifecycle.ps1.log",
+      "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f",
+      "bytes": 1346
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clipboard-ui-lifecycle.tests.py.log",
+      "sha256": "f1b08fa1e2d503e9751ca591ffe8c9574e54792885ab62021f5a02394334758b",
+      "bytes": 848
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clippy.log",
+      "sha256": "0d7d88b662425a9e58f536f3784ef2e03c12c154f04dedaa5c982a9d9932b424",
+      "bytes": 332
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/compiled-results.json",
+      "sha256": "9016f3ae649df8892172e6631908a6a877ddf794908cec833f68040c76c83301",
+      "bytes": 473
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/desktop-full.log",
+      "sha256": "9b907a29cbf76446674ebe8fc701b91649df0915f3187e28ebad928e70ab67a3",
+      "bytes": 256960
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/desktop-shell-lifecycle.ps1.log",
+      "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283",
+      "bytes": 336
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/download-ui-lifecycle.ps1.log",
+      "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5",
+      "bytes": 100
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/downloads.log",
+      "sha256": "01b3f21ebaf133075d43662d7ab70387b0c046b93e08fbe5b4584d3b6b3f5068",
+      "bytes": 38760
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/fmt.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/global-settings.log",
+      "sha256": "4dab839cd0d2d29289627c90dff5f89bf4eb4e59dd4035293ba6b5aa1ba551b3",
+      "bytes": 8356
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-green-final.log",
+      "sha256": "f29ba0421129de18a41009135f39d2b4c16e273cc5e086cde2dcff2cf5906f0b",
+      "bytes": 2320
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-green-initial.log",
+      "sha256": "5c6a1298dac82c6841a6317abd1a48de8cf25ac516d408110f868e605400a3da",
+      "bytes": 3886
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-green.log",
+      "sha256": "f5a9e0b4cb12611366e77d8666ed9824c2e68fc5c9491613f45bb32bab2314c1",
+      "bytes": 3606
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-red-behavior.log",
+      "sha256": "11abbe9cb8b498d79382a2bfc55508b95110ddf09e5c01d3f102c14ad1b42bfb",
+      "bytes": 10302
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-red.log",
+      "sha256": "442f217a4ac38c5bcae3a8f9f00a2cc9d6e05d1bb86bae85217d42bba32706af",
+      "bytes": 9278
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/own-delta.json",
+      "sha256": "0273a7244660278894fb151694c3a4c65eae23fdfa1b10886b393d4a104c997e",
+      "bytes": 29352
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/protected-checks.json",
+      "sha256": "c4da069db8af1252b2d43c0fa254d382015bf9ce8eae129f67050d36162cae7c",
+      "bytes": 2197
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/protected-manifest.json",
+      "sha256": "4f105480fc57a1171726c88dbaa989e5178648a400336907e822543020b68bc5",
+      "bytes": 1083
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/quick-gate-diagnosis.log",
+      "sha256": "9203638db06d950216aeda29798056bb162f753f20107ba6eef2ac17699ffe4c",
+      "bytes": 4040
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/quick-launch-lifecycle.ps1.log",
+      "sha256": "d35db2d2db01ae26ad7b22f6fac92ab75f92452b8a55ec09ddd34c0c985b884f",
+      "bytes": 6140
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/static-results.json",
+      "sha256": "af1e4f929ffe7a2502c09ab2c4043729e75d9e412abb2d16f12152bf11a063a5",
+      "bytes": 1125
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/ui-state-lifecycle.ps1.log",
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f",
+      "bytes": 108
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/ui-token-boundaries.ps1.log",
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1",
+      "bytes": 92
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/ui.log",
+      "sha256": "33a5c51758ab3707a5be1dfc487c76cb504d8976c3d09cc1cae44f79f0ba9a34",
+      "bytes": 47876
+    },
+    {
+      "path": ".trellis/tasks/10-25-button-accessible-names/evidence/workspace-check.log",
+      "sha256": "3fbe86920e6c5910544c7f269d7f0321df1545d4317bdc59cde99e4e1c1e349c",
+      "bytes": 332
+    }
+  ],
+  "verification": {
+    "names": "7/7 PASS; real Button name None before fix 0/7",
+    "downloads": "185/185 PASS",
+    "global_settings": "35/35 PASS",
+    "ui": "231/231 PASS",
+    "strict_clippy": "PASS",
+    "workspace_tests_check": "PASS",
+    "fmt_all_check": "PASS",
+    "desktop_single_full_run": "FAILED 1191 PASS / 1 FAIL, known Archive Unlock",
+    "protected_regressions": "keyboard8/picker14/clipboard_identity11 PASS",
+    "static_gates": "10 PASS / 1 FAIL Quick Launch build-script source predicate",
+    "protected_bytes": "9/9 PASS",
+    "native_reader_visual_user": "NOT RUN / NOT ACCEPTED"
+  }
+}

@@ -23,6 +23,9 @@ impl Drop for Fixture {
     }
 }
 fn fixture(cx: &mut TestAppContext) -> Fixture {
+    fixture_with_search_focus(cx, true)
+}
+fn fixture_with_search_focus(cx: &mut TestAppContext, focus_search: bool) -> Fixture {
     cx.update(gpui_kit::init);
     cx.executor().allow_parking();
     let directory = tempfile::tempdir().expect("temporary efficiency fixture");
@@ -133,9 +136,11 @@ fn fixture(cx: &mut TestAppContext) -> Fixture {
     surface.update(|window, _| window.activate_window());
     surface.refresh().expect("production panel");
     let panel = slot.borrow().clone().expect("panel entity");
-    panel.update_in(surface, |panel, window, cx| {
-        panel.focus_search_input(window, cx)
-    });
+    if focus_search {
+        panel.update_in(surface, |panel, window, cx| {
+            panel.focus_search_input(window, cx)
+        });
+    }
     let window = surface.update(|window, _| window.window_handle());
     Fixture {
         panel,
@@ -708,11 +713,38 @@ fn feedback_shortcut_allows_control_released_before_number(cx: &mut TestAppConte
 }
 
 #[gpui_kit::test]
-fn feedback_legacy_number_shortcut_works_with_empty_search(cx: &mut TestAppContext) {
+fn runtime_feedback_plain_number_is_search_text_not_paste(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let mut surface = VisualTestContext::from_window(f.window, cx);
-    press(&mut surface, "2");
-    assert_number_paste(&f, &mut surface, 1);
+    surface.simulate_keystrokes("2");
+    f.panel.read_with(&surface, |panel, cx| {
+        assert!(
+            panel.pending_action.is_none(),
+            "plain number must never arm a paste"
+        );
+        assert!(panel.armed_number_key.is_none());
+        assert_eq!(panel.search_input.read(cx).value().as_str(), "2");
+    });
+    assert!(f.endpoint.try_receive_command_for_contract_test().is_err());
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_initial_popup_focus_has_no_test_repair(cx: &mut TestAppContext) {
+    let f = fixture_with_search_focus(cx, false);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    surface.run_until_parked();
+    surface.update(|window, cx| {
+        let panel = f.panel.read(cx);
+        assert!(
+            panel.search_input.focus_handle(cx).is_focused(window),
+            "show must focus the actual search input without fixture assistance"
+        );
+    });
+    surface.simulate_input("80");
+    f.panel.read_with(&surface, |panel, cx| {
+        assert_eq!(panel.search_input.read(cx).value().as_str(), "80");
+        assert!(panel.pending_action.is_none());
+    });
 }
 
 #[gpui_kit::test]
@@ -995,6 +1027,9 @@ fn feedback_pause_icon_press_never_enters_header_window_drag(cx: &mut TestAppCon
 fn height_feedback_history_multiline_rows_grow_with_rendered_content(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let mut surface = VisualTestContext::from_window(f.window, cx);
+    f.panel.update(&mut surface, |panel, cx| {
+        panel.set_text_card_max_height(320, cx)
+    });
     let mut heights = vec![];
     for source in [
         "第一行\n\n最后一行",
@@ -1035,6 +1070,10 @@ fn height_feedback_history_multiline_rows_grow_with_rendered_content(cx: &mut Te
 fn height_feedback_long_links_reflow_when_history_width_changes(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let mut surface = VisualTestContext::from_window(f.window, cx);
+    let maximum_height = 320.0;
+    f.panel.update(&mut surface, |panel, cx| {
+        panel.set_text_card_max_height(maximum_height as u32, cx)
+    });
     f.panel.update_in(&mut surface, |panel, _, cx| {
         panel.entries.borrow_mut()[0].text = "价格：https://example.invalid/product/12345678901234567890\n\n便宜的：https://example.invalid/another-long-product\n\n最后一行不会消失".into();
         panel.list_scroll.reset(20); cx.notify();
@@ -1051,10 +1090,10 @@ fn height_feedback_long_links_reflow_when_history_width_changes(cx: &mut TestApp
         let state =
             history::RENDERED_MARKDOWN.with_borrow(|rows| rows[&id].upgrade().expect("state"));
         state.read_with(&surface, |state, _| {
-            if row.size.height < px(history::TEXT_CARD_MAX_HEIGHT + history::ROW_GAP) {
+            if row.size.height < px(maximum_height + history::ROW_GAP) {
                 assert!(state.bounds().bottom() <= row.bottom() - px(history::ROW_GAP));
             } else {
-                assert_eq!(row.size.height, px(218.0));
+                assert_eq!(row.size.height, px(maximum_height + history::ROW_GAP));
                 assert!(state.bounds().bottom() > row.bottom() - px(history::ROW_GAP));
             }
             assert!(state.rendered_text().as_str().contains("最后一行"));
@@ -1445,7 +1484,7 @@ fn icon_palette_late_reply_cannot_restore_retired_source_metadata(cx: &mut TestA
 }
 
 #[gpui_kit::test]
-fn text_cap_whole_text_card_is_at_most_210_and_short_content_stays_natural(
+fn text_cap_whole_text_card_uses_default_160_and_short_content_stays_natural(
     cx: &mut TestAppContext,
 ) {
     let f = fixture(cx);
@@ -1477,11 +1516,11 @@ fn text_cap_whole_text_card_is_at_most_210_and_short_content_stays_natural(
                         .bounds()
                 });
                 assert!(
-                    card.size.height <= px(210.0),
-                    "whole text card exceeds210DIP at{width}/{preference:?}: {card:?}"
+                    card.size.height <= px(160.0),
+                    "whole text card exceeds160DIP at{width}/{preference:?}: {card:?}"
                 );
                 let slot = surface.debug_bounds("history-row-slot-0").expect("slot");
-                assert!(slot.size.height <= px(218.0));
+                assert!(slot.size.height <= px(168.0));
                 assert!((slot.bottom() - card.bottom() - px(8.0)).abs() < px(0.1));
                 let header = surface
                     .debug_bounds("clipboard-source-0")
@@ -1494,7 +1533,11 @@ fn text_cap_whole_text_card_is_at_most_210_and_short_content_stays_natural(
                 heights[0] < px(120.0),
                 "short content must not fill the maximum"
             );
-            assert_eq!(heights[1], px(210.0), "long content reaches the card cap");
+            assert_eq!(
+                heights[1],
+                px(160.0),
+                "long content reaches the configured default cap"
+            );
         }
     }
 }
@@ -1820,4 +1863,828 @@ fn markdown_unified_editor_ime_and_undo_keep_search_and_original_payload(cx: &mu
         assert!(panel.search_input.read(cx).value().is_empty());
         panel.cancel_edit(window, cx);
     });
+}
+
+#[gpui_kit::test]
+fn text_cap_configured_heights_remeasure_real_rows_without_changing_selection(
+    cx: &mut TestAppContext,
+) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    for preference in [
+        nxtools_core::ThemePreference::Dark,
+        nxtools_core::ThemePreference::Light,
+    ] {
+        surface.update(|_, cx| crate::theme::set_theme_preference(preference, cx));
+        for width in [280.0, 460.0] {
+            surface.simulate_resize(size(px(width), px(440.0)));
+            for height in [120, 160, 210, 320] {
+                let (generation, selected) = f.panel.update_in(&mut surface, |panel, _, cx| {
+                    panel.entries.borrow_mut()[0].text = "长段落\n\n".repeat(30);
+                    panel.list_scroll.reset(20);
+                    panel.set_text_card_max_height(height, cx);
+                    cx.notify();
+                    (panel.query_dispatch_generation, panel.selected_entry_index)
+                });
+                surface.refresh().expect("actual configured cap");
+                let slot = surface
+                    .debug_bounds("history-row-slot-0")
+                    .expect("mounted slot");
+                assert_eq!(
+                    slot.size.height,
+                    px(height as f32 + 8.0),
+                    "cap{height}/{width}/{preference:?}"
+                );
+                f.panel.read_with(&surface, |panel, _| {
+                    assert_eq!(panel.query_dispatch_generation, generation);
+                    assert_eq!(panel.selected_entry_index, selected);
+                    assert_eq!(panel.entries.borrow().len(), 20);
+                });
+            }
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn input_followup_platform_text_from_control_uses_original_search(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    surface.update(|window, cx| {
+        window.focus_next(cx);
+        window.draw(cx).clear(cx);
+    });
+    surface.simulate_input("中文a");
+    f.panel.read_with(&surface, |panel, cx| {
+        assert_eq!(panel.search_input.read(cx).value().as_str(), "中文a");
+        assert!(panel.pending_action.is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn input_followup_hover_during_number_action_cannot_requeue_preview(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    surface.simulate_event(KeyDownEvent {
+        keystroke: Keystroke::parse("ctrl-2").expect("shortcut"),
+        is_held: false,
+        prefer_character_input: false,
+    });
+    let row = surface.debug_bounds("history-row-slot-0").expect("row");
+    surface.simulate_mouse_move(
+        point(row.left() + px(24.0), row.top() + px(48.0)),
+        None,
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "armed number gesture must reject a new hover candidate"
+    );
+    surface.simulate_event(KeyUpEvent {
+        keystroke: Keystroke::parse("ctrl-2").expect("release"),
+    });
+    assert_number_paste(&f, &mut surface, 1);
+    surface.simulate_mouse_move(point(px(0.0), px(0.0)), None, Modifiers::default());
+    surface.simulate_mouse_move(
+        point(row.left() + px(24.0), row.top() + px(48.0)),
+        None,
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "pending original paste must reject hover re-entry"
+    );
+}
+
+fn body_feather_quads(surface: &mut VisualTestContext) -> Vec<gpui_kit::Quad> {
+    surface.update(|window, _| {
+        let scale = window.scale_factor();
+        window
+            .painted_quads()
+            .into_iter()
+            .filter(|quad| {
+                let gradient = serde_json::to_value(quad.background).expect("gradient");
+                gradient["gradient_angle_or_pattern_height"] == 180.0
+                    && (quad.bounds.size.height.0 / scale - 14.0).abs() < 0.5
+                    && quad.background.as_solid().is_none()
+            })
+            .collect()
+    })
+}
+
+#[gpui_kit::test]
+fn feather_followup_only_overflow_body_fades_and_matches_card_states(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    for preference in [
+        nxtools_core::ThemePreference::Light,
+        nxtools_core::ThemePreference::Dark,
+    ] {
+        surface.update(|_, cx| crate::theme::set_theme_preference(preference, cx));
+        for selected in [false, true] {
+            f.panel.update(&mut surface, |panel, cx| {
+                panel.entries.borrow_mut().truncate(1);
+                panel.entries.borrow_mut()[0].text = "短文本".into();
+                panel.selected_entry_index = selected.then_some(0);
+                panel.list_scroll.reset(1);
+                cx.notify();
+            });
+            surface.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            assert!(
+                body_feather_quads(&mut surface).is_empty(),
+                "short text has no fade"
+            );
+            f.panel.update(&mut surface, |panel, cx| {
+                panel.entries.borrow_mut()[0].text = "正文段落\n\n".repeat(30);
+                panel.list_scroll.reset(1);
+                cx.notify();
+            });
+            surface.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let row = surface.debug_bounds("history-row-slot-0").expect("row");
+            for hovered in [false, true] {
+                surface.simulate_mouse_move(
+                    if hovered {
+                        row.center()
+                    } else {
+                        point(px(0.0), px(0.0))
+                    },
+                    None,
+                    Default::default(),
+                );
+                surface.update(|window, cx| {
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+                let fades = body_feather_quads(&mut surface);
+                assert_eq!(fades.len(), 1, "exactly one clipped body fade");
+                let body = surface
+                    .debug_bounds("clipboard-history-content")
+                    .expect("body");
+                let scale = surface.update(|window, _| window.scale_factor());
+                let fade = &fades[0];
+                assert!((fade.bounds.bottom().0 / scale - body.bottom().as_f32()).abs() < 1.0);
+                assert!(
+                    fade.bounds.size.width.0 / scale < body.size.width.as_f32() - 8.0,
+                    "count lane stays clear"
+                );
+                let serialized = serde_json::to_value(fade.background).expect("gradient stops");
+                let start: gpui_kit::Hsla =
+                    serde_json::from_value(serialized["colors"][0]["color"].clone())
+                        .expect("start");
+                let end: gpui_kit::Hsla =
+                    serde_json::from_value(serialized["colors"][1]["color"].clone()).expect("end");
+                assert_eq!(start.a, 0.0);
+                assert_eq!(end.a, 1.0);
+                let expected = surface.update(|window, cx| {
+                    let item_id = f.panel.read(cx).entries.borrow()[0].id;
+                    let card = gpui_kit::base::test_support::snapshots(window)
+                        .into_iter()
+                        .find(|node| node.label() == Some(format!("剪贴板记录 {item_id}").as_str()))
+                        .expect("card")
+                        .bounds();
+                    let background = window
+                        .painted_quads()
+                        .into_iter()
+                        .find(|quad| {
+                            (quad.bounds.size.width.0 / scale - card.size.width.as_f32()).abs()
+                                < 0.5
+                                && (quad.bounds.size.height.0 / scale - card.size.height.as_f32())
+                                    .abs()
+                                    < 0.5
+                                && (quad.bounds.origin.x.0 / scale - card.origin.x.as_f32()).abs()
+                                    < 0.5
+                                && (quad.bounds.origin.y.0 / scale - card.origin.y.as_f32()).abs()
+                                    < 0.5
+                                && !quad.background.is_transparent()
+                        })
+                        .expect("painted official card")
+                        .background
+                        .as_solid()
+                        .expect("card solid")
+                        .to_rgb();
+                    Theme::active(cx).canvas.blend(background)
+                });
+                let expected: gpui_kit::Hsla = expected.into();
+                assert_eq!(
+                    fade.background,
+                    gpui_kit::linear_gradient(
+                        180.0,
+                        gpui_kit::linear_color_stop(expected.opacity(0.0), 0.0),
+                        gpui_kit::linear_color_stop(expected, 1.0),
+                    ),
+                    "gradient must match the actual painted card: {preference:?}/selected{selected}/hover{hovered}"
+                );
+            }
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn feather_followup_fade_click_pastes_full_original_without_own_hitbox(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    surface.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let fade = body_feather_quads(&mut surface)
+        .into_iter()
+        .next()
+        .expect("clipped summary fade");
+    let scale = surface.update(|window, _| window.scale_factor());
+    surface.simulate_click(
+        point(
+            px(fade.bounds.center().x.0 / scale),
+            px(fade.bounds.center().y.0 / scale),
+        ),
+        Default::default(),
+    );
+    assert_number_paste(&f, &mut surface, 0);
+}
+
+#[gpui_kit::test]
+fn feather_followup_static_finish_has_bounded_draw_cost_and_no_frame_loop(cx: &mut TestAppContext) {
+    struct ResetFinish;
+    impl Drop for ResetFinish {
+        fn drop(&mut self) {
+            history::set_finish_enabled_for_test(true);
+        }
+    }
+    let _reset = ResetFinish;
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    surface.update(|window, cx| {
+        cx.set_reduce_motion(true);
+        window.focus_next(cx);
+    });
+    for _ in 0..4 {
+        surface.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+    }
+    let original_height = surface
+        .debug_bounds("history-row-slot-0")
+        .expect("row")
+        .size
+        .height;
+    let item_id = f
+        .panel
+        .read_with(&surface, |panel, _| panel.entries.borrow()[0].id);
+    let original_document =
+        history::RENDERED_MARKDOWN.with_borrow(|rows| rows[&item_id].upgrade().expect("document"));
+    let mut off = Vec::new();
+    let mut on = Vec::new();
+    let mut quad_counts = [0usize; 2];
+    for round in 0..12 {
+        for enabled in if round % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            history::set_finish_enabled_for_test(enabled);
+            surface.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            let started = Instant::now();
+            for _ in 0..8 {
+                surface.update(|window, cx| {
+                    window.refresh();
+                    window.draw(cx).clear(cx);
+                });
+            }
+            let microseconds = started.elapsed().as_secs_f64() * 1_000_000.0 / 8.0;
+            if enabled {
+                on.push(microseconds);
+            } else {
+                off.push(microseconds);
+            }
+            quad_counts[usize::from(enabled)] =
+                surface.update(|window, _| window.painted_quads().len());
+            assert_eq!(
+                surface
+                    .debug_bounds("history-row-slot-0")
+                    .expect("same row")
+                    .size
+                    .height,
+                original_height
+            );
+            let current = history::RENDERED_MARKDOWN
+                .with_borrow(|rows| rows[&item_id].upgrade().expect("same parsed document"));
+            assert_eq!(
+                current.entity_id(),
+                original_document.entity_id(),
+                "finish never reparses the document"
+            );
+        }
+    }
+    history::set_finish_enabled_for_test(true);
+    surface.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let fades = body_feather_quads(&mut surface).len();
+    assert!(
+        fades > 0 && fades <= 8,
+        "only mounted clipped rows paint a fade"
+    );
+    assert_eq!(
+        quad_counts[1] - quad_counts[0],
+        fades,
+        "only one new quad per clipped mounted body"
+    );
+    // Drain unrelated one-shot callbacks left by initial control/text mounting first.
+    for _ in 0..4 {
+        surface.update(|window, cx| window.simulate_next_frame(cx));
+        surface.run_until_parked();
+    }
+    let mut callback_sequences = Vec::new();
+    for enabled in [false, true] {
+        history::set_finish_enabled_for_test(enabled);
+        surface.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        let mut callbacks = Vec::new();
+        for _ in 0..4 {
+            callbacks.push(surface.update(|window, cx| window.simulate_next_frame(cx)));
+            surface.run_until_parked();
+        }
+        callback_sequences.push(callbacks);
+    }
+    assert!(
+        callback_sequences.iter().flatten().all(|count| *count == 0),
+        "finish off/on must both remain idle after initial callbacks settle: {callback_sequences:?}"
+    );
+    history::set_finish_enabled_for_test(true);
+    off.sort_by(f64::total_cmp);
+    on.sort_by(f64::total_cmp);
+    eprintln!(
+        "CLIPBOARD_FINISH_COST off_median_us={:.2} on_median_us={:.2} extra_quads={} fade_count={} samples=12x8 idle_frame_callbacks=0",
+        off[6],
+        on[6],
+        quad_counts[1] - quad_counts[0],
+        fades
+    );
+}
+
+#[gpui_kit::test]
+fn idle_preview_mount_under_stationary_pointer_does_not_schedule(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    let entries = f.panel.update(&mut surface, |panel, cx| {
+        let entries = std::mem::take(&mut *panel.entries.borrow_mut());
+        panel.list_scroll.reset(0);
+        cx.notify();
+        entries
+    });
+    surface.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    surface.run_until_parked();
+    surface.simulate_mouse_move(point(px(45.0), px(155.0)), None, Modifiers::default());
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test())
+    );
+    f.panel.update(&mut surface, |panel, cx| {
+        *panel.entries.borrow_mut() = entries;
+        panel.list_scroll.reset(20);
+        cx.notify();
+    });
+    // First-show/layout hit testing may run hover callbacks, but there is no new pointer intent.
+    for _ in 0..3 {
+        surface.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        surface.run_until_parked();
+    }
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "painting a row underneath a stationary cursor must not arm the preview timer"
+    );
+    surface
+        .executor()
+        .advance_clock(Duration::from_millis(1200));
+    surface.run_until_parked();
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "waiting without moving cannot open a preview"
+    );
+}
+
+fn settle_idle_preview_surface(surface: &mut VisualTestContext) {
+    surface.run_until_parked();
+    for _ in 0..3 {
+        surface.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        surface.run_until_parked();
+    }
+}
+
+#[gpui_kit::test]
+fn idle_preview_real_motion_and_leave_preserve_original_candidate(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    settle_idle_preview_surface(&mut surface);
+    let row = surface
+        .debug_bounds("history-row-slot-0")
+        .expect("first row");
+    let pointer = point(row.left() + px(25.0), row.top() + px(48.0));
+    surface.simulate_mouse_move(pointer, None, Modifiers::default());
+    surface.run_until_parked();
+    let first = f
+        .application
+        .read_with(&surface, |owner, _| owner.preview_hover_for_test());
+    assert_eq!(
+        first.1,
+        f.panel
+            .read_with(&surface, |panel, _| Some(panel.entries.borrow()[0].id))
+    );
+    surface.executor().advance_clock(Duration::from_millis(400));
+    surface.simulate_mouse_move(
+        pointer + point(px(2.0), px(0.0)),
+        None,
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    assert_eq!(
+        f.application
+            .read_with(&surface, |owner, _| owner.preview_hover_for_test()),
+        first,
+        "motion within the current row must not restart800ms or duplicate its candidate"
+    );
+    surface.simulate_mouse_move(point(px(0.0), px(0.0)), None, Modifiers::default());
+    surface.run_until_parked();
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test())
+    );
+    surface.simulate_mouse_move(pointer, None, Modifiers::default());
+    surface.run_until_parked();
+    assert_eq!(
+        f.application
+            .read_with(&surface, |owner, _| owner.preview_hover_for_test())
+            .1,
+        first.1
+    );
+}
+
+#[gpui_kit::test]
+fn idle_preview_same_position_and_pressed_motion_are_not_hover_intent(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    settle_idle_preview_surface(&mut surface);
+    let row = surface
+        .debug_bounds("history-row-slot-0")
+        .expect("first row");
+    let pointer = point(row.left() + px(25.0), row.top() + px(48.0));
+    surface.simulate_mouse_move(pointer, None, Modifiers::default());
+    surface.run_until_parked();
+    f.application
+        .update(&mut surface, |owner, cx| owner.dismiss_preview(cx));
+    surface.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    surface.run_until_parked();
+    for _ in 0..3 {
+        surface.simulate_mouse_move(pointer, None, Modifiers::default());
+        surface.run_until_parked();
+    }
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "same-position events after redraw/reopen cannot manufacture pointer intent"
+    );
+    surface.simulate_mouse_move(
+        pointer + point(px(1.0), px(0.0)),
+        Some(gpui_kit::MouseButton::Left),
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "dragging is not a hover"
+    );
+    surface.simulate_mouse_move(
+        pointer + point(px(2.0), px(0.0)),
+        None,
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    assert!(
+        f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+        "real movement inside an already-hovered row must work without leave/reentry"
+    );
+}
+
+#[gpui_kit::test]
+fn idle_preview_deferred_old_session_or_query_cannot_enter(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    settle_idle_preview_surface(&mut surface);
+    for new_session in [false, true] {
+        surface.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        surface.run_until_parked();
+        let row = surface
+            .debug_bounds("history-row-slot-0")
+            .expect("first row");
+        let pointer = point(
+            row.left() + px(25.0 + if new_session { 1.0 } else { 0.0 }),
+            row.top() + px(48.0),
+        );
+        surface.update(|window, cx| {
+            window.simulate_mouse_move(pointer, cx);
+            // Retire the captured identity before the deferred application admission.
+            f.panel.update(cx, |panel, _| {
+                if new_session {
+                    panel.session_id = uuid::Uuid::new_v4();
+                } else {
+                    panel.query_dispatch_generation =
+                        panel.query_dispatch_generation.wrapping_add(1);
+                }
+            });
+        });
+        surface.run_until_parked();
+        assert!(
+            !f.application
+                .read_with(&surface, |owner, _| owner.has_pending_preview_for_test()),
+            "old list callbacks must not arm the new query/session"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn idle_preview_image_mount_requires_real_motion(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    let mut entries = f.panel.update(&mut surface, |panel, cx| {
+        let entries = std::mem::take(&mut *panel.entries.borrow_mut());
+        panel.list_scroll.reset(0);
+        cx.notify();
+        entries
+    });
+    settle_idle_preview_surface(&mut surface);
+    let pointer = point(px(45.0), px(155.0));
+    surface.simulate_mouse_move(pointer, None, Modifiers::default());
+    entries.truncate(1);
+    let item_id = entries[0].id;
+    // Synthetic presentation-only image; no file decode or real clipboard access.
+    entries[0].kind = ClipboardKind::Image;
+    entries[0].text.clear();
+    entries[0].image_width = 231;
+    entries[0].image_height = 340;
+    f.panel.update(&mut surface, |panel, cx| {
+        *panel.entries.borrow_mut() = entries;
+        panel.list_scroll.reset(1);
+        cx.notify();
+    });
+    settle_idle_preview_surface(&mut surface);
+    surface.simulate_mouse_move(pointer, None, Modifiers::default());
+    surface
+        .executor()
+        .advance_clock(Duration::from_millis(1200));
+    surface.run_until_parked();
+    assert!(
+        !f.application
+            .read_with(&surface, |owner, _| owner.has_pending_preview_for_test())
+    );
+    surface.simulate_mouse_move(
+        pointer + point(px(2.0), px(0.0)),
+        None,
+        Modifiers::default(),
+    );
+    surface.run_until_parked();
+    assert_eq!(
+        f.application
+            .read_with(&surface, |owner, _| owner.preview_hover_for_test())
+            .1,
+        Some(item_id)
+    );
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_menu_blocks_preview_admission(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    settle_idle_preview_surface(&mut surface);
+    let item = f
+        .panel
+        .read_with(&surface, |panel, _| panel.entries.borrow()[0].clone());
+    let (platform, _endpoint) = nxtools_ipc::platform_bridge(16);
+    let token = surface.update(|window, cx| {
+        components::native_context_menu::install_pending_for_test(
+            window.window_handle(),
+            Rc::new(platform),
+            cx,
+        )
+    });
+    f.application.update(&mut surface, |owner, cx| {
+        owner.schedule_preview(
+            true,
+            item,
+            Bounds::new(point(px(0.0), px(0.0)), size(px(300.0), px(440.0))),
+            point(px(50.0), px(150.0)),
+            1.0,
+            cx,
+        );
+        assert!(
+            !owner.has_pending_preview_for_test(),
+            "an open menu must reject new preview candidates"
+        );
+    });
+    assert!(token.get());
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_fixed_control_is_left_of_recording(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    let fixed = surface
+        .debug_bounds("clipboard-fixed-display")
+        .expect("official fixed-display toggle");
+    let recording = surface
+        .debug_bounds("clipboard-capture-pause")
+        .expect("recording action");
+    assert!(fixed.right() <= recording.left());
+    assert_eq!(fixed.center().y, recording.center().y);
+    assert!(!f.panel.read_with(&surface, |panel, _| panel.fixed_display));
+    surface.simulate_click(fixed.center(), Modifiers::default());
+    surface.run_until_parked();
+    assert!(f.panel.read_with(&surface, |panel, _| panel.fixed_display));
+    surface.simulate_click(fixed.center(), Modifiers::default());
+    surface.run_until_parked();
+    assert!(!f.panel.read_with(&surface, |panel, _| panel.fixed_display));
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_fixed_paste_and_external_focus_keep_panel_without_activation(
+    cx: &mut TestAppContext,
+) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    let command_id = uuid::Uuid::new_v4();
+    surface.deactivate_window();
+    f.panel.update_in(&mut surface, |panel, window, cx| {
+        panel.fixed_display = true;
+        let target = nxtools_protocol::ForegroundContext {
+            window_handle: 100,
+            focus_window_handle: 101,
+            process_id: 99,
+            process_name: "fixture".into(),
+            window_title: String::new(),
+        };
+        panel.handle_foreground_changed(1, 2, &target, window, cx);
+        assert!(panel.is_open);
+        let transient = nxtools_protocol::ForegroundContext {
+            window_handle: 102,
+            focus_window_handle: 103,
+            process_id: 98,
+            process_name: "TextInputHost.exe".into(),
+            window_title: String::new(),
+        };
+        panel.handle_foreground_changed(1, 2, &transient, window, cx);
+        assert_eq!(
+            panel.target.window_handle, 100,
+            "IME host cannot become a paste target"
+        );
+        assert_eq!(panel.target.window_handle, 100);
+        let id = panel.entries.borrow()[0].id;
+        panel.pending_action = Some((command_id, ClipboardAction::PlainText, id));
+        panel.pending_action_started_at = Some((command_id, Instant::now()));
+        panel.handle_command_result(
+            command_id,
+            PlatformCommandResult {
+                success: true,
+                error: None,
+                native_error_code: None,
+                data: None,
+            },
+            window,
+            cx,
+        );
+        assert!(panel.is_open, "fixed paste must keep the panel visible");
+        assert!(panel.pending_action.is_none());
+        assert!(
+            !window.is_window_active(),
+            "paste must not activate the panel again"
+        );
+        panel.handle_pointer_pressed(
+            PopupPointerPressContext {
+                popup_window_handle: 1,
+                preview_window_handle: 2,
+                pressed_window_handle: 100,
+                pressed_root_window_handle: 100,
+                pressed_process_id: 99,
+                popup_requested_at_unix_ms: 1,
+                popup_event_sequence: 1,
+                pressed_at_unix_ms: 2,
+                pressed_event_sequence: 2,
+            },
+            window,
+            cx,
+        );
+        assert!(panel.is_open);
+        panel.close_from_native_menu(window, cx);
+        assert!(panel.is_open, "outside menu dismissal respects fixed mode");
+    });
+}
+
+#[gpui_kit::test]
+fn audit06_shared_clipboard_fixed_card_caps_gap_and_feather_do_not_scale(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());
+    let first_id = f
+        .panel
+        .read_with(&surface, |panel, _| panel.entries.borrow()[0].id);
+    for base in [16.0, 14.0, 18.0] {
+        surface.update(|_, cx| {
+            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))
+        });
+        for (kind, expected) in [
+            (ClipboardKind::Text, 160.0),
+            (ClipboardKind::Image, 190.0),
+            (ClipboardKind::Files, 62.0),
+        ] {
+            f.panel.update_in(&mut surface, |panel, _, cx| {
+                let mut items = panel.entries.borrow_mut();
+                items.truncate(1);
+                items[0].kind = kind;
+                items[0].text = "合成正文段落\n\n".repeat(60);
+                items[0].image_width = 1000;
+                items[0].image_height = 2000;
+                items[0].file_paths = vec!["synthetic-file.txt".into()];
+                drop(items);
+                panel.list_scroll.reset(1);
+                cx.notify();
+            });
+            surface.update(|window, cx| {
+                window.refresh();
+                window.draw(cx).clear(cx);
+            });
+            assert_eq!(surface.update(|window, _| window.rem_size()), px(base));
+            let card = surface.update(|window, _| {
+                gpui_kit::base::test_support::snapshots(window)
+                    .into_iter()
+                    .find(|node| node.label() == Some(format!("剪贴板记录 {first_id}").as_str()))
+                    .expect("original ListItem")
+                    .bounds()
+            });
+            if kind == ClipboardKind::Text {
+                assert!(
+                    card.size.height <= px(expected) && card.size.height >= px(expected - 2.0),
+                    "fixed text cap (not a forced natural height) at base {base}: {card:?}"
+                );
+            } else {
+                assert_eq!(
+                    card.size.height,
+                    px(expected),
+                    "fixed {kind:?} card at base {base}"
+                );
+            }
+            let slot = surface
+                .debug_bounds("history-row-slot-0")
+                .expect("original paging slot");
+            assert!((slot.bottom() - card.bottom() - px(8.0)).abs() < px(0.1));
+            assert_eq!(
+                surface
+                    .debug_bounds("clipboard-source-0")
+                    .expect("fixed source rail")
+                    .size
+                    .height,
+                px(24.0)
+            );
+            if kind == ClipboardKind::Text {
+                assert_eq!(
+                    body_feather_quads(&mut surface).len(),
+                    1,
+                    "original14DIPbody feather remains fixed"
+                );
+            }
+        }
+    }
+    surface.update(|_, cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));
 }

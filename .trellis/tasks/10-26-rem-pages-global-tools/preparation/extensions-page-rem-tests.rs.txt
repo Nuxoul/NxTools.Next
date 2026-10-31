@@ -1,0 +1,49 @@
+//! Queue08 original catalog and import/trust Dialog ordinary roles.
+use super::super::*;
+use gpui_kit::component::{Theme as ComponentTheme, WindowExt};
+use gpui_kit::{AppContext, TestAppContext, VisualTestContext, size};
+fn draw(surface: &mut VisualTestContext) { surface.run_until_parked(); surface.update(|window,cx| { window.refresh(); window.draw(cx).clear(cx); }); }
+#[gpui_kit::test]
+fn audit06_pages_extensions_actual_catalog_and_review_columns_follow_root(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let directory=tempfile::tempdir().expect("isolated presentation fixture");
+    let path=directory.path().join("config.json");
+    let manifest=br#"{"schema_version":1,"id":"synthetic.ordinary","name":"Synthetic","version":"1","handlers":[{"id":"web","title":"Web","feature":"quick_launch","entry":"command","keywords":["web"],"action":{"type":"website","url_template":"https://synthetic.invalid/?q={query}"}}]}"#;
+    let preview=nxtools_extensions::ImportPreview::from_json(manifest).expect("in-memory manifest only");
+    let mut config=nxtools_core::AppConfig::default();
+    config.extensions.install(preview.clone(),"synthetic identity".into(),false).expect("synthetic config identity only");
+    config.save_to(&path).expect("owned config");
+    let before=std::fs::read(&path).expect("owned bytes");
+    let app=cx.new(|_| crate::extensions::ExtensionApplication::new(config,path.clone(),None,gpui_kit::WeakEntity::new_invalid()));
+    let owner=app.clone(); let slot=Rc::new(RefCell::new(None));let retained=slot.clone();
+    let (_,surface)=cx.add_window_view(move |window,cx| {let view=cx.new(|cx| ExtensionManagerView::new(owner,window,cx));*retained.borrow_mut()=Some(view.clone());gpui_kit::base::Root::new(view,window,cx)});
+    surface.simulate_resize(size(px(744.0),px(430.0)));
+    let view=slot.borrow().clone().expect("original manager");
+    let original=surface.read(|cx| ComponentTheme::global(cx).clone());
+    for base in [16.0,14.0,18.0] {
+        surface.update(|_,cx| ComponentTheme::update(cx,|theme| theme.font_size=px(base)));
+        view.update(surface,|_,cx| cx.notify());draw(surface);
+        let icon=surface.debug_bounds("extension-catalog-feature-icon").expect("actual catalog vector");
+        assert!((icon.size.width-px(28.0*base/16.0)).abs()<=px(0.5),"catalog icon at{base}: {icon:?}");
+        app.update(surface,|app,cx| {app.preview=Some((preview.clone(),"synthetic-package.zip".into()));cx.notify();});draw(surface);
+        let label=surface.debug_bounds("extension-import-summary-label").expect("original import DescriptionList");
+        assert!((label.size.width-px(80.0*base/16.0)).abs()<=px(0.5),"import ordinary column at{base}: {label:?}");
+        let cancel=surface.debug_bounds("extension-cancel-import").expect("original Cancel");
+        assert!(cancel.bottom()<=px(430.0));
+        surface.simulate_click(cancel.center(),Default::default());draw(surface);
+        assert!(app.read_with(surface,|app,_| app.preview.is_none()));
+        assert_eq!(std::fs::read(&path).expect("Cancel preserves owned config"),before);
+        // Opening a trust presentation for a declarative package cannot start a runtime.
+        view.update_in(surface,|view,window,cx| view.open_trust("synthetic.ordinary".into(),window,cx));draw(surface);
+        let label=surface.debug_bounds("extension-trust-summary-label").expect("original trust DescriptionList");
+        assert!((label.size.width-px(88.0*base/16.0)).abs()<=px(0.5),"trust ordinary column at{base}: {label:?}");
+        let cancel=surface.debug_bounds("extension-trust-cancel").expect("original trust Cancel");
+        assert!(cancel.bottom()<=px(430.0));
+        surface.simulate_click(cancel.center(),Default::default());draw(surface);
+        assert_eq!(std::fs::read(&path).expect("trust Cancel preserves config"),before);
+        surface.update(|window,cx| { if window.has_active_dialog(cx) {window.close_dialog(cx);} });draw(surface);
+    }
+    surface.update(|_,cx| ComponentTheme::update(cx,|theme| *theme=original));
+}

@@ -14,6 +14,10 @@ mod catalog;
 mod environment;
 #[path = "extensions_page/import_confirmation.rs"]
 mod import_confirmation;
+#[path = "extensions_page/removal.rs"]
+mod removal;
+#[path = "extensions_page/storage.rs"]
+mod storage;
 #[path = "extensions_page/trust_confirmation.rs"]
 mod trust_confirmation;
 #[path = "extensions_page/usage.rs"]
@@ -36,9 +40,11 @@ pub(crate) struct ExtensionManagerView {
     alias_target: Option<(String, String)>,
     selected_package: Option<String>,
     detail_initial_page: usize,
+    detail_navigation_revision: u64,
     settings_draft: Option<PackageSettingsDraft>,
     parked_settings: std::collections::HashMap<String, PackageSettingsDraft>,
     seen_commit_revision: u64,
+    storage_open: bool,
     environment: Option<environment::EnvironmentDraft>,
     runtime_path: Entity<InputState>,
     trust_target: Option<String>,
@@ -84,10 +90,12 @@ impl ExtensionManagerView {
             alias_target: None,
             selected_package: None,
             detail_initial_page: 0,
+            detail_navigation_revision: 0,
             settings_draft: None,
             parked_settings: Default::default(),
             environment: None,
             seen_commit_revision,
+            storage_open: false,
             runtime_path,
             trust_target: None,
             trust_dialog: None,
@@ -106,6 +114,24 @@ impl ExtensionManagerView {
         }
     }
 
+    fn open_settings(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_package(id.clone());
+        self.detail_initial_page = 2;
+        self.detail_navigation_revision = self.detail_navigation_revision.wrapping_add(1);
+        if self.settings_draft.is_none()
+            && let Some(package) = self
+                .application
+                .read(cx)
+                .packages
+                .packages
+                .iter()
+                .find(|package| package.manifest.id == id)
+                .cloned()
+                .filter(|package| !package.manifest.settings.is_empty())
+        {
+            self.settings_draft = Some(PackageSettingsDraft::new(&package, window, cx));
+        }
+    }
     fn open_package(&mut self, id: String) {
         if let Some(draft) = self.settings_draft.take() {
             self.parked_settings
@@ -122,6 +148,9 @@ impl Render for ExtensionManagerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.reconcile_import_dialog(window, cx);
         self.reconcile_trust_dialog(window, cx);
+        if self.storage_open {
+            return self.render_storage(cx);
+        }
         if self.environment.is_some() {
             return self.render_environment(cx);
         }
@@ -360,15 +389,18 @@ mod tests {
         }
     }
 
-    #[gpui_kit::test]
+    #[gpui_kit::test(iterations = 8)]
     fn w6_manager_pointer_preview_confirm_and_toggle_commit_real_config(cx: &mut TestAppContext) {
         cx.update(gpui_kit::init);
+        // This test exercises business commits, not transient Dialog entrance coordinates.
+        cx.update(|cx| cx.set_reduce_motion(true));
         cx.executor().allow_parking();
         let temp = tempfile::tempdir().expect("fixture");
         let config_path = temp.path().join("config.json");
         nxtools_core::AppConfig::default()
             .save_to(&config_path)
             .expect("config");
+        let original_config = std::fs::read(&config_path).expect("initial config bytes");
         let manifest_path = temp.path().join("package.zip");
         write_zip(&manifest_path, br#"{"schema_version":1,"id":"example.web","name":"Web","version":"1.0.0","handlers":[{"id":"web","title":"Web","feature":"quick_launch","entry":"command","keywords":["web"],"action":{"type":"website","url_template":"https://example.test/?q={query}"}}]}"#);
         let application = cx.new(|_| {
@@ -418,7 +450,25 @@ mod tests {
         let cancel_import = window
             .debug_bounds("extension-cancel-import")
             .expect("cancel preview");
-        window.simulate_click(cancel_import.center(), gpui_kit::Modifiers::default());
+        window.simulate_mouse_down(
+            cancel_import.center(),
+            MouseButton::Left,
+            Default::default(),
+        );
+        window
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(50));
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        assert_eq!(
+            window.debug_bounds("extension-cancel-import"),
+            Some(cancel_import),
+            "business fixture keeps the original Cancel hit target stable through release"
+        );
+        window.simulate_mouse_up(
+            cancel_import.center(),
+            MouseButton::Left,
+            Default::default(),
+        );
         window.run_until_parked();
         assert!(window.read(|cx| observer.read(cx).preview.is_none()));
         assert!(
@@ -427,6 +477,11 @@ mod tests {
                 .extensions
                 .packages
                 .is_empty()
+        );
+        assert_eq!(
+            std::fs::read(&config_path).expect("cancel config bytes"),
+            original_config,
+            "preview cancellation never writes configuration"
         );
         window.refresh().expect("preview again");
         let preview = window
@@ -533,6 +588,12 @@ mod tests {
             .debug_bounds("extension-remove-example.web")
             .expect("remove");
         window.simulate_click(remove.center(), gpui_kit::Modifiers::default());
+        window.run_until_parked();
+        window.refresh().expect("review removal");
+        let confirm = window
+            .debug_bounds("extension-remove-confirm")
+            .expect("explicit confirmation");
+        window.simulate_click(confirm.center(), gpui_kit::Modifiers::default());
         wait_for_idle(&observer, window);
         assert!(
             nxtools_core::AppConfig::load_from(&config_path)
@@ -541,6 +602,113 @@ mod tests {
                 .packages
                 .is_empty()
         );
+    }
+
+    #[gpui_kit::test(iterations = 4)]
+    fn preview_cancel_after_animated_entrance_keeps_reopened_identity_and_config(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui_kit::component::WindowExt as _;
+        cx.update(gpui_kit::init);
+        cx.update(|cx| cx.set_reduce_motion(false));
+        cx.executor().allow_parking();
+        let temp = tempfile::tempdir().expect("owned animated preview");
+        let config_path = temp.path().join("config.json");
+        nxtools_core::AppConfig::default()
+            .save_to(&config_path)
+            .expect("seed owned config");
+        let original = std::fs::read(&config_path).expect("original config bytes");
+        let zip = temp.path().join("candidate.zip");
+        write_zip(&zip, br#"{"schema_version":1,"id":"fixture.animated","name":"Animated","version":"1","handlers":[{"id":"open","title":"Open","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://synthetic.invalid"}}]}"#);
+        let app = cx.new(|_| {
+            ExtensionApplication::new(
+                nxtools_core::AppConfig::default(),
+                config_path.clone(),
+                None,
+                gpui_kit::WeakEntity::new_invalid(),
+            )
+        });
+        let owner = app.clone();
+        let retained = Rc::new(RefCell::new(None));
+        let slot = retained.clone();
+        let (_, surface) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| ExtensionManagerView::new(owner, window, cx));
+            *slot.borrow_mut() = Some(view.clone());
+            gpui_kit::base::Root::new(view, window, cx)
+        });
+        surface.simulate_resize(size(px(744.0), px(570.0)));
+        surface.refresh().expect("production workspace");
+        let open = surface
+            .debug_bounds("extension-import-open")
+            .expect("original import command");
+        surface.simulate_click(open.center(), Default::default());
+        surface.run_until_parked();
+        let view = retained.borrow().clone().expect("production manager");
+        view.update_in(surface, |view, window, cx| {
+            view.path.update(cx, |input, cx| {
+                input.set_value(zip.to_string_lossy().into_owned(), window, cx)
+            });
+            cx.notify();
+        });
+        let mut previous = None;
+        for _ in 0..2 {
+            surface.refresh().expect("original preview control");
+            let preview = surface
+                .debug_bounds("extension-import-preview")
+                .expect("preview");
+            surface.simulate_click(preview.center(), Default::default());
+            wait_for_idle(&app, surface);
+            surface.update(|window, cx| window.draw(cx).clear(cx));
+            surface.run_until_parked();
+            surface.update(|window, cx| window.draw(cx).clear(cx));
+            let identity = surface.read(|cx| {
+                app.read(cx)
+                    .import_candidate_identity()
+                    .expect("current candidate")
+            });
+            assert_ne!(
+                previous.as_ref(),
+                Some(&identity),
+                "reopen has a new generation"
+            );
+            // Use the released animation's own duration, not a wall-clock sleep.
+            surface
+                .executor()
+                .advance_clock(*gpui_kit::component::dialog::ANIMATION_DURATION);
+            surface.update(|window, cx| window.draw(cx).clear(cx));
+            let cancel = surface
+                .debug_bounds("extension-cancel-import")
+                .expect("settled Cancel");
+            surface.simulate_mouse_up(cancel.center(), MouseButton::Left, Default::default());
+            assert_eq!(
+                surface.read(|cx| app.read(cx).import_candidate_identity()),
+                Some(identity.clone()),
+                "an orphan release cannot cancel the reopened candidate"
+            );
+            surface.simulate_mouse_down(cancel.center(), MouseButton::Left, Default::default());
+            surface
+                .executor()
+                .advance_clock(std::time::Duration::from_millis(50));
+            surface.update(|window, cx| window.draw(cx).clear(cx));
+            assert_eq!(
+                surface.debug_bounds("extension-cancel-import"),
+                Some(cancel)
+            );
+            surface.simulate_mouse_up(cancel.center(), MouseButton::Left, Default::default());
+            surface.run_until_parked();
+            assert!(surface.read(|cx| app.read(cx).preview.is_none()));
+            surface.update(|window, cx| window.draw(cx).clear(cx));
+            assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+            assert_eq!(
+                std::fs::read(&config_path).expect("unchanged config"),
+                original
+            );
+            assert!(
+                !temp.path().join("extensions").exists(),
+                "cancel never stages an install"
+            );
+            previous = Some(identity);
+        }
     }
 
     fn wait_for_idle(

@@ -1,0 +1,18 @@
+{
+  "finding06": "OPEN_SUBSTANTIVE_ORDINARY_AND_UNREVIEWED_REMAINDERS",
+  "root_red_green": "NOT_RUN",
+  "production_ordinary_remediation": "NOT_IMPLEMENTED",
+  "archive_and_affected_related_tests": "NOT_RUN",
+  "first_seven_and_accepted06_tests": "NOT_RUN",
+  "strict_production_clippy": "NOT_RUN",
+  "strict_test_clippy": "NOT_RUN",
+  "workspace_check": "NOT_RUN",
+  "scoped_rustfmt": "NOT_RUN",
+  "workspace_fmt": "NOT_RUN",
+  "source_document_gates": "12/12 PASS; Archive -SourceOnly only",
+  "rust_invocations": 0,
+  "full_desktop": "NOT_RUN / NOT_AUTHORIZED",
+  "native_physical_visual_user_release": "NOT_RUN / NOT_AUTHORIZED",
+  "inventory_v1": "SUPERSEDED_TOOLING_PREPARATION",
+  "inventory_v2": "Lexical navigation, not whole-product semantic coverage"
+}

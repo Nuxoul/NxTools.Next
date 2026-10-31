@@ -1,0 +1,65 @@
+--- live-task-start-dirty/rust/apps/nxtools-desktop/src/main_window/shell.rs
++++ queue08-blocked-checkpoint/rust/apps/nxtools-desktop/src/main_window/shell.rs
+@@ -2,6 +2,7 @@
+ use gpui_kit::component::sidebar::{Sidebar, SidebarGroup, SidebarItem};
+ use gpui_kit::component::{Collapsible, Selectable};
+ use gpui_kit::{ClickEvent, ElementId, RenderOnce};
++use crate::ui::metrics::ordinary_rem;
+ 
+ type ModuleClickHandler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
+ 
+@@ -61,7 +62,7 @@
+         let global_settings_action = div()
+             .id("global-network-settings")
+             .debug_selector(|| "global-network-settings".into())
+-            .h(px(CONTROL_HEIGHT_ACTION))
++            .h_7()
+             .flex()
+             .items_center()
+             .child(
+@@ -115,8 +116,8 @@
+                     })
+                     .flex()
+                     .items_center()
+-                    .gap(px(SPACING_8))
+-                    .pl(px(SPACING_12))
++                    .gap_2()
++                    .pl_3()
+                     .child(
+                         div()
+                             .id("main-brand-icon")
+@@ -135,9 +136,9 @@
+                     .child(
+                         div()
+                             .debug_selector(|| "main-brand-title".into())
+-                            .h(px(LINE_HEIGHT_PAGE_TITLE))
+-                            .text_size(px(TEXT_PAGE_TITLE))
+-                            .line_height(px(LINE_HEIGHT_PAGE_TITLE))
++                            .h(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))
++                            .text_size(ordinary_rem(TEXT_PAGE_TITLE))
++                            .line_height(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))
+                             .font_weight(gpui_kit::FontWeight::SEMIBOLD)
+                             .text_color(theme.text)
+                             .child("NxTools"),
+@@ -145,9 +146,9 @@
+                     .child(
+                         div()
+                             .debug_selector(|| "main-active-module".into())
+-                            .h(px(LINE_HEIGHT_LABEL))
+-                            .text_size(px(TEXT_LABEL))
+-                            .line_height(px(LINE_HEIGHT_LABEL))
++                            .h(ordinary_rem(LINE_HEIGHT_LABEL))
++                            .text_size(ordinary_rem(TEXT_LABEL))
++                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                             .text_color(theme.text_secondary)
+                             .child(format!("· {}", self.shell.active_module().label())),
+                     ),
+@@ -158,7 +159,7 @@
+                     .h_full()
+                     .flex()
+                     .items_center()
+-                    .gap(px(SPACING_4))
++                    .gap_1()
+                     .child(global_settings_action)
+                     .child(
+                         div()

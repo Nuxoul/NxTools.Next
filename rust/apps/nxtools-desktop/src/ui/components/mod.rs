@@ -23,3 +23,6 @@ mod kit_adoption_tests;
 
 #[cfg(test)]
 mod support_migration_tests;
+
+#[cfg(test)]
+mod ordinary_rem_tests;

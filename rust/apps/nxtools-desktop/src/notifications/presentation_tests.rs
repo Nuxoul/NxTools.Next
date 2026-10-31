@@ -445,3 +445,135 @@ fn notification_sizing_window_local_long_copy_respects_actual_small_viewport(
         assert!(action.top() >= card.top() && action.bottom() <= card.bottom());
     }
 }
+
+#[gpui_kit::test]
+fn notification_copy_content_geometry_matches_official_card_chrome(cx: &mut TestAppContext) {
+    let (center, surface) = mount(cx);
+    center.update(surface, |center, cx| {
+        center.show_progress("copy-geometry", "合成标题", "正文", cx)
+    });
+    tick(surface, 500);
+    let card = official_cards(surface)[0].bounds();
+    let content = surface
+        .debug_bounds("notification-copy-geometry")
+        .expect("public content");
+    let text = surface
+        .debug_bounds("notification-content-copy-geometry")
+        .expect("body");
+    assert!(
+        (content.top() - card.top() - px(15.0)).abs() < px(1.0),
+        "actual vertical chrome: {content:?} vs{card:?}"
+    );
+    assert!(
+        (content.left() - card.left() - px(41.0)).abs() < px(1.0),
+        "actual icon+left chrome: {content:?} vs{card:?}"
+    );
+    assert!((card.right() - content.right() - px(17.0)).abs() < px(1.0));
+    assert!((card.bottom() - content.bottom() - px(15.0)).abs() < px(1.0));
+    assert!(text.top() >= content.top() && text.bottom() <= content.bottom());
+    assert_eq!(copy_card_bounds(content, 16.0), card);
+}
+
+#[gpui_kit::test]
+fn notification_copy_full_card_geometry_tracks_official_stack_and_rem(cx: &mut TestAppContext) {
+    let (center, surface) = mount(cx);
+    for id in ["copy-one", "copy-two", "copy-three"] {
+        center.update(surface, |center, cx| {
+            center.push(
+                AppNotification::new(id, NotificationLevel::Progress, "合成标题", "正文\n第二行")
+                    .actions(vec![NotificationAction::new("动作不属于复制", |_, _| {})]),
+                cx,
+            );
+        });
+    }
+    for rem in [14.0, 16.0, 20.0] {
+        surface.update(|_, cx| gpui_kit::component::Theme::global_mut(cx).font_size = px(rem));
+        for position in NotificationPosition::ALL {
+            center.update(surface, |center, cx| center.set_position(position, cx));
+            tick(surface, 500);
+            for expanded in [false, true] {
+                let cards = official_cards(surface);
+                if expanded {
+                    let front = cards
+                        .iter()
+                        .max_by_key(|node| node.bounds().size.width)
+                        .expect("front");
+                    surface.simulate_mouse_move(front.bounds().center(), None, Default::default());
+                } else {
+                    surface.simulate_mouse_move(
+                        gpui_kit::point(px(0.0), px(0.0)),
+                        None,
+                        Default::default(),
+                    );
+                }
+                tick(surface, 600);
+                let cards = official_cards(surface);
+                for selector in [
+                    "notification-copy-one",
+                    "notification-copy-two",
+                    "notification-copy-three",
+                ] {
+                    let content = surface.debug_bounds(selector).expect("content");
+                    let projected = copy_card_bounds(content, rem);
+                    assert!(
+                        cards.iter().any(|node| {
+                            let actual = node.bounds();
+                            (actual.left() - projected.left()).abs() < px(1.0)
+                                && (actual.top() - projected.top()).abs() < px(1.0)
+                                && (actual.right() - projected.right()).abs() < px(1.0)
+                                && (actual.bottom() - projected.bottom()).abs() < px(1.0)
+                        }),
+                        "{position:?} rem{rem} expanded{expanded}: {projected:?} cards={cards:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn notification_copy_business_record_is_not_an_exit_start_signal(cx: &mut TestAppContext) {
+    let (center, surface) = mount(cx);
+    center.update(surface, |center, cx| {
+        center.show_progress("copy-exit", "合成标题", "正文", cx);
+    });
+    tick(surface, 600);
+    let card = official_cards(surface)[0].bounds();
+    surface.simulate_mouse_move(card.center(), None, Default::default());
+    draw(surface);
+    let close = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.path().last() == Some(&"close".into()))
+            .expect("official close")
+            .bounds()
+    });
+    surface.simulate_click(close.center(), Default::default());
+    draw(surface);
+    assert!(
+        center.read_with(surface, |center, _| {
+            let item = &center.items()[0];
+            item.id == "copy-exit" && !item.exiting
+        }),
+        "official exit starts before the business completion callback"
+    );
+    tick(surface, 350);
+    assert!(center.read_with(surface, |center, _| center.items().is_empty()));
+}
+
+// Source-backed geometry probe only, not a production copy registration API.
+fn copy_card_bounds(
+    content: gpui_kit::Bounds<gpui_kit::Pixels>,
+    rem: f32,
+) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    let left = 1.0 + rem * 2.5;
+    let right = 1.0 + rem;
+    let vertical = 1.0 + rem * 0.875;
+    gpui_kit::Bounds::new(
+        gpui_kit::point(content.left() - px(left), content.top() - px(vertical)),
+        size(
+            content.size.width + px(left + right),
+            content.size.height + px(vertical * 2.0),
+        ),
+    )
+}

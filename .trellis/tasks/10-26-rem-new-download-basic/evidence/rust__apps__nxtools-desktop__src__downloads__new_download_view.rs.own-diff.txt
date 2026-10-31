@@ -1,0 +1,402 @@
+--- live task-start baseline/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
++++ own current/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
+@@ -1,6 +1,7 @@
+ use super::*;
+ use crate::ui::components::popover::list_box;
+ use crate::ui::components::tooltip::bounded_text_tooltip;
++use crate::ui::metrics::ordinary_rem;
+ use gpui_kit::component::Selectable as _;
+ use gpui_kit::component::form::{Field, Form};
+ use gpui_kit::component::list::ListItem;
+@@ -1815,7 +1816,7 @@
+                 .debug_selector(|| "download-new-footer-leading-actions".into())
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(schedule_control)
+                 .child(footer_actions)
+                 .into_any_element()
+@@ -1827,7 +1828,7 @@
+                 .debug_selector(|| "download-new-footer-submission-actions".into())
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     div()
+                         .debug_selector(|| "download-add-to-queue".into())
+@@ -1904,23 +1905,32 @@
+                 .debug_selector(|| "download-new-form-grid".into())
+                 .flex_1()
+                 .min_h_0()
+-                .overflow_hidden()
+-                .px(px(16.0))
+-                .py(px(SPACING_8))
++                .overflow_y_scrollbar()
++                .px_4()
++                .py_2()
+                 .flex()
+                 .flex_col()
+                 .gap_2()
+-                .child(Form::horizontal().small().label_width(px(72.0)).child(
+-                    new_download_form_field(
+-                        "download-new-url-field",
+-                        "下载地址",
+-                        new_download_url_control(&self.url, false),
+-                    ),
+-                ))
++                .child(
++                    Form::horizontal()
++                        .small()
++                        .flex_none()
++                        .label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))
++                        .child(new_download_form_field(
++                            "download-new-url-field",
++                            "下载地址",
++                            new_download_url_control_layout(
++                                &self.url,
++                                false,
++                                probe.media.is_none(),
++                            ),
++                        )),
++                )
+                 .child(
+                     div()
+                         .debug_selector(|| "download-new-confirmed-form".into())
+                         .flex()
++                        .flex_none()
+                         .items_start()
+                         .gap_2()
+                         .child(
+@@ -1931,11 +1941,16 @@
+                                 .flex_col()
+                                 .gap_2()
+                                 .child(
+-                                    Form::horizontal().small().label_width(px(72.0)).child(
+-                                        new_download_form_field(
++                                    Form::horizontal()
++                                        .small()
++                                        .flex_none()
++                                        .label_width(
++                                            ordinary_rem(72.0).to_pixels(window.rem_size()),
++                                        )
++                                        .child(new_download_form_field(
+                                             "download-new-directory-field",
+                                             "保存目录",
+-                                            path_picker_shell(
++                                            new_download_path_picker_shell(
+                                                 "download-new-directory-control",
+                                                 div()
+                                                     .debug_selector(|| {
+@@ -1965,13 +1980,14 @@
+                                                             )),
+                                                     )
+                                                     .into_any_element(),
++                                                probe.media.is_none(),
+                                             ),
+-                                        ),
+-                                    ),
++                                        )),
+                                 )
+                                 .child(
+                                     Form::new()
+                                         .small()
++                                        .flex_none()
+                                         .columns(2)
+                                         .child(new_download_form_field(
+                                             "download-new-file-name-field",
+@@ -2004,34 +2020,50 @@
+                 )
+                 .when_some(media_options_panel, |body, panel| body.child(panel))
+                 .when_some(self.error.clone(), |body, error| {
+-                    body.child(download_inline_error(theme, error))
++                    body.child(
++                        div()
++                            .flex_none()
++                            .w_full()
++                            .child(download_inline_error(theme, error)),
++                    )
+                 })
+                 .into_any_element()
+         } else {
+             div()
++                .id("download-new-compact-body")
+                 .flex_1()
+                 .min_h_0()
+-                .overflow_hidden()
+-                .px(px(16.0))
+-                .py(px(SPACING_8))
++                .overflow_y_scrollbar()
++                .px_4()
++                .py_2()
+                 .flex()
+                 .flex_col()
+-                .gap(px(8.0))
+-                .child(Form::horizontal().small().label_width(px(72.0)).child(
+-                    new_download_form_field(
+-                        "download-new-url-field",
+-                        "下载地址",
+-                        new_download_url_control(&self.url, self.handoff_pending),
+-                    ),
+-                ))
++                .gap_2()
++                .child(
++                    Form::horizontal()
++                        .small()
++                        .flex_none()
++                        .label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))
++                        .child(new_download_form_field(
++                            "download-new-url-field",
++                            "下载地址",
++                            new_download_url_control(&self.url, self.handoff_pending),
++                        )),
++                )
+                 .child(
+                     div()
+                         .debug_selector(|| "download-new-probe-guidance".into())
+-                        .h(px(LINE_HEIGHT_BODY))
++                        .when(!compact_error, |line| {
++                            line.h(ordinary_rem(LINE_HEIGHT_BODY))
++                        })
++                        .when(compact_error, |line| {
++                            line.min_h(ordinary_rem(LINE_HEIGHT_BODY))
++                        })
++                        .flex_none()
+                         .min_w_0()
+                         .flex()
+                         .items_center()
+-                        .gap(px(SPACING_8))
++                        .gap_2()
+                         .child(if self.probing && crate::ui::motion::motion_allowed(cx) {
+                             div()
+                                 .debug_selector(|| "download-new-probe-spinner".into())
+@@ -2044,7 +2076,7 @@
+                             } else {
+                                 MaterialIcon::Info
+                             })
+-                            .size(px(ICON_GLYPH_SMALL))
++                            .size(ordinary_rem(ICON_GLYPH_SMALL))
+                             .text_color(if compact_error {
+                                 theme.danger
+                             } else if probing {
+@@ -2058,9 +2090,14 @@
+                             div()
+                                 .min_w_0()
+                                 .flex_1()
+-                                .truncate()
+-                                .text_size(px(TEXT_BODY))
+-                                .line_height(px(LINE_HEIGHT_BODY))
++                                .when(!compact_error, |text| text.truncate())
++                                .map(|text| {
++                                    #[cfg(test)]
++                                    let text = text.child(rem_tests::type_probe("guidance"));
++                                    text
++                                })
++                                .text_size(ordinary_rem(TEXT_BODY))
++                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                 .text_color(if compact_error {
+                                     theme.danger
+                                 } else {
+@@ -2077,7 +2114,14 @@
+                 )
+                 .when_some(
+                     displayed_error.clone().filter(|_| !compact_error),
+-                    |body, error| body.child(download_inline_error(theme, error)),
++                    |body, error| {
++                        body.child(
++                            div()
++                                .flex_none()
++                                .w_full()
++                                .child(download_inline_error(theme, error)),
++                        )
++                    },
+                 )
+                 .into_any_element()
+         };
+@@ -2139,7 +2183,7 @@
+                     .child(footer_leading_actions)
+                     .child(div().flex_1())
+                     .when_some(footer_submission_actions, |footer, actions| {
+-                        footer.child(actions).child(div().w(px(SPACING_8)))
++                        footer.child(actions).child(div().w_2())
+                     })
+                     .child(
+                         div()
+@@ -2207,32 +2251,41 @@
+         "单连接传输".into()
+     };
+ 
++    // Media internals keep their existing pixel roles for the next bounded slice.
++    let measure = |value| -> gpui_kit::AbsoluteLength {
++        if probe.media.is_none() {
++            ordinary_rem(value).into()
++        } else {
++            px(value).into()
++        }
++    };
+     let inspector = div()
+         .debug_selector(|| "download-new-probe-inspector".into())
+-        .w(px(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))
+-        .h(px(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))
++        .w(measure(NEW_DOWNLOAD_PROBE_INSPECTOR_WIDTH))
++        .h(measure(NEW_DOWNLOAD_PROBE_INSPECTOR_HEIGHT))
+         .flex_none()
+         .min_w_0()
+         .overflow_hidden()
+-        .pl(px(SPACING_12))
++        .pl(measure(SPACING_12))
+         .border_l_1()
+         .border_color(theme.border_subtle)
+         .flex()
+         .flex_col()
+         .justify_center()
+-        .gap(px(SPACING_4))
++        .gap(measure(SPACING_4))
+         .child(
+             div()
+                 .debug_selector(|| "download-new-probe-status".into())
+                 .w_full()
+-                .h(px(LINE_HEIGHT_BODY))
++                .h(measure(LINE_HEIGHT_BODY))
++                .flex_none()
+                 .min_w_0()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap(measure(SPACING_8))
+                 .child(
+                     Icon::new(MaterialIcon::Check)
+-                        .size(px(14.0))
++                        .size(measure(14.0))
+                         .text_color(theme.success),
+                 )
+                 .child(
+@@ -2240,10 +2293,15 @@
+                         .min_w_0()
+                         .flex_1()
+                         .truncate()
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .text_size(measure(TEXT_BODY))
++                        .line_height(measure(LINE_HEIGHT_BODY))
+                         .font_weight(FontWeight::MEDIUM)
+                         .text_color(theme.success)
++                        .map(|text| {
++                            #[cfg(test)]
++                            let text = text.child(rem_tests::type_probe("status"));
++                            text
++                        })
+                         .child(status),
+                 ),
+         )
+@@ -2251,27 +2309,39 @@
+             div()
+                 .debug_selector(|| "download-new-probe-size".into())
+                 .w_full()
+-                .h(px(LINE_HEIGHT_BODY))
++                .h(measure(LINE_HEIGHT_BODY))
++                .flex_none()
+                 .truncate()
+-                .text_size(px(TEXT_BODY))
+-                .line_height(px(LINE_HEIGHT_BODY))
++                .text_size(measure(TEXT_BODY))
++                .line_height(measure(LINE_HEIGHT_BODY))
+                 .font_weight(FontWeight::MEDIUM)
+-                .child(size_label),
++                .child(size_label)
++                .map(|text| {
++                    #[cfg(test)]
++                    let text = text.child(rem_tests::type_probe("size"));
++                    text
++                }),
+         )
+         .child(
+             div()
+                 .debug_selector(|| "download-new-probe-capability".into())
+                 .w_full()
+-                .h(px(LINE_HEIGHT_BODY))
++                .h(measure(LINE_HEIGHT_BODY))
++                .flex_none()
+                 .truncate()
+-                .text_size(px(TEXT_BODY))
+-                .line_height(px(LINE_HEIGHT_BODY))
++                .text_size(measure(TEXT_BODY))
++                .line_height(measure(LINE_HEIGHT_BODY))
+                 .text_color(if is_blob || probe.supports_ranges {
+                     theme.success
+                 } else {
+                     theme.text_muted
+                 })
+-                .child(capability),
++                .child(capability)
++                .map(|text| {
++                    #[cfg(test)]
++                    let text = text.child(rem_tests::type_probe("capability"));
++                    text
++                }),
+         );
+     let inspector = if let Some(resolution) = probe.resolution.as_ref() {
+         let original = resolution.provenance.original_request.source_url.clone();
+@@ -3043,6 +3113,11 @@
+             div()
+                 .debug_selector(move || format!("{selector}-label"))
+                 .child(label)
++                .map(|text| {
++                    #[cfg(test)]
++                    let text = text.child(rem_tests::type_probe(selector));
++                    text
++                })
+         })
+         .child(
+             div()
+@@ -3052,9 +3127,40 @@
+         )
+ }
+ 
++/// Original field/picker composition, with ordinary rails following the official controls.
++fn new_download_path_picker_shell(
++    selector: &'static str,
++    field: AnyElement,
++    picker: AnyElement,
++    ordinary: bool,
++) -> AnyElement {
++    if !ordinary {
++        return path_picker_shell(selector, field, picker);
++    }
++    div()
++        .debug_selector(move || selector.into())
++        .h_8()
++        .w_full()
++        .min_w_0()
++        .flex()
++        .items_center()
++        .gap_2()
++        .child(div().flex_1().min_w_0().child(field))
++        .child(picker)
++        .into_any_element()
++}
++
+ fn new_download_url_control(input: &Entity<InputState>, disabled: bool) -> AnyElement {
++    new_download_url_control_layout(input, disabled, true)
++}
++
++fn new_download_url_control_layout(
++    input: &Entity<InputState>,
++    disabled: bool,
++    ordinary: bool,
++) -> AnyElement {
+     let url = input.clone();
+-    path_picker_shell(
++    new_download_path_picker_shell(
+         "download-new-url-control",
+         div()
+             .debug_selector(|| "download-new-url-field-input".into())
+@@ -3081,6 +3187,7 @@
+                     }),
+             )
+             .into_any_element(),
++        ordinary,
+     )
+ }
+ 

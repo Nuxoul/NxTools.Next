@@ -1,0 +1,167 @@
+//! Audit #6 continuation: production Root/NewDownloadView base-font regressions.
+use super::*;
+use gpui_kit::component::Theme as ComponentTheme;
+use gpui_kit::{AppContext, TestAppContext, VisualTestContext};
+
+struct RemFixture {
+    application: Entity<DownloadApplication>,
+    view: Entity<NewDownloadView>,
+    surface: VisualTestContext,
+    _directory: tempfile::TempDir,
+    _endpoint: nxtools_ipc::PlatformServerEndpoint,
+}
+
+fn fixture(cx: &mut TestAppContext, confirmed: bool) -> RemFixture {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let directory = tempfile::tempdir().expect("isolated rem fixture");
+    let paths = directory.path().to_path_buf();
+    let (platform, endpoint) = nxtools_ipc::platform_bridge(16);
+    let application = cx.update(|cx| {
+        let notifications = cx.new(|_| NotificationCenter::default());
+        cx.new(|cx| {
+            DownloadApplication::new(
+                DownloadEngine::open_in_memory().expect("memory engine, no transfer"),
+                Rc::new(platform),
+                notifications,
+                DownloadRuntimeContext {
+                    fallback_default_directory: paths.clone(),
+                    config: AppConfig::default(),
+                    config_path: paths.join("config.json"),
+                    log_directory: paths.clone(),
+                    database_path: paths.join("download.sqlite3"),
+                    ffmpeg_install_directory: paths.join("tools"),
+                },
+                cx,
+            )
+        })
+    });
+    let app = application.clone();
+    let retained = Rc::new(RefCell::new(None));
+    let slot = retained.clone();
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| {
+            NewDownloadView::new(
+                NewDownloadViewInit {
+                    application: app,
+                    default_directory: paths,
+                    default_connection_limit: 4,
+                    default_adaptive_segment_policy: Default::default(),
+                    categories: DownloadSettings::default().categories,
+                    initial_source: None,
+                },
+                window,
+                cx,
+            )
+        });
+        if confirmed {
+            view.update(cx, |view, cx| {
+                view.url.update(cx, |input, cx| {
+                    input.set_value("https://synthetic.invalid/rem.bin", window, cx)
+                });
+                view.file_name.update(cx, |input, cx| {
+                    input.set_value("合成文件名.bin", window, cx)
+                });
+                view.confirmed_request = Some(view.request(cx).expect("synthetic request"));
+                view.probe = Some(DownloadProbe {
+                    resolution: None,
+                    final_url: "https://synthetic.invalid/rem.bin".into(),
+                    file_name: Some("合成文件名.bin".into()),
+                    total_bytes: Some(1024),
+                    supports_ranges: true,
+                    content_type: None,
+                    validator: Default::default(),
+                    media: None,
+                });
+            });
+        }
+        *slot.borrow_mut() = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let handle = surface.update(|window, _| window.window_handle());
+    let mut surface = VisualTestContext::from_window(handle, surface);
+    surface.simulate_resize(new_download_window_size(confirmed));
+    surface.refresh().expect("actual production Root and view");
+    RemFixture {
+        application,
+        view: retained.borrow().clone().expect("view"),
+        surface,
+        _directory: directory,
+        _endpoint: endpoint,
+    }
+}
+
+#[gpui_kit::test]
+fn audit06_new_compact_and_confirmed_roles_follow_actual_root(cx: &mut TestAppContext) {
+    for confirmed in [false, true] {
+        let mut f = fixture(cx, confirmed);
+        let original = f.surface.read(|cx| ComponentTheme::global(cx).clone());
+        let default_rem = f.surface.update(|window, _| window.rem_size());
+        let mut measured = Vec::new();
+        for base in [16.0, 14.0, 18.0] {
+            f.surface.update(|window, cx| {
+                ComponentTheme::update(cx, |theme| theme.font_size = px(base));
+                window.refresh();
+            });
+            f.surface
+                .refresh()
+                .expect("actual Root base font variation");
+            let root = f.surface.debug_bounds("download-new-root").expect("root");
+            let footer = f
+                .surface
+                .debug_bounds("download-new-footer")
+                .expect("fixed footer");
+            let input = f
+                .surface
+                .debug_bounds("download-new-url-field-input")
+                .expect("original Input");
+            let paste = f
+                .surface
+                .debug_bounds("download-new-url-paste")
+                .expect("original paste Button");
+            let cancel = f
+                .surface
+                .debug_bounds("download-new-cancel-action")
+                .expect("original Cancel");
+            let content = if confirmed {
+                f.surface
+                    .debug_bounds("download-new-probe-capability")
+                    .expect("actual inspector text")
+            } else {
+                f.surface
+                    .debug_bounds("download-new-probe-guidance")
+                    .expect("actual guidance")
+            };
+            measured.push((base, root, footer, input, paste, cancel, content));
+        }
+        f.surface
+            .update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+        assert_eq!(default_rem, px(16.0), "actual product design base");
+        for (base, root, footer, input, paste, cancel, content) in measured {
+            let ratio = base / 16.0;
+            assert!(
+                (content.size.height - px(18.0 * ratio)).abs() <= px(0.5),
+                "ordinary content line follows rem confirmed={confirmed} base={base}: {content:?}"
+            );
+            assert_eq!(
+                root.size,
+                new_download_window_size(confirmed),
+                "native budget is not a scale role"
+            );
+            assert_eq!(footer.size.height, px(44.0));
+            assert_eq!(input.size.height, px(32.0 * ratio));
+            assert_eq!(paste.size.height, input.size.height);
+            assert_eq!(paste.top(), input.top());
+            assert!(content.bottom() <= footer.top());
+            assert!(cancel.top() >= footer.top() && cancel.bottom() <= footer.bottom());
+        }
+        assert!(
+            f.application
+                .read_with(&f.surface, |app, _| app.tasks().is_empty())
+        );
+        assert!(
+            !f.view
+                .read_with(&f.surface, |view, _| view.probing || view.submitting)
+        );
+    }
+}

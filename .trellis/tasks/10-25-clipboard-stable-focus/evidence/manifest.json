@@ -1,0 +1,222 @@
+{
+  "scope": "original audit #10 only; Clipboard + Tools stabilization; parent review pending",
+  "baseline": "per-file task dirty baseline, not git HEAD",
+  "files": [
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+      "baseline_sha256": "6f0170c5055f8663ad9d926028fc46c0ba705b60d457a59c41452f381c7e0c07",
+      "delivery_sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+      "added": 18,
+      "removed": 31
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+      "baseline_sha256": "1c0bb864f8126a0f562a7d53aebd3c316a45d9d9e39b056647e891e17460320b",
+      "delivery_sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+      "added": 275,
+      "removed": 173
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs",
+      "baseline_sha256": "610db1d79f8d2e61d8561b4fc9e50d1fc3731c14ba6c11372dbdc7d637d7cea2",
+      "delivery_sha256": "48d69994a59f0c21e193148014d0ef9ec5e0fcbd79c60390ee021e395d8b206e",
+      "added": 2,
+      "removed": 5
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs",
+      "baseline_sha256": "9950bc1317f3a333ea3bea74e623a4f8d686fe5252b24fb1013aedcbda0e5b38",
+      "delivery_sha256": "590cd0e831172bd049422f9967afdbaf73d2e53d3a63912b44db20429afc926f",
+      "added": 19,
+      "removed": 2
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/polish_tests.rs",
+      "baseline_sha256": "559da1a2672d536066930f76cfd1c5e74509a1e230339d34d21ee32eca6ea666",
+      "delivery_sha256": "a0f92a727c0b810b6ab4a3f54f929b0dca19b5795dbe4cc078001fa365261a60",
+      "added": 0,
+      "removed": 1
+    },
+    {
+      "path": "docs/reference-code/clipboard.md",
+      "baseline_sha256": "a6436cc758fe9ff150406d6c455edca3381def6ad2dbe478029ae521f6c4e6be",
+      "delivery_sha256": "8ef525609b37d359538f3033aa92901ca003baea93a324821124ab55798d6e96",
+      "added": 30,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs",
+      "baseline_sha256": "f8eea7e3192996a95f5db9fbeb1eefa1aa1d33425aa922245b3e8844ef24553f",
+      "delivery_sha256": "9a7ea27199d7d60e7b3b0fe89de7c4525e57355e6a311539932981333c20fc0b",
+      "added": 0,
+      "removed": 1
+    },
+    {
+      "path": "tests/architecture/clipboard-ui-lifecycle.ps1",
+      "baseline_sha256": "468b3e3f4e90c56f05d50b4f99a519bca620a1c626b4c1259fa3fdc1f432f6b0",
+      "delivery_sha256": "aabb7de696bae25db9f575ec1bdb5c6af21c6ac2943e49c5cc389223c819cc5b",
+      "added": 8,
+      "removed": 1
+    },
+    {
+      "path": "tests/architecture/clipboard-ui-lifecycle.tests.py",
+      "baseline_sha256": "aea38793debe180afcc63982fbfd27a450b7d8f10244bec5040a519a50f975a1",
+      "delivery_sha256": "7b0d5ef5337fccae0e7cc2c1eff4413f1c2f9654267a498ae4da023d7a3c07bc",
+      "added": 14,
+      "removed": 0
+    },
+    {
+      "path": "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+      "new_file_sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6",
+      "lines": 824
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/prd.md",
+      "new_file_sha256": "75d2662297313e1cec80f541b943a2c8c8b6a2b0f395d63bec1250cace5626ac",
+      "lines": 19
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/outcomes.md",
+      "new_file_sha256": "0ad5cc01a6dd12ff69562f336f95b05d996b63e3271abf655b743a6a340462bc",
+      "lines": 130
+    }
+  ],
+  "evidence": [
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/baseline-manifest.json",
+      "sha256": "ef715e2fe543e6fca0de3e9dc4115aa0438bd3781adb36851d6cdf07da6320f8",
+      "bytes": 1900
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clipboard-lifecycle.ps1.log",
+      "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b",
+      "bytes": 268
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clipboard-ui-lifecycle.ps1.log",
+      "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f",
+      "bytes": 1346
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clipboard-ui-lifecycle.tests.py.log",
+      "sha256": "c62e2b9b3c65b8db05fca09d0fec679635018e0eb6743299d612d35bdac1bac7",
+      "bytes": 864
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clippy-final.log",
+      "sha256": "1b1a1da8b383cc3bc7b66a7ab5deda2d214dd5ea40e0a0db4a86ffd48ccf18d9",
+      "bytes": 332
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clippy.log",
+      "sha256": "84384e669a090e07fe9d5e06c34bcc4f01d551abf284f37b09735b3a3d6ec5bd",
+      "bytes": 1608
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/compiled-final-results.json",
+      "sha256": "b3f0ae73b6bd6a5ce0f9ace71f11bd92980b480a3fc80995dc35037417755a43",
+      "bytes": 291
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/desktop-full.log",
+      "sha256": "3f6a27ee38c7e6fa9ab57bb9e69e5b5da35ad6a1b9d168b2600b6fa7a76aace9",
+      "bytes": 255586
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/fmt-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/history-regressions-green.log",
+      "sha256": "477209ffc6956d274696aad20dee48b459d0045c83be9d81687d52117c3822e3",
+      "bytes": 4116
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/identity-key-mutation-red.log",
+      "sha256": "73d4c58b2a2c9560e6acc6719409148df6d274808d856bfdfb8a86ac9646ffe1",
+      "bytes": 2514
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/identity-matrix-green.log",
+      "sha256": "bcf99ab7c771eafa497a8f51dc0f53b85bcf7e1a55458602b12e85dc6796d792",
+      "bytes": 3288
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/identity-matrix.log",
+      "sha256": "f2f724f8222e2adffb62d619384e3d35af4d0b6c43a95e4eb12538e8778b72dd",
+      "bytes": 1923
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/own-delta.json",
+      "sha256": "3f6dac84f981402a172d23b3c7748de791023e735ca68a800ebed3d898a43a43",
+      "bytes": 44882
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/protected-checks.json",
+      "sha256": "45bc82c24dbabe2a95cd74bdcfe9a0fd472dad641224406bed918e899bd6956c",
+      "bytes": 2692
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/static-results.json",
+      "sha256": "94a74e3fad5f5863f64405d6da0d7235bd713b6c08676469bce4c24406431102",
+      "bytes": 816
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-final.log",
+      "sha256": "f8e211f1bec21086fd0380a8f20e026a5e98228c9828a6ba1cc58f63ff915933",
+      "bytes": 47358
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-regressions-green.log",
+      "sha256": "7c37dd650b57ea9c049960797fa50d725c9583e2e8433478762367b93232a4ca",
+      "bytes": 48658
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-regressions.log",
+      "sha256": "340d45f8668e2c88b6b062bd85f93af9102a6f2c71df456125016b52b19479a8",
+      "bytes": 50194
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-state-lifecycle.ps1.log",
+      "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f",
+      "bytes": 108
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-token-boundaries.ps1.log",
+      "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1",
+      "bytes": 92
+    },
+    {
+      "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/workspace-check-final.log",
+      "sha256": "92e4ea12db9bbf4c59f3a10b890b93615a8a9a0cad6d4683df57bc70e570850d",
+      "bytes": 332
+    }
+  ],
+  "verification": {
+    "identity_tests": "11/11 PASS",
+    "ui_tests": "228/228 PASS",
+    "strict_clippy": "PASS",
+    "workspace_check_tests": "PASS",
+    "fmt_all_check": "PASS",
+    "desktop_single_full_run": "FAILED 1184 PASS / 1 FAIL, pre-existing Archive Unlock",
+    "static_gates": "8/8 PASS; clipboard gate mutation tests 5/5",
+    "protected_hashes": "13/13 unchanged",
+    "native_visual_user_acceptance": "NOT RUN / NOT ACCEPTED"
+  }
+}

@@ -1,9 +1,11 @@
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
 use gpui_kit::component::{Icon, label::Label};
 use gpui_kit::{SharedString, div, prelude::*, px};
 
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
+use crate::ui::metrics::ordinary_rem;
 
 const MENU_MIN_WIDTH: f32 = 192.0;
 const MENU_MAX_WIDTH: f32 = 240.0;
@@ -39,9 +41,13 @@ pub(crate) fn context_menu_item(
 
     PopupMenuItem::element(move |_window, _cx| {
         div()
+            .id(selector)
+            .role(gpui_kit::Role::Label)
+            .aria_label(label.clone())
+            .test_support()
             .debug_selector(move || selector.into())
             .w_full()
-            .min_w(px(MENU_CONTENT_MIN_WIDTH))
+            .min_w(ordinary_rem(MENU_CONTENT_MIN_WIDTH))
             .text_color(foreground)
             .child(Label::new(label.clone()).text_sm())
     })

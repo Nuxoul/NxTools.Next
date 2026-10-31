@@ -1,0 +1,32 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+        "sha256":  "d923d7485cb482a256b1fe0855a7e90dbf249f1cbf20002f80c3bcef300466d6",
+        "last_write":  "2026-10-25T23:32:15.3650405+08:00",
+        "snapshot":  "rust__apps__nxtools-desktop__src__main_window__extensions_settings.rs.post-focused.observed"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+        "sha256":  "d35e9f0a56a88ac533065f6ffc808d8e44137c1e191084e17e9f9c23a94a99ae",
+        "last_write":  "2026-10-25T23:32:15.3751021+08:00",
+        "snapshot":  "rust__apps__nxtools-desktop__src__extensions__event_history.rs.post-focused.observed"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/lib.rs",
+        "sha256":  "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+        "last_write":  "2026-10-25T23:28:45.7292765+08:00",
+        "snapshot":  "rust__crates__nxtools-extensions__src__lib.rs.post-focused.observed"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/runtime.rs",
+        "sha256":  "f08318cd10c36ee205322eea3eca3c571001b616678c259d7e6a5c317dd1e5a3",
+        "last_write":  "2026-10-25T23:31:55.5658238+08:00",
+        "snapshot":  "rust__crates__nxtools-extensions__src__runtime.rs.post-focused.observed"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+        "sha256":  "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+        "last_write":  "2026-10-25T23:32:04.5911480+08:00",
+        "snapshot":  "rust__apps__nxtools-desktop__src__extensions__committed_events.rs.post-focused.observed"
+    }
+]

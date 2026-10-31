@@ -1,0 +1,20 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs
++++ queue07/rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs
+@@ -541,7 +541,7 @@
+                                 title,
+                                 if visible { "" } else { help },
+                                 format!("clipboard-setting-{slot}-help"),
+-                                300.0,
++                                crate::ui::metrics::ordinary_rem(300.0),
+                                 div()
+                                     .w_full()
+                                     .flex()
+@@ -968,7 +968,7 @@
+                     "全局呼出热键",
+                     "点击字段开始录制；Esc 或失焦取消",
+                     "clipboard-hotkey-help",
+-                    300.0,
++                    crate::ui::metrics::ordinary_rem(300.0),
+                     hotkey_control,
+                 ))
+                 .child(

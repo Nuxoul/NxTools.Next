@@ -1,0 +1,71 @@
+//! Explicit destructive review, with the original Core lock as the final authority.
+use super::*;
+use gpui_kit::component::{
+    WindowExt,
+    dialog::{DialogAction, DialogClose, DialogFooter},
+};
+use std::cell::Cell;
+
+impl ExtensionManagerView {
+    pub(super) fn confirm_removal(&self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let state = self.application.read(cx);
+        if state.busy {
+            return;
+        }
+        let reviewed = state.packages.clone();
+        let Some(package) = reviewed
+            .packages
+            .iter()
+            .find(|package| package.manifest.id == id)
+        else {
+            return;
+        };
+        let name = package.manifest.name.clone();
+        let chains = reviewed
+            .resolver_chains
+            .values()
+            .filter(|route| route.iter().any(|handler| handler.package_id == id))
+            .count();
+        let preferences = reviewed
+            .resolver_preferences
+            .values()
+            .filter(|handler| handler.package_id == id)
+            .count();
+        let running = state
+            .recent_manual_runs()
+            .iter()
+            .filter(|run| run.package_id == id && run.state.pending())
+            .count();
+        let owner = self.application.downgrade();
+        let source = window.window_handle();
+        cx.defer(move |cx| {
+            let _ = source.update(cx, |_, window, cx| {
+                let submitted = Rc::new(Cell::new(false));
+                window.open_dialog(cx, move |dialog, window, cx| {
+                    let current = owner.upgrade().is_some_and(|owner| !owner.read(cx).busy && owner.read(cx).packages == reviewed);
+                    let confirm_owner = owner.clone();
+                    let confirm_review = reviewed.clone();
+                    let confirm_id = id.clone();
+                    let latch = submitted.clone();
+                    let warning = format!("将移除“{name}”的设置、关键词、信任和启用记录，并停止其运行。受影响：{chains} 条完整解析链、{preferences} 个域名偏好；近期手动运行 {running} 个。其他链不会改成跳过该插件继续执行。重新导入不会恢复这些配置。");
+                    let body = div().id("extension-remove-review-scroll").w_full().max_h((window.viewport_size().height-px(190.0)).max(px(80.0))).overflow_y_scroll().flex().flex_col().gap_3()
+                        .child(Alert::warning("extension-remove-impact", warning).small())
+                        .child("已产生的外部效果不能撤回；此操作不删除独立文件或 Windows 已存凭据。")
+                        .when(!current, |body| body.child(Alert::error("extension-remove-stale", "扩展配置已变化，请取消后重新检查移除影响。").small()));
+                    dialog.title("确认移除扩展").w((window.viewport_size().width-px(32.0)).min(px(560.0))).overlay_closable(false)
+                        .child(body)
+                        .footer(DialogFooter::new()
+                            .child(DialogClose::new().trigger(|button| button.debug_selector(||"extension-remove-cancel".into()).label("取消").outline()))
+                            .child(DialogAction::new().child(Button::new("extension-remove-confirm").debug_selector(||"extension-remove-confirm".into()).label("确认移除").danger().disabled(!current || submitted.get()))))
+                        .on_ok(move |_, _, cx| {
+                            if latch.get() || !confirm_owner.upgrade().is_some_and(|owner| !owner.read(cx).busy && owner.read(cx).packages == confirm_review) { return false; }
+                            latch.set(true);
+                            let owner = confirm_owner.clone(); let id = confirm_id.clone(); let reviewed = confirm_review.clone();
+                            cx.defer(move |cx| { let _ = owner.update(cx, |app, cx| app.remove_reviewed(id, reviewed, cx)); });
+                            true
+                        })
+                });
+            });
+        });
+    }
+}

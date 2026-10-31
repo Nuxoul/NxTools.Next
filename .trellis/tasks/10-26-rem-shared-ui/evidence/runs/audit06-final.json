@@ -1,0 +1,7 @@
+﻿{
+    "name":  "audit06-final",
+    "command":  "cargo test -p nxtools-desktop audit06_ -- --test-threads=1 --nocapture",
+    "exit":  0,
+    "elapsed":  377.61515479999997,
+    "finished":  "2026-10-26T06:35:13.0499089+08:00"
+}

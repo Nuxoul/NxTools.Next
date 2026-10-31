@@ -1,0 +1,7 @@
+﻿{
+    "name":  "ui-related",
+    "command":  "cargo test -p nxtools-desktop ui:: -- --test-threads=1",
+    "exit":  101,
+    "elapsed":  28.5697026,
+    "finished":  "2026-10-26T06:37:27.6553479+08:00"
+}

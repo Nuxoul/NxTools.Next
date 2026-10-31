@@ -15,12 +15,20 @@ mod archive_tests;
 mod bundled_extension_tests;
 mod bundled_extensions;
 mod extensions;
+pub use extensions::ConfigExtensionStorage;
+pub mod floating_assistant;
+#[cfg(test)]
+mod floating_assistant_tests;
 mod instance;
 mod logging;
 mod paths;
 pub use archive::{
     ArchiveCompressionLevel, ArchiveConflictPolicy, ArchiveCreateFormat, ArchiveDestination,
-    ArchiveFilenameEncoding, ArchiveSettings,
+    ArchiveFilenameEncoding, ArchiveSettings, ArchiveShellIntegrationSettings,
+};
+pub use floating_assistant::{
+    ClickAction, FloatingAssistantPosition, FloatingAssistantSettings, ImageDropAction,
+    TextDropAction,
 };
 pub use instance::SingleInstanceGuard;
 #[cfg(test)]
@@ -206,6 +214,8 @@ pub struct AppConfig {
     pub clipboard: ClipboardSettings,
     #[serde(default)]
     pub quick_launch: QuickLaunchSettings,
+    #[serde(default)]
+    pub floating_assistant: FloatingAssistantSettings,
     #[serde(default = "legacy_process_blacklist")]
     pub process_blacklist: ProcessBlacklistSettings,
     #[serde(default)]
@@ -226,6 +236,7 @@ impl Default for AppConfig {
             clipboard_panel: ClipboardPanelSize::default(),
             clipboard: ClipboardSettings::default(),
             quick_launch: QuickLaunchSettings::default(),
+            floating_assistant: FloatingAssistantSettings::default(),
             process_blacklist: ProcessBlacklistSettings::default(),
             download: DownloadSettings::default(),
             archive: ArchiveSettings::default(),
@@ -471,6 +482,9 @@ fn valid_proxy_host(host: &str) -> bool {
 pub struct DownloadSettings {
     #[serde(default)]
     pub default_directory: String,
+    /// Optional exact Chrome Web Store ID; blank keeps local-install compatibility.
+    #[serde(default)]
+    pub chrome_web_store_extension_id: String,
     #[serde(default)]
     pub automatic_categories_enabled: bool,
     #[serde(default = "default_download_categories")]
@@ -620,6 +634,7 @@ impl Default for DownloadSettings {
     fn default() -> Self {
         Self {
             default_directory: String::new(),
+            chrome_web_store_extension_id: String::new(),
             automatic_categories_enabled: false,
             categories: default_download_categories(),
             duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
@@ -672,6 +687,10 @@ const fn default_taskbar_overlay_height() -> u32 {
 impl DownloadSettings {
     pub fn normalize(&mut self) {
         self.default_directory = self.default_directory.trim().to_owned();
+        self.chrome_web_store_extension_id = self.chrome_web_store_extension_id.trim().to_owned();
+        if !is_valid_chrome_web_store_extension_id(&self.chrome_web_store_extension_id) {
+            self.chrome_web_store_extension_id.clear();
+        }
         self.background_speed_limit.bytes_per_second =
             self.background_speed_limit.bytes_per_second.max(1);
         for category in &mut self.categories {
@@ -722,6 +741,12 @@ impl DownloadSettings {
             self.taskbar_progress_overlay.height = self.taskbar_progress_overlay.height.max(20);
         }
     }
+}
+
+/// Empty before first store upload, otherwise one exact Chromium extension identity.
+pub fn is_valid_chrome_web_store_extension_id(value: &str) -> bool {
+    value.is_empty()
+        || (value.len() == 32 && value.bytes().all(|byte| (b'a'..=b'p').contains(&byte)))
 }
 
 fn normalize_download_category_values(values: &[String], trim_dot: bool) -> Vec<String> {
@@ -1042,6 +1067,8 @@ pub struct ClipboardSettings {
     pub capture_files: bool,
     #[serde(default)]
     pub image_view_mode: ClipboardImageViewMode,
+    #[serde(default = "default_clipboard_text_card_max_height")]
+    pub text_card_max_height: u32,
     #[serde(default = "default_true")]
     pub link_detector_enabled: bool,
     #[serde(default)]
@@ -1081,6 +1108,7 @@ impl Default for ClipboardSettings {
             capture_images: true,
             capture_files: true,
             image_view_mode: ClipboardImageViewMode::default(),
+            text_card_max_height: default_clipboard_text_card_max_height(),
             link_detector_enabled: true,
             currency_conversion: CurrencyConversionSettings::default(),
             link_panel_position: LinkPanelPosition::default(),
@@ -1233,8 +1261,19 @@ fn default_clipboard_excluded_processes() -> Vec<String> {
     ]
 }
 
+pub const CLIPBOARD_TEXT_CARD_MIN_HEIGHT: u32 = 120;
+pub const CLIPBOARD_TEXT_CARD_MAX_HEIGHT: u32 = 320;
+
+pub const fn default_clipboard_text_card_max_height() -> u32 {
+    160
+}
+
 impl ClipboardSettings {
     pub fn normalize(&mut self) {
+        self.text_card_max_height = self.text_card_max_height.clamp(
+            CLIPBOARD_TEXT_CARD_MIN_HEIGHT,
+            CLIPBOARD_TEXT_CARD_MAX_HEIGHT,
+        );
         self.currency_conversion.target =
             self.currency_conversion.target.trim().to_ascii_uppercase();
         if !CurrencyConversionSettings::valid_code(&self.currency_conversion.target) {
@@ -1424,6 +1463,7 @@ impl AppConfig {
         self.process_blacklist.normalize();
         self.clipboard.excluded_processes = self.process_blacklist.clipboard_processes();
         self.quick_launch.normalize();
+        self.floating_assistant.normalize();
         self.download.normalize();
     }
 
@@ -1508,6 +1548,21 @@ impl AppConfig {
         path: &Path,
         mutate: impl FnOnce(&mut Self) -> Result<()>,
     ) -> Result<Self> {
+        Self::with_config_lock(path, || {
+            let mut config = Self::load_from(path)?;
+            mutate(&mut config)?;
+            config.normalize();
+            config.save_to(path)?;
+            Ok(config)
+        })
+    }
+
+    /// One original lock boundary shared by ordinary section updates and multi-store
+    /// extension data lifecycle commits. The callback must never reacquire this lock.
+    pub(crate) fn with_config_lock<T>(
+        path: &Path,
+        operation: impl FnOnce() -> Result<T>,
+    ) -> Result<T> {
         let lock_path = path.with_extension("json.lock");
         let lock = fs::OpenOptions::new()
             .create(true)
@@ -1517,13 +1572,7 @@ impl AppConfig {
             .with_context(|| format!("failed to open {}", lock_path.display()))?;
         lock.lock_exclusive()
             .with_context(|| format!("failed to lock {}", lock_path.display()))?;
-        let result = (|| {
-            let mut config = Self::load_from(path)?;
-            mutate(&mut config)?;
-            config.normalize();
-            config.save_to(path)?;
-            Ok(config)
-        })();
+        let result = operation();
         let _ = FileExt::unlock(&lock);
         result
     }
@@ -1532,6 +1581,15 @@ impl AppConfig {
     pub fn update_archive_settings(path: &Path, settings: ArchiveSettings) -> Result<Self> {
         settings.validate().map_err(anyhow::Error::msg)?;
         Self::update_section(path, |config| config.archive = settings)
+    }
+
+    /// Commits only the floating assistant section against the latest on-disk config.
+    pub fn update_floating_assistant_settings(
+        path: &Path,
+        mut settings: FloatingAssistantSettings,
+    ) -> Result<Self> {
+        settings.normalize();
+        Self::update_section(path, |config| config.floating_assistant = settings)
     }
 
     pub fn update_download_settings(path: &Path, mut settings: DownloadSettings) -> Result<Self> {
@@ -1983,6 +2041,7 @@ mod tests {
             &path,
             DownloadSettings {
                 default_directory: r"D:\Downloads".into(),
+                chrome_web_store_extension_id: String::new(),
                 automatic_categories_enabled: true,
                 categories: default_download_categories(),
                 duplicate_strategy: DownloadDuplicateStrategySettings::AddNumbered,
@@ -2390,6 +2449,84 @@ mod tests {
         ));
         fs::create_dir_all(&directory).expect("create config directory");
         directory
+    }
+
+    #[test]
+    fn text_card_height_legacy_integer_bounds_and_roundtrip() {
+        let mut legacy = serde_json::to_value(ClipboardSettings::default()).expect("settings");
+        legacy
+            .as_object_mut()
+            .expect("object")
+            .remove("text_card_max_height");
+        assert_eq!(
+            serde_json::from_value::<ClipboardSettings>(legacy.clone())
+                .expect("legacy")
+                .text_card_max_height,
+            160
+        );
+        for (requested, expected) in [
+            (0, 120),
+            (119, 120),
+            (120, 120),
+            (160, 160),
+            (210, 210),
+            (320, 320),
+            (u32::MAX, 320),
+        ] {
+            let mut settings = ClipboardSettings {
+                text_card_max_height: requested,
+                ..Default::default()
+            };
+            settings.normalize();
+            assert_eq!(settings.text_card_max_height, expected);
+            settings.normalize();
+            assert_eq!(settings.text_card_max_height, expected);
+            assert_eq!(
+                serde_json::from_str::<ClipboardSettings>(
+                    &serde_json::to_string(&settings).expect("encode")
+                )
+                .expect("decode"),
+                settings
+            );
+        }
+        for invalid in [
+            serde_json::json!(160.5),
+            serde_json::json!(-1),
+            serde_json::json!("160"),
+        ] {
+            legacy["text_card_max_height"] = invalid;
+            assert!(serde_json::from_value::<ClipboardSettings>(legacy.clone()).is_err());
+        }
+    }
+
+    #[test]
+    fn text_card_height_field_merge_and_corrupt_refusal() {
+        let directory = unique_config_dir("text-card-height");
+        let path = directory.join("config.json");
+        AppConfig::default().save_to(&path).expect("seed");
+        AppConfig::update_section(&path, |config| {
+            config.clipboard.storage_directory = "synthetic-new-root".into();
+            config.clipboard.image_view_mode = ClipboardImageViewMode::Mini;
+            config.download.default_connection_limit = 24;
+        })
+        .expect("other owners");
+        AppConfig::update_section(&path, |config| config.clipboard.text_card_max_height = 210)
+            .expect("height only");
+        let saved = AppConfig::load_from(&path).expect("reload");
+        assert_eq!(saved.clipboard.text_card_max_height, 210);
+        assert_eq!(saved.clipboard.storage_directory, "synthetic-new-root");
+        assert_eq!(
+            saved.clipboard.image_view_mode,
+            ClipboardImageViewMode::Mini
+        );
+        assert_eq!(saved.download.default_connection_limit, 24);
+        fs::write(&path, b"{broken").expect("corrupt");
+        assert!(
+            AppConfig::update_section(&path, |config| config.clipboard.text_card_max_height = 320)
+                .is_err()
+        );
+        assert_eq!(fs::read(&path).expect("unchanged"), b"{broken");
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
@@ -2926,5 +3063,53 @@ mod presentation_settings_tests {
                 style
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod chrome_store_identity_tests {
+    use super::*;
+
+    #[test]
+    fn chrome_store_optional_identity_legacy_validation_and_roundtrip() {
+        let mut legacy = serde_json::to_value(DownloadSettings::default()).expect("settings");
+        legacy
+            .as_object_mut()
+            .expect("object")
+            .remove("chrome_web_store_extension_id");
+        assert!(
+            serde_json::from_value::<DownloadSettings>(legacy)
+                .expect("legacy settings")
+                .chrome_web_store_extension_id
+                .is_empty()
+        );
+        for invalid in [
+            "*",
+            "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaq",
+            "abc",
+        ] {
+            assert!(!is_valid_chrome_web_store_extension_id(invalid));
+        }
+        let mut settings = DownloadSettings {
+            chrome_web_store_extension_id: " aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ".into(),
+            ..Default::default()
+        };
+        settings.normalize();
+        assert_eq!(
+            settings.chrome_web_store_extension_id,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(
+            serde_json::from_str::<DownloadSettings>(
+                &serde_json::to_string(&settings).expect("encode")
+            )
+            .expect("decode"),
+            settings
+        );
+        settings.chrome_web_store_extension_id = "*".into();
+        settings.normalize();
+        assert!(settings.chrome_web_store_extension_id.is_empty());
     }
 }

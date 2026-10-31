@@ -131,12 +131,15 @@ pub(crate) struct PrivateOutput<'a, W: Write> {
     replies: ReplyPort,
     metadata_enabled: bool,
     progress_bytes: u64,
+    current_bytes_done: u64,
     progress_files: u64,
     pub(crate) conflict: Option<crate::worker_conflict::ExtractionConflict<'a>>,
     pub(crate) risk: Option<crate::zip_risk::ZipRisk<'a>>,
     plan_paths: Option<std::collections::HashMap<String, String>>,
     plan_directories: Option<std::collections::HashSet<String>>,
     plan_prefix: String,
+    // Presentation only; unlike plan_prefix this never changes a native operation path.
+    display_prefix: Option<String>,
 }
 impl<'a, W: Write> PrivateOutput<'a, W> {
     pub fn new(writer: &'a mut W, control: &'a OperationControl, replies: ReplyPort) -> Self {
@@ -148,11 +151,13 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
             metadata_enabled: false,
             progress_bytes: 0,
             progress_files: 0,
+            current_bytes_done: 0,
             conflict: None,
             risk: None,
             plan_paths: None,
             plan_directories: None,
             plan_prefix: String::new(),
+            display_prefix: None,
         }
     }
     pub(crate) fn reserve_subfolder(
@@ -172,6 +177,7 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
             match self.call("directory_new", Some(&candidate), None, &[]) {
                 Ok(_) => {
                     plan.replace_subfolder(candidate)?;
+                    self.display_prefix = plan.subfolder().map(|name| format!("{name}/"));
                     return Ok(());
                 }
                 Err(ArchiveError::OutputCollision) => continue,
@@ -194,6 +200,8 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
     #[cfg(feature = "isolated-codecs")]
     pub(crate) fn planned(mut self, plan: Option<&crate::planning::ExtractionPlan>) -> Self {
         if let Some(plan) = plan {
+            self.control
+                .configure_extraction_progress(plan.total_bytes(), plan.files().len() as u64);
             let prefix = plan
                 .subfolder()
                 .map(|s| format!("{s}/"))
@@ -238,10 +246,13 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
             return Ok(());
         };
         let skipped = conflict.skipped + special_skips;
+        self.member_summary(skipped, all_members_written && skipped == 0)
+    }
+    pub(crate) fn member_summary(&mut self, skipped: u64, all_members_written: bool) -> Result<()> {
         let mut frame = WorkerFrame::state(self.operation_id, "extraction_summary");
         frame.extraction_summary = Some(crate::worker_conflict::ExtractionSummary {
             files_skipped: skipped,
-            all_members_written: all_members_written && skipped == 0,
+            all_members_written,
         });
         write_frame(self.writer, &frame).map_err(|_| ArchiveError::IoFailure)
     }
@@ -263,6 +274,11 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
     }
     pub(crate) fn source_checkpoint(&mut self, stage: &str) -> Result<()> {
         self.call(stage, None, None, &[]).map(|_| ())
+    }
+    pub(crate) fn edit_stage(&mut self, phase: &'static str) -> Result<()> {
+        self.control.set_progress_phase(phase);
+        let frame = serde_json::json!({"schema":1,"operation_id":self.operation_id,"op":"progress","progress":{"phase":phase,"bytes_done":0,"bytes_total":null,"files_done":0,"files_total":null,"current_member":null}});
+        write_frame(self.writer, &frame).map_err(|_| ArchiveError::IoFailure)
     }
     /// Called only after immutable source/selection/path/format preflight, before any output call.
     pub(crate) fn preflight_output(
@@ -385,7 +401,11 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
         let reply = self.replies.wait(self.control)?;
         if !reply.success {
             return Err(match reply.error_code.as_deref() {
+                Some("cancelled") => ArchiveError::Cancelled,
                 Some("source_changed") => ArchiveError::SourceChanged,
+                Some("reclamation_unsupported" | "reclamation_filesystem" | "reclamation_source_attributes") => ArchiveError::ReclamationUnsupported,
+                Some("reclamation_no_allocation") => ArchiveError::ReclamationNoAllocation,
+                Some(code) if code.starts_with("reclamation_") => ArchiveError::ReclamationRecoveryInvalid,
                 Some("target_exists" | "source_output_collision") => ArchiveError::OutputCollision,
                 Some(
                     "reparse_component" | "invalid_component" | "invalid_root" | "invalid_source",
@@ -455,19 +475,36 @@ impl<W: Write + Send> ArchiveOutput for PrivateOutput<'_, W> {
             .ok_or(ArchiveError::IoFailure)
     }
     fn begin_extracted_file(&mut self, path: &str, incoming: Option<u64>) -> Result<Option<Uuid>> {
+        let member_path = if self.plan_paths.is_none() {
+            self.display_prefix
+                .as_deref()
+                .and_then(|prefix| path.strip_prefix(prefix))
+                .unwrap_or(path)
+        } else {
+            path
+        }
+        .to_owned();
+        self.current_bytes_done = 0;
+        self.control.begin_extracted_member(&member_path, incoming);
         let path = if let Some(paths) = &self.plan_paths {
             let Some(mapped) = paths.get(path) else {
+                self.control.clear_extracted_member();
                 return Ok(None);
             };
             mapped.clone()
         } else {
             path.to_owned()
         };
-        let Some(mut conflict) = self.conflict.take() else {
-            return self.begin_file(&path).map(Some);
+        let result = if let Some(mut conflict) = self.conflict.take() {
+            let result = conflict.begin(self, &path, &member_path, incoming);
+            self.conflict = Some(conflict);
+            result
+        } else {
+            self.begin_file(&path).map(Some)
         };
-        let result = conflict.begin(self, &path, incoming);
-        self.conflict = Some(conflict);
+        if matches!(result, Ok(None)) {
+            self.control.clear_extracted_member();
+        }
         result
     }
     fn skipped_files(&self) -> u64 {
@@ -475,11 +512,15 @@ impl<W: Write + Send> ArchiveOutput for PrivateOutput<'_, W> {
     }
     fn write_file(&mut self, token: Uuid, data: &[u8]) -> Result<()> {
         self.progress_bytes = self.progress_bytes.saturating_add(data.len() as u64);
-        self.control.publish(crate::ArchiveProgress {
-            bytes: self.progress_bytes,
-            files: self.progress_files,
-            total_bytes: None,
-        });
+        self.current_bytes_done = self.current_bytes_done.saturating_add(data.len() as u64);
+        self.control.publish_extraction_progress(
+            crate::ArchiveProgress {
+                bytes: self.progress_bytes,
+                files: self.progress_files,
+                total_bytes: None,
+            },
+            self.current_bytes_done,
+        );
         self.call("write", None, Some(token), data).map(|_| ())
     }
     fn set_file_metadata(
@@ -531,11 +572,14 @@ impl<W: Write + Send> ArchiveOutput for PrivateOutput<'_, W> {
     fn commit_file(&mut self, token: Uuid) -> Result<()> {
         self.call("commit", None, Some(token), &[])?;
         self.progress_files += 1;
-        self.control.publish(crate::ArchiveProgress {
-            bytes: self.progress_bytes,
-            files: self.progress_files,
-            total_bytes: None,
-        });
+        self.control.publish_extraction_progress(
+            crate::ArchiveProgress {
+                bytes: self.progress_bytes,
+                files: self.progress_files,
+                total_bytes: None,
+            },
+            self.current_bytes_done,
+        );
         Ok(())
     }
     fn abort_file(&mut self, token: Uuid) {

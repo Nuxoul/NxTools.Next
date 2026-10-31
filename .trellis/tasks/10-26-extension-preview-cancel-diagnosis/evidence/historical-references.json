@@ -1,0 +1,18 @@
+[
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+    "sha256": "7753e62dcaa29bb39f7ea683db082ceb6cc97485e48220b24d486cc7551d8c48"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-review.md",
+    "sha256": "ae46b19eb442394a0939abbfeafd5ef44af32a8349a29a2d028943b5b8f37f4c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-settings-search-diagnosis/outcomes.md",
+    "sha256": "ba49d2a6718f54d66aabdb8bc9ec4548d9775106ae23186b366dfbfbe44a3c62"
+  },
+  {
+    "path": ".trellis/tasks/10-25-extensions-compile-closeout/outcomes.md",
+    "sha256": "39b4e15403d7936e1cbd97aae52b9adbb0bdf2861a25f08106d2c24f0249fe33"
+  }
+]

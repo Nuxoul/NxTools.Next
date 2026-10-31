@@ -93,6 +93,8 @@ fn execute_attempts(
         || request.operation_id != control.operation_id()
         || request.output_readmission.is_some()
         || request.delete_source.is_some()
+        || request.extract_options.as_ref().is_some_and(|options| options.reclamation.is_some())
+        || request.job_extract.as_ref().is_some_and(|options| options.reclamation.is_some())
     {
         return Err(ArchiveError::UnsupportedOperation);
     }

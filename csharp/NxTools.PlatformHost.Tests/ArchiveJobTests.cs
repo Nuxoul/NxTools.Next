@@ -15,6 +15,12 @@ internal static class ArchiveJobTests {
     private static ArchiveJobCommand Control(ArchiveJobCommand original,string action,ArchiveJobReply? reply=null)=>original with{Action=action,Request=null,Reply=reply};
     private static async Task<ArchiveJobEvent> Next(ArchiveJobSession session)=>(await session.Events.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20))).Payload.GetProperty("data").Deserialize<ArchiveJobEvent>(JsonDefaults.Options)!;
     private static async Task<ArchiveJobTerminal> Finish(ArchiveJobSession session){while(true){var e=await Next(session);if(e.Terminal is {} terminal)return terminal;}}
+    private static void ExportDirectoryTerminal(string name, ArchiveJobTerminal terminal) {
+        var directory=Environment.GetEnvironmentVariable("NXTOOLS_ARCHIVE_DIRECTORY_TERMINALS");
+        if(string.IsNullOrEmpty(directory))return;
+        Check(Path.IsPathFullyQualified(directory)&&Directory.Exists(directory),"explicit existing fixture evidence directory required");
+        File.WriteAllText(Path.Combine(directory,name+".json"),JsonSerializer.Serialize(terminal,JsonDefaults.Options));
+    }
     private static ArchiveJobRequest Extract(string source,string destination,string policy="skip")=>new(){Kind="extract",Paths=[source],Destination=destination,Extract=new(){Strategy="smart",SingleFileFolder=false,Conflict=policy,CopyMotw=false}};
     public static Task StrictWireAndPickerCancellation(){
         var command=Start(new(){Kind="test",Paths=["C:\\owned\\tiny.zip"]});Check(ArchiveJobWire.Parse(Wire(command)).Request!.Kind=="test","roundtrip");
@@ -24,6 +30,13 @@ internal static class ArchiveJobTests {
         try{ArchiveJobWire.Parse(Wire(create));throw new InvalidOperationException("hidden level accepted");}catch(InvalidDataException){}
         var secret=new ArchiveJobCreate{Format="zip",Level="normal",Method="deflate",Password=[97,98,99],StripSingleRoot=false,ExcludePatterns=[],TestAfterCreate=false,Name="out.zip"};
         var serialized=JsonSerializer.SerializeToElement(secret,JsonDefaults.Options);Check(serialized.GetProperty("password").ValueKind==JsonValueKind.Array && !secret.ToString().Contains("abc"),"private array/redaction");
+        var oldPrompt=new ArchiveJobPrompt(new(Guid.NewGuid(),Guid.NewGuid(),1),"conflict");
+        Check(!JsonSerializer.SerializeToElement(oldPrompt,JsonDefaults.Options).TryGetProperty("display",out _),"legacy display omission");
+        Check(JsonSerializer.Deserialize<ArchiveJobPrompt>(JsonSerializer.Serialize(oldPrompt,JsonDefaults.Options),ArchiveJobWire.Strict)!.Display is null,"legacy missing display");
+        var display=new ArchiveJobPromptDisplay("private-member-sentinel/同名.txt",@"C:\owned\private-target-sentinel\同名.txt");
+        Check(display.Valid("conflict") && !(oldPrompt with{Display=display}).ToString().Contains("sentinel"),"typed display redaction");
+        Check(!new ArchiveJobPromptDisplay(null,"x").Valid("conflict") && !new ArchiveJobPromptDisplay("x","line\nbreak").Valid("conflict"),"invalid display bounds/shape");
+        try{JsonSerializer.Deserialize<ArchiveJobPromptDisplay>("{\"incoming_member\":\"x\",\"target\":\"y\",\"authority\":true}",ArchiveJobWire.Strict);throw new InvalidOperationException("unknown display authority accepted");}catch(JsonException){}
         var picker=new ArchivePickerCommand{Version=1,OperationId=Guid.NewGuid(),SessionId=Guid.NewGuid(),Generation=7,OwnerWindowHandle=1,Purpose="files"};
         using var cancelled=new CancellationTokenSource();cancelled.Cancel();var result=ArchiveJobPicker.Pick(picker,0,cancelled.Token);Check(result.Cancelled && result.Paths.Length==0 && result.Generation==7,"pre-cancel must not create dialog");
         return Task.CompletedTask;
@@ -45,15 +58,19 @@ internal static class ArchiveJobTests {
         var root=Package();try{
             var archive=Path.Combine(root,"tiny.zip");using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){var entry=zip.CreateEntry("a.txt");using var writer=new StreamWriter(entry.Open());writer.Write("incoming");}
             var a=Path.Combine(root,"a");var b=Path.Combine(root,"b");Directory.CreateDirectory(a);Directory.CreateDirectory(b);File.WriteAllText(Path.Combine(a,"a.txt"),"existing-a");File.WriteAllText(Path.Combine(b,"a.txt"),"existing-b");
-            await using var first=ArchiveJobSession.ForOwnedTestPackage(root);await using var second=ArchiveJobSession.ForOwnedTestPackage(root);await using var third=ArchiveReadSession.ForOwnedTestPackage(root);
+            var displayLog=new JobLog();
+            await using var first=ArchiveJobSession.ForOwnedTestPackage(root,displayLog);await using var second=ArchiveJobSession.ForOwnedTestPackage(root,displayLog);await using var third=ArchiveReadSession.ForOwnedTestPackage(root);
             var start=Start(Extract(archive,a,"ask"));Check(first.Dispatch(Wire(start)).Success,"first job");ArchiveJobEvent prompt;do{prompt=await Next(first);Check(prompt.Terminal is null,"expected conflict not terminal "+prompt.Terminal?.Code);}while(prompt.Prompt is null);
             Check(first.Dispatch(Wire(Control(start,"pause"))).Success,"real pause control");Check(first.Dispatch(Wire(Control(start,"resume"))).Success,"real resume control");
             var other=Start(Extract(archive,b,"ask"));Check(second.Dispatch(Wire(other)).Success,"second job");ArchiveJobEvent otherPrompt;do{otherPrompt=await Next(second);Check(otherPrompt.Terminal is null,"second expected prompt");}while(otherPrompt.Prompt is null);
+            Check(prompt.Prompt!.Display==new ArchiveJobPromptDisplay("a.txt",Path.Combine(a,"a.txt")) && otherPrompt.Prompt!.Display==new ArchiveJobPromptDisplay("a.txt",Path.Combine(b,"a.txt")),"two current jobs retain distinct same-size targets");
+            Check(!prompt.Prompt.ToString().Contains(root) && !otherPrompt.Prompt.ToString().Contains(root),"nested prompt record redaction");
             var read=ArchiveProductReadTests.Command("test",path:archive);Check(!third.Dispatch(read).Success,"jobs and reads must share GLOBAL two reservations");
             var reply=new ArchiveJobReply{Ticket=prompt.Prompt!.Ticket with{Generation=99},Kind="conflict",Decision="overwrite",ApplyToAll=false};Check(!first.Dispatch(Wire(Control(start,"reply",reply))).Success,"stale ticket cannot approve");
             Check(first.Dispatch(Wire(Control(start,"cancel"))).Success,"cancel original prompt");var cancelled=await Finish(first);Check(cancelled.Outcome=="cancelled" && cancelled.FilesCommitted==0 && cancelled.CleanupComplete,"cancel cleanup "+cancelled.Code);Check(File.ReadAllText(Path.Combine(a,"a.txt"))=="existing-a","prior target preserved");
             var approve=new ArchiveJobReply{Ticket=otherPrompt.Prompt!.Ticket,Kind="conflict",Decision="skip",ApplyToAll=true};Check(second.Dispatch(Wire(Control(other,"reply",approve))).Success,"original finite conflict port");var skipped=await Finish(second);Check(skipped.Outcome=="succeeded_with_warnings" && skipped.FilesSkipped==1 && skipped.FilesCommitted==0 && skipped.CleanupComplete,"warning projection "+skipped.Code);
             Check(!first.Dispatch(Wire(Control(start,"reply",reply))).Success,"retired prompt cannot revive");
+            Check(displayLog.Records.All(line=>!line.Contains(root) && !line.Contains("a.txt") && !line.Contains("existing-a")),"original job/runner sink does not log display payload");
         }finally{Directory.Delete(root,true);}
     }
     private static async Task<(ArchiveBrowserContext Context,ArchiveReadEntry[] Entries)> Browse(string root,string path) {
@@ -155,9 +172,115 @@ internal static class ArchiveJobTests {
             var archive=Path.Combine(root,"named.zip");using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){foreach(var name in new[]{"a.txt","b.txt"}){var entry=zip.CreateEntry(name);using var writer=new StreamWriter(entry.Open());writer.Write(name);}}
             var output=Path.Combine(root,"out");Directory.CreateDirectory(Path.Combine(output,"named"));File.WriteAllText(Path.Combine(output,"named","foreign.txt"),"keep");
             await using var jobs=ArchiveJobSession.ForOwnedTestPackage(root);
-            foreach(var strategy in new[]{"name","smart"}){var command=Start(Extract(archive,output) with{Extract=new(){Strategy=strategy,SingleFileFolder=false,Conflict="skip",CopyMotw=false}});Check(jobs.Dispatch(Wire(command)).Success,"unique destination admission");var terminal=await Finish(jobs);Check(terminal.Outcome=="succeeded" && terminal.FilesCommitted==2 && terminal.CleanupComplete,"unique destination terminal "+terminal.Code);}
+            foreach(var strategy in new[]{"name","smart"}){var command=Start(Extract(archive,output) with{Extract=new(){Strategy=strategy,SingleFileFolder=false,Conflict="skip",CopyMotw=false}});Check(jobs.Dispatch(Wire(command)).Success,"unique destination admission");var terminal=await Finish(jobs);Check(terminal.Outcome=="succeeded" && terminal.FilesCommitted==2 && terminal.CleanupComplete,"unique destination terminal "+terminal.Code);
+                var wire=JsonSerializer.SerializeToElement(terminal,JsonDefaults.Options);
+                Check(wire.TryGetProperty("result_location",out var location) && location.GetProperty("action").GetString()=="open" && location.GetProperty("target").GetString()==Path.Combine(output,strategy=="name"?"named (2)":"named (3)"),"actual native Name/Smart collision result location must survive terminal");
+            }
             Check(!File.Exists(Path.Combine(output,"named","a.txt")) && File.ReadAllText(Path.Combine(output,"named","foreign.txt"))=="keep","Name/Smart must not merge existing directory");
             Check(File.ReadAllText(Path.Combine(output,"named (2)","a.txt"))=="a.txt" && File.ReadAllText(Path.Combine(output,"named (3)","b.txt"))=="b.txt","finite unique folders preserve all outputs");
+            foreach(var shape in new[]{"here_many","here_file","here_directory","smart_directory"}) {
+                var selected=Path.Combine(root,shape+".zip");
+                using(var zip=ZipFile.Open(selected,ZipArchiveMode.Create)) {
+                    foreach(var name in shape=="here_many"?new[]{"first.txt","second.txt"}:shape=="here_file"?new[]{"only.txt"}:new[]{"folder/a.txt","folder/b.txt"}) {var entry=zip.CreateEntry(name);using var writer=new StreamWriter(entry.Open());writer.Write("payload");}
+                }
+                var target=Path.Combine(root,shape);Directory.CreateDirectory(target);
+                var command=Start(Extract(selected,target) with{Extract=new(){Strategy=shape.StartsWith("smart",StringComparison.Ordinal)?"smart":"here",SingleFileFolder=false,Conflict="skip",CopyMotw=false}});
+                Check(jobs.Dispatch(Wire(command)).Success,"result shape admission");var terminal=await Finish(jobs);
+                var expected=shape=="here_many"?target:Path.Combine(target,shape=="here_file"?"only.txt":"folder");
+                Check(terminal.Outcome=="succeeded" && terminal.ResultLocation?.Target==expected && terminal.ResultLocation.Action==(shape=="here_file"?"select_in_explorer":"open"),"native Here/Smart sole directory/file/multiple result location "+shape);
+            }
+        }finally{Directory.Delete(root,true);}
+    }
+    public static async Task ActualEmptyDirectoryResultLocation() {
+        var root=Package();try {
+            await using var jobs=ArchiveJobSession.ForOwnedTestPackage(root);
+            var cases=0;
+            foreach(var strategy in new[]{"here","name","smart"})
+            foreach(var shape in new[]{"sole","multiple","nested"}) {
+                var archive=Path.Combine(root,strategy+"-"+shape+".zip");
+                var members=shape=="sole"?new[]{"empty/"}:shape=="multiple"?new[]{"first/","second/"}:new[]{"outer/inner/deep/"};
+                using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create))foreach(var member in members)zip.CreateEntry(member);
+                var destination=Path.Combine(root,strategy+"-"+shape);Directory.CreateDirectory(destination);
+                var stem=Path.GetFileNameWithoutExtension(archive);
+                var wrapped=strategy=="name" || strategy=="smart" && shape=="multiple";
+                if(wrapped)Directory.CreateDirectory(Path.Combine(destination,stem));
+                // Repeat Name/Smart wrappers to prove the held native (2)/(3) result, not a path guess.
+                foreach(var attempt in wrapped?new[]{2,3}:new[]{1}) {
+                    var command=Start(Extract(archive,destination) with{Extract=new(){Strategy=strategy,SingleFileFolder=false,Conflict="skip",CopyMotw=false}});
+                    Check(jobs.Dispatch(Wire(command)).Success,"empty directory worker admission");
+                    var terminal=await Finish(jobs);
+                    var output=wrapped?Path.Combine(destination,stem+" ("+attempt+")"):destination;
+                    Check(members.All(member=>Directory.Exists(Path.Combine(output,member.TrimEnd('/').Replace('/',Path.DirectorySeparatorChar)))),"real worker did not create empty directories");
+                    Check(terminal.Outcome=="succeeded" && terminal.CleanupComplete && terminal.FilesCommitted==0 && terminal.BytesCommitted==0 && terminal.Journal is {Count:0},"directory-only native terminal must retain zero file commits "+terminal.Code);
+                    var expected=wrapped || shape=="multiple"?output:Path.Combine(output,shape=="sole"?"empty":"outer");
+                    Check(terminal.ResultLocation is {Action:"open"} location && location.Target==expected,
+                        "actual empty directories exist but worker terminal result location is "+(terminal.ResultLocation?.Target??"NULL")+" for "+strategy+"/"+shape+"/"+attempt);
+                    Check(Directory.GetFiles(destination,"*",SearchOption.AllDirectories).Length==0,"directory-only extraction invented files");
+                    Check(!jobs.Dispatch(Wire(command)).Success && !jobs.Events.TryRead(out _),"directory terminal must be once-only");
+                    ExportDirectoryTerminal(strategy+"-"+shape+"-"+attempt,terminal);
+                    cases++;
+                }
+            }
+            Console.WriteLine("EMPTY-DIRECTORY worker terminal cases="+cases);
+        }finally{Directory.Delete(root,true);}
+    }
+    public static async Task ActualEmptyDirectoryNoOutputAndTerminalGuards() {
+        var root=Package();try {
+            var empty=Path.Combine(root,"empty.zip");using(var zip=ZipFile.Open(empty,ZipArchiveMode.Create)){}
+            await using var jobs=ArchiveJobSession.ForOwnedTestPackage(root);
+            foreach(var strategy in new[]{"here","name","smart"})
+            foreach(var present in new[]{false,true}) {
+                var destination=Path.Combine(root,"zero-"+strategy+"-"+present);
+                if(present)Directory.CreateDirectory(destination);
+                var command=Start(Extract(empty,destination) with{Extract=new(){Strategy=strategy,SingleFileFolder=false,Conflict="skip",CopyMotw=false}});
+                Check(jobs.Dispatch(Wire(command)).Success,"zero-output worker admission");var terminal=await Finish(jobs);
+                Check(terminal.Outcome=="succeeded" && terminal.CleanupComplete && terminal.FilesCommitted==0 && terminal.ResultLocation is null && Directory.Exists(destination)==present,"true zero-output archive must not locate or create destination");
+                if(present)Check(Directory.GetFileSystemEntries(destination).Length==0,"zero-output archive created wrapper");
+                ExportDirectoryTerminal("zero-"+strategy+"-"+present,terminal);
+            }
+            // Preparation effects alone (including a collision wrapper) do not represent completed output.
+            var preparedPath=Path.Combine(root,"prepared","base");
+            using(var prepared=ArchiveOutputSession.Prepare(preparedPath,Guid.NewGuid())) {
+                prepared.CreatePreparedRoot();Check(prepared.ResultLocation() is null,"prepared base is not successful output");
+                prepared.CreateExclusiveDirectory("wrapper");Check(prepared.ResultLocation() is null,"prepared wrapper is not completed archive output");
+                prepared.EnsureDirectory("wrapper/empty");
+                Check(prepared.ResultLocation()?.Target==Path.Combine(preparedPath,"wrapper"),"completed native directory must locate through held wrapper");
+                var moved=false;try{Directory.Move(Path.Combine(preparedPath,"wrapper"),Path.Combine(preparedPath,"moved"));moved=true;}catch(IOException){}
+                Check(!moved && prepared.ResultLocation()?.Target==Path.Combine(preparedPath,"wrapper"),"result directory must remain held by original native owner");
+            }
+            var unfinishedPath=Path.Combine(root,"unfinished");
+            using(var unfinished=ArchiveOutputSession.Prepare(unfinishedPath,Guid.NewGuid())) {
+                unfinished.CreatePreparedRoot();var token=unfinished.BeginFile("ancestry/file.txt");unfinished.Write(token,new byte[]{1});
+                Check(unfinished.ResultLocation() is null,"uncommitted file ancestry is not completed directory output");
+                Check(unfinished.Cancel(token).Category=="partial_removed" && unfinished.ResultLocation() is null,"cleaned uncommitted ancestry must not locate");
+            }
+            foreach(var mode in new[]{"failed","cancelled","unknown"}) {
+                var archive=Path.Combine(root,mode+".zip");
+                using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)) {zip.CreateEntry("empty/");using var writer=new StreamWriter(zip.CreateEntry("file.txt").Open());writer.Write("incoming");}
+                var destination=Path.Combine(root,mode);Directory.CreateDirectory(destination);
+                var target=Path.Combine(destination,"file.txt");File.WriteAllText(target,"keep");
+                await using var guarded=ArchiveJobSession.ForOwnedTestPackage(root);
+                var command=Start(Extract(archive,destination,"ask") with{Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="ask",CopyMotw=false}});
+                if(mode=="unknown")guarded.ProbeOutputCommitForFixture(stage=>{if(stage=="commit_in_flight")throw new ArchiveOutputException("replace_file",64);});
+                Check(guarded.Dispatch(Wire(command)).Success,"guarded worker admission");
+                ArchiveJobEvent prompt;do{prompt=await Next(guarded);Check(prompt.Terminal is null,"expected conflict after directory output");}while(prompt.Prompt is null);
+                Check(Directory.Exists(Path.Combine(destination,"empty")),"guard must run after actual directory output");
+                if(mode=="cancelled")Check(guarded.Dispatch(Wire(Control(command,"cancel"))).Success,"cancel original worker");
+                else {
+                    if(mode=="failed")File.WriteAllText(target,"changed");
+                    Check(guarded.Dispatch(Wire(Control(command,"reply",new(){Ticket=prompt.Prompt!.Ticket,Kind="conflict",Decision="overwrite",ApplyToAll=false}))).Success,"original conflict approval");
+                }
+                var terminal=await Finish(guarded);
+                var code=mode=="failed"?"target_changed":mode=="cancelled"?"cancelled":"commit_outcome_unknown";
+                Check(terminal.Outcome==(mode=="cancelled"?"cancelled":"failed") && terminal.Code==code && terminal.CleanupComplete && terminal.FilesCommitted==0 && terminal.BytesCommitted==0,"actual directory output must not rewrite failure/cancel/unknown terminal "+mode+":"+terminal.Code);
+                Check(terminal.ResultLocation is {Action:"open"} location && location.Target==Path.Combine(destination,"empty"),"retained actual directory location lost on "+mode);
+                Check(File.ReadAllText(target)==(mode=="failed"?"changed":"keep"),"guarded existing target changed");
+                Check(Directory.GetFiles(destination,".nxpart-*").Length==(mode=="unknown"?1:0),"original unknown evidence/failed-cancel cleanup changed");
+                if(mode=="unknown")Check(terminal.CommitState=="CommitOutcomeUnknown" && terminal.NativeErrorCode==64,"unknown native ownership facts changed");
+                ExportDirectoryTerminal("guard-"+mode,terminal);
+                Check(!guarded.Events.TryRead(out _),"duplicate guarded terminal");
+            }
+            Console.WriteLine("EMPTY-DIRECTORY no-output cases=6 preparation=3 terminal-guards=3");
         }finally{Directory.Delete(root,true);}
     }
 }

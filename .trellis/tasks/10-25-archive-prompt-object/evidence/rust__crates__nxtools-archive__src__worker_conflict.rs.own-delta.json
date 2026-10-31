@@ -1,0 +1,45 @@
+{
+  "path": "rust/crates/nxtools-archive/src/worker_conflict.rs",
+  "baseline_sha256": "12c1955296ad9c8f901d09645aa07c35f4d7477df388d7d79c735dc854e77a9d",
+  "delivery_sha256": "c7157a04b08de8b7f41df9851071611db87cdd630e46b81e09a74be6a33199de",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 40,
+      "baseline_end": 40,
+      "delivery_start": 40,
+      "delivery_end": 42,
+      "baseline_text": "",
+      "delivery_text": "    #[serde(default, skip_serializing_if = \"Option::is_none\")]\n    pub display: Option<nxtools_protocol::archive_job::ArchiveJobPromptDisplay>,\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 72,
+      "baseline_end": 72,
+      "delivery_start": 74,
+      "delivery_end": 75,
+      "baseline_text": "",
+      "delivery_text": "        member_path: &str,\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 90,
+      "baseline_end": 90,
+      "delivery_start": 93,
+      "delivery_end": 114,
+      "baseline_text": "",
+      "delivery_text": "                    // Exact current member projection, not a basename/progress lookup.\n                    // Display never feeds the native observation/approval paths below.\n                    let display = self\n                        .reserved\n                        .iter()\n                        .find(|entry| {\n                            entry\n                                .display_path()\n                                .replace('\\\\', \"/\")\n                                .trim_end_matches('/')\n                                == member_path\n                        })\n                        .and_then(|entry| {\n                            let member = entry.display_path();\n                            (member.len() <= 32767 && path.len() <= 65535).then(|| {\n                                nxtools_protocol::archive_job::ArchiveJobPromptDisplay {\n                                    incoming_member: Some(member.to_owned()),\n                                    target: path.to_owned(),\n                                }\n                            })\n                        });\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 102,
+      "baseline_end": 102,
+      "delivery_start": 126,
+      "delivery_end": 127,
+      "baseline_text": "",
+      "delivery_text": "                                display: display.clone(),\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

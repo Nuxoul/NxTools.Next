@@ -1,0 +1,353 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+    "baseline_sha256": "bb8e7eace6172caa29ef34eb98a602862be9bc8e393398689bca83fd9abd3f15",
+    "after_sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2",
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start": 20,
+        "baseline_end": 22,
+        "after_start": 20,
+        "after_end": 22,
+        "baseline_text": "    App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent,\n    ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,\n",
+        "after_text": "    App, AppContext, Context, Entity, EntityInputHandler, FocusHandle, Focusable, IntoElement,\n    KeyDownEvent, ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 105,
+        "baseline_end": 105,
+        "after_start": 105,
+        "after_end": 106,
+        "baseline_text": "",
+        "after_text": "    default_enter_held: bool,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 418,
+        "baseline_end": 418,
+        "after_start": 419,
+        "after_end": 422,
+        "baseline_text": "",
+        "after_text": "        subscriptions.push(cx.observe_window_activation(window, |this, _, _| {\n            this.default_enter_held = false;\n        }));\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 448,
+        "baseline_end": 448,
+        "after_start": 452,
+        "after_end": 453,
+        "baseline_text": "",
+        "after_text": "            default_enter_held: false,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 459,
+        "baseline_end": 459,
+        "after_start": 464,
+        "after_end": 493,
+        "baseline_text": "",
+        "after_text": "    }\n    fn default_enter(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {\n        if event.keystroke.key != \"enter\" {\n            return;\n        }\n        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {\n            return;\n        }\n        if event.keystroke.modifiers.modified()\n            || event.prefer_character_input\n            || self.busy()\n            || window.has_active_dialog(cx)\n        {\n            return;\n        }\n        let Some(input) = [&self.name, &self.destination, &self.volume]\n            .into_iter()\n            .find(|input| input.focus_handle(cx).is_focused(window))\n            .cloned()\n        else {\n            return;\n        };\n        if input.update(cx, |input, cx| {\n            input.marked_text_range(window, cx).is_some()\n        }) {\n            return;\n        }\n        cx.stop_propagation();\n        self.submit(window, cx);\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 1574,
+        "baseline_end": 1574,
+        "after_start": 1608,
+        "after_end": 1614,
+        "baseline_text": "",
+        "after_text": "            .capture_key_down(cx.listener(Self::default_enter))\n            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {\n                if event.keystroke.key == \"enter\" {\n                    this.default_enter_held = false;\n                }\n            }))\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+    "baseline_sha256": "e095a12211c2b6460e2f51f31f9a4e2801ed78b07b090e838ceb14c4a577505b",
+    "after_sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391",
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start": 626,
+        "baseline_end": 626,
+        "after_start": 626,
+        "after_end": 902,
+        "baseline_text": "",
+        "after_text": "\nfn audit05_form_key(surface: &mut VisualTestContext, key: &str, down: bool, held: bool) {\n    let keystroke = gpui_kit::Keystroke::parse(key).expect(\"form key\");\n    if down {\n        surface.simulate_event(gpui_kit::KeyDownEvent {\n            keystroke,\n            is_held: held,\n            prefer_character_input: false,\n        });\n    } else {\n        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });\n    }\n}\n#[gpui_kit::test]\nfn audit05_create_single_line_enter_reaches_original_submit_once(cx: &mut TestAppContext) {\n    let (view, mut surface) = mount(cx, ArchiveSettings::default());\n    view.update_in(&mut surface, |form, window, cx| {\n        form.name.read(cx).focus_handle(cx).focus(window, cx)\n    });\n    draw(&mut surface);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(\n        view.read_with(&surface, |form, _| form.submit_count),\n        1,\n        \"actual focused single-line Enter must use original submit\"\n    );\n    assert!(\n        view.read_with(&surface, |form, _| form.error.is_some()),\n        \"original disconnected-owner admission failure remains observable\"\n    );\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(\n        view.read_with(&surface, |form, _| form.submit_count),\n        1,\n        \"duplicate release is not another submit\"\n    );\n}\n\n#[gpui_kit::test]\nfn audit05_form_ime_modifiers_repeat_and_busy_keep_original_validation(cx: &mut TestAppContext) {\n    let (view, mut surface) = mount(cx, ArchiveSettings::default());\n    view.update_in(&mut surface, |form, window, cx| {\n        form.name.read(cx).focus_handle(cx).focus(window, cx);\n    });\n    draw(&mut surface);\n    for key in [\"ctrl-enter\", \"alt-enter\", \"shift-enter\"] {\n        audit05_form_key(&mut surface, key, true, false);\n        audit05_form_key(&mut surface, key, false, false);\n    }\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"enter\").expect(\"character Enter\"),\n        is_held: false,\n        prefer_character_input: true,\n    });\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    audit05_form_key(&mut surface, \"enter\", true, true);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    view.update_in(&mut surface, |form, window, cx| {\n        form.name.update(cx, |input, cx| {\n            input.replace_and_mark_text_in_range(None, \"中\", Some(1..1), window, cx)\n        });\n    });\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);\n    view.update_in(&mut surface, |form, window, cx| {\n        form.name.update(cx, |input, cx| {\n            input.unmark_text(window, cx);\n            input.set_value(\"valid.zip\", window, cx);\n        });\n        form.pending_picker = Some(PendingPicker {\n            operation: None,\n            purpose: ArchivePickerPurpose::Files,\n        });\n    });\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);\n    view.update_in(&mut surface, |form, _, _| form.pending_picker = None);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);\n    // Synchronous admission rejection clears busy; the same physical press still cannot retry.\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", true, true);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 2);\n}\n#[gpui_kit::test]\nfn audit05_form_masked_multiline_select_and_format_dialog_do_not_submit_outer(\n    cx: &mut TestAppContext,\n) {\n    let (view, mut surface) = mount(cx, ArchiveSettings::default());\n    for password in [true, false] {\n        view.update_in(&mut surface, |form, window, cx| {\n            let input = if password {\n                form.password.clone()\n            } else {\n                form.confirm.clone()\n            };\n            input.focus_handle(cx).focus(window, cx);\n        });\n        draw(&mut surface);\n        audit05_form_key(&mut surface, \"enter\", true, false);\n        audit05_form_key(&mut surface, \"enter\", false, false);\n    }\n    view.update_in(&mut surface, |form, window, cx| {\n        form.exclusions.focus_handle(cx).focus(window, cx);\n    });\n    // Mount a real comment editor using the original production modify constructor.\n    view.update_in(&mut surface, |form, window, cx| {\n        *form = OperationForm::modify(\n            ArchiveSettings::default(),\n            audit05_modify_draft(ArchiveJobModifyAction::Comment),\n            WeakEntity::new_invalid(),\n            window,\n            cx,\n        );\n        form.exclusions.focus_handle(cx).focus(window, cx);\n    });\n    draw(&mut surface);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);\n    assert!(view.read_with(&surface, |form, cx| {\n        form.exclusions.read(cx).value().contains('\\n')\n    }));\n    view.update_in(&mut surface, |form, window, cx| {\n        *form = OperationForm::create(\n            ArchiveSettings::default(),\n            vec![source()],\n            WeakEntity::new_invalid(),\n            window,\n            cx,\n        );\n        form.format.focus_handle(cx).focus(window, cx);\n    });\n    draw(&mut surface);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 0);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(\n        view.read_with(&surface, |form, _| form.submit_count),\n        0,\n        \"Select confirmation cannot fall through to outer submit\"\n    );\n    assert!(\n        surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)\n            .into_iter()\n            .filter(|node| node.role() == Some(gpui_kit::Role::ComboBox))\n            .all(|node| node.expanded() != Some(true))),\n        \"Select confirmation closes only its own layer\"\n    );\n    view.update_in(&mut surface, |form, window, cx| {\n        form.password.update(cx, |input, cx| {\n            input.set_value(\"synthetic-private\", window, cx)\n        });\n        form.confirm.update(cx, |input, cx| {\n            input.set_value(\"synthetic-private\", window, cx)\n        });\n        form.change_format(ArchiveCreateFormat::Tar, window, cx);\n    });\n    draw(&mut surface);\n    assert!(surface.update(|window, cx| window.has_active_dialog(cx)));\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(\n        view.read_with(&surface, |form, _| form.submit_count),\n        0,\n        \"child format decision cannot submit outer form\"\n    );\n}\nfn audit05_modify_draft(action: ArchiveJobModifyAction) -> ModifyDraft {\n    use nxtools_protocol::archive_browser::{ArchiveBrowserContext, ArchiveSourceBinding};\n    ModifyDraft {\n        source: r\"C:\\synthetic\\fixture.zip\".into(),\n        browser: ArchiveBrowserContext {\n            snapshot_id: Uuid::new_v4(),\n            format: \"Zip\".into(),\n            comment: String::new(),\n            source: ArchiveSourceBinding {\n                native: \"v1:fixture\".into(),\n                digest: [1; 32],\n                size: 1,\n                modified_unix_ns: 1,\n            },\n        },\n        action,\n        ordinals: vec![1],\n        value: Some(\"new.txt\".into()),\n        added: vec![],\n        codepage: 0,\n    }\n}\n#[gpui_kit::test]\nfn audit05_extract_and_edit_single_line_enter_keep_original_draft_and_cancel_key(\n    cx: &mut TestAppContext,\n) {\n    let (view, mut surface) = mount(cx, ArchiveSettings::default());\n    view.update_in(&mut surface, |form, window, cx| {\n        *form = OperationForm::extract(\n            ArchiveSettings::default(),\n            r\"C:\\synthetic\\fixture.zip\".into(),\n            None,\n            WeakEntity::new_invalid(),\n            window,\n            cx,\n        );\n        form.destination.focus_handle(cx).focus(window, cx);\n    });\n    draw(&mut surface);\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);\n    view.update_in(&mut surface, |form, window, cx| {\n        *form = OperationForm::modify(\n            ArchiveSettings::default(),\n            audit05_modify_draft(ArchiveJobModifyAction::Rename),\n            WeakEntity::new_invalid(),\n            window,\n            cx,\n        );\n        form.name.focus_handle(cx).focus(window, cx);\n    });\n    draw(&mut surface);\n    let original = view.read_with(&surface, |form, _| form.name.entity_id());\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    draw(&mut surface);\n    assert_eq!(view.read_with(&surface, |form, _| form.submit_count), 1);\n    assert_eq!(\n        view.read_with(&surface, |form, _| form.name.entity_id()),\n        original\n    );\n    assert_eq!(\n        view.read_with(&surface, |form, cx| form.name.read(cx).value().to_string()),\n        \"new.txt\"\n    );\n    for _ in 0..30 {\n        let focused = surface.update(|window, _| {\n            gpui_kit::base::test_support::snapshots(window)\n                .into_iter()\n                .any(|node| node.label() == Some(\"取消\") && node.focused() == Some(true))\n        });\n        if focused {\n            break;\n        }\n        surface.simulate_keystrokes(\"tab\");\n        draw(&mut surface);\n    }\n    audit05_form_key(&mut surface, \"enter\", true, false);\n    audit05_form_key(&mut surface, \"enter\", false, false);\n    surface.run_until_parked();\n    assert!(view.read_with(&surface, |form, _| form.retired));\n    assert_eq!(\n        view.read_with(&surface, |form, _| form.submit_count),\n        1,\n        \"focused Cancel is not default submit\"\n    );\n}\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+    "baseline_sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3",
+    "after_sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start": 8,
+        "baseline_end": 9,
+        "after_start": 8,
+        "after_end": 9,
+        "baseline_text": "    dialog::{DialogAction, DialogClose, DialogFooter},\n",
+        "after_text": "    dialog::{Confirm, DialogClose, DialogFooter},\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 23,
+        "baseline_end": 23,
+        "after_start": 23,
+        "after_end": 58,
+        "baseline_text": "",
+        "after_text": "\nstruct PromptButtonKeys;\nimpl gpui_kit::Global for PromptButtonKeys {}\n\n#[derive(Clone, Default)]\nstruct PromptButtonInput(std::rc::Rc<std::cell::Cell<bool>>);\nimpl PromptButtonInput {\n    fn guard(&self, button: Button) -> Button {\n        let down = self.0.clone();\n        let up = self.0.clone();\n        button\n            .key_context(\"ArchivePromptButton\")\n            .capture_key_down(move |event, window, cx| {\n                let activation = matches!(event.keystroke.key.as_str(), \"enter\" | \"space\");\n                if !activation {\n                    down.set(false);\n                    return;\n                }\n                if event.prefer_character_input || event.keystroke.modifiers.modified() {\n                    down.set(false);\n                } else if !event.is_held {\n                    down.set(true);\n                    return;\n                }\n                window.prevent_default();\n                cx.stop_propagation();\n            })\n            .capture_key_up(move |event, window, cx| {\n                if matches!(event.keystroke.key.as_str(), \"enter\" | \"space\") && !up.replace(false) {\n                    window.prevent_default();\n                    cx.stop_propagation();\n                }\n            })\n    }\n}\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 42,
+        "baseline_end": 42,
+        "after_start": 77,
+        "after_end": 79,
+        "baseline_text": "",
+        "after_text": "    prompt_inputs: Vec<PromptButtonInput>,\n    activation: Option<gpui_kit::Subscription>,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 61,
+        "baseline_end": 61,
+        "after_start": 98,
+        "after_end": 100,
+        "baseline_text": "",
+        "after_text": "            prompt_inputs: Vec::new(),\n            activation: None,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 69,
+        "baseline_end": 69,
+        "after_start": 108,
+        "after_end": 115,
+        "baseline_text": "",
+        "after_text": "        if self.activation.is_none() {\n            self.activation = Some(cx.observe_window_activation(window, |this, _, _| {\n                for input in &this.prompt_inputs {\n                    input.0.set(false);\n                }\n            }));\n        }\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 82,
+        "baseline_end": 82,
+        "after_start": 128,
+        "after_end": 131,
+        "baseline_text": "",
+        "after_text": "            for input in self.prompt_inputs.drain(..) {\n                input.0.set(false);\n            }\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 118,
+        "baseline_end": 119,
+        "after_start": 167,
+        "after_end": 173,
+        "baseline_text": "    fn show_prompt(&self, prompt: ArchiveJobPrompt, window: &mut Window, cx: &mut Context<Self>) {\n",
+        "after_text": "    fn show_prompt(\n        &mut self,\n        prompt: ArchiveJobPrompt,\n        window: &mut Window,\n        cx: &mut Context<Self>,\n    ) {\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 121,
+        "baseline_end": 121,
+        "after_start": 175,
+        "after_end": 183,
+        "baseline_text": "",
+        "after_text": "        if !cx.has_global::<PromptButtonKeys>() {\n            cx.bind_keys([gpui_kit::KeyBinding::new(\n                \"enter\",\n                gpui_kit::NoAction,\n                Some(\"ArchivePromptButton\"),\n            )]);\n            cx.set_global(PromptButtonKeys);\n        }\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 123,
+        "baseline_end": 123,
+        "after_start": 185,
+        "after_end": 196,
+        "baseline_text": "",
+        "after_text": "        let confirm_anchor = cx.focus_handle();\n        let explicit_confirm = std::rc::Rc::new(std::cell::Cell::new(false));\n        let confirm_input = PromptButtonInput::default();\n        let cancel_input_guard = PromptButtonInput::default();\n        let conflict_inputs: [PromptButtonInput; 3] =\n            std::array::from_fn(|_| PromptButtonInput::default());\n        for input in self.prompt_inputs.drain(..) {\n            input.0.set(false);\n        }\n        self.prompt_inputs = vec![confirm_input.clone(), cancel_input_guard.clone()];\n        self.prompt_inputs.extend(conflict_inputs.iter().cloned());\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 125,
+        "baseline_end": 125,
+        "after_start": 198,
+        "after_end": 199,
+        "baseline_text": "",
+        "after_text": "            let button_confirm=explicit_confirm.clone();let ok_explicit=explicit_confirm.clone();let action_anchor=confirm_anchor.clone();\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 133,
+        "baseline_end": 134,
+        "after_start": 207,
+        "after_end": 208,
+        "baseline_text": "            let mut footer=DialogFooter::new().child(DialogClose::new().trigger(|b|b.label(\"取消任务\")));\n",
+        "after_text": "            let mut footer=DialogFooter::new().child(DialogClose::new().trigger(|b|cancel_input_guard.guard(b.label(\"取消任务\"))));\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 135,
+        "baseline_end": 136,
+        "after_start": 209,
+        "after_end": 210,
+        "baseline_text": "                for (label,decision) in [(\"覆盖\",ArchiveJobConflictDecision::Overwrite),(\"跳过\",ArchiveJobConflictDecision::Skip),(\"自动重命名\",ArchiveJobConflictDecision::AutoRename)]{\n",
+        "after_text": "                for (index,(label,decision)) in [(\"覆盖\",ArchiveJobConflictDecision::Overwrite),(\"跳过\",ArchiveJobConflictDecision::Skip),(\"自动重命名\",ArchiveJobConflictDecision::AutoRename)].into_iter().enumerate(){\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 137,
+        "baseline_end": 138,
+        "after_start": 211,
+        "after_end": 212,
+        "baseline_text": "                    footer=footer.child(Button::new(label).label(label).outline().on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));\n",
+        "after_text": "                    footer=footer.child(conflict_inputs[index].guard(Button::new(gpui_kit::SharedString::from(format!(\"archive-conflict-{}-{label}\",prompt.ticket.prompt_id))).label(label).outline()).on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 139,
+        "baseline_end": 140,
+        "after_start": 213,
+        "after_end": 214,
+        "baseline_text": "            }else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(DialogAction::new().child(Button::new(\"archive-job-prompt-ok\").label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{\"确认覆盖\"}else{\"继续\"}).debug_selector(||\"archive-job-prompt-ok\".into())));}\n",
+        "after_text": "            }else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(confirm_input.guard(Button::new(gpui_kit::SharedString::from(format!(\"archive-job-prompt-ok-{}\",prompt.ticket.prompt_id))).label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{\"确认覆盖\"}else{\"继续\"})).debug_selector(||\"archive-job-prompt-ok\".into()).child(div().absolute().size_0().track_focus(&confirm_anchor)).on_click(move|_,window,cx|{button_confirm.set(true);action_anchor.dispatch_action(&Confirm{secondary:false},window,cx);}));}\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 146,
+        "baseline_end": 147,
+        "after_start": 220,
+        "after_end": 221,
+        "baseline_text": "                .on_ok(move|_,window,cx|{let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})\n",
+        "after_text": "                .on_ok(move|_,window,cx|{if ok_prompt.kind==ArchiveJobPromptKind::CreateOverwrite && !ok_explicit.replace(false){return false;}let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "baseline_sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4",
+    "after_sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3",
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start": 1220,
+        "baseline_end": 1220,
+        "after_start": 1220,
+        "after_end": 1769,
+        "baseline_text": "",
+        "after_text": "\n#[gpui_kit::test]\nfn audit05_create_keyboard_release_and_missing_object_cancel_are_once_only(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx)\n            .expect(\"original job admission\")\n    });\n    cx.run_until_parked();\n    let prompt = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\本次.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);\n    object_replies(&endpoint);\n    surface.update(|window, cx| window.focus_next(cx));\n    // Traverse the original Dialog focus scope, never call its reply/confirm helper.\n    for _ in 0..8 {\n        if object_node(&mut surface, \"确认覆盖\").focused() == Some(true) {\n            break;\n        }\n        surface.simulate_keystrokes(\"tab\");\n    }\n    assert_eq!(object_node(&mut surface, \"确认覆盖\").focused(), Some(true));\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"space press\"),\n        is_held: false,\n        prefer_character_input: false,\n    });\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"space release\"),\n    });\n    object_draw(&mut surface);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, prompt.ticket);\n    assert_eq!(\n        replies[0].decision,\n        Some(ArchiveJobConflictDecision::Overwrite)\n    );\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"duplicate release\"),\n    });\n    object_draw(&mut surface);\n    assert!(object_replies(&endpoint).is_empty());\n    let mut missing = object_prompt(\n        id,\n        \"conflict\",\n        Some(\"not-displayed.txt\"),\n        r\"C:\\not-displayed.txt\",\n    );\n    missing.display = None;\n    let ticket = missing.ticket.clone();\n    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);\n    let labels = object_labels(&mut surface);\n    assert_eq!(\n        labels\n            .iter()\n            .filter(|label| label.as_str() == \"本次提示未提供对象标识\")\n            .count(),\n        2\n    );\n    assert!(\n        !labels\n            .iter()\n            .any(|label| label.contains(\"本次.zip\") || label.contains(\"not-displayed\"))\n    );\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"missing metadata never auto-approves\"\n    );\n    surface.simulate_keystrokes(\"escape\");\n    object_draw(&mut surface);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, ticket);\n    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);\n}\n\nfn audit05_prompt_key(\n    surface: &mut gpui_kit::VisualTestContext,\n    key: &str,\n    down: bool,\n    held: bool,\n) {\n    let keystroke = gpui_kit::Keystroke::parse(key).expect(\"prompt key\");\n    if down {\n        surface.simulate_event(gpui_kit::KeyDownEvent {\n            keystroke,\n            is_held: held,\n            prefer_character_input: false,\n        });\n    } else {\n        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });\n    }\n    object_draw(surface);\n}\nfn audit05_tab_prompt(surface: &mut gpui_kit::VisualTestContext, label: &str) {\n    for _ in 0..12 {\n        if object_node(surface, label).focused() == Some(true) {\n            return;\n        }\n        surface.simulate_keystrokes(\"tab\");\n        object_draw(surface);\n    }\n    panic!(\"original Dialog control not Tab reachable: {label}\");\n}\n#[gpui_kit::test]\nfn audit05_create_enter_only_confirms_focused_button_on_release_and_cancel_keeps_owner(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).expect(\"job\")\n    });\n    cx.run_until_parked();\n    let prompt = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\enter.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);\n    object_replies(&endpoint);\n    assert_ne!(object_node(&mut surface, \"确认覆盖\").focused(), Some(true));\n    audit05_prompt_key(&mut surface, \"enter\", true, false);\n    audit05_prompt_key(&mut surface, \"enter\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"root Enter cannot authorize overwrite\"\n    );\n    audit05_tab_prompt(&mut surface, \"确认覆盖\");\n    audit05_prompt_key(&mut surface, \"enter\", true, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"Button activation must wait for release\"\n    );\n    audit05_prompt_key(&mut surface, \"enter\", true, true);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"held Enter cannot approve early\"\n    );\n    audit05_prompt_key(&mut surface, \"enter\", false, false);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, prompt.ticket);\n    assert_eq!(\n        replies[0].decision,\n        Some(ArchiveJobConflictDecision::Overwrite)\n    );\n    let next = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\cancel.zip\");\n    surface = show_object_prompt(&owner, &endpoint, id, next.clone(), cx);\n    audit05_tab_prompt(&mut surface, \"取消任务\");\n    audit05_prompt_key(&mut surface, \"enter\", true, false);\n    audit05_prompt_key(&mut surface, \"enter\", false, false);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, next.ticket);\n    assert!(\n        replies[0].decision.is_none(),\n        \"focused Cancel must not approve\"\n    );\n}\n\n#[gpui_kit::test]\nfn audit05_prompt_character_held_and_conflict_enter_respect_current_decision(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).expect(\"job\")\n    });\n    cx.run_until_parked();\n    let first = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\guarded.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, first, cx);\n    object_replies(&endpoint);\n    audit05_tab_prompt(&mut surface, \"确认覆盖\");\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"preferred input\"),\n        is_held: false,\n        prefer_character_input: true,\n    });\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"character-preferred input cannot authorize overwrite\"\n    );\n    audit05_prompt_key(&mut surface, \"space\", true, true);\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"held without an initiating down cannot approve\"\n    );\n    audit05_prompt_key(&mut surface, \"space\", true, false);\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"changed input intent\"),\n        is_held: false,\n        prefer_character_input: true,\n    });\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"changed input intent cancels an already armed release\"\n    );\n    for key in [\"ctrl-enter\", \"alt-enter\", \"shift-enter\"] {\n        audit05_prompt_key(&mut surface, key, true, false);\n        audit05_prompt_key(&mut surface, key, false, false);\n    }\n    assert!(object_replies(&endpoint).is_empty());\n    surface.simulate_keystrokes(\"escape\");\n    object_draw(&mut surface);\n    assert_eq!(object_replies(&endpoint).len(), 1);\n    let conflict = object_prompt(\n        id,\n        \"conflict\",\n        Some(\"current/同名.txt\"),\n        r\"C:\\owned\\current\\同名.txt\",\n    );\n    surface = show_object_prompt(&owner, &endpoint, id, conflict.clone(), cx);\n    audit05_tab_prompt(&mut surface, \"跳过\");\n    audit05_prompt_key(&mut surface, \"enter\", true, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"focused conflict Button owns release, not root Confirm\"\n    );\n    audit05_prompt_key(&mut surface, \"enter\", false, false);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, conflict.ticket);\n    assert_eq!(replies[0].decision, Some(ArchiveJobConflictDecision::Skip));\n}\n#[gpui_kit::test]\nfn audit05_create_form_enter_dispatches_original_typed_admission(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    owner.update(cx, |app, cx| {\n        app.open_create_form(\n            vec![crate::archive::draft::DraftSource {\n                path: r\"C:\\synthetic\\keyboard.txt\".into(),\n                directory: false,\n                bytes: Some(12),\n            }],\n            cx,\n        )\n    });\n    cx.run_until_parked();\n    let window = owner.read_with(cx, |app, _| {\n        app.jobs\n            .forms\n            .values()\n            .next()\n            .expect(\"original form slot\")\n            .window\n    });\n    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);\n    object_draw(&mut surface);\n    for _ in 0..40 {\n        let focused = surface.update(|window, _| {\n            gpui_kit::base::test_support::snapshots(window)\n                .into_iter()\n                .any(|node| node.label() == Some(\"压缩包名称\") && node.focused() == Some(true))\n        });\n        if focused {\n            break;\n        }\n        surface.simulate_keystrokes(\"tab\");\n        object_draw(&mut surface);\n    }\n    assert_eq!(\n        object_node(&mut surface, \"压缩包名称\").focused(),\n        Some(true)\n    );\n    object_replies(&endpoint);\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"enter\").expect(\"form Enter\"),\n        is_held: false,\n        prefer_character_input: false,\n    });\n    surface.run_until_parked();\n    let mut starts = vec![];\n    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {\n        if let Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) = envelope.message\n            && command.action == ArchiveJobAction::Start\n        {\n            starts.push(command);\n        }\n    }\n    assert_eq!(\n        starts.len(),\n        1,\n        \"real Enter must cross original typed bridge once\"\n    );\n    let request = starts[0].request.as_ref().expect(\"original request\");\n    assert_eq!(request.kind, ArchiveJobKind::Create);\n    assert_eq!(request.paths, vec![r\"C:\\synthetic\\keyboard.txt\"]);\n    assert_eq!(\n        request.create.as_ref().expect(\"create options\").name,\n        \"keyboard.zip\"\n    );\n    assert!(\n        request\n            .create\n            .as_ref()\n            .expect(\"create options\")\n            .password\n            .is_none()\n    );\n    assert!(\n        owner.read_with(&surface, |app, _| app.jobs.forms.is_empty()),\n        \"accepted form closes through its original owner\"\n    );\n}\n\n#[gpui_kit::test]\nfn audit05_prompt_focus_transfer_escape_and_new_ticket_cancel_old_release(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).expect(\"job\")\n    });\n    cx.run_until_parked();\n    let prompt = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\first.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt, cx);\n    object_replies(&endpoint);\n    audit05_tab_prompt(&mut surface, \"确认覆盖\");\n    audit05_prompt_key(&mut surface, \"space\", true, false);\n    surface.simulate_keystrokes(\"tab\");\n    object_draw(&mut surface);\n    audit05_tab_prompt(&mut surface, \"确认覆盖\");\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"focus ABA invalidates original native click generation\"\n    );\n    audit05_prompt_key(&mut surface, \"space\", true, false);\n    surface.simulate_keystrokes(\"escape\");\n    object_draw(&mut surface);\n    let cancelled = object_replies(&endpoint);\n    assert_eq!(cancelled.len(), 1);\n    assert!(cancelled[0].decision.is_none());\n    let next = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\next.zip\");\n    surface = show_object_prompt(&owner, &endpoint, id, next.clone(), cx);\n    audit05_tab_prompt(&mut surface, \"确认覆盖\");\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"old released key cannot authorize a new ticket\"\n    );\n    assert!(object_labels(&mut surface).contains(&r\"C:\\owned\\next.zip\".to_owned()));\n    audit05_prompt_key(&mut surface, \"space\", true, false);\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, next.ticket);\n    assert_eq!(\n        replies[0].decision,\n        Some(ArchiveJobConflictDecision::Overwrite)\n    );\n}\n#[gpui_kit::test]\nfn audit05_shared_prompt_buttons_preserve_password_risk_and_destination_reply_shapes(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).expect(\"job\")\n    });\n    cx.run_until_parked();\n    for kind in [\n        ArchiveJobPromptKind::Password,\n        ArchiveJobPromptKind::Risk,\n        ArchiveJobPromptKind::Destination,\n    ] {\n        let mut prompt = object_prompt(id, \"conflict\", Some(\"unused\"), \"unused\");\n        prompt.display = None;\n        prompt.kind = kind;\n        prompt.approved_limit = (kind == ArchiveJobPromptKind::Risk).then_some(4096);\n        let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);\n        object_replies(&endpoint);\n        if kind == ArchiveJobPromptKind::Password {\n            let input = object_node(&mut surface, \"当前任务密码\").bounds();\n            surface.simulate_click(input.center(), Default::default());\n            surface.simulate_input(\"synthetic-private-password\");\n            object_draw(&mut surface);\n        }\n        audit05_tab_prompt(&mut surface, \"继续\");\n        audit05_prompt_key(&mut surface, \"space\", true, false);\n        assert!(object_replies(&endpoint).is_empty());\n        audit05_prompt_key(&mut surface, \"space\", false, false);\n        let replies = object_replies(&endpoint);\n        assert_eq!(replies.len(), 1);\n        let reply = &replies[0];\n        assert_eq!(reply.ticket, prompt.ticket);\n        assert_eq!(reply.kind, kind);\n        assert_eq!(\n            reply.decision,\n            (kind == ArchiveJobPromptKind::Destination)\n                .then_some(ArchiveJobConflictDecision::Overwrite)\n        );\n        assert_eq!(reply.approved_limit, prompt.approved_limit);\n        assert!(!reply.apply_to_all);\n        if kind == ArchiveJobPromptKind::Password {\n            assert!(reply.password.is_some());\n            assert!(!format!(\"{reply:?}\").contains(\"synthetic-private-password\"));\n        } else {\n            assert!(reply.password.is_none());\n        }\n    }\n}\n\n#[gpui_kit::test]\nfn audit05_prompt_window_deactivation_cancels_armed_release(cx: &mut gpui_kit::TestAppContext) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx).expect(\"job\")\n    });\n    cx.run_until_parked();\n    let prompt = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\activation.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt, cx);\n    object_replies(&endpoint);\n    audit05_tab_prompt(&mut surface, \"确认覆盖\");\n    audit05_prompt_key(&mut surface, \"space\", true, false);\n    surface.deactivate_window();\n    object_draw(&mut surface);\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"window activation change cancels old armed release\"\n    );\n    assert!(surface.update(|window, cx| window.has_active_dialog(cx)));\n    audit05_prompt_key(&mut surface, \"space\", true, false);\n    audit05_prompt_key(&mut surface, \"space\", false, false);\n    assert_eq!(object_replies(&endpoint).len(), 1);\n}\n#[gpui_kit::test]\nfn audit05_output_budget_official_button_resumes_one_bound_attempt(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let mut input = request(1);\n    input.kind = ArchiveJobKind::Extract;\n    input.paths = vec![r\"C:\\owned\\budget.tar.gz\".into()];\n    input.destination = Some(r\"C:\\owned\\budget-out\".into());\n    input.limits.max_entry_bytes = 2;\n    input.limits.max_output_bytes = 2;\n    input.extract = Some(ArchiveJobExtract {\n        strategy: ArchiveJobStrategy::Here,\n        single_file_folder: false,\n        conflict: ArchiveJobConflict::Ask,\n        copy_motw: false,\n        selection: None,\n    });\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(input, completion(), cx)\n            .expect(\"logical budget job\")\n    });\n    let wait = |cx: &mut gpui_kit::TestAppContext| {\n        for _ in 0..100 {\n            cx.executor()\n                .advance_clock(std::time::Duration::from_millis(25));\n            cx.run_until_parked();\n            if let Ok(envelope) = endpoint.try_receive_command_for_contract_test()\n                && let Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) =\n                    envelope.message\n                && command.action == ArchiveJobAction::Start\n            {\n                return *command;\n            }\n            std::thread::sleep(std::time::Duration::from_millis(5));\n        }\n        panic!(\"original bounded start\")\n    };\n    let first = wait(cx);\n    assert_eq!(first.operation_id, id);\n    let mut shortage = terminal(id, true);\n    let facts = shortage.terminal.as_mut().expect(\"shortfall\");\n    facts.outcome = ArchiveJobOutcome::Failed;\n    facts.code = Some(\"resource_limit\".into());\n    facts.files_committed = 0;\n    facts.bytes_committed = 0;\n    facts.journal.clear();\n    facts.commit_state = None;\n    facts.output_shortfall = Some(ArchiveJobOutputShortfall {\n        current: ArchiveJobOutputBudget {\n            entry_bytes: 2,\n            output_bytes: 2,\n        },\n        required: ArchiveJobOutputBudget {\n            entry_bytes: 3,\n            output_bytes: 3,\n        },\n        source: ArchiveJobOutputSource {\n            native: \"v1:owned-budget\".into(),\n            digest: [8; 32],\n        },\n    });\n    deliver(&owner, &endpoint, shortage, cx);\n    let mut observed = None;\n    for _ in 0..100 {\n        cx.executor()\n            .advance_clock(std::time::Duration::from_millis(25));\n        cx.run_until_parked();\n        if let Some(prompt) = owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.clone()) {\n            observed = Some(prompt);\n            break;\n        }\n        std::thread::sleep(std::time::Duration::from_millis(5));\n    }\n    let prompt = observed.expect(\"bounded original budget prompt\");\n    assert_eq!(prompt.kind, ArchiveJobPromptKind::OutputBudget);\n    assert_eq!(prompt.approved_limit, Some(3));\n    let window = owner.read_with(cx, |app, _| {\n        app.jobs.records[&id]\n            .window\n            .as_ref()\n            .expect(\"budget Dialog\")\n            .0\n    });\n    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);\n    object_draw(&mut surface);\n    audit05_tab_prompt(&mut surface, \"继续\");\n    audit05_prompt_key(&mut surface, \"enter\", true, false);\n    assert!(\n        owner.read_with(&surface, |app, _| app.jobs.records[&id].prompt.as_ref()\n            == Some(&prompt)),\n        \"press alone cannot grant budget\"\n    );\n    audit05_prompt_key(&mut surface, \"enter\", false, false);\n    let second = wait(&mut surface);\n    assert_ne!(second.operation_id, id);\n    assert_eq!(second.session_id, id);\n    let retry = second.request.as_ref().expect(\"bound retry\");\n    assert_eq!(retry.limits.max_entry_bytes, 3);\n    assert_eq!(retry.limits.max_output_bytes, 3);\n    assert_eq!(\n        retry\n            .readmission\n            .as_ref()\n            .expect(\"source binding\")\n            .expected_source\n            .as_ref()\n            .expect(\"source\")\n            .native,\n        \"v1:owned-budget\"\n    );\n    audit05_prompt_key(&mut surface, \"enter\", false, false);\n    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {\n        assert!(\n            !matches!(envelope.message,Message::PlatformCommand(PlatformCommand::ArchiveJob(command))if command.action==ArchiveJobAction::Start),\n            \"duplicate release cannot readmit again\"\n        );\n    }\n}\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "baseline_sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d",
+    "after_sha256": "9ff0ef94d2e1739132488dbfab8e37c8f610553867f51771633c74b771f0f45e",
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start": 1,
+        "baseline_end": 1,
+        "after_start": 1,
+        "after_end": 2,
+        "baseline_text": "",
+        "after_text": "use gpui_kit::component::WindowExt as _;\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 19,
+        "baseline_end": 19,
+        "after_start": 20,
+        "after_end": 22,
+        "baseline_text": "",
+        "after_text": "    default_enter_held: bool,\n    _activation: Subscription,\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 68,
+        "baseline_end": 68,
+        "after_start": 71,
+        "after_end": 74,
+        "baseline_text": "",
+        "after_text": "            default_enter_held: false,\n            _activation: cx\n                .observe_window_activation(window, |this, _, _| this.default_enter_held = false),\n"
+      },
+      {
+        "kind": "insert",
+        "baseline_start": 69,
+        "baseline_end": 69,
+        "after_start": 75,
+        "after_end": 102,
+        "baseline_text": "",
+        "after_text": "    }\n    fn default_enter(\n        &mut self,\n        event: &gpui_kit::KeyDownEvent,\n        window: &mut Window,\n        cx: &mut Context<Self>,\n    ) {\n        if event.keystroke.key != \"enter\" {\n            return;\n        }\n        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {\n            return;\n        }\n        if event.keystroke.modifiers.modified()\n            || event.prefer_character_input\n            || self.saving\n            || window.has_active_dialog(cx)\n        {\n            return;\n        }\n        let start = self.enabled_start && self.start_time.focus_handle(cx).is_focused(window);\n        let stop = self.enabled_stop && self.stop_time.focus_handle(cx).is_focused(window);\n        if !start && !stop {\n            return;\n        }\n        cx.stop_propagation();\n        self.save(window, cx);\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 317,
+        "baseline_end": 329,
+        "after_start": 350,
+        "after_end": 371,
+        "baseline_text": "        dialog_shell(\n            theme,\n            DialogShellIds {\n                root: \"download-schedule-dialog-shell\",\n                titlebar: \"download-schedule-dialog-titlebar\",\n                body: \"download-schedule-dialog-body\",\n                footer: \"download-schedule-dialog-footer\",\n            },\n            titlebar,\n            body,\n            footer,\n        )\n",
+        "after_text": "        div()\n            .id(\"download-schedule-keyboard\")\n            .size_full()\n            .capture_key_down(cx.listener(Self::default_enter))\n            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {\n                if event.keystroke.key == \"enter\" {\n                    this.default_enter_held = false;\n                }\n            }))\n            .child(dialog_shell(\n                theme,\n                DialogShellIds {\n                    root: \"download-schedule-dialog-shell\",\n                    titlebar: \"download-schedule-dialog-titlebar\",\n                    body: \"download-schedule-dialog-body\",\n                    footer: \"download-schedule-dialog-footer\",\n                },\n                titlebar,\n                body,\n                footer,\n            ))\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+    "baseline_sha256": "a8b02fd12f4e0e24976f1e85f0135433924248dc578ba4b808c735767e7dd356",
+    "after_sha256": "867f91ed203f5ed55f88ed0b29a6d9f6541411e5e39d945fc06ee08b0220d734",
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start": 3387,
+        "baseline_end": 3387,
+        "after_start": 3387,
+        "after_end": 3659,
+        "baseline_text": "",
+        "after_text": "\n#[gpui_kit::test]\nfn audit05_schedule_timefield_enter_saves_original_queue_once(cx: &mut TestAppContext) {\n    cx.update(gpui_kit::init);\n    let (application, directory, _endpoint) = window_fixture(cx);\n    let owned_application = application.clone();\n    let slot = Rc::new(std::cell::RefCell::new(None));\n    let opened = slot.clone();\n    let (_, surface) = cx.add_window_view(move |window, cx| {\n        let view = cx.new(|cx| DownloadScheduleView::new(owned_application, None, window, cx));\n        *opened.borrow_mut() = Some(view.clone());\n        Root::new(view, window, cx)\n    });\n    let handle = surface.update(|window, _| window.window_handle());\n    let mut surface = VisualTestContext::from_window(handle, cx);\n    surface.simulate_resize(size(px(430.), px(326.)));\n    surface.refresh().expect(\"production schedule\");\n    let view = slot.borrow().clone().expect(\"schedule view\");\n    let toggle = surface\n        .debug_bounds(\"download-schedule-start-toggle\")\n        .expect(\"start switch\");\n    surface.simulate_click(toggle.center(), Modifiers::default());\n    view.update_in(&mut surface, |view, window, cx| {\n        let focus = view.start_time.focus_handle(cx);\n        focus.focus(window, cx);\n    });\n    surface.simulate_keystrokes(\"right up\");\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"enter\").expect(\"schedule Enter\"),\n        is_held: false,\n        prefer_character_input: false,\n    });\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"enter\").expect(\"schedule release\"),\n    });\n    surface.run_until_parked();\n    let saved = application.read_with(&surface, |application, _| {\n        application\n            .default_queue()\n            .and_then(|queue| queue.schedule.clone())\n    });\n    let saved =\n        saved.expect(\"actual focused TimeField Enter must save through original queue command\");\n    assert!(saved.daily.enabled_start && !saved.daily.enabled_stop);\n    assert_eq!(\n        saved.daily.start_minute, 151,\n        \"TimeField local minute editing precedes default Apply\"\n    );\n    assert!(view.read_with(&surface, |view, _| view.saving));\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"enter\").expect(\"duplicate release\"),\n    });\n    surface.run_until_parked();\n    assert_eq!(\n        application.read_with(&surface, |application, _| application\n            .default_queue()\n            .and_then(|queue| queue.schedule.clone())),\n        Some(saved)\n    );\n    let _ = std::fs::remove_dir_all(directory);\n}\n\nfn audit05_schedule_key(\n    surface: &mut VisualTestContext,\n    key: &str,\n    down: bool,\n    held: bool,\n    character: bool,\n) {\n    let keystroke = gpui_kit::Keystroke::parse(key).expect(\"schedule key\");\n    if down {\n        surface.simulate_event(gpui_kit::KeyDownEvent {\n            keystroke,\n            is_held: held,\n            prefer_character_input: character,\n        });\n    } else {\n        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });\n    }\n    surface.run_until_parked();\n}\nfn audit05_schedule_fixture(\n    cx: &mut TestAppContext,\n) -> (\n    Entity<DownloadApplication>,\n    Entity<DownloadScheduleView>,\n    VisualTestContext,\n    tempfile::TempDir,\n    DownloadEngine,\n) {\n    cx.update(gpui_kit::init);\n    let temp = tempfile::tempdir().expect(\"owned schedule storage\");\n    let directory = temp.path().to_path_buf();\n    let config = AppConfig::default();\n    config\n        .save_to(&directory.join(\"config.json\"))\n        .expect(\"owned config\");\n    let engine =\n        DownloadEngine::open(directory.join(\"downloads.sqlite3\")).expect(\"owned persistent queue\");\n    let observed = engine.clone();\n    let (platform, _endpoint) = nxtools_ipc::platform_bridge(16);\n    let app = cx.new(|cx| {\n        let notifications = cx.new(|_| NotificationCenter::default());\n        DownloadApplication::new(\n            engine,\n            Rc::new(platform),\n            notifications,\n            DownloadRuntimeContext {\n                fallback_default_directory: directory.clone(),\n                config,\n                config_path: directory.join(\"config.json\"),\n                log_directory: directory.clone(),\n                database_path: directory.join(\"downloads.sqlite3\"),\n                ffmpeg_install_directory: directory.join(\"tools\"),\n            },\n            cx,\n        )\n    });\n    let owned_app = app.clone();\n    let slot = Rc::new(std::cell::RefCell::new(None));\n    let opened = slot.clone();\n    let (_, surface) = cx.add_window_view(move |window, cx| {\n        let view = cx.new(|cx| DownloadScheduleView::new(owned_app, None, window, cx));\n        *opened.borrow_mut() = Some(view.clone());\n        Root::new(view, window, cx)\n    });\n    let handle = surface.update(|window, _| window.window_handle());\n    let mut surface = VisualTestContext::from_window(handle, cx);\n    surface.simulate_resize(size(px(430.), px(326.)));\n    surface.refresh().expect(\"fixed schedule\");\n    let view = slot.borrow().clone().expect(\"real schedule view\");\n    (app, view, surface, temp, observed)\n}\nfn audit05_queue_schedule(engine: &DownloadEngine) -> Option<DownloadSchedule> {\n    let result = engine.handle_command(DownloadCommandEnvelope {\n        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,\n        request_id: uuid::Uuid::new_v4(),\n        origin: RequestOrigin::Internal,\n        command: DownloadCommand::Snapshot {\n            query: DownloadQuery::default(),\n        },\n    });\n    let DownloadCommandOutcome::Snapshot(snapshot) = result.outcome else {\n        panic!(\"original queue snapshot\")\n    };\n    snapshot\n        .queues\n        .into_iter()\n        .find(|queue| queue.id == \"default\")\n        .and_then(|queue| queue.schedule)\n}\n#[gpui_kit::test]\nfn audit05_schedule_guards_and_persistent_queue_leave_config_unchanged(cx: &mut TestAppContext) {\n    let (app, view, mut surface, temp, engine) = audit05_schedule_fixture(cx);\n    let config = std::fs::read(temp.path().join(\"config.json\")).expect(\"config before\");\n    let toggle = surface\n        .debug_bounds(\"download-schedule-start-toggle\")\n        .expect(\"start toggle\");\n    surface.simulate_click(toggle.center(), Modifiers::default());\n    view.update_in(&mut surface, |view, window, cx| {\n        view.start_time.focus_handle(cx).focus(window, cx)\n    });\n    surface.refresh().expect(\"time focus\");\n    for key in [\"ctrl-enter\", \"alt-enter\", \"shift-enter\"] {\n        audit05_schedule_key(&mut surface, key, true, false, false);\n        audit05_schedule_key(&mut surface, key, false, false, false);\n    }\n    for (held, character) in [(true, false), (false, true)] {\n        audit05_schedule_key(&mut surface, \"enter\", true, held, character);\n        audit05_schedule_key(&mut surface, \"enter\", false, false, false);\n    }\n    assert!(audit05_queue_schedule(&engine).is_none());\n    view.update_in(&mut surface, |view, _, _| view.saving = true);\n    audit05_schedule_key(&mut surface, \"enter\", true, false, false);\n    audit05_schedule_key(&mut surface, \"enter\", false, false, false);\n    assert!(audit05_queue_schedule(&engine).is_none());\n    view.update_in(&mut surface, |view, _, _| {\n        view.saving = false;\n        view.days.clear();\n    });\n    audit05_schedule_key(&mut surface, \"enter\", true, false, false);\n    assert!(view.read_with(&surface, |view, _| view.error.is_some()));\n    assert!(audit05_queue_schedule(&engine).is_none());\n    view.update_in(&mut surface, |view, _, _| {\n        view.error = None;\n        view.days.insert(DownloadWeekday::ALL[0]);\n    });\n    audit05_schedule_key(&mut surface, \"enter\", true, false, false);\n    audit05_schedule_key(&mut surface, \"enter\", true, true, false);\n    assert!(\n        audit05_queue_schedule(&engine).is_none(),\n        \"invalid initial press cannot retry after draft changes before release\"\n    );\n    audit05_schedule_key(&mut surface, \"enter\", false, false, false);\n    audit05_schedule_key(&mut surface, \"enter\", true, false, false);\n    audit05_schedule_key(&mut surface, \"enter\", false, false, false);\n    let saved = audit05_queue_schedule(&engine).expect(\"normal Enter persisted original queue\");\n    assert_eq!(saved.daily.days, vec![DownloadWeekday::ALL[0]]);\n    assert!(saved.daily.enabled_start);\n    assert!(view.read_with(&surface, |view, _| view.saving));\n    let reopened =\n        DownloadEngine::open(temp.path().join(\"downloads.sqlite3\")).expect(\"reopen own queue\");\n    assert_eq!(audit05_queue_schedule(&reopened), Some(saved));\n    assert_eq!(\n        std::fs::read(temp.path().join(\"config.json\")).expect(\"config after\"),\n        config,\n        \"schedule does not rewrite AppConfig\"\n    );\n    assert!(\n        app.read_with(&surface, |app, _| app.tasks.is_empty()),\n        \"no network task is created\"\n    );\n}\n#[gpui_kit::test]\nfn audit05_schedule_cancel_and_reopened_window_do_not_apply_old_release(cx: &mut TestAppContext) {\n    let (app, view, mut surface, temp, engine) = audit05_schedule_fixture(cx);\n    let config = std::fs::read(temp.path().join(\"config.json\")).expect(\"config before cancel\");\n    let handle = surface.update(|window, _| window.window_handle());\n    app.update(&mut surface, |app, _| app.schedule_window = Some(handle));\n    let toggle = surface\n        .debug_bounds(\"download-schedule-start-toggle\")\n        .expect(\"toggle\");\n    surface.simulate_click(toggle.center(), Modifiers::default());\n    let cancel = surface\n        .debug_bounds(\"download-schedule-secondary-cancel-action\")\n        .expect(\"Cancel\");\n    surface.simulate_click(cancel.center(), Modifiers::default());\n    surface.run_until_parked();\n    assert!(audit05_queue_schedule(&engine).is_none());\n    assert!(!view.read_with(&surface, |view, _| view.saving));\n    app.update(&mut surface, |app, cx| app.open_schedule_window(cx));\n    surface.run_until_parked();\n    let next = app.read_with(&surface, |app, _| {\n        app.schedule_window.expect(\"new schedule\")\n    });\n    assert_ne!(next, handle);\n    let mut reopened = VisualTestContext::from_window(next, &surface);\n    reopened.refresh().expect(\"reopened schedule\");\n    audit05_schedule_key(&mut reopened, \"enter\", false, false, false);\n    assert!(audit05_queue_schedule(&engine).is_none());\n    // Actual Tab to the original Cancel Button: Enter must close, not save.\n    reopened.update(|window, cx| window.focus_next(cx));\n    for _ in 0..24 {\n        let focused = reopened.update(|window, _| {\n            gpui_kit::base::test_support::snapshots(window)\n                .into_iter()\n                .any(|node| node.label() == Some(\"取消\") && node.focused() == Some(true))\n        });\n        if focused {\n            break;\n        }\n        reopened.simulate_keystrokes(\"tab\");\n        reopened.refresh().expect(\"Cancel focus\");\n    }\n    assert!(\n        reopened.update(|window, _| gpui_kit::base::test_support::snapshots(window)\n            .into_iter()\n            .any(|node| node.label() == Some(\"取消\") && node.focused() == Some(true))),\n        \"actual Cancel Button must own Enter\"\n    );\n    audit05_schedule_key(&mut reopened, \"enter\", true, false, false);\n    audit05_schedule_key(&mut reopened, \"enter\", false, false, false);\n    assert!(\n        app.read_with(&reopened, |app, _| app.schedule_window.is_none()),\n        \"keyboard Cancel closes only its original schedule window\"\n    );\n    assert!(audit05_queue_schedule(&engine).is_none());\n    assert_eq!(\n        std::fs::read(temp.path().join(\"config.json\")).expect(\"config unchanged\"),\n        config\n    );\n}\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "docs/reference-code/archive.md",
+    "baseline_sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+    "after_sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78",
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start": 770,
+        "baseline_end": 770,
+        "after_start": 770,
+        "after_end": 800,
+        "baseline_text": "",
+        "after_text": "\n## 2026-10-25 — audit #5 confirmation/default-submit source boundary\n\nRechecked the allowed Bandizip IDD_ARCHIVE480–494 and IDD_ASK_DUPEFILE579–588 text resources;\nthese identify the decision fields/actions, not verified native default-key behavior. Licensed\nArchiver gui/ui/app.slint401–408 uses LineEdit plus a primary create-ok Button;430/442 explicitly\nroute LineEdit accepted to find/password actions. gui/src/main.rs::start_create485–508 snapshots\nand validates options, clears/closes the draft then calls the original background spawn;\n::do_extract718–748 snapshots selected source/destination; AppWindow::new115 -> callbacks ->\nui.run158 is the Slint lifecycle boundary. Framework native internals were not inspected. The old\nNxTools tracked-source investigation did not identify a general archive operation UI.\n\nExact current Component0.8.0 dialog/footer.rs::DialogAction122–132 has only an outer div click\ndispatcher and a private anchor; it exposes no public Button trigger. Component button/button.rs\n857–865 forwards activation only when Button.on_click exists, while Base Button/div own the real\nkeyboard-release boundary. A local composition may use official Button public child/on_click and\npublic FocusHandle::dispatch_action with exported dialog::Confirm, exactly one activation source\nfeeding the original Dialog on_ok/deferred reply. A zero-size non-Tab child focus node keeps\npointer activation routed to its own Dialog even when pointer press intentionally preserves focus.\nDo not use an empty click callback, private anchor API, vendor change or second reply controller.\nBase Dialog installs a root Enter Confirm keybinding; CreateOverwrite must additionally require\nthis prompt's explicit button activation, not blindly approve when only root/body has focus.\n\nOriginal OperationForm::submit/capture, busy/pending_format/retirement and deferred submit_form\nremain the admission owner. Default submission is confined to explicitly allowed focused editing\ncontrols, after child component handling, with IME/modifier/held/busy/layer guards. Existing masked\npassword, Textarea, Select and format-discard Dialog keep their local semantics. The original\nform client/scroll/fixed-footer budgets, source/draft/ticket/native identity and diagnostic privacy\nremain unchanged. New task evidence: `.trellis/tasks/10-25-default-submit-keyboard/`; previous\naudit #4's unresolved diagnostic/history stays immutable and is closed only by new #5 evidence.\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "baseline_sha256": "99abefb822f4e7aa1693b62087b2cd081a8e15f6f6e0ace0bffa7e14cd3d64f6",
+    "after_sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6",
+    "operations": [
+      {
+        "kind": "insert",
+        "baseline_start": 2912,
+        "baseline_end": 2912,
+        "after_start": 2912,
+        "after_end": 2937,
+        "baseline_text": "",
+        "after_text": "\n## Audit #5 daily-schedule default-submit prerequisite (2026-10-25)\n\nABDM first: desktop QueueInfoComponent.kt::createConfigurableList148–155/247–301 owns\nindependent start/end schedule flags and nonempty weekdays. app-utils OptionsDialog.kt::\nBaseOptionDialog delegates to Compose DialogWindow visible/modeless/close request, disposes\nits focus-loss listener; AWT/Compose native internals are not inspected. Legacy next:\nSettingsWindow.axaml::SchedulerSection900 and .axaml.cs constructor15 -> animation attach18\n-> OnOpened21/ConfigureForCurrentScope -> SaveButton_Click68/ApplySettingsCommand -> Close;\nOnClosed185 cancels through the original command. WindowAnimationService.Attach13–49 owns\nguarded delayed close; Avalonia native base is unavailable. These are schedule/close owner\nreferences, not proof of a window-wide default Enter implementation.\n\nCurrent Next DownloadScheduleView::save92 -> deferred DownloadApplication::\nset_default_queue_schedule -> original DownloadQueueAction::SetSchedule/engine store -> refresh\nand original close_schedule_window; it is not a new AppConfig write. TimeField/TimeFieldState\nare current production controls, not the old raw-HH:MM Input noted in historical migration.\nExact Base0.8.0 time_field.rs keybindings23–30 own digit/arrow/segment/Tab editing and have no\nEnter action; on_key_down418 handles only unmodified one-character edits. Default Apply may\ntherefore handle an otherwise unconsumed plain Enter only on an enabled focused TimeField,\nwith held/modifier/character/busy/Dialog guards and the original save/defer owner. Other\nButtons and child layers keep their own action/release semantics; no shared keyboard-helper,\nengine/persistence/native/geometry change. Preserve 430x326 fixed client, original input state,\nvalidation/cancel/close and prior audit#1/#9 behavior. New red/green evidence belongs only to\n`.trellis/tasks/10-25-default-submit-keyboard/`, not native/physical/reader/user acceptance.\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  }
+]

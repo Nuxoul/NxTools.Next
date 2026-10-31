@@ -1,0 +1,555 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/archive/job_tests.rs
++++ own-after/rust/apps/nxtools-desktop/src/archive/job_tests.rs
+@@ -1218,3 +1218,552 @@
+     object_draw(&mut surface);
+     assert!(object_replies(&endpoint).is_empty());
+ }
++
++#[gpui_kit::test]
++fn audit05_create_keyboard_release_and_missing_object_cancel_are_once_only(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original job admission")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\本次.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++    object_replies(&endpoint);
++    surface.update(|window, cx| window.focus_next(cx));
++    // Traverse the original Dialog focus scope, never call its reply/confirm helper.
++    for _ in 0..8 {
++        if object_node(&mut surface, "确认覆盖").focused() == Some(true) {
++            break;
++        }
++        surface.simulate_keystrokes("tab");
++    }
++    assert_eq!(object_node(&mut surface, "确认覆盖").focused(), Some(true));
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("space press"),
++        is_held: false,
++        prefer_character_input: false,
++    });
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("space release"),
++    });
++    object_draw(&mut surface);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, prompt.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::Overwrite)
++    );
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("duplicate release"),
++    });
++    object_draw(&mut surface);
++    assert!(object_replies(&endpoint).is_empty());
++    let mut missing = object_prompt(
++        id,
++        "conflict",
++        Some("not-displayed.txt"),
++        r"C:\not-displayed.txt",
++    );
++    missing.display = None;
++    let ticket = missing.ticket.clone();
++    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);
++    let labels = object_labels(&mut surface);
++    assert_eq!(
++        labels
++            .iter()
++            .filter(|label| label.as_str() == "本次提示未提供对象标识")
++            .count(),
++        2
++    );
++    assert!(
++        !labels
++            .iter()
++            .any(|label| label.contains("本次.zip") || label.contains("not-displayed"))
++    );
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "missing metadata never auto-approves"
++    );
++    surface.simulate_keystrokes("escape");
++    object_draw(&mut surface);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, ticket);
++    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);
++}
++
++fn audit05_prompt_key(
++    surface: &mut gpui_kit::VisualTestContext,
++    key: &str,
++    down: bool,
++    held: bool,
++) {
++    let keystroke = gpui_kit::Keystroke::parse(key).expect("prompt key");
++    if down {
++        surface.simulate_event(gpui_kit::KeyDownEvent {
++            keystroke,
++            is_held: held,
++            prefer_character_input: false,
++        });
++    } else {
++        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });
++    }
++    object_draw(surface);
++}
++fn audit05_tab_prompt(surface: &mut gpui_kit::VisualTestContext, label: &str) {
++    for _ in 0..12 {
++        if object_node(surface, label).focused() == Some(true) {
++            return;
++        }
++        surface.simulate_keystrokes("tab");
++        object_draw(surface);
++    }
++    panic!("original Dialog control not Tab reachable: {label}");
++}
++#[gpui_kit::test]
++fn audit05_create_enter_only_confirms_focused_button_on_release_and_cancel_keeps_owner(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx).expect("job")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\enter.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++    object_replies(&endpoint);
++    assert_ne!(object_node(&mut surface, "确认覆盖").focused(), Some(true));
++    audit05_prompt_key(&mut surface, "enter", true, false);
++    audit05_prompt_key(&mut surface, "enter", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "root Enter cannot authorize overwrite"
++    );
++    audit05_tab_prompt(&mut surface, "确认覆盖");
++    audit05_prompt_key(&mut surface, "enter", true, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "Button activation must wait for release"
++    );
++    audit05_prompt_key(&mut surface, "enter", true, true);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "held Enter cannot approve early"
++    );
++    audit05_prompt_key(&mut surface, "enter", false, false);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, prompt.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::Overwrite)
++    );
++    let next = object_prompt(id, "create_overwrite", None, r"C:\owned\cancel.zip");
++    surface = show_object_prompt(&owner, &endpoint, id, next.clone(), cx);
++    audit05_tab_prompt(&mut surface, "取消任务");
++    audit05_prompt_key(&mut surface, "enter", true, false);
++    audit05_prompt_key(&mut surface, "enter", false, false);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, next.ticket);
++    assert!(
++        replies[0].decision.is_none(),
++        "focused Cancel must not approve"
++    );
++}
++
++#[gpui_kit::test]
++fn audit05_prompt_character_held_and_conflict_enter_respect_current_decision(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx).expect("job")
++    });
++    cx.run_until_parked();
++    let first = object_prompt(id, "create_overwrite", None, r"C:\owned\guarded.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, first, cx);
++    object_replies(&endpoint);
++    audit05_tab_prompt(&mut surface, "确认覆盖");
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("preferred input"),
++        is_held: false,
++        prefer_character_input: true,
++    });
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "character-preferred input cannot authorize overwrite"
++    );
++    audit05_prompt_key(&mut surface, "space", true, true);
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "held without an initiating down cannot approve"
++    );
++    audit05_prompt_key(&mut surface, "space", true, false);
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("changed input intent"),
++        is_held: false,
++        prefer_character_input: true,
++    });
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "changed input intent cancels an already armed release"
++    );
++    for key in ["ctrl-enter", "alt-enter", "shift-enter"] {
++        audit05_prompt_key(&mut surface, key, true, false);
++        audit05_prompt_key(&mut surface, key, false, false);
++    }
++    assert!(object_replies(&endpoint).is_empty());
++    surface.simulate_keystrokes("escape");
++    object_draw(&mut surface);
++    assert_eq!(object_replies(&endpoint).len(), 1);
++    let conflict = object_prompt(
++        id,
++        "conflict",
++        Some("current/同名.txt"),
++        r"C:\owned\current\同名.txt",
++    );
++    surface = show_object_prompt(&owner, &endpoint, id, conflict.clone(), cx);
++    audit05_tab_prompt(&mut surface, "跳过");
++    audit05_prompt_key(&mut surface, "enter", true, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "focused conflict Button owns release, not root Confirm"
++    );
++    audit05_prompt_key(&mut surface, "enter", false, false);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, conflict.ticket);
++    assert_eq!(replies[0].decision, Some(ArchiveJobConflictDecision::Skip));
++}
++#[gpui_kit::test]
++fn audit05_create_form_enter_dispatches_original_typed_admission(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    owner.update(cx, |app, cx| {
++        app.open_create_form(
++            vec![crate::archive::draft::DraftSource {
++                path: r"C:\synthetic\keyboard.txt".into(),
++                directory: false,
++                bytes: Some(12),
++            }],
++            cx,
++        )
++    });
++    cx.run_until_parked();
++    let window = owner.read_with(cx, |app, _| {
++        app.jobs
++            .forms
++            .values()
++            .next()
++            .expect("original form slot")
++            .window
++    });
++    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
++    object_draw(&mut surface);
++    for _ in 0..40 {
++        let focused = surface.update(|window, _| {
++            gpui_kit::base::test_support::snapshots(window)
++                .into_iter()
++                .any(|node| node.label() == Some("压缩包名称") && node.focused() == Some(true))
++        });
++        if focused {
++            break;
++        }
++        surface.simulate_keystrokes("tab");
++        object_draw(&mut surface);
++    }
++    assert_eq!(
++        object_node(&mut surface, "压缩包名称").focused(),
++        Some(true)
++    );
++    object_replies(&endpoint);
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("enter").expect("form Enter"),
++        is_held: false,
++        prefer_character_input: false,
++    });
++    surface.run_until_parked();
++    let mut starts = vec![];
++    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
++        if let Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) = envelope.message
++            && command.action == ArchiveJobAction::Start
++        {
++            starts.push(command);
++        }
++    }
++    assert_eq!(
++        starts.len(),
++        1,
++        "real Enter must cross original typed bridge once"
++    );
++    let request = starts[0].request.as_ref().expect("original request");
++    assert_eq!(request.kind, ArchiveJobKind::Create);
++    assert_eq!(request.paths, vec![r"C:\synthetic\keyboard.txt"]);
++    assert_eq!(
++        request.create.as_ref().expect("create options").name,
++        "keyboard.zip"
++    );
++    assert!(
++        request
++            .create
++            .as_ref()
++            .expect("create options")
++            .password
++            .is_none()
++    );
++    assert!(
++        owner.read_with(&surface, |app, _| app.jobs.forms.is_empty()),
++        "accepted form closes through its original owner"
++    );
++}
++
++#[gpui_kit::test]
++fn audit05_prompt_focus_transfer_escape_and_new_ticket_cancel_old_release(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx).expect("job")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\first.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt, cx);
++    object_replies(&endpoint);
++    audit05_tab_prompt(&mut surface, "确认覆盖");
++    audit05_prompt_key(&mut surface, "space", true, false);
++    surface.simulate_keystrokes("tab");
++    object_draw(&mut surface);
++    audit05_tab_prompt(&mut surface, "确认覆盖");
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "focus ABA invalidates original native click generation"
++    );
++    audit05_prompt_key(&mut surface, "space", true, false);
++    surface.simulate_keystrokes("escape");
++    object_draw(&mut surface);
++    let cancelled = object_replies(&endpoint);
++    assert_eq!(cancelled.len(), 1);
++    assert!(cancelled[0].decision.is_none());
++    let next = object_prompt(id, "create_overwrite", None, r"C:\owned\next.zip");
++    surface = show_object_prompt(&owner, &endpoint, id, next.clone(), cx);
++    audit05_tab_prompt(&mut surface, "确认覆盖");
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "old released key cannot authorize a new ticket"
++    );
++    assert!(object_labels(&mut surface).contains(&r"C:\owned\next.zip".to_owned()));
++    audit05_prompt_key(&mut surface, "space", true, false);
++    audit05_prompt_key(&mut surface, "space", false, false);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, next.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::Overwrite)
++    );
++}
++#[gpui_kit::test]
++fn audit05_shared_prompt_buttons_preserve_password_risk_and_destination_reply_shapes(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx).expect("job")
++    });
++    cx.run_until_parked();
++    for kind in [
++        ArchiveJobPromptKind::Password,
++        ArchiveJobPromptKind::Risk,
++        ArchiveJobPromptKind::Destination,
++    ] {
++        let mut prompt = object_prompt(id, "conflict", Some("unused"), "unused");
++        prompt.display = None;
++        prompt.kind = kind;
++        prompt.approved_limit = (kind == ArchiveJobPromptKind::Risk).then_some(4096);
++        let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++        object_replies(&endpoint);
++        if kind == ArchiveJobPromptKind::Password {
++            let input = object_node(&mut surface, "当前任务密码").bounds();
++            surface.simulate_click(input.center(), Default::default());
++            surface.simulate_input("synthetic-private-password");
++            object_draw(&mut surface);
++        }
++        audit05_tab_prompt(&mut surface, "继续");
++        audit05_prompt_key(&mut surface, "space", true, false);
++        assert!(object_replies(&endpoint).is_empty());
++        audit05_prompt_key(&mut surface, "space", false, false);
++        let replies = object_replies(&endpoint);
++        assert_eq!(replies.len(), 1);
++        let reply = &replies[0];
++        assert_eq!(reply.ticket, prompt.ticket);
++        assert_eq!(reply.kind, kind);
++        assert_eq!(
++            reply.decision,
++            (kind == ArchiveJobPromptKind::Destination)
++                .then_some(ArchiveJobConflictDecision::Overwrite)
++        );
++        assert_eq!(reply.approved_limit, prompt.approved_limit);
++        assert!(!reply.apply_to_all);
++        if kind == ArchiveJobPromptKind::Password {
++            assert!(reply.password.is_some());
++            assert!(!format!("{reply:?}").contains("synthetic-private-password"));
++        } else {
++            assert!(reply.password.is_none());
++        }
++    }
++}
++
++#[gpui_kit::test]
++fn audit05_prompt_window_deactivation_cancels_armed_release(cx: &mut gpui_kit::TestAppContext) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx).expect("job")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\activation.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt, cx);
++    object_replies(&endpoint);
++    audit05_tab_prompt(&mut surface, "确认覆盖");
++    audit05_prompt_key(&mut surface, "space", true, false);
++    surface.deactivate_window();
++    object_draw(&mut surface);
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "window activation change cancels old armed release"
++    );
++    assert!(surface.update(|window, cx| window.has_active_dialog(cx)));
++    audit05_prompt_key(&mut surface, "space", true, false);
++    audit05_prompt_key(&mut surface, "space", false, false);
++    assert_eq!(object_replies(&endpoint).len(), 1);
++}
++#[gpui_kit::test]
++fn audit05_output_budget_official_button_resumes_one_bound_attempt(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let mut input = request(1);
++    input.kind = ArchiveJobKind::Extract;
++    input.paths = vec![r"C:\owned\budget.tar.gz".into()];
++    input.destination = Some(r"C:\owned\budget-out".into());
++    input.limits.max_entry_bytes = 2;
++    input.limits.max_output_bytes = 2;
++    input.extract = Some(ArchiveJobExtract {
++        strategy: ArchiveJobStrategy::Here,
++        single_file_folder: false,
++        conflict: ArchiveJobConflict::Ask,
++        copy_motw: false,
++        selection: None,
++    });
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(input, completion(), cx)
++            .expect("logical budget job")
++    });
++    let wait = |cx: &mut gpui_kit::TestAppContext| {
++        for _ in 0..100 {
++            cx.executor()
++                .advance_clock(std::time::Duration::from_millis(25));
++            cx.run_until_parked();
++            if let Ok(envelope) = endpoint.try_receive_command_for_contract_test()
++                && let Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) =
++                    envelope.message
++                && command.action == ArchiveJobAction::Start
++            {
++                return *command;
++            }
++            std::thread::sleep(std::time::Duration::from_millis(5));
++        }
++        panic!("original bounded start")
++    };
++    let first = wait(cx);
++    assert_eq!(first.operation_id, id);
++    let mut shortage = terminal(id, true);
++    let facts = shortage.terminal.as_mut().expect("shortfall");
++    facts.outcome = ArchiveJobOutcome::Failed;
++    facts.code = Some("resource_limit".into());
++    facts.files_committed = 0;
++    facts.bytes_committed = 0;
++    facts.journal.clear();
++    facts.commit_state = None;
++    facts.output_shortfall = Some(ArchiveJobOutputShortfall {
++        current: ArchiveJobOutputBudget {
++            entry_bytes: 2,
++            output_bytes: 2,
++        },
++        required: ArchiveJobOutputBudget {
++            entry_bytes: 3,
++            output_bytes: 3,
++        },
++        source: ArchiveJobOutputSource {
++            native: "v1:owned-budget".into(),
++            digest: [8; 32],
++        },
++    });
++    deliver(&owner, &endpoint, shortage, cx);
++    let mut observed = None;
++    for _ in 0..100 {
++        cx.executor()
++            .advance_clock(std::time::Duration::from_millis(25));
++        cx.run_until_parked();
++        if let Some(prompt) = owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.clone()) {
++            observed = Some(prompt);
++            break;
++        }
++        std::thread::sleep(std::time::Duration::from_millis(5));
++    }
++    let prompt = observed.expect("bounded original budget prompt");
++    assert_eq!(prompt.kind, ArchiveJobPromptKind::OutputBudget);
++    assert_eq!(prompt.approved_limit, Some(3));
++    let window = owner.read_with(cx, |app, _| {
++        app.jobs.records[&id]
++            .window
++            .as_ref()
++            .expect("budget Dialog")
++            .0
++    });
++    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
++    object_draw(&mut surface);
++    audit05_tab_prompt(&mut surface, "继续");
++    audit05_prompt_key(&mut surface, "enter", true, false);
++    assert!(
++        owner.read_with(&surface, |app, _| app.jobs.records[&id].prompt.as_ref()
++            == Some(&prompt)),
++        "press alone cannot grant budget"
++    );
++    audit05_prompt_key(&mut surface, "enter", false, false);
++    let second = wait(&mut surface);
++    assert_ne!(second.operation_id, id);
++    assert_eq!(second.session_id, id);
++    let retry = second.request.as_ref().expect("bound retry");
++    assert_eq!(retry.limits.max_entry_bytes, 3);
++    assert_eq!(retry.limits.max_output_bytes, 3);
++    assert_eq!(
++        retry
++            .readmission
++            .as_ref()
++            .expect("source binding")
++            .expected_source
++            .as_ref()
++            .expect("source")
++            .native,
++        "v1:owned-budget"
++    );
++    audit05_prompt_key(&mut surface, "enter", false, false);
++    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
++        assert!(
++            !matches!(envelope.message,Message::PlatformCommand(PlatformCommand::ArchiveJob(command))if command.action==ArchiveJobAction::Start),
++            "duplicate release cannot readmit again"
++        );
++    }
++}

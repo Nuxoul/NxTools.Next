@@ -1,0 +1,8 @@
+{"file":".trellis/tasks/10-25-extensions-host-http/prd.md","reason":"Approved R4/A4 exact origin/resource/authority and source acceptance"}
+{"file":".trellis/tasks/10-25-extensions-host-http/design.md","reason":"Existing dependency ownership, bounded HTTP/blob/current context and reference chain"}
+{"file":".trellis/tasks/10-25-extensions-capability-expansion/design.md","reason":"Canonical approved R4 section6 and shared v2 budgets"}
+{"file":".trellis/spec/nxtools-extensions/backend/index.md","reason":"Host-neutral manifest/runtime/current trust and no dependency cycle"}
+{"file":".trellis/spec/nxtools-network/backend/index.md","reason":"Original immutable NetworkPolicy route/client ownership"}
+{"file":".trellis/spec/nxtools-desktop/backend/database-guidelines.md","reason":"Original service publication, actual physical IO and deferred UI owners"}
+{"file":".trellis/tasks/10-25-extensions-host-http/reference-evidence.md","reason":"Bounded verified ABDM-first/legacy/current HTTP proxy call chains; original download reference section1795 remains authority"}
+{"file":".trellis/tasks/10-25-extensions-namespaced-storage/outcomes.md","reason":"P3 final source handoff and carried acceptance limits"}

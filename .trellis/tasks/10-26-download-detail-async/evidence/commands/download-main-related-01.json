@@ -1,0 +1,26 @@
+﻿{
+    "args":  [
+                 "main_window::tests::download",
+                 "main_window::tests::production_download",
+                 "main_window::tests::selected_download",
+                 "main_window::tests::queue_position",
+                 "main_window::tests::clicking_download",
+                 "main_window::tests::clicking_a_download",
+                 "main_window::tests::double_clicking_a_download",
+                 "main_window::tests::completed_download",
+                 "main_window::tests::desktop_snapshot_projection",
+                 "--test-threads=1"
+             ],
+    "executable":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-5008a12526e9ebe3.exe",
+    "process_id":  102308,
+    "started_utc":  "2026-10-26T08:42:12.8148633Z",
+    "completed":  true,
+    "exit":  0,
+    "finished_utc":  "2026-10-26T08:42:16.2833376Z",
+    "watchdog_seconds":  300,
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    }
+}

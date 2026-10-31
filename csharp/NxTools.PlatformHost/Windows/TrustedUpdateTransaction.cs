@@ -10,6 +10,11 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
     internal interface IDeployment
     {
         Task DeployAsync(string verifiedPackage, Guid correlationId, CancellationToken cancellationToken);
+        // Recovery passes the authenticated durable snapshot rather than re-admitting it as a new package.
+        Task DeployAsync(string verifiedPackage, VerifiedRelease verified, Guid correlationId, CancellationToken cancellationToken)
+            => DeployAsync(verifiedPackage, correlationId, cancellationToken);
+        Task RemoveSupersededAsync(VerifiedRelease previous, VerifiedRelease failed, CancellationToken cancellationToken)
+            => Task.CompletedTask;
     }
     internal sealed record State(long Sequence, Guid ReleaseId, string ManifestSha256);
     private sealed record Journal(State Previous, State Next);
@@ -28,12 +33,12 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         if (File.Exists(StatePath))
         {
             if (ReadState() != state) throw new InvalidDataException("Enrollment snapshot changed.");
-            VerifySnapshot(Active, state);
+            VerifySnapshot(Active, state).Dispose();
             return;
         }
         if (Directory.Exists(Active))
         {
-            VerifySnapshot(Active, state);
+            VerifySnapshot(Active, state).Dispose();
             Write(StatePath, state);
             return;
         }
@@ -52,7 +57,7 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         if (current == journal.Next)
         {
             // State commits only after deployment succeeded and the verified active snapshot was published.
-            VerifySnapshot(Active, journal.Next);
+            VerifySnapshot(Active, journal.Next).Dispose();
             Clean(Backup);
             Clean(Pending);
             File.Delete(JournalPath);
@@ -61,8 +66,13 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         }
         if (current != journal.Previous) throw new InvalidDataException("Update recovery state mismatch.");
         var previous = Directory.Exists(Backup) ? Backup : Active;
-        VerifySnapshot(previous, journal.Previous);
-        await deployment.DeployAsync(previous, correlationId, cancellationToken);
+        var failedPath = Directory.Exists(Pending) ? Pending : Active;
+        using (var verified = VerifySnapshot(previous, journal.Previous))
+        using (var failed = VerifySnapshot(failedPath, journal.Next))
+        {
+            await deployment.DeployAsync(previous, verified, correlationId, cancellationToken);
+            await deployment.RemoveSupersededAsync(verified, failed, cancellationToken);
+        }
         if (previous == Backup)
         {
             Clean(Active);
@@ -82,6 +92,8 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
     internal async Task<State> ApplyVerifiedAsync(VerifiedRelease release,
         Guid correlationId, CancellationToken cancellationToken)
     {
+        // Even an internal recovery VerifiedRelease must never become new-request admission.
+        TrustedReleaseManifest.ValidateApplicationRelease(release, publicKey);
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         Event("accepted", correlationId, started);
         await RecoverAsync(correlationId, cancellationToken);
@@ -90,16 +102,16 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         var next = new State(release.Manifest.ReleaseSequence, release.Manifest.ReleaseId, release.ManifestSha256);
         if (next == previous)
         {
-            VerifySnapshot(Active, previous);
+            VerifySnapshot(Active, previous).Dispose();
             Event("already_current", correlationId, started);
             return previous;
         }
         if (next.Sequence <= previous.Sequence) throw new InvalidDataException("Release downgrade/replay rejected.");
-        VerifySnapshot(Active, previous);
+        VerifySnapshot(Active, previous).Dispose();
         Clean(Pending);
         Directory.CreateDirectory(Pending);
         release.CopyTo(Pending);
-        VerifySnapshot(Pending, next);
+        VerifySnapshot(Pending, next).Dispose();
         cancellationToken.ThrowIfCancellationRequested();
         // Journal is durable before any deployment mutation. Once prepared, finish or recover;
         // losing the requesting UI/pipe does not cancel a privileged deployment midway.
@@ -124,13 +136,8 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         return next;
     }
 
-    private void VerifySnapshot(string path, State expected)
-    {
-        using var verified = TrustedReleaseManifest.VerifyPackage(path, publicKey, 0);
-        if (verified.Manifest.ReleaseSequence != expected.Sequence || verified.Manifest.ReleaseId != expected.ReleaseId ||
-            verified.ManifestSha256 != expected.ManifestSha256)
-            throw new InvalidDataException("Recovery snapshot identity mismatch.");
-    }
+    private VerifiedRelease VerifySnapshot(string path, State expected) =>
+        TrustedReleaseManifest.VerifyRecoverySnapshot(path, publicKey, expected.Sequence, expected.ReleaseId, expected.ManifestSha256);
 
     private static T Read<T>(string path)
     {

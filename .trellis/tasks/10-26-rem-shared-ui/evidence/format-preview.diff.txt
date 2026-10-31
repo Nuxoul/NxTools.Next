@@ -1,0 +1,1213 @@
+--- rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs
++++ rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs
+@@ -964,22 +964,39 @@
+ }
+ 
+ #[gpui_kit::test]
+-fn audit06_shared_global_settings_minimum_keeps_actual_footer_and_cancel_owner(cx: &mut TestAppContext) {
++fn audit06_shared_global_settings_minimum_keeps_actual_footer_and_cancel_owner(
++    cx: &mut TestAppContext,
++) {
+     let (application, view, mut surface, directory) = fixture(cx);
+     let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());
+     let path = directory.join("config.json");
+     let before = std::fs::read(&path).expect("owned original config");
+     for base in [16.0, 14.0, 18.0] {
+-        surface.update(|_, cx| gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base)));
++        surface.update(|_, cx| {
++            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))
++        });
+         view.update(&mut surface, |_, cx| cx.notify());
+-        surface.update(|window, cx| { window.refresh(); window.draw(cx).clear(cx); });
++        surface.update(|window, cx| {
++            window.refresh();
++            window.draw(cx).clear(cx);
++        });
+         assert_eq!(surface.update(|window, _| window.rem_size()), px(base));
+-        let footer = surface.debug_bounds("network-settings-footer").expect("fixed original footer");
++        let footer = surface
++            .debug_bounds("network-settings-footer")
++            .expect("fixed original footer");
+         assert_eq!(footer.size.height, px(48.0));
+         assert_eq!(footer.bottom(), px(480.0));
+-        for id in ["network-settings-cancel-button", "network-settings-save-button"] {
++        for id in [
++            "network-settings-cancel-button",
++            "network-settings-save-button",
++        ] {
+             let action = control_bounds(&mut surface, id);
+-            assert!(action.left() >= footer.left() && action.right() <= footer.right() && action.top() >= footer.top() && action.bottom() <= footer.bottom());
++            assert!(
++                action.left() >= footer.left()
++                    && action.right() <= footer.right()
++                    && action.top() >= footer.top()
++                    && action.bottom() <= footer.bottom()
++            );
+             assert!((action.size.height - px(24.0 * base / 16.0)).abs() <= px(0.5));
+         }
+         assert_eq!(std::fs::read(&path).expect("layout cannot save"), before);
+--- rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs
++++ rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs
+@@ -2585,10 +2585,18 @@
+     let f = fixture(cx);
+     let mut surface = VisualTestContext::from_window(f.window, cx);
+     let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());
+-    let first_id = f.panel.read_with(&surface, |panel, _| panel.entries.borrow()[0].id);
++    let first_id = f
++        .panel
++        .read_with(&surface, |panel, _| panel.entries.borrow()[0].id);
+     for base in [16.0, 14.0, 18.0] {
+-        surface.update(|_, cx| gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base)));
+-        for (kind, expected) in [(ClipboardKind::Text, 160.0), (ClipboardKind::Image, 190.0), (ClipboardKind::Files, 62.0)] {
++        surface.update(|_, cx| {
++            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))
++        });
++        for (kind, expected) in [
++            (ClipboardKind::Text, 160.0),
++            (ClipboardKind::Image, 190.0),
++            (ClipboardKind::Files, 62.0),
++        ] {
+             f.panel.update_in(&mut surface, |panel, _, cx| {
+                 let mut items = panel.entries.borrow_mut();
+                 items.truncate(1);
+@@ -2601,15 +2609,40 @@
+                 panel.list_scroll.reset(1);
+                 cx.notify();
+             });
+-            surface.update(|window, cx| { window.refresh(); window.draw(cx).clear(cx); });
++            surface.update(|window, cx| {
++                window.refresh();
++                window.draw(cx).clear(cx);
++            });
+             assert_eq!(surface.update(|window, _| window.rem_size()), px(base));
+-            let card = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window).into_iter().find(|node| node.label() == Some(format!("剪贴板记录 {first_id}").as_str())).expect("original ListItem").bounds());
+-            assert!(card.size.height <= px(expected) && card.size.height >= px(expected - 2.0), "fixed {kind:?} cap (not a forced natural height) at base {base}: {card:?}");
+-            let slot = surface.debug_bounds("history-row-slot-0").expect("original paging slot");
++            let card = surface.update(|window, _| {
++                gpui_kit::base::test_support::snapshots(window)
++                    .into_iter()
++                    .find(|node| node.label() == Some(format!("剪贴板记录 {first_id}").as_str()))
++                    .expect("original ListItem")
++                    .bounds()
++            });
++            assert!(
++                card.size.height <= px(expected) && card.size.height >= px(expected - 2.0),
++                "fixed {kind:?} cap (not a forced natural height) at base {base}: {card:?}"
++            );
++            let slot = surface
++                .debug_bounds("history-row-slot-0")
++                .expect("original paging slot");
+             assert!((slot.bottom() - card.bottom() - px(8.0)).abs() < px(0.1));
+-            assert_eq!(surface.debug_bounds("clipboard-source-0").expect("fixed source rail").size.height, px(24.0));
++            assert_eq!(
++                surface
++                    .debug_bounds("clipboard-source-0")
++                    .expect("fixed source rail")
++                    .size
++                    .height,
++                px(24.0)
++            );
+             if kind == ClipboardKind::Text {
+-                assert_eq!(body_feather_quads(&mut surface).len(), 1, "original14DIPbody feather remains fixed");
++                assert_eq!(
++                    body_feather_quads(&mut surface).len(),
++                    1,
++                    "original14DIPbody feather remains fixed"
++                );
+             }
+         }
+     }
+--- rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs
++++ rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs
+@@ -360,79 +360,85 @@
+                 .min_h_0()
+                 .flex_1()
+                 .overflow_hidden()
+-                .child(div().size_full().p_4()
+                 .child(
+                     div()
+-                        .debug_selector(|| "quick-launch-command-form".into())
+-                        .w_full()
++                        .size_full()
++                        .p_4()
+                         .child(
+-                            Form::new()
+-                                .columns(2)
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-keyword",
+-                                    "关键词",
+-                                    &inputs.keyword,
+-                                ))
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-title",
+-                                    "显示名称",
+-                                    &inputs.title,
+-                                ))
++                            div()
++                                .debug_selector(|| "quick-launch-command-form".into())
++                                .w_full()
+                                 .child(
+-                                    Field::new().label("程序").col_span(2).child(
+-                                        div()
+-                                            .w_full()
+-                                            .flex()
+-                                            .items_center()
+-                                            .gap_2()
+-                                            .child(
++                                    Form::new()
++                                        .columns(2)
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-keyword",
++                                            "关键词",
++                                            &inputs.keyword,
++                                        ))
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-title",
++                                            "显示名称",
++                                            &inputs.title,
++                                        ))
++                                        .child(
++                                            Field::new().label("程序").col_span(2).child(
+                                                 div()
+-                                                    .debug_selector(|| {
+-                                                        "quick-launch-command-field-program".into()
+-                                                    })
+-                                                    .flex_1()
+-                                                    .min_w_0()
++                                                    .w_full()
++                                                    .flex()
++                                                    .items_center()
++                                                    .gap_2()
+                                                     .child(
+-                                                        Input::new(&inputs.program)
+-                                                            .aria_label("程序"),
+-                                                    ),
+-                                            )
+-                                            .child(bounded_action_slot(
+-                                                "quick-launch-pick-command-program",
+-                                                picker_action.into_any_element(),
+-                                            )),
+-                                    ),
+-                                )
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-arguments",
+-                                    "参数模板",
+-                                    &inputs.arguments,
+-                                ))
+-                                .child(command_input_field(
+-                                    theme,
+-                                    "quick-launch-command-field-working-directory",
+-                                    "工作目录",
+-                                    &inputs.working_directory,
+-                                ))
+-                                .child(
+-                                    Field::new().col_span(2).child(
+-                                        div()
+-                                            .flex()
+-                                            .items_center()
+-                                            .gap_4()
+-                                            .child(admin)
+-                                            .child(silent),
+-                                    ),
+-                                )
+-                                .footer(bounded_action_slot(
+-                                    "quick-launch-save-custom-command",
+-                                    save_action.into_any_element(),
+-                                )),
+-                        ),
+-                ).overflow_y_scrollbar().id("quick-launch-command-detail-scroll"),
++                                                        div()
++                                                            .debug_selector(|| {
++                                                                "quick-launch-command-field-program"
++                                                                    .into()
++                                                            })
++                                                            .flex_1()
++                                                            .min_w_0()
++                                                            .child(
++                                                                Input::new(&inputs.program)
++                                                                    .aria_label("程序"),
++                                                            ),
++                                                    )
++                                                    .child(bounded_action_slot(
++                                                        "quick-launch-pick-command-program",
++                                                        picker_action.into_any_element(),
++                                                    )),
++                                            ),
++                                        )
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-arguments",
++                                            "参数模板",
++                                            &inputs.arguments,
++                                        ))
++                                        .child(command_input_field(
++                                            theme,
++                                            "quick-launch-command-field-working-directory",
++                                            "工作目录",
++                                            &inputs.working_directory,
++                                        ))
++                                        .child(
++                                            Field::new().col_span(2).child(
++                                                div()
++                                                    .flex()
++                                                    .items_center()
++                                                    .gap_4()
++                                                    .child(admin)
++                                                    .child(silent),
++                                            ),
++                                        )
++                                        .footer(bounded_action_slot(
++                                            "quick-launch-save-custom-command",
++                                            save_action.into_any_element(),
++                                        )),
++                                ),
++                        )
++                        .overflow_y_scrollbar()
++                        .id("quick-launch-command-detail-scroll"),
+                 ),
+         )
+         .into_any_element()
+--- rust/apps/nxtools-desktop/src/ui/components/settings.rs
++++ rust/apps/nxtools-desktop/src/ui/components/settings.rs
+@@ -6,8 +6,8 @@
+ use gpui_kit::component::button::ButtonVariants;
+ use gpui_kit::component::switch::Switch;
+ use gpui_kit::{
+-    AnyElement, FontWeight, IntoElement, Length, MouseButton, SharedString, Window, WindowControlArea, div,
+-    prelude::*, px,
++    AnyElement, FontWeight, IntoElement, Length, MouseButton, SharedString, Window,
++    WindowControlArea, div, prelude::*, px,
+ };
+ 
+ /// Shared public SettingItem::render content: title-adjacent help and one
+--- rust/apps/nxtools-desktop/src/ui/components/state.rs
++++ rust/apps/nxtools-desktop/src/ui/components/state.rs
+@@ -51,7 +51,10 @@
+                                     div()
+                                         .debug_selector(move || icon_selector.clone())
+                                         .flex_none()
+-                                        .child(Icon::new(icon).size(ordinary_rem(WORK_STATE_ICON_SIZE))),
++                                        .child(
++                                            Icon::new(icon)
++                                                .size(ordinary_rem(WORK_STATE_ICON_SIZE)),
++                                        ),
+                                 )
+                                 .child(
+                                     div()
+--- rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs
++++ rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs
+@@ -7,8 +7,8 @@
+ use gpui_kit::component::input::{Input, InputState};
+ use gpui_kit::component::{Sizable, Size};
+ use gpui_kit::{
+-    AppContext, Context, Entity, IntoElement, Modifiers, Render, TestAppContext,
+-    VisualTestContext, Window, div, prelude::*, px, size,
++    AppContext, Context, Entity, IntoElement, Modifiers, Render, TestAppContext, VisualTestContext,
++    Window, div, prelude::*, px, size,
+ };
+ use std::cell::Cell;
+ use std::rc::Rc;
+@@ -29,7 +29,10 @@
+     assert_eq!(surface.update(|window, _| window.rem_size()), px(value));
+ }
+ fn near(actual: gpui_kit::Pixels, expected: f32, context: &str) {
+-    assert!((actual - px(expected)).abs() <= px(0.5), "{context}: {actual:?} != {expected}");
++    assert!(
++        (actual - px(expected)).abs() <= px(0.5),
++        "{context}: {actual:?} != {expected}"
++    );
+ }
+ fn key(surface: &mut VisualTestContext, stroke: &str) {
+     surface.simulate_keystrokes(stroke);
+@@ -48,7 +51,11 @@
+         let calls = self.calls.clone();
+         let path = field::path_picker_shell(
+             "shared-rem-path",
+-            field::field_shell(Theme::zed_dark(), "shared-rem-input", Input::new(&self.input).aria_label("合成路径")),
++            field::field_shell(
++                Theme::zed_dark(),
++                "shared-rem-input",
++                Input::new(&self.input).aria_label("合成路径"),
++            ),
+             action::icon_action("shared-rem-picker", MaterialIcon::Folder, "合成选择")
+                 .with_size(Size::Medium)
+                 .on_click(move |_, _, _| calls.set(calls.get() + 1))
+@@ -57,13 +64,39 @@
+         let apply = self.calls.clone();
+         settings::settings_shell(
+             Theme::zed_dark(),
+-            settings::SettingsShellIds { root: "shared-rem-shell", content: "shared-rem-body", footer: "shared-rem-footer" },
+-            titlebar::client_titlebar(Theme::zed_dark(), "shared-rem-titlebar", "shared-rem-close", "合成共享表单", |_, _, _| {}),
+-            div().id("shared-rem-scroll").debug_selector(|| "shared-rem-scroll".into())
+-                .size_full().overflow_y_scroll().p_3()
++            settings::SettingsShellIds {
++                root: "shared-rem-shell",
++                content: "shared-rem-body",
++                footer: "shared-rem-footer",
++            },
++            titlebar::client_titlebar(
++                Theme::zed_dark(),
++                "shared-rem-titlebar",
++                "shared-rem-close",
++                "合成共享表单",
++                |_, _, _| {},
++            ),
++            div()
++                .id("shared-rem-scroll")
++                .debug_selector(|| "shared-rem-scroll".into())
++                .size_full()
++                .overflow_y_scroll()
++                .p_3()
+                 .child(Form::new().child(Field::new().label("路径").child(path)))
+-                .child(field::inline_error(Theme::zed_dark(), "shared-rem-validation", if self.long { "合成完整错误需要在原内容滚动区域中可达。\n".repeat(40) } else { "合成错误：保留输入与原动作。".into() }))
+-                .child(div().debug_selector(|| "shared-rem-last".into()).child("最后一行"))
++                .child(field::inline_error(
++                    Theme::zed_dark(),
++                    "shared-rem-validation",
++                    if self.long {
++                        "合成完整错误需要在原内容滚动区域中可达。\n".repeat(40)
++                    } else {
++                        "合成错误：保留输入与原动作。".into()
++                    },
++                ))
++                .child(
++                    div()
++                        .debug_selector(|| "shared-rem-last".into())
++                        .child("最后一行"),
++                )
+                 .into_any_element(),
+             settings::dialog_footer(
+                 action::action_button("shared-rem-apply", "合成应用")
+@@ -82,7 +115,11 @@
+     let slot = Rc::new(std::cell::RefCell::new(None));
+     let held = slot.clone();
+     let (_, surface) = cx.add_window_view(move |window, cx| {
+-        let view = cx.new(|cx| FormSurface { input: cx.new(|cx| InputState::new(window, cx)), calls: retained, long: false });
++        let view = cx.new(|cx| FormSurface {
++            input: cx.new(|cx| InputState::new(window, cx)),
++            calls: retained,
++            long: false,
++        });
+         *held.borrow_mut() = Some(view.clone());
+         gpui_kit::base::Root::new(view, window, cx)
+     });
+@@ -93,16 +130,34 @@
+     for value in [16.0, 14.0, 18.0] {
+         view.update(surface, |_, cx| cx.notify());
+         base(surface, value);
+-        let path = surface.debug_bounds("shared-rem-path").expect("actual path composition");
+-        let input = surface.debug_bounds("shared-rem-input").expect("actual Input");
+-        let picker = surface.debug_bounds("shared-rem-picker").expect("actual Button");
+-        near(path.size.height, 32.0 * value / 16.0, "path rail follows Input");
++        let path = surface
++            .debug_bounds("shared-rem-path")
++            .expect("actual path composition");
++        let input = surface
++            .debug_bounds("shared-rem-input")
++            .expect("actual Input");
++        let picker = surface
++            .debug_bounds("shared-rem-picker")
++            .expect("actual Button");
++        near(
++            path.size.height,
++            32.0 * value / 16.0,
++            "path rail follows Input",
++        );
+         near(input.size.height, 32.0 * value / 16.0, "Medium Input");
+         near(picker.size.height, 32.0 * value / 16.0, "Medium Button");
+-        near(picker.left() - input.right(), 8.0 * value / 16.0, "ordinary gap");
++        near(
++            picker.left() - input.right(),
++            8.0 * value / 16.0,
++            "ordinary gap",
++        );
+         assert!(input.top() >= path.top() && input.bottom() <= path.bottom());
+-        let footer = surface.debug_bounds("shared-rem-footer").expect("fixed footer");
+-        let apply = surface.debug_bounds("shared-rem-apply").expect("original footer action");
++        let footer = surface
++            .debug_bounds("shared-rem-footer")
++            .expect("fixed footer");
++        let apply = surface
++            .debug_bounds("shared-rem-apply")
++            .expect("original footer action");
+         assert_eq!(footer.size.height, px(48.0));
+         assert_eq!(footer.bottom(), px(240.0));
+         assert!(apply.top() >= footer.top() && apply.bottom() <= footer.bottom());
+@@ -114,17 +169,32 @@
+     surface.update(|window, cx| input.update(cx, |state, cx| state.focus(window, cx)));
+     surface.simulate_input("合成路径尾部");
+     draw(surface);
+-    assert_eq!(input.read_with(surface, |state, _| state.value().to_string()), "合成路径尾部");
++    assert_eq!(
++        input.read_with(surface, |state, _| state.value().to_string()),
++        "合成路径尾部"
++    );
+     assert_eq!(input.entity_id(), identity);
+     key(surface, "tab");
+-    let focused = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window).into_iter().find(|node| node.focused() == Some(true)).expect("actual focused picker"));
++    let focused = surface.update(|window, _| {
++        gpui_kit::base::test_support::snapshots(window)
++            .into_iter()
++            .find(|node| node.focused() == Some(true))
++            .expect("actual focused picker")
++    });
+     assert_eq!(focused.label(), Some("合成选择"));
+     key(surface, "space");
+     assert_eq!(calls.get(), 4, "same Button release owner");
+-    view.update(surface, |view, cx| { view.long = true; cx.notify(); });
++    view.update(surface, |view, cx| {
++        view.long = true;
++        cx.notify();
++    });
+     draw(surface);
+-    let viewport = surface.debug_bounds("shared-rem-scroll").expect("original scroll viewport");
+-    let before = surface.debug_bounds("shared-rem-last").expect("long error end");
++    let viewport = surface
++        .debug_bounds("shared-rem-scroll")
++        .expect("original scroll viewport");
++    let before = surface
++        .debug_bounds("shared-rem-last")
++        .expect("long error end");
+     assert!(before.bottom() > viewport.bottom());
+     surface.simulate_event(gpui_kit::ScrollWheelEvent {
+         position: viewport.center(),
+@@ -132,9 +202,16 @@
+         ..Default::default()
+     });
+     draw(surface);
+-    let end = surface.debug_bounds("shared-rem-last").expect("reachable complete error end");
+-    assert!(end.top() >= viewport.top() && end.bottom() <= viewport.bottom(), "{end:?} vs {viewport:?}");
+-    let apply = surface.debug_bounds("shared-rem-apply").expect("fixed action after scroll");
++    let end = surface
++        .debug_bounds("shared-rem-last")
++        .expect("reachable complete error end");
++    assert!(
++        end.top() >= viewport.top() && end.bottom() <= viewport.bottom(),
++        "{end:?} vs {viewport:?}"
++    );
++    let apply = surface
++        .debug_bounds("shared-rem-apply")
++        .expect("fixed action after scroll");
+     surface.simulate_click(apply.center(), Modifiers::default());
+     draw(surface);
+     assert_eq!(calls.get(), 5);
+@@ -143,24 +220,60 @@
+ struct States;
+ impl Render for States {
+     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+-        div().w_full().flex().flex_col()
+-            .child(state::empty_state(Theme::zed_dark(), "shared-rem-empty", MaterialIcon::Search, "无内容", "调整条件"))
+-            .child(state::progress_state(Theme::zed_dark(), "shared-rem-progress", "加载中", "不是百分比"))
+-            .child(state::inline_error_state(Theme::zed_dark(), "shared-rem-error", "读取失败", "可重试"))
++        div()
++            .w_full()
++            .flex()
++            .flex_col()
++            .child(state::empty_state(
++                Theme::zed_dark(),
++                "shared-rem-empty",
++                MaterialIcon::Search,
++                "无内容",
++                "调整条件",
++            ))
++            .child(state::progress_state(
++                Theme::zed_dark(),
++                "shared-rem-progress",
++                "加载中",
++                "不是百分比",
++            ))
++            .child(state::inline_error_state(
++                Theme::zed_dark(),
++                "shared-rem-error",
++                "读取失败",
++                "可重试",
++            ))
+     }
+ }
+ #[gpui_kit::test]
+ fn audit06_shared_empty_error_ordinary_geometry_follows_root(cx: &mut TestAppContext) {
+     cx.update(gpui_kit::init);
+     cx.update(crate::theme::apply_component_theme);
+-    let (_, surface) = cx.add_window_view(|window, cx| { let view = cx.new(|_| States); gpui_kit::base::Root::new(view, window, cx) });
++    let (_, surface) = cx.add_window_view(|window, cx| {
++        let view = cx.new(|_| States);
++        gpui_kit::base::Root::new(view, window, cx)
++    });
+     surface.simulate_resize(size(px(480.0), px(320.0)));
+     let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+     for value in [16.0, 14.0, 18.0] {
+         base(surface, value);
+-        let empty = surface.debug_bounds("shared-rem-empty").expect("actual Empty");
+-        near(empty.size.height, 72.0 * value / 16.0, "ordinary state minimum");
+-        near(surface.debug_bounds("shared-rem-empty-icon").expect("ordinary vector icon").size.width, 18.0 * value / 16.0, "ordinary icon");
++        let empty = surface
++            .debug_bounds("shared-rem-empty")
++            .expect("actual Empty");
++        near(
++            empty.size.height,
++            72.0 * value / 16.0,
++            "ordinary state minimum",
++        );
++        near(
++            surface
++                .debug_bounds("shared-rem-empty-icon")
++                .expect("ordinary vector icon")
++                .size
++                .width,
++            18.0 * value / 16.0,
++            "ordinary icon",
++        );
+         for selector in ["shared-rem-progress", "shared-rem-error"] {
+             let bounds = surface.debug_bounds(selector).expect("actual state");
+             assert!(bounds.size.height >= px(72.0 * value / 16.0) && bounds.bottom() <= px(320.0));
+@@ -171,25 +284,84 @@
+ struct Rows;
+ impl Render for Rows {
+     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+-        div().w_full().flex().flex_col()
+-            .child(volume_scope::volume_scope_row(Theme::zed_dark(), "shared-rem-volume", "合成卷", "合成状态", false, false, |_, _, _| {}))
+-            .child(quick_launch_diagnostics::quick_launch_diagnostics(Theme::zed_dark(), quick_launch_diagnostics::QuickLaunchDiagnosticsData { ranked_items: 1, total_activations: 2, query_associations: 3, recent_directories: 4, local_search_elapsed: "10 µs".into(), index_search_elapsed: "20 µs".into(), log_path: "合成日志路径".into(), log_available: false }, quick_launch_diagnostics::QuickLaunchDiagnosticsActions { clear_history: Rc::new(|_, _, _| {}), open_logs: Rc::new(|_, _, _| {}) }, cx))
++        div()
++            .w_full()
++            .flex()
++            .flex_col()
++            .child(volume_scope::volume_scope_row(
++                Theme::zed_dark(),
++                "shared-rem-volume",
++                "合成卷",
++                "合成状态",
++                false,
++                false,
++                |_, _, _| {},
++            ))
++            .child(quick_launch_diagnostics::quick_launch_diagnostics(
++                Theme::zed_dark(),
++                quick_launch_diagnostics::QuickLaunchDiagnosticsData {
++                    ranked_items: 1,
++                    total_activations: 2,
++                    query_associations: 3,
++                    recent_directories: 4,
++                    local_search_elapsed: "10 µs".into(),
++                    index_search_elapsed: "20 µs".into(),
++                    log_path: "合成日志路径".into(),
++                    log_available: false,
++                },
++                quick_launch_diagnostics::QuickLaunchDiagnosticsActions {
++                    clear_history: Rc::new(|_, _, _| {}),
++                    open_logs: Rc::new(|_, _, _| {}),
++                },
++                cx,
++            ))
+     }
+ }
+ #[gpui_kit::test]
+ fn audit06_shared_volume_and_diagnostics_scale_without_clipping(cx: &mut TestAppContext) {
+     cx.update(gpui_kit::init);
+     cx.update(crate::theme::apply_component_theme);
+-    let (_, surface) = cx.add_window_view(|window, cx| { let view = cx.new(|_| Rows); gpui_kit::base::Root::new(view, window, cx) });
++    let (_, surface) = cx.add_window_view(|window, cx| {
++        let view = cx.new(|_| Rows);
++        gpui_kit::base::Root::new(view, window, cx)
++    });
+     surface.simulate_resize(size(px(720.0), px(480.0)));
+     let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+     for value in [16.0, 14.0, 18.0] {
+         base(surface, value);
+-        near(surface.debug_bounds("shared-rem-volume").expect("actual ListItem").size.height, 40.0 * value / 16.0, "volume row");
+-        near(surface.debug_bounds("shared-rem-volume-title").expect("actual type line").size.height, 20.0 * value / 16.0, "ordinary workbench line");
+-        near(surface.debug_bounds("quick-launch-diagnostics-log-row").expect("actual diagnostic row").size.height, 48.0 * value / 16.0, "diagnostic row");
+-        let row = surface.debug_bounds("quick-launch-diagnostics-log-row").expect("log row");
+-        let path = surface.debug_bounds("quick-launch-diagnostics-log-path").expect("full path owner");
++        near(
++            surface
++                .debug_bounds("shared-rem-volume")
++                .expect("actual ListItem")
++                .size
++                .height,
++            40.0 * value / 16.0,
++            "volume row",
++        );
++        near(
++            surface
++                .debug_bounds("shared-rem-volume-title")
++                .expect("actual type line")
++                .size
++                .height,
++            20.0 * value / 16.0,
++            "ordinary workbench line",
++        );
++        near(
++            surface
++                .debug_bounds("quick-launch-diagnostics-log-row")
++                .expect("actual diagnostic row")
++                .size
++                .height,
++            48.0 * value / 16.0,
++            "diagnostic row",
++        );
++        let row = surface
++            .debug_bounds("quick-launch-diagnostics-log-row")
++            .expect("log row");
++        let path = surface
++            .debug_bounds("quick-launch-diagnostics-log-path")
++            .expect("full path owner");
+         assert!(path.top() >= row.top() && path.bottom() <= row.bottom());
+     }
+     surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+@@ -197,22 +369,49 @@
+ struct Header;
+ impl Render for Header {
+     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+-        titlebar::ModuleHeader::new("shared-rem-header", "shared-rem-header-title", "shared-rem-header-meta", "合成标题", "合成元数据").trailing(action::action_button("shared-rem-header-action", "合成操作").into_any_element()).render(Theme::zed_dark())
++        titlebar::ModuleHeader::new(
++            "shared-rem-header",
++            "shared-rem-header-title",
++            "shared-rem-header-meta",
++            "合成标题",
++            "合成元数据",
++        )
++        .trailing(action::action_button("shared-rem-header-action", "合成操作").into_any_element())
++        .render(Theme::zed_dark())
+     }
+ }
+ #[gpui_kit::test]
+ fn audit06_shared_module_header_type_and_action_share_ordinary_scale(cx: &mut TestAppContext) {
+     cx.update(gpui_kit::init);
+     cx.update(crate::theme::apply_component_theme);
+-    let (_, surface) = cx.add_window_view(|window, cx| { let view = cx.new(|_| Header); gpui_kit::base::Root::new(view, window, cx) });
++    let (_, surface) = cx.add_window_view(|window, cx| {
++        let view = cx.new(|_| Header);
++        gpui_kit::base::Root::new(view, window, cx)
++    });
+     surface.simulate_resize(size(px(480.0), px(100.0)));
+     let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+     for value in [16.0, 14.0, 18.0] {
+         base(surface, value);
+-        let header = surface.debug_bounds("shared-rem-header").expect("real module header");
+-        near(header.size.height, 48.0 * value / 16.0, "ordinary module rail");
+-        near(surface.debug_bounds("shared-rem-header-title").expect("actual title line").size.height, 22.0 * value / 16.0, "title role");
+-        let action = surface.debug_bounds("shared-rem-header-action").expect("original styled action");
++        let header = surface
++            .debug_bounds("shared-rem-header")
++            .expect("real module header");
++        near(
++            header.size.height,
++            48.0 * value / 16.0,
++            "ordinary module rail",
++        );
++        near(
++            surface
++                .debug_bounds("shared-rem-header-title")
++                .expect("actual title line")
++                .size
++                .height,
++            22.0 * value / 16.0,
++            "title role",
++        );
++        let action = surface
++            .debug_bounds("shared-rem-header-action")
++            .expect("original styled action");
+         assert!(action.top() >= header.top() && action.bottom() <= header.bottom());
+     }
+     surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+@@ -223,34 +422,137 @@
+ }
+ impl Render for Editors {
+     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+-        use custom_command_editor::{CustomCommandEditorActions, CustomCommandEditorInputs, CustomCommandEditorState};
+-        let commands = [nxtools_core::CustomCommandSettings { title: "合成命令".into(), keyword: "test".into(), ..Default::default() }];
+-        div().size_full().flex().flex_col()
+-            .child(hotkey::hotkey_field(Theme::zed_dark(), "shared-rem-hotkey", "Ctrl+Space", "合成状态", hotkey::HotkeyFieldState::Applied, |_, _, _| {}))
+-            .child(path_list::path_exclusion_setting(Theme::zed_dark(), &[r"C:\synthetic\合成路径".into()], None, |_, _, _| {}, |_, _, _, _| {}, |_, _, _| {}, cx))
+-            .child(custom_command_editor::custom_command_editor(Theme::zed_dark(), CustomCommandEditorState { commands: &commands, selected_index: Some(0), inputs: CustomCommandEditorInputs { keyword: self.inputs.keyword.clone(), title: self.inputs.title.clone(), program: self.inputs.program.clone(), arguments: self.inputs.arguments.clone(), working_directory: self.inputs.working_directory.clone() }, run_as_admin: false, run_silently: false }, CustomCommandEditorActions { select: Rc::new(|_, _, _| {}), add: Rc::new(|_, _, _| {}), set_enabled: Rc::new(|_, _, _| {}), delete: Rc::new(|_, _, _| {}), pick_program: Rc::new(|_, _, _| {}), set_run_as_admin: Rc::new(|_, _, _| {}), set_run_silently: Rc::new(|_, _, _| {}), save: Rc::new(|_, _, _| {}) }, cx))
++        use custom_command_editor::{
++            CustomCommandEditorActions, CustomCommandEditorInputs, CustomCommandEditorState,
++        };
++        let commands = [nxtools_core::CustomCommandSettings {
++            title: "合成命令".into(),
++            keyword: "test".into(),
++            ..Default::default()
++        }];
++        div()
++            .size_full()
++            .flex()
++            .flex_col()
++            .child(hotkey::hotkey_field(
++                Theme::zed_dark(),
++                "shared-rem-hotkey",
++                "Ctrl+Space",
++                "合成状态",
++                hotkey::HotkeyFieldState::Applied,
++                |_, _, _| {},
++            ))
++            .child(path_list::path_exclusion_setting(
++                Theme::zed_dark(),
++                &[r"C:\synthetic\合成路径".into()],
++                None,
++                |_, _, _| {},
++                |_, _, _, _| {},
++                |_, _, _| {},
++                cx,
++            ))
++            .child(custom_command_editor::custom_command_editor(
++                Theme::zed_dark(),
++                CustomCommandEditorState {
++                    commands: &commands,
++                    selected_index: Some(0),
++                    inputs: CustomCommandEditorInputs {
++                        keyword: self.inputs.keyword.clone(),
++                        title: self.inputs.title.clone(),
++                        program: self.inputs.program.clone(),
++                        arguments: self.inputs.arguments.clone(),
++                        working_directory: self.inputs.working_directory.clone(),
++                    },
++                    run_as_admin: false,
++                    run_silently: false,
++                },
++                CustomCommandEditorActions {
++                    select: Rc::new(|_, _, _| {}),
++                    add: Rc::new(|_, _, _| {}),
++                    set_enabled: Rc::new(|_, _, _| {}),
++                    delete: Rc::new(|_, _, _| {}),
++                    pick_program: Rc::new(|_, _, _| {}),
++                    set_run_as_admin: Rc::new(|_, _, _| {}),
++                    set_run_silently: Rc::new(|_, _, _| {}),
++                    save: Rc::new(|_, _, _| {}),
++                },
++                cx,
++            ))
+     }
+ }
+ #[gpui_kit::test]
+-fn audit06_shared_editors_ordinary_roles_keep_fixed_viewport_and_delete_hit(cx: &mut TestAppContext) {
++fn audit06_shared_editors_ordinary_roles_keep_fixed_viewport_and_delete_hit(
++    cx: &mut TestAppContext,
++) {
+     cx.update(gpui_kit::init);
+     cx.update(crate::theme::apply_component_theme);
+     let (_, surface) = cx.add_window_view(|window, cx| {
+-        let view = cx.new(|cx| Editors { inputs: custom_command_editor::CustomCommandEditorInputs {
+-            keyword: cx.new(|cx| InputState::new(window, cx)), title: cx.new(|cx| InputState::new(window, cx)), program: cx.new(|cx| InputState::new(window, cx)), arguments: cx.new(|cx| InputState::new(window, cx)), working_directory: cx.new(|cx| InputState::new(window, cx)),
+-        }});
++        let view = cx.new(|cx| Editors {
++            inputs: custom_command_editor::CustomCommandEditorInputs {
++                keyword: cx.new(|cx| InputState::new(window, cx)),
++                title: cx.new(|cx| InputState::new(window, cx)),
++                program: cx.new(|cx| InputState::new(window, cx)),
++                arguments: cx.new(|cx| InputState::new(window, cx)),
++                working_directory: cx.new(|cx| InputState::new(window, cx)),
++            },
++        });
+         gpui_kit::base::Root::new(view, window, cx)
+     });
+     surface.simulate_resize(size(px(720.0), px(600.0)));
+     let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+     for value in [16.0, 14.0, 18.0] {
+         base(surface, value);
+-        near(surface.debug_bounds("shared-rem-hotkey").expect("actual recorder").size.width, 260.0 * value / 16.0, "ordinary hotkey width");
+-        near(surface.debug_bounds("quick-launch-exclusion-path-0").expect("actual path line").size.height, 20.0 * value / 16.0, "ordinary path line");
+-        assert_eq!(surface.debug_bounds("quick-launch-exclusion-delete-0").expect("approved delete hit").size, size(px(40.0), px(40.0)));
+-        near(surface.debug_bounds("quick-launch-custom-command-master").expect("actual master").size.width, 224.0 * value / 16.0, "ordinary master rail");
+-        assert_eq!(surface.debug_bounds("quick-launch-custom-command-master-detail").expect("bounded editor").size.height, px(360.0));
+-        near(surface.debug_bounds("quick-launch-command-field-keyword").expect("actual Form Input").size.height, 32.0 * value / 16.0, "original command Input");
++        near(
++            surface
++                .debug_bounds("shared-rem-hotkey")
++                .expect("actual recorder")
++                .size
++                .width,
++            260.0 * value / 16.0,
++            "ordinary hotkey width",
++        );
++        near(
++            surface
++                .debug_bounds("quick-launch-exclusion-path-0")
++                .expect("actual path line")
++                .size
++                .height,
++            20.0 * value / 16.0,
++            "ordinary path line",
++        );
++        assert_eq!(
++            surface
++                .debug_bounds("quick-launch-exclusion-delete-0")
++                .expect("approved delete hit")
++                .size,
++            size(px(40.0), px(40.0))
++        );
++        near(
++            surface
++                .debug_bounds("quick-launch-custom-command-master")
++                .expect("actual master")
++                .size
++                .width,
++            224.0 * value / 16.0,
++            "ordinary master rail",
++        );
++        assert_eq!(
++            surface
++                .debug_bounds("quick-launch-custom-command-master-detail")
++                .expect("bounded editor")
++                .size
++                .height,
++            px(360.0)
++        );
++        near(
++            surface
++                .debug_bounds("quick-launch-command-field-keyword")
++                .expect("actual Form Input")
++                .size
++                .height,
++            32.0 * value / 16.0,
++            "original command Input",
++        );
+     }
+     surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+ }
+--- rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs
++++ rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs
+@@ -7,7 +7,10 @@
+ 
+ fn draw(surface: &mut VisualTestContext) {
+     surface.run_until_parked();
+-    surface.update(|window, cx| { window.refresh(); window.draw(cx).clear(cx); });
++    surface.update(|window, cx| {
++        window.refresh();
++        window.draw(cx).clear(cx);
++    });
+ }
+ fn base(surface: &mut VisualTestContext, value: f32) {
+     surface.update(|_, cx| ComponentTheme::update(cx, |theme| theme.font_size = px(value)));
+@@ -15,18 +18,30 @@
+     assert_eq!(surface.update(|window, _| window.rem_size()), px(value));
+ }
+ fn click(surface: &mut VisualTestContext, selector: &'static str) {
+-    let hit = surface.debug_bounds(selector).unwrap_or_else(|| panic!("actual {selector}"));
++    let hit = surface
++        .debug_bounds(selector)
++        .unwrap_or_else(|| panic!("actual {selector}"));
+     surface.simulate_click(hit.center(), Modifiers::default());
+     draw(surface);
+ }
+ fn page(surface: &mut VisualTestContext, index: usize) {
+     let id = gpui_kit::ElementId::from(SharedString::from(format!("0-{index}")));
+-    let hit = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window).into_iter().find(|node| node.path().last() == Some(&id)).expect("official Settings navigation").bounds());
++    let hit = surface.update(|window, _| {
++        gpui_kit::base::test_support::snapshots(window)
++            .into_iter()
++            .find(|node| node.path().last() == Some(&id))
++            .expect("official Settings navigation")
++            .bounds()
++    });
+     surface.simulate_click(hit.center(), Modifiers::default());
+     draw(surface);
+ }
+ fn wheel(surface: &mut VisualTestContext, hit: gpui_kit::Point<gpui_kit::Pixels>, amount: f32) {
+-    surface.simulate_event(gpui_kit::ScrollWheelEvent { position: hit, delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(amount))), ..Default::default() });
++    surface.simulate_event(gpui_kit::ScrollWheelEvent {
++        position: hit,
++        delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(amount))),
++        ..Default::default()
++    });
+     draw(surface);
+ }
+ fn main_fixture(cx: &mut TestAppContext) -> (Entity<MainWindow>, VisualTestContext) {
+@@ -36,7 +51,21 @@
+     let retained = Rc::new(RefCell::new(None));
+     let slot = retained.clone();
+     let (_, surface) = cx.add_window_view(move |window, cx| {
+-        let main = cx.new(|cx| MainWindow::new(gpui_kit::WeakEntity::new_invalid(), gpui_kit::WeakEntity::new_invalid(), gpui_kit::WeakEntity::new_invalid(), MainWindowShellContext { settings: None, platform: None, system_settings: Rc::new(RefCell::new(SystemSettings::default())) }, notifications, window, cx));
++        let main = cx.new(|cx| {
++            MainWindow::new(
++                gpui_kit::WeakEntity::new_invalid(),
++                gpui_kit::WeakEntity::new_invalid(),
++                gpui_kit::WeakEntity::new_invalid(),
++                MainWindowShellContext {
++                    settings: None,
++                    platform: None,
++                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
++                },
++                notifications,
++                window,
++                cx,
++            )
++        });
+         *slot.borrow_mut() = Some(main.clone());
+         gpui_kit::base::Root::new(main, window, cx)
+     });
+@@ -45,36 +74,76 @@
+     (main, VisualTestContext::from_window(handle, cx))
+ }
+ #[gpui_kit::test]
+-fn audit06_shared_actual_main_headers_and_tools_keep_minimum_and_fixed_tile(cx: &mut TestAppContext) {
++fn audit06_shared_actual_main_headers_and_tools_keep_minimum_and_fixed_tile(
++    cx: &mut TestAppContext,
++) {
+     let (main, mut surface) = main_fixture(cx);
+     surface.simulate_resize(size(px(920.0), px(480.0)));
+     let original = surface.read(|cx| ComponentTheme::global(cx).clone());
+     for value in [16.0, 14.0, 18.0] {
+         main.update(&mut surface, |_, cx| cx.notify());
+         base(&mut surface, value);
+-        for (entry, header) in [("main-module-下载", "download-module-header"), ("main-module-速启", "quick-launch-module-header"), ("main-module-剪贴板", "clipboard-module-header"), ("main-module-其他工具", "tools-module-header")] {
++        for (entry, header) in [
++            ("main-module-下载", "download-module-header"),
++            ("main-module-速启", "quick-launch-module-header"),
++            ("main-module-剪贴板", "clipboard-module-header"),
++            ("main-module-其他工具", "tools-module-header"),
++        ] {
+             click(&mut surface, entry);
+             let rail = surface.debug_bounds(header).expect("actual module header");
+             assert!((rail.size.height - px(48.0 * value / 16.0)).abs() <= px(0.5));
+             assert!(rail.left() >= px(176.0) && rail.right() <= px(920.0));
+-            assert_eq!(surface.debug_bounds("main-titlebar").expect("native caption").size.height, px(36.0));
++            assert_eq!(
++                surface
++                    .debug_bounds("main-titlebar")
++                    .expect("native caption")
++                    .size
++                    .height,
++                px(36.0)
++            );
+         }
+-        let tile = surface.debug_bounds("tool-link-detector-card").expect("approved tile");
+-        assert_eq!(tile.size, size(px(180.0), px(160.0)), "shared rem must not scale Tools tile");
++        let tile = surface
++            .debug_bounds("tool-link-detector-card")
++            .expect("approved tile");
++        assert_eq!(
++            tile.size,
++            size(px(180.0), px(160.0)),
++            "shared rem must not scale Tools tile"
++        );
+         click(&mut surface, "tool-link-detector-configure");
+-        let handle = main.read_with(&surface, |main, _| *main.tool_settings_windows.get("tool-link-detector").expect("original keyed settings window"));
++        let handle = main.read_with(&surface, |main, _| {
++            *main
++                .tool_settings_windows
++                .get("tool-link-detector")
++                .expect("original keyed settings window")
++        });
+         let mut tool = VisualTestContext::from_window(handle, &surface);
+         tool.simulate_resize(size(px(460.0), px(320.0)));
+         draw(&mut tool);
+-        let root = tool.debug_bounds("tool-settings-window").expect("actual feature shell");
++        let root = tool
++            .debug_bounds("tool-settings-window")
++            .expect("actual feature shell");
+         assert_eq!(root.size, size(px(460.0), px(320.0)));
+-        for selector in ["tool-dwell-control", "tool-position-control", "tool-settings-toggle", "tool-settings-close"] {
++        for selector in [
++            "tool-dwell-control",
++            "tool-position-control",
++            "tool-settings-toggle",
++            "tool-settings-close",
++        ] {
+             let hit = tool.debug_bounds(selector).expect("actual Tool control");
+-            assert!(hit.left() >= root.left() && hit.right() <= root.right() && hit.top() >= root.top() && hit.bottom() <= root.bottom(), "{selector}: {hit:?}");
++            assert!(
++                hit.left() >= root.left()
++                    && hit.right() <= root.right()
++                    && hit.top() >= root.top()
++                    && hit.bottom() <= root.bottom(),
++                "{selector}: {hit:?}"
++            );
+         }
+         click(&mut tool, "tool-settings-toggle");
+         assert!(tool.debug_bounds("tool-settings-form").is_some());
+-        let close = tool.debug_bounds("tool-settings-close").expect("original close");
++        let close = tool
++            .debug_bounds("tool-settings-close")
++            .expect("original close");
+         tool.simulate_click(close.center(), Modifiers::default());
+         surface.run_until_parked();
+         assert!(surface.read(|cx| !cx.windows().contains(&handle)));
+@@ -82,24 +151,59 @@
+     surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+ }
+ #[gpui_kit::test]
+-fn audit06_shared_actual_quick_form_retains_inputs_and_original_save_at_minimum(cx: &mut TestAppContext) {
++fn audit06_shared_actual_quick_form_retains_inputs_and_original_save_at_minimum(
++    cx: &mut TestAppContext,
++) {
+     cx.update(gpui_kit::init);
+     cx.update(crate::theme::apply_component_theme);
+     let directory = tempfile::tempdir().expect("isolated Quick rem config");
+     let config_path = directory.path().join("config.json");
+     let mut config = AppConfig::default();
+-    config.quick_launch.custom_commands = vec![CustomCommandSettings { enabled: false, keyword: "synthetic".into(), title: "合成命令".into(), program: "synthetic.exe".into(), ..Default::default() }];
++    config.quick_launch.custom_commands = vec![CustomCommandSettings {
++        enabled: false,
++        keyword: "synthetic".into(),
++        title: "合成命令".into(),
++        program: "synthetic.exe".into(),
++        ..Default::default()
++    }];
+     config.save_to(&config_path).expect("synthetic config");
+-    let catalog = FinderCatalog::open(directory.path().join("history.db"), &[]).expect("no catalog roots");
++    let catalog =
++        FinderCatalog::open(directory.path().join("history.db"), &[]).expect("no catalog roots");
+     let (platform, _endpoint) = nxtools_ipc::platform_bridge(16);
+     let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+     let notifications = cx.new(|_| NotificationCenter::default());
+-    let quick = cx.new(|_| QuickLaunchApplication::new(catalog, Rc::new(platform), Rc::new(indexer), config, config_path.clone(), directory.path().join("logs"), notifications.clone()));
++    let quick = cx.new(|_| {
++        QuickLaunchApplication::new(
++            catalog,
++            Rc::new(platform),
++            Rc::new(indexer),
++            config,
++            config_path.clone(),
++            directory.path().join("logs"),
++            notifications.clone(),
++        )
++    });
+     let owner = quick.downgrade();
+     let retained = Rc::new(RefCell::new(None));
+     let slot = retained.clone();
+     let (_, surface) = cx.add_window_view(move |window, cx| {
+-        let main = cx.new(|cx| { let mut main = MainWindow::new(gpui_kit::WeakEntity::new_invalid(), owner, gpui_kit::WeakEntity::new_invalid(), MainWindowShellContext { settings: None, platform: None, system_settings: Rc::new(RefCell::new(SystemSettings::default())) }, notifications, window, cx); main.shell.activate(MainModule::QuickFind); main });
++        let main = cx.new(|cx| {
++            let mut main = MainWindow::new(
++                gpui_kit::WeakEntity::new_invalid(),
++                owner,
++                gpui_kit::WeakEntity::new_invalid(),
++                MainWindowShellContext {
++                    settings: None,
++                    platform: None,
++                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
++                },
++                notifications,
++                window,
++                cx,
++            );
++            main.shell.activate(MainModule::QuickFind);
++            main
++        });
+         *slot.borrow_mut() = Some(main.clone());
+         gpui_kit::base::Root::new(main, window, cx)
+     });
+@@ -112,8 +216,13 @@
+         base(surface, value);
+         page(surface, 3);
+         click(surface, "quick-launch-command-0");
+-        assert_eq!(main.read_with(surface, |main, _| main.selected_custom_command), Some(0));
+-        let editor = surface.debug_bounds("quick-launch-custom-command-master-detail").expect("production bounded editor");
++        assert_eq!(
++            main.read_with(surface, |main, _| main.selected_custom_command),
++            Some(0)
++        );
++        let editor = surface
++            .debug_bounds("quick-launch-custom-command-master-detail")
++            .expect("production bounded editor");
+         assert_eq!(editor.size.height, px(360.0));
+         let input = main.read_with(surface, |main, _| main.custom_command_title.clone());
+         assert_eq!(input.entity_id(), identity);
+@@ -121,8 +230,13 @@
+         surface.simulate_keystrokes("ctrl-a");
+         surface.simulate_input(&format!("合成已编辑{value}"));
+         draw(surface);
+-        assert_eq!(input.read_with(surface, |input, _| input.value().to_string()), format!("合成已编辑{value}"));
+-        let scroll = surface.debug_bounds("quick-launch-command-form-scroll").expect("original detail scroll");
++        assert_eq!(
++            input.read_with(surface, |input, _| input.value().to_string()),
++            format!("合成已编辑{value}")
++        );
++        let scroll = surface
++            .debug_bounds("quick-launch-command-form-scroll")
++            .expect("original detail scroll");
+         for _ in 0..5 {
+             surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                 position: gpui_kit::point(scroll.center().x, scroll.top() + px(80.0)),
+@@ -131,27 +245,73 @@
+             });
+             draw(surface);
+         }
+-        let save = surface.debug_bounds("quick-launch-save-custom-command").expect("original Save");
++        let save = surface
++            .debug_bounds("quick-launch-save-custom-command")
++            .expect("original Save");
+         let viewport_bottom = editor.bottom().min(px(480.0));
+         if save.bottom() > viewport_bottom {
+-            let content = surface.debug_bounds("quick-launch-kit-settings").expect("original Settings viewport");
+-            wheel(surface, gpui_kit::point(content.right() - px(8.0), content.bottom() - px(20.0)), -1000.0);
++            let content = surface
++                .debug_bounds("quick-launch-kit-settings")
++                .expect("original Settings viewport");
++            wheel(
++                surface,
++                gpui_kit::point(content.right() - px(8.0), content.bottom() - px(20.0)),
++                -1000.0,
++            );
+         }
+-        let save = surface.debug_bounds("quick-launch-save-custom-command").expect("reachable original Save");
+-        let actual_scroll = surface.debug_bounds("quick-launch-command-form-scroll").expect("current detail viewport");
+-        let actual_button = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window).into_iter().find(|node| node.path().last() == Some(&gpui_kit::ElementId::from("quick-launch-save-custom-command"))).expect("actual Save Button").bounds());
+-        assert!(save.top() >= px(36.0) && save.bottom() <= px(480.0), "Save {save:?}");
+-        assert!(actual_button.left() >= actual_scroll.left() && actual_button.right() <= actual_scroll.right() && actual_button.top() >= actual_scroll.top() && actual_button.bottom() <= actual_scroll.bottom().min(px(480.0)), "actual Save must be inside clipped detail viewport: {actual_button:?} / {actual_scroll:?}");
++        let save = surface
++            .debug_bounds("quick-launch-save-custom-command")
++            .expect("reachable original Save");
++        let actual_scroll = surface
++            .debug_bounds("quick-launch-command-form-scroll")
++            .expect("current detail viewport");
++        let actual_button = surface.update(|window, _| {
++            gpui_kit::base::test_support::snapshots(window)
++                .into_iter()
++                .find(|node| {
++                    node.path().last()
++                        == Some(&gpui_kit::ElementId::from(
++                            "quick-launch-save-custom-command",
++                        ))
++                })
++                .expect("actual Save Button")
++                .bounds()
++        });
++        assert!(
++            save.top() >= px(36.0) && save.bottom() <= px(480.0),
++            "Save {save:?}"
++        );
++        assert!(
++            actual_button.left() >= actual_scroll.left()
++                && actual_button.right() <= actual_scroll.right()
++                && actual_button.top() >= actual_scroll.top()
++                && actual_button.bottom() <= actual_scroll.bottom().min(px(480.0)),
++            "actual Save must be inside clipped detail viewport: {actual_button:?} / {actual_scroll:?}"
++        );
+         surface.simulate_click(save.center(), Modifiers::default());
+         draw(surface);
+-        let persisted: AppConfig = serde_json::from_slice(&std::fs::read(&config_path).expect("read owned config")).expect("owned config JSON");
+-        assert_eq!(persisted.quick_launch.custom_commands[0].title, format!("合成已编辑{value}"));
+-        assert_eq!(quick.read_with(surface, |quick, _| quick.settings().custom_commands[0].title.clone()), format!("合成已编辑{value}"));
++        let persisted: AppConfig =
++            serde_json::from_slice(&std::fs::read(&config_path).expect("read owned config"))
++                .expect("owned config JSON");
++        assert_eq!(
++            persisted.quick_launch.custom_commands[0].title,
++            format!("合成已编辑{value}")
++        );
++        assert_eq!(
++            quick.read_with(surface, |quick, _| quick.settings().custom_commands[0]
++                .title
++                .clone()),
++            format!("合成已编辑{value}")
++        );
+         page(surface, 4);
+-        let log = surface.debug_bounds("quick-launch-diagnostics-log-row").expect("actual mounted diagnostic");
++        let log = surface
++            .debug_bounds("quick-launch-diagnostics-log-row")
++            .expect("actual mounted diagnostic");
+         assert!((log.size.height - px(48.0 * value / 16.0)).abs() <= px(0.5));
+         page(surface, 0);
+-        let hotkey = surface.debug_bounds("quick-launch-hotkey-field").expect("actual recorder");
++        let hotkey = surface
++            .debug_bounds("quick-launch-hotkey-field")
++            .expect("actual recorder");
+         assert!(hotkey.left() >= px(176.0) && hotkey.right() <= px(920.0));
+     }
+     surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));

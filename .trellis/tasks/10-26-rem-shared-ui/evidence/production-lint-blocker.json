@@ -1,0 +1,7 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/tools/floating_assistant/media.rs",
+  "sha256": "187ca0f8e4815f97a9e30f6cff78a1595940d21fb9c899d6b4e1fec550f56d7f",
+  "task_start_equal": true,
+  "diagnostic": "field DecodedMedia.animated is never read (line62), production-only strict Clippy",
+  "status": "Not repaired or suppressed; outside shared ordinary UI scope."
+}

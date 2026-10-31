@@ -1,0 +1,7 @@
+{
+  "basis": "Current live task-start dirty bytes, not HEAD",
+  "production_changes": [],
+  "test_changes": [],
+  "reference_changes": [],
+  "reason": "Effective production cursor red not executed. No implementation; new task artifacts only."
+}

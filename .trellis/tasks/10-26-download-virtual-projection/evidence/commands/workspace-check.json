@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T07:16:54.0753453Z",
+    "started_utc":  "2026-10-26T07:15:39.6021236Z",
+    "command":  "cargo check --workspace --tests",
+    "exit":  0,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\download-virtual-projection\\workspace-check.log"
+}

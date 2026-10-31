@@ -1,0 +1,12 @@
+--- live-dirty-baseline/rust/crates/nxtools-download/Cargo.toml
++++ own-current/rust/crates/nxtools-download/Cargo.toml
+@@ -3,6 +3,9 @@
+ version.workspace = true
+ edition.workspace = true
+ license.workspace = true
++
++[features]
++test-support = []
+ 
+ [dependencies]
+ aes.workspace = true

@@ -1,0 +1,21 @@
+﻿{
+    "timestamp_utc":  "2026-10-26T01:18:56.4153586Z",
+    "natural_idle":  false,
+    "processes":  [
+                      {
+                          "ProcessId":  83436,
+                          "ParentProcessId":  84988,
+                          "CreationDate":  "\/Date(1792973804160)\/",
+                          "Name":  "cargo.exe",
+                          "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                      },
+                      {
+                          "ProcessId":  87140,
+                          "ParentProcessId":  83436,
+                          "CreationDate":  "\/Date(1792973992913)\/",
+                          "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                          "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                      }
+                  ],
+    "level":  "Read-only observation; zero Rust invocations"
+}

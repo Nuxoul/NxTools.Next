@@ -1,6 +1,7 @@
 use super::progress_display::ProgressDisplaySampler;
 use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
+use crate::ui::metrics::ordinary_rem;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::description_list::DescriptionList;
 use gpui_kit::component::dialog::DialogFooter;
@@ -302,15 +303,17 @@ impl Render for DownloadTaskWindowView {
                 DownloadWindowPhase::Completed,
                 "下载完成",
                 div()
+                    .id("download-complete-content-scroll")
                     .size_full()
-                    .px(px(SPACING_16))
-                    .py(px(8.0))
+                    .overflow_y_scroll()
+                    .px_4()
+                    .py_2()
                     .flex()
                     .items_center()
-                    .gap(px(SPACING_8))
+                    .gap_2()
                     .child(
                         div()
-                            .size(px(34.0))
+                            .size(ordinary_rem(34.0))
                             .flex_none()
                             .rounded(px(RADIUS_FLOATING))
                             .bg(theme.accent_soft)
@@ -319,7 +322,7 @@ impl Render for DownloadTaskWindowView {
                             .justify_center()
                             .child(
                                 Icon::new(MaterialIcon::Check)
-                                    .size(px(18.0))
+                                    .size(ordinary_rem(18.0))
                                     .text_color(theme.success),
                             ),
                     )
@@ -330,7 +333,7 @@ impl Render for DownloadTaskWindowView {
                             .flex_1()
                             .flex()
                             .flex_col()
-                            .gap(px(SPACING_4))
+                            .gap_1()
                             .child(task_window_filename(
                                 "download-complete-name",
                                 name.clone(),
@@ -339,8 +342,8 @@ impl Render for DownloadTaskWindowView {
                             .child(
                                 div()
                                     .debug_selector(|| "download-complete-size".into())
-                                    .text_size(px(TEXT_LABEL))
-                                    .line_height(px(LINE_HEIGHT_LABEL))
+                                    .text_size(ordinary_rem(TEXT_LABEL))
+                                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                                     .text_color(theme.success)
                                     .child(
                                         task.total_bytes.map(format_download_size).unwrap_or_else(
@@ -350,12 +353,19 @@ impl Render for DownloadTaskWindowView {
                             )
                             .child(
                                 div()
+                                    .id("download-complete-path")
                                     .debug_selector(|| "download-complete-path".into())
                                     .min_w_0()
-                                    .text_size(px(TEXT_LABEL))
-                                    .line_height(px(LINE_HEIGHT_LABEL))
+                                    .text_size(ordinary_rem(TEXT_LABEL))
+                                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                                     .text_color(theme.text_secondary)
                                     .truncate()
+                                    .aria_label(final_path.clone())
+                                    .tooltip(bounded_text_tooltip(
+                                        "download-complete-path-tooltip",
+                                        final_path.clone(),
+                                        true,
+                                    ))
                                     .child(final_path),
                             ),
                     ),
@@ -397,26 +407,6 @@ impl Render for DownloadTaskWindowView {
                             }),
                     )
                     .child(
-                        Button::new("download-complete-open-with-action")
-                            .small()
-                            .outline()
-                            .label("打开方式…")
-                            .accessibility_label("选择应用打开下载文件")
-                            .on_click(move |_, _, cx| {
-                                let application = open_with_application.clone();
-                                cx.defer(move |cx| {
-                                    application.update(cx, |application, cx| {
-                                        application.open_task_artifact_from_task_window(
-                                            task_id,
-                                            ShellOpenAction::OpenWith,
-                                            task_window_identity,
-                                            cx,
-                                        );
-                                    })
-                                });
-                            }),
-                    )
-                    .child(
                         completed_task_window_action(CompletedTaskWindowAction::Open, theme, cx)
                             .on_click(move |_, _, cx| {
                                 let application = open_application.clone();
@@ -432,6 +422,27 @@ impl Render for DownloadTaskWindowView {
                                     });
                                 });
                             }),
+                    )
+                    .child(
+                        crate::ui::components::action::icon_action(
+                            "download-complete-open-with-action",
+                            MaterialIcon::ExpandMore,
+                            "选择应用打开下载文件",
+                        )
+                        .outline()
+                        .on_click(move |_, _, cx| {
+                            let application = open_with_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| {
+                                    application.open_task_artifact_from_task_window(
+                                        task_id,
+                                        ShellOpenAction::OpenWith,
+                                        task_window_identity,
+                                        cx,
+                                    );
+                                })
+                            });
+                        }),
                     ),
             )
             .into_any_element();
@@ -451,20 +462,23 @@ impl Render for DownloadTaskWindowView {
                 DownloadWindowPhase::Failed,
                 "下载失败",
                 div()
+                    .id("download-failed-content-scroll")
                     .size_full()
-                    .px(px(16.0))
-                    .py(px(8.0))
+                    .overflow_y_scroll()
+                    .px_4()
+                    .py_2()
                     .flex()
                     .flex_col()
-                    .gap(px(SPACING_4))
+                    .gap_1()
                     .child(
                         div()
                             .flex()
+                            .flex_none()
                             .items_center()
-                            .gap(px(8.0))
+                            .gap_2()
                             .child(
                                 Icon::new(MaterialIcon::Download)
-                                    .size(px(16.0))
+                                    .size(ordinary_rem(16.0))
                                     .text_color(theme.danger),
                             )
                             .child(
@@ -483,6 +497,7 @@ impl Render for DownloadTaskWindowView {
                             .w_full()
                             .max_h(px(40.0))
                             .min_h(px(36.0))
+                            .flex_none()
                             .overflow_y_scroll()
                             .child(
                                 div()
@@ -495,12 +510,20 @@ impl Render for DownloadTaskWindowView {
                     )
                     .child(
                         div()
+                            .id("download-window-failed-path")
                             .debug_selector(|| "download-window-failed-path".into())
                             .min_w_0()
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .text_size(ordinary_rem(TEXT_LABEL))
+                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_secondary)
                             .truncate()
+                            .flex_none()
+                            .aria_label(destination.clone())
+                            .tooltip(bounded_text_tooltip(
+                                "download-failed-path-tooltip",
+                                destination.clone(),
+                                true,
+                            ))
                             .child(destination.clone()),
                     ),
                 DialogFooter::new()
@@ -524,6 +547,7 @@ impl Render for DownloadTaskWindowView {
                         footer.child(
                             crate::ui::components::action::primary_action_button(
                                 "download-window-failed-retry",
+                                "重试下载",
                                 "重试",
                                 theme,
                                 false,
@@ -596,7 +620,7 @@ impl Render for DownloadTaskWindowView {
             DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed => div()
                 .flex()
                 .items_center()
-                .gap(px(SPACING_8))
+                .gap_2()
                 .child(
                     Button::new("download-window-cancel")
                         .debug_selector(|| "download-window-cancel".into())
@@ -615,6 +639,11 @@ impl Render for DownloadTaskWindowView {
                 .child(
                     crate::ui::components::action::primary_action_button(
                         "download-window-resume",
+                        if status == DownloadStatus::Failed {
+                            "重试下载"
+                        } else {
+                            "继续下载"
+                        },
                         if status == DownloadStatus::Failed {
                             "重试"
                         } else {
@@ -643,7 +672,7 @@ impl Render for DownloadTaskWindowView {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(SPACING_8))
+                    .gap_2()
                     .child(
                         Button::new("download-window-cancel-active")
                             .debug_selector(|| "download-window-cancel-active".into())
@@ -662,6 +691,7 @@ impl Render for DownloadTaskWindowView {
                     .child(
                         crate::ui::components::action::primary_action_button(
                             "download-window-pause",
+                            "暂停下载",
                             "暂停",
                             theme,
                             false,
@@ -711,10 +741,12 @@ impl Render for DownloadTaskWindowView {
             DownloadWindowPhase::Progress,
             status_label,
             div()
+                .id("download-progress-content-scroll")
                 .size_full()
-                .px(px(16.0))
-                .pt(px(SPACING_4))
-                .pb(px(0.0))
+                .overflow_y_scroll()
+                .px_4()
+                .pt_1()
+                .pb_0()
                 .flex()
                 .flex_col()
                 .gap_0()
@@ -723,14 +755,14 @@ impl Render for DownloadTaskWindowView {
                         .debug_selector(|| "download-window-progress-identity".into())
                         .w_full()
                         .min_w_0()
-                        .h(px(32.0))
+                        .h(ordinary_rem(32.0))
                         .flex_none()
                         .flex()
                         .items_start()
-                        .gap(px(8.0))
+                        .gap_2()
                         .child(
                             Icon::new(MaterialIcon::Download)
-                                .size(px(16.0))
+                                .size(ordinary_rem(16.0))
                                 .text_color(status_color),
                         )
                         .child(
@@ -750,8 +782,13 @@ impl Render for DownloadTaskWindowView {
                                     } else {
                                         MaterialIcon::ExpandMore
                                     })
-                                    .size(px(16.0)),
+                                    .size(ordinary_rem(16.0)),
                                 )
+                                .accessibility_label(if details_expanded {
+                                    "收起分段详情"
+                                } else {
+                                    "展开分段详情"
+                                })
                                 .tooltip(if details_expanded {
                                     "收起分段详情"
                                 } else {
@@ -803,17 +840,17 @@ impl Render for DownloadTaskWindowView {
                     div()
                         .debug_selector(|| "download-window-progress-track".into())
                         .w_full()
-                        .h(px(16.0))
+                        .h(ordinary_rem(16.0))
                         .flex_none()
                         .flex()
                         .items_center()
-                        .gap(px(8.0))
+                        .gap_2()
                         .child(
                             div()
                                 .debug_selector(|| "download-window-progress-component".into())
                                 .flex_1()
                                 .min_w_0()
-                                .h(px(4.0))
+                                .h_1()
                                 .child(
                                     Progress::new("download-task-window-progress")
                                         .xsmall()
@@ -825,8 +862,8 @@ impl Render for DownloadTaskWindowView {
                         .child(
                             div()
                                 .debug_selector(|| "download-window-progress-percent".into())
-                                .text_size(px(TEXT_BODY))
-                                .line_height(px(LINE_HEIGHT_LABEL))
+                                .text_size(ordinary_rem(TEXT_BODY))
+                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                                 .flex_none()
                                 .child(progress_badge),
                         ),
@@ -841,7 +878,7 @@ impl Render for DownloadTaskWindowView {
                                 .small()
                                 .bordered(false)
                                 .columns(2)
-                                .label_width(px(44.0))
+                                .label_width(ordinary_rem(44.0))
                                 .item(
                                     monitor_metric_text("已下载", "label", "已下载".into()),
                                     monitor_metric_text("已下载", "value", progress_text),
@@ -878,10 +915,10 @@ impl Render for DownloadTaskWindowView {
                         .debug_selector(|| "download-window-progress-capabilities".into())
                         .w_full()
                         .min_w_0()
-                        .h(px(16.0))
+                        .h(ordinary_rem(16.0))
                         .flex_none()
-                        .text_size(px(TEXT_BODY))
-                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_size(ordinary_rem(TEXT_BODY))
+                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_secondary)
                         .truncate()
                         .aria_label(capabilities.clone())
@@ -899,7 +936,8 @@ impl Render for DownloadTaskWindowView {
                             .w_full()
                             .flex_1()
                             .min_h_0()
-                            .pt(px(4.0))
+                            .pt_1()
+                            .min_h(ordinary_rem(24.0))
                             .child(segment_progress_table(&segments, status)),
                     )
                 }),
@@ -985,10 +1023,10 @@ fn task_window_filename(
         .id(selector)
         .debug_selector(move || selector.into())
         .min_w_0()
-        .max_h(px(32.0))
+        .max_h(ordinary_rem(32.0))
         .flex_none()
-        .text_size(px(TEXT_BODY))
-        .line_height(px(LINE_HEIGHT_LABEL))
+        .text_size(ordinary_rem(TEXT_BODY))
+        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme.text)
         .line_clamp(2)
@@ -1008,9 +1046,9 @@ fn monitor_metric_text(label: &'static str, role: &'static str, text: String) ->
         )))
         .debug_selector(move || format!("download-window-metric-{label}-{role}"))
         .min_w_0()
-        .h(px(16.0))
-        .text_size(px(TEXT_BODY))
-        .line_height(px(LINE_HEIGHT_LABEL))
+        .h(ordinary_rem(16.0))
+        .text_size(ordinary_rem(TEXT_BODY))
+        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
         .aria_label(text.clone())
         .tooltip(bounded_text_tooltip(
             format!("download-window-metric-{label}-{role}-tooltip"),
@@ -1055,9 +1093,9 @@ fn segment_progress_table(
             .zip(widths)
             .map(|(label, width)| {
                 TableHead::new()
-                    .w(px(width))
+                    .w(gpui_kit::relative(width / 408.0))
                     .min_w_0()
-                    .h(px(24.0))
+                    .h(ordinary_rem(24.0))
                     .py_0()
                     .child(label)
             }),
@@ -1076,9 +1114,9 @@ fn segment_progress_table(
         TableRow::new().children(values.into_iter().zip(widths).enumerate().map(
             move |(column, (value, width))| {
                 TableCell::new()
-                    .w(px(width))
+                    .w(gpui_kit::relative(width / 408.0))
                     .min_w_0()
-                    .h(px(24.0))
+                    .h(ordinary_rem(24.0))
                     .py_0()
                     .child(
                         div()
@@ -1109,8 +1147,8 @@ fn segment_progress_table(
             table.child(
                 div()
                     .debug_selector(|| "download-window-single-connection".into())
-                    .text_size(px(TEXT_BODY))
-                    .line_height(px(LINE_HEIGHT_LABEL))
+                    .text_size(ordinary_rem(TEXT_BODY))
+                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                     .child("尚未分段 · 单连接传输"),
             )
         })

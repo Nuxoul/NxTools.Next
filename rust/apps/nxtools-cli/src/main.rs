@@ -3,11 +3,19 @@ use std::process::ExitCode;
 use nxtools_cli::{default_download_directory, parse_invocation, run_with_host_policy};
 
 fn main() -> ExitCode {
-    let invocation = match parse_invocation(std::env::args().skip(1), default_download_directory())
-    {
+    let arguments = std::env::args().skip(1).collect::<Vec<_>>();
+    let archive_json = nxtools_cli::archive::is_archive_invocation(&arguments)
+        && arguments.iter().any(|a| a == "--json");
+    let invocation = match parse_invocation(arguments.clone(), default_download_directory()) {
         Ok(invocation) => invocation,
         Err(error) => {
-            eprintln!("{}", error.message);
+            if archive_json {
+                if let Err(output_error) = nxtools_cli::archive::emit_syntax_failure(&arguments) {
+                    eprintln!("{}", output_error.message);
+                }
+            } else {
+                eprintln!("{}", error.message);
+            }
             return ExitCode::from(error.exit_code);
         }
     };

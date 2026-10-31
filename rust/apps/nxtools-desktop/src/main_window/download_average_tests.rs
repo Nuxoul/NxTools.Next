@@ -115,8 +115,8 @@ impl gpui_kit::Render for AverageRowView {
                 selected: true,
                 visible_task_ids: Arc::new(vec![task_id]),
             },
-            self.task.clone(),
-            Some(DownloadProgress {
+            &self.task,
+            Some(&DownloadProgress {
                 task_id,
                 downloaded_bytes: 1,
                 total_bytes: Some(9),

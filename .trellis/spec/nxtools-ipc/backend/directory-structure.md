@@ -19,6 +19,18 @@ by fast-path and waiting select; never hold it across await or clear later overf
 Normal UI traffic keeps its original bounded queue. See
 [product read contract](../../nxtools-archive/backend/product-read.md).
 
+Formal P208 archive_virtual_drag.rs uses the same original router/receiver: one admitted native drag
+and one coalesced exact cancellation, formal+legacy alias. Start-before-cancel, fair ordinary/cancel
+turn and original wake are reused. Full ordinary queue cannot discard source retirement cancellation.
+Cancel ACK/local view retirement does not free identity; original start native terminal frees it unless
+virtual_cleanup_incomplete, or original connection retirement clears it. Only bounded held start/cancel
+receipts bypass ordinary10s sweep; native120s/cleanup owner unchanged. No new pipe/reader/retry task.
+Formal `send_archive_virtual_drag(command,receipt_id,origin_connection)` compares ORIGINAL read
+connection with active generation under that SAME router lock before pending/reservation/enqueue.
+Generic unbound formal starts fail closed; legacy isolated spike alias remains compatible. Caller
+browser generation/current is_connected does not authorize an old source after reconnect. Formal
+cancel carries its admitted original connection too; no ordinary timeout or native owner expansion.
+
 Ordinary notification saturation must never suspend the same pipe task that writes retained
 archive cancellation. The owner uses nonblocking delivery and fails/physically closes that
 ORIGINAL PlatformHost connection when its ordinary receiver is full/closed. Existing C# EOF

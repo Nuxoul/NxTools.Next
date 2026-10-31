@@ -24,6 +24,8 @@ ActualTargetFailures12cases assert event/state/native/count/cleanup/bytes/owned 
 ### 7. Wrong vs Correct
 Wrong: terminal event resolves overwrite_not_supported but failed log says worker_failure. Correct: resolve once after real cleanup→write safe fields from terminal→publish same terminal.
 
+HZ4-TERM01 Job handoff: `ArchiveWorkerEvent.HasNativeFailure` is an internal `[JsonIgnore]` provenance bit, set only from the current first-failure `ArchiveFault.OutputFailure` in `ResolveTerminal`. Job terminal projection uses that owning native cause ahead of the worker's consequential Cancelled frame; it must not infer ownership merely from a nonnull native code or from a mutable last error. Cleanup-incomplete remains first, publication/unknown/postcommit and timeout priorities remain; actual native category cancelled stays cancelled. No new IPC/worker/public DTO/diagnostic field or fault switch. `ArchiveJobTerminalTests.NativeFailureBeforeWorkerCancelled` forces real FailNative -> worker Cancelled frame -> original Job exit; its12same-boundary controls preserve genuine/native cancel, incidental nativecode, source/target,64unknown,timeout,cleanup/domain and published-latecancel facts.
+
 Archive read timeout projection: original runner category timeout must not become user Cancelled
 because cooperative shutdown later emits worker Cancelled. Current unchanged wire has no timeout
 enum; product terminal is failed/io_failure after actualcleanup, while runner diagnostics retain
@@ -36,3 +38,9 @@ increment successful samples or peaks. Setup and runner-dispatch timing domains 
 Safe-stop/real cleanup and Legacy-result rules are owned by
 [resource-tool contract](../nxtools-archive/backend/product-read.md#scenario-resource-tool-stop-and-validity-test-infrastructure-only).
 No raw payload/secret diagnostics, per-sample production events or new PlatformCommand are added.
+
+Archive CLI-only host emits archive.cli_host.start/connected/stopped/failure with GUID pipe-session
+correlation, fixed stage/count/elapsed/native fields; original read/job/worker operation correlation
+is unchanged. No adapter/UI or raw frame/path/error output. EOF sets stop before original channel
+completion so normal shutdown cannot be diagnosed as a failed event pump. Child exit still reflects
+actual transport/session drain failure. CLI structured product output is separate from diagnostics.

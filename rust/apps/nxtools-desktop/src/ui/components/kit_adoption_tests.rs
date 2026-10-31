@@ -71,7 +71,8 @@ impl Render for GeometryFixture {
                     .child(
                         div()
                             .debug_selector(|| "kit-reference-switch".into())
-                            .child(Switch::new("kit-reference-switch").checked(true).small()),
+                            .w(gpui_kit::px(36.0))
+                            .child(Switch::new("kit-reference-switch").checked(true)),
                     ),
             )
     }
@@ -101,7 +102,7 @@ fn kit_adoption_shared_button_matches_released_small_geometry(cx: &mut TestAppCo
 }
 
 #[gpui_kit::test]
-fn kit_adoption_shared_switch_matches_released_small_geometry(cx: &mut TestAppContext) {
+fn kit_adoption_shared_switch_matches_released_medium_geometry(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     cx.update(apply_component_theme);
     let (_, window) = cx.add_window_view(|window, cx| {

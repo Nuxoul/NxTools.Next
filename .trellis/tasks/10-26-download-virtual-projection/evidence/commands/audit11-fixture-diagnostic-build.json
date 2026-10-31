@@ -1,0 +1,12 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T06:48:19.2226994Z",
+    "started_utc":  "2026-10-26T06:41:26.5181601Z",
+    "command":  "cargo test -p nxtools-desktop --no-run",
+    "exit":  0,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\download-virtual-projection\\audit11-fixture-diagnostic-build.log"
+}

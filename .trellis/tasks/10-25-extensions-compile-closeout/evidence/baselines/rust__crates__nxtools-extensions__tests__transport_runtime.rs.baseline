@@ -1,0 +1,413 @@
+#![cfg(feature = "test-support")]
+use nxtools_extensions::{
+    Causality, ExtensionRuntime, FeatureAdapter, HostContext, HostFuture, HostReply, ImportPreview,
+    InvokeRequest, PackageRegistry, RuntimeError, RuntimeIdentity,
+};
+use serde_json::{Value, json};
+use std::{
+    path::{Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
+use tokio::sync::{Barrier, Semaphore, watch};
+use uuid::Uuid;
+
+struct OwnedAdapter(Arc<AtomicUsize>);
+impl FeatureAdapter for OwnedAdapter {
+    fn describe(&self) -> Value {
+        json!({"version":1,"fixture":"original-adapter"})
+    }
+    fn call<'a>(&'a self, _: &'a HostContext, method: &'a str, _: Value) -> HostFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(method, "fixture.echo");
+            self.0.fetch_add(1, Ordering::SeqCst);
+            HostReply {
+                success: true,
+                value: json!({"echo":"owned"}),
+            }
+        })
+    }
+}
+fn python() -> PathBuf {
+    std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+        .map(|path| path.join("python.exe"))
+        .find(|path| path.is_file())
+        .expect("installed fixture Python")
+}
+struct Fixture {
+    runtime: ExtensionRuntime,
+    _root: tempfile::TempDir,
+}
+impl Fixture {
+    fn new(script: &str, adapter: Arc<dyn FeatureAdapter>) -> Self {
+        Self::with_program(script, adapter, "python", "entry.py")
+    }
+    fn with_program(
+        script: &str,
+        adapter: Arc<dyn FeatureAdapter>,
+        program: &str,
+        entry: &str,
+    ) -> Self {
+        let root = tempfile::tempdir().expect("owned v2 process fixture");
+        let source = root.path().join("source");
+        std::fs::create_dir(&source).expect("source");
+        let manifest = json!({"schema_version":1,"id":"fixture.v2","name":"V2","version":"1","runtime":{"program":program,"protocol_version":2},"files":[entry],"handlers":[{"id":"run","title":"Run","feature":"tools","entry":"action","action":{"type":"script","entry_file":entry}}]});
+        std::fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("manifest"),
+        )
+        .expect("write");
+        std::fs::write(source.join(entry), script).expect("owned script");
+        let preview = ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&root.path().join("packages"))
+            .expect("stage");
+        let hash = preview.content_hash.clone();
+        let mut registry = PackageRegistry::default();
+        registry
+            .install(preview, "owned".into(), false)
+            .expect("install");
+        registry
+            .approve(
+                "fixture.v2",
+                &hash,
+                RuntimeIdentity::inspect(&if program == "python" {
+                    python()
+                } else {
+                    std::env::split_paths(&std::env::var_os("PATH").expect("PATH"))
+                        .map(|path| path.join("node.exe"))
+                        .find(|path| path.is_file())
+                        .expect("installed fixture Node")
+                })
+                .expect("identity"),
+            )
+            .expect("approve");
+        registry
+            .set_enabled("fixture.v2", true, &[])
+            .expect("enable");
+        let runtime = ExtensionRuntime::new(registry, PathBuf::new(), adapter);
+        let broker = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).expect("workspace")
+            .join("csharp/NxTools.PlatformHost.Tests/bin/Debug/net8.0-windows/NxTools.PlatformHost.Tests.exe");
+        runtime
+            .bind_owned_fixture_broker(&broker)
+            .expect("original audited broker");
+        Self {
+            runtime,
+            _root: root,
+        }
+    }
+    fn request(context: Value, cancellation: watch::Receiver<bool>) -> InvokeRequest {
+        InvokeRequest {
+            package_id: "fixture.v2".into(),
+            handler_id: "run".into(),
+            correlation_id: Uuid::new_v4(),
+            generation: 1,
+            context,
+            causality: Causality::root(Uuid::new_v4()),
+            cancellation,
+            batches: None,
+        }
+    }
+}
+impl Drop for Fixture {
+    fn drop(&mut self) {
+        self.runtime.shutdown();
+    }
+}
+const BOOT: &str = r#"import json,sys
+init=json.loads(sys.stdin.readline())
+assert init['protocol_version']==2 and init['op']=='initialize'
+session=init['session_id']
+print(json.dumps({'protocol_version':2,'op':'ready','session_id':session}),flush=True)
+f=json.loads(sys.stdin.readline())
+assert f['op']=='invoke' and f['session_id']==session
+run=f['run_id']
+def emit(op,**fields):
+    print(json.dumps(dict(protocol_version=2,op=op,session_id=session,run_id=run,**fields)),flush=True)
+def finish():
+    emit('complete',status='success',value={'text':'v2-owned'})
+    emit('request_finished')
+"#;
+#[tokio::test]
+async fn expansion_v2_once_real_script_host_call_and_native_cleanup_keep_legacy_broker_owner() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let fixture = Fixture::new(
+        &format!(
+            "{BOOT}{}",
+            r#"
+emit('host_call',call_id='echo',method='fixture.echo',params={})
+reply=json.loads(sys.stdin.readline())
+assert reply['protocol_version']==2 and reply['session_id']==session and reply['run_id']==run
+assert reply['success'] and reply['value']['echo']=='owned'
+finish()
+"#
+        ),
+        Arc::new(OwnedAdapter(calls.clone())),
+    );
+    let (_cancel, cancellation) = watch::channel(false);
+    let result = fixture
+        .runtime
+        .invoke(Fixture::request(json!({}), cancellation))
+        .await
+        .expect("real v2 once invocation after native cleanup");
+    assert_eq!(result.status, "success");
+    assert_eq!(result.value["text"], "v2-owned");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+#[tokio::test]
+async fn expansion_v2_describe_reports_only_implemented_transport_and_preserves_adapter_metadata() {
+    let fixture = Fixture::new(
+        &format!(
+            "{BOOT}{}",
+            r#"
+emit('host_call',call_id='describe',method='host.describe',params={})
+reply=json.loads(sys.stdin.readline())
+assert reply['success'] and reply['value']['fixture']=='original-adapter'
+t=reply['value']['transport']
+assert t['active_protocol_version']==2 and t['supported_protocol_versions']==[1,2]
+assert t['supported_modes']==['once'] and t['mode']=='once'
+assert t['limits']['frame_bytes']==262144
+assert t['limits']['input_control_bytes']==1048576 and t['limits']['output_control_bytes']==4194304
+assert t['limits']['host_calls_active']==8 and t['limits']['host_calls_total']==64
+assert t['progress']==False and t['blobs']==False
+finish()
+"#
+        ),
+        Arc::new(OwnedAdapter(Arc::new(AtomicUsize::new(0)))),
+    );
+    let (_cancel, cancellation) = watch::channel(false);
+    fixture
+        .runtime
+        .invoke(Fixture::request(json!({}), cancellation))
+        .await
+        .expect("truthful runtime-owned transport discovery");
+}
+struct ParallelAdapter {
+    barrier: Barrier,
+    entered: AtomicUsize,
+}
+impl FeatureAdapter for ParallelAdapter {
+    fn describe(&self) -> Value {
+        json!({})
+    }
+    fn call<'a>(&'a self, _: &'a HostContext, method: &'a str, _: Value) -> HostFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(method, "fixture.parallel");
+            self.entered.fetch_add(1, Ordering::SeqCst);
+            // No sleep: a serial/blocked frame reader cannot release this exact eight-party barrier.
+            self.barrier.wait().await;
+            HostReply {
+                success: true,
+                value: json!({"released":true}),
+            }
+        })
+    }
+}
+#[tokio::test]
+async fn expansion_v2_original_reader_admits_eight_waiting_calls_without_serial_deadlock() {
+    let adapter = Arc::new(ParallelAdapter {
+        barrier: Barrier::new(8),
+        entered: AtomicUsize::new(0),
+    });
+    let fixture = Fixture::new(
+        &format!(
+            "{BOOT}{}",
+            r#"
+for i in range(8):
+    emit('host_call',call_id='call-'+str(i),method='fixture.parallel',params={})
+seen=set()
+for i in range(8):
+    reply=json.loads(sys.stdin.readline())
+    assert reply['session_id']==session and reply['run_id']==run and reply['success']
+    assert reply['value']['released'] and reply['call_id'] not in seen
+    seen.add(reply['call_id'])
+finish()
+"#
+        ),
+        adapter.clone(),
+    );
+    let (_cancel, cancellation) = watch::channel(false);
+    fixture
+        .runtime
+        .invoke(Fixture::request(json!({}), cancellation))
+        .await
+        .expect("eight live futures through one reader");
+    assert_eq!(adapter.entered.load(Ordering::SeqCst), 8);
+}
+struct BlockingAdapter {
+    entered: Semaphore,
+    dropped: Semaphore,
+    calls: AtomicUsize,
+}
+struct PendingCall<'a>(&'a Semaphore);
+impl Drop for PendingCall<'_> {
+    fn drop(&mut self) {
+        self.0.add_permits(1);
+    }
+}
+impl FeatureAdapter for BlockingAdapter {
+    fn describe(&self) -> Value {
+        json!({})
+    }
+    fn call<'a>(&'a self, _: &'a HostContext, method: &'a str, _: Value) -> HostFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(method, "fixture.block");
+            let _pending = PendingCall(&self.dropped);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.entered.add_permits(1);
+            std::future::pending().await
+        })
+    }
+}
+#[tokio::test]
+async fn expansion_v2_cancel_and_revoke_drop_pending_calls_before_new_owned_run() {
+    for revoke in [false, true] {
+        let adapter = Arc::new(BlockingAdapter {
+            entered: Semaphore::new(0),
+            dropped: Semaphore::new(0),
+            calls: AtomicUsize::new(0),
+        });
+        let fixture = Fixture::new(
+            &format!(
+                "{BOOT}{}",
+                r#"
+if f['context'].get('block'):
+    emit('host_call',call_id='blocked',method='fixture.block',params={})
+    sys.stdin.read()
+else:
+    finish()
+"#
+            ),
+            adapter.clone(),
+        );
+        let saved = fixture.runtime.snapshot().expect("current registry");
+        let (cancel, cancellation) = watch::channel(false);
+        let runtime = fixture.runtime.clone();
+        let pending = tokio::spawn(async move {
+            runtime
+                .invoke(Fixture::request(json!({"block":true}), cancellation))
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(5), adapter.entered.acquire())
+            .await
+            .expect("actual host call admitted")
+            .expect("entered")
+            .forget();
+        if revoke {
+            let mut retired = saved.clone();
+            retired
+                .revoke("fixture.v2")
+                .expect("revoke current owned package");
+            fixture
+                .runtime
+                .publish_registry(retired)
+                .expect("publish revoke");
+        } else {
+            cancel.send(true).expect("cancel current run");
+        }
+        let result = tokio::time::timeout(Duration::from_secs(3), pending)
+            .await
+            .expect("bounded logical cancellation")
+            .expect("invocation task");
+        assert!(matches!(
+            result,
+            Err(RuntimeError::Cancelled | RuntimeError::Stale | RuntimeError::Untrusted)
+        ));
+        tokio::time::timeout(Duration::from_secs(3), adapter.dropped.acquire())
+            .await
+            .expect("pending host future actually dropped")
+            .expect("drop")
+            .forget();
+        assert_eq!(adapter.calls.load(Ordering::SeqCst), 1, "no effect replay");
+        if revoke {
+            fixture
+                .runtime
+                .publish_registry(saved)
+                .expect("restore explicit fixture trust for a new request");
+        }
+        let (_cancel, cancellation) = watch::channel(false);
+        fixture
+            .runtime
+            .invoke(Fixture::request(json!({}), cancellation))
+            .await
+            .expect("new invocation waits original native cleanup slots");
+        assert_eq!(
+            adapter.calls.load(Ordering::SeqCst),
+            1,
+            "new request never replays old host call"
+        );
+    }
+}
+#[tokio::test]
+async fn expansion_v2_real_wrong_session_duplicate_ready_missing_finish_and_handshake_timeout_fail()
+{
+    let cases = [
+        ("import json,sys\nf=json.loads(sys.stdin.readline())\nprint(json.dumps(dict(protocol_version=2,op='ready',session_id='11111111-1111-4111-8111-111111111111')),flush=True)\nsys.stdin.read()\n".to_string(), RuntimeError::Protocol),
+        (format!("{BOOT}\nprint(json.dumps(dict(protocol_version=2,op='ready',session_id=session)),flush=True)\nsys.stdin.read()\n"), RuntimeError::Protocol),
+        (format!("{BOOT}\nemit('complete',status='success',value={{}})\n"), RuntimeError::Protocol),
+        ("import sys\nsys.stdin.readline()\nsys.stdin.read()\n".to_string(), RuntimeError::Timeout),
+    ];
+    for (script, expected) in cases {
+        let fixture = Fixture::new(
+            &script,
+            Arc::new(OwnedAdapter(Arc::new(AtomicUsize::new(0)))),
+        );
+        let (_cancel, cancellation) = watch::channel(false);
+        assert!(
+            matches!(fixture.runtime.invoke(Fixture::request(json!({}), cancellation)).await, Err(actual) if actual == expected)
+        );
+    }
+}
+
+async fn sdk_process(program_filter: &str) {
+    let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(3)
+        .expect("workspace");
+    for (program, entry, sdk, tail) in [
+        (
+            "python",
+            "entry.py",
+            "nxtools.py",
+            "\nsession=Session(protocol_version=2)\nassert session.call('fixture.echo',{})['echo']=='owned'\nsession.complete('success',{'text':'sdk-owned'})\n",
+        ),
+        (
+            "node",
+            "entry.mjs",
+            "nxtools.mjs",
+            "\nconst session=await Session.start(process.stdin,process.stdout,{protocolVersion:2});\nif((await session.call('fixture.echo')).echo!=='owned') throw new Error('fixture');\nawait session.complete('success',{text:'sdk-owned'});\n",
+        ),
+    ] {
+        if program != program_filter {
+            continue;
+        }
+        let calls = Arc::new(AtomicUsize::new(0));
+        let code = std::fs::read_to_string(workspace.join("docs/extensions/sdk").join(sdk))
+            .expect("actual SDK source")
+            + tail;
+        let fixture =
+            Fixture::with_program(&code, Arc::new(OwnedAdapter(calls.clone())), program, entry);
+        let (_cancel, cancellation) = watch::channel(false);
+        let outcome = fixture
+            .runtime
+            .invoke(Fixture::request(json!({}), cancellation))
+            .await
+            .unwrap_or_else(|failure| {
+                panic!("actual {program} SDK completion and native cleanup: {failure:?}; admitted_calls={}", calls.load(Ordering::SeqCst))
+            });
+        assert_eq!(outcome.value["text"], "sdk-owned");
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+}
+
+#[tokio::test]
+async fn expansion_v2_python_sdk_runs_through_original_native_owner() {
+    sdk_process("python").await;
+}
+#[tokio::test]
+async fn expansion_v2_node_sdk_runs_through_original_native_owner() {
+    sdk_process("node").await;
+}

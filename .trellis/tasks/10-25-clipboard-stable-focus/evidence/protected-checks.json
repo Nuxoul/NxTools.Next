@@ -1,0 +1,67 @@
+[
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads.rs",
+        "Unchanged":  true,
+        "SHA256":  "badd97e84410b64e9b6b155ebce6d94615fd0b29eb2ee7d8bc2408a168a7499f"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+        "Unchanged":  true,
+        "SHA256":  "6e211ab826784e0ae613516478bb3601f62d39e624106dba50c36bdb4278b445"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+        "Unchanged":  true,
+        "SHA256":  "14e0330f998bfada1b30a3e4ca7cc9b717c663e5fbe8f91b310ca18e43f1a80d"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+        "Unchanged":  true,
+        "SHA256":  "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783"
+    },
+    {
+        "Path":  "docs/reference-code/download.md",
+        "Unchanged":  true,
+        "SHA256":  "2e9d7815c04397dc785fd81069fd45bdd12109491e921f508edd81cb80cc63a3"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+        "Unchanged":  true,
+        "SHA256":  "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+        "Unchanged":  true,
+        "SHA256":  "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab"
+    },
+    {
+        "Path":  ".trellis/tasks/10-25-download-picker-identity/prd.md",
+        "Unchanged":  true,
+        "SHA256":  "72cbc24229951e7099e74927c102438b8d01cb83ab51c02b2f6ba09924cb7308"
+    },
+    {
+        "Path":  ".trellis/tasks/10-25-download-picker-identity/outcomes.md",
+        "Unchanged":  true,
+        "SHA256":  "8e5d4116ac19153bcb45b2323639a3edebae286eabec2f783aa61a1cda606e92"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+        "Unchanged":  true,
+        "SHA256":  "55bea700ba6460dc5e4ee35d61c2f3e8f4d345ef041849463404ff9166b9e865"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+        "Unchanged":  true,
+        "SHA256":  "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29"
+    },
+    {
+        "Path":  ".trellis/tasks/10-24-download-enter-popover/prd.md",
+        "Unchanged":  true,
+        "SHA256":  "7a2009883c2dd02bcc962a02edf486578db3ea740185ebaaeff3b5e07a22ebb0"
+    },
+    {
+        "Path":  ".trellis/tasks/10-24-download-enter-popover/outcomes.md",
+        "Unchanged":  true,
+        "SHA256":  "68a44458fd842cf112a7970700b37a53ab5d1c83a5a86d7662dc4343d34e56f7"
+    }
+]

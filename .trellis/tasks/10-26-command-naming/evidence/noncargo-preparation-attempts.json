@@ -1,0 +1,12 @@
+{
+  "items": [
+    "Edit old_string payload rejected ops required, no write; corrected line ops",
+    "KeyDownEvent prefer_character_input compile error retained in Cargo log",
+    "TestSupportExt missing import compile error retained in Cargo log",
+    "New fixture duplicate line corrected before compilation, no product delta",
+    "DefaultGBK read failed after old-prefix byte check already returned true; UTF8 correction passed",
+    "finish-download-checks.ps1 inline Python/PowerShell failed before production formatting/test; separate check-polish-prefix.py and resume succeeded",
+    "Several early runner calls rejected natural-idle admission before Cargo/log creation; bounded admission observations saved for later commands"
+  ],
+  "level": "Preparation/tooling errors, never behavioral reds"
+}

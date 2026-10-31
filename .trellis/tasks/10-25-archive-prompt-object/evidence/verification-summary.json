@@ -1,0 +1,65 @@
+﻿[
+    {
+        "name":  "archive-clippy-final",
+        "command":  "cargo clippy -p nxtools-archive --features isolated-codecs --tests -- -D warnings",
+        "exit_code":  0,
+        "elapsed_seconds":  23.5,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\archive-clippy-final.log"
+    },
+    {
+        "name":  "desktop-clippy-final",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit_code":  101,
+        "elapsed_seconds":  57.85,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\desktop-clippy-final.log"
+    },
+    {
+        "name":  "protocol-clippy-final",
+        "command":  "cargo clippy -p nxtools-protocol --tests -- -D warnings",
+        "exit_code":  0,
+        "elapsed_seconds":  5.62,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\protocol-clippy-final.log"
+    },
+    {
+        "name":  "worker-direct-regressions",
+        "command":  "cargo test -p nxtools-archive --features isolated-codecs --test prompt_display_contract --test worker_wire --test worker_extraction_contract --test interaction_contract --test job_execution_contract --test output_readmission_contract --test worker_cancel_contract -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  52.53,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\worker-direct-regressions.log"
+    },
+    {
+        "name":  "ipc-regressions",
+        "command":  "cargo test -p nxtools-ipc --lib -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  19.15,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\ipc-regressions.log"
+    },
+    {
+        "name":  "protocol-archive-final",
+        "command":  "cargo test -p nxtools-protocol archive_job:: --lib -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  18.66,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\protocol-archive-final.log"
+    },
+    {
+        "name":  "desktop-object-final",
+        "command":  "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+        "exit_code":  101,
+        "elapsed_seconds":  236.59,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\desktop-object-final.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit_code":  0,
+        "elapsed_seconds":  81.62,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\workspace-check.log"
+    },
+    {
+        "name":  "workspace-fmt",
+        "command":  "cargo fmt --all --check",
+        "exit_code":  1,
+        "elapsed_seconds":  8.49,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\workspace-fmt.log"
+    }
+]

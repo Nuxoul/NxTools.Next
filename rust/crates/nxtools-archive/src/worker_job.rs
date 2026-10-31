@@ -49,14 +49,11 @@ pub(crate) fn plan(request: &WorkerRequest, snapshot: &ArchiveSnapshot) -> Resul
         }
         Ok(plan)
     } else {
-        let selected = crate::worker_browser::selected(request, snapshot.entries())?;
-        ExtractionPlan::build(
-            snapshot,
-            selected.map_or(ExtractionSelection::All, |entry| {
-                ExtractionSelection::Entries(vec![entry.id()])
-            }),
-            TargetStrategy::Here,
-        )
+        if let Some(entry) = crate::worker_browser::selected(request, snapshot.entries())? {
+            ExtractionPlan::browser_entry(snapshot, entry)
+        } else {
+            ExtractionPlan::build(snapshot, ExtractionSelection::All, TargetStrategy::Here)
+        }
     }
 }
 fn strategy(options: &ArchiveJobExtract, path: &str) -> TargetStrategy {
@@ -254,8 +251,15 @@ impl<W: std::io::Write> std::io::Write for ProgressWriter<'_, W> {
             && self.last.elapsed() >= std::time::Duration::from_millis(100)
         {
             self.last = std::time::Instant::now();
-            if let Some(progress) = self.control.latest_progress() {
-                let frame = serde_json::json!({"schema":1,"operation_id":self.control.operation_id(),"op":"progress","progress":{"phase":"running","bytes_done":progress.bytes,"bytes_total":progress.total_bytes,"files_done":progress.files,"files_total":null}});
+            if let Some(snapshot) = self.control.progress_snapshot() {
+                let progress = snapshot.progress;
+                let mut frame = serde_json::json!({"schema":1,"operation_id":self.control.operation_id(),"op":"progress","progress":{"phase":snapshot.phase,"bytes_done":progress.bytes,"bytes_total":progress.total_bytes,"files_done":progress.files,"files_total":snapshot.files_total,"current_member":snapshot.current_member}});
+                if let Some(done) = snapshot.current_bytes_done {
+                    frame["progress"]["current_bytes_done"] = serde_json::json!(done);
+                }
+                if let Some(total) = snapshot.current_bytes_total {
+                    frame["progress"]["current_bytes_total"] = serde_json::json!(total);
+                }
                 crate::worker::write_frame(self.inner, &frame)?;
             }
         }
@@ -268,8 +272,126 @@ mod tests {
     use super::*;
     use std::io::Write;
     #[test]
+    fn extraction_snapshot_keeps_member_and_plan_totals_independent_of_commits() {
+        let control = OperationControl::default();
+        control.configure_extraction_progress(Some(30), 2);
+        control.begin_extracted_member("first.txt", Some(10));
+        control.publish_extraction_progress(
+            crate::ArchiveProgress {
+                bytes: 4,
+                files: 0,
+                total_bytes: None,
+            },
+            4,
+        );
+        let mut bytes = Vec::new();
+        let mut writer = ProgressWriter::new(&mut bytes, &control, true);
+        writer.last = std::time::Instant::now() - std::time::Duration::from_millis(100);
+        writer.flush().expect("first member snapshot");
+        let first_size = writer.inner.len();
+        let first: serde_json::Value =
+            crate::worker::read_frame(&mut std::io::Cursor::new(&writer.inner[..first_size]))
+                .expect("frame")
+                .expect("progress");
+        assert_eq!(first["progress"]["bytes_done"], 4);
+        assert_eq!(first["progress"]["bytes_total"], 30);
+        assert_eq!(first["progress"]["files_done"], 0);
+        assert_eq!(first["progress"]["files_total"], 2);
+        assert_eq!(first["progress"]["current_member"], "first.txt");
+        assert_eq!(first["progress"]["current_bytes_done"], 4);
+        assert_eq!(first["progress"]["current_bytes_total"], 10);
+        control.begin_extracted_member("second.txt", None);
+        control.publish_extraction_progress(
+            crate::ArchiveProgress {
+                bytes: 10,
+                files: 1,
+                total_bytes: None,
+            },
+            0,
+        );
+        writer.last = std::time::Instant::now() - std::time::Duration::from_millis(100);
+        writer.flush().expect("second member snapshot");
+        let second: serde_json::Value =
+            crate::worker::read_frame(&mut std::io::Cursor::new(&writer.inner[first_size..]))
+                .expect("frame")
+                .expect("progress");
+        assert_eq!(second["progress"]["bytes_done"], 10);
+        assert_eq!(second["progress"]["files_done"], 1);
+        assert_eq!(second["progress"]["current_member"], "second.txt");
+        assert_eq!(second["progress"]["current_bytes_done"], 0);
+        assert!(second["progress"].get("current_bytes_total").is_none());
+    }
+    #[test]
+    fn extraction_unknown_zero_overrun_and_phase_clear_keep_truthful_wire() {
+        let control = OperationControl::default();
+        control.configure_extraction_progress(None, 2);
+        control.begin_extracted_member("empty", Some(0));
+        let mut bytes = Vec::new();
+        let mut writer = ProgressWriter::new(&mut bytes, &control, true);
+        writer.last = std::time::Instant::now() - std::time::Duration::from_millis(100);
+        writer.flush().expect("zero snapshot");
+        let first_size = writer.inner.len();
+        let empty: serde_json::Value =
+            crate::worker::read_frame(&mut std::io::Cursor::new(&writer.inner[..first_size]))
+                .expect("frame")
+                .expect("progress");
+        assert!(empty["progress"]["bytes_total"].is_null());
+        assert_eq!(empty["progress"]["current_bytes_done"], 0);
+        assert_eq!(empty["progress"]["current_bytes_total"], 0);
+        control.clear_extracted_member();
+        control.begin_extracted_member("overrun", Some(1));
+        control.publish_extraction_progress(
+            crate::ArchiveProgress {
+                bytes: 2,
+                files: 0,
+                total_bytes: None,
+            },
+            2,
+        );
+        writer.last = std::time::Instant::now() - std::time::Duration::from_millis(100);
+        writer.flush().expect("processed overrun");
+        let overrun: serde_json::Value =
+            crate::worker::read_frame(&mut std::io::Cursor::new(&writer.inner[first_size..]))
+                .expect("frame")
+                .expect("progress");
+        assert_eq!(overrun["progress"]["bytes_done"], 2);
+        assert_eq!(overrun["progress"]["files_done"], 0);
+        assert_eq!(overrun["progress"]["current_bytes_done"], 2);
+        assert!(overrun["progress"].get("current_bytes_total").is_none());
+        control.set_progress_phase("edit_reading");
+        control.finish_progress(crate::ArchiveProgress {
+            bytes: 1,
+            files: 0,
+            total_bytes: None,
+        });
+        let snapshot = control.progress_snapshot().expect("stage snapshot");
+        assert_eq!(snapshot.phase, "edit_reading");
+        assert!(
+            snapshot.current_member.is_none()
+                && snapshot.current_bytes_done.is_none()
+                && snapshot.files_total.is_none()
+        );
+        let creation = OperationControl::default();
+        creation.publish_extraction_progress(
+            crate::ArchiveProgress {
+                bytes: 7,
+                files: 0,
+                total_bytes: None,
+            },
+            7,
+        );
+        assert_eq!(
+            creation
+                .latest_progress()
+                .expect("original creation progress")
+                .bytes,
+            7
+        );
+    }
+    #[test]
     fn original_progress_one_thousand_updates_emit_only_time_bounded_serial_snapshot() {
         let control = OperationControl::default();
+        control.set_current_member("bounded/current.txt");
         let mut bytes = Vec::new();
         let mut writer = ProgressWriter::new(&mut bytes, &control, true);
         for value in 0..1000 {
@@ -291,6 +413,7 @@ mod tests {
                 .expect("serialized frame")
                 .expect("progress");
         assert_eq!(frame["progress"]["bytes_done"], 999);
+        assert_eq!(frame["progress"]["current_member"], "bounded/current.txt");
         let size = writer.inner.len();
         writer.flush().expect("same time");
         assert_eq!(writer.inner.len(), size);

@@ -1,0 +1,88 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/archive/forms.rs
++++ own-after/rust/apps/nxtools-desktop/src/archive/forms.rs
+@@ -18,8 +18,8 @@
+     select::{Select, SelectEvent, SelectState},
+ };
+ use gpui_kit::{
+-    App, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, KeyDownEvent,
+-    ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,
++    App, AppContext, Context, Entity, EntityInputHandler, FocusHandle, Focusable, IntoElement,
++    KeyDownEvent, ParentElement, Render, Subscription, WeakEntity, Window, div, prelude::*, px,
+ };
+ use nxtools_core::archive::{
+     ArchiveCompressionLevel, ArchiveConflictPolicy, ArchiveCreateFormat, ArchiveDestination,
+@@ -103,6 +103,7 @@
+     validation: Option<String>,
+     submitted: bool,
+     submit_epoch: u64,
++    default_enter_held: bool,
+     pub(in crate::archive) retired: bool,
+     open_after: bool,
+     keep_open: bool,
+@@ -416,6 +417,9 @@
+                 draft.clear_secrets();
+             }
+         }));
++        subscriptions.push(cx.observe_window_activation(window, |this, _, _| {
++            this.default_enter_held = false;
++        }));
+         let focus = cx.focus_handle();
+         focus.focus(window, cx);
+         let mut form = Self {
+@@ -446,6 +450,7 @@
+             validation: None,
+             submitted: false,
+             submit_epoch: 0,
++            default_enter_held: false,
+             retired: false,
+             open_after,
+             keep_open,
+@@ -457,6 +462,35 @@
+         };
+         form.revalidate(cx);
+         form
++    }
++    fn default_enter(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
++        if event.keystroke.key != "enter" {
++            return;
++        }
++        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {
++            return;
++        }
++        if event.keystroke.modifiers.modified()
++            || event.prefer_character_input
++            || self.busy()
++            || window.has_active_dialog(cx)
++        {
++            return;
++        }
++        let Some(input) = [&self.name, &self.destination, &self.volume]
++            .into_iter()
++            .find(|input| input.focus_handle(cx).is_focused(window))
++            .cloned()
++        else {
++            return;
++        };
++        if input.update(cx, |input, cx| {
++            input.marked_text_range(window, cx).is_some()
++        }) {
++            return;
++        }
++        cx.stop_propagation();
++        self.submit(window, cx);
+     }
+     fn busy(&self) -> bool {
+         self.retired
+@@ -1572,6 +1606,12 @@
+             .bg(cx.theme().background)
+             .text_color(cx.theme().foreground)
+             .track_focus(&self.focus)
++            .capture_key_down(cx.listener(Self::default_enter))
++            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {
++                if event.keystroke.key == "enter" {
++                    this.default_enter_held = false;
++                }
++            }))
+             .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                 if event.keystroke.key == "escape" && this.pending_format.is_none() {
+                     this.close(window, cx);

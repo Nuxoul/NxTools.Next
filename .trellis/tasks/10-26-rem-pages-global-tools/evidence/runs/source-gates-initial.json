@@ -1,0 +1,46 @@
+﻿[
+    {
+        "command":  "tests/architecture/desktop-shell-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/clipboard-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/download-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/ui-token-boundaries.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/ui-consistency.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/ui-state-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/ui-motion-policy.ps1",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/gpui-component-catalog.py",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/gpui-release-contracts.py",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/markdown-editor-contracts.py",
+        "exit":  0
+    },
+    {
+        "command":  "tests/architecture/spec-contracts.py",
+        "exit":  0
+    }
+]

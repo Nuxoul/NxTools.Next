@@ -1,0 +1,13 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/downloads.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/downloads.rs
+@@ -919,6 +919,10 @@
+ 
+     pub(crate) fn tasks(&self) -> &[DownloadEngineTask] {
+         &self.tasks
++    }
++
++    pub(crate) fn task_removal_deletes_file(&self) -> bool {
++        self.config.download.task_removal_deletes_file
+     }
+ 
+     pub(crate) fn task_icon_path(&self, task_id: DownloadTaskId) -> Option<&Path> {

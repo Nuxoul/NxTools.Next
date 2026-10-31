@@ -1,0 +1,1922 @@
+[
+  {
+    "path": ".trellis/tasks/10-24-download-enter-popover/outcomes.md",
+    "sha256": "68a44458fd842cf112a7970700b37a53ab5d1c83a5a86d7662dc4343d34e56f7"
+  },
+  {
+    "path": ".trellis/tasks/10-24-download-enter-popover/parent-review.md",
+    "sha256": "8866de529c6dccdfa74a83b8839b363247b5c1f8b94bd4cf31b3a741a2a80b15"
+  },
+  {
+    "path": ".trellis/tasks/10-24-download-enter-popover/prd.md",
+    "sha256": "7a2009883c2dd02bcc962a02edf486578db3ea740185ebaaeff3b5e07a22ebb0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-picker-identity/outcomes.md",
+    "sha256": "8e5d4116ac19153bcb45b2323639a3edebae286eabec2f783aa61a1cda606e92"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-picker-identity/parent-review.md",
+    "sha256": "da4b47a5b5bb1f6a476fa4c3eb4b244f9cc06d72840b8db885596e975fc109b2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-picker-identity/prd.md",
+    "sha256": "72cbc24229951e7099e74927c102438b8d01cb83ab51c02b2f6ba09924cb7308"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/baseline-manifest.json",
+    "sha256": "ef715e2fe543e6fca0de3e9dc4115aa0438bd3781adb36851d6cdf07da6320f8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clipboard-lifecycle.ps1.log",
+    "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clipboard-ui-lifecycle.ps1.log",
+    "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clipboard-ui-lifecycle.tests.py.log",
+    "sha256": "c62e2b9b3c65b8db05fca09d0fec679635018e0eb6743299d612d35bdac1bac7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clippy-final.log",
+    "sha256": "1b1a1da8b383cc3bc7b66a7ab5deda2d214dd5ea40e0a0db4a86ffd48ccf18d9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/clippy.log",
+    "sha256": "84384e669a090e07fe9d5e06c34bcc4f01d551abf284f37b09735b3a3d6ec5bd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/compiled-final-results.json",
+    "sha256": "b3f0ae73b6bd6a5ce0f9ace71f11bd92980b480a3fc80995dc35037417755a43"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/desktop-full.log",
+    "sha256": "3f6a27ee38c7e6fa9ab57bb9e69e5b5da35ad6a1b9d168b2600b6fa7a76aace9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/fmt-final.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/history-regressions-green.log",
+    "sha256": "477209ffc6956d274696aad20dee48b459d0045c83be9d81687d52117c3822e3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/identity-key-mutation-red.log",
+    "sha256": "73d4c58b2a2c9560e6acc6719409148df6d274808d856bfdfb8a86ac9646ffe1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/identity-matrix-green.log",
+    "sha256": "bcf99ab7c771eafa497a8f51dc0f53b85bcf7e1a55458602b12e85dc6796d792"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/identity-matrix.log",
+    "sha256": "f2f724f8222e2adffb62d619384e3d35af4d0b6c43a95e4eb12538e8778b72dd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/manifest.json",
+    "sha256": "91a6f97a68bd3a010365669cd02ca07c55ab8071eedc65d53b0c3c247255667a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/own-delta.json",
+    "sha256": "3f6dac84f981402a172d23b3c7748de791023e735ca68a800ebed3d898a43a43"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/protected-checks.json",
+    "sha256": "45bc82c24dbabe2a95cd74bdcfe9a0fd472dad641224406bed918e899bd6956c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/static-results.json",
+    "sha256": "94a74e3fad5f5863f64405d6da0d7235bd713b6c08676469bce4c24406431102"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-final.log",
+    "sha256": "f8e211f1bec21086fd0380a8f20e026a5e98228c9828a6ba1cc58f63ff915933"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-regressions-green.log",
+    "sha256": "7c37dd650b57ea9c049960797fa50d725c9583e2e8433478762367b93232a4ca"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-regressions.log",
+    "sha256": "340d45f8668e2c88b6b062bd85f93af9102a6f2c71df456125016b52b19479a8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-state-lifecycle.ps1.log",
+    "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/ui-token-boundaries.ps1.log",
+    "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/workspace-check-final.log",
+    "sha256": "92e4ea12db9bbf4c59f3a10b890b93615a8a9a0cad6d4683df57bc70e570850d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/outcomes.md",
+    "sha256": "0ad5cc01a6dd12ff69562f336f95b05d996b63e3271abf655b743a6a340462bc"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/parent-review.md",
+    "sha256": "eb50b732603388dc4c8796822f8f92ab9c5abbf2ecf96a1beb96f9cbe02782be"
+  },
+  {
+    "path": ".trellis/tasks/10-25-clipboard-stable-focus/prd.md",
+    "sha256": "75d2662297313e1cec80f541b943a2c8c8b6a2b0f395d63bec1250cace5626ac"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/baseline-manifest.json",
+    "sha256": "e63f74c8da2266acb0087d48e43f5a5a9653e28d8953cd02bb5ca8309baa0d2a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clipboard-lifecycle.ps1.log",
+    "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clipboard-ui-lifecycle.ps1.log",
+    "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clipboard-ui-lifecycle.tests.py.log",
+    "sha256": "f1b08fa1e2d503e9751ca591ffe8c9574e54792885ab62021f5a02394334758b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/clippy.log",
+    "sha256": "0d7d88b662425a9e58f536f3784ef2e03c12c154f04dedaa5c982a9d9932b424"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/compiled-results.json",
+    "sha256": "9016f3ae649df8892172e6631908a6a877ddf794908cec833f68040c76c83301"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/desktop-full.log",
+    "sha256": "9b907a29cbf76446674ebe8fc701b91649df0915f3187e28ebad928e70ab67a3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/desktop-shell-lifecycle.ps1.log",
+    "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/downloads.log",
+    "sha256": "01b3f21ebaf133075d43662d7ab70387b0c046b93e08fbe5b4584d3b6b3f5068"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/global-settings.log",
+    "sha256": "4dab839cd0d2d29289627c90dff5f89bf4eb4e59dd4035293ba6b5aa1ba551b3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/manifest.json",
+    "sha256": "e55975671f81fff5c215573ec3c56f5bd127c6115efc03bb7be5fc944a8a6bef"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-green-final.log",
+    "sha256": "f29ba0421129de18a41009135f39d2b4c16e273cc5e086cde2dcff2cf5906f0b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-green-initial.log",
+    "sha256": "5c6a1298dac82c6841a6317abd1a48de8cf25ac516d408110f868e605400a3da"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-green.log",
+    "sha256": "f5a9e0b4cb12611366e77d8666ed9824c2e68fc5c9491613f45bb32bab2314c1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-red-behavior.log",
+    "sha256": "11abbe9cb8b498d79382a2bfc55508b95110ddf09e5c01d3f102c14ad1b42bfb"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/names-red.log",
+    "sha256": "442f217a4ac38c5bcae3a8f9f00a2cc9d6e05d1bb86bae85217d42bba32706af"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/own-delta.json",
+    "sha256": "0273a7244660278894fb151694c3a4c65eae23fdfa1b10886b393d4a104c997e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/protected-checks.json",
+    "sha256": "c4da069db8af1252b2d43c0fa254d382015bf9ce8eae129f67050d36162cae7c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/protected-manifest.json",
+    "sha256": "4f105480fc57a1171726c88dbaa989e5178648a400336907e822543020b68bc5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/quick-gate-diagnosis.log",
+    "sha256": "9203638db06d950216aeda29798056bb162f753f20107ba6eef2ac17699ffe4c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/quick-launch-lifecycle.ps1.log",
+    "sha256": "d35db2d2db01ae26ad7b22f6fac92ab75f92452b8a55ec09ddd34c0c985b884f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/static-results.json",
+    "sha256": "af1e4f929ffe7a2502c09ab2c4043729e75d9e412abb2d16f12152bf11a063a5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/ui-state-lifecycle.ps1.log",
+    "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/ui-token-boundaries.ps1.log",
+    "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/ui.log",
+    "sha256": "33a5c51758ab3707a5be1dfc487c76cb504d8976c3d09cc1cae44f79f0ba9a34"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/evidence/workspace-check.log",
+    "sha256": "3fbe86920e6c5910544c7f269d7f0321df1545d4317bdc59cde99e4e1c1e349c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/outcomes.md",
+    "sha256": "bf301273282ca3057b3497e547cc396d4d08dd97998a57ce447ba083d74d0460"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/parent-review.md",
+    "sha256": "1c209d650111d1550f173c5cf418d6f93c84be27ff285d2dd4a467fb95d4291f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-button-accessible-names/prd.md",
+    "sha256": "ecb0e0c718609181dd91d55c27da424fc39b259976dc9a9baf9604716ebe9aa5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/baseline-manifest.json",
+    "sha256": "6f703c3993ac76c08d59ee0bb7fb5dc6519b833b2ba6b99c493e25e9f0ec4bfe"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clipboard-lifecycle.ps1.log",
+    "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clipboard-ui-lifecycle.ps1.log",
+    "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clipboard-ui-lifecycle.tests.py.log",
+    "sha256": "52d5c58716c7b0fed9e7b9e96c18002ad48f5f8a66e1f4d4b25e0364e84174e0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/clippy-final.log",
+    "sha256": "99f3d027a324ba41ff9b3ae128061cd274df7cd4ef048477345ad1b047f25c15"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/compiled-results.json",
+    "sha256": "4154c8e3db8e8e37f7fd96a71813f95df083cc685e2e08536b7dabc664b552a7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/desktop-full.log",
+    "sha256": "c210ac61b71f9c9cad6176e1d1bc11ca29e92b312f0fd98690331bcd03e54434"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/desktop-shell-lifecycle.ps1.log",
+    "sha256": "3edd84facc8b95e77613c7ebe10277b259cc1d7ca15b23d8741c4deab4d12283"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/downloads-final.log",
+    "sha256": "a87f9fa1cca789556c86c03a4aaf1d11ad8eedce8ea3ff7e7ed8b1bb5d57f7de"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/focused-results.json",
+    "sha256": "102c0229b041c6e0196e58954314ef1c41d44234aea772192c1dd20d93fd9e6a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/main-window-final.log",
+    "sha256": "e7d2a16b07b87c93c300d60d5e53d3360c1e32d06366f780b5e0530b892bd66e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/main-window.log",
+    "sha256": "1c013a07728fd3e5291c6e0efa3c3d2dc8f81eda7910d8f54fc8ba3f7e274cdd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/manifest.json",
+    "sha256": "86551b60bebb355e724c55e2bb1f33e85e8b479b7d826230402b4d1555cc7406"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/own-delta.json",
+    "sha256": "de6a4b6a474635ad01a4a22664f48ee87e5f5a843fb4daf7593d33f6f087aae3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/protected-checks.json",
+    "sha256": "cc0dc8f57fbd9d0cedf31e836154de4dfe482cce9a6e971a87c0d2c937c5a0f3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/protected-manifest.json",
+    "sha256": "7df93188641954fb8c0c81e39ec3f569f1bfc99dfd100cf7937cb015b394a536"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/quick-launch-lifecycle.ps1.log",
+    "sha256": "d35db2d2db01ae26ad7b22f6fac92ab75f92452b8a55ec09ddd34c0c985b884f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-final.log",
+    "sha256": "5bcf2e9254af59a1663b8484cac0b03dd7470abbe4fb9ad594f27fb2121665cd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-focus-start.log",
+    "sha256": "7beb065b226c4eb9885b901ad8fa6ab630aef14cd97ea0bace8aa77b9dc2b124"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-green-final.log",
+    "sha256": "7e38550192f611cc0e698c16ac86baff4d056db9c516430dba35319df3aa265a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-green-initial.log",
+    "sha256": "3c4e0a7e1917685ab61b92ec85a5753ef15ba59e4ae4836a29175f54bb8396bb"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-green.log",
+    "sha256": "426975c60b902cdcd546204d2f8ba431b81024d04c176db79d428fa0103e8980"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/sort-red.log",
+    "sha256": "763b7ae134495eedec6d2c7690ebb4769fcf82f681108b49f1f9a60878249fc0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/static-results.json",
+    "sha256": "0ae3cb1ec08937cdd194e50d2fbaff89db393544c15cd72f4e0a9787f06ba07f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/ui-final.log",
+    "sha256": "8270ef27a389242da3d842616beaed89a37e56cdac9e79f443a045fce217e601"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/ui-state-lifecycle.ps1.log",
+    "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/ui-token-boundaries.ps1.log",
+    "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/workspace-check.log",
+    "sha256": "30533c0dfaf82cc3730c939cec815c5bbf429a44f96b0babffeb3dbd5389cb23"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/outcomes.md",
+    "sha256": "4aad88a6f20db706cb77d17033b7e2645af467b3000fe1b676e9eaf66768afa3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/parent-review.md",
+    "sha256": "76030a6986488540aef5bd8f691d67a803829def9b8107e73cb410fbb51e331c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-download-sort-keyboard/prd.md",
+    "sha256": "2ebd40907b8b12b510e0e7f22f4d06caa2379c76958d296932f4b274fc708f46"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/archive-clippy-final.log",
+    "sha256": "f49fe7be864bc24a6540323f878752bd23c996478c5164bf2a8489c56300ebf9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/archive-clippy.log",
+    "sha256": "4a6b5ac0ad9f2d88b17d11a5006a2bba1a7798737e4caa35c7adb951551daeaa"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/archive_job.external-format-live.baseline",
+    "sha256": "ba43ca319c8a09494f9684c8d681fe2db0365b6a4eb7c72422bc9a06e431ee7f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/archive_job.own-after-resume.json",
+    "sha256": "90dbca43268942bb6404d15949ab577125d194ac36420dfc529498acef6cded4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/baseline-manifest.json",
+    "sha256": "0c8b608eec0409c687cd5f7c055bf006b81a0740517d5a30556060eba5baf233"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp-build-green.log",
+    "sha256": "a2dfdb2bc85dbf6c9cdbc5840ebe7c19100e7c2d7b4308d7f798dd1c2ee5e615"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp-build.log",
+    "sha256": "5042d9ebc712399cc0793d0403fc41eccf8a1ff1a13dbb22db6ec870a6e4b511"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp-five-fixtures.log",
+    "sha256": "215d07b172e3693c33379713327b7d893b9ad5f9d55ab1494fe00ed88be8bf4d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.baseline",
+    "sha256": "ca693479c8e4f389ab44ea11a8a4f7e40620fe3b854a6eb47cfc6d11347e3bcc"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.json",
+    "sha256": "fc55b30aa47926aca50ef0fa7edf183ce10a33da392b169c269b523830f6155c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveConflictTests.cs.own-delta.txt",
+    "sha256": "64cab784cb7980f1bb6f486df62e9c4a1308e8a165b712438b2a41b7d58ef25f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.baseline",
+    "sha256": "05e3956547312f9cd0dc07fe2f6f6f100cba4962d79dbb7aea51708e76700d41"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.json",
+    "sha256": "13e8bd763567ccf50c806d42bd50753d3cace28b200fc47ff6c306ee1fc62ca0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveCreateOverwriteTests.cs.own-delta.txt",
+    "sha256": "745203f8df44a34f7d4291e17197c06c992f4913596f036d2895c043d09eec10"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.baseline",
+    "sha256": "a22d8aecbf7d69394add2b98ecc8ba6d6d2885373abd8b638bf3fc98e5b1bcc1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.json",
+    "sha256": "92112ee9fe08c6caefcc227d74d4a7a4f71f72f56b96431cd81b53c310b27efe"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost.Tests__ArchiveJobTests.cs.own-delta.txt",
+    "sha256": "e200034195be4714779bd71de4658dcbe5c02b578c68ab052e6cc793e0f9402d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.baseline",
+    "sha256": "1207f0043e4db0969baefbb5b1e40a77f034e093daca9c2440d2723909e39731"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.json",
+    "sha256": "af2d531abfd0d56be1e2d3c280addade7c486d38055b7c9bf0a61c49949d77fa"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobContract.cs.own-delta.txt",
+    "sha256": "4bfbd2b0eade323b39f938795480dfcff79ea76eaf70bc4b9be6a2663f75d5c9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.baseline",
+    "sha256": "860d0db31079b56221e03fc9040b285b0018508f9fbdd1d57eb830830a52fb9e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.json",
+    "sha256": "9d8af5720f2e097d09a5891d91434663229057821b1bd6168ed5ac7814f608cb"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/csharp__NxTools.PlatformHost__Protocol__ArchiveJobSession.cs.own-delta.txt",
+    "sha256": "1090e9bd4487b4fd31fd37cdb3e87b41cf06ac83a9de3d763908c2e68e783a2d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/delivery-manifest.json",
+    "sha256": "bea18e4b467792ba69e46cb825d96b405a63e684634c1638e92ea64d27371924"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-clippy-final.log",
+    "sha256": "e3913d42545038a378d74d3fe869c65fe80968eea49fde8ad3fa889b6ab77f74"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-clippy.log",
+    "sha256": "4197cb69a0a074f8bc20726edbc69a7665a25980f8fd4c9ab7b412899b512972"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-full-once.log",
+    "sha256": "e74d732e05209685c7b93a1536e97fe4a682b10921bbf9c1404ee7008c2df013"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-expanded.log",
+    "sha256": "de96050fe8b5dbe31455ea35f7fd4987987c11c7d82453507e766b5faf01afac"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-final.log",
+    "sha256": "1b56de7e35056abccce40776b4a5c4d6035b8f49402ee68b00745db460a02ea5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-first-green.log",
+    "sha256": "f04b9efbfaa7a65dddd7baba77a09cd87410a51765a2318c8ac11475642ceba7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-input-green.log",
+    "sha256": "b79a5f2a33e8bfe5bb4b31339d3a227d6b269fd472c096cc8b4d9a75282b52c9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-object-red.log",
+    "sha256": "4bae36bd046b8ca1792afa7b51cdf28e0fa608355c573d3fd1e9ca106a3b1aa5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/desktop-real-ui-red.log",
+    "sha256": "b06dfa9be9fd5b33359293818f0a3c3771e472e4dd5e4f7f6418ad05cdb64fdd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/docs__reference-code__archive.md.baseline",
+    "sha256": "c0ef4510ed738d0b9c8b554d6737cb3837380a85fd6ab4075b74305fa3f1479a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/docs__reference-code__archive.md.own-delta.json",
+    "sha256": "bf6f24652c499c7db58ac9cd48c608ddb8f411514319fad3bc3a0201fde59223"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/docs__reference-code__archive.md.own-delta.txt",
+    "sha256": "da97c3debe4058124abaec6b992f519e3bceda5486dd4cb40f08789c0bd1215a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-cli.py.log",
+    "sha256": "b81f461138af79acbac458619c2dd2fe0fd71c386c9512c2414048a6a758ce9d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-phase-f-shell.py.log",
+    "sha256": "016e5ed278fd87802a06deb02f9ef194f8351f07952512c9b431651143e0147d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-phase-f-spike.py.log",
+    "sha256": "729fe9263126157c727fd21623b44cbb5508b8268bdb63062a967978f8ba6ba4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-archive-release-chain.ps1.log",
+    "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-gpui-component-catalog.py.log",
+    "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gate-spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/gates-summary.json",
+    "sha256": "bab5ebcc3598eab19e8f16413fe80f0f447cb154c6370be206bc702dc860152e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/ipc-regressions.log",
+    "sha256": "293cf2f4231e9cc770f93afdf81d109b43ce1ae3faf6c8963b929f6b3e3d9880"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.external-format-live.baseline",
+    "sha256": "a3bff6c673c1c93d414ea86632645fdb47dd40d762df0868c2527daa2913e176"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.external-format.json",
+    "sha256": "4449633c9c0cf99779120089726f48928d8597ae502d34f8e0f714dd61645a1e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.own-after-resume.json",
+    "sha256": "a2eb3ec11d8549c49074e6b1be9d6bec4a6078dc7c4c9bb2f67d50ad5d07ff53"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/job_tests.own-initial.json",
+    "sha256": "2874a697ad62bf3bdf8df46e650cbf1e7845ec99465b718256bbeb2a6eed8626"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/create-keyboard-unresolved-probe.rs.txt",
+    "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/focused-ui-original-failure.log",
+    "sha256": "1b56de7e35056abccce40776b4a5c4d6035b8f49402ee68b00745db460a02ea5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/footer-compare.json",
+    "sha256": "c34a22c3815c273df14a7b9a40c870ee6cb15b5a803a533ab6fd58b304ab0bd8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/job_tests.current-readonly.rs.txt",
+    "sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/manifest.json",
+    "sha256": "e4029b9795622785dd6c07b2f22b2a65e11bc29d6096b412d121cbfdf8fa5d88"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/protocol-full-original-failure.log",
+    "sha256": "d92fe0f012802cd3efe2e5f5bf97edeba342ad35f8dda8bc8acd33dd2b6f95c1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/protocol-lib.current-readonly.rs.txt",
+    "sha256": "b19d21a17d720365839374ed51394be717b395d549ea04fc5263f128c24a6384"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/late-instruction/readonly-hashes.json",
+    "sha256": "f8a9691c3bbebcaa3f9480480d0e101f2c97a56ac265abcb473e0f945555d552"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/own-deltas.json",
+    "sha256": "ce07e982cc393e881976240d5cd20900db633bb21db074b278f60bb5b14d277b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/protected-manifest.json",
+    "sha256": "fd73c73b3407d68d191b6ec950c6ddcf7cfbfb889dab992ef7590374ca97031a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/protocol-archive-final.log",
+    "sha256": "85eb6c24cea35706cb5aa718fe612ab29c8d87f32e9fab467c6e20556f5f0118"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/protocol-clippy-final.log",
+    "sha256": "7f68e2c2bf51d395e264c66048fcab502db2731bdef97ac7976cb781a127788e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/protocol-green.log",
+    "sha256": "d92fe0f012802cd3efe2e5f5bf97edeba342ad35f8dda8bc8acd33dd2b6f95c1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/.trellis__tasks__10-25-archive-prompt-object__outcomes.md.baseline",
+    "sha256": "7b83e0caf2547aca5ffcd9c31b3c9aa8944c25ab0705d89fcb8e1c1e2a22eb80"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/.trellis__tasks__10-25-archive-prompt-object__outcomes.md.delta.json",
+    "sha256": "ce2bfe956fa4bbdaf94d3c72f67b6cab769aff280926a03e358cef8589b43e03"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/.trellis__tasks__10-25-archive-prompt-object__outcomes.md.delta.txt",
+    "sha256": "f7e05e4eee9f7ae50cc5b29b7b91eac632e4fe13fd1a1ed1a95b7b48e475de13"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/.trellis__tasks__10-25-archive-prompt-object__prd.md.baseline",
+    "sha256": "305121445549cb2cffe7a869ef3b731abf5c008f7711848d0ccb7807c79fed08"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/.trellis__tasks__10-25-archive-prompt-object__prd.md.delta.json",
+    "sha256": "0d39808715354ecbc4f49156ef793485de43b6983f109b89f0c4c3f4935b7d15"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/.trellis__tasks__10-25-archive-prompt-object__prd.md.delta.txt",
+    "sha256": "018998b622ecdebe51031f3cdb42f6ff0c399b75e42923243a743019243a3167"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/baseline-manifest.json",
+    "sha256": "031a79e20b421a2bf4f8d6229575f7395aea316cc22646ccbbd390c587952db1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/desktop-strict-clippy.log",
+    "sha256": "33467d9a6ef8c7073be42733c4e1f5479781bcf84dc492499abfe6561837221f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/document-checks.json",
+    "sha256": "646037b78fb54cc51016ec99a42a6e206374720e78290089ee67adc9fcc383b4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/frozen-artifacts.json",
+    "sha256": "6ad021a5b2d136b4e928fdf5e926f84b916b26516e14699cf9fcd591991a3a4a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/frozen-sources-expanded.json",
+    "sha256": "2649fcae096a4c2b148677ca2fd9d739209046dc6ae975cd6741dcf98528ce84"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/frozen-sources.json",
+    "sha256": "06d32e594eccf1f9e6279cd680b3363444aecb5d76a781b50b2a8c7dc50f3028"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/gpui-component-catalog.py.log",
+    "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/manifest.json",
+    "sha256": "1851f3efbd01123a7e67685e6f818da9c03779d67564906a1eedfe803f5193e2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/original-archive-job-regressions.log",
+    "sha256": "a7c92f2836a9d77560e3bbd3a7efa9061627e9766b5667d6e831445d7b873b0e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/own-deltas.json",
+    "sha256": "2ef34318824dabcc3d8d48ed5fea47e5dca34865300ef09d006a5ef41153651d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+    "sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/rust__apps__nxtools-desktop__src__archive__job_tests.rs.delta.json",
+    "sha256": "aee30ec2fba791e6b4174a2fe1398c347897760ee8f50c532477e7b54af6bdb1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/rust__apps__nxtools-desktop__src__archive__job_tests.rs.delta.txt",
+    "sha256": "490b0f00664002c4690ac50361de035ea75de4b865f291df3b26da33faf96b65"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/scope-checks.json",
+    "sha256": "2fddefde2a52923b234edce01d27bb006908de6fe5b3e3eca6ccb7df3740fbe6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/standard-audit04.log",
+    "sha256": "ebcc40ca924d7d2a8318adbe4311bd973ed7b023e0a006295d1fed0a56bf75f9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/unresolved-diagnostics/create-keyboard-unresolved-probe.rs.txt",
+    "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/unresolved-diagnostics/job_tests.before-r1-r2.rs.txt",
+    "sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/unresolved-diagnostics/README.md",
+    "sha256": "18ab752fc51268af952a3cc1c09721abd015160671bd5965311f51b23684852b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/verification-summary.json",
+    "sha256": "0c02cb792ada1754f5c02551ebc519c30d495adbe74ad3f10e30de474aad66d2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/revision-r1-r2/verify.ps1",
+    "sha256": "b14b3ccab2c4e91fc0fc10525e38190ab7f41f3433b8a625e8ebe1085fd429bf"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-cli__src__archive__execution__tests.rs.baseline",
+    "sha256": "12c2e242e5e2a2bf8f26f92bfa613ad6d2dee1f408173e235c7913501abd16c8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.json",
+    "sha256": "c1b58e5e93dfbeecb455a7ef7017dec842af387959a03ac48cc5618be2f97247"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-cli__src__archive__execution__tests.rs.own-delta.txt",
+    "sha256": "1ff83ae0c4c15ae6b25d6e6a9b94bf77876d049a94512c3c9147ed538f7fca96"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+    "sha256": "6c999ab492528c69629cdcc6c50ac8141c57cc65edec150daf80cb16b9548476"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+    "sha256": "737d486b0c778f6a417fb1142c0d587a68639f4b4fe945603a7d5fe10f55c0a8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.txt",
+    "sha256": "f7eb0f3409875eb0da8db977dbd832e50a703508cc410a57b49ceffcafa118d8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.baseline",
+    "sha256": "dc65157d165ad03dfb8a5ed51ea3821d5178233716e91dc8ce39c15e49ffa052"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+    "sha256": "e91a373f669a31b9612f806dad3334532cd6612ed19390a35f7538be69555778"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.txt",
+    "sha256": "697009604fdf4926c3a31e5e718a41693c37f0b0919180cff26f78bf6beb45c3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__readmission.rs.baseline",
+    "sha256": "cc1585ef9d800d84654f522293edcf0728af7dffd4b3679f32f0ee7fb54d83ed"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.json",
+    "sha256": "9531dd7e63ec6de46e4f542bfbc68585ea780faa3c76919936f96441d9190443"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__apps__nxtools-desktop__src__archive__readmission.rs.own-delta.txt",
+    "sha256": "b1ba92f2567402ab16f8ec21857f404aba9d31818a9a70451e0bfb159889f07a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_conflict.rs.baseline",
+    "sha256": "12c1955296ad9c8f901d09645aa07c35f4d7477df388d7d79c735dc854e77a9d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.json",
+    "sha256": "fed7bc6408b52fdf73b34872d950c671abd7e7eaf6fcb6b897b7ba2ec15cbf6d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_conflict.rs.own-delta.txt",
+    "sha256": "af8be082f1213ef1975c89cb6781f5af0c62ac9a35845875cbe9c2576557d3d8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_output.rs.baseline",
+    "sha256": "67204ae8348abfbf9c492b18984ec9c4e933bd6d41c388661d66e541bb2a9dd3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_output.rs.own-delta.json",
+    "sha256": "04f309e337e4da3d2787ac81def8958a88652f25a01fc4ea0780c3dbc8e4515d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-archive__src__worker_output.rs.own-delta.txt",
+    "sha256": "5d1b0055327aa29a16c5ce4a6c5e1201be251348972335d22f460cd78b598cf7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-protocol__src__archive_job.rs.baseline",
+    "sha256": "0da449dbcff592e8f0d488a267a477f9fd5f67277e210e190c4eda192bb5de81"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.json",
+    "sha256": "0939b7129e3f98e9807f1cba235902ba1700126ab73e46f09194e1fb458da91a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/rust__crates__nxtools-protocol__src__archive_job.rs.own-delta.txt",
+    "sha256": "313522c1f46d40f73f8ea4f8f4270abb1ee83538e2e23638b29bad817d7c791b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/verification-summary.json",
+    "sha256": "bad26df522f5aba7ff578cb94ed104f4be6b2ae669cbda9ab6cd5ef7929bd148"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/verify.ps1",
+    "sha256": "4f6d87551cdfe667ded856a8b18ef68ce6b544406325bcb81774aae4ee0f3e42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/worker-direct-regressions.log",
+    "sha256": "f1cd1066788ea704b79c89ca9e54d24d53b6ece70c6912aec0d95ab89714a12d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/worker-object-matrix.log",
+    "sha256": "ae4cb85d6fb407411396b462ad110d9e951266600333abc4ff23a349b266a885"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/workspace-check.log",
+    "sha256": "e958d80f185bdf7594d790aaf61d6018e6d4a83f477d8255ed2a9ff7b2836fe6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/workspace-fmt.log",
+    "sha256": "ac243c70b630ec08d9a9dba4f157b7a6203d4b254e5ce45d64fdeff6c03ced48"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/late-instruction-addendum.md",
+    "sha256": "2484b5d59e4df5a515975dba6ce5e6e90b3e01acf000f6e9c0b32a8bd0755e79"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+    "sha256": "624b194cbcf2ab56f25c70ac855f6c63fb94bcd9cd8b38938dea699fcab85d0a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/parent-review-r1-r2.md",
+    "sha256": "6a7f8741ffd863381677c8231f110f6c5a841aea01ffb19077003ba3076a669b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/parent-review.md",
+    "sha256": "a614b00a21d8ec914a5046ddbb17cf037eee9fed768aca2b464ae6025a725637"
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/prd.md",
+    "sha256": "70e31e1d4a9461ba9a1b05c55b7881d5bf75d4cc12cc84809c05439399150e82"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/accessible-names-protected.log",
+    "sha256": "6b07dd50fe3e9055b5167408d0991d606b860662d19e16d858e2a8482fbf6fea"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-form-enter-red.log",
+    "sha256": "7fcd349d5d4a76fab99788b0751a0b0d066a4005477d89d72b1fec2920cc072b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-form-first-green.log",
+    "sha256": "18de183ab0f99f17833699b3561654f8a80e8ac1db0d546fed08d2d93636730d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-form-green.log",
+    "sha256": "9c275ab757c953bb5ddae9b8e634bad25b49ceb179b7c76068bbba79efc98bd2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-reference.external-append.json",
+    "sha256": "a615eca9f0d424c7a1f363cc48b902eb99df86698ddf5a2b569d71518316edb0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-reference.external-live.baseline",
+    "sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-reference.own-after-before-external.md.txt",
+    "sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-related.log",
+    "sha256": "95ace5686d27344da1626c3c827ace7e36043d3e622195982121c7ba652b11f9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/archive-static-gates.json",
+    "sha256": "b6599cca36208e62ac17353af75a7b10895d0adc5bf0670177d09bbeda226382"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-expanded-behavior.log",
+    "sha256": "45531a29329ee107ec47ba0bfd9cc303b9196f39cb14156d31af355430506177"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-final-matrix-first.log",
+    "sha256": "56a3543fd6104b4ec79646d4a5101c67e7abcf127f369c2812194670a97272a5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-final-matrix.log",
+    "sha256": "a7d2a52b63025c9812cdcd09274064a395be8edf61c452b44de492ba4d557570"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-first-expanded.log",
+    "sha256": "a1d40f58d0fb85ac873f7069cef1d2c5f9777955b5aee1977243a9ffd75c5338"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-first-four-green.log",
+    "sha256": "3fae08e72d46d190f282e1bcaca84bd6241b5b723ca53ec5a10d013969a1f37b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-lifecycle-matrix.log",
+    "sha256": "ccfb34f50bc0e0d0278b1042284abef37ca2ae57c3c86c6c175bddfd033bb226"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-safety-expanded.log",
+    "sha256": "e93abbd7af9983578333c81f3e3b075fb9ecc2b1328a5a9ffbd9173ed958aa84"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/audit05-safety-green.log",
+    "sha256": "955fe73d36d1efdb9155966406d8b39ee50b137f0413a03c231fb9e617e23899"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/baseline-manifest.json",
+    "sha256": "942ee90cdfa4a142addd64cd2cba03dba11f3980dd976c2091ac0f2d9a943d5d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/create-confirm-first-green.log",
+    "sha256": "7a0f2559dc533c8ad0075cb6040849784ace46280e4bd2e1523c5e64684fe95c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/create-confirm-red.log",
+    "sha256": "f93d8acb46386e6ce76c0ee566e75c6fbb13ea05334ec9666fff76561d9afb7b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/delivery-manifest.json",
+    "sha256": "52cb1160a4536aae54adb064ab2cdb0436ae77c6e44ec3a6502931f4ae4e2ab4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/desktop-full-once.log",
+    "sha256": "ce62f70c9026a5b8296ee4e2420b0b11066ef7a0f80615288f6fd8d3564f7314"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/desktop-strict-clippy.log",
+    "sha256": "a0be3d1db0fa02c59ccbd9d3d04d8dae419dc7536a444928cab5bade0edf06fe"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/display-six-after-confirm.log",
+    "sha256": "cbc8924fc14f9efff2aba53ff2abc364fed34d6b7f6a9d8b8e47a30a2283fcb4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/docs__reference-code__archive.md.baseline",
+    "sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/docs__reference-code__archive.md.own-delta.json",
+    "sha256": "86f5d03e8808a418b5158c9a6f23d39360fef9d18664bd10987b274dff93fa8a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/docs__reference-code__archive.md.own-delta.txt",
+    "sha256": "72ffd35d1c7f3504d0ea81be23e565086998fbc5e165757b026def6afc1b00ec"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/docs__reference-code__download.md.baseline",
+    "sha256": "99abefb822f4e7aa1693b62087b2cd081a8e15f6f6e0ace0bffa7e14cd3d64f6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/docs__reference-code__download.md.own-delta.json",
+    "sha256": "c486dba69edab82644a91329298f6c4ecfd4a74a9d1563daf0e9b0f596416090"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/docs__reference-code__download.md.own-delta.txt",
+    "sha256": "e7405175f5f70db15161e1e14032be43d369b819ad33a0aff69e7f6ec168cd84"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/downloads-related.log",
+    "sha256": "afdea1e44e66689023d9fb36534808c23416a76633ce311f20b62135c5ed2cd1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/final-artifact.txt",
+    "sha256": "f833b23bb076fb29c5ba5ba059f32e8e92e0dfa6bf042a6c9524925714162170"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/final-verification.json",
+    "sha256": "8c8ced41416443292500c09dcae08d305d596445e7871d489e216fdc8a6a8fa7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/focused-final.log",
+    "sha256": "12895f08fa2c8afb16c06b17270057f686ee02b3f0f5216eaa609b7a3c99f719"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/form-child-layers-green.log",
+    "sha256": "cc8499a3a51b8dc77034cb0e93ecea36ad58f096e3020fd9ac5b148add4bba7b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-archive-cli.py.log",
+    "sha256": "b81f461138af79acbac458619c2dd2fe0fd71c386c9512c2414048a6a758ce9d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-archive-phase-f-shell.py.log",
+    "sha256": "016e5ed278fd87802a06deb02f9ef194f8351f07952512c9b431651143e0147d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-archive-phase-f-spike.py.log",
+    "sha256": "729fe9263126157c727fd21623b44cbb5508b8268bdb63062a967978f8ba6ba4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-archive-release-chain.ps1.log",
+    "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-clipboard-ui-lifecycle.ps1.log",
+    "sha256": "df1a3dd5d487d372ad65757ba8ee1507d9b3e6e607c2cf0a765000d1bd9e01cb"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-gpui-component-catalog.py.log",
+    "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-quick-launch-lifecycle.ps1.log",
+    "sha256": "a3e0ad1d8b62a159013a21b87cb96633b74c8806669acf61063ac2ce4a0a4311"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/gate-spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/history-identity-protected.log",
+    "sha256": "5c14f6450a5dc2a3b2155ebccc4400dd8c648ee901bf88ec316e30bc73eb8747"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/item04-frozen.json",
+    "sha256": "5db5f699dd7e6a14e42a1f20f1b71abf410aa06fce7a13d8cd726598813ff791"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/last-boundaries.log",
+    "sha256": "3d4ca0c53c9d3bdd6d143124a6cc3a7e92f38ab0bdb30582e48989d7e895854a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/original-restored-probe-evidence.rs.txt",
+    "sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/own-deltas.json",
+    "sha256": "f6a8d678e638d21da6bf4c33f1261a4e2cc54e201ad25f844ec6fd9f0f7aed8c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/owner-invariants.json",
+    "sha256": "d282dbffe881b2fa87bc8feb399a59de4530db8ac7830e5e19a14bc290de83c0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/prompt-input-intent-actual.log",
+    "sha256": "86c3fb91a3a8ea902f0f529ef5fcaeb56eac2ba51b191a22879519523229aa04"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/prompt-input-intent-red.log",
+    "sha256": "e26e4b7f3be4ebbe825d8ebba08e5b9e9a052e42c7176ffb192854279b9b4d21"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/prompt-intent-artifact.txt",
+    "sha256": "5efa8010954d36e0dc54f5a94e34833f9a293316c7114fa5ead97cb828b80baa"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/protected-manifest.json",
+    "sha256": "1fa00db3738925f4822aea14adf06b381575528639d67bbf4040bf46cdf6be82"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/protected-regression-map.json",
+    "sha256": "8111fe8ee6e33ccaeddffab00ec4a7d97e70ed8a25882950b360b31ee179a90b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/restore-probe-check.json",
+    "sha256": "44c4ba72dbd822a6895a42d5fe5a28940c6ce104def8088eb8e9f151d0a39d03"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__forms.rs.baseline",
+    "sha256": "bb8e7eace6172caa29ef34eb98a602862be9bc8e393398689bca83fd9abd3f15"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__forms.rs.own-delta.json",
+    "sha256": "8d0c299526c99b2b6de1c2d8c9b86850ab7fc5cb8903ee44039dd22022057695"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__forms.rs.own-delta.txt",
+    "sha256": "25c19f5b2bc0a4118300930e30e81d9e82fdb6f28e3ed71f0940b57a1e40fed9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__forms_tests.rs.baseline",
+    "sha256": "e095a12211c2b6460e2f51f31f9a4e2801ed78b07b090e838ceb14c4a577505b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__forms_tests.rs.own-delta.json",
+    "sha256": "b7f22d409469da319a30bc418b9d749cbf205e7320a44797286e505ed0c77108"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__forms_tests.rs.own-delta.txt",
+    "sha256": "60ff08bca8b078027c4b44ebaee1cbcc53114d580be557f15cad139969113060"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline",
+    "sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.json",
+    "sha256": "d9ee3188ad53fec4131afad99d9e118cdcc75f5cd98bcc8f6de1d3436e9b75a9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__job_tests.rs.own-delta.txt",
+    "sha256": "a2ba8728f389d6d43266fd887198369df72eb9128b8ff8c5e202f9506b96c168"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.baseline",
+    "sha256": "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.json",
+    "sha256": "3a2814cd1865432975b6571f0849966685c56a1f65c71953f377d5b4231d1b2c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__archive__progress.rs.own-delta.txt",
+    "sha256": "f81bb15d52b3d2ae046d6d1df3f10b0faf0d53cb02f6cd927b2197e09423fd3b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.baseline",
+    "sha256": "a8b02fd12f4e0e24976f1e85f0135433924248dc578ba4b808c735767e7dd356"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.own-delta.json",
+    "sha256": "bd7292808a8d5c40c353f883e4fcfa7e9aa7898b4b9d084c328c394dbb0c5ac5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.own-delta.txt",
+    "sha256": "dcadd71d95548625b9adb45e4920321a8e0c1fa352fe5a4b880890c69662a50a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.baseline",
+    "sha256": "b4ccd3bbed18ea92660e647fd0dee50f6fc42f825d233e4eb4d391183f76731d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.own-delta.json",
+    "sha256": "3cd5790f5ec67eec34c6d6fe86f19a62c16b1674ef9f71d79ec1bd52eaa74fdb"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.own-delta.txt",
+    "sha256": "b42b5b706b56a0eb213de2253147926b5d26cc0b8315e36900c78d5d9b6cf216"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/scope-checks.json",
+    "sha256": "732e566b7edf6b1aa8a60c80e263e5e266056a56298f64356bfb2e18486d0fd2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/scoped-diff-final.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/scoped-fmt-final.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/sort-keyboard-protected.log",
+    "sha256": "02101328eb5f1181daef3b45bac905d90ea75f90233f81ba46c511d88c6549a8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/source-gates.json",
+    "sha256": "51ea8f748100b6645b76490c19e46cb7523a61804afc61c0ec0ccead7831b044"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/static-gates.json",
+    "sha256": "5bb289a91e75043a246f3f32c909196092fa1c7dd48fa9bf62f9cf99d769283c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/verify-final.ps1",
+    "sha256": "3d9c0a13075917ab1d1a1f62043d68d5612a72955cee0e2108161349f500a6da"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/workspace-check.log",
+    "sha256": "376121a8f44d55b20da33ae735077eb88e13f5097ddc7f3d4413c01b3844adbc"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/workspace-deltas.json",
+    "sha256": "2d6c810e65853acf6f2694c4665ec049c5dd041edf4d0ed95d904b2c6a8d88fc"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/workspace-fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/outcomes.md",
+    "sha256": "52b28c108cca187d614d8c149729677b26555f5e4644eced3e23a9380ddd05f8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/accessible_name.log",
+    "sha256": "79ca621c1896887f57c24f425bf2e47aa558b5b68ab473dc041f11e7d3aefef6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/archive.log",
+    "sha256": "86623cdf15377d53addc76f954263ab4afc6c42a3b9b7fc9f24e18420651c1f1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/audit05.log",
+    "sha256": "b2054a535a34938dbadc4b5be170fe92521cf90a7a0200a379a467bbb8330fb6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/checks.json",
+    "sha256": "86c0c689d95e0de64596d79e11446a39be58d8d679f9fe02eab044a7768c5ac7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/clippy.log",
+    "sha256": "8405509f761378fc7b72b2f8e5464e1da45c67d7b4cf3937aa1c1b934f62e182"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/downloads.log",
+    "sha256": "3e21b4df4eff6af82a7b204d8c25d858ea0a103503e85168a11d81da8433ae7e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/extra-gate.json",
+    "sha256": "ffdd7a54032fbb41507143177867e152e0e4fb4997b000f03169bbfb710cfe3a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-archive-cli.py.log",
+    "sha256": "b81f461138af79acbac458619c2dd2fe0fd71c386c9512c2414048a6a758ce9d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-archive-phase-f-shell.py.log",
+    "sha256": "016e5ed278fd87802a06deb02f9ef194f8351f07952512c9b431651143e0147d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-archive-phase-f-spike.py.log",
+    "sha256": "729fe9263126157c727fd21623b44cbb5508b8268bdb63062a967978f8ba6ba4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-archive-release-chain.ps1.log",
+    "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-clipboard-ui-lifecycle.ps1.log",
+    "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-gpui-component-catalog.py.log",
+    "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-quick-launch-lifecycle.ps1.log",
+    "sha256": "640081fa23d46ac065bad8d3e6833068d78fd2d40b508d21a0276adfd0bb4176"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gate-spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/gates.json",
+    "sha256": "c58602174d36f9f679ab0e1ce39376cb2f439e0405ce247134c8d75533482d4a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/history_identity.log",
+    "sha256": "364db99bd7af418e20704e27e9b468775574870d5544ec37a8f81fe7816c4c50"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/integrity-result.json",
+    "sha256": "4840dd952b0ee37585d69ca230425b4699d59cec8207b0886479a63853c823d8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/integrity.py",
+    "sha256": "53e0e763eaad18c8e9e27b2a1e06bbebf3ffce85fe34d6853c3400abb1ac3f14"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/parent-evidence-manifest.json",
+    "sha256": "46c2ae7feb0e54822974869300544befa03e615f5f039ff955a5d001350e89ac"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/sort_keyboard.log",
+    "sha256": "b2c3437ad5129be78a65fc633d2234d025c03e8026c8c8bc0a6750ca5f627760"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/tests.json",
+    "sha256": "903e14c64dc25a70427ece52d0b09aef05229cbd7a2eb587821473d78b30c30f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-evidence/workspace-check.log",
+    "sha256": "30533c0dfaf82cc3730c939cec815c5bbf429a44f96b0babffeb3dbd5389cb23"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-review.md",
+    "sha256": "824b212f931492fdb90b2d98aac2f6b17d064f304ccd45e0e37228108afd2891"
+  },
+  {
+    "path": ".trellis/tasks/10-25-default-submit-keyboard/prd.md",
+    "sha256": "21db1e7f2a4c1398c3b43af237df89d885688315cd22d59d9e9b1bcabac9045a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/accessible-names-protected.log",
+    "sha256": "ad18215d0c2c2644012ff262194b86608a7f10f8a9e9b308492ad0f76ab182d3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baseline-manifest.json",
+    "sha256": "364a4974986dff458c282533a98efd5484e1a339856e1038c38ea3a25b4d679a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/docs__reference-code__download.md.baseline",
+    "sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/docs__reference-code__gpui-kit-080.md.baseline",
+    "sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.baseline",
+    "sha256": "867f91ed203f5ed55f88ed0b29a6d9f6541411e5e39d945fc06ee08b0220d734"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.baseline",
+    "sha256": "9ff0ef94d2e1739132488dbfab8e37c8f610553867f51771633c74b771f0f45e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/rust__apps__nxtools-desktop__src__main_window__download_page.rs.baseline",
+    "sha256": "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.baseline",
+    "sha256": "d11a415c105b5858cafd3a64a21111b67b3554c7f5e6589d261c998a4ab2bddf"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/rust__apps__nxtools-desktop__src__ui__metrics.rs.baseline",
+    "sha256": "352f74abed01b155e23df2ebbcf2a09d96b39a201137693744ddd8415b1acb40"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/baselines/rust__apps__nxtools-desktop__src__ui__typography.rs.baseline",
+    "sha256": "a23ca9f2c045cc8d6b2b58661ed28ee0dcd54889871c9b8f806fc71cb4fdee1e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/capture-baseline.py",
+    "sha256": "39ba28f701b18bff997f7890078b05b0e512686ded814e4b8537d9c4b65c9496"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/captured-sources.json",
+    "sha256": "f7bc252e85cfe7266d75208de713cc9f8d14af5c95df45db93b414077024e1fe"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/docs__reference-code__download.md.current",
+    "sha256": "135970f15de5e95754e9873ffb294b156068a2dc4267339950bf628671a558ca"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/docs__reference-code__gpui-kit-080.md.current",
+    "sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.current",
+    "sha256": "272bc26198986a050f53588c82cc8859a3e514cb286691cd541865054d4c4062"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.current",
+    "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/rust__apps__nxtools-desktop__src__main_window__download_page.rs.current",
+    "sha256": "b797e668770db50515049007c5070edb2ab9d46955b34936cf5d7bbf9f4c9191"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.current",
+    "sha256": "d443ed923241e37c5670a680473a9c1a9982c59f75eccaeeb1232ab4c5cdfe4a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/rust__apps__nxtools-desktop__src__ui__metrics.rs.current",
+    "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/current/rust__apps__nxtools-desktop__src__ui__typography.rs.current",
+    "sha256": "a23ca9f2c045cc8d6b2b58661ed28ee0dcd54889871c9b8f806fc71cb4fdee1e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/default-submit-protected.log",
+    "sha256": "646cdc7f085666508e7d6849be35c1afa33b5d807d063402c8a7798dcb076fbf"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/delivery-manifest.json",
+    "sha256": "0bb653bc732a72047a8227ad9e9c48b3316c198ee7789abf0dfc18ce94f5fb4f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.json",
+    "sha256": "6e1ae5410f08807253d54b49fa21e6af32de4b3a30f605f2632289b07ccd4888"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+    "sha256": "7753e62dcaa29bb39f7ea683db082ceb6cc97485e48220b24d486cc7551d8c48"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-strict-clippy-final.log",
+    "sha256": "8bd6f749f3fc51fe7ee91dbdcf95dd33bbd70d8851808524107127df2a6ca020"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-strict-clippy.log",
+    "sha256": "2b94346b3f56ac08b739cfa34bea36d279134f05df69296b0cd38a96f59c7f5a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/docs__reference-code__download.md.own-delta.txt",
+    "sha256": "45800b880200dc0f39c83afeb09ccb1080cdcf7ed940b9f0ef2018738b22b06f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/download-page-related.log",
+    "sha256": "a6c2a5d11d8c579cf26686c3854107b1815c536b9c5f688168fb10d087d4eed2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/downloads-related.log",
+    "sha256": "b66fc4fd9cfcd36e8bdff3eb1f7c1819916f03cb2be4bbf20031251cb1635264"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/final-verification.json",
+    "sha256": "5ddda91773761afdd55240b02389695141b6d92c0156ecd635a0bac1bcfaec31"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/focused-final.log",
+    "sha256": "186ef1f018f8ef085f763837250f6e77a0500234ec00e0087643badd375f4dcc"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/focused-six-final.log",
+    "sha256": "ba4d9c9676f4fdb641a799ccd65f888a5da7087b2343765ecfb64ecdc0f419b8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/focused-verification.json",
+    "sha256": "8cb419444f80284aba332b96628528d926c0d8ea5d5fa10f364475acd99e7943"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/format-applied.json",
+    "sha256": "62a0d3a58a42bf1707a6ea087447575ba5e5cbdb9696e01dc225a0bbd42fb634"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/format-preview.json",
+    "sha256": "f65cdf680a92c7230768a33e481a201c1c15aa8cec6d4dfed54957353136d0d3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/frozen-history.json",
+    "sha256": "fc75e7df3cf33659de6065a1b4700009e9e125c47a48338f90b60b6f8ee64c96"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/full-coverage.json",
+    "sha256": "30dff652c075adde78b7db6e5d56ad755aa557b004b35184402c40d62e04cda6"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-archive-release-chain.ps1.log",
+    "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-clipboard-lifecycle.ps1.log",
+    "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-clipboard-ui-lifecycle.ps1.log",
+    "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-gpui-component-catalog.py.log",
+    "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-quick-launch-lifecycle.ps1.log",
+    "sha256": "313f71c267288ef4b87300b4af0e928f12fc706d71d274f1bfb76f1218933c74"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-ui-consistency.ps1.log",
+    "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-ui-preview-isolation.ps1.log",
+    "sha256": "8e75d9bb98cb0f07aa010802a3d12fb94908c4d7434341967c2f796409fedb0a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-ui-state-lifecycle.ps1.log",
+    "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/gate-ui-token-boundaries.ps1.log",
+    "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/history-identity-protected.log",
+    "sha256": "c07196091903966f694f286c5329df86a0c7c162b46c4a3092d3418231df6567"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/initial-download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/initial-ui-consistency.ps1.log",
+    "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/initial-ui-token-boundaries.ps1.log",
+    "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/inspect-own-delta.py",
+    "sha256": "3f2b13163cf38e11b322f8f47eb5ed0434fe028801147e538a1197fa17a3b4de"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/main-window-related.log",
+    "sha256": "3bfaa6eac4846c2d2ba00d0cddef2d5c2cffd78c93a5207f5249076437e7115c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/own-deltas.json",
+    "sha256": "bce01154fec5970e8464b41f51e7deddd6c61cd8ad705c6dbbb74f14ad5efc17"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/owner-invariants.json",
+    "sha256": "a480f33da39b17c8b926d37d14fd9d711d54839634353728640ef0ff4b92f22b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/preview-format.py",
+    "sha256": "11da28d750be6329e354a0abc6633e174a3656e1e184ca0a405a0126c1a03e9e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/prompt-display-protected.log",
+    "sha256": "ae2531fc06bbf6fd8119394250b90aa8f1d73d35bf38244dca39430fae258679"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/protected-baseline.json",
+    "sha256": "f592e077cf9b2c9ca468d2188aea77c0d4daa019bf61e74709091def0382cda7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/publish-evidence.py",
+    "sha256": "24273342bfe698396eb35e2c34fb0447964f9c95a200e7393ae904d0b62b7bac"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/reference-and-failure-sources.json",
+    "sha256": "67546b22a4bc9bc8347abd3a22fec431a9ea9dd86d0c6e9b8d1be4cca1cd1ef3"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/remaining-verification.json",
+    "sha256": "e9d6c6de88d2912b07afbd66059d1fabc16bb74f6c77aa16a9c9b49ade2cf717"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rows-green.log",
+    "sha256": "3130cb90476a46d679b83cd19291f6720e40e31959ac85a12ad920e13bac4cb4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rows-red-2.log",
+    "sha256": "1e7d38286bed9b5d7b5b7df900d2973e4eec814e54fbbe00e14c76d27a3ca7b0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rows-red-resumed.log",
+    "sha256": "c186c7356dbc3ef6dac5210818670f8ee8b7d0833f231cc5f45f16f2d2c663b2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rows-red.log",
+    "sha256": "8a9410a122d043295cc96f6a41c17918adc0b6bc583d0e1b7dbea6278e2fac54"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.own-delta.txt",
+    "sha256": "b121456d93b1f66eafed3c6ff4b85f7bfd63a46e6d632e665c89961a360d7b51"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.own-delta.txt",
+    "sha256": "dd6c96d0d36cfb6ea5a0609215a231d33db09c20efe5613150928160c167aa45"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rust__apps__nxtools-desktop__src__main_window__download_page.rs.own-delta.txt",
+    "sha256": "4fda4958e6348158b7665ed369f4051ee0a5722a8a1b57151d3c42e58027f1ec"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.own-delta.txt",
+    "sha256": "cb3b453b133b3f934cd1627186cab29fa5bc13e7d40401e7dd6d0f9122a00b86"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/rust__apps__nxtools-desktop__src__ui__metrics.rs.own-delta.txt",
+    "sha256": "c3a5269a94a2a9bf8092728e9697d74835a5a1e13b61112c79efa9b9a9723b20"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-final-green.log",
+    "sha256": "a8869ad12116c8ffec2b951c04c3be205adf631159c173900002350bd94b0873"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-green-1.log",
+    "sha256": "a0f5ad334daddcd53f532aa062ed52a5237f645c0d702305d76ad4f5601b0a26"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-green-2.log",
+    "sha256": "ad6cb1291df49380fa931271580401e300de312a71a57f6c2ffe3941c7aca860"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-red.log",
+    "sha256": "51390d0ff7499ca653d76e74ddb09ed92fa96ba1a3b7b85e7f1cf8b72b2f610d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-scroll-green.log",
+    "sha256": "ce722e126553da3e65e81984e94f8ae49cba621d40b2115ffafee9b9b03f19aa"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-scroll-red-2.log",
+    "sha256": "f812c85638257299acd54689cd26e68b718bde3581911a23a23fc6df2566e67f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/schedule-scroll-red.log",
+    "sha256": "2e9d0aca3101de3dd7ec5e14c094317a81522c551d8e565919424ecb55b65cc4"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/scoped-diff-final.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/sort-keyboard-protected.log",
+    "sha256": "b14cae03404fc1a1df2721c39b74ae625c9aa94abdf897f6968bd90410c4391d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/source-gates.json",
+    "sha256": "778a4c23cbb0859d130ea3d17bb1b2ff875f22afa23ad45c7ac91ddd9cfe627e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/spec-final.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/verify-final.ps1",
+    "sha256": "a644756049230e48aba624817332fdc3e708a42fdeb7869a81d479da156ffcf9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/verify-focused.ps1",
+    "sha256": "3a7b5979cef3030ccfdf3706795573ebc3606e4b1d05709767b0c04428ce9386"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/verify-remaining.ps1",
+    "sha256": "a14165e719847de2f3da7c2d0d8eddbff1b08f31d10fc5afd78fb7af5c983f68"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/verify_evidence.py",
+    "sha256": "59aaeef61b183c93b2254d863247f015d5ba993f859ec0c7464eb29bd1a29d94"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/workspace-check-final.log",
+    "sha256": "5d0702b129ef466cc75841ec91959dda4d8f15f6e8c4352ddfb2916c5bdb3d5c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/workspace-check.log",
+    "sha256": "a6f68b52eceed0d6cb303a7bc0f3aa36b77d8069402a403539c33c2cb3ee7370"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/workspace-fmt-corrected.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/workspace-fmt-final.log",
+    "sha256": "96a8e34dd3ac89958c08fdf3c24defccb60c7b0480df23a760ce1eff6b53cc98"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/workspace-fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/zoom-extended.log",
+    "sha256": "37ac1fd4a7e86c5184fcf1985f0cddf128a147b12cd2fd8c5e8bf4008e6f66e9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/zoom-keyboard.log",
+    "sha256": "41d4142a0f915b775e7490d70c7c5617ee8a39b67d60da833a01d11c6210c6a8"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/outcomes.md",
+    "sha256": "24148126c89e10edaa110fe91b895e58874bfbcf627c60356377c38b9848ad20"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/accessible_name.log",
+    "sha256": "06df8d86a677ccc85e0f9a30a3f36a2749ee7f4ec6d658e95ea6d63556058aee"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/archive_settings_official_search_never_saves.log",
+    "sha256": "b619822113df5845803242c7dfc58e0a0b11f9e817d4af929ddd8525d828da97"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/audit04.log",
+    "sha256": "0e773e76514cb97384a8a94dc34a5db06e27002bc9e2e2a5b17bfc8e3e17032d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/audit05.log",
+    "sha256": "dcdc72e2774a07b6ba9b70c89c752ae85ddba80d18b965d1426a3be2a50719ce"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/audit06.log",
+    "sha256": "06c87d94004b7b0f6612a505db10b11248e948ed2c5a18e3f85359c5c3a26170"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/bounded-failures.json",
+    "sha256": "8f48a9c525cdcdb8a6d733862bbbe45f8dd92387a02caf7c37eb27022ba3cf37"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/checks.json",
+    "sha256": "a03041e34bcacfef3902a9cc7960c5d1069b9ba103478e48a67a7b6af0d0b043"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/clippy.log",
+    "sha256": "4b547d1c8b6261138df6205b24c56cd29558c98992d5c14cefaac130676c9b18"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/downloads.log",
+    "sha256": "478abaf50efa2e10c3b919ff525efd01ae70b94174dd930743b5591f3c714701"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/extra-gate.json",
+    "sha256": "7b8454f2f68c59f4fca248477884bc605698dff5b3c51cbe2106732efa4f9c5d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/fmt.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-archive-release-chain.ps1.log",
+    "sha256": "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-clipboard-lifecycle.ps1.log",
+    "sha256": "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-clipboard-ui-lifecycle.ps1.log",
+    "sha256": "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-download-ui-lifecycle.ps1.log",
+    "sha256": "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-gpui-component-catalog.py.log",
+    "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-gpui-release-contracts.py.log",
+    "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-markdown-editor-contracts.py.log",
+    "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-quick-launch-lifecycle.ps1.log",
+    "sha256": "3ec09873a30631bdcbcb80241a0501e8f4d9ccf8c68300a4c667d2522772ce4a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-spec-contracts.py.log",
+    "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-ui-consistency.ps1.log",
+    "sha256": "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-ui-preview-isolation.ps1.log",
+    "sha256": "8e75d9bb98cb0f07aa010802a3d12fb94908c4d7434341967c2f796409fedb0a"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-ui-state-lifecycle.ps1.log",
+    "sha256": "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gate-ui-token-boundaries.ps1.log",
+    "sha256": "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/gates.json",
+    "sha256": "00c943e3911e87401be7e062327d1579ebca79b3370b0d025ccddce65e37560e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/history_identity.log",
+    "sha256": "ab295f66ca637a9c891b7d2e5bbd84949e764b49a670b52315656d5b52ecdefb"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/integrity-result.json",
+    "sha256": "7f2d261f79c4572f1617d23f7f4247f5f0d86bfcc50467eb811bc8f7ed1894a2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/integrity.log",
+    "sha256": "ebb3084e57ef52e765500c77dc9c576961af1698f7d80b7b9c3339f3a0846b47"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/integrity.py",
+    "sha256": "6d1a68d5a28f3fd805f51538b035a048c4bae3bcd76a9a7202b78417c4777df7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/item06-parent-prereview.md",
+    "sha256": "0a7821b81486eb25480d4fafe32a3e69b289f40048222ed70922a0bec3a962fd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/main_windowdownload_page.log",
+    "sha256": "bfa2e50430f00d2f5aea8bd85e3385a60749bbc334b9607b0f3ae9ece12dbbc9"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/manifest.json",
+    "sha256": "91af0f3f9474a34d25b7507b691ee9848bd4afc1b74d104f034d196c4ac2f2b2"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/protected-coverage.json",
+    "sha256": "828a66d48795f83635a78ecce7fed78cf2bed27c2eb46c9138f99f1b02f4202c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/sort_keyboard.log",
+    "sha256": "7dc44e31190be74370e123c06716146f19f610680a1682e2011c52141fd5849e"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/test-results.json",
+    "sha256": "d92c7f14e304c7fd2aa0e707a09a26be9da8fa2ef4c037295d7966f385510367"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/w6_manager_pointer_preview_confirm_and_toggle_commit_real_config.log",
+    "sha256": "9face7cb79cd5a577c1de3e361cb87458ed28fcc9fbf24cab74f646e4250f6f0"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-evidence/workspace-check.log",
+    "sha256": "28eef548314e2d45c6b36cb109f9fbe27adbf1221d970dffa8ddf4e80f1a4d3f"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/parent-review.md",
+    "sha256": "ae46b19eb442394a0939abbfeafd5ef44af32a8349a29a2d028943b5b8f37f4c"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/prd.md",
+    "sha256": "d4fe3ec2b2caac9715979c5a6de935a9772f6837097416492cff98a1a4cab6f2"
+  }
+]

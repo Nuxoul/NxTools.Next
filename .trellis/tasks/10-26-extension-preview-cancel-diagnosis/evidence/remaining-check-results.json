@@ -1,0 +1,14 @@
+﻿[
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\workspace-check.log"
+    },
+    {
+        "name":  "scoped-format",
+        "command":  "rustfmt --edition 2024 --config skip_children=true --check rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\scoped-format.log"
+    }
+]

@@ -1,0 +1,55 @@
+{
+  "scope": "2026-10-28 local-source review; no build or behavior tests",
+  "root": "D:\\Code\\archive-edit-references",
+  "repositories": [
+    {"name":"bit7z","commit":"a9e4c8a54b67672a89b8a934868abef87a880317","clean":true,"files":[
+      {"path":"src/bitarchiveeditor.cpp","sha256":"e1ee7d67d20deaa046979ff2b73fa660cd2af7a99db83c71e696e0980e8a1022","bytes":12256},
+      {"path":"src/bitoutputarchive.cpp","sha256":"d1c1f809f50a47da3f137027566d7389b99526c676196f60831067483f8f7d1d","bytes":17707},
+      {"path":"src/internal/atomicfilereplacer.cpp","sha256":"d2c813845d20f714d9197b3e599a74d5178be622fc5d5cfb2763c989458e3d05","bytes":3660},
+      {"path":"src/internal/updatecallback.cpp","sha256":"aaa2c31cad4d36091aa24caf0d2f0b5aee03129fa721b3b673b283a758457703","bytes":4942},
+      {"path":"tests/src/test_bitarchiveeditor.cpp","sha256":"0b6b18346c9aefafe274bd97616253e7e06e950c65852e3038566ad97aba73ed","bytes":41992},
+      {"path":"LICENSE","sha256":"66a3107d5ad6a058aab753eaac2047ccb2ed0e39465dd0fe5844da3e300d5172","bytes":16727}
+    ]},
+    {"name":"7zip","commit":"b88c6bc09339de32f7d18bbab900686b244f42ba","clean":true,"files":[
+      {"path":"CPP/7zip/UI/Common/Update.cpp","sha256":"8efad6b55be29458c5849e544b7cf808abddb96194ca3742b9e2f9fa153e03a8","bytes":50679},
+      {"path":"CPP/7zip/Archive/7z/7zUpdate.cpp","sha256":"d8c7a91e9841fd7abbe17e2735398ce8c5a60e4807d63ec5eb313dfc0cb4daab","bytes":81904},
+      {"path":"CPP/7zip/Archive/7z/7zOut.cpp","sha256":"5c4b214737efc80a0615ddc1072d118593539bfd38b287dc9e9b2895b4d13c2c","bytes":26531},
+      {"path":"CPP/7zip/Archive/7z/7zIn.cpp","sha256":"8120be5248c001ff799c724b4daf4f1dc22aa4768fe01b355bd9269ff6cb87f8","bytes":45117},
+      {"path":"DOC/License.txt","sha256":"dac8389b6bc39339537bc351772106afe7951cb242cdf03e855b67c3a683deb1","bytes":6190}
+    ]},
+    {"name":"NanaZip","commit":"555a3ff0f0e6c754dbf93c528253afeb0444e9e1","clean":true,"files":[
+      {"path":"NanaZip.UI.Classic/SevenZip/CPP/7zip/UI/Agent/AgentOut.cpp","sha256":"c5ca505ff110664441e686e96dcd0c1691fafa66202427560768122d9a18f7a7","bytes":21792},
+      {"path":"NanaZip.UI.Classic/SevenZip/CPP/Windows/FileDir.cpp","sha256":"937bac3d746f4d9834d1990a5e02d27b059d6c40e65c9c2e87e84036d784b33f","bytes":26925},
+      {"path":"NanaZip.Core/SevenZip/CPP/7zip/Archive/7z/7zIn.cpp","sha256":"94a33fa9967c8fef98055998b88ece5565d87c9e90c2cff9ebf1c1d6119021fc","bytes":46935},
+      {"path":"License.md","sha256":"11226d29ae0a7b7df3417f957fe8e4a4bafc5635d3c9ce9e9437776516512782","bytes":27846}
+    ]},
+    {"name":"ark","commit":"f7ea89e828925244d0a6b76cbfb4ac5b9fafe2e5","clean":true,"files":[
+      {"path":"plugins/libarchive/readwritelibarchiveplugin.cpp","sha256":"16d219ac0955db5712aad8d7c25c8108cf5509062417b16407b7727cd1447b5c","bytes":22946},
+      {"path":"plugins/libarchive/readwritelibarchiveplugin.h","sha256":"d25938ec0e02bae42762fa59d47f1694666fd60047fed05e853f7f4cd35cb1a5","bytes":2849},
+      {"path":"plugins/libarchive/libarchiveplugin.cpp","sha256":"4c5c6fa9d7c282d392ece03b741bb899099fa4e00175e3079e1c033aa0f5fd0f","bytes":30398},
+      {"path":"kerfuffle/jobs.cpp","sha256":"7fa8b935882f344f170ee5fc7f8db81b1e52f363235721c16ab5a6cdb483d38a","bytes":28757},
+      {"path":"plugins/cli7zplugin/cliplugin.cpp","sha256":"0ee3b721b96b661e943c8ef4ba36e78ea08cbe70c86c0d745f397856ae19b946","bytes":16264}
+    ]},
+    {"name":"PeaZip","commit":"a6259b90031827887bae6a041db1f1c1787c6825","clean":true,"files":[
+      {"path":"peazip-sources/dev/peach.pas","sha256":"deef5b0ecc65839dea4c2b032a4050caa5ebcdbd51fd5602f571905f878e3560","bytes":2950677},
+      {"path":"peazip-sources/dev/unitgwrap.pas","sha256":"13a7b2513ceafae200a7598a35226165b7d9acf6338db3ba34628ce2da4b9b4f","bytes":110045},
+      {"path":"LICENSE","sha256":"a853c2ffec17057872340eee242ae4d96cbf2b520ae27d903e1b2fef1a5f9d1c","bytes":7639}
+    ]}
+  ],
+  "hz4_locked_rust_source_inspection": {
+    "crate":"sevenz-rust2", "version":"0.23.0", "mode":"read-only registry source; no dependency/vendor patch",
+    "files":[
+      {"path":"src/reader.rs","sha256":"e9b49c2f18139372545c9910c00d373f5ab059cfcc34b17d10944884c6597767","bytes":70928},
+      {"path":"src/writer.rs","sha256":"b39cb45413dc4474e06771db9eeb733967ba6d4c62dc0a8935f9473a7e58e344","bytes":28686},
+      {"path":"src/writer/pack_info.rs","sha256":"392541baf43d0f535a7e2a52ca3b01ced32f186cca5365f0dfab2e8dcf0c71cf","bytes":1580},
+      {"path":"src/writer/unpack_info.rs","sha256":"7964effb90b595eae0b04eaf867e70c9316d800a4beae578e5d9301e21cb99cc","bytes":5674}
+    ]
+  },
+  "hz4_secondary_reader_reference": {
+    "url":"https://raw.githubusercontent.com/libarchive/libarchive/v3.7.7/libarchive/archive_read_support_format_7zip.c",
+    "sha256":"8c9ca81fbcd15cd12b2e9701b232fc810e00fe83f49ff0de2556948f5d6a2821", "bytes":107781,
+    "lines":"2698-2724", "mode":"read-only upstream reference, not Microsoft executable source provenance",
+    "executable_witness":"canonical partial 0/1; swapped bitmap/external 2/0; all-defined diagnostic-only 0/0",
+    "decision":".trellis/tasks/10-16-archive-manager/hz4-7z02-reader-decision.md"
+  }
+}

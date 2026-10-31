@@ -1,0 +1,10 @@
+--- task-start
++++ independent-observed
+@@ -399,6 +399,7 @@
+         {
+             settings.push(self.settings_form(&package, busy, cx));
+         }
++        settings.push(self.storage_entry_group(&package, cx));
+         let header = gpui_kit::component::toolbar::Toolbar::new("extension-detail-header")
+             .with_size(gpui_kit::component::Size::Medium)
+             .h_auto()

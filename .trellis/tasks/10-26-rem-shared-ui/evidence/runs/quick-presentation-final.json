@@ -1,0 +1,7 @@
+﻿{
+    "name":  "quick-presentation-final",
+    "command":  "cargo test -p nxtools-desktop quick_launch::polish_tests:: -- --test-threads=1",
+    "exit":  0,
+    "elapsed":  2.3096738,
+    "finished":  "2026-10-26T07:14:18.9988204+08:00"
+}

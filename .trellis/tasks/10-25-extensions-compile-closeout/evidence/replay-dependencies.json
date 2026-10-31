@@ -1,0 +1,14 @@
+﻿[
+    {
+        "path":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libnxtools_extensions-86bfb42afd2faaec.rlib",
+        "sha256":  "0d8e3fa5ddba34f788ebfebd27ca3325aaae8cbb4710f678e13f884a33443c49"
+    },
+    {
+        "path":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libuuid-5f5052baab46b057.rlib",
+        "sha256":  "a32084c4fcbb39ab3f07bd36aee1cdcd40de405531e7f5e755e50b78da8ccd3e"
+    },
+    {
+        "path":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\libchrono-b467f2b686e7e6f8.rlib",
+        "sha256":  "9226d1f7da5267b74a722dffda23b0c53136e64f15e730a75d68ec126c2398e9"
+    }
+]

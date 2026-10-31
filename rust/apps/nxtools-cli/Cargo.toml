@@ -6,8 +6,13 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+async-channel.workspace = true
 nxtools-download = { path = "../../crates/nxtools-download" }
 nxtools-download-ipc = { path = "../../crates/nxtools-download-ipc" }
+nxtools-archive = { path = "../../crates/nxtools-archive" }
+nxtools-ipc = { path = "../../crates/nxtools-ipc" }
+nxtools-protocol = { path = "../../crates/nxtools-protocol" }
+tokio = { workspace = true, features = ["signal"] }
 serde.workspace = true
 serde_json.workspace = true
 url.workspace = true
@@ -15,7 +20,6 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile = "3.20.0"
-nxtools-ipc = { path = "../../crates/nxtools-ipc" }
 
 [lints]
 workspace = true

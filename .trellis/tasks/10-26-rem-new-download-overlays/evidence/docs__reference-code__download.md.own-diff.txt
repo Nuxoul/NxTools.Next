@@ -1,0 +1,52 @@
+--- live dirty baseline/docs/reference-code/download.md
++++ own final/docs/reference-code/download.md
+@@ -3022,3 +3022,49 @@
+ do not establish physical/native/IME/reader/visual/user or installed-release acceptance.
+ The earlier compile-only checkpoints and full Desktop failure remain immutable history;
+ this bounded slice does not close original audit#6 or authorize a full Desktop/package run.
++
++## Audit #6 Queue05: New Download overlays and media rem roles (2026-10-26)
++
++ABDM first recheck: CategorySelect.kt::CategorySelect/RenderCategory keeps one bounded
++dropdown,original close/selection and an intrinsic icon/name row; AddDownloadPage.kt keeps
++the category/location/name column beside intrinsic metadata and the original footer. Legacy
++AddDownloadWindow.axaml232–387 retains bounded HLS resource lists and complete metadata in
++Tooltip,original commands and ScrollViewer. Its constructor/Attach/OnOpened/RequestClose/
++OnClosed cleanup and WindowAnimationService guarded delayed Close remain the lifecycle
++reference. Neither managed source establishes its unavailable framework-native show/close.
++
++The current bounded slice retains official0.8.0 Popover,ListItem,Input,Small Select,compact
++ghost date Button and RadioGroup/Radio with original callbacks/owners. Category34px two-line
++roles12/18+11/16 and search gap now follow ordinary_rem; fixed320x240 minus actual released
++Popover/ListItem rem padding determines content width. Existing search/highlight/ScrollHandle/
++Enter confirmation/focus-return and full name+path Tooltip remain. Schedule304x200 retains
++the same calendar scrollowner,up to124px; rem-relative header/date/type and66px time rails
++yield within that budget to nonshrinking original actions. Seven ideal40px date columns may
++shrink within available width; default16 remains40x19. Confirmation,clear and overlay cancel
++remain local/deferred,never outer submit. No Calendar/Select controller was replaced.
++
++Media inspector and ordinary HLS/DASH headings,gaps and minimum40px Radio rows follow rem.
++Long Chinese track metadata wraps inside the original official Radio content instead of
++being permanently single-line clipped. Native budgets are still compact176,ordinary246,
++media base278,HLS one/many338/418,DASH353/433 and original38px error reserve. List viewports
++remain at most120px. Exact released scroll/scrollable.rs::render/root_style_from retains a
++caller's max_size on content while copying it to the outer wrapper; using that cap directly
++on a long RadioGroup can leave the actual wheel range unusable. Public Scrollable::id is
++required when the same callsite creates two independent scrollables. One stateless
++NewDownloadMediaViewport resolves ordinary natural height at the existing Window/rem boundary,
++caps its outer layout before parent flow,and hosts the original Scrollable with a stable
++per-list ID. No new state/ScrollHandle/scroll controller or vendor patch. Original RadioGroup
++gap remains released12px/rem; required HLS/video and nullable repeat-to-clear DASH audio
++callbacks/typed request owners are unchanged.
++
++Production Root16/14/18 tests prove actual category wheel-to-last/full-path Tooltip/search/
++Enter,calendar wheel-to-last-date and pointer selection,real Tab to original actions,time
++Select confirmation,Enter confirm/Space clear/Escape cancel and child-no-outer-submit.
++Long HLS/DASH metadata scrolls to its true end and pointer selects the original final item;
++after real Input focus,Tab reaches the selected audio Radio and Space release clears once.
++The original media error geometry remains visible at456px after a red-capable regression
++caught an intermediate oversized parent flow. No prior geometry assertion was weakened.
++Source/compiled fixtures are not physical keyboard,WindowsIME,DPI/reader/visual/user/release
++acceptance. Exact reds,intermediate failures,dirty deltas and protection evidence live in
++`.trellis/tasks/10-26-rem-new-download-overlays/`; Queue04 and earlier full-suite failure
++remain immutable. Original audit#6 overall remains open for later ordinary-role consumers.

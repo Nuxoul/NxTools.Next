@@ -28,14 +28,21 @@ pub(crate) fn selected<'a>(
         return Err(ArchiveError::SourceChanged);
     }
     if entry.kind() != EntryKind::File
-        || entry
-            .warnings()
-            .iter()
-            .any(|warning| *warning != crate::EntryWarning::UncertainEncoding)
+        || entry.warnings().iter().any(|warning| {
+            !matches!(
+                warning,
+                crate::EntryWarning::UncertainEncoding | crate::EntryWarning::OutputCollision
+            )
+        })
     {
         return Err(ArchiveError::UnsupportedOperation);
     }
-    if entry.size().is_some_and(|size| size > 512 << 20) {
+    entry.metadata.validate()?;
+    crate::path_policy::validate_relative(&entry.display_path.replace('\\', "/"))?;
+    if entry
+        .size()
+        .is_some_and(|size| size > request.limits.max_entry_bytes)
+    {
         return Err(ArchiveError::ResourceLimit);
     }
     Ok(Some(entry))
@@ -54,6 +61,7 @@ pub(crate) fn decode_limits(request: &WorkerRequest) -> crate::ResourceLimits {
     limits
 }
 
+#[cfg(feature = "isolated-codecs")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bind<W: Write>(
     request: &WorkerRequest,
@@ -67,7 +75,28 @@ pub(crate) fn bind<W: Write>(
     control: &OperationControl,
     replies: ReplyPort,
 ) -> Result<()> {
+    bind_with_edit(
+        request, snapshot, format, comment, digest, size, modified, output, control, replies, None,
+        None,
+    )
+}
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn bind_with_edit<W: Write>(
+    request: &WorkerRequest,
+    snapshot: Uuid,
+    format: &str,
+    comment: &str,
+    digest: [u8; 32],
+    size: u64,
+    modified: std::time::SystemTime,
+    output: &mut W,
+    control: &OperationControl,
+    replies: ReplyPort,
+    sevenz_edit: Option<nxtools_protocol::archive_browser::SevenzEditEligibility>,
+    tar_edit: Option<nxtools_protocol::archive_browser::TarEditEligibility>,
+) -> Result<()> {
     if !(request.browser_entry.is_some()
+        || request.browser_authorize.is_some()
         || request
             .job_extract
             .as_ref()
@@ -104,6 +133,12 @@ pub(crate) fn bind<W: Write>(
         }
         return Ok(());
     }
+    if let Some(expected) = &request.browser_authorize {
+        if source != expected.source || format != expected.format {
+            return Err(ArchiveError::SourceChanged);
+        }
+        return Ok(());
+    }
     if let Some(selection) = &request.browser_entry {
         if source != selection.expected.source || format != selection.expected.format {
             return Err(ArchiveError::SourceChanged);
@@ -120,6 +155,8 @@ pub(crate) fn bind<W: Write>(
             format: format.into(),
             comment: comment[..end].into(),
             source,
+            sevenz_edit,
+            tar_edit,
         });
         write_frame(output, &frame).map_err(|_| ArchiveError::IoFailure)?;
     }
@@ -147,8 +184,8 @@ mod tests {
         let mut request = WorkerRequest::open(Uuid::new_v4(), path.to_string_lossy().into_owned());
         request.version = 2;
         request.operation = "extract".into();
-        request.limits.max_entry_bytes = 512 << 20;
-        request.limits.max_output_bytes = 512 << 20;
+        request.limits.max_entry_bytes = crate::ResourceLimits::default().max_entry_bytes;
+        request.limits.max_output_bytes = crate::ResourceLimits::default().max_output_bytes;
         request.limits.max_entries = 100_000;
         request.limits.max_metadata_bytes = 128 << 20;
         request.browser_entry = Some(BrowserEntry {
@@ -163,11 +200,23 @@ mod tests {
                     size: 0,
                     modified_unix_ns: 0,
                 },
+                sevenz_edit: None,
+                tar_edit: None,
             },
         });
         assert!(selected(&request, snapshot.entries()).is_ok());
         request.password_interaction = Some(true);
         assert!(request.validate().is_ok());
+        // Admission-only metadata regression; payload extraction/CRC stays in the real worker fixtures.
+        let mut large = snapshot.entries().to_vec();
+        large[encrypted.id().ordinal as usize].size = Some((1u64 << 33) + 17);
+        assert!(selected(&request, &large).is_ok());
+        request.limits.max_entry_bytes = 512 << 20;
+        assert!(matches!(
+            selected(&request, &large),
+            Err(ArchiveError::ResourceLimit)
+        ));
+        request.limits.max_entry_bytes = crate::ResourceLimits::default().max_entry_bytes;
         request.password = Some("must-not-be-in-browser-start".into());
         assert!(request.validate().is_err());
     }

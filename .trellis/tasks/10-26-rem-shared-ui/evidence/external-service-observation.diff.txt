@@ -1,0 +1,10 @@
+--- task-start
++++ independent-current
+@@ -521,3 +521,7 @@
+         service.runtime.shutdown();
+     }
+ }
++
++#[cfg(test)]
++#[path = "service_storage_tests.rs"]
++mod storage_tests;

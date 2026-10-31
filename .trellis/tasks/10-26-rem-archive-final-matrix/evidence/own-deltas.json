@@ -1,0 +1,7 @@
+{
+  "basis": "Task-start live dirty bytes, not HEAD",
+  "existing_production_deltas": [],
+  "existing_test_deltas": [],
+  "existing_reference_deltas": [],
+  "reason": "No effective red; implementation blocked before source edits. Current task artifacts only."
+}

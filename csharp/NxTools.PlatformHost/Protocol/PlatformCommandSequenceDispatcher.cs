@@ -16,6 +16,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         "set_clipboard_capture_paused",
         "present_fixed_window_over_anchor",
         "prepare_notification_window",
+        "prepare_main_window",
         "query_shell_actions",
         "query_shell_submenu",
         "invoke_shell_action",
@@ -27,6 +28,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         "pick_program",
         "pick_extension_manifest",
         "pick_extension_runtime",
+        "pick_extension_setting_path",
         "inspect_extension_runtime",
         "export_browser_extension",
         // Launching a Shell target waits on process start and can take
@@ -35,6 +37,8 @@ internal sealed class PlatformCommandSequenceDispatcher
         // the self-healing retry queued behind the same stall — the panel
         // stayed on screen until the launch finished.
         "open_shell_target",
+        "open_default_apps_settings",
+        "archive_shell_integration",
         "navigate_directory",
         "open_file_in_dialog",
     };

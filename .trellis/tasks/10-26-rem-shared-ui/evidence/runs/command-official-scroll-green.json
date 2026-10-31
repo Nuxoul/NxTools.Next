@@ -1,0 +1,7 @@
+﻿{
+    "name":  "command-official-scroll-green",
+    "command":  "cargo test -p nxtools-desktop audit06_shared_actual_quick_form -- --test-threads=1 --nocapture",
+    "exit":  0,
+    "elapsed":  255.4933462,
+    "finished":  "2026-10-26T06:21:14.5982246+08:00"
+}

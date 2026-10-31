@@ -1,0 +1,156 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs
+@@ -4,14 +4,16 @@
+ use gpui_kit::component::button::ButtonVariants;
+ use gpui_kit::component::description_list::DescriptionList;
+ use gpui_kit::component::tooltip::Tooltip;
+-use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
++#[cfg(test)]
++use gpui_kit::px;
++use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*};
+ 
+ use crate::icons::MaterialIcon;
+ use crate::theme::Theme;
+ use crate::ui::components::action::{
+     action_button, danger_hover_button_variant, labelled_icon_action,
+ };
+-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_4, SPACING_12};
++use crate::ui::metrics::ordinary_rem;
+ use crate::ui::typography::{
+     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+@@ -72,7 +74,7 @@
+             Some(
+                 div()
+                     .debug_selector(|| "quick-launch-clear-history".into())
+-                    .h(px(CONTROL_HEIGHT_INPUT))
++                    .h_8()
+                     .flex_none()
+                     .child(
+                         action_button("quick-launch-clear-history-button", "清空历史")
+@@ -91,7 +93,7 @@
+                 .id("quick-launch-diagnostics-history-metrics")
+                 .debug_selector(|| "quick-launch-diagnostics-history-metrics".into())
+                 .w_full()
+-                .h(px(DIAGNOSTICS_ROW_HEIGHT))
++                .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))
+                 .flex_none()
+                 .border_b_1()
+                 .border_color(theme.border_subtle)
+@@ -141,7 +143,7 @@
+                 .id("quick-launch-diagnostics-performance-metrics")
+                 .debug_selector(|| "quick-launch-diagnostics-performance-metrics".into())
+                 .w_full()
+-                .h(px(DIAGNOSTICS_ROW_HEIGHT))
++                .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))
+                 .flex_none()
+                 .border_b_1()
+                 .border_color(theme.border_subtle)
+@@ -168,24 +170,24 @@
+                 .id("quick-launch-diagnostics-log-row")
+                 .debug_selector(|| "quick-launch-diagnostics-log-row".into())
+                 .w_full()
+-                .h(px(DIAGNOSTICS_ROW_HEIGHT))
++                .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))
+                 .flex_none()
+-                .px(px(SPACING_12))
++                .px_3()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_12))
++                .gap_3()
+                 .child(
+                     div()
+                         .min_w_0()
+                         .flex_1()
+                         .flex()
+                         .flex_col()
+-                        .gap(px(SPACING_4))
++                        .gap_1()
+                         .child(
+                             div()
+-                                .h(px(LINE_HEIGHT_BODY))
+-                                .text_size(px(TEXT_BODY))
+-                                .line_height(px(LINE_HEIGHT_BODY))
++                                .h(ordinary_rem(LINE_HEIGHT_BODY))
++                                .text_size(ordinary_rem(TEXT_BODY))
++                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                 .text_color(theme.text)
+                                 .child("运行日志"),
+                         )
+@@ -193,11 +195,11 @@
+                             div()
+                                 .id("quick-launch-diagnostics-log-path")
+                                 .debug_selector(|| "quick-launch-diagnostics-log-path".into())
+-                                .h(px(LINE_HEIGHT_LABEL))
++                                .h(ordinary_rem(LINE_HEIGHT_LABEL))
+                                 .truncate()
+                                 .font_family(UI_MONO_FONT_FAMILY)
+-                                .text_size(px(TEXT_LABEL))
+-                                .line_height(px(LINE_HEIGHT_LABEL))
++                                .text_size(ordinary_rem(TEXT_LABEL))
++                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                 .text_color(theme.text_muted)
+                                 .tooltip(move |window, cx| {
+                                     let log_tooltip = log_tooltip.clone();
+@@ -216,7 +218,7 @@
+                 .child(
+                     div()
+                         .debug_selector(|| "quick-launch-open-logs".into())
+-                        .h(px(CONTROL_HEIGHT_INPUT))
++                        .h_8()
+                         .flex_none()
+                         .child(
+                             labelled_icon_action(
+@@ -246,26 +248,26 @@
+         .id(selector)
+         .debug_selector(move || selector.into())
+         .w_full()
+-        .h(px(DIAGNOSTICS_ROW_HEIGHT))
++        .h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))
+         .flex_none()
+-        .px(px(SPACING_12))
++        .px_3()
+         .border_b_1()
+         .border_color(theme.border_subtle)
+         .flex()
+         .items_center()
+-        .gap(px(SPACING_12))
++        .gap_3()
+         .child(
+             div()
+                 .min_w_0()
+                 .flex_1()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_4))
++                .gap_1()
+                 .child(
+                     div()
+-                        .h(px(LINE_HEIGHT_BODY))
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .h(ordinary_rem(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .text_color(theme.text)
+                         .child(title),
+                 )
+@@ -294,7 +296,7 @@
+         .min_w_0()
+         .h_full()
+         .flex_1()
+-        .px(px(SPACING_12))
++        .px_3()
+         .border_l_1()
+         .border_color(if show_leading_divider {
+             theme.border_subtle
+@@ -307,7 +309,7 @@
+                 div()
+                     .id(value_selector)
+                     .debug_selector(move || value_selector.into())
+-                    .min_h(px(LINE_HEIGHT_BODY))
++                    .min_h(ordinary_rem(LINE_HEIGHT_BODY))
+                     .min_w_0()
+                     .w_full()
+                     .truncate()

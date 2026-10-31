@@ -1,0 +1,65 @@
+--- revision-start/.trellis/tasks/10-25-archive-prompt-object/prd.md
++++ revision-after/.trellis/tasks/10-25-archive-prompt-object/prd.md
+@@ -1,30 +1,42 @@
+-# 原报告 #4 — 归档覆盖确认的当前决策对象
++# Audit #4 — Current decision object in archive overwrite confirmation
+ 
+-## 授权与阶段
+-仅第 6 次单项整改；沿用 `Phase A — Engine contracts and safety foundation` 的既有稳定化，不推进/关闭 A–F。#1/#9/#10/#3/#2 已由父会话限定验收，不返修。交付后停止，父独立 review；其余 backlog 未授权。
++## Authorization and canonical phase
+ 
+-## 最小缺口与真实边界
+-现有 `JobProgressView::show_prompt` 的 Conflict 只有大小，CreateOverwrite 只有通用说明；相同大小的连续冲突不可辨认。原目标身份/发布未证明有误。
++This is the sixth individually authorized correction, limited to original audit item #4. It stabilizes the existing `Phase A — Engine contracts and safety foundation`; it does not advance or close Phase A–F. Items #1/#9/#10/#3/#2 have separate limited parent acceptance and must not be reopened. Stop after delivery for independent parent review. Item seven and the remaining backlog are not authorized.
+ 
+-链路：原 format/codec -> `PrivateOutput::begin_extracted_file` -> `ExtractionConflict::begin` 原 ticket -> 私有 worker frame -> `ArchiveJobSession.Prompt` -> typed ArchiveJobEvent -> 原 bridge/job record -> `refresh_job`/`ProgressSnapshot` -> 原官方 Dialog。CreateOverwrite 原 runner 预检 -> session immutable command/ticket -> 同一 typed event/UI。
++The current parent review requests only R1/R2 closeout: relocate the newly introduced, unresolved CreateOverwrite keyboard diagnostic outside default product regressions while preserving it completely, and translate this PRD and outcomes into English. Do not repair the keyboard behavior, change production display code, overwrite historical evidence, or repeat the complete Desktop suite.
+ 
+-最小变化：可选、仅展示的 prompt 对象快照（incoming member + target）。worker 的当前 plan 映射只产生展示信息，C# 用本次 command 的目标根组成 UI 标识；CreateOverwrite 用该 command 的 destination/create name。原观察 token、路径操作、source session/ordinal、覆写验证/预算均不读取新字段。
++## Smallest behavior gap and actual boundary
+ 
+-## 兼容与隐私
+-- 保留 wire version 1、worker schema 及 strict unknown-field 拒绝；可选字段缺失/None 不序列化。
+-- 新接收端接受旧载荷，缺字段显示“本次提示未提供对象标识”，不借进度/selection/别的 ticket 补值、不默认同意覆盖。
+-- 旧严格接收端不能接受带新增字段的新载荷；不宣称双向混版兼容，不放宽 parser，不擅自升版本。原产品原子发行/匹配 worker 部署边界保持。
+-- 对象只在 UI/private typed payload 出现。Rust Debug/C# ToString 脱敏；诊断仍只有原 correlation/state/terminal/count/elapsed/native code。
++Before this correction, `JobProgressView::show_prompt` showed only sizes for Conflict and generic prose for CreateOverwrite. Consecutive conflicts with equal sizes were not distinguishable. This does not establish incorrect target identity or publication in the underlying operation.
+ 
+-## UI/API 选择
+-沿 Bandizip 允许文本资源 IDD_ASK_DUPEFILE 的 existing/incoming 双对象结构（未运行/未验证其动态布局）。官方 Component0.8.0 `Dialog` 原 title/body/footer/Action/Close owner，`DescriptionList::vertical().columns(1)` 只读 metadata 公共槽，原 Button outline/default Medium32、Checkbox 原单 owner。Dialog 的 body scroll 与独立 footer 已在 exact released source 核实；不改 560x300/default、480x260/min client。完整长 Unicode 路径不删除字符；正文 wrap/受控滚动，必要完整标识可在正文滚到末尾。无新 Clipboard/Shell/native 交互。
++The actual chain is the original format/codec -> `PrivateOutput::begin_extracted_file` -> `ExtractionConflict::begin` and its original ticket -> private worker frame -> `ArchiveJobSession.Prompt` -> typed `ArchiveJobEvent` -> original bridge/job record -> `refresh_job`/`ProgressSnapshot` -> original official Dialog. CreateOverwrite follows the original runner preflight -> session immutable command/ticket -> the same typed event/UI chain.
+ 
+-## 保持不变量
+-原 native identity、entry ordinal/source revision、overwrite validation、有限资源预算/path safety、临时输出完整验证/原子发布、密码 secret、ticket generation、once reply、cancel/disconnect/timeout/apply-all、跨实体 defer 完全保留。非 Conflict/CreateOverwrite 不整改；不动 #5 Enter/#8 文案、codec、安全或 OS 策略。
++The minimal change is an optional, presentation-only prompt snapshot containing the incoming archive member and target. The current worker plan supplies exact display context; C# combines it with this immutable command's destination root for UI identification. CreateOverwrite uses that command's destination/create name. Native observation tokens, filesystem paths used for operations, source session/ordinal, overwrite validation and budgets never consume the new fields.
+ 
+-## 验证与授权限制
+-先有效红再绿：真实 typed notification -> 原 job state -> 实际官方 Dialog 的可观测内容；同大小不同目录/ticket、两 job/迟到 reply、CreateOverwrite；原按钮/Checkbox/keyboard/pointer 单次回复；长 Unicode、缺字段/非法类型、原尺寸/滚动/动作可达。原 engine/worker/C# fixtures 只允许 GUID 临时合成文件、受控 adapter；日志 sentinel 不泄漏。保留原安全断言。
++## Compatibility and privacy
+ 
+-运行 focused Archive/Desktop/Protocol/IPC、必要 effect-reviewed C# fixtures、strict owner Clippy/workspace check/fmt/source gates；完整 Desktop 最多一轮。每 Rust shell 单 job/no incremental/codegen256；自然等待其他 Cargo，不能干预。无 Release/package/install/product/PlatformHost/服务/实际 HWND/Shell/picker/真实用户数据/registry/commit/push/递归代理。
++- Preserve wire version 1, the original worker schema, and strict unknown-field rejection. Missing/None optional display is omitted on serialization.
++- New receivers accept old payloads. Missing context explicitly shows `本次提示未提供对象标识`; never borrow progress, selection or another ticket's data, invent a path, or approve overwrite automatically.
++- Old strict receivers cannot accept populated new fields. Do not claim bidirectional mixed-version compatibility, relax the parser or silently increase the version. Preserve the original atomic product release/matching-worker deployment boundary.
++- Objects appear only in UI/private typed payloads. Redact Rust Debug and C# ToString. Diagnostics retain only the original correlation/state/terminal/count/elapsed/native-code fields; no per-frame or file-tick logging.
+ 
+-每 existing file 编辑前 dirty baseline 已存本会话 item04 scratch；最终 task evidence 发布 exact own-delta/manifest/protected hash 与每条验收证据。source/compiled/synthetic/render 与 native/physical IME/DPI/reader/visual/user acceptance 分开；额外 QuickLaunch source gate 历史 FAIL 保留。
++## Component/API selection and layout
++
++Use the existing/incoming structure evidenced by the allowed Bandizip `IDD_ASK_DUPEFILE` text resources. That evidence is not a live application or dynamic-layout verification. Preserve official Component0.8.0 `Dialog` title/body/footer/Action/Close ownership and use the public read-only metadata slots of `DescriptionList::vertical().columns(1)`. Keep the original Button outline/default Medium32 tier and single Checkbox owner.
++
++The exact released Dialog implementation provides body scrolling separate from its footer. Keep default 560x300 and minimum 480x260 client dimensions. Retain every character of long Unicode identifiers; wrap and scroll the body so the complete identifier is recoverable. Keep overwrite/skip/rename/cancel and apply-all reachable in the original fixed footer. Do not add Clipboard/Shell/native interactions, fake controls, a second dialog, focus owner or reply dispatcher.
++
++## Preserved invariants and exclusions
++
++Preserve native identity, entry ordinal/source revision, overwrite validation, finite resource budgets/path safety, fully verified temporary output/atomic publication, password secrecy, ticket generation, once-only reply, cancel/disconnect/timeout/apply-to-all and deferred cross-entity work. Non-Conflict/CreateOverwrite prompts are not being redesigned. Do not change #5 Enter behavior, #8 wording, codecs, safety or OS policy.
++
++## Verification and evidence boundaries
++
++Establish executable red/green evidence at the real typed notification -> original job state -> actual official Dialog boundary. Cover equal-size members in different directories/tickets, two jobs, consecutive tickets and late replies, CreateOverwrite's current output, original pointer/keyboard/Checkbox once-only decisions, long Unicode content, missing/invalid typed fields, original client budgets, real scrolling and reachable actions. Keep original security assertions. Worker/C# fixtures may use only GUID-owned temporary synthetic files and controlled adapters; verify sentinel privacy through the original diagnostic sink.
++
++The initial implementation verification covers focused Archive/Desktop/Protocol/IPC, effect-reviewed C# fixtures, strict owner Clippy/workspace check/format/source gates, and at most one complete Desktop run. Its actual failed and passing results remain historical evidence, not replaceable by later shared-tree results. R1/R2 verification is narrower: six standard audit04 tests, original archive job regressions, required scoped lint/format/diff and document gates. The outstanding CreateOverwrite Space diagnostic remains **UNRESOLVED / NOT ACCEPTED**, outside default regression registration, with its complete original source, expected-one assertion, dependencies, commands and failed logs preserved in task evidence. Pointer/fallback success does not certify keyboard activation.
++
++Every Rust shell uses `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, `RUSTFLAGS=-C codegen-units=256`, serial execution, sufficient timeout and natural-idle waiting. Do not kill, pause, reserve or reorder another process/session. No Release/package/install, product/PlatformHost/service, actual HWND/Shell/picker/clipboard, real user config/database/archive/registry, commit/push or recursive delegation is authorized.
++
++Save each existing file's current dirty baseline before editing; it is not a HEAD baseline. Preserve prior task evidence and parent-review documents. On a concurrent path change, stop that path and report rather than overwrite it. Publish exact forward/reverse-reconstructable deltas, versioned manifests, frozen-artifact hashes and acceptance mapping. Distinguish source/compiled/synthetic/headless semantic/geometry evidence from native lifecycle, physical input/IME/DPI, UIA/reader, screenshots/visual and user acceptance. Keep the previously failed extra Quick Launch source gate explicit; do not repair build/security/gates here.

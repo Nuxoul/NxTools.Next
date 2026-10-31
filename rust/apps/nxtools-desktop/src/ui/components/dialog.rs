@@ -1,7 +1,7 @@
 use gpui_kit::{AnyElement, IntoElement, div, prelude::*, px};
 
 use crate::theme::Theme;
-use crate::ui::metrics::{SETTINGS_FOOTER_HEIGHT, TITLEBAR_HEIGHT};
+use crate::ui::metrics::SETTINGS_FOOTER_HEIGHT;
 use crate::ui::typography::UI_FONT_FAMILY;
 
 pub(crate) struct DialogShellIds {
@@ -29,7 +29,6 @@ pub(crate) fn dialog_shell(
         .child(
             div()
                 .debug_selector(move || ids.titlebar.into())
-                .h(px(TITLEBAR_HEIGHT))
                 .w_full()
                 .flex_none()
                 .child(titlebar),

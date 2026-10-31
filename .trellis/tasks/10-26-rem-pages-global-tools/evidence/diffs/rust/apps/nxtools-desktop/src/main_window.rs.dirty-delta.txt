@@ -1,0 +1,9 @@
+--- live-task-start-dirty/rust/apps/nxtools-desktop/src/main_window.rs
++++ queue08-blocked-checkpoint/rust/apps/nxtools-desktop/src/main_window.rs
+@@ -514,3 +514,6 @@
+ 
+ #[cfg(test)]
+ mod shared_rem_tests;
++
++#[cfg(test)]
++mod page_rem_tests;

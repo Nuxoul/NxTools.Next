@@ -1,0 +1,62 @@
+[
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\settings\\DesktopSettingsComponent.kt",
+    "sha256": "38fddaeb0f948d03dd69b93c39228462be09646e8403a195bec727bdcfda84a7",
+    "order": 0,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\settings\\SettingsPage.kt",
+    "sha256": "b677f1d581b1dd6233de3cc1249e2c715db2968e8946647a62f88a24fd9f4e2e",
+    "order": 1,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\singleDownloadPage\\ShowDownloadDialogs.kt",
+    "sha256": "289d8c29959bb833c81867d2002ca33b793399c93e884c395e5b5918b9a9e378",
+    "order": 2,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\singleDownloadPage\\ProgressDownloadPage.kt",
+    "sha256": "89faac85c4b32a0beb89b52789df6a0b18949b847643092e0da5b5cf344acd56",
+    "order": 3,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\pages\\singleDownloadPage\\CompletedDownloadPage.kt",
+    "sha256": "a3f977d8a36729e475dd70605a9782b6cf00d1c9eeac99f670d2a57c13f18ab2",
+    "order": 4,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Views\\SettingsWindow.axaml",
+    "sha256": "0619ab83e60f4f586bc9197a605d272b82bdeca46665aa4d6a8ce7cf66834894",
+    "order": 5,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Views\\SettingsWindow.axaml.cs",
+    "sha256": "a5169be3f4af3388648dc0590a8ce43de26228341536490083adc9353fea6d15",
+    "order": 6,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Views\\DownloadProgressWindow.axaml",
+    "sha256": "79501d744f09cc8f1650a76eb0e8f80bd7127e5390999924d22edaf98ab77204",
+    "order": 7,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Views\\DownloadProgressWindow.axaml.cs",
+    "sha256": "caa2185c958684e9c79ae3e2fd302bba75c6f17b5f29541403c43c38d6e449c4",
+    "order": 8,
+    "owned_edit": false
+  },
+  {
+    "path": "D:\\Code\\NxTools\\Services\\WindowAnimationService.cs",
+    "sha256": "987a3040ade0a027ed37564158a9d408903dbb47e342e940f716fd0eadb51346",
+    "order": 9,
+    "owned_edit": false
+  }
+]

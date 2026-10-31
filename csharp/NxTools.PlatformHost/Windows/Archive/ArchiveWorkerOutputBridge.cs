@@ -39,11 +39,12 @@ internal sealed partial class ArchiveWorkerOutputBridge : IDisposable
     internal void BindZoneIdentifier(ReadOnlyMemory<byte>? value) => session.BindZoneIdentifier(value);
     internal ArchiveWorkerOutputBridge(ArchiveWorkerRequest request, NxTools.PlatformHost.Diagnostics.IPlatformLog? log, ArchiveOutputSession? prepared = null)
     {
-        if (request.Operation is not ("extract" or "modify_zip") && !ArchiveWorkerRunner.IsCreation(request.Operation) || string.IsNullOrEmpty(request.OutputRoot)) throw new ArchiveOutputException("invalid_output_request");
+        if (request.Operation != "extract" && !ArchiveWorkerRunner.IsModification(request.Operation) && !ArchiveWorkerRunner.IsCreation(request.Operation) || string.IsNullOrEmpty(request.OutputRoot)) throw new ArchiveOutputException("invalid_output_request");
+        reclamationRequested = request.ExtractOptions?.Reclamation is not null; reclamationLog = log;
         outputPrepared = !request.JobExecution;
-        allowPartialRead = ArchiveWorkerRunner.IsCreation(request.Operation) || request.Operation == "modify_zip";
-        createName = request.Operation == "modify_zip" ? Path.GetFileName(request.Path) : allowPartialRead ? request.CreateName : null;
-        editing = request.Operation == "modify_zip";
+        editing = ArchiveWorkerRunner.IsModification(request.Operation);
+        allowPartialRead = ArchiveWorkerRunner.IsCreation(request.Operation) || editing;
+        createName = editing ? Path.GetFileName(request.Path) : allowPartialRead ? request.CreateName : null;
         conflicts = request.ConflictPolicy is not null;
         browserEntry = request.BrowserEntry is not null;
         var limits = JsonSerializer.SerializeToElement(request.Limits);
@@ -72,6 +73,11 @@ internal sealed partial class ArchiveWorkerOutputBridge : IDisposable
         Guid? token = null;
         try
         {
+            if (action.StartsWith("hz5_", StringComparison.Ordinal)) return ExecuteReclamation(operationId, callId, action, call);
+            if (reclamationRequested) {
+                if (reclamation is null) throw new ArchiveOutputException("reclamation_source_required");
+                reclamation.ValidateOutputAction(action);
+            }
             if (!outputPrepared && action is ("directory" or "directory_new" or "begin" or "begin_overwrite" or "observe_target")) { session.CreatePreparedRoot();outputPrepared=true; }
             if (HandleExtendedCall(action,call,operationId,callId,out var extended)) return extended!;
             switch (action)
@@ -86,14 +92,14 @@ internal sealed partial class ArchiveWorkerOutputBridge : IDisposable
                     if (createName is not null) throw new ArchiveOutputException("invalid_output_request");
                     session.EnsureDirectory(call.GetProperty("path").GetString()!); break;
                 case "observe_target":
-                    if (!conflicts) throw new ArchiveOutputException("invalid_native_call");
+                    if (!conflicts || editing) throw new ArchiveOutputException("invalid_native_call");
                     var observedPath = call.GetProperty("path").GetString()!;
                     var observed = session.ObserveOrdinaryTarget(observedPath);
                     observation = observed is { } value ? (Guid.NewGuid(), observedPath, value.Signature) : null;
                     return new { version = 1, operation_id = operationId, op = "native_result", call_id = callId,
                         success = true, token = observation?.Token, existing_bytes = observed?.Size };
                 case "begin_overwrite":
-                    if (!conflicts || observation is not { } approval || call.GetProperty("token").GetGuid() != approval.Token || call.GetProperty("path").GetString() != approval.Path)
+                    if (!conflicts || editing || observation is not { } approval || call.GetProperty("token").GetGuid() != approval.Token || call.GetProperty("path").GetString() != approval.Path)
                         throw new ArchiveOutputException("expected_identity_required");
                     observation = null;
                     if (++files > 4096) throw new ArchiveOutputException("session_entry_limit");
@@ -161,7 +167,7 @@ internal sealed partial class ArchiveWorkerOutputBridge : IDisposable
                 case "abort":
                     var abortToken = call.GetProperty("token").GetGuid(); RequireToken(abortToken);
                     var aborted = session.Cancel(abortToken);
-                    if (aborted.Category != "partial_removed") throw new ArchiveOutputException(aborted.Category, aborted.NativeCode);
+                    if (aborted.Category != "partial_removed" && !(reclamationRequested && aborted.Category == "reclamation_retained")) throw new ArchiveOutputException(aborted.Category, aborted.NativeCode);
                     active.Remove(abortToken); break;
                 default: throw new ArchiveOutputException("invalid_native_call");
             }
@@ -175,17 +181,19 @@ internal sealed partial class ArchiveWorkerOutputBridge : IDisposable
         }
         catch (ArchiveOutputException failure)
         {
+            var category = reclamationRequested && !failure.Stage.StartsWith("reclamation_", StringComparison.Ordinal) && failure.Stage != "cancelled" ? "reclamation_" + failure.Stage : failure.Stage;
+            reclamation?.ReportFailure(category, failure.NativeCode);
             if (action == "commit") { LastCommitState = failure.State; LastCommitNativeCode = failure.NativeCode; }
             var state = action == "directory_metadata" && FilesCommitted > 0 ? ArchiveCommitState.Committed : failure.State;
             nativeFailure = new(operationId, callId, action,
                 call.TryGetProperty("token", out var failedToken) ? failedToken.GetGuid() : token,
-                failure.Stage, failure.NativeCode, state);
-            return new { version = 1, operation_id = operationId, op = "native_result", call_id = callId, success = false, token = (Guid?)null, error_code = failure.Stage, native_error_code = failure.NativeCode };
+                category, failure.NativeCode, state);
+            return new { version = 1, operation_id = operationId, op = "native_result", call_id = callId, success = false, token = (Guid?)null, error_code = category, native_error_code = failure.NativeCode };
         }
     }
     private void MarkPublished(Guid token) {
         if (active.Remove(token)) {Interlocked.Increment(ref filesCommitted);Interlocked.Add(ref committedBytes,checked((long)tokenBytes.GetValueOrDefault(token)));}
     }
     private void RequireToken(Guid token) { if (!active.Contains(token)) throw new ArchiveOutputException("unknown_token"); }
-    public void Dispose() { session.Dispose(); cancellation.Dispose(); }
+    public void Dispose() { try { session.Dispose(); } finally { reclamation?.ReportEnd(cancellation.IsCancellationRequested); reclamation?.Dispose(); cancellation.Dispose(); } }
 }

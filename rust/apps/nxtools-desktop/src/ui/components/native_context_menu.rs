@@ -23,6 +23,7 @@ use uuid::Uuid;
 #[derive(Default)]
 struct NativeMenuState {
     pending: Option<Pending>,
+    source_dismiss: Option<(AnyWindowHandle, Instant)>,
 }
 impl Global for NativeMenuState {}
 struct Pending {
@@ -36,6 +37,8 @@ struct Pending {
     previous_focus: Option<FocusHandle>,
     platform: Rc<PlatformBridge>,
     surface: Option<Surface>,
+    pointer_inside_source: bool,
+    source_bounds: gpui_kit::Bounds<gpui_kit::DevicePixels>,
     pointer: bool,
     ready: bool,
     step: u8,
@@ -49,6 +52,41 @@ pub(crate) fn active(window: &Window, cx: &App) -> bool {
         .and_then(|state| state.pending.as_ref())
         .is_some_and(|pending| pending.window == window.window_handle())
 }
+pub(crate) fn any_active(cx: &App) -> bool {
+    cx.try_global::<NativeMenuState>()
+        .is_some_and(|state| state.pending.is_some())
+}
+pub(crate) fn consume_source_press(window: &Window, cx: &mut App) -> bool {
+    let source = window.window_handle();
+    let pending = cx
+        .try_global::<NativeMenuState>()
+        .and_then(|state| state.pending.as_ref())
+        .filter(|pending| pending.window == source)
+        .map(|pending| pending.id);
+    if let Some(id) = pending {
+        finish(id, None, false, "source_pointer", cx);
+        return true;
+    }
+    cx.try_global::<NativeMenuState>()
+        .and_then(|state| state.source_dismiss.as_ref())
+        .is_some_and(|(window, started)| {
+            *window == source && started.elapsed() < std::time::Duration::from_millis(500)
+        })
+}
+pub(crate) fn consume_source_release(window: &Window, cx: &mut App) -> bool {
+    let source = window.window_handle();
+    if cx
+        .try_global::<NativeMenuState>()
+        .and_then(|state| state.source_dismiss.as_ref())
+        .is_some_and(|(window, started)| {
+            *window == source && started.elapsed() < std::time::Duration::from_millis(500)
+        })
+    {
+        cx.global_mut::<NativeMenuState>().source_dismiss = None;
+        return true;
+    }
+    false
+}
 pub(super) fn surface_session(window: &Window, cx: &App) -> Option<Uuid> {
     cx.try_global::<NativeMenuState>()
         .and_then(|state| state.pending.as_ref())
@@ -60,7 +98,17 @@ pub(super) fn surface_session(window: &Window, cx: &App) -> Option<Uuid> {
         })
         .map(|pending| pending.id)
 }
-pub(super) fn mark_pointer(id: Uuid, cx: &mut App) {
+pub(super) fn mark_pointer_position(
+    id: Uuid,
+    position: Point<Pixels>,
+    window: &Window,
+    cx: &mut App,
+) {
+    let screen = window.bounds().origin + position;
+    let screen = point(
+        gpui_kit::DevicePixels((screen.x.as_f32() * window.scale_factor()).round() as i32),
+        gpui_kit::DevicePixels((screen.y.as_f32() * window.scale_factor()).round() as i32),
+    );
     if let Some(pending) = cx
         .global_mut::<NativeMenuState>()
         .pending
@@ -68,6 +116,7 @@ pub(super) fn mark_pointer(id: Uuid, cx: &mut App) {
         .filter(|pending| pending.id == id)
     {
         pending.pointer = true;
+        pending.pointer_inside_source = pending.source_bounds.contains(&screen);
     }
 }
 pub(super) fn mark_keyboard(id: Uuid, cx: &mut App) {
@@ -188,10 +237,22 @@ fn open_with_source(
         platform: platform.clone(),
         surface: None,
         pointer: false,
+        pointer_inside_source: false,
+        source_bounds: window.bounds().to_device_pixels(window.scale_factor()),
         ready: false,
         step: 0,
         started: Instant::now(),
     });
+    if let Some(application) = cx
+        .try_global::<crate::clipboard::ClipboardApplicationGlobal>()
+        .map(|global| global.application())
+    {
+        cx.defer(move |cx| {
+            application.update(cx, |owner, cx| {
+                owner.dismiss_preview_for_interaction("context_menu", cx)
+            })
+        });
+    }
     tracing::info!(event="ui.menu.styled.accepted", correlation_id=%id, "styled context menu accepted");
     let surface = match styled_menu_surface::open(id, items, window, cx) {
         Ok(surface) => surface,
@@ -282,9 +343,41 @@ pub(super) fn finish(
         .pending
         .take()
         .expect("matching menu");
+    let reason = if outside
+        && reason == "deactivated"
+        && pending
+            .window
+            .update(cx, |_, window, _| window.is_window_active())
+            .unwrap_or(false)
+    {
+        "source_pointer"
+    } else {
+        reason
+    };
+    let reason = if selected.is_none()
+        && pending.pointer
+        && pending.pointer_inside_source
+        && reason == "escape"
+    {
+        "source_overlay"
+    } else {
+        reason
+    };
+    let outside = outside && !matches!(reason, "source_pointer" | "source_overlay");
+    if reason == "source_pointer" {
+        cx.global_mut::<NativeMenuState>().source_dismiss = Some((pending.window, Instant::now()));
+    }
     let outside = outside || (selected.is_none() && pending.pointer && reason == "escape");
-    let restore =
-        !outside && matches!(reason, "escape" | "selected" | "failed" | "trigger_retired");
+    let restore = !outside
+        && matches!(
+            reason,
+            "escape"
+                | "selected"
+                | "failed"
+                | "trigger_retired"
+                | "source_pointer"
+                | "source_overlay"
+        );
     let _ = pending
         .platform
         .send_command(PlatformCommand::CancelContextMenu(
@@ -381,7 +474,21 @@ pub(crate) fn handle_notification(notification: &PlatformNotification, cx: &mut 
                 if sampled > 0
                     && now.saturating_sub(sampled) < pending.started.elapsed().as_millis() as i64
                 {
-                    cx.defer(move |cx| finish(id, None, true, "outside_pointer", cx));
+                    let inside_source = press.window_handle == pending.source_hwnd
+                        || press.root_window_handle == pending.source_hwnd;
+                    cx.defer(move |cx| {
+                        finish(
+                            id,
+                            None,
+                            !inside_source,
+                            if inside_source {
+                                "source_pointer"
+                            } else {
+                                "outside_pointer"
+                            },
+                            cx,
+                        )
+                    });
                 }
             }
         }
@@ -609,10 +716,13 @@ pub(super) fn test_terminal_is_once_deferred(cx: &mut gpui_kit::TestAppContext) 
                     platform: platform.clone(),
                     surface: None,
                     pointer: false,
+                    pointer_inside_source: false,
+                    source_bounds: Default::default(),
                     ready: true,
                     step: 2,
                     started: Instant::now(),
                 }),
+                source_dismiss: None,
             });
             if cancel {
                 finish(id, None, false, "host_retired", cx);
@@ -644,3 +754,35 @@ mod tests;
 mod preview;
 #[cfg(debug_assertions)]
 pub(crate) use preview::open as open_isolated_preview;
+
+#[cfg(test)]
+pub(crate) fn install_pending_for_test(
+    window: AnyWindowHandle,
+    platform: Rc<PlatformBridge>,
+    cx: &mut App,
+) -> Rc<Cell<bool>> {
+    let token = Rc::new(Cell::new(true));
+    let id = Uuid::new_v4();
+    cx.set_global(NativeMenuState {
+        pending: Some(Pending {
+            id,
+            window,
+            command_id: id,
+            source_hwnd: 1,
+            source_session: None,
+            trigger: Rc::downgrade(&token),
+            callbacks: HashMap::new(),
+            previous_focus: None,
+            platform,
+            surface: None,
+            pointer: false,
+            pointer_inside_source: false,
+            source_bounds: Default::default(),
+            ready: true,
+            step: 2,
+            started: Instant::now(),
+        }),
+        source_dismiss: None,
+    });
+    token
+}

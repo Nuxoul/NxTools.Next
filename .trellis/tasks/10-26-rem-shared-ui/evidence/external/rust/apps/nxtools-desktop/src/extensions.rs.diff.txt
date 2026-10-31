@@ -1,0 +1,54 @@
+--- task-start
++++ independent-observed
+@@ -650,7 +650,9 @@
+                 &store,
+                 move |values| async move {
+                     tokio::task::spawn_blocking(move || {
+-                        AppConfig::save_extension_settings(&path, &id, values)
++                        service.commit_config(&path, |path| {
++                            AppConfig::save_extension_settings(path, &id, values)
++                        })
+                     })
+                     .await
+                     .map_err(|_| nxtools_extensions::PackageError::FileOperation)?
+@@ -665,11 +667,9 @@
+                 app.busy = false;
+                 app.commit_revision = app.commit_revision.wrapping_add(1);
+                 match outcome {
+-                    Ok(Ok(config)) => {
++                    Ok(Ok((config, applied))) => {
+                         app.packages = config.extensions;
+-                        let applied = app.service.as_ref().is_none_or(|service| {
+-                            service.publish_registry(app.packages.clone()).is_ok()
+-                        });
++                        app.refresh_committed_storage_metadata();
+                         app.last_commit = Some(("settings", true, applied));
+                         app.notify_operation(
+                             operation_key.clone(),
+@@ -1021,17 +1021,23 @@
+         let started = Instant::now();
+         info!(event = "extension.management.accepted", correlation_id=%id, action, "extension change accepted");
+         let background = cx.background_executor().clone();
++        let service = self.service.clone();
+         cx.spawn(async move |this, cx| {
+-            let outcome = background.spawn(async move { operation(&config_path) }).await;
++            let outcome = background.spawn(async move {
++                match service {
++                    Some(service) => service.commit_config(&config_path, operation),
++                    None => operation(&config_path).map(|config| (config, true)),
++                }
++            }).await;
+             let _ = this.update(cx, |app, cx| {
+                 app.busy = false;
+                 if action=="trust" { app.trust_revision=app.trust_revision.wrapping_add(1); }
+                 app.commit_revision = app.commit_revision.wrapping_add(1);
+                 match outcome {
+-                    Ok(config) => {
++                    Ok((config, applied)) => {
+                         app.packages = config.extensions;
++                        app.refresh_committed_storage_metadata();
+                         app.preview = None;
+-                        let applied = app.service.as_ref().is_none_or(|service| service.publish_registry(app.packages.clone()).is_ok());
+                         app.last_commit = Some((action, true, applied));
+                         app.notify_operation(operation_key.clone(), if applied { NotificationLevel::Success } else { NotificationLevel::Error },
+                             if applied { "已保存" } else { "已保存，但扩展运行时未能应用；请重试" }, cx);

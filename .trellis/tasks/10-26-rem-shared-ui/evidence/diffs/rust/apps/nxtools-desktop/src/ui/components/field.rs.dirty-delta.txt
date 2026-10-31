@@ -1,0 +1,28 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/field.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/field.rs
+@@ -1,9 +1,8 @@
+ use gpui_kit::component::Sizable;
+ use gpui_kit::component::input::Input;
+-use gpui_kit::{AnyElement, IntoElement, div, prelude::*, px};
++use gpui_kit::{AnyElement, IntoElement, div, prelude::*};
+ 
+ use crate::theme::Theme;
+-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, SPACING_8};
+ use gpui_kit::component::alert::Alert;
+ 
+ pub(crate) fn field_shell(_theme: Theme, selector: &'static str, control: Input) -> AnyElement {
+@@ -28,12 +27,12 @@
+ ) -> AnyElement {
+     div()
+         .debug_selector(move || selector.into())
+-        .h(px(CONTROL_HEIGHT_INPUT))
++        .h_8()
+         .w_full()
+         .min_w_0()
+         .flex()
+         .items_center()
+-        .gap(px(SPACING_8))
++        .gap_2()
+         .child(div().flex_1().min_w_0().child(field))
+         .child(picker)
+         .into_any_element()

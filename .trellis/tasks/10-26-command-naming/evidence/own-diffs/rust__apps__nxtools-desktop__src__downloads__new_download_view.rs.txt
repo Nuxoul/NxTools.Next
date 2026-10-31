@@ -1,0 +1,13 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
+@@ -1971,8 +1971,8 @@
+                                                         Button::new("download-pick-directory")
+                                                             .icon(Icon::new(MaterialIcon::Folder))
+                                                             .outline()
+-                                                            .tooltip("选择下载目录")
+-                                                            .accessibility_label("选择下载目录")
++                                                            .tooltip("选择下载目录…")
++                                                            .accessibility_label("选择下载目录…")
+                                                             .on_click(cx.listener(
+                                                                 |this, _, window, cx| {
+                                                                     this.request_directory(

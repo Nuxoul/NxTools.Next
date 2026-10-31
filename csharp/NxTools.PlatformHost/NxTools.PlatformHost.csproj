@@ -12,5 +12,11 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+    <Compile Remove="Generated\ReleaseBinaryManifest.g.cs" Condition="'$(ReleaseBinaryManifestPath)' != ''" />
+    <Compile Include="$(ReleaseBinaryManifestPath)" Condition="'$(ReleaseBinaryManifestPath)' != ''" />
+    <Compile Remove="Generated\ArchiveReleaseManifest.g.cs" Condition="'$(ArchiveReleaseManifestPath)' != ''" />
+    <Compile Include="$(ArchiveReleaseManifestPath)" Condition="'$(ArchiveReleaseManifestPath)' != ''" />
+    <Compile Remove="Generated\UpdateTrust.g.cs" Condition="'$(UpdateTrustPath)' != ''" />
+    <Compile Include="$(UpdateTrustPath)" Condition="'$(UpdateTrustPath)' != ''" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,14 @@
+﻿[
+    {
+        "exit":  0,
+        "name":  "download-page-related-01"
+    },
+    {
+        "exit":  0,
+        "name":  "download-main-related-01"
+    },
+    {
+        "exit":  0,
+        "name":  "downloads-lifecycle-no-network"
+    }
+]

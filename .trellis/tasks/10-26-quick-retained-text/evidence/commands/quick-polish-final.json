@@ -1,0 +1,19 @@
+﻿{
+    "args":  [
+                 "quick_launch::polish_tests::",
+                 "--test-threads=1",
+                 "--nocapture"
+             ],
+    "executable":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-5008a12526e9ebe3.exe",
+    "process_id":  110256,
+    "started_utc":  "2026-10-26T10:06:04.6961861Z",
+    "completed":  true,
+    "exit":  0,
+    "finished_utc":  "2026-10-26T10:06:05.2096316Z",
+    "watchdog_seconds":  1800,
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    }
+}

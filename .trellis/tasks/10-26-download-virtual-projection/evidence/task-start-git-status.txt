@@ -1,0 +1,550 @@
+ M .trellis/spec/browser-extension/contracts.md
+ M .trellis/spec/browser-extension/index.md
+ M .trellis/spec/browser-extension/ui-guidelines.md
+ M .trellis/spec/nxtools-archive/backend/index.md
+ M .trellis/spec/nxtools-archive/backend/product-jobs.md
+ M .trellis/spec/nxtools-archive/backend/product-read.md
+ M .trellis/spec/nxtools-cli/backend/directory-structure.md
+ M .trellis/spec/nxtools-cli/backend/error-handling.md
+ M .trellis/spec/nxtools-cli/backend/index.md
+ M .trellis/spec/nxtools-cli/backend/quality-guidelines.md
+ M .trellis/spec/nxtools-core/backend/database-guidelines.md
+ M .trellis/spec/nxtools-desktop/backend/database-guidelines.md
+ M .trellis/spec/nxtools-desktop/backend/index.md
+ M .trellis/spec/nxtools-desktop/backend/quality-guidelines.md
+ M .trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md
+ M .trellis/spec/nxtools-extensions/backend/quality-guidelines.md
+ M .trellis/spec/nxtools-ipc/backend/directory-structure.md
+ M .trellis/spec/nxtools-protocol/backend/directory-structure.md
+ M .trellis/spec/platformhost/diagnostics.md
+ M .trellis/spec/platformhost/index.md
+ M .trellis/spec/platformhost/native-contracts.md
+ M .trellis/spec/shared/ui-component-selection.md
+ M .trellis/spec/shared/ui-design.md
+ M .trellis/tasks/10-01-one-time-uac-trusted-updates/release-operations.md
+ M .trellis/tasks/10-16-archive-manager/README.md
+ M .trellis/tasks/10-16-archive-manager/implement.md
+ M .trellis/tasks/10-16-archive-manager/phase-a-checkpoint.md
+ M .trellis/tasks/10-16-archive-manager/task.json
+ M Cargo.lock
+ M browser_extension/nxtools-interceptor/README.md
+ M browser_extension/nxtools-interceptor/background.js
+ M browser_extension/nxtools-interceptor/content-script.js
+ M browser_extension/nxtools-interceptor/manifest.json
+ M browser_extension/nxtools-interceptor/popup-tokens.css
+ M browser_extension/nxtools-interceptor/popup.css
+ M browser_extension/nxtools-interceptor/popup.html
+ M browser_extension/nxtools-interceptor/popup.js
+ M browser_extension/nxtools-interceptor/shadow-styles.js
+ M browser_extension/nxtools-interceptor/tests/build-preview.cjs
+ M browser_extension/nxtools-interceptor/tests/capture-policy.test.js
+ M browser_extension/nxtools-interceptor/tests/layout-browser.cjs
+ M browser_extension/nxtools-interceptor/tests/native-lifecycle.test.js
+ M browser_extension/nxtools-interceptor/tests/popup-contract.test.js
+ M browser_extension/nxtools-interceptor/tests/redesign-browser.cjs
+ M browser_extension/nxtools-interceptor/tests/resource-cache.test.js
+ M browser_extension/nxtools-interceptor/tests/safe-handoff.test.js
+ M csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs
+ M csharp/NxTools.PlatformHost.Tests/ArchiveCreateOverwriteTests.cs
+ M csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs
+ M csharp/NxTools.PlatformHost.Tests/BrowserExtensionSigningTests.cs
+ M csharp/NxTools.PlatformHost.Tests/ExplorerObservationTests.cs
+ M csharp/NxTools.PlatformHost.Tests/ExplorerRevealFeedbackTests.cs
+ M csharp/NxTools.PlatformHost.Tests/ExtensionProcessFixture.cs
+ M csharp/NxTools.PlatformHost.Tests/ExtensionProcessTests.cs
+ M csharp/NxTools.PlatformHost.Tests/InstalledNativeActionTests.cs
+ M csharp/NxTools.PlatformHost.Tests/NxTools.PlatformHost.Tests.csproj
+ M csharp/NxTools.PlatformHost.Tests/Program.cs
+ M csharp/NxTools.PlatformHost.Tests/TestEffects.cs
+ M csharp/NxTools.PlatformHost.Tests/TrustedReleaseManifestTests.cs
+ M csharp/NxTools.PlatformHost.Tests/TrustedUpdateNewUserSimulationTests.cs
+ M csharp/NxTools.PlatformHost.Tests/TrustedUpdateTransactionTests.cs
+ M csharp/NxTools.PlatformHost/ExtensionHost/ExtensionHostBroker.cs
+ M csharp/NxTools.PlatformHost/Generated/ReleaseBinaryManifest.g.cs
+ M csharp/NxTools.PlatformHost/NxTools.PlatformHost.csproj
+ M csharp/NxTools.PlatformHost/Program.cs
+ M csharp/NxTools.PlatformHost/Protocol/ArchiveBrowserPassword.cs
+ M csharp/NxTools.PlatformHost/Protocol/ArchiveEntryContract.cs
+ M csharp/NxTools.PlatformHost/Protocol/ArchiveEntrySession.cs
+ M csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs
+ M csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs
+ M csharp/NxTools.PlatformHost/Protocol/PlatformCapabilities.cs
+ M csharp/NxTools.PlatformHost/Protocol/PlatformCommandParser.cs
+ M csharp/NxTools.PlatformHost/Protocol/PlatformCommandSequenceDispatcher.cs
+ M csharp/NxTools.PlatformHost/Protocol/PlatformPipeClient.cs
+ M csharp/NxTools.PlatformHost/Windows/Archive/ArchiveEntryCache.cs
+ M csharp/NxTools.PlatformHost/Windows/Archive/ArchiveReadHelper.cs
+ M csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVolumeSources.cs
+ M csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerAdmission.cs
+ M csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerRunner.Password.cs
+ M csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerRunner.cs
+ M csharp/NxTools.PlatformHost/Windows/BrowserExtensionExportDialog.cs
+ M csharp/NxTools.PlatformHost/Windows/BrowserExtensionPackageService.cs
+ M csharp/NxTools.PlatformHost/Windows/ClipboardShellTarget.cs
+ M csharp/NxTools.PlatformHost/Windows/ExplorerNativeFolder.cs
+ M csharp/NxTools.PlatformHost/Windows/ExplorerShellActivation.cs
+ M csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionProcessProtocol.cs
+ M csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionProcessRunner.cs
+ M csharp/NxTools.PlatformHost/Windows/IndexerServiceInstaller.cs
+ M csharp/NxTools.PlatformHost/Windows/NativeFileDragService.cs
+ M csharp/NxTools.PlatformHost/Windows/TrustedReleaseManifest.cs
+ M csharp/NxTools.PlatformHost/Windows/TrustedUpdateBroker.cs
+ M csharp/NxTools.PlatformHost/Windows/TrustedUpdateTransaction.cs
+ M csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs
+ M docs/extensions/PROTOCOL.md
+ M docs/extensions/examples/clipboard-text-tools/extension.json
+ M docs/extensions/examples/download-link-list/extension.json
+ M docs/reference-code/README.md
+ M docs/reference-code/archive.md
+ M docs/reference-code/clipboard.md
+ M docs/reference-code/download.md
+ M docs/reference-code/gpui-kit-080.md
+ M docs/reference-code/gpui.md
+ M docs/reference-code/graphite-theme.md
+ M docs/reference-code/markdown-editor.md
+ M docs/reference-code/notifications.md
+ M docs/reference-code/quick-launch-research.md
+ M docs/reference-code/shellrs-ui.md
+ M docs/reference-code/system-shell.md
+ M docs/reference-code/winshun.md
+ M installer/close-owned-processes.ps1
+ M installer/nxtools-next.iss
+ M rust/apps/nxtools-cli/Cargo.toml
+ M rust/apps/nxtools-cli/src/lib.rs
+ M rust/apps/nxtools-cli/src/main.rs
+ M rust/apps/nxtools-desktop/Cargo.toml
+ M rust/apps/nxtools-desktop/src/archive.rs
+ M rust/apps/nxtools-desktop/src/archive/application.rs
+ M rust/apps/nxtools-desktop/src/archive/application_tests.rs
+ M rust/apps/nxtools-desktop/src/archive/browser.rs
+ M rust/apps/nxtools-desktop/src/archive/browser_tests.rs
+ M rust/apps/nxtools-desktop/src/archive/draft.rs
+ M rust/apps/nxtools-desktop/src/archive/entry.rs
+ M rust/apps/nxtools-desktop/src/archive/forms.rs
+ M rust/apps/nxtools-desktop/src/archive/forms_tests.rs
+ M rust/apps/nxtools-desktop/src/archive/job_tests.rs
+ M rust/apps/nxtools-desktop/src/archive/jobs.rs
+ M rust/apps/nxtools-desktop/src/archive/launch_entry.rs
+ M rust/apps/nxtools-desktop/src/archive/model.rs
+ M rust/apps/nxtools-desktop/src/archive/model_tests.rs
+ M rust/apps/nxtools-desktop/src/archive/password.rs
+ M rust/apps/nxtools-desktop/src/archive/progress.rs
+ M rust/apps/nxtools-desktop/src/archive/readmission.rs
+ M rust/apps/nxtools-desktop/src/archive/ui_state.rs
+ M rust/apps/nxtools-desktop/src/archive_launch.rs
+ M rust/apps/nxtools-desktop/src/archive_launch_tests.rs
+ M rust/apps/nxtools-desktop/src/clipboard.rs
+ M rust/apps/nxtools-desktop/src/clipboard/extension_adapter.rs
+ M rust/apps/nxtools-desktop/src/clipboard_preview_presentation_tests.rs
+ M rust/apps/nxtools-desktop/src/clipboard_resize_tests.rs
+ M rust/apps/nxtools-desktop/src/clipboard_worker.rs
+ M rust/apps/nxtools-desktop/src/downloads.rs
+ M rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs
+ M rust/apps/nxtools-desktop/src/downloads/new_download_view.rs
+ M rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
+ M rust/apps/nxtools-desktop/src/downloads/schedule_view.rs
+ M rust/apps/nxtools-desktop/src/downloads/settings_view.rs
+ M rust/apps/nxtools-desktop/src/downloads/task_window.rs
+ M rust/apps/nxtools-desktop/src/downloads/tests.rs
+ M rust/apps/nxtools-desktop/src/downloads/window_support.rs
+ M rust/apps/nxtools-desktop/src/extensions.rs
+ M rust/apps/nxtools-desktop/src/extensions/committed_events.rs
+ M rust/apps/nxtools-desktop/src/extensions/feature_adapters.rs
+ M rust/apps/nxtools-desktop/src/extensions/manual_actions.rs
+ M rust/apps/nxtools-desktop/src/extensions/manual_feedback.rs
+ M rust/apps/nxtools-desktop/src/extensions/manual_runs.rs
+ M rust/apps/nxtools-desktop/src/extensions/runtime_environment.rs
+ M rust/apps/nxtools-desktop/src/extensions/service.rs
+ M rust/apps/nxtools-desktop/src/extensions/ui_host.rs
+ M rust/apps/nxtools-desktop/src/main.rs
+ M rust/apps/nxtools-desktop/src/main_window.rs
+ M rust/apps/nxtools-desktop/src/main_window/archive_page.rs
+ M rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs
+ M rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs
+ M rust/apps/nxtools-desktop/src/main_window/clipboard_page/kit_migration_tests.rs
+ M rust/apps/nxtools-desktop/src/main_window/currency_tests.rs
+ M rust/apps/nxtools-desktop/src/main_window/download_page.rs
+ M rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs
+ M rust/apps/nxtools-desktop/src/main_window/extensions_page.rs
+ M rust/apps/nxtools-desktop/src/main_window/extensions_page/activity.rs
+ M rust/apps/nxtools-desktop/src/main_window/extensions_page/catalog.rs
+ M rust/apps/nxtools-desktop/src/main_window/extensions_page/usage.rs
+ M rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs
+ M rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs
+ M rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs
+ M rust/apps/nxtools-desktop/src/main_window/shell.rs
+ M rust/apps/nxtools-desktop/src/main_window/tests.rs
+ M rust/apps/nxtools-desktop/src/main_window/tools_page.rs
+ M rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs
+ M rust/apps/nxtools-desktop/src/network_settings.rs
+ M rust/apps/nxtools-desktop/src/network_settings/blacklist.rs
+ M rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs
+ M rust/apps/nxtools-desktop/src/notifications.rs
+ M rust/apps/nxtools-desktop/src/notifications/presentation.rs
+ M rust/apps/nxtools-desktop/src/notifications/presentation_tests.rs
+ M rust/apps/nxtools-desktop/src/platform_events.rs
+ M rust/apps/nxtools-desktop/src/quick_launch.rs
+ M rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs
+ M rust/apps/nxtools-desktop/src/runtime.rs
+ M rust/apps/nxtools-desktop/src/theme.rs
+ M rust/apps/nxtools-desktop/src/theme_graphite_tests.rs
+ M rust/apps/nxtools-desktop/src/tools/mod.rs
+ M rust/apps/nxtools-desktop/src/ui/capture_controls.rs
+ M rust/apps/nxtools-desktop/src/ui/components/action.rs
+ M rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs
+ M rust/apps/nxtools-desktop/src/ui/components/field.rs
+ M rust/apps/nxtools-desktop/src/ui/components/hotkey.rs
+ M rust/apps/nxtools-desktop/src/ui/components/menu.rs
+ M rust/apps/nxtools-desktop/src/ui/components/mod.rs
+ M rust/apps/nxtools-desktop/src/ui/components/native_context_menu.rs
+ M rust/apps/nxtools-desktop/src/ui/components/native_context_menu_tests.rs
+ M rust/apps/nxtools-desktop/src/ui/components/path_list.rs
+ M rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs
+ M rust/apps/nxtools-desktop/src/ui/components/settings.rs
+ M rust/apps/nxtools-desktop/src/ui/components/state.rs
+ M rust/apps/nxtools-desktop/src/ui/components/styled_menu_surface.rs
+ M rust/apps/nxtools-desktop/src/ui/components/titlebar.rs
+ M rust/apps/nxtools-desktop/src/ui/components/tooltip.rs
+ M rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs
+ M rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs
+ M rust/apps/nxtools-desktop/src/ui/history.rs
+ M rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs
+ M rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs
+ M rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs
+ M rust/apps/nxtools-desktop/src/ui/markdown_document.rs
+ M rust/apps/nxtools-desktop/src/ui/metrics.rs
+ M rust/apps/nxtools-desktop/src/ui/mod.rs
+ M rust/apps/nxtools-desktop/src/ui/polish_tests.rs
+ M rust/crates/nxtools-archive/src/engine.rs
+ M rust/crates/nxtools-archive/src/formats/xz.rs
+ M rust/crates/nxtools-archive/src/formats/zstd.rs
+ M rust/crates/nxtools-archive/src/product.rs
+ M rust/crates/nxtools-archive/src/worker.rs
+ M rust/crates/nxtools-archive/src/worker_browser.rs
+ M rust/crates/nxtools-archive/src/worker_codecs.rs
+ M rust/crates/nxtools-archive/src/worker_codecs/volumes.rs
+ M rust/crates/nxtools-archive/src/worker_conflict.rs
+ M rust/crates/nxtools-archive/src/worker_output.rs
+ M rust/crates/nxtools-archive/src/worker_password.rs
+ M rust/crates/nxtools-archive/tests/product_read_consumer.rs
+ M rust/crates/nxtools-archive/tests/worker_wire.rs
+ M rust/crates/nxtools-clipboard/src/lib.rs
+ M rust/crates/nxtools-clipboard/src/query.rs
+ M rust/crates/nxtools-core/Cargo.toml
+ M rust/crates/nxtools-core/src/archive.rs
+ M rust/crates/nxtools-core/src/archive_tests.rs
+ M rust/crates/nxtools-core/src/extensions.rs
+ M rust/crates/nxtools-core/src/lib.rs
+ M rust/crates/nxtools-download/src/engine/projection.rs
+ M rust/crates/nxtools-download/src/http.rs
+ M rust/crates/nxtools-extensions/Cargo.toml
+ M rust/crates/nxtools-extensions/src/broker.rs
+ M rust/crates/nxtools-extensions/src/lib.rs
+ M rust/crates/nxtools-extensions/src/registry.rs
+ M rust/crates/nxtools-extensions/src/runtime.rs
+ M rust/crates/nxtools-extensions/src/script.rs
+ M rust/crates/nxtools-extensions/src/settings_transaction.rs
+ M rust/crates/nxtools-ipc/src/lib.rs
+ M rust/crates/nxtools-protocol/src/archive_browser.rs
+ M rust/crates/nxtools-protocol/src/archive_job.rs
+ M rust/crates/nxtools-protocol/src/desktop_archive_intent.rs
+ M rust/crates/nxtools-protocol/src/lib.rs
+ M scripts/build.ps1
+ M scripts/package.ps1
+ M scripts/windows-build-tools.ps1
+ M scripts/write-release-binary-manifest.ps1
+ M tests/architecture/browser-native-messaging.ps1
+ M tests/architecture/clipboard-ui-lifecycle.ps1
+ M tests/architecture/desktop-shell-lifecycle.ps1
+ M tests/architecture/download-ui-lifecycle.ps1
+ M tests/architecture/gpui-release-contracts.py
+ M tests/architecture/installer-browserhost-replacement.ps1
+ M tests/architecture/installer-runtime.ps1
+ M tests/architecture/installer-update-lifecycle.py
+ M tests/architecture/markdown-editor-contracts.py
+ M vendor/gpui-component-080/NXTOOLS-PATCH.md
+ M vendor/gpui-component-080/src/notification.rs
+ M vendor/gpui-kit-markdown-editor-010/NXTOOLS-PATCH.md
+ M vendor/gpui-kit-markdown-editor-010/NXTOOLS-UPSTREAM.json
+ M vendor/gpui-kit-markdown-editor-010/src/element.rs
+ M vendor/gpui-kit-markdown-editor-010/src/serialize.rs
+?? .pi/plan/runtime-interaction-feedback-20261024.md
+?? .trellis/spec/nxtools-archive/backend/rar-safety.md
+?? .trellis/spec/nxtools-archive/backend/sevenz-safety.md
+?? .trellis/spec/nxtools-archive/backend/tar-stream-safety.md
+?? .trellis/spec/nxtools-cli/backend/archive-commands.md
+?? .trellis/spec/platformhost/floating-assistant.md
+?? .trellis/tasks/10-16-archive-manager/archive-cli-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/archive-cli-contract.md
+?? .trellis/tasks/10-16-archive-manager/archive-cli-lifecycle-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/archive-cli-lifecycle-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/archive-cli-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/bootstrap-maintenance-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/manual-package26-live-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/manual-package26-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/manual-package27-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/manual-package28-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/p208-live-resumed-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-a-b2-b3-safe04-closeout-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-a-b2-b3-safe04-closeout.md
+?? .trellis/tasks/10-16-archive-manager/phase-e-integration-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-e-integration-convergence.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-password-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-password-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-production-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-production-contract.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-production-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-production-repair-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-production-repair-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-tree-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-p208-tree-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-release-chain-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-release-chain-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-release-chain-repair-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-release-chain-repair-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-shell-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-shell-contract.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-shell-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-shell-repair-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-shell-repair-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-spike-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-spike-contract.md
+?? .trellis/tasks/10-16-archive-manager/phase-f-spike-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/rar-risk-readmission-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/rar-risk-readmission-contract.md
+?? .trellis/tasks/10-16-archive-manager/rar-risk-readmission-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/release-test-fields-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/release-test-fields-contract.md
+?? .trellis/tasks/10-16-archive-manager/release-test-fields-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/sevenz-risk-readmission-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/sevenz-risk-readmission-contract.md
+?? .trellis/tasks/10-16-archive-manager/sevenz-risk-readmission-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/shell-settings-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/shell-settings-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/single-installer-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/tar-stream-risk-readmission-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/tar-stream-risk-readmission-contract.md
+?? .trellis/tasks/10-16-archive-manager/tar-stream-risk-readmission-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/ui-ac-settings-repair-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/ui-ac-settings-repair-outcomes.md
+?? .trellis/tasks/10-16-archive-manager/ui-correction-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/ui-remaining-acceptance.md
+?? .trellis/tasks/10-16-archive-manager/ui-remaining-outcomes.md
+?? .trellis/tasks/10-22-browser-extension-refactor/
+?? .trellis/tasks/10-22-clipboard-density-resource-names/
+?? .trellis/tasks/10-23-floating-assistant/
+?? .trellis/tasks/10-23-notification-copy-button/
+?? .trellis/tasks/10-24-download-enter-popover/
+?? .trellis/tasks/10-24-extensions-api-ux-repair/
+?? .trellis/tasks/10-24-runtime-feedback-reveal-ui/
+?? .trellis/tasks/10-24-runtime-interaction-feedback/
+?? .trellis/tasks/10-25-archive-password-regression/
+?? .trellis/tasks/10-25-archive-prompt-object/
+?? .trellis/tasks/10-25-archive-settings-search-diagnosis/
+?? .trellis/tasks/10-25-button-accessible-names/
+?? .trellis/tasks/10-25-clipboard-stable-focus/
+?? .trellis/tasks/10-25-default-submit-keyboard/
+?? .trellis/tasks/10-25-download-picker-identity/
+?? .trellis/tasks/10-25-download-sort-closeout/
+?? .trellis/tasks/10-25-download-sort-keyboard/
+?? .trellis/tasks/10-25-extensions-capability-expansion/
+?? .trellis/tasks/10-25-extensions-compile-closeout/
+?? .trellis/tasks/10-25-extensions-host-http/
+?? .trellis/tasks/10-25-extensions-independent-search/
+?? .trellis/tasks/10-25-extensions-namespaced-storage/
+?? .trellis/tasks/10-25-extensions-png-exchange/
+?? .trellis/tasks/10-25-extensions-progress-blobs/
+?? .trellis/tasks/10-25-extensions-resident-w10/
+?? .trellis/tasks/10-25-extensions-validated-settings/
+?? .trellis/tasks/10-25-rem-new-download/
+?? .trellis/tasks/10-25-rem-role-consistency/
+?? .trellis/tasks/10-26-command-naming/
+?? .trellis/tasks/10-26-cursor-semantics/
+?? .trellis/tasks/10-26-download-virtual-projection/
+?? .trellis/tasks/10-26-extension-preview-cancel-diagnosis/
+?? .trellis/tasks/10-26-rem-archive-final-matrix/
+?? .trellis/tasks/10-26-rem-download-settings-task/
+?? .trellis/tasks/10-26-rem-new-download-basic/
+?? .trellis/tasks/10-26-rem-new-download-overlays/
+?? .trellis/tasks/10-26-rem-pages-global-tools/
+?? .trellis/tasks/10-26-rem-quick-clipboard/
+?? .trellis/tasks/10-26-rem-shared-ui/
+?? Program.cs
+?? browser_extension/nxtools-interceptor.zip
+?? browser_extension/nxtools-interceptor/bg/
+?? browser_extension/nxtools-interceptor/content/
+?? browser_extension/nxtools-interceptor/popup/
+?? browser_extension/nxtools-interceptor/tests/background-modules.test.js
+?? browser_extension/nxtools-interceptor/tests/content-browser.cjs
+?? browser_extension/nxtools-interceptor/tests/content-modules.test.js
+?? browser_extension/nxtools-interceptor/tests/defects.behavior.test.js
+?? browser_extension/nxtools-interceptor/tests/harness/
+?? browser_extension/nxtools-interceptor/tests/refine-browser.cjs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveAssociationSettingsTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveCliCleanupLifecycleTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveCliHostTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveIntegrationPlanTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveIntegrationServiceTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveReleaseTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveShellSelectionTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveTempSettingsTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveVirtualDragTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveVirtualPasswordTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ArchiveVirtualTreeTests.cs
+?? csharp/NxTools.PlatformHost.Tests/DirectoryOpusTargetObservationTests.cs
+?? csharp/NxTools.PlatformHost.Tests/ExtensionSettingPathTests.cs
+?? csharp/NxTools.PlatformHost.Tests/FloatingAssistantCoordinatorTests.cs
+?? csharp/NxTools.PlatformHost.Tests/FloatingAssistantDropTests.cs
+?? csharp/NxTools.PlatformHost.Tests/FloatingAssistantInputTests.cs
+?? csharp/NxTools.PlatformHost.Tests/FloatingAssistantOleAcceptance.cs
+?? csharp/NxTools.PlatformHost.Tests/FloatingAssistantRendererFixture.cs
+?? csharp/NxTools.PlatformHost.Tests/MainWindowStartupTests.cs
+?? csharp/NxTools.PlatformHost.Tests/RarReadmissionHost.cs
+?? csharp/NxTools.PlatformHost.Tests/RarRiskInteractionTests.cs
+?? csharp/NxTools.PlatformHost.Tests/RarRiskReadmissionTests.cs
+?? csharp/NxTools.PlatformHost.Tests/SevenzReadmissionHost.cs
+?? csharp/NxTools.PlatformHost.Tests/SevenzRiskReadmissionTests.cs
+?? csharp/NxTools.PlatformHost.Tests/SystemProxySnapshotTests.cs
+?? csharp/NxTools.PlatformHost.Tests/TarStreamReadmissionHost.cs
+?? csharp/NxTools.PlatformHost.Tests/TarStreamRiskTests.cs
+?? csharp/NxTools.PlatformHost.Tests/TarStreamSafetyTests.cs
+?? csharp/NxTools.PlatformHost.Tests/TrustedBootstrapMaintenanceTests.cs
+?? csharp/NxTools.PlatformHost.Tests/TrustedUpdateRecoveryTests.cs
+?? csharp/NxTools.PlatformHost/Generated/ArchiveReleaseManifest.g.cs
+?? csharp/NxTools.PlatformHost/Protocol/ArchiveCliHost.cs
+?? csharp/NxTools.PlatformHost/Protocol/ArchiveEntrySession.Open.cs
+?? csharp/NxTools.PlatformHost/Protocol/ArchiveEntrySession.Password.cs
+?? csharp/NxTools.PlatformHost/Protocol/ArchiveVirtualDragContract.cs
+?? csharp/NxTools.PlatformHost/Protocol/FloatingAssistantContract.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveEntryCache.TempRoots.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveIntegrationPlan.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveIntegrationService.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveSelectionHandlerPlan.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualContent.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualDragSession.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualFileDataObject.cs
+?? csharp/NxTools.PlatformHost/Windows/Archive/WindowsArchiveIntegrationStore.cs
+?? csharp/NxTools.PlatformHost/Windows/DefaultAppsSettingsOpener.cs
+?? csharp/NxTools.PlatformHost/Windows/DirectoryOpusTargetObservation.cs
+?? csharp/NxTools.PlatformHost/Windows/ExtensionSettingPathPicker.cs
+?? csharp/NxTools.PlatformHost/Windows/FloatingAssistantCoordinator.cs
+?? csharp/NxTools.PlatformHost/Windows/FloatingAssistantDropTarget.cs
+?? csharp/NxTools.PlatformHost/Windows/FloatingAssistantInputSurface.cs
+?? csharp/NxTools.PlatformHost/Windows/MainWindowPreparation.cs
+?? csharp/NxTools.PlatformHost/Windows/SystemProxySnapshotReader.cs
+?? csharp/NxTools.PlatformHost/Windows/TrustedBootstrapMaintenance.cs
+?? csharp/NxTools.PlatformHost/Windows/TrustedBootstrapMaintenanceWindows.cs
+?? csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.MainWindow.cs
+?? csharp/NxTools.ShellSelectionHelper/
+?? docs/audits/2026-10-24-extensions-api-ux-review.md
+?? docs/extensions/AUTHORING.md
+?? docs/extensions/build_schemas.py
+?? docs/extensions/manifest.schema.json
+?? docs/extensions/methods.schema.json
+?? docs/extensions/sdk/
+?? docs/extensions/test_contracts.py
+?? docs/reference-code/archive-shell.md
+?? docs/reference-code/archive-virtual-drag.md
+?? docs/reference-code/assistant.md
+?? installer/bootstrap-migration.ps1
+?? installer/nxtools-maintenance.iss
+?? rust/apps/nxtools-cli/README.md
+?? rust/apps/nxtools-cli/src/archive.rs
+?? rust/apps/nxtools-cli/src/archive/
+?? rust/apps/nxtools-cli/tests/
+?? rust/apps/nxtools-desktop/src/archive/browser_drag.rs
+?? rust/apps/nxtools-desktop/src/archive/browser_drag_tests.rs
+?? rust/apps/nxtools-desktop/src/archive/model_drag.rs
+?? rust/apps/nxtools-desktop/src/archive/shell_integration.rs
+?? rust/apps/nxtools-desktop/src/archive/virtual_drag_spike.rs
+?? rust/apps/nxtools-desktop/src/clipboard/popup_activation.rs
+?? rust/apps/nxtools-desktop/src/downloads/directory_picker.rs
+?? rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs
+?? rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs
+?? rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs
+?? rust/apps/nxtools-desktop/src/downloads/new_download_overlay_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/extensions/event_history.rs
+?? rust/apps/nxtools-desktop/src/extensions/pages.rs
+?? rust/apps/nxtools-desktop/src/extensions/pages_tests.rs
+?? rust/apps/nxtools-desktop/src/extensions/service_storage.rs
+?? rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs
+?? rust/apps/nxtools-desktop/src/extensions/storage_management.rs
+?? rust/apps/nxtools-desktop/src/main_window/archive_temp_settings.rs
+?? rust/apps/nxtools-desktop/src/main_window/command_naming_tests.rs
+?? rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs
+?? rust/apps/nxtools-desktop/src/main_window/extensions_page/removal_tests.rs
+?? rust/apps/nxtools-desktop/src/main_window/extensions_page/setting_paths.rs
+?? rust/apps/nxtools-desktop/src/main_window/extensions_page/storage.rs
+?? rust/apps/nxtools-desktop/src/main_window/floating_assistant_tests.rs
+?? rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs
+?? rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/network_settings/system_proxy.rs
+?? rust/apps/nxtools-desktop/src/network_settings/theme_chooser.rs
+?? rust/apps/nxtools-desktop/src/notifications/copy.rs
+?? rust/apps/nxtools-desktop/src/notifications/copy_tests.rs
+?? rust/apps/nxtools-desktop/src/platform_events/
+?? rust/apps/nxtools-desktop/src/quick_launch/floating_assistant.rs
+?? rust/apps/nxtools-desktop/src/tools/floating_assistant/
+?? rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs
+?? rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs
+?? rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs
+?? rust/crates/nxtools-archive/tests/prompt_display_contract.rs
+?? rust/crates/nxtools-archive/tests/rar_readmission_chain.rs
+?? rust/crates/nxtools-archive/tests/rar_readmission_contract.rs
+?? rust/crates/nxtools-archive/tests/sevenz_readmission_chain.rs
+?? rust/crates/nxtools-archive/tests/sevenz_readmission_contract.rs
+?? rust/crates/nxtools-archive/tests/tar_stream_readmission_chain.rs
+?? rust/crates/nxtools-archive/tests/tar_stream_readmission_contract.rs
+?? rust/crates/nxtools-archive/tests/tar_stream_readmission_guard.rs
+?? rust/crates/nxtools-core/src/floating_assistant.rs
+?? rust/crates/nxtools-core/src/floating_assistant_tests.rs
+?? rust/crates/nxtools-core/tests/
+?? rust/crates/nxtools-download/tests/http_filename_contract.rs
+?? rust/crates/nxtools-extensions/examples/
+?? rust/crates/nxtools-extensions/src/api.rs
+?? rust/crates/nxtools-extensions/src/blob_calls.rs
+?? rust/crates/nxtools-extensions/src/blobs.rs
+?? rust/crates/nxtools-extensions/src/data_plane.rs
+?? rust/crates/nxtools-extensions/src/input.rs
+?? rust/crates/nxtools-extensions/src/network_declaration.rs
+?? rust/crates/nxtools-extensions/src/page_cursors.rs
+?? rust/crates/nxtools-extensions/src/progress.rs
+?? rust/crates/nxtools-extensions/src/runtime_storage.rs
+?? rust/crates/nxtools-extensions/src/session.rs
+?? rust/crates/nxtools-extensions/src/setting_validation.rs
+?? rust/crates/nxtools-extensions/src/storage.rs
+?? rust/crates/nxtools-extensions/src/storage_calls.rs
+?? rust/crates/nxtools-extensions/tests/api_contracts.rs
+?? rust/crates/nxtools-extensions/tests/blob_store.rs
+?? rust/crates/nxtools-extensions/tests/network_declarations.rs
+?? rust/crates/nxtools-extensions/tests/session_contracts.rs
+?? rust/crates/nxtools-extensions/tests/storage_restore.rs
+?? rust/crates/nxtools-extensions/tests/storage_store.rs
+?? rust/crates/nxtools-extensions/tests/transport_declarations.rs
+?? rust/crates/nxtools-extensions/tests/transport_runtime.rs
+?? rust/crates/nxtools-extensions/tests/validated_settings.rs
+?? rust/crates/nxtools-ipc/src/archive_authorization.rs
+?? rust/crates/nxtools-ipc/src/archive_virtual_drag.rs
+?? rust/crates/nxtools-protocol/src/archive_shell_integration.rs
+?? rust/crates/nxtools-protocol/src/archive_virtual_drag.rs
+?? rust/crates/nxtools-protocol/src/floating_assistant.rs
+?? rust/crates/nxtools-protocol/src/main_window.rs
+?? rust/crates/nxtools-protocol/src/system_proxy.rs
+?? scripts/publish-release-hosts.ps1
+?? scripts/write-shell-selection-identity.ps1
+?? tests/architecture/archive-cli.py
+?? tests/architecture/archive-phase-f-shell.py
+?? tests/architecture/archive-phase-f-spike.py
+?? tests/architecture/archive-release-chain.ps1
+?? tests/architecture/bootstrap-maintenance.py
+?? tests/architecture/clipboard-ui-lifecycle.tests.py
+?? tests/architecture/floating-assistant-lifecycle.py
+?? tests/architecture/installer-bootstrap-migration.ps1
+?? tests/architecture/installer-owned-set-rollback.ps1
+?? tests/architecture/installer-preparation-recovery.ps1
+?? tests/architecture/staging-key-cleanup.ps1
+?? tests/integration/

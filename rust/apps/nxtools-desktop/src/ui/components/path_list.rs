@@ -9,7 +9,7 @@ use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude:
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::action::{danger_ghost_button_variant, labelled_icon_action};
-use crate::ui::metrics::{CONTROL_HEIGHT_INPUT, RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};
+use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};
 use crate::ui::typography::{
     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
@@ -73,29 +73,29 @@ pub(crate) fn path_exclusion_setting(
     div()
         .debug_selector(|| "quick-launch-exclusion-setting".into())
         .w_full()
-        .py(px(SPACING_12))
+        .py_3()
         .border_b_1()
         .border_color(theme.border_subtle)
         .flex()
         .flex_col()
-        .gap(px(SPACING_8))
+        .gap_2()
         .child(
             div()
                 .w_full()
                 .flex()
                 .items_center()
-                .gap(px(SPACING_12))
+                .gap_3()
                 .child(
                     div()
                         .min_w_0()
                         .flex()
                         .items_center()
-                        .gap(px(SPACING_4))
+                        .gap_1()
                         .child(
                             div()
-                                .h(px(LINE_HEIGHT_BODY))
-                                .text_size(px(TEXT_BODY))
-                                .line_height(px(LINE_HEIGHT_BODY))
+                                .h(ordinary_rem(LINE_HEIGHT_BODY))
+                                .text_size(ordinary_rem(TEXT_BODY))
+                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
                                 .text_color(theme.text)
                                 .child("排除目录"),
                         )
@@ -107,7 +107,7 @@ pub(crate) fn path_exclusion_setting(
                 .child(
                     div()
                         .debug_selector(|| "quick-launch-add-index-exclusion".into())
-                        .h(px(CONTROL_HEIGHT_INPUT))
+                        .h_8()
                         .flex_none()
                         .child(add),
                 ),
@@ -147,6 +147,7 @@ fn path_row(
     let row_select = Rc::clone(&callbacks.select);
     let remove = Rc::clone(&callbacks.remove);
     let delete_variant = danger_ghost_button_variant(theme, cx);
+    let remove_name = format!("移除排除目录：{path}");
 
     ListItem::new(row_selector.clone())
         .debug_selector(move || row_selector.to_string())
@@ -154,7 +155,7 @@ fn path_row(
         .selected(selected)
         .aria_selected(selected)
         .w_full()
-        .h(px(PATH_LIST_ROW_HEIGHT))
+        .min_h(px(PATH_LIST_ROW_HEIGHT))
         .py_0()
         .flex_none()
         .cursor_pointer()
@@ -178,13 +179,13 @@ fn path_row(
                 .items_center()
                 .child(
                     div()
-                        .w(px(PATH_LIST_ICON_RAIL_WIDTH))
+                        .w(ordinary_rem(PATH_LIST_ICON_RAIL_WIDTH))
                         .flex_none()
                         .flex()
                         .items_center()
                         .child(
                             Icon::new(MaterialIcon::Folder)
-                                .size(px(14.0))
+                                .small()
                                 .text_color(theme.icon_muted),
                         ),
                 )
@@ -193,12 +194,12 @@ fn path_row(
                         .id(path_selector.clone())
                         .debug_selector(move || path_selector.to_string())
                         .min_w_0()
-                        .h(px(LINE_HEIGHT_BODY))
+                        .h(ordinary_rem(LINE_HEIGHT_BODY))
                         .flex_1()
-                        .ml(px(SPACING_8))
+                        .ml_2()
                         .truncate()
-                        .text_size(px(TEXT_BODY))
-                        .line_height(px(LINE_HEIGHT_BODY))
+                        .text_size(ordinary_rem(TEXT_BODY))
+                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
                         .text_color(theme.text_secondary)
                         .tooltip(move |window, cx| {
                             let tooltip_path = tooltip_path.clone();
@@ -220,7 +221,8 @@ fn path_row(
                         .flex_none()
                         .child(
                             Button::new(delete_id)
-                                .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
+                                .accessibility_label(remove_name)
+                                .icon(Icon::new(MaterialIcon::Delete).small())
                                 // Named 40px delete hit contract; Kit keeps radius/content/state grammar.
                                 .with_size(px(PATH_LIST_DELETE_HIT_TARGET))
                                 .custom(delete_variant)
@@ -239,12 +241,12 @@ fn empty_path_row(theme: Theme) -> AnyElement {
     div()
         .debug_selector(|| "quick-launch-exclusion-empty".into())
         .w_full()
-        .h(px(PATH_LIST_ROW_HEIGHT))
-        .px(px(SPACING_12))
+        .min_h(px(PATH_LIST_ROW_HEIGHT))
+        .px_3()
         .flex()
         .items_center()
-        .text_size(px(TEXT_LABEL))
-        .line_height(px(LINE_HEIGHT_LABEL))
+        .text_size(ordinary_rem(TEXT_LABEL))
+        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
         .text_color(theme.text_muted)
         .child("尚未添加排除目录")
         .into_any_element()
@@ -325,5 +327,42 @@ mod queue01_tests {
         window.run_until_parked();
         assert_eq!(removes.get(), 1);
         assert_eq!(selects.get(), 0, "delete must not also select the row");
+    }
+
+    #[gpui_kit::test]
+    fn accessible_name_excluded_path_delete_buttons_identify_each_object(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        let removes = Rc::new(Cell::new(0));
+        let held = removes.clone();
+        let (_, surface) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|_| PathFixture {
+                selects: Rc::new(Cell::new(0)),
+                removes: held,
+            });
+            gpui_kit::base::Root::new(view, window, cx)
+        });
+        surface.refresh().expect("actual excluded path rows");
+        let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        for (index, path) in [r"C:\synthetic\合成长路径", r"C:\synthetic\第二路径"]
+            .into_iter()
+            .enumerate()
+        {
+            let id = gpui_kit::ElementId::from(gpui_kit::SharedString::from(format!(
+                "quick-launch-exclusion-delete-button-{index}"
+            )));
+            let button = nodes
+                .iter()
+                .find(|node| node.path().last() == Some(&id))
+                .expect("actual trailing delete Button");
+            assert_eq!(button.role(), Some(gpui_kit::Role::Button));
+            assert_eq!(
+                button.label(),
+                Some(format!("移除排除目录：{path}").as_str())
+            );
+            assert_eq!(button.bounds().size, gpui_kit::size(px(40.0), px(40.0)));
+        }
+        assert_eq!(removes.get(), 0, "semantic observation cannot remove paths");
     }
 }

@@ -1,0 +1,374 @@
+[
+  {
+    "path": "docs/reference-code/quick-launch-research.md",
+    "before_sha256": "1251ab336ff23a1bf475503dd83037d0788b35109b3ea9214ebd8457c8d3c418",
+    "after_sha256": "7006227d4c931089b41f86bb21630eba56a04c2fbd72f95463be2bccc3104261",
+    "after_snapshot": "evidence/current/docs/reference-code/quick-launch-research.md",
+    "ops": [
+      {
+        "old_start": 1395,
+        "old_end": 1395,
+        "new_start": 1395,
+        "new_end": 1420,
+        "old": "",
+        "new": "CiMjIyBBdWRpdCAjMTMgcmV0YWluZWQgcHJlc2VudGF0aW9uIG93bmVyc2hpcCByZXZpZXcgKDIwMjYtMTAtMjYpCgotIFJlLXJlYWQgTGlzdGFyeSBtYW5hZ2VkIFNlYXJjaE1vZGUuUmVzdWx0cy9zZWxlY3Rpb24gYW5kIFNlYXJjaFdpbmRvd0Jhc2UgZXZlbnQKICBiaW5kaW5ncyAtPiBTaG93V2luZG93L2Jhc2UuU2hvdy9BY3RpdmF0ZS9IaWRlL0Nsb3NlL2lucHV0IGZvY3VzIGZpcnN0LiBPbmx5IHRoZQogIG1hbmFnZWQgYXBwbGljYXRpb24gYm91bmRhcnkgaXMgYXZhaWxhYmxlLCBub3QgTGlzdGFyeSdzIHByb3ByaWV0YXJ5IG5hdGl2ZSBlbmdpbmUuCi0gU3dpZnRMaXN0IHNlY29uZDogY3VycmVudCBgQXBwL1ZpZXdzL1F1aWNrU2VhcmNoV2luZG93L0hlbHBlcnMvCiAgUXVpY2tTZWFyY2hXaW5kb3dJbnB1dEhhbmRsZXIuY3NgIGFuZCBgUXVpY2tTZWFyY2hXaW5kb3dMaWZlY3ljbGUuY3NgIHByZXNlcnZlCiAgb3JpZ2luYWwgbmVzdGVkIGFjdGlvbi9JTUUvRXNjYXBlL3Nob3ctaGlkZS9mb2N1cyBvd25lcnMuIFRoZSBlYXJsaWVyIGluZGV4ZWQKICBpbnB1dCBoYW5kbGVyIHdpdGhvdXQgSGVscGVycyBpcyBhYnNlbnQgaW4gdGhpcyBzb3VyY2Ugc25hcHNob3QuIFdQRi9uYXRpdmUKICBpbXBsZW1lbnRhdGlvbiBpcyBub3QgaW5mZXJyZWQgZnJvbSBhcHBsaWNhdGlvbiBzb3VyY2VzLgotIEdQVUkgY29kaW5nIGd1aWRlIHBlcnNpc3RlbnQgVUkgdGV4dCByZXF1aXJlcyBzdGFibGUgU2hhcmVkU3RyaW5nIGluIHRoZSBvcmlnaW5hbAogIHZpZXcvZW50aXR5LCBjbG9uZWQgYnkgaGFuZGxlIGluIGVsZW1lbnRzOyBtdXRhYmxlIGVkaXQvZm9ybWF0IGJ1ZmZlcnMgYW5kIG9yaWdpbmFsCiAgZG9tYWluL3RyYW5zcG9ydC9leGVjdXRpb24gcGF5bG9hZCByZW1haW4gc2VwYXJhdGUuIExvY2tlZCBwcmUwLjMuOSBTdHlsZWRUZXh0OjpuZXcKICBhY2NlcHRzIEludG88U2hhcmVkU3RyaW5nPiBhbmQgcmV0YWlucyBpdDsgaXQgZG9lcyBub3QgcmVwYWlyIHJlcGVhdGVkIFN0cmluZyBjbG9uaW5nLgotIE5leHQgcGFuZWwgbmV3L3ByZXBhcmVfZm9yX3Nob3cvcmVwbGFjZV9yZXN1bHRzL3JlY2VudC1kaXJlY3RvcnkgdXBkYXRlcyBhcmUgdGhlCiAgcmVzdWx0IHByZXNlbnRhdGlvbiBjb21taXQgYm91bmRhcmllczsgcmVuZGVyX3Jlc3VsdCBjdXJyZW50bHkgY29waWVzIGxvbmcgdGl0bGUsCiAgc3VidGl0bGUvZmFsbGJhY2sgYW5kIGEgZnVsbCBTZWFyY2hSZXN1bHQgaW50byBob3ZlciBjYWxsYmFja3MgZWFjaCBmcmFtZS4gT3JpZ2luYWwKICBhY3Rpb24tbW9kZSBsZXZlbHMvaXRlbXMgcmV0YWluIGRpc3BsYXkgbGFiZWxzL3RpdGxlcyBzZXBhcmF0ZWx5IGZyb20gZXhlY3V0YWJsZQogIGFjdGlvbi9zZXNzaW9uL3BhdGggcGF5bG9hZCBhbmQgZWRpdGFibGUgZmlsdGVyLiBQcmVwYXJlIGZ1bGwgc2hhcmVkIGRpc3BsYXkgdmFsdWVzCiAgYXQgdGhvc2Ugb3duZXJzIHdpdGhvdXQgYW5vdGhlciBjYWNoZS9zZWFyY2ggY29udHJvbGxlciBvciByZXdyaXRpbmcgRmluZGVyL0lQQyBkYXRhLgotIFByZXNlcnZlIGV4YWN0IHRleHQsIGhpZ2hsaWdodC9vcmRlciwgZ2VuZXJhdGlvbi9zZWxlY3Rpb24sIGNhcHR1cmVkIHByZXZpZXcgcGF5bG9hZCwKICBhY3Rpb24gc3RhY2svcXVlcnkgcmVzdG9yYXRpb24gYW5kIG9yaWdpbmFsIHJlbGVhc2UvY2xvc2UvZm9jdXMvbmF0aXZlIGJ1ZGdldHMuCiAgRXZpZGVuY2Ugb3duZXI6IGAudHJlbGxpcy90YXNrcy8xMC0yNi1xdWljay1yZXRhaW5lZC10ZXh0L2A7IHJlYWwgcmVwZWF0ZWQgcHJvZHVjdGlvbgogIHJlbmRlciBoYW5kbGUgaWRlbnRpdHkgaXMgZGlzdGluY3QgZnJvbSBuYXRpdmUvRFBJL3Zpc3VhbC91c2VyIGFjY2VwdGFuY2UuCg=="
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch.rs",
+    "before_sha256": "55d950208060777298b3118a350966b5a5717f66e8d1de338fc01bf1a89d6e6d",
+    "after_sha256": "d833dbc06c067ea27cf83be81e5dc2ca7bb5e0f94a8eea1f1a14419d943826a2",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch.rs",
+    "ops": [
+      {
+        "old_start": 157,
+        "old_end": 157,
+        "new_start": 157,
+        "new_end": 159,
+        "old": "",
+        "new": "bW9kIHJldGFpbmVkX3RleHQ7CnVzZSByZXRhaW5lZF90ZXh0OjpRdWlja0xhdW5jaFJlc3VsdHM7Cg=="
+      },
+      {
+        "old_start": 3932,
+        "old_end": 3932,
+        "new_start": 3934,
+        "new_end": 3936,
+        "old": "",
+        "new": "bW9kIHJldGFpbmVkX3RleHRfdGVzdHM7CiNbY2ZnKHRlc3QpXQo="
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+    "before_sha256": "22f7cb1b9973fc5b8c4cb71ed420dbc86f944982c619dae6834f725e1ed465b9",
+    "after_sha256": "807bd39a029ac8bd5851fd842bca60122f6c43c56ca0d26948a19cd1e90a55d2",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+    "ops": [
+      {
+        "old_start": 46,
+        "old_end": 47,
+        "new_start": 46,
+        "new_end": 47,
+        "old": "ICAgIHB1YihjcmF0ZSkgcmVzdWx0czogVmVjPFNlYXJjaFJlc3VsdD4sCg==",
+        "new": "ICAgIHB1YihjcmF0ZSkgcmVzdWx0czogUXVpY2tMYXVuY2hSZXN1bHRzLAo="
+      },
+      {
+        "old_start": 52,
+        "old_end": 53,
+        "new_start": 52,
+        "new_end": 53,
+        "old": "ICAgIHB1YihjcmF0ZSkgc3RhdHVzOiBPcHRpb248U3RyaW5nPiwK",
+        "new": "ICAgIHB1YihjcmF0ZSkgc3RhdHVzOiBPcHRpb248Z3B1aV9raXQ6OlNoYXJlZFN0cmluZz4sCg=="
+      },
+      {
+        "old_start": 126,
+        "old_end": 127,
+        "new_start": 126,
+        "new_end": 128,
+        "old": "ICAgICAgICAgICAgICAgICAgICAgICAgdGhpcy5yZXN1bHRzID0gcmVjZW50X2RpcmVjdG9yeV9yZXN1bHRzKCZ0aGlzLnJlY2VudF9kaXJlY3RvcmllcywgJnF1ZXJ5KTsK",
+        "new": "ICAgICAgICAgICAgICAgICAgICAgICAgdGhpcy5yZXN1bHRzID0KICAgICAgICAgICAgICAgICAgICAgICAgICAgIHJlY2VudF9kaXJlY3RvcnlfcmVzdWx0cygmdGhpcy5yZWNlbnRfZGlyZWN0b3JpZXMsICZxdWVyeSkuaW50bygpOwo="
+      },
+      {
+        "old_start": 204,
+        "old_end": 205,
+        "new_start": 205,
+        "new_end": 206,
+        "old": "ICAgICAgICAgICAgcmVzdWx0cywK",
+        "new": "ICAgICAgICAgICAgcmVzdWx0czogcmVzdWx0cy5pbnRvKCksCg=="
+      },
+      {
+        "old_start": 244,
+        "old_end": 245,
+        "new_start": 245,
+        "new_end": 246,
+        "old": "ICAgICAgICBzZWxmLnJlc3VsdHMgPSByZXN1bHRzOwo=",
+        "new": "ICAgICAgICBzZWxmLnJlc3VsdHMgPSByZXN1bHRzLmludG8oKTsK"
+      },
+      {
+        "old_start": 344,
+        "old_end": 345,
+        "new_start": 345,
+        "new_end": 348,
+        "old": "ICAgICAgICBpZiBhcHBseV9zZWFyY2hfdXBkYXRlKCZtdXQgc2VsZi5yZXN1bHRzLCB1cGRhdGUucmVzdWx0cywgdXBkYXRlLnBlbmRpbmcpIHsK",
+        "new": "ICAgICAgICBsZXQgbXV0IGNvbW1pdHRlZCA9IFZlYzo6bmV3KCk7CiAgICAgICAgaWYgYXBwbHlfc2VhcmNoX3VwZGF0ZSgmbXV0IGNvbW1pdHRlZCwgdXBkYXRlLnJlc3VsdHMsIHVwZGF0ZS5wZW5kaW5nKSB7CiAgICAgICAgICAgIHNlbGYucmVzdWx0cyA9IGNvbW1pdHRlZC5pbnRvKCk7Cg=="
+      },
+      {
+        "old_start": 381,
+        "old_end": 382,
+        "new_start": 384,
+        "new_end": 385,
+        "old": "ICAgICAgICBzZWxmLnJlc3VsdHMgPSByZXN1bHRzOwo=",
+        "new": "ICAgICAgICBzZWxmLnJlc3VsdHMgPSByZXN1bHRzLmludG8oKTsK"
+      },
+      {
+        "old_start": 787,
+        "old_end": 788,
+        "new_start": 790,
+        "new_end": 791,
+        "old": "ICAgICAgICBzZWxmLnJlc3VsdHMgPSByZXN1bHRzOwo=",
+        "new": "ICAgICAgICBzZWxmLnJlc3VsdHMgPSByZXN1bHRzLmludG8oKTsK"
+      },
+      {
+        "old_start": 1009,
+        "old_end": 1010,
+        "new_start": 1012,
+        "new_end": 1013,
+        "old": "ICAgICAgICBzZWxmLnN0YXR1cyA9IFNvbWUobWVzc2FnZSk7Cg==",
+        "new": "ICAgICAgICBzZWxmLnN0YXR1cyA9IFNvbWUobWVzc2FnZS5pbnRvKCkpOwo="
+      },
+      {
+        "old_start": 1086,
+        "old_end": 1087,
+        "new_start": 1089,
+        "new_end": 1090,
+        "old": "ICAgICAgICBxdWVyeTogU3RyaW5nLAo=",
+        "new": "ICAgICAgICBxdWVyeTogZ3B1aV9raXQ6OlNoYXJlZFN0cmluZywK"
+      },
+      {
+        "old_start": 1100,
+        "old_end": 1101,
+        "new_start": 1103,
+        "new_end": 1104,
+        "old": "ICAgICAgICBsZXQgcHJldmlld19yZXN1bHQgPSByZXN1bHQuY2xvbmUoKTsK",
+        "new": "ICAgICAgICBsZXQgcHJldmlld19yZXN1bHRzID0gc2VsZi5yZXN1bHRzLmNsb25lKCk7Cg=="
+      },
+      {
+        "old_start": 1108,
+        "old_end": 1115,
+        "new_start": 1111,
+        "new_end": 1119,
+        "old": "ICAgICAgICBsZXQgc3VidGl0bGUgPSBpZiBsZXQgU29tZShzdWJ0aXRsZSkgPSAmcmVzdWx0LnN1YnRpdGxlIHsKICAgICAgICAgICAgc3VidGl0bGUuY2xvbmUoKQogICAgICAgIH0gZWxzZSBpZiByZXN1bHQuY29weV90ZXh0KCkuaXNfc29tZSgpIHsKICAgICAgICAgICAgIuaMiSBFbnRlciDlpI3liLbnu5PmnpwiLnRvX293bmVkKCkKICAgICAgICB9IGVsc2UgewogICAgICAgICAgICByZXN1bHQuZW50cnkudGFyZ2V0LmNsb25lKCkKICAgICAgICB9Owo=",
+        "new": "ICAgICAgICBsZXQgZGlzcGxheSA9IHNlbGYucmVzdWx0cy5kaXNwbGF5KGluZGV4KTsKICAgICAgICBsZXQgc3VidGl0bGUgPSBkaXNwbGF5LnN1YnRpdGxlLmNsb25lKCk7CiAgICAgICAgbGV0IHRpdGxlID0gZGlzcGxheS50aXRsZS5jbG9uZSgpOwogICAgICAgICNbY2ZnKHRlc3QpXQogICAgICAgIHsKICAgICAgICAgICAgc3VwZXI6OnJldGFpbmVkX3RleHRfdGVzdHM6Om9ic2VydmUoZm9ybWF0ISgicmVzdWx0LXRpdGxlLXtpbmRleH0iKSwgJnRpdGxlKTsKICAgICAgICAgICAgc3VwZXI6OnJldGFpbmVkX3RleHRfdGVzdHM6Om9ic2VydmUoZm9ybWF0ISgicmVzdWx0LXN1YnRpdGxlLXtpbmRleH0iKSwgJnN1YnRpdGxlKTsKICAgICAgICB9Cg=="
+      },
+      {
+        "old_start": 1146,
+        "old_end": 1147,
+        "new_start": 1150,
+        "new_end": 1153,
+        "old": "ICAgICAgICAgICAgICAgIGxldCByZXN1bHQgPSBwcmV2aWV3X3Jlc3VsdC5jbG9uZSgpOwo=",
+        "new": "ICAgICAgICAgICAgICAgIGxldCBTb21lKHJlc3VsdCkgPSBwcmV2aWV3X3Jlc3VsdHMuZ2V0KGluZGV4KS5jbG9uZWQoKSBlbHNlIHsKICAgICAgICAgICAgICAgICAgICByZXR1cm47CiAgICAgICAgICAgICAgICB9Owo="
+      },
+      {
+        "old_start": 1223,
+        "old_end": 1227,
+        "new_start": 1229,
+        "new_end": 1230,
+        "old": "ICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5jaGlsZCgKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICBTdHlsZWRUZXh0OjpuZXcocmVzdWx0LmVudHJ5Lm5hbWUuY2xvbmUoKSkKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLndpdGhfaGlnaGxpZ2h0cyhuYW1lX2hpZ2hsaWdodHMpLAogICAgICAgICAgICAgICAgICAgICAgICAgICAgKSwK",
+        "new": "ICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5jaGlsZChTdHlsZWRUZXh0OjpuZXcodGl0bGUpLndpdGhfaGlnaGxpZ2h0cyhuYW1lX2hpZ2hsaWdodHMpKSwK"
+      },
+      {
+        "old_start": 1329,
+        "old_end": 1329,
+        "new_start": 1332,
+        "new_end": 1335,
+        "old": "",
+        "new": "ICAgICAgICBsZXQgbGFiZWwgPSBpdGVtLmxhYmVsLmNsb25lKCk7CiAgICAgICAgI1tjZmcodGVzdCldCiAgICAgICAgc3VwZXI6OnJldGFpbmVkX3RleHRfdGVzdHM6Om9ic2VydmUoZm9ybWF0ISgiYWN0aW9uLWxhYmVsLXtpbmRleH0iKSwgJmxhYmVsKTsK"
+      },
+      {
+        "old_start": 1390,
+        "old_end": 1391,
+        "new_start": 1396,
+        "new_end": 1397,
+        "old": "ICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5jaGlsZChpdGVtLmxhYmVsLmNsb25lKCkpLAo=",
+        "new": "ICAgICAgICAgICAgICAgICAgICAgICAgICAgIC5jaGlsZChsYWJlbCksCg=="
+      },
+      {
+        "old_start": 1468,
+        "old_end": 1468,
+        "new_start": 1474,
+        "new_end": 1476,
+        "old": "",
+        "new": "ICAgICAgICAgICAgICAgICNbY2ZnKHRlc3QpXQogICAgICAgICAgICAgICAgc3VwZXI6OnJldGFpbmVkX3RleHRfdGVzdHM6Om9ic2VydmUoZm9ybWF0ISgiYWN0aW9uLXNlY3Rpb24te2luZGV4fSIpLCAmbGFiZWwpOwo="
+      },
+      {
+        "old_start": 1495,
+        "old_end": 1496,
+        "new_start": 1503,
+        "new_end": 1504,
+        "old": "ICAgICAgICBsZXQgcXVlcnkgPSBzZWxmLnNlYXJjaF9pbnB1dC5yZWFkKGN4KS52YWx1ZSgpLnRvX3N0cmluZygpOwo=",
+        "new": "ICAgICAgICBsZXQgcXVlcnkgPSBzZWxmLnNlYXJjaF9pbnB1dC5yZWFkKGN4KS52YWx1ZSgpOwo="
+      },
+      {
+        "old_start": 1503,
+        "old_end": 1505,
+        "new_start": 1511,
+        "new_end": 1513,
+        "old": "ICAgICAgICAgICAgICAgIG1vZGUudGl0bGUoKS50b19zdHJpbmcoKSwKICAgICAgICAgICAgICAgIG1vZGUudGFyZ2V0KCkuZW50cnkubmFtZS5jbG9uZSgpLAo=",
+        "new": "ICAgICAgICAgICAgICAgIG1vZGUudGl0bGUoKSwKICAgICAgICAgICAgICAgIG1vZGUudGFyZ2V0X3RpdGxlLmNsb25lKCksCg=="
+      },
+      {
+        "old_start": 1518,
+        "old_end": 1518,
+        "new_start": 1526,
+        "new_end": 1531,
+        "old": "",
+        "new": "ICAgICAgICAgICAgI1tjZmcodGVzdCldCiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgIHN1cGVyOjpyZXRhaW5lZF90ZXh0X3Rlc3RzOjpvYnNlcnZlKCJhY3Rpb24tbGV2ZWwtdGl0bGUiLmludG8oKSwgJmxldmVsX3RpdGxlKTsKICAgICAgICAgICAgICAgIHN1cGVyOjpyZXRhaW5lZF90ZXh0X3Rlc3RzOjpvYnNlcnZlKCJhY3Rpb24tdGFyZ2V0LXRpdGxlIi5pbnRvKCksICZ0YXJnZXQpOwogICAgICAgICAgICB9Cg=="
+      },
+      {
+        "old_start": 1763,
+        "old_end": 1763,
+        "new_start": 1776,
+        "new_end": 1778,
+        "old": "",
+        "new": "ICAgICAgICAgICAgICAgICNbY2ZnKHRlc3QpXQogICAgICAgICAgICAgICAgc3VwZXI6OnJldGFpbmVkX3RleHRfdGVzdHM6Om9ic2VydmUoInN0YXR1cyIuaW50bygpLCAmc3RhdHVzKTsK"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/actions.rs",
+    "before_sha256": "e10429556f048887cc01dec83fcce5e4970e5a5eaeeee2e93b17a2e2224593d7",
+    "after_sha256": "6a68c08e4502eebe3dc2f41c7d7ab2b144a917c2808443db029504fc56cde0d9",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch/actions.rs",
+    "ops": [
+      {
+        "old_start": 212,
+        "old_end": 213,
+        "new_start": 212,
+        "new_end": 213,
+        "old": "ICAgIHB1YihjcmF0ZSkgbGFiZWw6IFN0cmluZywK",
+        "new": "ICAgIHB1YihjcmF0ZSkgbGFiZWw6IGdwdWlfa2l0OjpTaGFyZWRTdHJpbmcsCg=="
+      },
+      {
+        "old_start": 217,
+        "old_end": 218,
+        "new_start": 217,
+        "new_end": 218,
+        "old": "ICAgIHB1YihjcmF0ZSkgc2VjdGlvbl9sYWJlbDogT3B0aW9uPFN0cmluZz4sCg==",
+        "new": "ICAgIHB1YihjcmF0ZSkgc2VjdGlvbl9sYWJlbDogT3B0aW9uPGdwdWlfa2l0OjpTaGFyZWRTdHJpbmc+LAo="
+      },
+      {
+        "old_start": 289,
+        "old_end": 290,
+        "new_start": 289,
+        "new_end": 290,
+        "old": "ICAgICAgICAgICAgbGFiZWw6IGl0ZW0udGl0bGUsCg==",
+        "new": "ICAgICAgICAgICAgbGFiZWw6IGl0ZW0udGl0bGUuaW50bygpLAo="
+      },
+      {
+        "old_start": 395,
+        "old_end": 396,
+        "new_start": 395,
+        "new_end": 396,
+        "old": "ICAgIHB1YihjcmF0ZSkgdGl0bGU6IFN0cmluZywK",
+        "new": "ICAgIHB1YihjcmF0ZSkgdGl0bGU6IGdwdWlfa2l0OjpTaGFyZWRTdHJpbmcsCg=="
+      },
+      {
+        "old_start": 413,
+        "old_end": 413,
+        "new_start": 413,
+        "new_end": 414,
+        "old": "",
+        "new": "ICAgIHB1YihjcmF0ZSkgdGFyZ2V0X3RpdGxlOiBncHVpX2tpdDo6U2hhcmVkU3RyaW5nLAo="
+      },
+      {
+        "old_start": 472,
+        "old_end": 472,
+        "new_start": 473,
+        "new_end": 474,
+        "old": "",
+        "new": "ICAgICAgICAgICAgdGFyZ2V0X3RpdGxlOiB0YXJnZXQuZW50cnkubmFtZS5jbG9uZSgpLmludG8oKSwK"
+      },
+      {
+        "old_start": 531,
+        "old_end": 533,
+        "new_start": 533,
+        "new_end": 535,
+        "old": "ICAgIHB1YihjcmF0ZSkgZm4gdGl0bGUoJnNlbGYpIC0+ICZzdHIgewogICAgICAgICZzZWxmLmN1cnJlbnRfbGV2ZWwoKS50aXRsZQo=",
+        "new": "ICAgIHB1YihjcmF0ZSkgZm4gdGl0bGUoJnNlbGYpIC0+IGdwdWlfa2l0OjpTaGFyZWRTdHJpbmcgewogICAgICAgIHNlbGYuY3VycmVudF9sZXZlbCgpLnRpdGxlLmNsb25lKCkK"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/tests.rs",
+    "before_sha256": "406d8f6805d111e1fcf4ba7715bdd8d726a3af95d5cb89a9ced6ef614d5c5102",
+    "after_sha256": "9bd5f80b0c68243d8e0105b81e4da392815c716dcd4a5777a017c65adcaa5cae",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch/tests.rs",
+    "ops": [
+      {
+        "old_start": 1080,
+        "old_end": 1081,
+        "new_start": 1080,
+        "new_end": 1081,
+        "old": "ICAgICAgICBwYW5lbC5yZXN1bHRzID0gcmVjZW50X2RpcmVjdG9yeV9yZXN1bHRzKCZwYW5lbC5yZWNlbnRfZGlyZWN0b3JpZXMsICIiKTsK",
+        "new": "ICAgICAgICBwYW5lbC5yZXN1bHRzID0gcmVjZW50X2RpcmVjdG9yeV9yZXN1bHRzKCZwYW5lbC5yZWNlbnRfZGlyZWN0b3JpZXMsICIiKS5pbnRvKCk7Cg=="
+      },
+      {
+        "old_start": 2627,
+        "old_end": 2628,
+        "new_start": 2627,
+        "new_end": 2628,
+        "old": "ICAgICAgICBwYW5lbC5yZXBsYWNlX3Jlc3VsdHMocGFuZWwucmVzdWx0cy5jbG9uZSgpLCBjeCk7IC8vIFRoaXMgZml4dHVyZSBzdXBwbGllcyBjdXJyZW50IGNvbXBsZXRlZCBwcm92aWRlciByb3dzLgo=",
+        "new": "ICAgICAgICBwYW5lbC5yZXBsYWNlX3Jlc3VsdHMocGFuZWwucmVzdWx0cy50b192ZWMoKSwgY3gpOyAvLyBUaGlzIGZpeHR1cmUgc3VwcGxpZXMgY3VycmVudCBjb21wbGV0ZWQgcHJvdmlkZXIgcm93cy4K"
+      },
+      {
+        "old_start": 4417,
+        "old_end": 4418,
+        "new_start": 4417,
+        "new_end": 4418,
+        "old": "ICAgICAgICBwYW5lbC5yZXN1bHRzID0gdmVjIVtzZWFyY2hfcmVzdWx0KCJjdXJyZW50IiwgQXBwbGljYXRpb25Tb3VyY2U6OkluZGV4ZWRGaWxlKV07Cg==",
+        "new": "ICAgICAgICBwYW5lbC5yZXN1bHRzID0gdmVjIVtzZWFyY2hfcmVzdWx0KCJjdXJyZW50IiwgQXBwbGljYXRpb25Tb3VyY2U6OkluZGV4ZWRGaWxlKV0uaW50bygpOwo="
+      },
+      {
+        "old_start": 4748,
+        "old_end": 4749,
+        "new_start": 4748,
+        "new_end": 4750,
+        "old": "ICAgICAgICApXTsK",
+        "new": "ICAgICAgICApXQogICAgICAgIC5pbnRvKCk7Cg=="
+      },
+      {
+        "old_start": 4799,
+        "old_end": 4800,
+        "new_start": 4800,
+        "new_end": 4802,
+        "old": "ICAgICAgICApXTsK",
+        "new": "ICAgICAgICApXQogICAgICAgIC5pbnRvKCk7Cg=="
+      },
+      {
+        "old_start": 4838,
+        "old_end": 4839,
+        "new_start": 4840,
+        "new_end": 4842,
+        "old": "ICAgICAgICApXTsK",
+        "new": "ICAgICAgICApXQogICAgICAgIC5pbnRvKCk7Cg=="
+      },
+      {
+        "old_start": 4877,
+        "old_end": 4878,
+        "new_start": 4880,
+        "new_end": 4882,
+        "old": "ICAgICAgICApXTsK",
+        "new": "ICAgICAgICApXQogICAgICAgIC5pbnRvKCk7Cg=="
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs",
+    "before_sha256": "c230afb00589fd60c561b3dd3a195c7522a0f0d595c9d0cc0a3a7aa5a26345a9",
+    "after_sha256": "c80f01a271f7f9193921cdcefa4725ed8325df38da043027dfefc9207022306d",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs",
+    "ops": [
+      {
+        "old_start": 524,
+        "old_end": 525,
+        "new_start": 524,
+        "new_end": 525,
+        "old": "ICAgICAgICAgICAgcGFuZWwucmVzdWx0cyA9IHZlYyFbbm9ybWFsKCldOwo=",
+        "new": "ICAgICAgICAgICAgcGFuZWwucmVzdWx0cyA9IHZlYyFbbm9ybWFsKCldLmludG8oKTsK"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/retained_text.rs",
+    "new_file": true,
+    "after_sha256": "b27f5c8ddb444ad66dd66650c01947a998d77cdab082b79574d81fbb97639a9c",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch/retained_text.rs"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/quick_launch/retained_text_tests.rs",
+    "new_file": true,
+    "after_sha256": "44ece0a9786d36aa92206182661fdc29e71a7c269c7afda6dc89383dbf4618aa",
+    "after_snapshot": "evidence/current/rust/apps/nxtools-desktop/src/quick_launch/retained_text_tests.rs"
+  }
+]

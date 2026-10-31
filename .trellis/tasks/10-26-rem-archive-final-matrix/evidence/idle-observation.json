@@ -1,0 +1,405 @@
+﻿{
+    "natural_idle":  false,
+    "samples":  [
+                    {
+                        "timestamp_utc":  "2026-10-26T01:23:38.7138494Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:24:09.2162472Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:24:39.6592312Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:25:10.1148948Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:25:40.5741208Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:26:11.0241523Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:26:41.4611422Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:27:12.0422398Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:27:42.5243621Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:28:13.0855266Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:28:43.5669346Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:29:14.0192316Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:29:44.4751899Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:30:14.9338177Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:30:45.3853978Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:31:15.8356943Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:31:46.2740632Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:32:16.7308328Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:32:47.1948011Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:33:17.6853766Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    },
+                    {
+                        "timestamp_utc":  "2026-10-26T01:33:48.1183425Z",
+                        "processes":  [
+                                          {
+                                              "ProcessId":  83436,
+                                              "ParentProcessId":  84988,
+                                              "CreationDate":  "\/Date(1792973804160)\/",
+                                              "Name":  "cargo.exe",
+                                              "CommandLine":  "\"C:\\Users\\Administrator\\.rustup\\toolchains\\1.96.0-x86_64-pc-windows-msvc\\bin\\cargo.exe\" test -p nxtools-desktop expansion_storage_retained -- --test-threads=1"
+                                          },
+                                          {
+                                              "ProcessId":  87140,
+                                              "ParentProcessId":  83436,
+                                              "CreationDate":  "\/Date(1792973992913)\/",
+                                              "Name":  "nxtools_desktop-1a822a8848cabb25.exe",
+                                              "CommandLine":  "\"D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-1a822a8848cabb25.exe\" expansion_storage_retained --test-threads=1"
+                                          }
+                                      ]
+                    }
+                ],
+    "purpose":  "Bounded read-only natural Rust idle observation. No process mutation, Rust command, lock bypass or coordination"
+}

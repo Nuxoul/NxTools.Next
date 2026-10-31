@@ -31,8 +31,56 @@ wire_enum!(ArchiveJobModifyAction {
     Delete,
     Rename,
     NewDirectory,
+    ReplaceContent,
     Comment
 });
+/// Semantic intent shared by capability projections and the existing modification request.
+/// This does not add a wire action or grant any new native/codec authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArchiveOperation {
+    Browse,
+    Extract,
+    Preview,
+    Add,
+    Delete,
+    ReplaceContent,
+    RenameFile,
+    RenameDirectorySubtree,
+    NewDirectory,
+    Comment,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveModificationRefusal {
+    BackendMissing,
+    SnapshotNotReady,
+    SourceChanged,
+    Volumes,
+    SelfExtracting,
+    ApplicationContainer,
+    UnsupportedEncryption,
+    UnsupportedStructure,
+    Corrupt,
+    UnverifiedMetadata,
+    SourceUnavailable,
+}
+impl ArchiveModificationRefusal {
+    pub fn message(self) -> &'static str {
+        match self {
+            Self::BackendMissing => "此格式支持浏览和解压，暂不支持修改压缩包内容。",
+            Self::SnapshotNotReady => "仅完整的就绪快照可编辑。",
+            Self::SourceChanged => "源已变化或旧快照不能编辑；请刷新。",
+            Self::Volumes => "分卷归档只读，不能编辑。",
+            Self::SelfExtracting => "已确认的自解压归档不能编辑。",
+            Self::ApplicationContainer => "应用容器不能编辑。",
+            Self::UnsupportedEncryption => "此加密结构不支持修改。",
+            Self::UnsupportedStructure => "此归档结构不支持修改。",
+            Self::Corrupt => "归档结构已损坏，不能修改。",
+            Self::UnverifiedMetadata => "尚未确认源结构或元数据可安全保留，不能修改。",
+            Self::SourceUnavailable => "源不可访问，请刷新后重试。",
+        }
+    }
+}
 wire_enum!(ArchiveJobStrategy { Here, Name, Smart });
 wire_enum!(ArchiveJobConflict {
     Ask,
@@ -203,6 +251,20 @@ pub struct ArchiveJobExtract {
     pub conflict: ArchiveJobConflict,
     pub copy_motw: bool,
     pub selection: Option<ArchiveJobSelection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reclamation: Option<ArchiveReclamationIntent>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveReclamationMode {
+    Start,
+    Continue,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveReclamationIntent {
+    pub mode: ArchiveReclamationMode,
+    pub recovery_id: Uuid,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -212,6 +274,15 @@ pub struct ArchiveJobSelection {
 }
 impl ArchiveJobExtract {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
+        if self.reclamation.is_some_and(|intent| {
+            intent.recovery_id.is_nil()
+                || self.strategy != ArchiveJobStrategy::Here
+                || self.single_file_folder
+                || self.conflict != ArchiveJobConflict::Ask
+                || self.selection.is_some()
+        }) {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
         if let Some(selection) = &self.selection {
             selection.browser.validate()?;
             if selection.ordinals.is_empty()
@@ -254,10 +325,12 @@ pub struct ArchiveJobModify {
     pub action: ArchiveJobModifyAction,
     pub ordinals: Vec<u64>,
     pub value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_prefix: Option<String>,
 }
 pub fn valid_job_path(path: &str) -> bool {
     let b = path.as_bytes();
-    b.len() >= 4
+    b.len() >= 3
         && b.len() <= 32767
         && b[0].is_ascii_alphabetic()
         && b[1..3] == *b":\\"
@@ -308,10 +381,53 @@ pub fn valid_modify_target(value: &str, directory: bool) -> bool {
     };
     !path.is_empty() && value.len() <= 32767 && path.split('/').all(valid_job_name)
 }
+impl ArchiveJobModifyAction {
+    pub fn operation(self, value: Option<&str>) -> ArchiveOperation {
+        match self {
+            Self::Add => ArchiveOperation::Add,
+            Self::Delete => ArchiveOperation::Delete,
+            Self::Rename if value.is_some_and(|value| value.ends_with('/')) => {
+                ArchiveOperation::RenameDirectorySubtree
+            }
+            Self::Rename => ArchiveOperation::RenameFile,
+            Self::NewDirectory => ArchiveOperation::NewDirectory,
+            Self::ReplaceContent => ArchiveOperation::ReplaceContent,
+            Self::Comment => ArchiveOperation::Comment,
+        }
+    }
+}
 impl ArchiveJobModify {
+    /// Legacy rename wire spelling is preserved; directory intent is explicit in the
+    /// validated target grammar and must be checked against the original member kind.
+    pub fn operation(&self) -> ArchiveOperation {
+        self.action.operation(self.value.as_deref())
+    }
+    /// Implemented edit backend gate, independent of create/extract format support.
+    pub fn backend_refusal(&self) -> Option<ArchiveModificationRefusal> {
+        (!matches!(
+            self.browser.format.as_str(),
+            "Zip" | "SevenZ" | "Tar" | "TarGz" | "TarXz"
+        ) || self.browser.format == "Zip" && self.action == ArchiveJobModifyAction::ReplaceContent
+            || self.browser.format != "Zip" && self.action == ArchiveJobModifyAction::Comment)
+            .then_some(ArchiveModificationRefusal::BackendMissing)
+    }
     pub fn validate(&self, path_count: usize) -> Result<(), ArchiveReadError> {
         self.browser.validate()?;
-        if self.browser.format != "Zip"
+        if self.source_prefix.as_deref().is_some_and(|prefix| {
+            !matches!(
+                self.browser.format.as_str(),
+                "SevenZ" | "Tar" | "TarGz" | "TarXz"
+            ) || self.action != ArchiveJobModifyAction::Rename
+                || self.ordinals.len() != 1
+                || !self
+                    .value
+                    .as_deref()
+                    .is_some_and(|value| value.ends_with('/'))
+                || !valid_modify_target(prefix, true)
+        }) {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
+        if self.backend_refusal().is_some()
             || self.ordinals.len() > 4096
             || self
                 .ordinals
@@ -331,6 +447,14 @@ impl ArchiveJobModify {
                         .value
                         .as_deref()
                         .is_none_or(|value| valid_modify_target(value, true))
+            }
+            ArchiveJobModifyAction::ReplaceContent => {
+                matches!(
+                    self.browser.format.as_str(),
+                    "SevenZ" | "Tar" | "TarGz" | "TarXz"
+                ) && path_count == 2
+                    && self.ordinals.len() == 1
+                    && self.value.is_none()
             }
             ArchiveJobModifyAction::Delete => {
                 path_count == 1 && !self.ordinals.is_empty() && self.value.is_none()
@@ -370,6 +494,14 @@ impl ArchiveJobModify {
 impl ArchiveJobRequest {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
         self.limits.validate()?;
+        if self.readmission.is_some()
+            && self
+                .extract
+                .as_ref()
+                .is_some_and(|extract| extract.reclamation.is_some())
+        {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
         if self.readmission.as_ref().is_some_and(|r| {
             self.kind != ArchiveJobKind::Extract
                 || r.logical_id.is_nil()
@@ -581,6 +713,40 @@ pub struct ArchiveJobProgress {
     pub bytes_total: Option<u64>,
     pub files_done: u64,
     pub files_total: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_member: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_bytes_done: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_bytes_total: Option<u64>,
+}
+/// UI-only immutable decision context. Never use these strings for filesystem authority.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveJobPromptDisplay {
+    pub incoming_member: Option<String>,
+    pub target: String,
+}
+impl std::fmt::Debug for ArchiveJobPromptDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ArchiveJobPromptDisplay([PRIVATE])")
+    }
+}
+impl ArchiveJobPromptDisplay {
+    fn valid(&self, kind: ArchiveJobPromptKind) -> bool {
+        let text = |value: &str, limit| {
+            !value.is_empty() && value.len() <= limit && !value.chars().any(char::is_control)
+        };
+        text(&self.target, 65535)
+            && match kind {
+                ArchiveJobPromptKind::Conflict => self
+                    .incoming_member
+                    .as_deref()
+                    .is_some_and(|member| text(member, 32767)),
+                ArchiveJobPromptKind::CreateOverwrite => self.incoming_member.is_none(),
+                _ => false,
+            }
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -592,6 +758,8 @@ pub struct ArchiveJobPrompt {
     pub existing_bytes: Option<u64>,
     pub incoming_bytes: Option<u64>,
     pub approved_limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<ArchiveJobPromptDisplay>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -606,6 +774,27 @@ pub struct ArchiveJobCommit {
     pub published: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cleanup: Option<String>,
+}
+/// Native committed-output location. Display/Shell use only; never grants write authority.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveJobResultLocation {
+    pub target: String,
+    pub action: crate::ShellOpenAction,
+}
+impl std::fmt::Debug for ArchiveJobResultLocation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ArchiveJobResultLocation([PRIVATE])")
+    }
+}
+impl ArchiveJobResultLocation {
+    fn valid(&self) -> bool {
+        valid_job_path(&self.target)
+            && matches!(
+                self.action,
+                crate::ShellOpenAction::Open | crate::ShellOpenAction::SelectInExplorer
+            )
+    }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -624,6 +813,12 @@ pub struct ArchiveJobTerminal {
     pub journal: Vec<ArchiveJobCommit>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_shortfall: Option<ArchiveJobOutputShortfall>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_location: Option<ArchiveJobResultLocation>,
+    /// Native read-only publication fact, including directories. Missing/null is unknown, not zero.
+    /// Does not grant execution, commit, cleanup or retry authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_published: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -662,7 +857,19 @@ impl ArchiveJobEvent {
             }
             ArchiveJobEventKind::Progress => {
                 self.state.is_none()
-                    && self.progress.as_ref().is_some_and(|p| p.phase == "running")
+                    && self.progress.as_ref().is_some_and(|p| {
+                        p.phase == "running"
+                            && p.current_member.as_ref().is_none_or(|member| {
+                                !member.is_empty()
+                                    && member.len() <= 32767
+                                    && !member.chars().any(char::is_control)
+                            })
+                            && (p.current_bytes_done.is_none() && p.current_bytes_total.is_none()
+                                || p.current_member.is_some()
+                                    && p.current_bytes_total.is_none_or(|total| {
+                                        p.current_bytes_done.is_some_and(|done| done <= total)
+                                    }))
+                    })
                     && self.prompt.is_none()
                     && self.terminal.is_none()
             }
@@ -674,6 +881,9 @@ impl ArchiveJobEvent {
                             && !p.ticket.prompt_id.is_nil()
                             && p.ticket.generation > 0
                             && p.attempt <= 3
+                            && p.display
+                                .as_ref()
+                                .is_none_or(|display| display.valid(p.kind))
                     })
                     && self.terminal.is_none()
             }
@@ -683,6 +893,9 @@ impl ArchiveJobEvent {
                     && self.prompt.is_none()
                     && self.terminal.as_ref().is_some_and(|t| {
                         t.journal.len() <= 4096
+                            && t.result_location
+                                .as_ref()
+                                .is_none_or(ArchiveJobResultLocation::valid)
                             && t.code.as_ref().is_none_or(|code| {
                                 code.len() <= 64
                                     && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
@@ -824,6 +1037,8 @@ mod tests {
                 size: 1,
                 modified_unix_ns: 1,
             },
+            sevenz_edit: None,
+            tar_edit: None,
         };
         let mut request: ArchiveJobRequest = serde_json::from_value(serde_json::json!({
             "kind":"test", "paths":["C:\\owned\\a.zip"],"destination":null,"extract":null,"create":null
@@ -840,6 +1055,7 @@ mod tests {
             action: ArchiveJobModifyAction::Delete,
             ordinals: vec![0, 1],
             value: None,
+            source_prefix: None,
         });
         assert!(request.validate().is_ok());
         request.modify.as_mut().expect("edit").ordinals.push(1);
@@ -877,4 +1093,279 @@ mod tests {
             fact
         );
     }
+    #[test]
+    fn extraction_member_counts_require_identity_and_known_total_bounds() {
+        let mut event: ArchiveJobEvent = serde_json::from_value(serde_json::json!({
+            "version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),"generation":1,
+            "kind":"progress","state":null,"prompt":null,"terminal":null,
+            "progress":{"phase":"running","bytes_done":40,"bytes_total":30,
+                "files_done":0,"files_total":2,"current_member":"one.txt",
+                "current_bytes_done":4,"current_bytes_total":10}
+        }))
+        .expect("dual wire");
+        assert!(
+            event.validate().is_ok(),
+            "processed aggregate may exceed declared total"
+        );
+        let progress = event.progress.as_mut().expect("progress");
+        progress.current_bytes_done = Some(11);
+        assert!(event.validate().is_err(), "known member cannot overrun");
+        let progress = event.progress.as_mut().expect("progress");
+        progress.current_bytes_total = None;
+        assert!(
+            event.validate().is_ok(),
+            "unknown total keeps actual member bytes"
+        );
+        event.progress.as_mut().expect("progress").current_member = None;
+        assert!(event.validate().is_err(), "count requires member identity");
+        let progress = event.progress.as_mut().expect("progress");
+        progress.current_bytes_done = None;
+        assert!(event.validate().is_ok(), "legacy aggregate-only event");
+        event
+            .progress
+            .as_mut()
+            .expect("progress")
+            .current_bytes_total = Some(10);
+        assert!(
+            event.validate().is_err(),
+            "known total needs a current done count"
+        );
+    }
+    #[test]
+    fn feedback_location_and_member_optional_wire_is_bounded_and_private() {
+        let mut progress:ArchiveJobProgress=serde_json::from_value(serde_json::json!({"phase":"running","bytes_done":0,"bytes_total":null,"files_done":0,"files_total":null})).expect("legacy progress");
+        assert!(progress.current_member.is_none());
+        assert!(progress.current_bytes_done.is_none() && progress.current_bytes_total.is_none());
+        progress.current_member = Some("member.txt".into());
+        progress.current_bytes_done = Some(3);
+        progress.current_bytes_total = Some(10);
+        assert_eq!(
+            serde_json::from_value::<ArchiveJobProgress>(
+                serde_json::to_value(&progress).expect("wire")
+            )
+            .expect("roundtrip"),
+            progress
+        );
+        let location = ArchiveJobResultLocation {
+            target: r"C:\owned\actual (2)".into(),
+            action: crate::ShellOpenAction::Open,
+        };
+        assert!(location.valid());
+        assert!(!format!("{location:?}").contains("actual"));
+        assert!(
+            !ArchiveJobResultLocation {
+                action: crate::ShellOpenAction::RunElevated,
+                ..location.clone()
+            }
+            .valid()
+        );
+        assert!(
+            !ArchiveJobResultLocation {
+                target: "https://example.com".into(),
+                ..location
+            }
+            .valid()
+        );
+    }
+}
+
+#[cfg(test)]
+mod prompt_display_tests {
+    use super::*;
+    fn event() -> ArchiveJobEvent {
+        let id = Uuid::new_v4();
+        serde_json::from_value(serde_json::json!({
+            "version":1,"operation_id":id,"session_id":Uuid::new_v4(),"generation":1,
+            "kind":"prompt","state":null,"progress":null,"terminal":null,
+            "prompt":{"ticket":{"operation_id":id,"prompt_id":Uuid::new_v4(),"generation":1},
+                "kind":"conflict","error_code":null,"attempt":0,"existing_bytes":10,
+                "incoming_bytes":10,"approved_limit":null}
+        }))
+        .expect("legacy typed prompt event")
+    }
+    #[test]
+    fn audit04_legacy_omission_strict_shape_bounds_and_redacted_debug() {
+        let mut e = event();
+        assert!(e.validate().is_ok());
+        assert!(e.prompt.as_ref().expect("prompt").display.is_none());
+        assert!(
+            serde_json::to_value(&e).expect("legacy event wire")["prompt"]
+                .get("display")
+                .is_none()
+        );
+        let sentinel = "private-prompt-object-资料/同名.txt";
+        e.prompt.as_mut().expect("prompt").display = Some(ArchiveJobPromptDisplay {
+            incoming_member: Some(sentinel.into()),
+            target: format!(r"C:\owned\{sentinel}"),
+        });
+        assert!(e.validate().is_ok());
+        let wire = serde_json::to_value(&e).expect("display event wire");
+        assert_eq!(
+            serde_json::from_value::<ArchiveJobEvent>(wire.clone()).expect("display roundtrip"),
+            e
+        );
+        assert!(!format!("{e:?}").contains(sentinel));
+        for field in ["target", "incoming_member"] {
+            let mut bad = wire.clone();
+            bad["prompt"]["display"][field] = serde_json::json!(5);
+            assert!(serde_json::from_value::<ArchiveJobEvent>(bad).is_err());
+        }
+        let mut unknown = wire;
+        unknown["prompt"]["display"]["authority"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<ArchiveJobEvent>(unknown).is_err());
+        for invalid in [String::new(), "line\nbreak".into(), "x".repeat(65536)] {
+            e.prompt
+                .as_mut()
+                .expect("prompt")
+                .display
+                .as_mut()
+                .expect("display")
+                .target = invalid;
+            assert!(e.validate().is_err());
+        }
+        e.prompt
+            .as_mut()
+            .expect("prompt")
+            .display
+            .as_mut()
+            .expect("display")
+            .target = "x".repeat(65535);
+        assert!(e.validate().is_ok());
+        e.prompt.as_mut().expect("prompt").kind = ArchiveJobPromptKind::Password;
+        assert!(
+            e.validate().is_err(),
+            "non-overwrite prompts cannot carry display"
+        );
+        e.prompt.as_mut().expect("prompt").kind = ArchiveJobPromptKind::CreateOverwrite;
+        assert!(
+            e.validate().is_err(),
+            "create has no incoming archive member"
+        );
+        e.prompt
+            .as_mut()
+            .expect("prompt")
+            .display
+            .as_mut()
+            .expect("display")
+            .incoming_member = None;
+        assert!(e.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod capability_foundation_tests {
+    use super::*;
+    #[test]
+    fn capability_foundation_existing_request_resolves_distinct_rename_intents_without_wire_expansion()
+     {
+        let mut request: ArchiveJobModify = serde_json::from_value(serde_json::json!({
+            "browser":{"snapshot_id":Uuid::new_v4(),"format":"Zip","comment":"",
+                "source":{"native":"v1:fixture","digest":vec![1u8;32],"size":1,"modified_unix_ns":1}},
+            "action":"rename","ordinals":[7],"value":"file.txt"
+        })).expect("original request shape");
+        assert_eq!(request.operation(), ArchiveOperation::RenameFile);
+        assert!(request.validate(1).is_ok());
+        request.value = Some("folder/".into());
+        assert_eq!(
+            request.operation(),
+            ArchiveOperation::RenameDirectorySubtree
+        );
+        assert!(request.validate(1).is_ok());
+        let wire = serde_json::to_value(&request).expect("legacy compatible wire");
+        assert_eq!(wire["action"], "rename");
+        assert!(wire.get("operation").is_none());
+        for format in [
+            "TarBz2", "TarZstd", "Rar4", "Rar5", "Gzip", "Bzip2", "Xz", "Zstd",
+        ] {
+            request.browser.format = format.into();
+            assert_eq!(
+                request.backend_refusal(),
+                Some(ArchiveModificationRefusal::BackendMissing)
+            );
+            assert!(
+                request.validate(1).is_err(),
+                "no unimplemented write request gets admitted"
+            );
+        }
+        let mut unsupported = wire;
+        unsupported["action"] = serde_json::json!("replace_content");
+        let replacement: ArchiveJobModify =
+            serde_json::from_value(unsupported).expect("new typed action");
+        assert!(
+            replacement.validate(2).is_err(),
+            "ZIP replacement is still unavailable"
+        );
+    }
+}
+
+#[cfg(test)]
+mod sevenz_edit_tests {
+    use super::*;
+    #[test]
+    fn sevenz_replace_is_a_distinct_bounded_action_and_never_grants_zip_replacement() {
+        let wire = serde_json::json!({"browser":{"snapshot_id":Uuid::new_v4(),"format":"SevenZ","comment":"","source":{"native":"v1:fixture","digest":vec![1u8;32],"size":1,"modified_unix_ns":1}},"action":"replace_content","ordinals":[2],"value":null});
+        let mut intent: ArchiveJobModify =
+            serde_json::from_value(wire).expect("real typed replacement action");
+        assert_eq!(intent.operation(), ArchiveOperation::ReplaceContent);
+        assert!(intent.validate(2).is_ok());
+        for paths in [0, 1, 3, 33] {
+            assert!(intent.validate(paths).is_err());
+        }
+        intent.browser.format = "Zip".into();
+        assert!(intent.validate(2).is_err());
+    }
+}
+
+#[cfg(test)]
+mod hz3_publication_tests {
+    use super::*;
+    #[test]
+    fn hz3_optional_native_publication_is_legacy_unknown_and_strict_bool() {
+        let legacy = serde_json::json!({"outcome":"failed","code":"io_failure","files_committed":0,"bytes_committed":0,"files_verified":0,"bytes_verified":0,"files_skipped":0,"cleanup_complete":true,"commit_state":null,"elapsed_ms":1,"native_error_code":null,"journal":[]});
+        let terminal: ArchiveJobTerminal =
+            serde_json::from_value(legacy.clone()).expect("legacy terminal");
+        assert_eq!(terminal.output_published, None);
+        assert!(
+            serde_json::to_value(terminal)
+                .expect("legacy encoding")
+                .get("output_published")
+                .is_none()
+        );
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(true),
+        ] {
+            let mut wire = legacy.clone();
+            wire["output_published"] = value.clone();
+            let terminal: ArchiveJobTerminal =
+                serde_json::from_value(wire).expect("optional native fact");
+            assert_eq!(terminal.output_published, value.as_bool());
+        }
+        for value in [
+            serde_json::json!(0),
+            serde_json::json!("false"),
+            serde_json::json!({}),
+            serde_json::json!([]),
+        ] {
+            let mut wire = legacy.clone();
+            wire["output_published"] = value;
+            assert!(serde_json::from_value::<ArchiveJobTerminal>(wire).is_err());
+        }
+        let mut unknown = legacy;
+        unknown["publication_permission"] = serde_json::json!(true);
+        assert!(
+            serde_json::from_value::<ArchiveJobTerminal>(unknown).is_err(),
+            "facts do not grant new authority"
+        );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn windows_drive_root_is_a_valid_archive_destination() {
+    assert!(valid_job_path(r"C:\"));
+    assert!(valid_job_path(r"d:\"));
+    assert!(!valid_job_path("C:"));
+    assert!(!valid_job_path("C:/"));
 }

@@ -1,0 +1,42 @@
+[
+  {
+    "path": "vendor/gpui-component-080/src/setting/settings.rs",
+    "sha256": "632c9539c26bc57e0c625a228524a17cd1af438b299a526c204217d63f8cc6c3"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/setting/item.rs",
+    "sha256": "bd88a5c1c8306e5818e7ce29724ce109201bbb3b4b9300c4840a23999d9af18a"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/form/form.rs",
+    "sha256": "30c64b21250b7157a11c30a101114d22e51b6af68bd1a81610f2faf8157791b8"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/description_list.rs",
+    "sha256": "ce090def6caf75d5e147c4b4945f15b8c51915bcf17e7d5aa7150db6bbd46a23"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/table/table.rs",
+    "sha256": "452936e35bbf5afdd6c018a767b0566a9fd1020c8286dec329ae1e15203bf07a"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/button/button.rs",
+    "sha256": "fdd2ed48d6ba0efe6945e7ea041b46738e3e266556d1adc91276d79ade158174"
+  },
+  {
+    "path": "vendor/gpui-component-080/src/scroll/scrollable.rs",
+    "sha256": "87db9106bd50ebe85bea9058afe0cd3fe4c463a7b3f1610a94b41ed180097982"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/metrics.rs",
+    "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+    "sha256": "292a9cb577521aa6c5b36ba19f205a4d30b28c7117fc1e8c5e466f1f66e34f71"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+    "sha256": "5de208e485ea894dfd6687a7d3c8c103603fe27c035a3c10d213a6e0da722c6f"
+  }
+]

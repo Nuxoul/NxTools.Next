@@ -1,0 +1,560 @@
+﻿REFERENCE D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared\LocationTextField.kt
+
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:2:
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:3:import com.abdownloadmanager.shared.ui.widget.MyTextFieldWithIcons
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:4:import com.abdownloadmanager.shared.ui.widget.MyTextFieldIcon
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:5:import com.abdownloadmanager.shared.util.ui.icon.MyIcons
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:6:import com.abdownloadmanager.shared.util.ui.myColors
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:7:import com.abdownloadmanager.shared.util.ui.theme.myTextSizes
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:45:@Composable
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:46:fun LocationTextField(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:47:    modifier: Modifier,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:48:    text: String,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:49:    setText: (String) -> Unit,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:68:    Box(modifier) {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:69:        MyTextFieldWithIcons(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:70:            text,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:71:            setText,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:72:            myStringResource(Res.string.location),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:75:            end = {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:76:                Row {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:77:                    MyTextFieldIcon(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:78:                        icon = MyIcons.folder,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:79:                        contentDescription = myStringResource(Res.string.download_location),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:80:                    ) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:83:                    }
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:84:                    MyTextFieldIcon(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:85:                        icon = MyIcons.down,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:86:                        contentDescription = myStringResource(Res.string.download_location),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:87:                    ) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:98:                lastUsedLocations = lastUsedLocations,
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:99:                onSuggestionSelected = {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:100:                    setText(it)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:101:                    showLocationOptions = false
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:102:                },
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:110:private fun LocationOptionsDialog(
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:111:    onSuggestionSelected: (String) -> Unit,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:112:    onDismiss: () -> Unit,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:113:    lastUsedLocations: LastUsedLocationsProp,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:114:    rememberFolder: RememberFolderProp,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:154:                    WindowDraggableArea(Modifier.fillMaxWidth()) {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:155:                        Row(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:156:                            Modifier
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:157:                                .fillMaxWidth()
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:158:                                .padding(horizontal = 16.dp, vertical = 12.dp),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:183:                            value = rememberFolder.value,
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:184:                            onValueChange = rememberFolder.onValueChange,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:185:                            enabled = rememberFolder.isEnabled,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:186:                            description = rememberFolder.rememberDescriptionString(),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:187:                        )
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:207:                                    .fillMaxWidth()
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:208:                                    .heightIn(max = 180.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:209:                                    .verticalScroll(rememberScrollState())
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:210:                            ) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:211:                                for (l in lastUsedLocations.locations) {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:212:                                    Row(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:213:                                        Modifier
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:214:                                            .fillMaxWidth()
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:215:                                            .clip(myShapes.defaultRounded)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:216:                                            .clickable {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:217:                                                onSuggestionSelected(l)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:218:                                            }
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:219:                                            .padding(vertical = 6.dp, horizontal = 4.dp),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:220:                                        verticalAlignment = Alignment.CenterVertically,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:256:            .fillMaxWidth()
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:257:            .height(1.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:258:            .background(myColors.onBackground / 10)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:259:    )
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared
+\LocationTextField.kt:260:}
+
+
+
+REFERENCE D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsPage.kt
+
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:45:        modifier
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:46:            .fillMaxHeight()
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:47:            .border(1.dp, myColors.surface / 0.5f, shape)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:48:            .clip(shape)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:49:    ) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:53://            onTextChange = { searchText = it },
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:54://            modifier = Modifier.height(38.dp),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:55://        )
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:56:        val collectAsState by settingsComponent.currentPage.collectAsState()
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:57:        for (i in settingsComponent.pages) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:60:                name = i.name.rememberString(),
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:61:                isSelected = collectAsState == i,
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:62:                onClick = {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:63:                    settingsComponent.setCurrentPage(i)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:64:                }
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:65:            )
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:70:@Composable
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:71:private fun SideBarItem(icon: IconSource, name: String, isSelected: Boolean, onClick: () -> Unit) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:72:    Box(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:73:        Modifier
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:74:            .height(IntrinsicSize.Max)
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:75:            .ifThen(isSelected) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:76:                background(myColors.onBackground / 0.05f)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:77:            }
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:78:            .selectable(
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:79:                selected = isSelected,
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:80:                onClick = onClick
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:81:            )
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:82:    ) {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:83:        Row(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:84:            Modifier
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:85:                .padding(vertical = 8.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:86:                .padding(start = 16.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:89:        ) {
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:90:            WithContentAlpha(if (isSelected) 1f else 0.75f) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:91:                MyIcon(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:92:                    icon,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:93:                    null,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:99:                    Modifier.weight(1f),
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:100:                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:101:                    fontSize = myTextSizes.lg,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:102:                    overflow = TextOverflow.Ellipsis,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:103:                    maxLines = 1,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:107:        AnimatedVisibility(
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:108:            isSelected,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:109:            modifier = Modifier
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:110:                .align(Alignment.CenterStart),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:111:            enter = scaleIn(),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:115:                Modifier
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:116:                    .height(16.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:117:                    .width(3.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:118:                    .clip(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:119:                        RoundedCornerShape(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:128:        }
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:129:        if (isSelected) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:130:            listOf(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:131:                Alignment.TopCenter,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:132:                Alignment.BottomCenter,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:137:                        .fillMaxWidth()
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:138:                        .height(1.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:139:                        .background(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:140:                            Brush.horizontalGradient(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:141:                                listOf(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:165:                .fillMaxWidth()
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:166:                .height(1.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:167:                .background(myColors.surface)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:168:        )
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:169:        Row {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:170:            var sideBarWidth by remember { mutableStateOf(250.dp) }
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:171:            SideBar(
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:172:                settingsComponent,
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:173:                Modifier
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:174:                    .fillMaxHeight()
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:175:                    .width(sideBarWidth)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:176:                    .padding(8.dp)
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:177:            )
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:179:            Handle(
+> D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:180:                Modifier.width(5.dp).fillMaxHeight(),
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:181:                orientation = Orientation.Horizontal
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:182:            ) {
+  D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\settings\SettingsP
+age.kt:183:                sideBarWidth = (sideBarWidth + it).coerceIn(150.dp..300.dp)
+
+
+
+REFERENCE D:\Code\zed-main\crates\ui\src\components\button\button_like.rs
+
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:2:use gpui::{
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:3:    AnyElement, AnyView, ClickEvent, CursorStyle, D
+efiniteLength, FocusHandle, Hsla, MouseButton,
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:4:    MouseClickEvent, MouseDownEvent, MouseUpEvent, 
+Rems, Role, StyleRefinement, Toggled, relative,
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:5:    transparent_black,
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:6:};
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:10:
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:11:/// A trait for buttons that can be Selected. Enab
+les setting the [`ButtonStyle`] of a button when it is selected.
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:12:pub trait SelectableButton: Toggleable {
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:13:    fn selected_style(self, style: ButtonStyle) ->
+ Self;
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:14:}
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:15:
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:16:/// A common set of traits all buttons must implem
+ent.
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:17:pub trait ButtonCommon: Clickable + Disableable {
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:18:    /// A unique element ID to identify the button
+.
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:19:    fn id(&self) -> &ElementId;
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:20:
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:21:    /// The visual style of the button.
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:22:    ///
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:23:    /// Most commonly will be [`ButtonStyle::Subtl
+e`], or [`ButtonStyle::Filled`]
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:24:    /// for an emphasized button.
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:25:    fn style(self, style: ButtonStyle) -> Self;
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:26:
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:27:    /// The size of the button.
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:28:    ///
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:29:    /// Most buttons will use the default size.
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:30:    ///
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:31:    /// [`ButtonSize`] can also be used to help bu
+ild non-button elements
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:32:    /// that are consistently sized with buttons.
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:33:    fn size(self, size: ButtonSize) -> Self;
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:34:
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:35:    /// The tooltip that shows when a user hovers 
+over the button.
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:36:    ///
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:37:    /// Nearly all interactable elements should ha
+ve a tooltip. Some example
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:38:    /// exceptions might a scroll bar, or a slider
+.
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:44:
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:45:    fn track_focus(self, focus_handle: &FocusHandl
+e) -> Self;
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:46:}
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:47:
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:48:#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Ha
+sh, Clone, Copy, Default)]
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:71:impl TintColor {
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:72:    fn button_like_style(self, cx: &mut App) -> Bu
+ttonLikeStyles {
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:73:        match self {
+> D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:74:            TintColor::Accent => ButtonLikeStyles 
+{
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:75:                background: cx.theme().status().in
+fo_background,
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:76:                border_color: cx.theme().status().
+info_border,
+  D:\Code\zed-main\crates\ui\src\components\button\button_like.rs:77:                label_color: cx.theme().colors().t
+ext,
+
+
+
+REFERENCE D:\Code\zed-main\crates\ui\src\components\list\list_item.rs
+
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:3:use component::{Component, ComponentScope, example_grou
+p_with_title, single_example};
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:4:use gpui::{AnyElement, AnyView, ClickEvent, MouseButton
+, MouseDownEvent, Pixels, Role, px};
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:5:use smallvec::SmallVec;
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:6:
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:7:use crate::{Disclosure, prelude::*};
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:35:    disabled: bool,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:36:    selected: bool,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:37:    spacing: ListItemSpacing,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:38:    indent_level: usize,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:39:    indent_step_size: Pixels,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:42:    /// A slot for content that appears after the chil
+dren, usually on the other side of the header.
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:43:    /// This might be a button, a disclosure arrow, a 
+face pile, etc.
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:44:    end_slot: Option<AnyElement>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:45:    end_slot_visibility: EndSlotVisibility,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:46:    toggle: Option<bool>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:47:    inset: bool,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:48:    on_click: Option<Box<dyn Fn(&ClickEvent, &mut Wind
+ow, &mut App) + 'static>>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:49:    on_hover: Option<Box<dyn Fn(&bool, &mut Window, &m
+ut App) + 'static>>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:50:    on_toggle: Option<Arc<dyn Fn(&ClickEvent, &mut Win
+dow, &mut App) + 'static>>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:51:    tooltip: Option<Box<dyn Fn(&mut Window, &mut App) 
+-> AnyView + 'static>>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:58:    overflow_x: bool,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:59:    focused: Option<bool>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:60:    dock: Option<DockSide>,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:61:    height: Option<DefiniteLength>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:62:    aria_role: Option<Role>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:63:    aria_label: Option<SharedString>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:64:    aria_keyshortcuts: Option<SharedString>,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:74:            disabled: false,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:75:            selected: false,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:76:            spacing: ListItemSpacing::Dense,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:77:            indent_level: 0,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:78:            indent_step_size: px(12.),
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:83:            inset: false,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:84:            on_click: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:85:            on_secondary_mouse_down: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:86:            on_toggle: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:87:            on_hover: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:94:            overflow_x: false,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:95:            focused: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:96:            dock: None,
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:97:            height: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:98:            aria_role: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:99:            aria_label: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:100:            aria_keyshortcuts: None,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:139:
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:140:    /// Reports this item as the accessibility focus,
+ overriding the element
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:141:    /// that holds real keyboard focus. Requires [`Se
+lf::aria_role`] to be set.
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:142:    ///
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:143:    /// Use this on the selected item of a composite 
+widget (e.g. a menu) that
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:144:    /// keeps keyboard focus on its container. It is 
+honored only while the
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:145:    /// container actually holds focus, so it is safe
+ to set unconditionally on
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:146:    /// the selected item. See [`StatefulInteractiveE
+lement::aria_active_descendant`].
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:147:    pub fn aria_active_descendant(mut self) -> Self {
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:148:        self.aria_active_descendant = true;
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:149:        self
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:171:
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:172:    pub fn on_click(
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:173:        mut self,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:174:        handler: impl Fn(&ClickEvent, &mut Window, &m
+ut App) + 'static,
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:175:    ) -> Self {
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:176:        self.on_click = Some(Box::new(handler));
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:177:        self
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:178:    }
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:179:
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:261:
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:262:    pub fn focused(mut self, focused: bool) -> Self {
+> D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:263:        self.focused = Some(focused);
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:264:        self
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:265:    }
+  D:\Code\zed-main\crates\ui\src\components\list\list_item.rs:266:
+
+
+
+REFERENCE D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml
+
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:17:    <conv:ReferenceEqualsConverter x:Key="RefEqua
+ls"/>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:18:    <local:BadgeFieldToVisibilityConverter x:Key=
+"BadgeFieldToVis"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:19:
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:20:    <!-- Selectable row container for the array m
+aster list -->
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:21:    <Style x:Key="ArrayMasterListItemStyle" Targe
+tType="ListBoxItem">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:22:        <Setter Property="Padding" Value="0"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:23:        <Setter Property="Margin" Value="0,0,0,2"
+/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:38:                        </Trigger>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:39:                        <Trigger Property="IsSele
+cted" Value="True">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:40:                            <Setter TargetName="B
+d" Property="Background" Value="{DynamicResource HoverBackground}"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:41:                            <Setter TargetName="A
+ccentBar" Property="Fill" Value="{DynamicResource AccentBarColor}"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:42:                        </Trigger>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:57:        <Setter Property="FontSize" Value="12"/>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:58:        <Setter Property="ContextMenu"><Setter.Va
+lue><ContextMenu Style="{DynamicResource {x:Type ContextMenu}}"><MenuItem Command="ApplicationCommands.Cut"/><MenuItem 
+Command="ApplicationCommands.Copy"/><MenuItem Command="ApplicationCommands.Paste"/></ContextMenu></Setter.Value></Sette
+r>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:59:    </Style>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:60:
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:61:
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:62:    <DataTemplate x:Key="HotkeyFieldTemplate">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:63:        <ctrl:HotkeyRecorderControl Value="{Bindi
+ng Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:64:                                    RequireModifi
+er="{Binding HotkeyRequireModifier}"
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:65:                                    Width="180" H
+eight="26"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:66:    </DataTemplate>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:67:
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:68:    <DataTemplate x:Key="FilePathFieldTemplate">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:69:        <StackPanel Orientation="Horizontal">
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:70:            <TextBox Text="{Binding Value, Update
+SourceTrigger=PropertyChanged, Mode=TwoWay}" MaxLength="{Binding MaxLength}" Width="150" Height="26"/>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:71:            <Button Content="..." Style="{StaticR
+esource SettingsButton}" MinWidth="0" Padding="4,0" Width="28" Height="26" Margin="4,0,0,0" Tag="File" Click="BrowsePat
+h_Click"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:72:        </StackPanel>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:73:    </DataTemplate>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:74:
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:75:    <DataTemplate x:Key="FolderPathFieldTemplate"
+>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:76:        <StackPanel Orientation="Horizontal">
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:77:            <TextBox Text="{Binding Value, Update
+SourceTrigger=PropertyChanged, Mode=TwoWay}" MaxLength="{Binding MaxLength}" Width="150" Height="26"/>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:78:            <Button Content="..." Style="{StaticR
+esource SettingsButton}" MinWidth="0" Padding="4,0" Width="28" Height="26" Margin="4,0,0,0" Tag="Folder" Click="BrowseP
+ath_Click"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:79:        </StackPanel>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:80:    </DataTemplate>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:81:
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:83:    <Style TargetType="ComboBox" BasedOn="{Static
+Resource SettingsComboBox}">
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:84:        <Setter Property="Height" Value="26"/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:85:    </Style>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:86:
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:87:    <!-- Renders just the value editor for a fiel
+d (no label/description), shared by the
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:88:         standalone field row below and by each c
+ell of an array table. -->
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:89:    <Style x:Key="FieldValueEditorStyle" TargetTy
+pe="ContentControl">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:90:        <Setter Property="ContentTemplate">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:91:            <Setter.Value>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:92:                <DataTemplate/>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:95:        <Style.Triggers>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:96:            <!-- Boolean fields -->
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:97:            <DataTrigger Binding="{Binding IsBool
+ean}" Value="True">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:98:                <Setter Property="ContentTemplate
+">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:99:                    <Setter.Value>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:106:
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:107:            <!-- Text fields -->
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:108:            <DataTrigger Binding="{Binding IsTex
+t}" Value="True">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:109:                <Setter Property="ContentTemplat
+e">
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:110:                    <Setter.Value>
+  D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:116:                                         TextAli
+gnment="{Binding TextAlignment}"
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:117:                                         Height=
+"26"/>
+> D:\Code\SwiftList-main\App\Views\Settings\Plugins\Templates.xaml:118:                                <!-- Spacer for 
+non-icon fields to align them with the icon field preview -->
+
+
+

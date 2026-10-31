@@ -1,0 +1,79 @@
+[
+  {
+    "command": "tests/architecture/download-ui-lifecycle.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\download-ui-lifecycle.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/download-ui-lifecycle.log"
+  },
+  {
+    "command": "tests/architecture/desktop-shell-lifecycle.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\desktop-shell-lifecycle.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/desktop-shell-lifecycle.log"
+  },
+  {
+    "command": "tests/architecture/clipboard-ui-lifecycle.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\clipboard-ui-lifecycle.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/clipboard-ui-lifecycle.log"
+  },
+  {
+    "command": "tests/architecture/ui-token-boundaries.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\ui-token-boundaries.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/ui-token-boundaries.log"
+  },
+  {
+    "command": "tests/architecture/ui-consistency.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\ui-consistency.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/ui-consistency.log"
+  },
+  {
+    "command": "tests/architecture/ui-state-lifecycle.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\ui-state-lifecycle.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/ui-state-lifecycle.log"
+  },
+  {
+    "command": "tests/architecture/ui-motion-policy.ps1",
+    "level": "source only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\ui-motion-policy.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/ui-motion-policy.log"
+  },
+  {
+    "command": "tests/architecture/gpui-component-catalog.py",
+    "level": "source/document only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\gpui-component-catalog.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/gpui-component-catalog.log"
+  },
+  {
+    "command": "tests/architecture/gpui-release-contracts.py",
+    "level": "source/document only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\gpui-release-contracts.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/gpui-release-contracts.log"
+  },
+  {
+    "command": "tests/architecture/markdown-editor-contracts.py",
+    "level": "source/document only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\markdown-editor-contracts.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/markdown-editor-contracts.log"
+  },
+  {
+    "command": "tests/architecture/spec-contracts.py",
+    "level": "source/document only",
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\spec-contracts.log",
+    "exit": 0,
+    "evidence_log": "evidence/logs/spec-contracts.log"
+  }
+]

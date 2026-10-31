@@ -362,7 +362,7 @@ impl MainWindow {
                         title,
                         help,
                         format!("quick-settings-{title}-help"),
-                        280.0,
+                        crate::ui::metrics::ordinary_rem(280.0),
                         div()
                             .w_full()
                             .flex()
@@ -624,12 +624,37 @@ impl MainWindow {
                 error,
             ),
         };
+        let (custom_hotkey, reset_ready) = self
+            .quick_launch
+            .upgrade()
+            .map(|app| {
+                let app = app.read(cx);
+                (app.hotkey_is_custom(), app.can_reset_hotkey())
+            })
+            .unwrap_or_default();
+        let reset = custom_hotkey.then(|| {
+            Button::new("quick-launch-hotkey-reset")
+                .label("重置")
+                .outline()
+                .tooltip("恢复默认快捷键：双击 Ctrl")
+                .disabled(!reset_ready)
+                .on_click(cx.listener(|this, _, _, cx| {
+                    let application = this.quick_launch.clone();
+                    cx.defer(move |cx| {
+                        let _ = application.update(cx, |app, cx| {
+                            app.reset_hotkey();
+                            cx.notify();
+                        });
+                    });
+                }))
+        });
         let hotkey_control = hotkey_field(
             theme,
             "quick-launch-hotkey-field",
             hotkey_value,
             hotkey_status,
             hotkey_state,
+            reset,
             cx.listener(move |this, _, window, cx| {
                 let recording = this.recording_hotkey != Some(HotkeyRecordingTarget::QuickLaunch);
                 if this.recording_hotkey.take().is_some() {

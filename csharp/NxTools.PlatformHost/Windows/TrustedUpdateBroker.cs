@@ -22,7 +22,7 @@ internal static class TrustedUpdateBroker
     private static string Root => Path.Combine(IndexerServiceInstaller.ProtectedProductDirectory(), "Updater");
     private static string Bootstrap => Path.Combine(Root, "Bootstrap", "NxTools.PlatformHost.exe");
     private static string Store => Path.Combine(Root, "Releases");
-    private sealed record Request(string PackageDirectory, Guid CorrelationId);
+    private sealed record Request(string PackageDirectory, Guid CorrelationId, bool MaintenanceProbe = false);
     private sealed record Reply(Guid CorrelationId, bool Success, string Stage, int? NativeErrorCode = null);
 
     // Incomplete enrollment resumes only under its pinned explicit authorization record.
@@ -249,9 +249,22 @@ internal static class TrustedUpdateBroker
                 using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 readDeadline.CancelAfter(TimeSpan.FromSeconds(10));
                 var request = await ReadFrameAsync<Request>(pipe, readDeadline.Token);
+                if (request.MaintenanceProbe && request.CorrelationId != Guid.Empty && request.PackageDirectory == "")
+                {
+                    await WriteFrameAsync(pipe, new Reply(request.CorrelationId, true, "maintenance_ready"), readDeadline.Token);
+                    continue;
+                }
                 if (request.CorrelationId == Guid.Empty || request.PackageDirectory.Length > 1024 ||
                     !Path.IsPathFullyQualified(request.PackageDirectory) || request.PackageDirectory.StartsWith("\\\\", StringComparison.Ordinal))
                     throw new InvalidDataException("Invalid update request.");
+                FileStream updateAdmission;
+                try { updateAdmission = new FileStream(Path.Combine(Root, "bootstrap-maintenance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+                catch (IOException)
+                {
+                    await WriteFrameAsync(pipe, new Reply(request.CorrelationId, false, "bootstrap_maintenance_busy"), readDeadline.Token);
+                    continue;
+                }
+                using var admission = updateAdmission;
                 // Open the source under the caller token, not arbitrary SYSTEM read privileges.
                 // Locked verified handles can then be copied into SYSTEM-owned staging.
                 VerifiedRelease? sourceRelease = null;
@@ -289,6 +302,11 @@ internal static class TrustedUpdateBroker
         {
             using var expected = TrustedReleaseManifest.VerifyPackage(verifiedPackage,
                 Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64), 0);
+            await DeployAsync(verifiedPackage, expected, correlationId, cancellationToken);
+        }
+
+        public async Task DeployAsync(string verifiedPackage, VerifiedRelease expected, Guid correlationId, CancellationToken cancellationToken)
+        {
             var startInfo = new ProcessStartInfo(Path.Combine(verifiedPackage, "NxTools.PlatformHost.exe"))
             { UseShellExecute = false, CreateNoWindow = true };
             startInfo.ArgumentList.Add("--deploy-trusted-release");
@@ -307,7 +325,7 @@ internal static class TrustedUpdateBroker
                 throw;
             }
             if (process.ExitCode != 0) throw new Win32Exception(process.ExitCode, "Verified deployment failed.");
-            if (!IndexerServiceInstaller.IsProtectedServiceHealthy())
+            if (!expected.RecoveryOnly && !IndexerServiceInstaller.IsProtectedServiceHealthy())
                 throw new InvalidDataException("Protected service tuple failed post-deployment verification.");
             foreach (var file in expected.Files)
             {
@@ -317,6 +335,26 @@ internal static class TrustedUpdateBroker
                     throw new InvalidDataException("Protected release file failed post-deployment verification.");
             }
             Trace(log, correlationId, "deployment_completed", Stopwatch.GetTimestamp());
+        }
+        public Task RemoveSupersededAsync(VerifiedRelease previous, VerifiedRelease failed, CancellationToken cancellationToken)
+        {
+            using var gate = TrustedDeploymentGate.Acquire();
+            TrustedReleaseManifest.RemoveSupersededArchiveFiles(IndexerServiceInstaller.ProtectedServiceDirectory(), previous, failed);
+            if (!previous.Files.Any(file => file.Path == "NxTools.ArchiveWorker.exe"))
+            {
+                using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{IndexerServiceInstaller.ServiceName}", true)
+                    ?? throw new InvalidDataException("Recovered service registration missing.");
+                var json = key.GetValue("NxToolsArchiveReleaseSha256") as string;
+                if (json is not null)
+                {
+                    var registered = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? throw new InvalidDataException("Invalid archive registration.");
+                    var expected = failed.Files.Where(file => file.Path == "NxTools.ArchiveWorker.exe" || file.Path.StartsWith("NxTools.ShellSelectionHelper.", StringComparison.Ordinal)).ToDictionary(file => file.Path, file => file.Sha256);
+                    if (registered.Count != expected.Count || registered.Any(pair => !expected.TryGetValue(pair.Key, out var hash) || !string.Equals(hash, pair.Value, StringComparison.OrdinalIgnoreCase)))
+                        throw new InvalidDataException("Archive approval changed during recovery.");
+                    key.DeleteValue("NxToolsArchiveReleaseSha256", false);
+                }
+            }
+            return Task.CompletedTask;
         }
     }
 

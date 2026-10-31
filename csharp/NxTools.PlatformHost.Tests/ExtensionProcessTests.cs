@@ -39,6 +39,18 @@ internal static class ExtensionProcessTests
             Assert(events.Last().Reason == reason && !events.Last().Success && runner.ActiveCount == 0,
                 mode + " must fail at the real byte pump and drain: " + events.Last().Reason + " active=" + runner.ActiveCount + " elapsed=" + events.Last().ElapsedMs);
         }
+        var dataEvents = new ConcurrentQueue<ExtensionProcessEvent>();
+        var outputBytes = 0L;
+        using var dataRunner = new ExtensionProcessRunner(value => {
+            if (value.Op == "stdout") Interlocked.Add(ref outputBytes, value.Data!.Length + 1);
+            else dataEvents.Enqueue(value);
+        });
+        Assert(dataRunner.Start(Request("stdoutflood", "30000") with { DataPlane = 2, TimeoutMs = 10000 }), "opted data stdout admitted");
+        await Until(() => dataEvents.Any(value => value.Op == "exited"), 15000);
+        Assert(dataEvents.Last().Reason == "stdout_total_limit" && dataEvents.Last().CleanupComplete && dataRunner.ActiveCount == 0,
+            "v2 combined native stdout still has a finite28MiB ceiling and actual cleanup");
+        Assert(outputBytes > ExtensionProcessProtocol.StdoutLimit && outputBytes <= 28L*1024*1024,
+            "explicit v2 alone may exceed legacy4MiB, never the declared outer cap");
     }
 
     public static async Task TimeoutCancellationAndPipeHoldingTree()
@@ -122,6 +134,12 @@ internal static class ExtensionProcessTests
         Assert(!runner.Start(Request("sleep") with { TimeoutMs = 120001 }), "hard timeout cap");
         Assert(!runner.Start(Request("sleep") with { MaxProcesses = 9 }), "hard process cap");
         Assert(!runner.Start(Request("sleep") with { MemoryBytes = 1073741825 }), "hard memory cap");
+        Assert(!runner.Start(Request("sleep") with { DataPlane = 1 }), "unknown data transport must reject");
+        Assert(ExtensionProcessProtocol.InputBudget(Request("sleep")) == 1024 * 1024 &&
+            ExtensionProcessProtocol.StdoutBudget(Request("sleep")) == 4 * 1024 * 1024, "legacy limits unchanged");
+        Assert(ExtensionProcessProtocol.InputBudget(Request("sleep") with { DataPlane = 2 }) == 25 * 1024 * 1024 &&
+            ExtensionProcessProtocol.StdoutBudget(Request("sleep") with { DataPlane = 2 }) == 28 * 1024 * 1024,
+            "explicit host-owned data ceiling");
         var limits = Request("joblimits"); runner.Start(limits);
         await Until(() => events.Any(e => e.RunId == limits.RunId && e.Op == "exited"));
         Assert(events.Any(e => e.RunId == limits.RunId && e.Data == "8712:536870912:8"),
@@ -133,6 +151,16 @@ internal static class ExtensionProcessTests
         Assert(!runner.Write(consume.RunId, new string('x', 240000)), "input total budget");
         await Until(() => events.Any(e => e.RunId == consume.RunId && e.Op == "exited"));
         Assert(events.Last().Reason == "input_total_limit", "stdin must stay finite");
+        var opted = Request("consume") with { DataPlane = 2, TimeoutMs = 10000 };
+        Assert(runner.Start(opted), "explicit v2 input admitted");
+        await Until(() => events.Any(e => e.RunId == opted.RunId && e.Op == "started"));
+        for (var i = 0; i < 6; i++) {
+            Assert(runner.Write(opted.RunId, new string('x', 240000)), "opted-in native input exceeds legacy1MiB");
+            await Task.Delay(100);
+        }
+        Assert(runner.Cancel(opted.RunId), "owned data run cancellation");
+        await Until(() => events.Any(e => e.RunId == opted.RunId && e.Op == "exited"));
+        Assert(events.Last(e => e.RunId == opted.RunId).CleanupComplete, "data run retains actual native cleanup");
         var marker = Path.Combine(Path.GetTempPath(), "NxTools-extension-" + Guid.NewGuid() + ".txt");
         try
         {
@@ -163,6 +191,8 @@ internal static class ExtensionProcessTests
             Assert(!runner.Start(Request("sleep")) && runner.ActiveCount == 4, "cancel must not create unlimited replacements");
         }
         finally { release.Set(); runner.Stop(); Assert(await runner.DrainAsync(), "released owned suspended children must terminate"); }
+        await Until(() => events.Count(e => e.Op == "exited") == 4 &&
+            diagnostics.Entries.Count(e => e.Contains("extension.run.cancelled")) == 4);
         Assert(events.Count(e => e.Op == "exited") == 4 && !events.Any(e => e.Op == "started"), "cancelled suspended callbacks must never resume");
         Assert(diagnostics.Entries.All(e => !e.Contains(AppContext.BaseDirectory) && !e.Contains("invoke") && !e.Contains("sleep")),
             "native lifecycle logs must never contain path, argv, stdin or child output");

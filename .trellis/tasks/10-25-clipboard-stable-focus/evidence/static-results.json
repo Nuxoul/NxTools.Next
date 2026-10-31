@@ -1,0 +1,34 @@
+[
+    {
+        "check":  "tests/architecture/clipboard-ui-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/clipboard-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/ui-state-lifecycle.ps1",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/ui-token-boundaries.ps1",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/clipboard-ui-lifecycle.tests.py",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/gpui-release-contracts.py",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/markdown-editor-contracts.py",
+        "exit":  0
+    },
+    {
+        "check":  "tests/architecture/spec-contracts.py",
+        "exit":  0
+    }
+]

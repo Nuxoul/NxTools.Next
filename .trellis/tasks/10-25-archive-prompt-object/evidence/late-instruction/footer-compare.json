@@ -1,0 +1,26 @@
+[
+  {
+    "block": "create_action",
+    "byte_identical_without_indent": true,
+    "baseline_line": "}else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(DialogAction::new().child(Button::new(\"archive-job-prompt-ok\").label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{\"确认覆盖\"}else{\"继续\"}).debug_selector(||\"archive-job-prompt-ok\".into())));}",
+    "current_line": "}else if matches!(prompt.kind,ArchiveJobPromptKind::Password|ArchiveJobPromptKind::Risk|ArchiveJobPromptKind::OutputBudget|ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination){footer=footer.child(DialogAction::new().child(Button::new(\"archive-job-prompt-ok\").label(if prompt.kind==ArchiveJobPromptKind::CreateOverwrite{\"确认覆盖\"}else{\"继续\"}).debug_selector(||\"archive-job-prompt-ok\".into())));}"
+  },
+  {
+    "block": "on_ok",
+    "byte_identical_without_indent": true,
+    "baseline_line": ".on_ok(move|_,window,cx|{let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})",
+    "current_line": ".on_ok(move|_,window,cx|{let password=(ok_prompt.kind==ArchiveJobPromptKind::Password).then(||PrivatePassword::new(ok_input.read(cx).value().as_ref()));ok_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let prompt=ok_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password,decision:matches!(prompt.kind,ArchiveJobPromptKind::CreateOverwrite|ArchiveJobPromptKind::Destination).then_some(ArchiveJobConflictDecision::Overwrite),apply_to_all:ok_apply.get(),approved_limit:prompt.approved_limit};let owner=ok_owner.clone();cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})"
+  },
+  {
+    "block": "on_cancel",
+    "byte_identical_without_indent": true,
+    "baseline_line": ".on_cancel(move|_,window,cx|{cancel_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let owner=cancel_owner.clone();let prompt=cancel_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:None,apply_to_all:false,approved_limit:None};cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})",
+    "current_line": ".on_cancel(move|_,window,cx|{cancel_input.update(cx,|input,cx|input.set_value(\"\",window,cx));let owner=cancel_owner.clone();let prompt=cancel_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:None,apply_to_all:false,approved_limit:None};cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});true})"
+  },
+  {
+    "block": "conflict_decision",
+    "byte_identical_without_indent": true,
+    "baseline_line": "footer=footer.child(Button::new(label).label(label).outline().on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));",
+    "current_line": "footer=footer.child(Button::new(label).label(label).outline().on_click(move|_,window,cx|{let owner=response_owner.clone();let prompt=response_prompt.clone();let reply=ArchiveJobReply{ticket:prompt.ticket.clone(),kind:prompt.kind,password:None,decision:Some(decision),apply_to_all:apply.get(),approved_limit:None};window.close_dialog(cx);cx.defer(move|cx|{let _=owner.update(cx,|app,cx|app.reply_job(id,prompt,reply,cx));});}));"
+  }
+]

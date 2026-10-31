@@ -1,0 +1,4 @@
+{"file":".trellis/spec/shared/engineering.md","reason":"Deferred leases, pending-before-dispatch, privacy and bounded diagnostic contracts"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official notification compound and XSmall icon Button public composition"}
+{"file":"docs/reference-code/notifications.md","reason":"Current native lifecycle and cancelled Ctrl+C history; new button is separate"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Pinned graph and explicitly approved notification header API amendment"}

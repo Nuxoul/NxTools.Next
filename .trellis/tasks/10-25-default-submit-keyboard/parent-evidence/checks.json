@@ -1,0 +1,17 @@
+﻿[
+    {
+        "name":  "clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  0
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0
+    },
+    {
+        "name":  "fmt",
+        "command":  "cargo fmt --all -- --check",
+        "exit":  0
+    }
+]

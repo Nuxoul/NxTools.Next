@@ -1,0 +1,133 @@
+use nxtools_extensions::ImportPreview;
+use serde_json::json;
+
+fn manifest() -> serde_json::Value {
+    json!({"schema_version":1,"id":"fixture.api","name":"API","version":"1","handlers":[{"id":"open","title":"Open","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://example.test"}}]})
+}
+#[test]
+fn remediation_required_methods_reject_unsupported_and_keep_legacy_identity() {
+    let legacy = manifest();
+    let original = ImportPreview::from_json(&serde_json::to_vec(&legacy).expect("legacy"))
+        .expect("legacy import");
+    let mut compatible = legacy.clone();
+    compatible["requires"] = json!([]);
+    let explicit =
+        ImportPreview::from_json(&serde_json::to_vec(&compatible).expect("empty requirements"))
+            .expect("empty requirements preserve compatibility");
+    assert_eq!(original.content_hash, explicit.content_hash);
+    compatible["requires"] = json!([{"method":"downloads.list_page","version":1}]);
+    assert!(ImportPreview::from_json(&serde_json::to_vec(&compatible).expect("supported")).is_ok());
+    for requirement in [
+        json!({"method":"host.reflect","version":1}),
+        json!({"method":"downloads.list","version":2}),
+        json!({"method":"downloads.list","version":1,"ignored":true}),
+    ] {
+        compatible["requires"] = json!([requirement]);
+        assert!(
+            ImportPreview::from_json(&serde_json::to_vec(&compatible).expect("unsupported"))
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn remediation_input_declaration_rejects_wrong_kind_size_and_preserves_legacy_hash() {
+    let legacy = manifest();
+    let mut explicit = legacy.clone();
+    explicit["handlers"][0]["accepts"] = serde_json::Value::Null;
+    let original =
+        ImportPreview::from_json(&serde_json::to_vec(&legacy).expect("legacy")).expect("legacy");
+    assert_eq!(
+        original.content_hash,
+        ImportPreview::from_json(&serde_json::to_vec(&explicit).expect("null"))
+            .expect("null omitted")
+            .content_hash
+    );
+    let accepts: nxtools_extensions::AcceptedInput =
+        serde_json::from_value(json!({"kinds":["text"],"max_items":1,"max_bytes":8}))
+            .expect("accepted input");
+    assert!(accepts.validate());
+    assert!(accepts.accepts_context(
+        "clipboard",
+        &json!({"selection":{"kind":"text","text":"hello"}})
+    ));
+    assert!(!accepts.accepts_context("clipboard", &json!({"selection":{"kind":"image"}})));
+    assert!(!accepts.accepts_context(
+        "clipboard",
+        &json!({"selection":{"kind":"text","text":"too much data"}})
+    ));
+    let catalog = nxtools_extensions::method_catalog(false, false, true);
+    for name in [
+        "common.copy",
+        "quick_launch.search_catalog",
+        "downloads.probe",
+    ] {
+        assert_eq!(
+            catalog
+                .as_array()
+                .expect("methods")
+                .iter()
+                .find(|item| item["method"] == name)
+                .expect("method")["available"],
+            false
+        );
+    }
+}
+
+#[test]
+fn expansion_method_discovery_preserves_legacy_names_and_declares_minimum_transport() {
+    let methods = nxtools_extensions::method_catalog(true, true, false);
+    let methods = methods.as_array().expect("method catalog");
+    assert_eq!(methods.len(), 31);
+    assert_eq!(
+        methods
+            .iter()
+            .filter(|method| method["minimum_transport"] == 1)
+            .count(),
+        23
+    );
+    assert_eq!(
+        methods
+            .iter()
+            .filter(|method| method["minimum_transport"] == 2)
+            .count(),
+        8
+    );
+    assert_eq!(
+        nxtools_extensions::method_minimum_transport("blobs.begin", 1),
+        Some(2)
+    );
+    for name in [
+        "storage.get",
+        "storage.set",
+        "storage.delete",
+        "storage.list",
+    ] {
+        assert_eq!(
+            nxtools_extensions::method_minimum_transport(name, 1),
+            Some(2)
+        );
+        let method = methods
+            .iter()
+            .find(|method| method["method"] == name)
+            .expect("storage declaration");
+        assert_eq!(
+            method["available"], false,
+            "generic adapters cannot promise an unconfigured storage host"
+        );
+        assert_eq!(method["unavailable_code"], "capability_unavailable");
+    }
+    assert_eq!(
+        nxtools_extensions::method_minimum_transport("clipboard.get", 1),
+        Some(1)
+    );
+    assert_eq!(
+        nxtools_extensions::method_minimum_transport("clipboard.get", 2),
+        None
+    );
+    assert_eq!(
+        nxtools_extensions::method_minimum_transport("http.request", 1),
+        None,
+        "unimplemented future methods are not advertised as available"
+    );
+}

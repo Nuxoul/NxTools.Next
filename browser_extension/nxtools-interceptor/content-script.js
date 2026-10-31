@@ -6,6 +6,15 @@
   }
   window.__nxToolsMediaBridgeInstalled = true;
 
+  // Stateless helpers live in content/*.js (loaded first by the manifest and
+  // injectContentBridge); this file owns all shared page state.
+  const { OVERLAY_GAP, MEDIA_CANDIDATE_TTL_MS, DIRECT_DOWNLOAD_EXTENSIONS, MEDIA_SELECTOR, MEDIA_CONTAINER_SELECTOR } = NxToolsContent.constants;
+  const { safeRuntimeSendMessage } = NxToolsContent.runtime;
+  const { extensionOf, isInterestingUrl, isOverlayMediaResourceUrl, mediaElementKind, isUsableGoogleVideoUrl, filenameFromUrl, firstSrcsetUrl, mediaMimeFromElement, mediaDimensions, mediaResolutionText, mediaCandidateKey, currentPageKey, performanceEntryCapturedAt, candidateMediaInfo, mediaKindIcon } = NxToolsContent.media;
+  const { normalizeChoiceKey, rankResourceChoice, backgroundResourceChoiceCandidates, resourceChoiceLabel, resourceChoiceQuality, resourceChoiceTypeText, resourceChoiceSizeText, resourceChoiceFileText, resourceChoiceMetaText } = NxToolsContent.choices;
+  const { blobInfoFromPage, uploadBlobFromPage, readBlobInPage, downloadBlobInPage } = NxToolsContent.blob;
+  const { mediaHasPlayableSource, viewportFallbackRect, visibleElementRect, visibleMediaRect, hasMediaSurface, containerUrl, mediaContainerScore, mediaScore, mediaElements, selectionResolutionText, sameResourceUrl } = NxToolsContent.geometry;
+
   const sent = new Map();
   const mediaCandidates = new Map();
   let detectedCount = 0;
@@ -27,392 +36,6 @@
   let selectedMediaIndex = 0;
   let resetTimer = 0;
   let lastPageKey = "";
-  const OVERLAY_GAP = 8;
-  const FLOATING_MEDIA_WIDTH = 28;
-  const FLOATING_MEDIA_HEIGHT = 28;
-  const MEDIA_CANDIDATE_TTL_MS = 3 * 60 * 1000;
-  const GOOGLEVIDEO_MIN_REMAINING_MS = 30 * 1000;
-  const GOOGLEVIDEO_MAX_FUTURE_MS = 14 * 24 * 60 * 60 * 1000;
-  const YOUTUBE_ITAG_INFO = {
-    18: { height: 360, format: "MP4", kind: "video", progressive: true },
-    22: { height: 720, format: "MP4", kind: "video", progressive: true },
-    37: { height: 1080, format: "MP4", kind: "video", progressive: true },
-    38: { height: 3072, format: "MP4", kind: "video", progressive: true },
-    133: { height: 240, format: "MP4", kind: "video" },
-    134: { height: 360, format: "MP4", kind: "video" },
-    135: { height: 480, format: "MP4", kind: "video" },
-    136: { height: 720, format: "MP4", kind: "video" },
-    137: { height: 1080, format: "MP4", kind: "video" },
-    138: { height: 2160, format: "MP4", kind: "video" },
-    160: { height: 144, format: "MP4", kind: "video" },
-    242: { height: 240, format: "WebM", kind: "video" },
-    243: { height: 360, format: "WebM", kind: "video" },
-    244: { height: 480, format: "WebM", kind: "video" },
-    247: { height: 720, format: "WebM", kind: "video" },
-    248: { height: 1080, format: "WebM", kind: "video" },
-    271: { height: 1440, format: "WebM", kind: "video" },
-    272: { height: 2160, format: "WebM", kind: "video" },
-    278: { height: 144, format: "WebM", kind: "video" },
-    298: { height: 720, format: "MP4", kind: "video" },
-    299: { height: 1080, format: "MP4", kind: "video" },
-    302: { height: 720, format: "WebM", kind: "video" },
-    303: { height: 1080, format: "WebM", kind: "video" },
-    308: { height: 1440, format: "WebM", kind: "video" },
-    313: { height: 2160, format: "WebM", kind: "video" },
-    315: { height: 2160, format: "WebM", kind: "video" },
-    394: { height: 144, format: "MP4 AV1", kind: "video" },
-    395: { height: 240, format: "MP4 AV1", kind: "video" },
-    396: { height: 360, format: "MP4 AV1", kind: "video" },
-    397: { height: 480, format: "MP4 AV1", kind: "video" },
-    398: { height: 720, format: "MP4 AV1", kind: "video" },
-    399: { height: 1080, format: "MP4 AV1", kind: "video" },
-    400: { height: 1440, format: "MP4 AV1", kind: "video" },
-    401: { height: 2160, format: "MP4 AV1", kind: "video" },
-    139: { format: "M4A", kind: "audio" },
-    140: { format: "M4A", kind: "audio" },
-    141: { format: "M4A", kind: "audio" },
-    249: { format: "WebM Opus", kind: "audio" },
-    250: { format: "WebM Opus", kind: "audio" },
-    251: { format: "WebM Opus", kind: "audio" },
-    256: { format: "M4A", kind: "audio" },
-    258: { format: "M4A", kind: "audio" }
-  };
-
-  const INTERESTING_EXTENSIONS = new Set([
-    "avif", "bmp",
-    "3gp", "aac", "avi", "cmfa", "cmfv", "flac", "flv", "gif", "m3u", "m3u8", "m4a", "m4s", "m4v", "mkv", "mov", "mp2t", "mp3",
-    "jpeg", "jpg", "mp4", "mpd", "ogg", "opus", "png", "svg", "ts", "wav", "weba", "webm", "webp", "wmv",
-    "7z", "apk", "app", "bat", "bin", "bz2", "csv", "deb", "dmg", "doc", "docx", "exe",
-    "gz", "iso", "jar", "msi", "pdf", "pkg", "ppt", "pptx", "rar", "rpm", "sh", "tar",
-    "tgz", "txt", "xls", "xlsx", "xz", "zip"
-  ]);
-
-  const DIRECT_DOWNLOAD_EXTENSIONS = new Set([
-    "7z", "apk", "app", "appimage", "appx", "appxbundle", "ar", "bat", "bin", "bz", "bz2",
-    "cab", "cmd", "com", "cpio", "crx", "deb", "dmg", "dpkg", "exe", "flatpakref", "gz",
-    "img", "ipa", "iso", "jar", "lz", "lz4", "lzh", "lzma", "msi", "msix", "msixbundle",
-    "msp", "msu", "nupkg", "pacman", "pkg", "ps1", "rar", "rpm", "run", "sh", "snap",
-    "tar", "taz", "tbz", "tbz2", "tgz", "txz", "vhd", "vhdx", "vmdk", "war", "wim", "xar",
-    "xpi", "xz", "z", "zip", "zipx", "zst", "zstd",
-    "doc", "docx", "dot", "dotx", "xls", "xlsx", "xlsm", "xlt", "xltx", "ppt",
-    "pptx", "pps", "ppsx", "pot", "potx", "odt", "ods", "odp", "odg", "rtf", "csv",
-    "epub", "mobi", "azw", "azw3", "djvu", "fb2",
-    "psd", "psb", "ai", "eps", "sketch", "fig", "indd", "afdesign", "xd",
-    "raw", "dng", "cr2", "cr3", "nef", "arw", "orf", "rw2", "tiff", "tif", "heic", "heif",
-    "rbxm", "rbxl", "rbxlx", "rbxmx",
-    "unitypackage", "pak", "vpk", "asset", "fbx", "obj", "blend", "dae", "3ds", "stl",
-    "glb", "gltf",
-    "torrent", "magnet",
-    "vsix", "nbproj", "ipynb",
-    "log", "dat", "db", "sqlite", "sqlite3", "mdb", "accdb",
-    "key", "cer", "crt", "pem", "p12", "pfx",
-    "srt", "ass", "vtt", "ssa"
-  ]);
-
-  const OVERLAY_MEDIA_EXTENSIONS = new Set([
-    "3gp", "aac", "avi", "cmfa", "cmfv", "flac", "flv", "m3u", "m3u8", "m4a", "m4s", "m4v", "mkv", "mov", "mp2t", "mp3",
-    "mp4", "mpd", "ogg", "opus", "ts", "wav", "weba", "webm", "wmv"
-  ]);
-
-  const MEDIA_SELECTOR = [
-    "video[src]",
-    "audio[src]",
-    "source[src]",
-    "track[src]",
-    "img[src]",
-    "picture source[srcset]",
-    "[srcset]",
-    "a[href]"
-  ].join(",");
-
-  const MEDIA_CONTAINER_SELECTOR = [
-    "video",
-    "audio",
-    "canvas",
-    "[data-bvid]",
-    "[data-aid]",
-    "[data-video-id]"
-  ].join(",");
-
-  function runtimeLastError() {
-    try {
-      return chrome.runtime.lastError || null;
-    } catch {
-      return { message: "Extension context invalidated." };
-    }
-  }
-
-  function safeRuntimeSendMessage(message, callback) {
-    try {
-      if (!globalThis.chrome?.runtime?.id || typeof chrome.runtime.sendMessage !== "function") {
-        callback?.(undefined, { message: "Extension context invalidated." });
-        return false;
-      }
-
-      chrome.runtime.sendMessage(message, (result) => {
-        callback?.(result, runtimeLastError());
-      });
-      return true;
-    } catch (error) {
-      callback?.(undefined, {
-        message: error instanceof Error ? error.message : "Extension message failed."
-      });
-      return false;
-    }
-  }
-
-  function runtimeMessage(message) {
-    return new Promise((resolve) => {
-      safeRuntimeSendMessage(message, (result, lastError) => {
-        resolve({ result, lastError });
-      });
-    });
-  }
-
-  function extensionOf(url) {
-    try {
-      const path = new URL(url, location.href).pathname;
-      const name = path.split("/").pop() || "";
-      const index = name.lastIndexOf(".");
-      return index >= 0 ? name.slice(index + 1).toLowerCase() : "";
-    } catch {
-      return "";
-    }
-  }
-
-  function isInterestingMime(mime) {
-    const type = String(mime || "").toLowerCase();
-    return type.startsWith("video/")
-      || type.startsWith("audio/")
-      || type.startsWith("image/")
-      || type === "image/gif"
-      || type === "image/webp"
-      || type.includes("mpegurl")
-      || type.includes("dash+xml")
-      || type.includes("mp4")
-      || type.includes("octet-stream");
-  }
-
-  function isOverlayMediaMime(mime) {
-    const type = String(mime || "").toLowerCase();
-    return type.startsWith("video/")
-      || type.startsWith("audio/")
-      || type === "video/*"
-      || type === "audio/*"
-      || type.includes("mpegurl")
-      || type.includes("dash+xml");
-  }
-
-  function isInterestingUrl(url, extra = {}) {
-    const text = String(url || "");
-    if (!/^(https?:|blob:)/i.test(text)) {
-      return false;
-    }
-    if (!isUsableGoogleVideoUrl(url)) {
-      return false;
-    }
-    if (isInterestingMime(extra.mime)) {
-      return true;
-    }
-    if (/^blob:/i.test(text) && extra.elementKind) {
-      return true;
-    }
-    const extension = String(extra.ext || extensionOf(url) || "").replace(/^\./, "").toLowerCase();
-    return INTERESTING_EXTENSIONS.has(extension)
-      || /\.(m3u8|mpd|mp4|m4s|webm|mkv|mov|flv|ts|m4a|mp3|aac|flac|wav|ogg)(?:[?#]|$)/i.test(url)
-      || /\.(gif|webp|png|jpe?g|avif|bmp|svg)(?:[?#]|$)/i.test(url)
-      || /(?:bilivideo|hdslb|upos-|mcdn|googlevideo|videoplayback|douyinvod|bytecdn|weibocdn|akamaized|cloudfront|dash|hls|segment|fragment|chunk|playback|stream).*?(?:m4s|mp4|audio|video|mime_type|mime=)/i.test(url);
-  }
-
-  function isOverlayMediaResourceUrl(url, extra = {}) {
-    const text = String(url || "");
-    if (!/^(https?:|blob:)/i.test(text)) {
-      return false;
-    }
-    if (!isUsableGoogleVideoUrl(text)) {
-      return false;
-    }
-    if (isOverlayMediaMime(extra.mime)) {
-      return true;
-    }
-
-    const extension = String(extra.ext || extensionOf(text) || "").replace(/^\./, "").toLowerCase();
-    return OVERLAY_MEDIA_EXTENSIONS.has(extension)
-      || /\.(m3u8|mpd|mp4|m4s|webm|mkv|mov|flv|ts|m4a|mp3|aac|flac|wav|ogg)(?:[?#]|$)/i.test(text)
-      || /(?:bilivideo|hdslb|upos-|mcdn|googlevideo|videoplayback|douyinvod|bytecdn|weibocdn|akamaized|cloudfront|dash|hls|segment|fragment|chunk|playback).*?(?:m4s|mp4|audio|video|mime_type|mime=)/i.test(text);
-  }
-
-  function mediaElementKind(element) {
-    if (element instanceof HTMLAudioElement || element?.tagName?.toLowerCase?.() === "audio") {
-      return "audio";
-    }
-    if (element instanceof HTMLVideoElement || element?.tagName?.toLowerCase?.() === "video") {
-      return "video";
-    }
-    if (element instanceof HTMLImageElement || element?.tagName?.toLowerCase?.() === "img") {
-      return "image";
-    }
-    return "";
-  }
-
-  function isGoogleVideoUrl(url) {
-    try {
-      const host = new URL(url, location.href).hostname.toLowerCase();
-      return host === "googlevideo.com" || host.endsWith(".googlevideo.com");
-    } catch {
-      return false;
-    }
-  }
-
-  function isUsableGoogleVideoUrl(url) {
-    if (!isGoogleVideoUrl(url)) {
-      return true;
-    }
-
-    try {
-      const params = new URL(url, location.href).searchParams;
-      const expireText = params.get("expire") || "";
-      if (!expireText) {
-        return true;
-      }
-
-      const expireMs = Number(expireText) * 1000;
-      if (!Number.isFinite(expireMs) || expireMs <= 0) {
-        return false;
-      }
-
-      const now = Date.now();
-      return expireMs > now + GOOGLEVIDEO_MIN_REMAINING_MS &&
-        expireMs < now + GOOGLEVIDEO_MAX_FUTURE_MS;
-    } catch {
-      return false;
-    }
-  }
-
-  function filenameFromUrl(url) {
-    try {
-      return decodeURIComponent(new URL(url, location.href).pathname.split("/").pop() || "");
-    } catch {
-      return "";
-    }
-  }
-
-  function firstSrcsetUrl(srcset) {
-    const text = String(srcset || "").trim();
-    if (!text) {
-      return "";
-    }
-    return text.split(",").map((part) => part.trim().split(/\s+/, 1)[0]).filter(Boolean).pop() || "";
-  }
-
-  function mediaMimeFromElement(element) {
-    if (!element) {
-      return "";
-    }
-
-    const type = element.getAttribute("type") || "";
-    if (type) {
-      return type.split(";")[0].trim().toLowerCase();
-    }
-
-    if (element instanceof HTMLImageElement || element?.tagName?.toLowerCase?.() === "img" || element?.hasAttribute?.("srcset")) {
-      return "image/*";
-    }
-
-    if (element instanceof HTMLMediaElement) {
-      const source = element.currentSrc || element.src || "";
-      if (/\.m3u8(?:[?#]|$)/i.test(source)) {
-        return "application/vnd.apple.mpegurl";
-      }
-      if (/\.mpd(?:[?#]|$)/i.test(source)) {
-        return "application/dash+xml";
-      }
-      return element.tagName.toLowerCase() === "audio" ? "audio/*" : "video/*";
-    }
-
-    return "";
-  }
-
-  function mediaDimensions(element) {
-    if (element instanceof HTMLImageElement) {
-      const width = Number(element.naturalWidth || element.width || 0);
-      const height = Number(element.naturalHeight || element.height || 0);
-      if (width > 0 && height > 0) {
-        return { width, height };
-      }
-    }
-
-    if (element instanceof HTMLVideoElement) {
-      const width = Number(element.videoWidth || 0);
-      const height = Number(element.videoHeight || 0);
-      if (width > 0 && height > 0) {
-        return { width, height };
-      }
-
-      const rect = element.getBoundingClientRect();
-      const rectWidth = Math.round(rect.width || element.clientWidth || 0);
-      const rectHeight = Math.round(rect.height || element.clientHeight || 0);
-      return rectWidth > 0 && rectHeight > 0 ? { width: rectWidth, height: rectHeight } : { width: 0, height: 0 };
-    }
-
-    return { width: 0, height: 0 };
-  }
-
-  function mediaResolutionText(element) {
-    const dimensions = mediaDimensions(element);
-    return dimensions.width > 0 && dimensions.height > 0
-      ? `${dimensions.width}x${dimensions.height}`
-      : "";
-  }
-
-  function mediaCandidateKey(url) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return parsed.toString();
-    } catch {
-      return String(url || "").split("#", 1)[0];
-    }
-  }
-
-  function escapeHtml(value) {
-    return String(value || "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  function currentYoutubeVideoId() {
-    try {
-      const parsed = new URL(location.href);
-      const id = parsed.searchParams.get("v");
-      if (id) {
-        return id;
-      }
-    } catch {
-      // Ignore malformed page URLs.
-    }
-
-    const watchFlexy = document.querySelector("ytd-watch-flexy[video-id]");
-    const attributeId = watchFlexy?.getAttribute?.("video-id");
-    if (attributeId) {
-      return attributeId;
-    }
-
-    const player = document.querySelector("#movie_player[data-video-id], .html5-video-player[data-video-id]");
-    return player?.getAttribute?.("data-video-id") || "";
-  }
-
-  function currentPageKey() {
-    const isYoutube = /(^|\.)youtube\.com$/i.test(location.hostname);
-    const videoId = isYoutube ? currentYoutubeVideoId() : "";
-    if (videoId) {
-      return `${location.origin}${location.pathname}?v=${videoId}`;
-    }
-
-    return location.href.split("#", 1)[0];
-  }
 
   function resetMediaCandidatesForNavigation(reason = "navigation") {
     const nextKey = currentPageKey();
@@ -441,12 +64,6 @@
     }
 
     resetMediaCandidatesForNavigation("detected-url-change");
-  }
-
-  function performanceEntryCapturedAt(entry) {
-    const origin = Number(performance?.timeOrigin || 0);
-    const start = Number(entry?.startTime || 0);
-    return origin > 0 && start >= 0 ? Math.round(origin + start) : Date.now();
   }
 
   function trackMediaCandidate(url, extra = {}) {
@@ -531,109 +148,6 @@
       .slice(0, 80);
   }
 
-  function youtubeItagInfo(itag) {
-    const numeric = Number(itag || 0);
-    return Number.isFinite(numeric) ? YOUTUBE_ITAG_INFO[numeric] || null : null;
-  }
-
-  function decodedMimeFromUrl(url) {
-    try {
-      const params = new URL(url, location.href).searchParams;
-      return (params.get("mime") || params.get("mime_type") || "").replace(/_/g, "/").split(";", 1)[0].toLowerCase();
-    } catch {
-      return "";
-    }
-  }
-
-  function candidateMediaInfo(candidate) {
-    let params;
-    try {
-      params = new URL(candidate?.url || "", location.href).searchParams;
-    } catch {
-      params = new URLSearchParams();
-    }
-
-    const itag = params.get("itag") || candidate?.itag || "";
-    const itagInfo = youtubeItagInfo(itag);
-    const mime = String(candidate?.mime || decodedMimeFromUrl(candidate?.url || "") || "").toLowerCase();
-    const kind = candidate?.kind ||
-      (mime.startsWith("audio/")
-      ? "audio"
-      : mime.startsWith("video/")
-        ? "video"
-        : itagInfo?.kind || "media");
-    const resolution = String(candidate?.resolution || "");
-    const height = Number(candidate?.height || itagInfo?.height || 0);
-    const width = Number(candidate?.width || 0);
-    const extension = String(candidate?.extension || candidate?.ext || "").replace(/^\./, "").toUpperCase();
-    const format = candidate?.format ||
-      itagInfo?.format ||
-      extension ||
-      (mime.includes("webm") ? "WebM" : mime.includes("mp4") ? "MP4" : mime.split("/", 2)[1]?.toUpperCase() || "");
-    const size = Number(candidate?.size || params.get("clen") || 0);
-    return {
-      itag,
-      mime,
-      kind,
-      resolution,
-      height,
-      width,
-      format,
-      size,
-      progressive: Boolean(itagInfo?.progressive)
-    };
-  }
-
-  function formatBytes(bytes) {
-    const units = ["B", "KB", "MB", "GB"];
-    let value = Math.max(0, Number(bytes || 0));
-    let unit = 0;
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024;
-      unit += 1;
-    }
-    return unit === 0 ? `${Math.round(value)} ${units[unit]}` : `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unit]}`;
-  }
-
-  function normalizeChoiceKey(url) {
-    try {
-      const parsed = new URL(url, location.href);
-      parsed.hash = "";
-      return parsed.toString();
-    } catch {
-      return String(url || "").split("#", 1)[0];
-    }
-  }
-
-  function rankResourceChoice(candidate) {
-    const info = candidateMediaInfo(candidate);
-    const kindScore = info.kind === "video" ? 2_000_000_000 : info.kind === "audio" ? 1_000_000_000 : 0;
-    const completeScore = info.progressive ? 200_000_000 : 0;
-    const heightScore = Math.min(info.height || 0, 4320) * 100_000;
-    const sizeScore = Math.min(info.size || 0, 80_000_000) / 10;
-    const timeScore = Number(candidate?.capturedAt || 0) / 100000;
-    return kindScore + completeScore + heightScore + sizeScore + timeScore;
-  }
-
-  async function backgroundResourceChoiceCandidates(selected) {
-    const selectedDimensions = mediaDimensions(selected?.media);
-    const response = await runtimeMessage({
-      type: "content_get_resource_choices",
-      href: location.href,
-      pageKey: currentPageKey(),
-      width: selectedDimensions.width,
-      height: selectedDimensions.height,
-      resolution: selectedDimensions.width > 0 && selectedDimensions.height > 0 ? `${selectedDimensions.width}x${selectedDimensions.height}` : "",
-      requestedAt: Date.now()
-    });
-
-    if (response.lastError || response.result?.ok === false || !Array.isArray(response.result?.choices)) {
-      return [];
-    }
-
-    return response.result.choices;
-  }
-
   async function resourceChoiceCandidates(selected = null) {
     const seen = new Set();
     const backgroundChoices = await backgroundResourceChoiceCandidates(selected);
@@ -657,126 +171,6 @@
       })
       .sort((left, right) => rankResourceChoice(right) - rankResourceChoice(left))
       .slice(0, 12);
-  }
-
-  function resourceChoiceLabel(candidate, index) {
-    const info = candidateMediaInfo(candidate);
-    const kind = info.kind === "audio" ? "音频" : info.kind === "video" ? "视频" : "媒体";
-    const quality = info.resolution || (info.height > 0 ? `${info.height}p` : info.width > 0 ? `${info.width}px` : `资源 ${index + 1}`);
-    const format = info.format ? ` · ${info.format}` : "";
-    const complete = info.progressive ? " · 音视频" : "";
-    return candidate.label || `${quality} ${kind}${format}${complete}`;
-  }
-
-  function resourceChoiceMeta(candidate) {
-    const info = candidateMediaInfo(candidate);
-    const size = info.size > 0 ? formatBytes(info.size) : "";
-    const itag = info.itag ? `itag ${info.itag}` : "";
-    const fileName = candidate.filename && !/^videoplayback$/i.test(candidate.filename) ? candidate.filename : "";
-    const parts = [];
-    const pushUnique = (value) => {
-      const text = String(value || "").trim();
-      if (!text) {
-        return;
-      }
-
-      const normalized = text.toLowerCase();
-      if (parts.some((item) => {
-        const existing = item.toLowerCase();
-        return existing === normalized || existing.includes(normalized) || normalized.includes(existing);
-      })) {
-        return;
-      }
-
-      parts.push(text);
-    };
-
-    pushUnique(size);
-    pushUnique(fileName);
-    pushUnique(itag);
-    String(candidate.meta || "")
-      .split("·")
-      .map((item) => item.trim())
-      .forEach(pushUnique);
-    pushUnique(info.progressive ? "可单文件播放" : info.kind === "video" ? "通常为仅视频轨" : "");
-    return parts.join(" · ");
-  }
-
-  function resourceChoiceQuality(candidate, index) {
-    const info = candidateMediaInfo(candidate);
-    return info.resolution || (info.height > 0 ? `${info.height}p` : info.width > 0 ? `${info.width}px` : `资源 ${index + 1}`);
-  }
-
-  function resourceChoiceTypeText(candidate) {
-    const info = candidateMediaInfo(candidate);
-    const kind = info.kind === "audio" ? "音频" : info.kind === "video" ? "视频" : "媒体";
-    return info.format ? `${kind} · ${info.format}` : kind;
-  }
-
-  function resourceChoiceSizeText(candidate) {
-    const info = candidateMediaInfo(candidate);
-    return info.size > 0 ? formatBytes(info.size) : "-";
-  }
-
-  function resourceChoiceSourceText(candidate) {
-    const source = String(candidate?.source || candidate?.sourceType || "").trim();
-    return source
-      .replace(/^performance:/i, "性能:")
-      .replace(/^webRequest-/i, "请求:")
-      .replace(/xhr-response/ig, "XHR响应")
-      .replace(/page-hook/ig, "hook")
-      .replace(/request/ig, "请求");
-  }
-
-  function resourceChoiceFileText(candidate, index) {
-    const fileName = candidate?.filename && !/^videoplayback(?:\.\w+)?$/i.test(candidate.filename)
-      ? candidate.filename
-      : filenameFromUrl(candidate?.url || "");
-    return fileName || candidate?.label || `资源 ${index + 1}`;
-  }
-
-  function resourceChoiceTrackText(candidate) {
-    const info = candidateMediaInfo(candidate);
-    if (info.progressive) {
-      return "音视频";
-    }
-
-    if (info.kind === "video") {
-      return "仅视频轨";
-    }
-
-    if (info.kind === "audio") {
-      return "仅音频轨";
-    }
-
-    return "";
-  }
-
-  function resourceChoiceMetaText(candidate) {
-    const info = candidateMediaInfo(candidate);
-    const source = resourceChoiceSourceText(candidate);
-    const parts = [];
-    if (source) {
-      parts.push(`来源: ${source}`);
-    }
-    if (info.itag) {
-      parts.push(`itag ${info.itag}`);
-    }
-    const mime = info.mime && info.mime !== "video/*" && info.mime !== "audio/*" ? info.mime : "";
-    if (mime) {
-      parts.push(mime);
-    }
-    const track = resourceChoiceTrackText(candidate);
-    if (track) {
-      parts.push(track);
-    }
-    return parts.join(" · ") || resourceChoiceMeta(candidate) || "点击发送到 NxTools";
-  }
-
-  function resourceChoiceDetail(candidate) {
-    const fileName = resourceChoiceFileText(candidate, 0);
-    const meta = resourceChoiceMetaText(candidate);
-    return [fileName, meta].filter(Boolean).join(" · ") || "点击发送到 NxTools";
   }
 
   function sendResource(url, element, extra = {}) {
@@ -860,260 +254,6 @@
         blobUrl: absoluteUrl.startsWith("blob:") ? absoluteUrl : ""
       }
     });
-  }
-
-  let nxBlobRequestSeq = 0;
-  function requestBlobBytesFromPage(url, timeoutMs = 3500) {
-    return new Promise((resolve) => {
-      const token = `nxblob-${Date.now()}-${++nxBlobRequestSeq}`;
-      let settled = false;
-      const cleanup = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener("message", onMessage, true);
-      };
-      const onMessage = (event) => {
-        if (event.source !== window) {
-          return;
-        }
-        const data = event.data;
-        if (!data || data.__nxtoolsBlobBytesResponse !== true || data.token !== token) {
-          return;
-        }
-        cleanup();
-        resolve(data.ok
-          ? { ok: true, base64: data.base64 || "", mime: data.mime || "", size: Number(data.size || 0) }
-          : { ok: false, message: data.message || "页面脚本无法读取这个 Blob" });
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve({ ok: false, message: "页面脚本读取 Blob 超时" });
-      }, timeoutMs);
-      window.addEventListener("message", onMessage, true);
-      window.postMessage({ __nxtoolsBlobBytesRequest: true, token, url: String(url || "") }, "*");
-    });
-  }
-
-  function requestBlobPageAction(requestFlag, responseFlag, payload, timeoutMs) {
-    return new Promise((resolve) => {
-      const token = `nxblob-${Date.now()}-${++nxBlobRequestSeq}`;
-      let settled = false;
-      const cleanup = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener("message", onMessage, true);
-      };
-      const onMessage = (event) => {
-        if (event.source !== window) {
-          return;
-        }
-        const data = event.data;
-        if (!data || data[responseFlag] !== true || data.token !== token) {
-          return;
-        }
-        cleanup();
-        resolve({
-          ok: Boolean(data.ok),
-          message: String(data.message || ""),
-          mime: String(data.mime || ""),
-          size: Number(data.size || 0)
-        });
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve({ ok: false, message: "页面 Blob 操作超时" });
-      }, timeoutMs);
-      window.addEventListener("message", onMessage, true);
-      window.postMessage({ [requestFlag]: true, token, ...payload }, "*");
-    });
-  }
-
-  function blobInfoFromPage(url) {
-    return requestBlobPageAction(
-      "__nxtoolsBlobInfoRequest",
-      "__nxtoolsBlobInfoResponse",
-      { url: String(url || "") },
-      3500
-    );
-  }
-
-  function requestBlobChunkFromPage(url, expectedSize, offset, length, timeoutMs = 10000) {
-    return new Promise((resolve) => {
-      const token = `nxblob-${Date.now()}-${++nxBlobRequestSeq}`;
-      let settled = false;
-      const cleanup = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        window.removeEventListener("message", onMessage, true);
-      };
-      const onMessage = (event) => {
-        if (event.source !== window) {
-          return;
-        }
-        const data = event.data;
-        if (!data || data.__nxtoolsBlobChunkResponse !== true || data.token !== token) {
-          return;
-        }
-        cleanup();
-        if (!data.ok || !(data.bytes instanceof ArrayBuffer) || data.bytes.byteLength !== length) {
-          resolve({ ok: false, message: data.message || "Blob 分块读取失败" });
-          return;
-        }
-        resolve({ ok: true, bytes: data.bytes });
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve({ ok: false, message: "页面 Blob 分块读取超时" });
-      }, timeoutMs);
-      window.addEventListener("message", onMessage, true);
-      window.postMessage({
-        __nxtoolsBlobChunkRequest: true,
-        token,
-        url: String(url || ""),
-        expectedSize,
-        offset,
-        length
-      }, "*");
-    });
-  }
-
-  async function uploadBlobFromPage(url, uploadUrl, expectedSize, chunkBytes) {
-    if (!Number.isSafeInteger(expectedSize) || expectedSize <= 0
-        || !Number.isSafeInteger(chunkBytes) || chunkBytes <= 0 || chunkBytes > 1024 * 1024
-        || !/^http:\/\/127\.0\.0\.1:\d+\/nxtools\/blob\/[0-9a-f-]+\/[0-9a-f]{64}$/i.test(uploadUrl)) {
-      return { ok: false, message: "Blob 上传参数无效" };
-    }
-    let offset = 0;
-    while (offset < expectedSize) {
-      const length = Math.min(chunkBytes, expectedSize - offset);
-      const chunk = await requestBlobChunkFromPage(url, expectedSize, offset, length);
-      if (!chunk.ok) {
-        return chunk;
-      }
-      let response;
-      try {
-        response = await fetch(`${uploadUrl}?offset=${offset}`, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=UTF-8" },
-          body: chunk.bytes,
-          cache: "no-store",
-          credentials: "omit",
-          redirect: "error"
-        });
-      } catch (error) {
-        return { ok: false, message: error instanceof Error ? error.message : "Blob 分块上传失败" };
-      }
-      if (!response.ok) {
-        return { ok: false, message: `Blob 分块上传失败：HTTP ${response.status}` };
-      }
-      offset += length;
-    }
-    return { ok: true, message: "Blob 已安全上传到 NxTools" };
-  }
-
-  function fallbackBlobDownloadFromPage(url, filename) {
-    return requestBlobPageAction(
-      "__nxtoolsBlobFallbackRequest",
-      "__nxtoolsBlobFallbackResponse",
-      { url: String(url || ""), filename: String(filename || "") },
-      5000
-    );
-  }
-
-  async function readBlobInPage(url, filename) {
-    if (!String(url || "").startsWith("blob:")) {
-      return { ok: false, message: "不是 Blob 链接" };
-    }
-
-    // Prefer the page hook (main world): it holds a strong reference to the original Blob captured at
-    // createObjectURL time, so it still works after the page revoked the blob URL or when the blob
-    // belongs to a frame this isolated-world fetch can't reach. Fall back to fetch() if it can't.
-    const viaPage = await requestBlobBytesFromPage(url);
-    if (viaPage.ok && viaPage.base64) {
-      return {
-        ok: true,
-        filename: filename || filenameFromUrl(url) || `blob-${Date.now()}`,
-        mime: viaPage.mime || "",
-        size: viaPage.size || 0,
-        base64: viaPage.base64
-      };
-    }
-
-    let response;
-    try {
-      response = await fetch(url);
-    } catch {
-      return { ok: false, message: viaPage.message || "页面无法读取这个 Blob 链接，可能已失效或属于其他 frame" };
-    }
-
-    if (!response.ok) {
-      return { ok: false, message: `Blob 读取失败：HTTP ${response.status}` };
-    }
-
-    const blob = await response.blob();
-    if (!blob || blob.size <= 0) {
-      return { ok: false, message: "Blob 内容为空" };
-    }
-
-    if (blob.size > 48 * 1024 * 1024) {
-      return { ok: false, message: "Blob 超过 48 MB，当前只能等待真实网络源被捕获" };
-    }
-
-    const dataUrl = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("Blob 读取失败"));
-      reader.readAsDataURL(blob);
-    });
-    const base64 = String(dataUrl).split(",", 2)[1] || "";
-    if (!base64) {
-      return { ok: false, message: "Blob 编码失败" };
-    }
-
-    return {
-      ok: true,
-      filename: filename || filenameFromUrl(url) || `blob-${Date.now()}`,
-      mime: blob.type || response.headers.get("content-type") || "",
-      size: blob.size,
-      base64
-    };
-  }
-
-  async function downloadBlobInPage(url, filename) {
-    const retainedFallback = await fallbackBlobDownloadFromPage(url, filename);
-    if (retainedFallback.ok) {
-      return retainedFallback;
-    }
-    const readResult = await readBlobInPage(url, filename);
-    if (!readResult.ok) {
-      return readResult;
-    }
-
-    const blob = await (await fetch(`data:${readResult.mime || "application/octet-stream"};base64,${readResult.base64}`)).blob();
-    const objectUrl = URL.createObjectURL(blob);
-    try {
-      const anchor = document.createElement("a");
-      anchor.href = objectUrl;
-      anchor.download = readResult.filename || filename || filenameFromUrl(url) || `blob-${Date.now()}`;
-      anchor.rel = "noopener";
-      anchor.setAttribute("data-nxtools-pass-through", "1");
-      anchor.style.display = "none";
-      (document.body || document.documentElement).appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      return { ok: true, message: `已在浏览器中下载 Blob 资源（${Math.round(blob.size / 1024)} KB）` };
-    } finally {
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 30_000);
-    }
   }
 
   function installPageHook() {
@@ -1219,117 +359,6 @@
     }
   }
 
-  function mediaHasPlayableSource(media) {
-    return Boolean(media?.currentSrc || media?.src || media?.readyState > 0 || (!media?.paused && !media?.ended));
-  }
-
-  function viewportFallbackRect() {
-    const top = Math.min(Math.max(72, OVERLAY_GAP), Math.max(OVERLAY_GAP, innerHeight - FLOATING_MEDIA_HEIGHT - OVERLAY_GAP));
-    const left = Math.max(OVERLAY_GAP, innerWidth - FLOATING_MEDIA_WIDTH - OVERLAY_GAP);
-    return {
-      left,
-      top,
-      right: left + FLOATING_MEDIA_WIDTH,
-      bottom: top + FLOATING_MEDIA_HEIGHT,
-      width: FLOATING_MEDIA_WIDTH,
-      height: FLOATING_MEDIA_HEIGHT,
-      fallback: true
-    };
-  }
-
-  function visibleElementRect(element, minWidth, minHeight) {
-    const rect = element.getBoundingClientRect();
-    const visibleWidth = Math.max(0, Math.min(rect.right, innerWidth) - Math.max(rect.left, 0));
-    const visibleHeight = Math.max(0, Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0));
-
-    if (visibleWidth < minWidth || visibleHeight < minHeight) {
-      return null;
-    }
-
-    const style = getComputedStyle(element);
-    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) <= 0.02) {
-      return null;
-    }
-
-    return {
-      left: rect.left,
-      top: rect.top,
-      right: rect.right,
-      bottom: rect.bottom,
-      width: rect.width,
-      height: rect.height,
-      visibleWidth,
-      visibleHeight,
-      visibleArea: visibleWidth * visibleHeight,
-      fallback: false
-    };
-  }
-
-  function visibleMediaRect(media) {
-    const tag = media.tagName.toLowerCase();
-    const rect = visibleElementRect(media, tag === "audio" ? 64 : 48, tag === "audio" ? 20 : 28);
-    if (rect) {
-      return rect;
-    }
-
-    if (tag === "audio" && mediaHasPlayableSource(media)) {
-      return viewportFallbackRect();
-    }
-
-    if (tag === "video" && mediaHasPlayableSource(media) && !media.paused) {
-      return viewportFallbackRect();
-    }
-
-    return null;
-  }
-
-  function hasMediaSurface(element) {
-    if (element instanceof HTMLMediaElement || element instanceof HTMLCanvasElement) {
-      return true;
-    }
-
-    if (element.matches?.("[data-bvid], [data-aid], [data-video-id]")) {
-      return true;
-    }
-
-    if (element.querySelector?.("video,audio,canvas")) {
-      return true;
-    }
-
-    return false;
-  }
-
-  function containerUrl(element) {
-    if (!element) {
-      return "";
-    }
-
-    if (element instanceof HTMLAnchorElement) {
-      return element.href || "";
-    }
-
-    const anchor = element.closest?.("a[href]") || element.querySelector?.("a[href]");
-    if (anchor instanceof HTMLAnchorElement) {
-      return anchor.href || "";
-    }
-
-    return "";
-  }
-
-  function mediaContainerScore(element, rect) {
-    const text = `${element.className || ""} ${element.id || ""} ${element.getAttribute?.("aria-label") || ""}`;
-    const strong = /bili|video|player|media|播放|视频/i.test(text) ? 20_000_000 : 0;
-    const direct = element.matches?.("[data-bvid], [data-aid], [data-video-id]") ? 50_000_000 : 0;
-    const playing = [...element.querySelectorAll?.("video,audio") || []]
-      .some((media) => media instanceof HTMLMediaElement && !media.paused && !media.ended)
-      ? 1_000_000_000
-      : 0;
-    const viewportCenterY = innerHeight / 2;
-    const elementCenterY = Math.max(0, Math.min(innerHeight, rect.top + rect.visibleHeight / 2));
-    const centerPenalty = Math.abs(elementCenterY - viewportCenterY) * 1000;
-    return playing + direct + strong + rect.visibleArea - centerPenalty;
-  }
-
   function findVisibleMediaContainer() {
     let selected = null;
     const recentMediaUrls = recentMediaResourceUrls();
@@ -1397,17 +426,6 @@
     };
   }
 
-  function mediaScore(media, rect) {
-    const playing = !media.paused && !media.ended ? 1_000_000_000 : 0;
-    const visible = rect.fallback ? 0 : 10_000_000;
-    const source = mediaHasPlayableSource(media) ? 100_000 : 0;
-    return playing + visible + media.readyState * 1_000_000 + source + rect.width * rect.height;
-  }
-
-  function mediaElements() {
-    return [...document.querySelectorAll("video, audio")];
-  }
-
   function findActiveMedia() {
     let selected = null;
     for (const media of mediaElements()) {
@@ -1431,29 +449,6 @@
 
   function recentMediaResourceUrls() {
     return recentMediaResourceCandidates().map((candidate) => candidate.url);
-  }
-
-  function selectionResolutionText(selected) {
-    if (selected?.media instanceof HTMLVideoElement) {
-      return mediaResolutionText(selected.media);
-    }
-
-    const activeVideo = mediaElements()
-      .filter((media) => media instanceof HTMLVideoElement && mediaHasPlayableSource(media))
-      .sort((left, right) => mediaScore(right, visibleMediaRect(right) || viewportFallbackRect()) - mediaScore(left, visibleMediaRect(left) || viewportFallbackRect()))[0];
-    return activeVideo instanceof HTMLVideoElement ? mediaResolutionText(activeVideo) : "";
-  }
-
-  function sameResourceUrl(left, right) {
-    try {
-      const leftUrl = new URL(left, location.href);
-      const rightUrl = new URL(right, location.href);
-      leftUrl.hash = "";
-      rightUrl.hash = "";
-      return leftUrl.toString() === rightUrl.toString();
-    } catch {
-      return String(left || "").split("#", 1)[0] === String(right || "").split("#", 1)[0];
-    }
   }
 
   function closeOverlayPanel(schedule = true) {
@@ -1657,7 +652,15 @@
         meta.className = "choice-meta";
         meta.textContent = `${resourceChoiceQuality(candidate, index)} · ${resourceChoiceTypeText(candidate)} · ${resourceChoiceSizeText(candidate)}`;
 
-        choice.append(file, meta);
+        const icon = document.createElement("span");
+        icon.className = "choice-kind";
+        icon.dataset.kind = candidateMediaInfo(candidate).kind === "audio" ? "audio" : "video";
+        icon.append(mediaKindIcon(icon.dataset.kind));
+
+        const text = document.createElement("span");
+        text.className = "choice-text";
+        text.append(file, meta);
+        choice.append(icon, text);
         return choice;
       });
       panel.replaceChildren(...rows);
@@ -2387,27 +1390,6 @@
       return true;
     }
 
-    return false;
-  });
-
-  chrome.storage.local.get({
-    interceptDownloads: true,
-    captureResources: true,
-    mediaOverlayEnabled: true,
-    dropTargetEnabled: true,
-    dropTargetPosition: "right-bottom",
-    dropTargetWidth: 188,
-    dropTargetHeight: 86
-  }, (settings) => {
-    interceptDownloadsEnabled = settings.interceptDownloads !== false;
-    captureResourcesEnabled = settings.captureResources !== false;
-    overlayEnabled = settings.mediaOverlayEnabled !== false;
-    dropTargetSettings = normalizeDropTargetSettings(settings);
-    if (captureResourcesEnabled) {
-      sent.clear();
-      scanPage(false);
-    }
-
     if (message?.type === "content_blob_info") {
       void blobInfoFromPage(message.url).then((result) => {
         sendResponse({
@@ -2432,6 +1414,27 @@
           });
         });
       return true;
+    }
+
+    return false;
+  });
+
+  chrome.storage.local.get({
+    interceptDownloads: true,
+    captureResources: true,
+    mediaOverlayEnabled: true,
+    dropTargetEnabled: true,
+    dropTargetPosition: "right-bottom",
+    dropTargetWidth: 188,
+    dropTargetHeight: 86
+  }, (settings) => {
+    interceptDownloadsEnabled = settings.interceptDownloads !== false;
+    captureResourcesEnabled = settings.captureResources !== false;
+    overlayEnabled = settings.mediaOverlayEnabled !== false;
+    dropTargetSettings = normalizeDropTargetSettings(settings);
+    if (captureResourcesEnabled) {
+      sent.clear();
+      scanPage(false);
     }
     scheduleOverlayUpdate();
   });

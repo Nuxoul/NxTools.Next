@@ -1,0 +1,16 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/ui/metrics.rs
++++ audit06/rust/apps/nxtools-desktop/src/ui/metrics.rs
+@@ -46,6 +46,13 @@
+ pub(crate) const SPACING_16: f32 = 16.0;
+ pub(crate) const SPACING_24: f32 = 24.0;
+ 
++/// Express an ordinary layout/type role in rem while preserving its density at
++/// the product Root's verified 16px design base. Native, bitmap and fixed-client
++/// budgets must keep their explicit pixel roles instead.
++pub(crate) fn ordinary_rem(design_pixels: f32) -> gpui_kit::Rems {
++    gpui_kit::rems(design_pixels / 16.0)
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;

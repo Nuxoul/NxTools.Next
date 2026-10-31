@@ -1,0 +1,16 @@
+[
+  {
+    "path": "rust/crates/nxtools-core/src/extensions.rs",
+    "observed_sha256": "871057f66700ac345fee16c80403d940053db41b65444a7e2f6974dbbee5bae5",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Workspace fmt failed at this external path; no formatting or suppression applied"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/registry.rs",
+    "observed_sha256": "db0623f8ff92e0ca71b880247a19076b4f4a08994348685cb2dd53abfd553607",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Workspace fmt failed at this external path; no formatting or suppression applied"
+  }
+]

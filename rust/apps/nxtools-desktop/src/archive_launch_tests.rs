@@ -224,3 +224,16 @@ fn os_arguments_reject_non_unicode_empty_and_ambiguous_drive_paths_without_lossy
         );
     }
 }
+
+#[test]
+fn shell_settings_double_click_modes_require_confirming_intent() {
+    for mode in ["smart-dialog", "name-dialog"] {
+        let intent = parse(&["--archive-extract", mode, "a.zip"])
+            .expect("fixed confirming mode")
+            .expect("intent");
+        assert_eq!(intent.action, ArchiveIntentAction::Extract);
+        assert_eq!(intent.paths.len(), 1);
+        let wire = serde_json::to_value(intent.mode).expect("mode");
+        assert_eq!(wire, serde_json::json!(mode.replace('-', "_")));
+    }
+}

@@ -1,0 +1,9 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/mod.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/mod.rs
+@@ -23,3 +23,6 @@
+ 
+ #[cfg(test)]
+ mod support_migration_tests;
++
++#[cfg(test)]
++mod ordinary_rem_tests;

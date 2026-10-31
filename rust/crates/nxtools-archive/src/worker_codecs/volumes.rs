@@ -11,7 +11,37 @@ pub(super) struct SourceSet {
     length: u64,
 }
 impl SourceSet {
-    pub(super) fn open(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
+    #[cfg(windows)]
+    pub(super) fn open_rar(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
+        // RAR metadata must be reachable with a deficient output allowance. Reuse the
+        // original finite default for encoded input only, never for actual decode/output.
+        let encoded_limit =
+            if request.operation == "extract" && request.output_readmission.is_some() {
+                request
+                    .limits
+                    .max_output_bytes
+                    .max(ResourceLimits::default().max_output_bytes)
+            } else {
+                request.limits.max_output_bytes
+            };
+        Self::open_bounded(request, control, encoded_limit)
+    }
+    pub(super) fn open_sevenz(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
+        let encoded_limit = if request.output_readmission.is_some() {
+            request
+                .limits
+                .max_output_bytes
+                .max(ResourceLimits::default().max_output_bytes)
+        } else {
+            request.limits.max_output_bytes
+        };
+        Self::open_bounded(request, control, encoded_limit)
+    }
+    fn open_bounded(
+        request: &WorkerRequest,
+        control: &OperationControl,
+        encoded_limit: u64,
+    ) -> Result<Self> {
         let paths: Vec<std::path::PathBuf> = if request.volume_paths.is_empty() {
             vec![request.path.clone().into()]
         } else {
@@ -26,6 +56,10 @@ impl SourceSet {
         };
         let mut revisions = Vec::with_capacity(paths.len());
         let mut total = 0u64;
+        // Declared-output readmission must reach the original header/plan preflight even
+        // when the deficient output allowance is smaller than the encoded source itself.
+        // Keep encoded scanning finite under the existing default source/decode ceiling;
+        // this does not change actual output, dictionary, metadata or native Job budgets.
         let mut digest = Sha256::new();
         for path in &paths {
             control.checkpoint()?;
@@ -36,7 +70,7 @@ impl SourceSet {
             total = total
                 .checked_add(part.1)
                 .ok_or(ArchiveError::ResourceLimit)?;
-            if total > request.limits.max_output_bytes {
+            if total > encoded_limit {
                 return Err(ArchiveError::ResourceLimit);
             }
             digest.update(part.1.to_le_bytes());

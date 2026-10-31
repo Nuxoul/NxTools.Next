@@ -4,8 +4,10 @@
     <TargetFramework>net8.0-windows</TargetFramework>
     <AssemblyName>NxTools.PlatformHost.Tests</AssemblyName>
     <RootNamespace>NxTools.PlatformHost.Tests</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\NxTools.PlatformHost\NxTools.PlatformHost.csproj" />
+    <ProjectReference Include="..\NxTools.ShellSelectionHelper\NxTools.ShellSelectionHelper.csproj" />
   </ItemGroup>
 </Project>

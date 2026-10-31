@@ -152,8 +152,11 @@ const QUICK_LAUNCH_PREVIEW_STAGING_COORDINATE: i32 = -32_000;
 const QUICK_LAUNCH_PANEL_STAGING_COORDINATE: i32 = -30_000;
 mod actions;
 mod extension_providers;
+mod floating_assistant;
 mod icon;
 mod panel;
+mod retained_text;
+use retained_text::QuickLaunchResults;
 pub(crate) mod preview;
 mod search;
 
@@ -264,6 +267,25 @@ impl QuickLaunchApplication {
         match self.catalog.borrow().search_with_packages(query,&[],&self.config.quick_launch.custom_commands,&self.config.extensions,32) {
             Ok(results)=>nxtools_extensions::HostReply{success:true,value:serde_json::Value::Array(results.into_iter().map(|result|serde_json::json!({"id":result.entry.id,"title":result.entry.name,"target":result.entry.target})).collect())},
             Err(_)=>nxtools_extensions::HostReply::error("search_failed"),
+        }
+    }
+    pub(crate) fn extension_search_catalog(&self, query: &str) -> nxtools_extensions::HostReply {
+        match self.catalog.borrow().search_with_packages(
+            query,
+            &[],
+            &self.config.quick_launch.custom_commands,
+            &self.config.extensions,
+            33,
+        ) {
+            Ok(mut results) => {
+                let truncated = results.len() > 32;
+                results.truncate(32);
+                nxtools_extensions::HostReply {
+                    success: true,
+                    value: serde_json::json!({"items":results.into_iter().map(|result|serde_json::json!({"id":result.entry.id,"title":result.entry.name,"target":result.entry.target})).collect::<Vec<_>>(),"scope":"local_catalog","sources":["catalog","custom_commands","declarative_extensions"],"excluded_sources":["indexed_files","script_providers"],"complete":!truncated,"truncated":truncated}),
+                }
+            }
+            Err(_) => nxtools_extensions::HostReply::error("search_failed"),
         }
     }
     pub(crate) fn extension_set_query(
@@ -406,12 +428,32 @@ impl QuickLaunchApplication {
         (self.config.clone(), self.config_path.clone())
     }
 
+    pub(crate) fn refresh_extension_storage_metadata(
+        &mut self,
+        packages: &nxtools_extensions::PackageRegistry,
+        cx: &mut Context<Self>,
+    ) {
+        if crate::extensions::service::refresh_storage_metadata(
+            &mut self.config.extensions,
+            packages,
+        ) {
+            // Metadata-only projection must not cancel current provider requests/results.
+            cx.notify();
+        }
+    }
     pub(crate) fn apply_extension_snapshot(
         &mut self,
         packages: nxtools_extensions::PackageRegistry,
         cx: &mut Context<Self>,
     ) {
         self.cancel_extension_providers();
+        let mut packages = packages;
+        if let Some(current) = cx
+            .try_global::<crate::extensions::ui_host::ExtensionServiceGlobal>()
+            .and_then(|global| global.0.runtime.snapshot().ok())
+        {
+            crate::extensions::service::refresh_storage_metadata(&mut packages, &current);
+        }
         self.config.extensions = packages;
         self.refresh_indexed_results(cx);
         cx.notify();
@@ -1025,7 +1067,8 @@ impl QuickLaunchApplication {
         let refresh_results = matches!(
             &notification,
             IndexerNotification::Event(IndexerEvent::SearchBatch(batch))
-                if batch.generation == self.index_search.generation && batch.complete
+                if batch.generation == self.index_search.generation
+                    && (batch.complete || !batch.items.is_empty())
         );
         let indexer_disconnected = matches!(&notification, IndexerNotification::Disconnected);
         if apply_indexer_notification(&mut self.index_status, &mut self.index_search, notification)
@@ -1136,11 +1179,41 @@ impl QuickLaunchApplication {
         }
         self.recording_desired = false;
         self.recording_active = false;
+        self.apply_hotkey(hotkey);
+    }
+
+    pub(crate) fn hotkey_is_custom(&self) -> bool {
+        let default = QuickLaunchSettings::default().hotkey;
+        self.config.quick_launch.hotkey.modifiers != default.modifiers
+            || !self
+                .config
+                .quick_launch
+                .hotkey
+                .key
+                .eq_ignore_ascii_case(&default.key)
+    }
+
+    pub(crate) fn can_reset_hotkey(&self) -> bool {
+        self.hotkey_is_custom()
+            && self.platform.is_connected()
+            && self.pending_configuration.is_empty()
+            && !self.hotkey_recording_active()
+    }
+
+    pub(crate) fn reset_hotkey(&mut self) {
+        if self.can_reset_hotkey() {
+            self.apply_hotkey(QuickLaunchSettings::default().hotkey);
+        }
+    }
+
+    fn apply_hotkey(&mut self, hotkey: ClipboardHotKey) {
         self.hotkey_error = None;
         let mut settings = self.config.quick_launch.clone();
         settings.hotkey = hotkey.clone();
         if let Some(command_id) = self.send_configuration_for(&settings) {
             self.pending_hotkey = Some((command_id, hotkey));
+            info!(event = "quick_launch.hotkey.submitted", correlation_id = %command_id,
+                "quick-launch binding submitted through original configuration owner");
         } else {
             self.hotkey_error = Some(self.configuration_status.clone());
         }
@@ -1376,7 +1449,9 @@ impl QuickLaunchApplication {
             PlatformEvent::ArchiveRead(_)
             | PlatformEvent::ArchivePassword(_)
             | PlatformEvent::ArchiveJob(_)
+            | PlatformEvent::ArchiveVirtualDragProgress(_)
             | PlatformEvent::ArchivePicker(_)
+            | PlatformEvent::FloatingAssistant(_)
             | PlatformEvent::TrayActionRequested(_)
             | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::SystemThemePreferenceChanged(_)
@@ -1806,6 +1881,9 @@ impl QuickLaunchApplication {
             let Some((_, hotkey)) = self.pending_hotkey.take() else {
                 return;
             };
+            info!(event = "quick_launch.hotkey.completed", %correlation_id,
+                success = result.success, native_error_code = result.native_error_code,
+                "quick-launch binding received matching Windows result");
             if result.success {
                 self.config.quick_launch.hotkey = hotkey;
                 if let Err(error) = self.save_quick_launch_section() {
@@ -2239,12 +2317,8 @@ impl QuickLaunchApplication {
         };
         self.last_local_search_us = Some(elapsed_microseconds(local_search_started));
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
-        // Local rows publish immediately; `pending` keeps the bounded "正在搜索"
-        // hint alive until the complete index batch replaces this list.
-        QuickLaunchSearchUpdate {
-            results,
-            pending: search_update_pending(search_queued),
-        }
+        let pending = search_update_pending(search_queued, !results.is_empty());
+        QuickLaunchSearchUpdate { results, pending }
     }
 
     fn refresh_indexed_results(&mut self, cx: &mut Context<Self>) {
@@ -2281,15 +2355,22 @@ impl QuickLaunchApplication {
             .count();
         info!(
             generation = self.index_search.generation,
+            complete = self.index_search.complete,
             indexed_candidates = self.index_search.items.len(),
             indexed_visible,
             result_count = results.len(),
             "quick-launch merged provider results published"
         );
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
-        let _ = popup
-            .panel
-            .update(cx, |panel, cx| panel.replace_results(results, cx));
+        let pending = search_update_pending(!self.index_search.complete, !results.is_empty());
+        let _ = popup.panel.update(cx, |panel, cx| {
+            if pending {
+                panel.search_pending = true;
+                cx.notify();
+            } else {
+                panel.replace_results(results, cx);
+            }
+        });
     }
 
     fn refresh_results_after_indexer_disconnect(&mut self, cx: &mut Context<Self>) {
@@ -3888,6 +3969,8 @@ fn apply_indexer_notification(
 }
 #[cfg(test)]
 mod polish_tests;
+#[cfg(test)]
+mod retained_text_tests;
 #[cfg(test)]
 mod tests;
 

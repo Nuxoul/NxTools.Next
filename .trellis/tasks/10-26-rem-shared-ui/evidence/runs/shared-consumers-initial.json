@@ -1,0 +1,7 @@
+﻿{
+    "name":  "shared-consumers-initial",
+    "command":  "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  81.0786371,
+    "finished":  "2026-10-26T05:45:51.4441659+08:00"
+}

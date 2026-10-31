@@ -192,7 +192,23 @@ internal sealed class PlatformPipeClient(
             SingleWriter = false
         });
         await using var archiveRead = new ArchiveReadSession(log);
+        using var floatingAssistant = new FloatingAssistantCoordinator(desktopProcessId,
+            envelope => outgoing.Writer.TryWrite(envelope), log);
         await using var archiveEntry = new ArchiveEntrySession(log);
+        await using var archiveVirtualDrag = new NxTools.PlatformHost.Windows.Archive.ArchiveVirtualDragSession(archiveEntry,log);
+        // One original drag session callback, no queue/extractor manager. Running snapshots are
+        // expendable; terminal delivery uses a bounded forwarder, never blocks the OLE apartment.
+        var dragTerminals=Channel.CreateBounded<ProtocolEnvelope>(new BoundedChannelOptions(2){SingleReader=true,SingleWriter=false,FullMode=BoundedChannelFullMode.Wait});
+        archiveVirtualDrag.Progress=envelope=>{
+            var phase=envelope.Payload.GetProperty("data").GetProperty("phase").GetString();
+            if(phase is "finished" or "cancelled" or "failed") {
+                if(!dragTerminals.Writer.TryWrite(envelope))session.Cancel(); // Transport failure, not silently lost success.
+            }else outgoing.Writer.TryWrite(envelope);
+        };
+        var archiveDragEvents=Task.Run(async()=>{
+            await foreach(var item in dragTerminals.Reader.ReadAllAsync(session.Token))
+                await outgoing.Writer.WriteAsync(item,session.Token);
+        });
         await using var archiveJob = new ArchiveJobSession(log);
         var archiveJobProgress = Task.Run(async () => {
             await foreach (var item in archiveJob.Progress.ReadAllAsync(session.Token))
@@ -224,12 +240,14 @@ internal sealed class PlatformPipeClient(
             session.Token,
             commandDispatcher,
             desktopProcessId,
-            archiveRead, archiveEntry, archiveJob);
-        var tasks = new[] { writeTask, eventTask, readTask, archiveEvents, archiveJobEvents, archiveJobProgress };
+            archiveRead, archiveEntry, archiveJob, archiveVirtualDrag, floatingAssistant);
+        var tasks = new[] { writeTask, eventTask, readTask, archiveEvents, archiveJobEvents, archiveJobProgress, archiveDragEvents };
 
         var completed = await Task.WhenAny(tasks);
         await session.CancelAsync();
         archiveRead.Stop();
+        archiveVirtualDrag.Stop();
+        floatingAssistant.Stop();
         archiveEntry.Stop();
         archiveJob.Stop();
         platformAdapter.CancelCurrentShellContextWork();
@@ -257,7 +275,9 @@ internal sealed class PlatformPipeClient(
         CancellationToken cancellationToken,
         PlatformCommandSequenceDispatcher commandDispatcher,
         uint desktopProcessId,
-        ArchiveReadSession archiveRead, ArchiveEntrySession archiveEntry, ArchiveJobSession archiveJob)
+        ArchiveReadSession archiveRead, ArchiveEntrySession archiveEntry, ArchiveJobSession archiveJob,
+        NxTools.PlatformHost.Windows.Archive.ArchiveVirtualDragSession archiveVirtualDrag,
+        FloatingAssistantCoordinator floatingAssistant)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -290,11 +310,39 @@ internal sealed class PlatformPipeClient(
                     continue;
                 }
 
+                if (commandName == "floating_assistant")
+                {
+                    // Admission installs the exact peer lease before any later retire/update arrives.
+                    var result = floatingAssistant.Dispatch(envelope);
+                    await commandDispatcher.DispatchAsync("archive_entry", async commandToken =>
+                    {
+                        var applied = await result;
+                        if (!commandToken.IsCancellationRequested)
+                            await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, applied), commandToken);
+                    }, cancellationToken);
+                    continue;
+                }
                 if (commandName == "archive_job") {
                     var jobReceipt=CreateCommandResultEnvelope(envelope,archiveJob.Dispatch(envelope));
                     // Never let a full ordinary receipt queue park the serial reader ahead of
                     // reserved job cancellation. EOF retires/cancels originals if transport stalls.
                     if(!outgoing.TryWrite(jobReceipt))throw new InvalidDataException("Archive job receipt transport full.");
+                    continue;
+                }
+                if(commandName=="archive_space") {
+                    ArchiveSpaceCommand space;
+                    try { space=ArchiveSpaceCommand.Parse(envelope); }
+                    catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(false,"invalid_request")),cancellationToken);continue; }
+                    await Windows.Archive.ArchiveSpacePreflight.DispatchAsync(commandDispatcher,space,log,cancellationToken,
+                        (result,commandToken)=>outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,result),commandToken).AsTask());
+                    continue;
+                }
+                if(commandName=="archive_recovery_inspect") {
+                    ArchiveRecoveryInspectCommand inspect;
+                    try { inspect=ArchiveRecoveryInspectCommand.Parse(envelope); }
+                    catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(false,"invalid_request")),cancellationToken);continue; }
+                    await Windows.Archive.ArchiveRecoveryInspection.DispatchAsync(commandDispatcher,inspect,log,cancellationToken,
+                        (result,commandToken)=>outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,result),commandToken).AsTask());
                     continue;
                 }
                 if (commandName == "archive_picker") {
@@ -317,6 +365,12 @@ internal sealed class PlatformPipeClient(
                     await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, archiveRead.Dispatch(ArchiveBrowserPassword.NormalizeRead(envelope), browserInteraction: true)), cancellationToken);
                     continue;
                 }
+                if(commandName is "archive_virtual_drag" or "archive_virtual_drag_spike") {
+                    var result=archiveVirtualDrag.Dispatch(envelope,desktopProcessId); // bounded admission before next cancel
+                    await commandDispatcher.DispatchAsync("archive_entry",async commandToken=>
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,await result),commandToken),cancellationToken);
+                    continue;
+                }
                 if (commandName == "archive_entry")
                 {
                     // Synchronous bounded admission installs identity before exact cancel can follow.
@@ -329,6 +383,18 @@ internal sealed class PlatformPipeClient(
                 {
                     await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, archiveRead.Dispatch(envelope)), cancellationToken);
                     continue;
+                }
+                if (commandName == "pick_extension_setting_path") {
+                    try { var picker = PlatformCommandParser.ParsePickExtensionSettingPath(envelope); if (picker.SourceProcessId != desktopProcessId) throw new InvalidDataException("Invalid picker peer."); }
+                    catch (InvalidDataException) { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "setting_picker_invalid_peer", NativeErrorCode:87)), cancellationToken); continue; }
+                }
+                if (commandName == "prepare_main_window") {
+                    try {
+                        ValidateMainWindowPeer(envelope, desktopProcessId);
+                    } catch (InvalidDataException) {
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "main_window_peer_mismatch")), cancellationToken);
+                        continue;
+                    }
                 }
                 if (commandName == "prepare_notification_window")
                 {
@@ -383,6 +449,13 @@ internal sealed class PlatformPipeClient(
                 }
             }
         }
+    }
+
+    internal static void ValidateMainWindowPeer(ProtocolEnvelope envelope, uint desktopProcessId)
+    {
+        var command = PlatformCommandParser.ParsePrepareMainWindow(envelope);
+        if (desktopProcessId == 0 || command.SourceProcessId != desktopProcessId)
+            throw new InvalidDataException("Invalid main-window source identity.");
     }
 
     internal static void ValidateNotificationWindowPeer(ProtocolEnvelope envelope, uint desktopProcessId)
@@ -714,6 +787,7 @@ internal sealed class PlatformPipeClient(
         CancellationToken cancellationToken) =>
         commandName switch
         {
+            "prepare_main_window" => await platformAdapter.PrepareMainWindowAsync(PlatformCommandParser.ParsePrepareMainWindow(envelope), diagnosticCorrelationId, cancellationToken),
             "prepare_notification_window" => await platformAdapter.PrepareNotificationWindowAsync(
                 PlatformCommandParser.ParsePrepareNotificationWindow(envelope), diagnosticCorrelationId, cancellationToken),
             "show_context_menu" => await platformAdapter.ShowContextMenuAsync(
@@ -812,7 +886,12 @@ internal sealed class PlatformPipeClient(
                 PlatformCommandParser.ParseOpenShellTarget(envelope),
                 diagnosticCorrelationId,
                 cancellationToken),
+            "open_default_apps_settings" => platformAdapter.OpenDefaultAppsSettings(
+                PlatformCommandParser.ParseOpenDefaultAppsSettings(envelope),
+                diagnosticCorrelationId,
+                cancellationToken),
             "play_system_notification_sound" => platformAdapter.PlaySystemNotificationSound(),
+            "read_system_proxy" => SystemProxySnapshotReader.Read(diagnosticCorrelationId, log),
             "shutdown_system" => platformAdapter.ShutdownSystem(
                 PlatformCommandParser.ParseShutdownSystem(envelope)),
             "export_browser_extension" => platformAdapter.ExportBrowserExtension(
@@ -862,6 +941,7 @@ internal sealed class PlatformPipeClient(
                 PlatformCommandParser.ParsePickExtensionRuntime(envelope),
                 diagnosticCorrelationId,
                 cancellationToken),
+            "pick_extension_setting_path" => ExtensionSettingPathPicker.Pick(PlatformCommandParser.ParsePickExtensionSettingPath(envelope), diagnosticCorrelationId, log, cancellationToken),
             "inspect_extension_runtime" => await platformAdapter.InspectExtensionRuntimeAsync(
                 PlatformCommandParser.ParseInspectExtensionRuntime(envelope),
                 diagnosticCorrelationId,
@@ -873,6 +953,10 @@ internal sealed class PlatformPipeClient(
             "ensure_browser_native_messaging" => platformAdapter.EnsureBrowserNativeMessaging(
                 PlatformCommandParser.ParseEnsureBrowserNativeMessaging(envelope),
                 diagnosticCorrelationId),
+            "archive_shell_integration" => platformAdapter.ArchiveShellIntegration(
+                PlatformCommandParser.ParseArchiveShellIntegration(envelope),
+                diagnosticCorrelationId,
+                cancellationToken),
             var command => new WindowsCommandResult(
                 false,
                 $"Unsupported platform command '{command}'.")

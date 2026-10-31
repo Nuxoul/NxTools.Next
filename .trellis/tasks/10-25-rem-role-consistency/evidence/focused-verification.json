@@ -1,0 +1,23 @@
+﻿[
+    {
+        "name":  "focused-final",
+        "command":  "cargo test -p nxtools-desktop audit06_ -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  212.13,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\focused-final.log"
+    },
+    {
+        "name":  "downloads-related",
+        "command":  "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+        "exit_code":  0,
+        "elapsed_seconds":  55.37,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\downloads-related.log"
+    },
+    {
+        "name":  "main-window-related",
+        "command":  "cargo test -p nxtools-desktop main_window:: -- --test-threads=1",
+        "exit_code":  101,
+        "elapsed_seconds":  93.85,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\main-window-related.log"
+    }
+]

@@ -1,0 +1,7 @@
+﻿{
+    "name":  "global-behavior-initial",
+    "command":  "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  82.283379099999991,
+    "finished":  "2026-10-26T08:01:24.5985062+08:00"
+}

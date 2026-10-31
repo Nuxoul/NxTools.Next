@@ -1,0 +1,37 @@
+--- dirty-baseline/csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs
++++ delivery/csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs
+@@ -24,6 +24,13 @@
+         try{ArchiveJobWire.Parse(Wire(create));throw new InvalidOperationException("hidden level accepted");}catch(InvalidDataException){}
+         var secret=new ArchiveJobCreate{Format="zip",Level="normal",Method="deflate",Password=[97,98,99],StripSingleRoot=false,ExcludePatterns=[],TestAfterCreate=false,Name="out.zip"};
+         var serialized=JsonSerializer.SerializeToElement(secret,JsonDefaults.Options);Check(serialized.GetProperty("password").ValueKind==JsonValueKind.Array && !secret.ToString().Contains("abc"),"private array/redaction");
++        var oldPrompt=new ArchiveJobPrompt(new(Guid.NewGuid(),Guid.NewGuid(),1),"conflict");
++        Check(!JsonSerializer.SerializeToElement(oldPrompt,JsonDefaults.Options).TryGetProperty("display",out _),"legacy display omission");
++        Check(JsonSerializer.Deserialize<ArchiveJobPrompt>(JsonSerializer.Serialize(oldPrompt,JsonDefaults.Options),ArchiveJobWire.Strict)!.Display is null,"legacy missing display");
++        var display=new ArchiveJobPromptDisplay("private-member-sentinel/同名.txt",@"C:\owned\private-target-sentinel\同名.txt");
++        Check(display.Valid("conflict") && !(oldPrompt with{Display=display}).ToString().Contains("sentinel"),"typed display redaction");
++        Check(!new ArchiveJobPromptDisplay(null,"x").Valid("conflict") && !new ArchiveJobPromptDisplay("x","line\nbreak").Valid("conflict"),"invalid display bounds/shape");
++        try{JsonSerializer.Deserialize<ArchiveJobPromptDisplay>("{\"incoming_member\":\"x\",\"target\":\"y\",\"authority\":true}",ArchiveJobWire.Strict);throw new InvalidOperationException("unknown display authority accepted");}catch(JsonException){}
+         var picker=new ArchivePickerCommand{Version=1,OperationId=Guid.NewGuid(),SessionId=Guid.NewGuid(),Generation=7,OwnerWindowHandle=1,Purpose="files"};
+         using var cancelled=new CancellationTokenSource();cancelled.Cancel();var result=ArchiveJobPicker.Pick(picker,0,cancelled.Token);Check(result.Cancelled && result.Paths.Length==0 && result.Generation==7,"pre-cancel must not create dialog");
+         return Task.CompletedTask;
+@@ -45,15 +52,19 @@
+         var root=Package();try{
+             var archive=Path.Combine(root,"tiny.zip");using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){var entry=zip.CreateEntry("a.txt");using var writer=new StreamWriter(entry.Open());writer.Write("incoming");}
+             var a=Path.Combine(root,"a");var b=Path.Combine(root,"b");Directory.CreateDirectory(a);Directory.CreateDirectory(b);File.WriteAllText(Path.Combine(a,"a.txt"),"existing-a");File.WriteAllText(Path.Combine(b,"a.txt"),"existing-b");
+-            await using var first=ArchiveJobSession.ForOwnedTestPackage(root);await using var second=ArchiveJobSession.ForOwnedTestPackage(root);await using var third=ArchiveReadSession.ForOwnedTestPackage(root);
++            var displayLog=new JobLog();
++            await using var first=ArchiveJobSession.ForOwnedTestPackage(root,displayLog);await using var second=ArchiveJobSession.ForOwnedTestPackage(root,displayLog);await using var third=ArchiveReadSession.ForOwnedTestPackage(root);
+             var start=Start(Extract(archive,a,"ask"));Check(first.Dispatch(Wire(start)).Success,"first job");ArchiveJobEvent prompt;do{prompt=await Next(first);Check(prompt.Terminal is null,"expected conflict not terminal "+prompt.Terminal?.Code);}while(prompt.Prompt is null);
+             Check(first.Dispatch(Wire(Control(start,"pause"))).Success,"real pause control");Check(first.Dispatch(Wire(Control(start,"resume"))).Success,"real resume control");
+             var other=Start(Extract(archive,b,"ask"));Check(second.Dispatch(Wire(other)).Success,"second job");ArchiveJobEvent otherPrompt;do{otherPrompt=await Next(second);Check(otherPrompt.Terminal is null,"second expected prompt");}while(otherPrompt.Prompt is null);
++            Check(prompt.Prompt!.Display==new ArchiveJobPromptDisplay("a.txt",Path.Combine(a,"a.txt")) && otherPrompt.Prompt!.Display==new ArchiveJobPromptDisplay("a.txt",Path.Combine(b,"a.txt")),"two current jobs retain distinct same-size targets");
++            Check(!prompt.Prompt.ToString().Contains(root) && !otherPrompt.Prompt.ToString().Contains(root),"nested prompt record redaction");
+             var read=ArchiveProductReadTests.Command("test",path:archive);Check(!third.Dispatch(read).Success,"jobs and reads must share GLOBAL two reservations");
+             var reply=new ArchiveJobReply{Ticket=prompt.Prompt!.Ticket with{Generation=99},Kind="conflict",Decision="overwrite",ApplyToAll=false};Check(!first.Dispatch(Wire(Control(start,"reply",reply))).Success,"stale ticket cannot approve");
+             Check(first.Dispatch(Wire(Control(start,"cancel"))).Success,"cancel original prompt");var cancelled=await Finish(first);Check(cancelled.Outcome=="cancelled" && cancelled.FilesCommitted==0 && cancelled.CleanupComplete,"cancel cleanup "+cancelled.Code);Check(File.ReadAllText(Path.Combine(a,"a.txt"))=="existing-a","prior target preserved");
+             var approve=new ArchiveJobReply{Ticket=otherPrompt.Prompt!.Ticket,Kind="conflict",Decision="skip",ApplyToAll=true};Check(second.Dispatch(Wire(Control(other,"reply",approve))).Success,"original finite conflict port");var skipped=await Finish(second);Check(skipped.Outcome=="succeeded_with_warnings" && skipped.FilesSkipped==1 && skipped.FilesCommitted==0 && skipped.CleanupComplete,"warning projection "+skipped.Code);
+             Check(!first.Dispatch(Wire(Control(start,"reply",reply))).Success,"retired prompt cannot revive");
++            Check(displayLog.Records.All(line=>!line.Contains(root) && !line.Contains("a.txt") && !line.Contains("existing-a")),"original job/runner sink does not log display payload");
+         }finally{Directory.Delete(root,true);}
+     }
+     private static async Task<(ArchiveBrowserContext Context,ArchiveReadEntry[] Entries)> Browse(string root,string path) {

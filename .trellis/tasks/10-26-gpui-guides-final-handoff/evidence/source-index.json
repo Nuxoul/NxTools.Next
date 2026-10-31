@@ -1,0 +1,1753 @@
+{
+  "created_utc": "2026-10-26T11:15:21.199205+00:00",
+  "source_of_initial_problem_descriptions": "Original per-item PRDs and accepted parent reviews; no standalone verbatim initial thirteen-item transcript found in inspected project docs",
+  "official_guide_urls": [
+    "https://gpui-kit.com/docs/design-guides/",
+    "https://gpui-kit.com/docs/coding-guides/"
+  ],
+  "historical_parent_accepted_findings": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    9,
+    10
+  ],
+  "later_bounded_implementations_not_new_global_acceptance": [
+    8,
+    11,
+    12,
+    13
+  ],
+  "open_findings": [
+    6,
+    7
+  ],
+  "final_integrated_attempts": 0,
+  "report_only_no_new_implementation": true,
+  "tasks": [
+    {
+      "task": "10-24-download-enter-popover",
+      "original_findings": [
+        1
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-24-download-enter-popover/prd.md",
+          "sha256": "7a2009883c2dd02bcc962a02edf486578db3ea740185ebaaeff3b5e07a22ebb0",
+          "bytes": 3331
+        },
+        {
+          "path": ".trellis/tasks/10-24-download-enter-popover/outcomes.md",
+          "sha256": "68a44458fd842cf112a7970700b37a53ab5d1c83a5a86d7662dc4343d34e56f7",
+          "bytes": 9778
+        },
+        {
+          "path": ".trellis/tasks/10-24-download-enter-popover/parent-review.md",
+          "sha256": "8866de529c6dccdfa74a83b8839b363247b5c1f8b94bd4cf31b3a741a2a80b15",
+          "bytes": 5465
+        }
+      ],
+      "delta_index": null,
+      "delta_availability_note": "Early #1/#9 raw deltas were communicated from the historical implementer scratch; project PRD/outcome/parent review contains file/hash evidence. No current local raw-delta link is invented.",
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+          "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29",
+          "bytes": 15831
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+          "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc",
+          "bytes": 142970
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+          "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783",
+          "bytes": 335038
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-download-sort-keyboard",
+      "original_findings": [
+        2
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-download-sort-keyboard/prd.md",
+          "sha256": "2ebd40907b8b12b510e0e7f22f4d06caa2379c76958d296932f4b274fc708f46",
+          "bytes": 3809
+        },
+        {
+          "path": ".trellis/tasks/10-25-download-sort-keyboard/outcomes.md",
+          "sha256": "4aad88a6f20db706cb77d17033b7e2645af467b3000fe1b676e9eaf66768afa3",
+          "bytes": 12409
+        },
+        {
+          "path": ".trellis/tasks/10-25-download-sort-keyboard/parent-review.md",
+          "sha256": "76030a6986488540aef5bd8f691d67a803829def9b8107e73cb410fbb51e331c",
+          "bytes": 7119
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-download-sort-keyboard/evidence/own-delta.json",
+        "sha256": "de6a4b6a474635ad01a4a22664f48ee87e5f5a843fb4daf7593d33f6f087aae3",
+        "bytes": 20480
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+          "sha256": "d3ed606a9713de949c5f3e7e0c0cd2ff6ca8b133655c9657ae19d8ecb71abd52",
+          "bytes": 133992
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+          "sha256": "529dde267f681d13a5aebb10976af02c3896dd8e345a58a731190013dbed4269",
+          "bytes": 62373
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-button-accessible-names",
+      "original_findings": [
+        3
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-button-accessible-names/prd.md",
+          "sha256": "ecb0e0c718609181dd91d55c27da424fc39b259976dc9a9baf9604716ebe9aa5",
+          "bytes": 3793
+        },
+        {
+          "path": ".trellis/tasks/10-25-button-accessible-names/outcomes.md",
+          "sha256": "bf301273282ca3057b3497e547cc396d4d08dd97998a57ce447ba083d74d0460",
+          "bytes": 14517
+        },
+        {
+          "path": ".trellis/tasks/10-25-button-accessible-names/parent-review.md",
+          "sha256": "1c209d650111d1550f173c5cf418d6f93c84be27ff285d2dd4a467fb95d4291f",
+          "bytes": 7079
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-button-accessible-names/evidence/own-delta.json",
+        "sha256": "0273a7244660278894fb151694c3a4c65eae23fdfa1b10886b393d4a104c997e",
+        "bytes": 29352
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/gpui-kit-080.md",
+          "sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c",
+          "bytes": 8204
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+          "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc",
+          "bytes": 142970
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+          "sha256": "f8df57174a6ec3c34eafba0c4d4b0cc9974d3c3ba4ab32ae2f436be05c8a677f",
+          "bytes": 160699
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+          "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a",
+          "bytes": 22341
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+          "sha256": "a33fc73c5591388013fabd00ef465c71c559f732d011d9187c08929957b924d1",
+          "bytes": 131458
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+          "sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4",
+          "bytes": 49831
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+          "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e",
+          "bytes": 14536
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+          "sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da",
+          "bytes": 111886
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+          "sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e",
+          "bytes": 39415
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+          "sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b",
+          "bytes": 21733
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/action_name_tests.rs",
+          "sha256": "2af2a15d7ba36b48ec397a19abb54fa9470bad44b3ab1b1a3c0629dc1bbe13e3",
+          "bytes": 7590
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+          "sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c",
+          "bytes": 14109
+        },
+        {
+          "path": "tests/architecture/download-ui-lifecycle.ps1",
+          "sha256": "dc6c0541e3319bfd3273ef1fb3e1cd961a8493e37ced01347f9a525688d8eea3",
+          "bytes": 24042
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-archive-prompt-object",
+      "original_findings": [
+        4
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-archive-prompt-object/prd.md",
+          "sha256": "70e31e1d4a9461ba9a1b05c55b7881d5bf75d4cc12cc84809c05439399150e82",
+          "bytes": 6956
+        },
+        {
+          "path": ".trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+          "sha256": "624b194cbcf2ab56f25c70ac855f6c63fb94bcd9cd8b38938dea699fcab85d0a",
+          "bytes": 21959
+        },
+        {
+          "path": ".trellis/tasks/10-25-archive-prompt-object/parent-review.md",
+          "sha256": "a614b00a21d8ec914a5046ddbb17cf037eee9fed768aca2b464ae6025a725637",
+          "bytes": 8786
+        },
+        {
+          "path": ".trellis/tasks/10-25-archive-prompt-object/parent-review-r1-r2.md",
+          "sha256": "6a7f8741ffd863381677c8231f110f6c5a841aea01ffb19077003ba3076a669b",
+          "bytes": 6535
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-archive-prompt-object/evidence/own-deltas.json",
+        "sha256": "ce07e982cc393e881976240d5cd20900db633bb21db074b278f60bb5b14d277b",
+        "bytes": 51240
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs",
+          "sha256": "b6fb4337b08e82e685026fca1b4853bf631fdcd653c30de89d0f361caa36e7da",
+          "bytes": 12733
+        },
+        {
+          "path": "csharp/NxTools.PlatformHost.Tests/ArchiveCreateOverwriteTests.cs",
+          "sha256": "908866e37ffc59210e8e757ef0d15e866bfbb6a75fbccf8211ffa4d0b02cc8a5",
+          "bytes": 9911
+        },
+        {
+          "path": "csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs",
+          "sha256": "559bd980b786e394d7d02dc872a7e4c1154dcc3c93c8c03e9fd1692575843068",
+          "bytes": 29146
+        },
+        {
+          "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs",
+          "sha256": "20e6dfb7d4329467d1495169d26af5a1360e56133c583468288e3237360df2e3",
+          "bytes": 15814
+        },
+        {
+          "path": "csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs",
+          "sha256": "caa2b3dbdffa3d2d7409bb644fac28410cc7533889be06796c807ba614d4a187",
+          "bytes": 19075
+        },
+        {
+          "path": "docs/reference-code/archive.md",
+          "sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+          "bytes": 68633
+        },
+        {
+          "path": "rust/apps/nxtools-cli/src/archive/execution/tests.rs",
+          "sha256": "813016f6f592a4c0017548b9e18fa39422da4bfa501b9a721667ab4892465375",
+          "bytes": 8696
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+          "sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3",
+          "bytes": 66387
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+          "sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+          "bytes": 21122
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/readmission.rs",
+          "sha256": "8e84bc7b63dad51a6c7baa1331f249b83e86ca6bed1aa1d6c2d344870457cadb",
+          "bytes": 7906
+        },
+        {
+          "path": "rust/crates/nxtools-archive/src/worker_conflict.rs",
+          "sha256": "c7157a04b08de8b7f41df9851071611db87cdd630e46b81e09a74be6a33199de",
+          "bytes": 7541
+        },
+        {
+          "path": "rust/crates/nxtools-archive/src/worker_output.rs",
+          "sha256": "dc8cf790186065fc9557215c50a9bdd953c7b11501fc260462c6ae2fa7725912",
+          "bytes": 18962
+        },
+        {
+          "path": "rust/crates/nxtools-archive/tests/prompt_display_contract.rs",
+          "sha256": "0684751bf87a5f15294a333b7598c6012e8f370d09c46609254204886c294225",
+          "bytes": 6077
+        },
+        {
+          "path": "rust/crates/nxtools-protocol/src/archive_job.rs",
+          "sha256": "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a",
+          "bytes": 36870
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-default-submit-keyboard",
+      "original_findings": [
+        5
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-default-submit-keyboard/prd.md",
+          "sha256": "21db1e7f2a4c1398c3b43af237df89d885688315cd22d59d9e9b1bcabac9045a",
+          "bytes": 5372
+        },
+        {
+          "path": ".trellis/tasks/10-25-default-submit-keyboard/outcomes.md",
+          "sha256": "52b28c108cca187d614d8c149729677b26555f5e4644eced3e23a9380ddd05f8",
+          "bytes": 21720
+        },
+        {
+          "path": ".trellis/tasks/10-25-default-submit-keyboard/parent-review.md",
+          "sha256": "824b212f931492fdb90b2d98aac2f6b17d064f304ccd45e0e37228108afd2891",
+          "bytes": 9235
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-default-submit-keyboard/evidence/own-deltas.json",
+        "sha256": "f6a8d678e638d21da6bf4c33f1261a4e2cc54e201ad25f844ec6fd9f0f7aed8c",
+        "bytes": 71007
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/archive.md",
+          "sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+          "bytes": 68633
+        },
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/forms.rs",
+          "sha256": "7b5819c77e7ad09515c42876e55d249edeed6d81a6237ad3d4eaac29ae2854a2",
+          "bytes": 73233
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+          "sha256": "218e7e12d87fdd89a42d629142844c609173aca3984e2754cb86efe15312d391",
+          "bytes": 36025
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+          "sha256": "a563433b3818674c10592a748a3e767ca7cb2b51f98ef7b6b631c87961c399b3",
+          "bytes": 66387
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/archive/progress.rs",
+          "sha256": "ea1513fe28afa6750c9de826de07081acc0737247c33d08389866b9abb96821c",
+          "bytes": 21122
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+          "sha256": "f8df57174a6ec3c34eafba0c4d4b0cc9974d3c3ba4ab32ae2f436be05c8a677f",
+          "bytes": 160699
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+          "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a",
+          "bytes": 22341
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-rem-role-consistency",
+      "original_findings": [
+        6
+      ],
+      "status": "PARTIAL_OPEN",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-rem-role-consistency/prd.md",
+          "sha256": "d4fe3ec2b2caac9715979c5a6de935a9772f6837097416492cff98a1a4cab6f2",
+          "bytes": 8115
+        },
+        {
+          "path": ".trellis/tasks/10-25-rem-role-consistency/outcomes.md",
+          "sha256": "24148126c89e10edaa110fe91b895e58874bfbcf627c60356377c38b9848ad20",
+          "bytes": 11778
+        },
+        {
+          "path": ".trellis/tasks/10-25-rem-role-consistency/parent-review.md",
+          "sha256": "ae46b19eb442394a0939abbfeafd5ef44af32a8349a29a2d028943b5b8f37f4c",
+          "bytes": 8771
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/own-deltas.json",
+        "sha256": "bce01154fec5970e8464b41f51e7deddd6c61cd8ad705c6dbbb74f14ad5efc17",
+        "bytes": 73388
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+          "sha256": "f8df57174a6ec3c34eafba0c4d4b0cc9974d3c3ba4ab32ae2f436be05c8a677f",
+          "bytes": 160699
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+          "sha256": "4deeff0fadb17110fb559eda40d8ccfee293b3b6d97b2fcc7ce5988192b6c84a",
+          "bytes": 22341
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+          "sha256": "d3ed606a9713de949c5f3e7e0c0cd2ff6ca8b133655c9657ae19d8ecb71abd52",
+          "bytes": 133992
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+          "sha256": "529dde267f681d13a5aebb10976af02c3896dd8e345a58a731190013dbed4269",
+          "bytes": 62373
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/metrics.rs",
+          "sha256": "2540b2d90dd1e4974d9106445360b2d504f59c63155c803f8d20acd9ad522420",
+          "bytes": 3774
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-cursor-semantics",
+      "original_findings": [
+        7
+      ],
+      "status": "NOT_REPAIRED",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-cursor-semantics/prd.md",
+          "sha256": "964b0d12fee9621868f512e4fd44210553cb74a9327acb01cc7dc83f00083b6c",
+          "bytes": 4983
+        },
+        {
+          "path": ".trellis/tasks/10-26-cursor-semantics/outcomes.md",
+          "sha256": "40fe72a254333083552d74670406b0c277e7dbb41ca900f94483c82b57a52b38",
+          "bytes": 6286
+        },
+        {
+          "path": ".trellis/tasks/10-26-cursor-semantics/inventory.md",
+          "sha256": "9d5573b7c651a8dd7290096ed543af3101853355ce6f0374c7092fdb970e14f0",
+          "bytes": 10513
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-cursor-semantics/evidence/own-deltas.json",
+        "sha256": "fae1bd6ae3bd7b406864d863ba57ce410ee750fd17f441ade31c3e637a52ad33",
+        "bytes": 252
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-command-naming",
+      "original_findings": [
+        8
+      ],
+      "status": "IMPLEMENTED_BOUNDED_NOT_GLOBAL_ACCEPTED",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-command-naming/prd.md",
+          "sha256": "7b38431585c8c91009f7c605b7e769b8ef0a18b33076999ec93a0046cfd5f15c",
+          "bytes": 3792
+        },
+        {
+          "path": ".trellis/tasks/10-26-command-naming/outcomes.md",
+          "sha256": "7cd8f425d3e7244bf619b95894b065b42d82c23688c7adf9ff89f2d28f5cc325",
+          "bytes": 14887
+        },
+        {
+          "path": ".trellis/tasks/10-26-command-naming/command-matrix.md",
+          "sha256": "33718bf272ccdf2a8a4ad4f28c89bf26ae7e73a5a07577017fdaaf86a036f591",
+          "bytes": 9744
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-command-naming/evidence/own-deltas.json",
+        "sha256": "f55973cf36162fd8d0ad228648b9b46ed47d78c82452016f875b9577a2d0e41f",
+        "bytes": 3444802
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/clipboard.md",
+          "sha256": "fc7caba493a0d02f80ed9f036dee25be433bfe2a6b02d2ba10cc2c1cdb1ef8ca",
+          "bytes": 85275
+        },
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "docs/reference-code/gpui.md",
+          "sha256": "ec85d67362cfec332440f489ee3e9c07268e1369be6c67b24f936bb9e0b77cb2",
+          "bytes": 38658
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads.rs",
+          "sha256": "d3f94a9ed5d60c1de3d6db8af5a55951500c92fcc55a3f7727205549dc7e4ede",
+          "bytes": 143568
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+          "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc",
+          "bytes": 142970
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+          "sha256": "f8df57174a6ec3c34eafba0c4d4b0cc9974d3c3ba4ab32ae2f436be05c8a677f",
+          "bytes": 160699
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+          "sha256": "a33fc73c5591388013fabd00ef465c71c559f732d011d9187c08929957b924d1",
+          "bytes": 131458
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+          "sha256": "7295da9551b9753634f871f260acdf339e4b4a2ed23cee1ec2879341bf563406",
+          "bytes": 24922
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+          "sha256": "f7a19bdbd3bc848666f7e3d30064a39cb6e93032b7ba081f2e4d6329fb6d74ef",
+          "bytes": 44783
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page/kit_migration_tests.rs",
+          "sha256": "7cd53c852b6f8afece078645e872f773dbedbe8bf5b574a76cd4ae648481680d",
+          "bytes": 35662
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/command_naming_tests.rs",
+          "sha256": "4b3da1b55cf7d35d7dd4d28399ced16d4b523bd545057c6e3313dfe760ee54c5",
+          "bytes": 17437
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+          "sha256": "d3ed606a9713de949c5f3e7e0c0cd2ff6ca8b133655c9657ae19d8ecb71abd52",
+          "bytes": 133992
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/floating_assistant_tests.rs",
+          "sha256": "9498ab95bbe52618ea228aec100b33b9f101549ed2e5f93b420b3a6c1d1a53f4",
+          "bytes": 7285
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+          "sha256": "e9673a2c5b7c71e28db40d63d8cd3b7869f39304c00071e67e2a3ea7a5b96eff",
+          "bytes": 22945
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+          "sha256": "305e6a46e378f6474b586e2f289cde97df1e1b4d684c349c7ac6d378b394dd6f",
+          "bytes": 11823
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+          "sha256": "43bcf9801a0f9cc5e7ce752805efbbfc1d25ed16bea8ac51ee4a9d625bea5037",
+          "bytes": 30202
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/menu.rs",
+          "sha256": "6d7a68a636d4315f5a666210871e387fcc683c90e5af2500d10d05d03b807fea",
+          "bytes": 1797
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-download-picker-identity",
+      "original_findings": [
+        9
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-download-picker-identity/prd.md",
+          "sha256": "72cbc24229951e7099e74927c102438b8d01cb83ab51c02b2f6ba09924cb7308",
+          "bytes": 4440
+        },
+        {
+          "path": ".trellis/tasks/10-25-download-picker-identity/outcomes.md",
+          "sha256": "8e5d4116ac19153bcb45b2323639a3edebae286eabec2f783aa61a1cda606e92",
+          "bytes": 13735
+        },
+        {
+          "path": ".trellis/tasks/10-25-download-picker-identity/parent-review.md",
+          "sha256": "da4b47a5b5bb1f6a476fa4c3eb4b244f9cc06d72840b8db885596e975fc109b2",
+          "bytes": 6056
+        }
+      ],
+      "delta_index": null,
+      "delta_availability_note": "Early #1/#9 raw deltas were communicated from the historical implementer scratch; project PRD/outcome/parent review contains file/hash evidence. No current local raw-delta link is invented.",
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads.rs",
+          "sha256": "d3f94a9ed5d60c1de3d6db8af5a55951500c92fcc55a3f7727205549dc7e4ede",
+          "bytes": 143568
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+          "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb",
+          "bytes": 11375
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+          "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab",
+          "bytes": 30309
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+          "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc",
+          "bytes": 142970
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+          "sha256": "a33fc73c5591388013fabd00ef465c71c559f732d011d9187c08929957b924d1",
+          "bytes": 131458
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/tests.rs",
+          "sha256": "fe31c10337acb27d7f8ee817ebff326a151b3d6c358e4281ff8319b0a18ef783",
+          "bytes": 335038
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-clipboard-stable-focus",
+      "original_findings": [
+        10
+      ],
+      "status": "PARENT_ACCEPTED_BOUNDED_S_C_Y",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-clipboard-stable-focus/prd.md",
+          "sha256": "75d2662297313e1cec80f541b943a2c8c8b6a2b0f395d63bec1250cace5626ac",
+          "bytes": 3742
+        },
+        {
+          "path": ".trellis/tasks/10-25-clipboard-stable-focus/outcomes.md",
+          "sha256": "0ad5cc01a6dd12ff69562f336f95b05d996b63e3271abf655b743a6a340462bc",
+          "bytes": 10958
+        },
+        {
+          "path": ".trellis/tasks/10-25-clipboard-stable-focus/parent-review.md",
+          "sha256": "eb50b732603388dc4c8796822f8f92ab9c5abbf2ecf96a1beb96f9cbe02782be",
+          "bytes": 6220
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-clipboard-stable-focus/evidence/own-delta.json",
+        "sha256": "3f6dac84f981402a172d23b3c7748de791023e735ca68a800ebed3d898a43a43",
+        "bytes": 44882
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/clipboard.md",
+          "sha256": "fc7caba493a0d02f80ed9f036dee25be433bfe2a6b02d2ba10cc2c1cdb1ef8ca",
+          "bytes": 85275
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+          "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39",
+          "bytes": 49887
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/history_feedback_tests.rs",
+          "sha256": "48d69994a59f0c21e193148014d0ef9ec5e0fcbd79c60390ee021e395d8b206e",
+          "bytes": 13323
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+          "sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6",
+          "bytes": 29661
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs",
+          "sha256": "590cd0e831172bd049422f9967afdbaf73d2e53d3a63912b44db20429afc926f",
+          "bytes": 9832
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/history_menu_tests.rs",
+          "sha256": "9a7ea27199d7d60e7b3b0fe89de7c4525e57355e6a311539932981333c20fc0b",
+          "bytes": 8606
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+          "sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2",
+          "bytes": 170959
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/polish_tests.rs",
+          "sha256": "a0f92a727c0b810b6ab4a3f54f929b0dca19b5795dbe4cc078001fa365261a60",
+          "bytes": 29840
+        },
+        {
+          "path": "tests/architecture/clipboard-ui-lifecycle.ps1",
+          "sha256": "aabb7de696bae25db9f575ec1bdb5c6af21c6ac2943e49c5cc389223c819cc5b",
+          "bytes": 17697
+        },
+        {
+          "path": "tests/architecture/clipboard-ui-lifecycle.tests.py",
+          "sha256": "7b0d5ef5337fccae0e7cc2c1eff4413f1c2f9654267a498ae4da023d7a3c07bc",
+          "bytes": 3445
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-download-virtual-projection",
+      "original_findings": [
+        11
+      ],
+      "status": "IMPLEMENTED_BOUNDED_NOT_GLOBAL_ACCEPTED",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-download-virtual-projection/prd.md",
+          "sha256": "bed580b386f2c1ec7c525fe4b7a671d2be74f72ad556668e9a37bdf41a22d014",
+          "bytes": 3754
+        },
+        {
+          "path": ".trellis/tasks/10-26-download-virtual-projection/outcomes.md",
+          "sha256": "ec9ed55f066362ea233d60bd06af4e269e894c9cab1c93e6bdab49e4ce812f72",
+          "bytes": 10297
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-download-virtual-projection/evidence/own-deltas.json",
+        "sha256": "2cb75f722726205da73a18274a6d0f53dc98d449e57887ba082ee3fc43789229",
+        "bytes": 23550
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads.rs",
+          "sha256": "d3f94a9ed5d60c1de3d6db8af5a55951500c92fcc55a3f7727205549dc7e4ede",
+          "bytes": 143568
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs",
+          "sha256": "73cdb3f53ece36deb22c6658c16c4fcb61a46953108b95fc416ea2bf910e3883",
+          "bytes": 12770
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+          "sha256": "7295da9551b9753634f871f260acdf339e4b4a2ed23cee1ec2879341bf563406",
+          "bytes": 24922
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs",
+          "sha256": "0aa091c5a2c3490571cc36280ef2b5b6f82ec518d125c8f35fbb015aa45d61db",
+          "bytes": 6578
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+          "sha256": "d3ed606a9713de949c5f3e7e0c0cd2ff6ca8b133655c9657ae19d8ecb71abd52",
+          "bytes": 133992
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+          "sha256": "529dde267f681d13a5aebb10976af02c3896dd8e345a58a731190013dbed4269",
+          "bytes": 62373
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page/projection_tests.rs",
+          "sha256": "813532ea76951192b5e08cbb874a72ae381867e6ffb1851158a98690fc6fabaf",
+          "bytes": 23434
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tests.rs",
+          "sha256": "bde7e002a0054d3051550e6a03f00cc64c7832ffa333ffafaf69cf914cd09952",
+          "bytes": 237399
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-download-detail-async",
+      "original_findings": [
+        12
+      ],
+      "status": "IMPLEMENTED_BOUNDED_NOT_GLOBAL_ACCEPTED",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-download-detail-async/prd.md",
+          "sha256": "b58daee888a512d81f5f752991fcc5c04a051170393d13d09cbe4286b592c273",
+          "bytes": 4393
+        },
+        {
+          "path": ".trellis/tasks/10-26-download-detail-async/outcomes.md",
+          "sha256": "2b75eea9271ceca096be3e9d71d387da50eb0a4b07b5333cb34a000a8354b57b",
+          "bytes": 13568
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-download-detail-async/evidence/own-deltas.json",
+        "sha256": "b31f3a259d5fce5ad75883fd8979d7377eb4116585827ae37dcf8db14c3af281",
+        "bytes": 31138
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/Cargo.toml",
+          "sha256": "357da860d57c8131083223e163d992d4d414176c338a2b7b38d6092b7dacd20f",
+          "bytes": 2129
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads.rs",
+          "sha256": "d3f94a9ed5d60c1de3d6db8af5a55951500c92fcc55a3f7727205549dc7e4ede",
+          "bytes": 143568
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/detail_request.rs",
+          "sha256": "745dca69a1b346832bfaae311c6eb0a9c4d68b5999fc7dcbc9eea21804bc7273",
+          "bytes": 12852
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/detail_request_tests.rs",
+          "sha256": "947675e0edddec92bc1bbb751b711f35ab72be43a0b23924655d45eb8b19ac59",
+          "bytes": 13198
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+          "sha256": "7295da9551b9753634f871f260acdf339e4b4a2ed23cee1ec2879341bf563406",
+          "bytes": 24922
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+          "sha256": "d3ed606a9713de949c5f3e7e0c0cd2ff6ca8b133655c9657ae19d8ecb71abd52",
+          "bytes": 133992
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/download_page/detail_async_tests.rs",
+          "sha256": "be65af53270ccf5a5731beab6a91e9bd59ff5e0d4fdcb20b26990e1a4a23212f",
+          "bytes": 6531
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+          "sha256": "141cccc9b242bcf218a4a9271d49e103fabc12bad126f9de20c8c77ded68d362",
+          "bytes": 18827
+        },
+        {
+          "path": "rust/crates/nxtools-download/Cargo.toml",
+          "sha256": "bf396e24a338c84ecd7e4161587b46a0e79230a96597a84aec8dadb2ad47b803",
+          "bytes": 889
+        },
+        {
+          "path": "rust/crates/nxtools-download/src/engine/projection.rs",
+          "sha256": "71bc1562c83ac860a12cf0454c93c15640c885973d50a99d32042a3e9363a95a",
+          "bytes": 17392
+        },
+        {
+          "path": "rust/crates/nxtools-download/src/storage.rs",
+          "sha256": "be09bc2db9635ca5fb55f53047fbad3961635c7e82ff396df90c4b2c12dd6042",
+          "bytes": 129797
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-quick-retained-text",
+      "original_findings": [
+        13
+      ],
+      "status": "IMPLEMENTED_BOUNDED_NOT_GLOBAL_ACCEPTED",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-quick-retained-text/prd.md",
+          "sha256": "14900265f199f8da91889f0774ec60cfb28fb3c3a306d3d08d7f3a275d0bbd50",
+          "bytes": 4358
+        },
+        {
+          "path": ".trellis/tasks/10-26-quick-retained-text/outcomes.md",
+          "sha256": "f350f31e47f74be47b773fd959bee62f6e7af2a050b08ee4e7b8174a0f154642",
+          "bytes": 11175
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-quick-retained-text/evidence/own-deltas.json",
+        "sha256": "9032dfa0b397795cddec5e00eb2faab4b087b2f0913c88d1bf9ac13369e90323",
+        "bytes": 17947
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/quick-launch-research.md",
+          "sha256": "7006227d4c931089b41f86bb21630eba56a04c2fbd72f95463be2bccc3104261",
+          "bytes": 139985
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch.rs",
+          "sha256": "d833dbc06c067ea27cf83be81e5dc2ca7bb5e0f94a8eea1f1a14419d943826a2",
+          "bytes": 160316
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch/actions.rs",
+          "sha256": "6a68c08e4502eebe3dc2f41c7d7ab2b144a917c2808443db029504fc56cde0d9",
+          "bytes": 32031
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs",
+          "sha256": "c80f01a271f7f9193921cdcefa4725ed8325df38da043027dfefc9207022306d",
+          "bytes": 25393
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch/panel.rs",
+          "sha256": "807bd39a029ac8bd5851fd842bca60122f6c43c56ca0d26948a19cd1e90a55d2",
+          "bytes": 72142
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch/retained_text.rs",
+          "sha256": "b27f5c8ddb444ad66dd66650c01947a998d77cdab082b79574d81fbb97639a9c",
+          "bytes": 1586
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch/retained_text_tests.rs",
+          "sha256": "44ece0a9786d36aa92206182661fdc29e71a7c269c7afda6dc89383dbf4618aa",
+          "bytes": 13447
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/quick_launch/tests.rs",
+          "sha256": "9bd5f80b0c68243d8e0105b81e4da392815c716dcd4a5777a017c65adcaa5cae",
+          "bytes": 188999
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-extensions-compile-closeout",
+      "original_findings": [],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-extensions-compile-closeout/prd.md",
+          "sha256": "011390ab6391f56101c397cd1596a9daeca3846c52bb67bde7b0c6385504746a",
+          "bytes": 3273
+        },
+        {
+          "path": ".trellis/tasks/10-25-extensions-compile-closeout/outcomes.md",
+          "sha256": "39b4e15403d7936e1cbd97aae52b9adbb0bdf2861a25f08106d2c24f0249fe33",
+          "bytes": 6966
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-extensions-compile-closeout/evidence/own-delta.json",
+        "sha256": "94edfc257bf9061433a89bffe7fc8cd378f93154030e6026067c7a422d10e0dc",
+        "bytes": 3471
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+          "sha256": "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+          "bytes": 20217
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-25-archive-settings-search-diagnosis",
+      "original_findings": [],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-25-archive-settings-search-diagnosis/prd.md",
+          "sha256": "117aa173c8ab51c25ccd291bfbb827e31c03b7937db5f21e211b426d53ea009e",
+          "bytes": 3126
+        },
+        {
+          "path": ".trellis/tasks/10-25-archive-settings-search-diagnosis/outcomes.md",
+          "sha256": "ba49d2a6718f54d66aabdb8bc9ec4548d9775106ae23186b366dfbfbe44a3c62",
+          "bytes": 7387
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-25-archive-settings-search-diagnosis/evidence/own-delta.json",
+        "sha256": "223cf87a3924a8b2a87065999836a14f628133b6e60622ce0dccb25f02ff60f6",
+        "bytes": 2790
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+          "sha256": "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d",
+          "bytes": 44664
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-extension-preview-cancel-diagnosis",
+      "original_findings": [],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-extension-preview-cancel-diagnosis/prd.md",
+          "sha256": "63e19a9f8aaf69c982681d44501e289e2b60d05cec41d3612603ff8c8bdee55e",
+          "bytes": 3671
+        },
+        {
+          "path": ".trellis/tasks/10-26-extension-preview-cancel-diagnosis/outcomes.md",
+          "sha256": "0100b44a5f1f0dd3c48392fc0a89f3d774b9a1abdb854c5c67816e5487455361",
+          "bytes": 11404
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-extension-preview-cancel-diagnosis/evidence/own-delta.json",
+        "sha256": "429dfe83f5cbf019a3e15e9ff8e215e7f1eb14a622208fed9c6f746b36e3e266",
+        "bytes": 9941
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+          "sha256": "7d6f3ac300b7e043c3267df860898c9e2b5576dfdbd87945a9d1626315b121ad",
+          "bytes": 31002
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-new-download-basic",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-new-download-basic/prd.md",
+          "sha256": "4804c94b468e1dbc02ff5262b1b0f5384a1d3a60069160a4e6379bb9b1686f95",
+          "bytes": 3851
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-new-download-basic/outcomes.md",
+          "sha256": "981b87989b8ed51bea88a823984ada70f66aa25588cdab2b77d14497a4c53abd",
+          "bytes": 10216
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-rem-new-download-basic/evidence/own-deltas.json",
+        "sha256": "3a526f8c741273f7a153dc534abf5a1f9c0c80cd7ba2ee6314483bd77e60cee3",
+        "bytes": 49807
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_rem_tests.rs",
+          "sha256": "00daf83e19bfdf3dc7882eb2bdd19c439466d49faaa25fc41d51b72a93359680",
+          "bytes": 23416
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+          "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc",
+          "bytes": 142970
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-new-download-overlays",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-new-download-overlays/prd.md",
+          "sha256": "72da01023ba1febe58d54f3dc6ebceb6c932eba5f3bd54fa5228d3bd83b2b2d7",
+          "bytes": 4142
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-new-download-overlays/outcomes.md",
+          "sha256": "0ad54c2efb4192b2be46aa77e14450089e6f05c964325616d71420b1452ac526",
+          "bytes": 10303
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-rem-new-download-overlays/evidence/own-deltas.json",
+        "sha256": "f7571dbc700f0bc7bff5dd03d2da0cbb35bdb8e3992ad0bd0f2edd9ded4b6c82",
+        "bytes": 34674
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_overlay_rem_tests.rs",
+          "sha256": "94ea1422a60e1e0091b6b3a5c02b060ad38d5ff618fa06b3b758041de787c715",
+          "bytes": 24925
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+          "sha256": "909e9f7322df1972ba777d45161c145a5b1eda3f4df1b1dfc783e053b996b1cc",
+          "bytes": 142970
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-download-settings-task",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-download-settings-task/prd.md",
+          "sha256": "71435b405eef14ad38b8d87803f2bddafc254073715057b29c0ac8ef644fba5b",
+          "bytes": 4062
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-download-settings-task/outcomes.md",
+          "sha256": "d72c61a43297a852825a2ee56c99211372ee5b8eb74fd967b750149fb0b235bf",
+          "bytes": 13707
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-rem-download-settings-task/evidence/own-deltas.json",
+        "sha256": "cde3e0bb9e82294971b4bdc22621c7fa14d29f75d690b66be153399308caecea",
+        "bytes": 43048
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/download.md",
+          "sha256": "ad8eb2cf377389cac551e0adea77a79bde07e2905db5017debaf675f0660fd11",
+          "bytes": 283046
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs",
+          "sha256": "d818ffccb431cc998dd8074e28f2532c10ebf249f4cfffe47264b47ad8b8d5d3",
+          "bytes": 31812
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+          "sha256": "a33fc73c5591388013fabd00ef465c71c559f732d011d9187c08929957b924d1",
+          "bytes": 131458
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+          "sha256": "62ed6d5780b1251d00d279374c3da896b30a7b4bd599099ce11f71f33dc762c4",
+          "bytes": 49831
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-shared-ui",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-shared-ui/prd.md",
+          "sha256": "ee0921e610373c4f30b618a16cf54d40b773d33e6f837a9f81ee37e0ac0aa61b",
+          "bytes": 11701
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-shared-ui/outcomes.md",
+          "sha256": "3b54aac742c2e1c35f5601ee80086d470082078054838a319a26831a83e4bfdc",
+          "bytes": 14426
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-rem-shared-ui/evidence/own-deltas.json",
+        "sha256": "c6b28347417b05e2ac4cb85187a5dc395348e06affd78a3f8b3c79dbb8cffea0",
+        "bytes": 78676
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/gpui.md",
+          "sha256": "ec85d67362cfec332440f489ee3e9c07268e1369be6c67b24f936bb9e0b77cb2",
+          "bytes": 38658
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+          "sha256": "a33fc73c5591388013fabd00ef465c71c559f732d011d9187c08929957b924d1",
+          "bytes": 131458
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+          "sha256": "7295da9551b9753634f871f260acdf339e4b4a2ed23cee1ec2879341bf563406",
+          "bytes": 24922
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+          "sha256": "f7a19bdbd3bc848666f7e3d30064a39cb6e93032b7ba081f2e4d6329fb6d74ef",
+          "bytes": 44783
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs",
+          "sha256": "a8e3ee75a776b23ce04e359c5d2fc1756ccf5a947464b6d627b575db9ea830f1",
+          "bytes": 56375
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/shared_rem_tests.rs",
+          "sha256": "5b892c83db1ed8941d39df20fe3482b1252fe51464e32270cc2d377088921ccc",
+          "bytes": 13295
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+          "sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da",
+          "bytes": 111886
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+          "sha256": "b4a7c72849ddc8e1c68c348f6dcb2fea95d62904871b30baf50599fb9cf5e46e",
+          "bytes": 39415
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+          "sha256": "39d672a78f2168e8c2fb373c810b8be5b19f3da054eb22cecce8a8a9f84b4d9b",
+          "bytes": 21733
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/custom_command_editor.rs",
+          "sha256": "535236eca6630d5aaf0e38e75986988d7b2e07b33c48337c3227ede6e5047fda",
+          "bytes": 24083
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/field.rs",
+          "sha256": "0d6d712991d10eccccbc377e6e387a4b62dc3741453cb1bb506191d59387841e",
+          "bytes": 1568
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/hotkey.rs",
+          "sha256": "7ed87d7f8b6bcd632485adf4385e6718310780fff9d9e51dcbad58cc3134511f",
+          "bytes": 7711
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/menu.rs",
+          "sha256": "6d7a68a636d4315f5a666210871e387fcc683c90e5af2500d10d05d03b807fea",
+          "bytes": 1797
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/mod.rs",
+          "sha256": "a22684b6c84965f7ae484d13e28fe9670b55a7f52f1acebdf74f3a5ca91a5d1c",
+          "bytes": 632
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/ordinary_rem_tests.rs",
+          "sha256": "204df982153115bb296535339bea7b0c96f1160948a58a52ee8689139ea15c32",
+          "bytes": 20585
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+          "sha256": "ffb1d393e71acf74b170df5680a6003e3513da1acda6d1278a15848a5fb1172c",
+          "bytes": 14109
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/quick_launch_diagnostics.rs",
+          "sha256": "1deca08ac288f5a26c5cb64b3d31dbb3220fc2e100439f7d7c4d9e746149ec44",
+          "bytes": 14655
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/settings.rs",
+          "sha256": "e19bba4be4acb11da7dab5213401aebccad224440b0ba88c518d6be3bc1f152e",
+          "bytes": 20269
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/state.rs",
+          "sha256": "4b2bd86123cdaf7bb9d4e6fe7aaf0ecd0e4ae66de7ee1691d2b5903fe2fcd4c2",
+          "bytes": 9609
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/titlebar.rs",
+          "sha256": "e15e7221897038988dd8c88f40dd5fdb970e06e02896eeb6d3b3903b4f54209f",
+          "bytes": 5008
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/tooltip.rs",
+          "sha256": "6d60db37be16092d76e1f38904580a49884f82e0f1a214b4568c414bd870ff9c",
+          "bytes": 8133
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs",
+          "sha256": "b2108299ed569d7d0c31db779e32f5f348ba4adddecf041ad72025948ee546a6",
+          "bytes": 12842
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs",
+          "sha256": "512db11d2fe9178766c0e72f32556b953af80e6a5fde554e57d76ca23aba977f",
+          "bytes": 99733
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-pages-global-tools",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-pages-global-tools/prd.md",
+          "sha256": "e848854069ae29b1726c370a2daa8de3af221f41981963d601af3204260a25a7",
+          "bytes": 11474
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-pages-global-tools/outcomes.md",
+          "sha256": "70af039c966e1e6603b47a096e9867829ca640b06ebaef850437020be5c67555",
+          "bytes": 13981
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-rem-pages-global-tools/evidence/own-deltas.json",
+        "sha256": "871d648fab4ee8711d0fc8ee828e969c6c3f541ec08582fbec29c250a4a8447c",
+        "bytes": 26064
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "docs/reference-code/gpui.md",
+          "sha256": "ec85d67362cfec332440f489ee3e9c07268e1369be6c67b24f936bb9e0b77cb2",
+          "bytes": 38658
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+          "sha256": "7295da9551b9753634f871f260acdf339e4b4a2ed23cee1ec2879341bf563406",
+          "bytes": 24922
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs",
+          "sha256": "f2edacc61ec3ac99a5069b60b7f1119539286f015962e8e7a1223ab0914eb4b5",
+          "bytes": 5945
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+          "sha256": "141cccc9b242bcf218a4a9271d49e103fabc12bad126f9de20c8c77ded68d362",
+          "bytes": 18827
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+          "sha256": "e9673a2c5b7c71e28db40d63d8cd3b7869f39304c00071e67e2a3ea7a5b96eff",
+          "bytes": 22945
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+          "sha256": "305e6a46e378f6474b586e2f289cde97df1e1b4d684c349c7ac6d378b394dd6f",
+          "bytes": 11823
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+          "sha256": "43bcf9801a0f9cc5e7ce752805efbbfc1d25ed16bea8ac51ee4a9d625bea5037",
+          "bytes": 30202
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+          "sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da",
+          "bytes": 111886
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+          "sha256": "b789126ec66823ce3d3e8adbbdc8967905d8e9f38c37c881288d420ec4b45f9b",
+          "bytes": 13200
+        },
+        {
+          "path": "rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs",
+          "sha256": "2d26dbde4a22c40de6236fcfc3ce0538b0e5006b424560ffb114c390f9d23233",
+          "bytes": 10901
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-quick-clipboard",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-quick-clipboard/prd.md",
+          "sha256": "1bbcb0664ed01a0b99e016895ff9b73dc805acf95f369a7c3eb876ba91b46b3a",
+          "bytes": 5162
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-quick-clipboard/outcomes.md",
+          "sha256": "614e3201731a3c1cb3c6094cf009c65a3080920c1b95008a3143bc1430d356fc",
+          "bytes": 6237
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-quick-clipboard/inventory.md",
+          "sha256": "86b86a570423557fe66b8a95006e81e3e1741d17219773715c3d3dc3164969a8",
+          "bytes": 12205
+        }
+      ],
+      "delta_index": null,
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-rem-archive-final-matrix",
+      "original_findings": [
+        6
+      ],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-rem-archive-final-matrix/prd.md",
+          "sha256": "92bb9aa8d831574e841e39f81bac731fe7d1473a0c997aaedd6b9ce4b1ee0f8b",
+          "bytes": 4565
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-archive-final-matrix/outcomes.md",
+          "sha256": "d917609cc6b3600ab3e74f0ef92f3ce8190402c6f801027120e7246c3f3f5843",
+          "bytes": 8350
+        },
+        {
+          "path": ".trellis/tasks/10-26-rem-archive-final-matrix/role-matrix.md",
+          "sha256": "0ab66e128818c68a250fc4b1697f85d953d224ce5d085989a0dfbdcb3fea8ce1",
+          "bytes": 17636
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-rem-archive-final-matrix/evidence/own-deltas.json",
+        "sha256": "f2b7e03dfb1aa58469e9dc8ab2f09d0e731abe06c5d9cc6329000b55f1a3ac87",
+        "bytes": 269
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-quick-source-release-chain",
+      "original_findings": [],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-quick-source-release-chain/prd.md",
+          "sha256": "7569451be41d4231bd4a98b3c15a303d19bc95bca2a0b5f858ced66186e2249f",
+          "bytes": 2772
+        },
+        {
+          "path": ".trellis/tasks/10-26-quick-source-release-chain/outcomes.md",
+          "sha256": "032a27a0a5b4d34d690698a48151a75ede7324a36e926fefd48bbcc29e8ea705",
+          "bytes": 10342
+        }
+      ],
+      "delta_index": {
+        "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/own-deltas.json",
+        "sha256": "8950119bd361285bd4082e56e689df982795650f97a57a81975ea234ae27d3d5",
+        "bytes": 1746
+      },
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [
+        {
+          "path": "tests/architecture/quick-launch-lifecycle.ps1",
+          "sha256": "c6bbd775c86073e63d61d08af6a94b013288285530b5b5671e650566dee11e77",
+          "bytes": 101100
+        },
+        {
+          "path": "tests/architecture/quick-launch-release-chain-tests.ps1",
+          "sha256": "3211f1b6129e50909bd9717021d812fbf53c0f7dcf0279686c361e4d0b03a441",
+          "bytes": 8456
+        },
+        {
+          "path": "tests/architecture/quick-launch-release-chain.ps1",
+          "sha256": "184f9b983073267e1101709a5245669f1e04d18c4942b75dd380a98c90b10a18",
+          "bytes": 12271
+        }
+      ],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    },
+    {
+      "task": "10-26-final-convergence-admission",
+      "original_findings": [],
+      "status": "READ_OWNING_OUTCOME_FOR_PARTIAL_OR_AUXILIARY_STATUS",
+      "documents": [
+        {
+          "path": ".trellis/tasks/10-26-final-convergence-admission/outcomes.md",
+          "sha256": "eab7a661e8d364f600f75d5f41b8db4076e2500f92cdd3b95e2004d25af5df0c",
+          "bytes": 12858
+        }
+      ],
+      "delta_index": null,
+      "delta_availability_note": null,
+      "actual_changed_files_current_hashes": [],
+      "current_hash_caution": "Current source hashes include subsequent authorized deltas and are not substituted into old manifests. Original delta index controls attribution."
+    }
+  ],
+  "historical_command_logs": [
+    {
+      "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+      "sha256": "7753e62dcaa29bb39f7ea683db082ceb6cc97485e48220b24d486cc7551d8c48",
+      "bytes": 267740,
+      "encoding": "utf-16",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 31s",
+        "thread 'main_window::extensions_page::tests::w6_manager_pointer_preview_confirm_and_toggle_commit_real_config' (14884) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page.rs:445:9:",
+        "test result: FAILED. 1237 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 281.18s",
+        "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.json",
+      "sha256": "6e1ae5410f08807253d54b49fa21e6af32de4b3a30f605f2632289b07ccd4888",
+      "bytes": 323,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": []
+    },
+    {
+      "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/main-window-related.log",
+      "sha256": "3bfaa6eac4846c2d2ba00d0cddef2d5c2cffd78c93a5207f5249076437e7115c",
+      "bytes": 45558,
+      "encoding": "utf-16",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.42s",
+        "thread 'main_window::archive_page_tests::archive_settings_official_search_never_saves' (11600) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\archive_page_tests.rs:205:5:",
+        "test result: FAILED. 185 passed; 1 failed; 0 ignored; 0 measured; 1051 filtered out; finished in 92.13s",
+        "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-command-naming/evidence/logs/main-window-related.log",
+      "sha256": "ab9f8d3086afd7e4e3abf81b839d7567537a9256383e6fcd09ac9040e4b82f31",
+      "bytes": 29303,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 05s",
+        "thread 'main_window::extensions_page::removal::tests::expansion_storage_retained_data_remains_reachable_without_installed_package_and_clear_needs_review' (89792) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+        "thread 'main_window::extensions_page::removal::tests::expansion_storage_retained_restore_requires_fresh_confirmation_and_preserves_values' (83380) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+        "thread 'main_window::extensions_page::removal::tests::expansion_storage_retained_stale_confirmation_and_busy_cancel_keep_data' (87408) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+        "thread 'main_window::extensions_page::removal::tests::expansion_storage_ui_keyboard_clear_choice_and_dialog_cancel_preserve_data' (71972) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+        "thread 'main_window::extensions_page::removal::tests::expansion_storage_ui_paged_metadata_last_action_and_keyboard_confirmation_fit' (84564) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+        "thread 'main_window::extensions_page::removal::tests::expansion_storage_ui_remove_waits_for_actual_io_without_blocking_view' (91760) panicked at rust\\apps\\nxtools-desktop\\src\\main_window\\extensions_page\\removal_tests.rs:72:10:",
+        "test result: FAILED. 206 passed; 6 failed; 0 ignored; 0 measured; 1087 filtered out; finished in 106.50s",
+        "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/workspace-fmt-02.log",
+      "sha256": "a10dc64199ab961c0535764cd091414b0fe073b07319888ac77a799bff365e58",
+      "bytes": 32405,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:6:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:20:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:29:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:37:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:55:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:72:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:88:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\main_window\\page_rem_tests.rs:96:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:1:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:5:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:94:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\blacklist.rs:224:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:5:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:12:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:19:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:30:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:38:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:46:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:59:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:68:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:75:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:94:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:105:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:113:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:117:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:123:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:127:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:136:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings\\page_rem_tests.rs:143:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1135:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1184:",
+        "Diff in \\\\?\\D:\\Code\\NxTools.Next-main\\rust\\apps\\nxtools-desktop\\src\\network_settings.rs:1201:"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-production.log",
+      "sha256": "4e6447e59baf8441caaeafc0f9afc2f68dbbd6e426c44a5781cfff1563ead614",
+      "bytes": 1023,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "error: unused import: `SPACING_12`",
+        "error: field `animated` is never read",
+        "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\") due to 2 previous errors"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-production.json",
+      "sha256": "e9acd3ef2f502b22ae15738e984c99c211193cb3f0570d804c0ade1f67b43a5c",
+      "bytes": 639,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": []
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-tests-final.log",
+      "sha256": "b2b3b00aa15d4d9ded636c917cd27381285f130276722af2829c13babd66fa05",
+      "bytes": 163,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 44.16s"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/desktop-strict-tests-final.json",
+      "sha256": "41565e4a05ccd4329151934712911ac52ba0dc7a8aae2821041b816b367bcd69",
+      "bytes": 624,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": []
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/workspace-check-final.log",
+      "sha256": "0ef2951ca7d3431ff5d00156c847a7a4dff40f05873aa2cc15f9b396c29aacc6",
+      "bytes": 1052,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "warning: unused import: `SPACING_12`",
+        "warning: field `animated` is never read",
+        "warning: `nxtools-desktop` (bin \"nxtools-desktop\") generated 2 warnings (run `cargo fix --bin \"nxtools-desktop\" -p nxtools-desktop` to apply 1 suggestion)",
+        "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 13.94s"
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/workspace-check-final.json",
+      "sha256": "4a4615a9ea8775498432d6c5fe6961cc9c0e094006fefb4b0006fef9e593bb4d",
+      "bytes": 588,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": []
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-retained-text/evidence/commands/baseline-blocker-attribution.json",
+      "sha256": "235d6085817f1b80a9260141a20b4a6835b8ae50bfdb4f4539612a9dba72832c",
+      "bytes": 1109,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": []
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/commands/quick-full-source-final.log",
+      "sha256": "81649343f92fe8b88c9a1249837d0bcaebe47741bf60d6fd3eddc5f4f8e97adf",
+      "bytes": 551,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "QL-11 custom commands must use the shared tokenized master-detail editor contract.",
+        "+         throw 'QL-11 custom commands must use the shared tokenized ma ...",
+        "    + FullyQualifiedErrorId : QL-11 custom commands must use the shared tokenized master-detail editor contract."
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/commands/release-chain-final.log",
+      "sha256": "b4f477b068e809cecbd97d4423f59443f7bff7d2c016df73c72aa7f5188db3df",
+      "bytes": 5939,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": [
+        "PASS Quick Launch release-chain SourceOnly: 100 assertions; 26 broken chains + 73 retained security predicates; no product/native command executed."
+      ]
+    },
+    {
+      "path": ".trellis/tasks/10-26-quick-source-release-chain/evidence/commands/check-results.json",
+      "sha256": "0bfcb4f457efa6647a8d7a7aa357dca913305712f3d2d69ba29bb5b58d198558",
+      "bytes": 3382,
+      "encoding": "utf-8-sig",
+      "evidence_level": "HISTORICAL_NOT_RERUN",
+      "signals": []
+    }
+  ]
+}

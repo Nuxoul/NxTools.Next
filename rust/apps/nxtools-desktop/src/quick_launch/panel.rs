@@ -2,6 +2,7 @@ use super::*;
 use crate::ui::metrics::SPACING_4;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::Input;
+use gpui_kit::component::tooltip::Tooltip;
 
 /// Keep keyboard focus/ring outside the fixed 40/26/48 content rails.
 pub(super) fn quick_launch_focusable_row(
@@ -44,13 +45,13 @@ pub(crate) struct QuickLaunchPanel {
     pub(crate) application: WeakEntity<QuickLaunchApplication>,
     pub(crate) target: nxtools_protocol::ForegroundContext,
     pub(crate) navigation_context: Option<nxtools_protocol::DirectoryNavigationContext>,
-    pub(crate) results: Vec<SearchResult>,
+    pub(crate) results: QuickLaunchResults,
     pub(crate) selected: usize,
     pub(crate) action_mode: Option<QuickLaunchActionMode>,
     pub(crate) recent_directory_mode: bool,
     pub(crate) recent_directories: Vec<RecentDirectory>,
     pub(crate) search_input: Entity<InputState>,
-    pub(crate) status: Option<String>,
+    pub(crate) status: Option<gpui_kit::SharedString>,
     pub(crate) icons: HashMap<String, PathBuf>,
     pub(crate) is_open: bool,
     pub(crate) results_visible: bool,
@@ -72,8 +73,6 @@ pub(crate) fn quick_launch_row_shell(theme: Theme, selected: bool) -> Div {
         .w_full()
         .h(px(COMPACT_RESULT_ROW_HEIGHT))
         .px(px(SPACING_8))
-        .border_l_2()
-        .border_color(if selected { theme.accent } else { theme.canvas })
         .flex()
         .items_center()
         .gap(px(SPACING_8))
@@ -124,7 +123,8 @@ impl QuickLaunchPanel {
                         this.search_pending = false;
                     } else if this.recent_directory_mode {
                         this.selected = 0;
-                        this.results = recent_directory_results(&this.recent_directories, &query);
+                        this.results =
+                            recent_directory_results(&this.recent_directories, &query).into();
                         this.search_pending = false;
                         this.reset_presented_results();
                         this.result_scroll
@@ -202,7 +202,7 @@ impl QuickLaunchPanel {
             application,
             target,
             navigation_context,
-            results,
+            results: results.into(),
             selected: 0,
             action_mode: None,
             recent_directory_mode: false,
@@ -242,7 +242,7 @@ impl QuickLaunchPanel {
         self.dismiss_preview(cx);
         self.target = target;
         self.navigation_context = navigation_context;
-        self.results = results;
+        self.results = results.into();
         self.icons.clear();
         self.selected = 0;
         self.action_mode = None;
@@ -342,16 +342,18 @@ impl QuickLaunchPanel {
                 pending: false,
             });
         self.search_pending = update.pending;
-        if apply_search_update(&mut self.results, update.results, update.pending) {
+        let mut committed = Vec::new();
+        if apply_search_update(&mut committed, update.results, update.pending) {
             self.selected = 0;
+            self.results = committed.into();
+            self.retain_icons_for_results();
+            self.reset_presented_results();
+            self.pointer_selection_gate.reset();
             self.result_scroll
                 .0
                 .borrow()
                 .base_handle
                 .set_offset(point(px(0.0), px(0.0)));
-            self.reset_presented_results();
-            self.retain_icons_for_results();
-            self.pointer_selection_gate.reset();
         }
         cx.notify();
     }
@@ -379,7 +381,7 @@ impl QuickLaunchPanel {
         }
         self.dismiss_preview(cx);
         self.recent_directory_mode = true;
-        self.results = results;
+        self.results = results.into();
         self.selected = 0;
         self.search_pending = false;
         self.reset_presented_results();
@@ -783,13 +785,28 @@ impl QuickLaunchPanel {
     }
 
     pub(crate) fn replace_results(&mut self, results: Vec<SearchResult>, cx: &mut Context<Self>) {
-        self.dismiss_preview(cx);
-        self.selected = selection_after_results_refresh(&self.results, self.selected, &results);
-        self.results = results;
+        let previous = self
+            .results
+            .get(self.selected)
+            .map(|result| result.entry.id.clone());
+        let visible_range = self.visible_result_range.clone();
+        let selected = selection_after_results_refresh(&self.results, self.selected, &results);
+        let preserved = previous.as_ref().is_some_and(|id| {
+            results
+                .get(selected)
+                .is_some_and(|result| &result.entry.id == id)
+        });
+        if !preserved {
+            self.dismiss_preview(cx);
+        }
+        self.selected = selected;
+        self.results = results.into();
         self.retain_icons_for_results();
         self.reset_presented_results();
-        self.result_scroll
-            .scroll_to_item(self.selected, ScrollStrategy::Center);
+        if !preserved || (!visible_range.is_empty() && !visible_range.contains(&selected)) {
+            self.result_scroll
+                .scroll_to_item(selected, ScrollStrategy::Center);
+        }
         self.search_pending = false;
         self.status = None;
         cx.notify();
@@ -1006,8 +1023,8 @@ impl QuickLaunchPanel {
 
     /// Query/engine health stays attached to the last-good search results.
     pub(crate) fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
-        self.search_pending = false;
-        self.status = Some(message);
+        self.search_pending &= !self.results.is_empty();
+        self.status = Some(message.into());
         cx.notify();
     }
 
@@ -1084,13 +1101,14 @@ impl QuickLaunchPanel {
         index: usize,
         visible_position: usize,
         result: &SearchResult,
-        query: String,
+        query: gpui_kit::SharedString,
         panel: WeakEntity<QuickLaunchPanel>,
         render: (&mut Window, &mut App),
     ) -> AnyElement {
         let (window, cx) = render;
         let theme = self.theme;
-        let selected = index == self.selected;
+        let stale = self.search_pending;
+        let selected = !stale && index == self.selected;
         let source = result.entry.source;
         let click_action = if self.recent_directory_mode {
             recent_directory_navigation_action(result, self.navigation_context.as_ref())
@@ -1098,7 +1116,7 @@ impl QuickLaunchPanel {
             Some(quick_launch_primary_action(result, false, false))
         };
         let preview_application = self.application.clone();
-        let preview_result = result.clone();
+        let preview_results = self.results.clone();
         let pointer_panel = panel.clone();
         let press_panel = panel.clone();
         let right_click_panel = panel.clone();
@@ -1106,13 +1124,15 @@ impl QuickLaunchPanel {
         let click_panel = panel;
         let icon_path = self.icons.get(&result.entry.id).cloned();
         let has_icon_path = icon_path.is_some();
-        let subtitle = if let Some(subtitle) = &result.subtitle {
-            subtitle.clone()
-        } else if result.copy_text().is_some() {
-            "按 Enter 复制结果".to_owned()
-        } else {
-            result.entry.target.clone()
-        };
+        let display = self.results.display(index);
+        let subtitle = display.subtitle.clone();
+        let title = display.title.clone();
+        let full_label = display.accessible.clone();
+        #[cfg(test)]
+        {
+            super::retained_text_tests::observe(format!("result-title-{index}"), &title);
+            super::retained_text_tests::observe(format!("result-subtitle-{index}"), &subtitle);
+        }
         let shortcut_hint = quick_launch_shortcut_hint(visible_position);
         let name_highlights = if result
             .subtitle
@@ -1124,6 +1144,7 @@ impl QuickLaunchPanel {
             quick_launch_match_ranges(&result.entry.name, &query)
         }
         .into_iter()
+        .filter(|_| !stale)
         .map(|range| {
             (
                 range,
@@ -1137,14 +1158,21 @@ impl QuickLaunchPanel {
         .collect::<Vec<_>>();
         let row = quick_launch_row_shell(theme, selected)
             .id(("quick-launch-result", index))
-            .active(move |row| row.bg(theme.surface_pressed))
+            .when(!stale, |row| {
+                row.active(move |row| row.bg(theme.surface_pressed))
+            })
             .debug_selector(move || format!("quick-launch-result-row-{index}"))
-            .cursor_pointer()
+            .when(!stale, |row| row.cursor_pointer())
             .on_hover(move |hovered, window, cx| {
+                if stale {
+                    return;
+                }
                 let entered = *hovered;
                 let panel_bounds = window.bounds();
                 let panel_scale_factor = window.scale_factor();
-                let result = preview_result.clone();
+                let Some(result) = preview_results.get(index).cloned() else {
+                    return;
+                };
                 schedule_application_update(
                     preview_application.clone(),
                     move |application, cx| {
@@ -1159,22 +1187,25 @@ impl QuickLaunchPanel {
                     cx,
                 );
             })
-            .on_mouse_move(move |event, _window, cx| {
-                let position = (event.position.x.as_f32(), event.position.y.as_f32());
-                let _ = pointer_panel.update(cx, |panel, cx| {
-                    panel.pointer_moved_result(index, position, cx);
-                });
-            })
-            .on_mouse_down(gpui_kit::MouseButton::Left, move |_event, _window, cx| {
-                let _ = press_panel.update(cx, |panel, cx| {
-                    panel.select_result(index, cx);
-                });
-            })
-            .on_mouse_down(gpui_kit::MouseButton::Right, move |_event, window, cx| {
-                let _ = right_click_panel.update(cx, |panel, cx| {
-                    panel.enter_action_mode(index, window, cx);
-                });
-                cx.stop_propagation();
+            .when(!stale, |row| {
+                row.on_mouse_move(move |event, _window, cx| {
+                    let position = (event.position.x.as_f32(), event.position.y.as_f32());
+                    let _ = pointer_panel.update(cx, |panel, cx| {
+                        panel.pointer_moved_result(index, position, cx);
+                    });
+                })
+                .on_mouse_down(gpui_kit::MouseButton::Left, move |_event, _window, cx| {
+                    let _ = press_panel.update(cx, |panel, cx| panel.select_result(index, cx));
+                })
+                .on_mouse_down(
+                    gpui_kit::MouseButton::Right,
+                    move |_event, window, cx| {
+                        let _ = right_click_panel.update(cx, |panel, cx| {
+                            panel.enter_action_mode(index, window, cx);
+                        });
+                        cx.stop_propagation();
+                    },
+                )
             })
             .child(
                 div()
@@ -1219,12 +1250,9 @@ impl QuickLaunchPanel {
                             .h(px(LINE_HEIGHT_BODY))
                             .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_BODY))
-                            .text_color(theme.text)
+                            .text_color(if stale { theme.text_muted } else { theme.text })
                             .truncate()
-                            .child(
-                                StyledText::new(result.entry.name.clone())
-                                    .with_highlights(name_highlights),
-                            ),
+                            .child(StyledText::new(title).with_highlights(name_highlights)),
                     )
                     .child(
                         div()
@@ -1232,7 +1260,11 @@ impl QuickLaunchPanel {
                             .h(px(LINE_HEIGHT_LABEL))
                             .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_LABEL))
-                            .text_color(theme.text_secondary)
+                            .text_color(if stale {
+                                theme.text_muted
+                            } else {
+                                theme.text_secondary
+                            })
                             .truncate()
                             .child(subtitle),
                     ),
@@ -1255,7 +1287,7 @@ impl QuickLaunchPanel {
         let row = quick_launch_focusable_row(
             gpui_kit::SharedString::from(format!("quick-launch-result-focus-{}", result.entry.id)),
             theme,
-            click_action.is_none(),
+            click_action.is_none() || stale,
             row,
             window,
             cx,
@@ -1274,6 +1306,8 @@ impl QuickLaunchPanel {
                 });
             },
         )
+        .aria_label(full_label.clone())
+        .tooltip(move |window, cx| Tooltip::new(full_label.clone()).build(window, cx))
         .on_key_down(move |event, window, cx| {
             if event.keystroke.modifiers.modified()
                 || !matches!(
@@ -1327,6 +1361,9 @@ impl QuickLaunchPanel {
         let navigation_panel = panel.clone();
         let click_panel = panel;
         let section_label = item.section_label.clone();
+        let label = item.label.clone();
+        #[cfg(test)]
+        super::retained_text_tests::observe(format!("action-label-{index}"), &label);
         let divider_before = item.divider_before;
         let row = quick_launch_row_shell(theme, selected)
             .id(("quick-launch-action", index))
@@ -1388,7 +1425,7 @@ impl QuickLaunchPanel {
                                 theme.text_muted
                             })
                             .truncate()
-                            .child(item.label.clone()),
+                            .child(label),
                     ),
             )
             .child(
@@ -1466,6 +1503,8 @@ impl QuickLaunchPanel {
                     .border_color(theme.border_subtle)
             })
             .when_some(section_label, |container, label| {
+                #[cfg(test)]
+                super::retained_text_tests::observe(format!("action-section-{index}"), &label);
                 container.child(
                     div()
                         .h(px(24.0))
@@ -1493,7 +1532,7 @@ impl Render for QuickLaunchPanel {
         let panel = cx.entity().downgrade();
         let recent_button_panel = panel.clone();
         let preview_scroll_application = self.application.clone();
-        let query = self.search_input.read(cx).value().to_string();
+        let query = self.search_input.read(cx).value();
         let recent_button_visible = !self.recent_directories.is_empty()
             && self.navigation_context.is_some()
             && self.action_mode.is_none()
@@ -1501,8 +1540,8 @@ impl Render for QuickLaunchPanel {
         let recent_directory_mode = self.recent_directory_mode;
         let action_target = self.action_mode.as_ref().map(|mode| {
             (
-                mode.title().to_string(),
-                mode.target().entry.name.clone(),
+                mode.title(),
+                mode.target_title.clone(),
                 mode.shell_pending(),
             )
         });
@@ -1516,6 +1555,11 @@ impl Render for QuickLaunchPanel {
             Vec::new()
         };
         let result_surface = if let Some((level_title, target, pending)) = action_target {
+            #[cfg(test)]
+            {
+                super::retained_text_tests::observe("action-level-title".into(), &level_title);
+                super::retained_text_tests::observe("action-target-title".into(), &target);
+            }
             div()
                 .id("quick-launch-actions-scroll")
                 .flex_1()
@@ -1569,7 +1613,7 @@ impl Render for QuickLaunchPanel {
             div()
                 .flex_1()
                 .min_h_0()
-                .when(self.search_pending, |container| {
+                .when(self.search_pending && self.status.is_none(), |container| {
                     container.child(progress_state(
                         theme,
                         "quick-launch-results-progress",
@@ -1577,7 +1621,16 @@ impl Render for QuickLaunchPanel {
                         "正在合并应用、本地文件与系统工具结果。",
                     ))
                 })
-                .when(!self.search_pending, |container| {
+                .when(self.status.is_some(), |container| {
+                    container.child(empty_state(
+                        theme,
+                        "quick-launch-results-unavailable",
+                        MaterialIcon::Info,
+                        "搜索暂不可用",
+                        "检查索引服务后重试；下方显示具体原因。",
+                    ))
+                })
+                .when(!self.search_pending && self.status.is_none(), |container| {
                     container.child(empty_state(
                         theme,
                         "quick-launch-results-empty",
@@ -1761,6 +1814,8 @@ impl Render for QuickLaunchPanel {
             )
             .when(self.results_visible, |panel| panel.child(result_surface))
             .when_some(self.status.clone(), |panel, status| {
+                #[cfg(test)]
+                super::retained_text_tests::observe("status".into(), &status);
                 panel.child(
                     div()
                         .absolute()

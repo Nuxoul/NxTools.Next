@@ -1,0 +1,10 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Single-Cargo memory environment, evidence levels and no unapproved native/release operations"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Follow owning quality-guidelines.md with explicit bounded reads; the full file exceeds injection size. Check actual production geometry/actions/generations/leases, not helper-only checks"}
+{"file":".trellis/spec/nxtools-core/backend/database-guidelines.md","reason":"Locked latest-section merge and failure/no-overwrite regressions"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Actual parser/owning callback cross-language boundary and bounded DTO tests"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Follow native-contracts.md relevant window/OLE/fixture sections with explicit bounded reads; full file exceeds injection size. Check passive native readback, fixed worker and actual cleanup"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Actual official forms/controls, user-requested tiles, variant/parent adaptation"}
+{"file":"docs/reference-code/assistant.md","reason":"Legacy preservation and newly requested behavior acceptance"}
+{"file":".trellis/tasks/10-23-floating-assistant/research/current-next.md","reason":"Native OLE receiver feasibility, current owner reuse and scope boundary"}
+{"file":".trellis/spec/platformhost/floating-assistant.md","reason":"Current source/native/action/edge/environment contracts and dedicated lifecycle gate; physical acceptance remains separate"}
+{"file":".trellis/tasks/10-23-floating-assistant/implementation-checkpoint.md","reason":"Current Phase D evidence and resolved historical settings compile blocker"}

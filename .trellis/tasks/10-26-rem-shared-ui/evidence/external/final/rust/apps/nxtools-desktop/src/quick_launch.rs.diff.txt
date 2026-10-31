@@ -1,0 +1,35 @@
+--- task-start
++++ independent-observed
+@@ -426,12 +426,32 @@
+         (self.config.clone(), self.config_path.clone())
+     }
+ 
++    pub(crate) fn refresh_extension_storage_metadata(
++        &mut self,
++        packages: &nxtools_extensions::PackageRegistry,
++        cx: &mut Context<Self>,
++    ) {
++        if crate::extensions::service::refresh_storage_metadata(
++            &mut self.config.extensions,
++            packages,
++        ) {
++            // Metadata-only projection must not cancel current provider requests/results.
++            cx.notify();
++        }
++    }
+     pub(crate) fn apply_extension_snapshot(
+         &mut self,
+         packages: nxtools_extensions::PackageRegistry,
+         cx: &mut Context<Self>,
+     ) {
+         self.cancel_extension_providers();
++        let mut packages = packages;
++        if let Some(current) = cx
++            .try_global::<crate::extensions::ui_host::ExtensionServiceGlobal>()
++            .and_then(|global| global.0.runtime.snapshot().ok())
++        {
++            crate::extensions::service::refresh_storage_metadata(&mut packages, &current);
++        }
+         self.config.extensions = packages;
+         self.refresh_indexed_results(cx);
+         cx.notify();

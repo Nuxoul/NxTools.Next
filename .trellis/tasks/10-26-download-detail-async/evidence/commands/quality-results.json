@@ -1,0 +1,26 @@
+﻿[
+    {
+        "exit":  0,
+        "name":  "strict-desktop-tests"
+    },
+    {
+        "exit":  1,
+        "name":  "strict-desktop-production"
+    },
+    {
+        "exit":  0,
+        "name":  "strict-download-tests"
+    },
+    {
+        "exit":  0,
+        "name":  "strict-download-production"
+    },
+    {
+        "exit":  0,
+        "name":  "workspace-check"
+    },
+    {
+        "exit":  1,
+        "name":  "workspace-fmt"
+    }
+]

@@ -1,0 +1,18 @@
+{
+  "path": "docs/reference-code/archive.md",
+  "baseline_sha256": "c0ef4510ed738d0b9c8b554d6737cb3837380a85fd6ab4075b74305fa3f1479a",
+  "delivery_sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 735,
+      "baseline_end": 735,
+      "delivery_start": 735,
+      "delivery_end": 770,
+      "baseline_text": "",
+      "delivery_text": "\n## 2026-10-25 — audit #4 decision-object display (bounded implementation index)\n\nThis is stabilization within `Phase A — Engine contracts and safety foundation`, not phase/UI\nacceptance. Re-read allowed Bandizip `langs/SimpChinese.lang:579`–588: existing/incoming labels,\nSkip/Overwrite/Rename/apply-all are resource evidence only, not live layout/native behavior.\nRe-read licensed Archiver `core/src/lib.rs:230` decoder and `:665` single-file final `File::create`;\nthat truncating output/progress-name callback is NOT a safe confirmation or publication source.\nNo old general NxTools archive UI was identified in the existing tracked-source investigation.\n\nVerified current producer chain: formats ZIP/TAR/standalone Gzip/BZip2/XZ/Zstd and isolated\n7z/RAR `begin_extracted_file` -> `worker_output.rs::PrivateOutput` (ordinary format receives\nplan-prefixed target; isolated codec maps the current member through `planned_unique`) ->\n`worker_conflict.rs::ExtractionConflict::begin` -> original InteractionPort pending ticket ->\nprivate conflict frame -> `ArchiveJobSession.OnFrame/Prompt` -> `ArchiveJobEvent` -> original\nDesktop job record/`refresh_job` -> `ProgressSnapshot` -> `JobProgressView::show_prompt`.\nCreateOverwrite uses `ArchiveWorkerRunner.ExecuteAsync` original native observation and\n`ArchiveJobSession.ConfirmCreateOverwrite`, bound to the immutable operation Command's\nDestination/Create.Name, not progress/selection. `ArchiveJobSession.Reply`, Desktop `reply_job`\nand original InteractionPort retain single reply/ticket/generation/cancel authority.\n\nDisplay strings are UI-only snapshots, never an output path grant or native token. Preserve\nsource revision/ordinal, plan/path validation, native observed identity/signature, budgets,\ntemporary verified output/publication, password clearing and original cleanup-bound lifetime.\nNew optional display is omitted when absent; new receivers accept old payloads with explicit\nunavailable-object fallback. Old strict receivers reject new populated fields: no mixed-version\ncompatibility claim, unknown-field relaxation or version change. New payload Debug/ToString\nmust redact the names; fixed correlated production diagnostics remain unchanged.\n\nExact released Component0.8.0 `dialog/dialog.rs:735` limits the Dialog to viewport, `:769`–786\nscrolls body separately from footer. `description_list.rs::vertical/columns/item` provides read-only\nmetadata slots. Keep original official Button/Checkbox and Dialog close/confirm/deferred reply\nowners and 560x300/default,480x260/min native client. Task evidence belongs to\n`.trellis/tasks/10-25-archive-prompt-object/`; source/compiled/synthetic is not physical/native,\nreader/DPI/visual or user acceptance.\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

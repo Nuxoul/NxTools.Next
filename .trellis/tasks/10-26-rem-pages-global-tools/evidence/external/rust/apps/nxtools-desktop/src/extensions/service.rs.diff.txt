@@ -1,0 +1,47 @@
+--- task-start
++++ independent-observed
+@@ -263,15 +263,42 @@
+         path: &std::path::Path,
+         operation: impl FnOnce(&std::path::Path) -> anyhow::Result<nxtools_core::AppConfig>,
+     ) -> anyhow::Result<(nxtools_core::AppConfig, bool)> {
++        self.commit_config_with_result(path, |path| operation(path).map(|config| (config, ())))
++            .map(|(config, applied, ())| (config, applied))
++    }
++    /// The durable result remains distinct from runtime application and physical cleanup.
++    pub(crate) fn commit_config_with_result<T>(
++        &self,
++        path: &std::path::Path,
++        operation: impl FnOnce(&std::path::Path) -> anyhow::Result<(nxtools_core::AppConfig, T)>,
++    ) -> anyhow::Result<(nxtools_core::AppConfig, bool, T)> {
+         let _publication = self
+             .publication
+             .lock()
+             .map_err(|_| anyhow::anyhow!("extension publication unavailable"))?;
+-        let config = operation(path)?;
++        let (config, result) = operation(path)?;
+         let applied = self
+             .publish_locked(config.extensions.clone(), || {})
+             .is_ok();
+-        Ok((config, applied))
++        Ok((config, applied, result))
++    }
++    /// Background-only read/clear review shares the original publication barrier with bind.
++    pub(crate) fn with_storage_management<T>(
++        &self,
++        operation: impl FnOnce(&nxtools_extensions::storage::StorageOwner) -> anyhow::Result<T>,
++    ) -> anyhow::Result<T> {
++        let _publication = self
++            .publication
++            .lock()
++            .map_err(|_| anyhow::anyhow!("extension publication unavailable"))?;
++        let storage = self
++            .storage
++            .as_ref()
++            .ok_or(nxtools_extensions::storage::StorageError::Unavailable)?;
++        operation(&storage.owner)
++    }
++    pub(crate) fn storage_owner(&self) -> Option<nxtools_extensions::storage::StorageOwner> {
++        self.storage.as_ref().map(|storage| storage.owner.clone())
+     }
+     pub(crate) fn subscribe_storage_metadata(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+         self.storage.as_ref().map(|storage| storage.subscribe())

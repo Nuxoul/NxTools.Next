@@ -1,0 +1,7 @@
+﻿{
+    "name":  "workspace-fmt-import-clean",
+    "command":  "cargo fmt --all -- --check",
+    "exit":  0,
+    "elapsed":  8.6102493999999989,
+    "finished":  "2026-10-26T07:07:26.1570546+08:00"
+}

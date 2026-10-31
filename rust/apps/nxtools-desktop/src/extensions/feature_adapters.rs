@@ -1,3 +1,8 @@
+#[path = "pages.rs"]
+mod pages;
+#[cfg(test)]
+#[path = "pages_tests.rs"]
+mod pages_tests;
 use crate::clipboard::extension_adapter::{
     ClipboardExtensionAdapter, ClipboardExtensionContent, ClipboardExtensionSnapshot,
     ClipboardExtensionSnapshotContent,
@@ -29,6 +34,7 @@ pub(crate) struct FeatureAdapters {
     blocking: Arc<Semaphore>,
     pub(super) manual_effects: super::manual_runs::ManualEffects,
     clipboard_writes: Arc<Semaphore>,
+    cursors: Arc<std::sync::Mutex<nxtools_extensions::PageCursors>>,
 }
 impl FeatureAdapters {
     pub(crate) fn new(
@@ -43,11 +49,15 @@ impl FeatureAdapters {
             blocking: Arc::new(Semaphore::new(4)),
             manual_effects: Default::default(),
             clipboard_writes: Arc::new(Semaphore::new(4)),
+            cursors: Default::default(),
         }
     }
     async fn dispatch(&self, context: &HostContext, method: &str, params: Value) -> HostReply {
         if *context.cancellation.borrow() {
             return HostReply::error("cancelled");
+        }
+        if method == "clipboard.query_page" {
+            return self.clipboard_page(context, params).await;
         }
         if method.starts_with("downloads.") {
             return self.download(context, method, params).await;
@@ -133,6 +143,7 @@ impl FeatureAdapters {
                 | "clipboard.copy"
                 | "quick_launch.query"
                 | "quick_launch.search"
+                | "quick_launch.search_catalog"
         ) {
             return HostReply::error("unsupported");
         }
@@ -187,12 +198,15 @@ impl FeatureAdapters {
         // Dropping the awaiting host future must retire the real engine operation, not only
         // detach its blocking JoinHandle. The blocking closure owns its permit until it exits.
         let cancellation_guard = CancelDownloadOnDrop(control.clone());
+        let cursors = self.cursors.clone();
+        let identity = context.identity.clone();
         let mut worker = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             if control.is_cancelled() {
                 return HostReply::error("cancelled");
             }
             match method.as_str() {
+                "downloads.list_page" => pages::download_page(&engine, &cursors, &identity, params),
                 "downloads.list" => {
                     let Ok(input) = serde_json::from_value::<List>(params) else {
                         return HostReply::error("invalid_params");
@@ -293,7 +307,20 @@ impl FeatureAdapters {
 }
 impl FeatureAdapter for FeatureAdapters {
     fn describe(&self) -> Value {
-        serde_json::json!({"version":1,"headless":self.ui.is_none(),"downloads":["list","get","probe","submit","enqueue","pause","resume","cancel"],"clipboard":if self.clipboard.is_some(){vec!["get","query","create_derived","copy"]}else{Vec::<&str>::new()},"ui":if self.ui.is_some(){vec!["common.open","common.program","common.copy","common.notify","quick_launch.query","quick_launch.search"]}else{Vec::<&str>::new()},"limits":{"frame_bytes":256*1024,"active_host_calls":8,"total_host_calls":64,"credential_native_bytes":2560}})
+        let mut description = serde_json::json!({"version":1,"headless":self.ui.is_none(),"downloads":["list","get","probe","submit","enqueue","pause","resume","cancel"],"clipboard":if self.clipboard.is_some(){vec!["get","query","create_derived","copy"]}else{Vec::<&str>::new()},"ui":if self.ui.is_some(){vec!["common.open","common.program","common.copy","common.notify","quick_launch.query","quick_launch.search"]}else{Vec::<&str>::new()},"limits":{"frame_bytes":256*1024,"active_host_calls":8,"total_host_calls":64,"credential_native_bytes":2560,"page_items":32,"page_bytes":128*1024,"cursor_ttl_ms":60000,"cursor_slots":128,"clipboard_content_bytes":128*1024,"clipboard_query_bytes":4096}});
+        description["methods"] =
+            nxtools_extensions::method_catalog(self.ui.is_some(), self.clipboard.is_some(), false);
+        description["search_scope"] = serde_json::json!({"quick_launch.search":"local_catalog","indexed_files":false,"script_providers":false});
+        description
+    }
+    fn describe_for(&self, context: &HostContext) -> Value {
+        let mut description = self.describe();
+        description["methods"] = nxtools_extensions::method_catalog(
+            self.ui.is_some(),
+            self.clipboard.is_some(),
+            context.feature == "downloads" && context.entry == "resolve",
+        );
+        description
     }
     fn call<'a>(
         &'a self,
@@ -325,6 +352,16 @@ fn download_error_reply(error: nxtools_download::DownloadEngineError) -> HostRep
         DownloadEngineError::Resolution(
             DownloadResolutionError::ResolutionRequired | DownloadResolutionError::IdentityChanged,
         ) => "resolution_required",
+        DownloadEngineError::InvalidRequest(_) => "invalid_request",
+        DownloadEngineError::TaskNotFound(_) => "task_unavailable",
+        DownloadEngineError::InvalidAction { .. } | DownloadEngineError::RetryNotAllowed(_) => {
+            "invalid_state"
+        }
+        DownloadEngineError::Storage(_) => "storage_failed",
+        DownloadEngineError::NetworkPolicy(_) | DownloadEngineError::DownloadHttpPolicy(_) => {
+            "network_policy"
+        }
+        DownloadEngineError::Http(_) => "network_failed",
         _ => "download_failed",
     })
 }
@@ -351,16 +388,20 @@ fn task_snapshot(task: &nxtools_download::DownloadEngineTask) -> Value {
     serde_json::json!({"task_id":task.task.id(),"status":task.task.status(),"request":task.task.request(),"resolution":task.task.resolution()})
 }
 fn command_reply(result: nxtools_download::DownloadCommandResult) -> HostReply {
-    if !matches!(
-        result.outcome,
-        nxtools_download::DownloadCommandOutcome::Rejected { .. }
-    ) {
-        match serde_json::to_value(result) {
-            Ok(value) => success(value),
-            Err(_) => HostReply::error("download_failed"),
-        }
-    } else {
-        HostReply::error("download_failed")
+    if let nxtools_download::DownloadCommandOutcome::Rejected { fault } = &result.outcome {
+        let code = match fault.code {
+            nxtools_download::DownloadFaultCode::InvalidRequest => "invalid_request",
+            nxtools_download::DownloadFaultCode::NotFound => "task_unavailable",
+            nxtools_download::DownloadFaultCode::InvalidState => "invalid_state",
+            nxtools_download::DownloadFaultCode::ResolutionRequired => "resolution_required",
+            nxtools_download::DownloadFaultCode::Cancelled => "cancelled",
+            _ => "download_failed",
+        };
+        return HostReply::error(code);
+    }
+    match serde_json::to_value(result) {
+        Ok(value) => success(value),
+        Err(_) => HostReply::error("download_failed"),
     }
 }
 #[derive(Deserialize)]
@@ -621,7 +662,7 @@ mod tests {
             control: std::sync::Mutex::new(None),
         })
     }
-    fn download_context() -> (HostContext, tokio::sync::watch::Sender<bool>) {
+    pub(super) fn download_context() -> (HostContext, tokio::sync::watch::Sender<bool>) {
         let (cancel, cancellation) = tokio::sync::watch::channel(false);
         let root_id = uuid::Uuid::new_v4();
         (
@@ -640,6 +681,7 @@ mod tests {
                     .enter("fixture.host", "action")
                     .expect("fixture causality"),
                 cancellation,
+                blobs: None,
             },
             cancel,
         )
@@ -955,6 +997,7 @@ mod tests {
                 .enter("fixture.host", "action")
                 .expect("causality"),
             cancellation,
+            blobs: None,
         };
         let input = nxtools_download::DownloadRequest {
             source_url: "https://fixture.test/file".into(),

@@ -1,0 +1,145 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/volume_scope.rs
+@@ -8,7 +8,7 @@
+ 
+ use crate::theme::Theme;
+ use crate::ui::components::action::focusable_content;
+-use crate::ui::metrics::{RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12};
++use crate::ui::metrics::{RADIUS_CONTROL, ordinary_rem};
+ use crate::ui::typography::{
+     LINE_HEIGHT_WORKBENCH_BODY as LINE_HEIGHT_BODY,
+     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
+@@ -26,22 +26,22 @@
+     div()
+         .debug_selector(|| "quick-launch-volume-scope-setting".into())
+         .w_full()
+-        .py(px(SPACING_12))
++        .py_3()
+         .border_b_1()
+         .border_color(theme.border_subtle)
+         .flex()
+         .flex_col()
+-        .gap(px(SPACING_8))
++        .gap_2()
+         .child(
+             div()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_4))
++                .gap_1()
+                 .child(
+                     div()
+-                        .h(px(LINE_HEIGHT_BODY))
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .h(ordinary_rem(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .text_color(theme.text)
+                         .child("索引卷"),
+                 )
+@@ -80,7 +80,7 @@
+         .accessibility_label("自动包含全部 NTFS 卷")
+         .tooltip(|window, cx| Tooltip::new("新发现的卷会自动加入索引范围").build(window, cx))
+         .w_full()
+-        .h(px(VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT))
++        .h(ordinary_rem(VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT))
+         .py_0()
+         .cursor_pointer()
+         .border_b_1()
+@@ -92,7 +92,7 @@
+                 .w_full()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     Checkbox::new("quick-launch-volume-scope-automatic-checkbox")
+                         .checked(checked)
+@@ -105,13 +105,13 @@
+                         .flex_1()
+                         .flex()
+                         .items_center()
+-                        .gap(px(SPACING_4))
++                        .gap_1()
+                         .child(
+                             div()
+-                                .h(px(LINE_HEIGHT_BODY))
+-                                .text_size(px(TEXT_BODY))
++                                .h(ordinary_rem(LINE_HEIGHT_BODY))
++                                .text_size(ordinary_rem(TEXT_BODY))
+                                 .truncate()
+-                                .line_height(px(LINE_HEIGHT_BODY))
++                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                 .text_color(theme.text)
+                                 .child("自动包含全部 NTFS 卷"),
+                         ),
+@@ -154,7 +154,7 @@
+         .debug_selector(move || row_selector.clone())
+         .accessibility_label(title.clone())
+         .w_full()
+-        .h(px(VOLUME_SCOPE_ROW_HEIGHT))
++        .h(ordinary_rem(VOLUME_SCOPE_ROW_HEIGHT))
+         .py_0()
+         .cursor_pointer()
+         .when(show_divider, |row| {
+@@ -166,7 +166,7 @@
+                 .w_full()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     Checkbox::new(checkbox_id.clone())
+                         .checked(checked)
+@@ -176,12 +176,12 @@
+                 .child(
+                     div()
+                         .debug_selector(move || title_selector.clone())
+-                        .h(px(LINE_HEIGHT_BODY))
++                        .h(ordinary_rem(LINE_HEIGHT_BODY))
+                         .min_w_0()
+                         .flex_1()
+                         .truncate()
+-                        .text_size(px(TEXT_BODY))
+-                        .line_height(px(LINE_HEIGHT_BODY))
++                        .text_size(ordinary_rem(TEXT_BODY))
++                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                         .text_color(theme.text)
+                         .child(title),
+                 )
+@@ -189,13 +189,13 @@
+                     div()
+                         .id(SharedString::from(format!("{selector}-status")))
+                         .debug_selector(move || metadata_selector.clone())
+-                        .h(px(LINE_HEIGHT_LABEL))
+-                        .w(px(196.0))
++                        .h(ordinary_rem(LINE_HEIGHT_LABEL))
++                        .w(ordinary_rem(196.0))
+                         .min_w_0()
+                         .flex_none()
+                         .truncate()
+-                        .text_size(px(TEXT_LABEL))
+-                        .line_height(px(LINE_HEIGHT_LABEL))
++                        .text_size(ordinary_rem(TEXT_LABEL))
++                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                         .text_color(theme.text_muted)
+                         .tooltip(move |window, cx| {
+                             Tooltip::new(metadata_tooltip.clone()).build(window, cx)
+@@ -213,12 +213,12 @@
+     div()
+         .debug_selector(|| "quick-launch-volume-scope-empty".into())
+         .w_full()
+-        .h(px(VOLUME_SCOPE_ROW_HEIGHT))
+-        .px(px(SPACING_12))
++        .h(ordinary_rem(VOLUME_SCOPE_ROW_HEIGHT))
++        .px_3()
+         .flex()
+         .items_center()
+-        .text_size(px(TEXT_LABEL))
+-        .line_height(px(LINE_HEIGHT_LABEL))
++        .text_size(ordinary_rem(TEXT_LABEL))
++        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+         .text_color(theme.text_muted)
+         .child(message)
+         .into_any_element()

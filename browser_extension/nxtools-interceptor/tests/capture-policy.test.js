@@ -218,7 +218,7 @@ test("worker capture never trusts page-supplied request headers or persists cont
   assert.equal(browserOwned.referrerSource, policy.Sources.referrer.browser);
   assert.equal(browserOwned.headers.authorization, "browser value");
 
-  const background = fs.readFileSync(path.resolve(__dirname, "..", "background.js"), "utf8");
+  const background = require("./harness/background-source.cjs").backgroundSource();
   assert.doesNotMatch(background, /payload\.requestHeaders/);
   assert.match(background, /buildPageCaptureContext\(/);
   assert.match(background, /projectResourceForStorage\(resource\)/);

@@ -1,0 +1,19 @@
+﻿{
+    "diff":  0,
+    "files":  [
+                  "rust/apps/nxtools-desktop/src/downloads.rs",
+                  "rust/apps/nxtools-desktop/src/downloads/floating_assistant.rs",
+                  "rust/apps/nxtools-desktop/src/main_window.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/download_page/projection_tests.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/download_average_tests.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/tests.rs"
+              ],
+    "fmt":  0,
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    }
+}

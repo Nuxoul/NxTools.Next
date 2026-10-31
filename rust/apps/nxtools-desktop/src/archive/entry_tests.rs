@@ -98,6 +98,8 @@ fn ready_browser(
                 size: 10,
                 modified_unix_ns: 0,
             },
+            sevenz_edit: None,
+            tar_edit: None,
         });
         *id
     });
@@ -220,10 +222,15 @@ fn active_content_escape_clears_pending_without_materialize_or_shell(
     surface.simulate_keystrokes("escape");
     surface.run_until_parked();
     assert!(!view.read_with(&surface, |view, _| view.open_pending));
-    assert!(
-        endpoint.try_receive_command_for_contract_test().is_err(),
-        "consent cancel sends neither materialize nor Shell"
-    );
+    let mut icon_requests = 0;
+    while let Ok(wire) = endpoint.try_receive_command_for_contract_test() {
+        assert!(
+            matches!(wire.message, nxtools_protocol::Message::PlatformCommand(nxtools_protocol::PlatformCommand::ExtractShellIcon(command)) if command.target=="nxtools-file-type:.hta" && command.size==32),
+            "consent cancel sends neither materialize nor Shell"
+        );
+        icon_requests += 1;
+    }
+    assert!(icon_requests <= 1, "same file type is cached and bounded");
 }
 
 #[test]

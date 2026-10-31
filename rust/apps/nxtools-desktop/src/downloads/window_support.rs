@@ -235,6 +235,7 @@ pub(crate) fn completed_task_window_action(
         CompletedTaskWindowEmphasis::Primary => {
             crate::ui::components::action::primary_action_button(
                 spec.button_id,
+                "打开文件",
                 spec.label.unwrap_or_default(),
                 theme,
                 false,
@@ -246,31 +247,21 @@ pub(crate) fn completed_task_window_action(
             Some(label) => {
                 action_button(spec.button_id, label).icon(Icon::new(spec.icon).size(px(14.0)))
             }
-            None => icon_action_button(spec.button_id, spec.icon),
+            None => icon_action_button(spec.button_id, spec.icon, "拖拽下载文件"),
         }
         .outline(),
     };
     button.debug_selector(move || spec.role_selector.into())
 }
 
-pub(crate) fn download_window_titlebar(theme: Theme, title: &'static str) -> impl IntoElement {
-    div()
-        .h(px(34.0))
-        .pl(px(SPACING_16))
-        .border_b_1()
-        .border_color(theme.border_subtle)
-        .bg(theme.surface)
-        .window_control_area(WindowControlArea::Drag)
-        .flex()
-        .items_center()
-        .child(
-            div()
-                .flex_1()
-                .text_size(px(TEXT_BODY))
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(title),
-        )
-        .child(download_window_close_button(theme))
+pub(crate) fn download_window_titlebar(_theme: Theme, title: &'static str) -> impl IntoElement {
+    crate::ui::components::titlebar::controlled_titlebar(
+        "download-window-titlebar",
+        "download-window-close",
+        title,
+        crate::ui::components::titlebar::CaptionCapabilities::MINIMIZE,
+        |_, window, _| window.remove_window(),
+    )
 }
 
 pub(crate) fn download_settings_titlebar(
@@ -296,17 +287,6 @@ pub(crate) fn download_settings_titlebar(
             window.remove_window();
         },
     )
-}
-
-pub(crate) fn download_window_close_button(theme: Theme) -> impl IntoElement {
-    icon_action("download-window-close", MaterialIcon::Close, "关闭下载窗口")
-        .danger()
-        .ghost()
-        .w(px(40.0))
-        .text_color(theme.text_secondary)
-        .h(px(32.0))
-        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-        .on_click(|_, window, _| window.remove_window())
 }
 
 pub(crate) fn download_task_status(

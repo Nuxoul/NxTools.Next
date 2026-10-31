@@ -788,6 +788,25 @@ impl ClipboardCaptureWorkerHandle {
         .await
     }
 
+    pub(crate) async fn extension_page_async(
+        &self,
+        query: String,
+        cursor: Option<ClipboardPageCursor>,
+        revision: Option<String>,
+        limit: usize,
+    ) -> Result<Option<(nxtools_clipboard::ClipboardHistoryPage, String)>, ClipboardHistoryError>
+    {
+        self.async_request_inner(None, move |history| {
+            if let Some(revision) = revision.as_ref()
+                && history.mutation_revision()? != *revision
+            {
+                return Ok(None);
+            }
+            history.extension_page(&query, cursor, limit).map(Some)
+        })
+        .await
+    }
+
     pub(crate) async fn extension_get_async(
         &self,
         item_id: i64,

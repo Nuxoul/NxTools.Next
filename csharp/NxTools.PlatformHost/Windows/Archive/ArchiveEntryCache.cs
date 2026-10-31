@@ -4,11 +4,12 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Win32.SafeHandles;
 using NxTools.PlatformHost.Diagnostics;
+using NxTools.PlatformHost.Protocol;
 
 namespace NxTools.PlatformHost.Windows.Archive;
 
 // One selected file per GUID lease. Never recursive cleanup or Shell-process lifetime inference.
-internal sealed class ArchiveEntryCache : IDisposable
+internal sealed partial class ArchiveEntryCache : IDisposable
 {
     internal static readonly TimeSpan Retention = TimeSpan.FromHours(24);
     private readonly string cacheRoot;
@@ -18,7 +19,10 @@ internal sealed class ArchiveEntryCache : IDisposable
     private readonly HashSet<Guid> released = [];
     private readonly Queue<Guid> releasedOrder = new();
     private readonly Queue<Guid> localRetirements = new();
-    private IEnumerator<string>? sweep;
+    private readonly Dictionary<Guid, int> externalHolds = [];
+    private readonly Dictionary<Guid, (Guid Operation, Guid Session, ulong Generation)> releasedOwners = [];
+    private readonly Dictionary<string, IEnumerator<string>> sweeps = new(StringComparer.OrdinalIgnoreCase);
+    private int nextSweepRoot;
     private bool disposed;
     internal Task StartupCleanup { get; }
 
@@ -56,20 +60,28 @@ internal sealed class ArchiveEntryCache : IDisposable
         internal Guid Session => record.SessionId;
         internal ulong Generation => record.Generation;
         internal string Root { get; }
+        internal DateTimeOffset Expires => new(record.ExpiresUtcTicks, TimeSpan.Zero);
         private readonly List<SafeFileHandle> parents = [];
+        internal ArchiveTempPolicy Policy { get; } = ArchiveTempPolicy.Default;
         private SafeFileHandle? root;
         private FileStream? manifest;
         private ManifestRecord record = null!;
         private byte[] manifestBytes = [];
         private bool retirementRecord;
         private bool disposed;
+        private ArchiveSourceActivity.Reservation? sourceActivity;
+        internal void BindSourceActivity(ArchiveSourceActivity.Reservation reservation) {
+            if (disposed || sourceActivity is not null) throw new ArchiveOutputException("source_unavailable");
+            sourceActivity = reservation;
+        }
         private SafeFileHandle Base => parents[^1];
         private SafeFileHandle RootHandle => root ?? throw new ArchiveOutputException("source_unavailable");
         private string RetiredName => $"{Id:D}.retire.json";
 
-        internal Lease(string baseRoot, Guid id, Guid operation, Guid session, ulong generation, DateTimeOffset expires)
+        internal Lease(string baseRoot, Guid id, Guid operation, Guid session, ulong generation, DateTimeOffset expires, ArchiveTempPolicy policy)
         {
             Root = Path.Combine(baseRoot, id.ToString("D"));
+            Policy = policy;
             try {
                 using var prepared = ArchiveOutputSession.Open(baseRoot, operation);
                 OpenBase(baseRoot);
@@ -119,7 +131,7 @@ internal sealed class ArchiveEntryCache : IDisposable
             }
             if (record.Output is { } output) {
                 ValidateRelative(output.Relative);
-                if (output.Identity is null || output.Size is < 0 or > 536870912 || output.Digest is null || output.Digest.Length != 64 ||
+                if (output.Identity is null || output.Size is < 0 || output.Digest is null || output.Digest.Length != 64 ||
                     !output.Digest.All(Uri.IsHexDigit) || output.ZonePresent != (output.ZoneDigest is { Length: 64 }) ||
                     output.ZoneDigest is not null && !output.ZoneDigest.All(Uri.IsHexDigit)) throw new InvalidDataException();
             } else if (record.OutputRemoved && !record.Retired) throw new InvalidDataException();
@@ -144,9 +156,9 @@ internal sealed class ArchiveEntryCache : IDisposable
             var stream = manifest ?? throw new InvalidDataException();
             stream.Position = 0; stream.SetLength(0); stream.Write(manifestBytes); stream.Flush(true);
         }
-        private SafeFileHandle OpenOutput(string name, bool readOnly)
+        private SafeFileHandle OpenOutput(string name, bool readOnly, List<SafeFileHandle>? retainedParents = null)
         {
-            var parts = ValidateRelative(name); var held = new List<SafeFileHandle>();
+            var parts = ValidateRelative(name); var held = retainedParents ?? [];
             try {
                 var parent = RootHandle;
                 if (FileId.Read(parent) != record.RootIdentity) throw new ArchiveOutputException("source_changed");
@@ -157,7 +169,7 @@ internal sealed class ArchiveEntryCache : IDisposable
                     if ((record.Output is not null || expected is not null) && (expected is null || FileId.Read(next) != expected.Identity)) throw new ArchiveOutputException("source_changed");
                 }
                 return OutputNative.Open(parent, parts[^1], false, readOnly: readOnly, metadataCleanup: !readOnly);
-            } finally { foreach (var handle in held.AsEnumerable().Reverse()) handle.Dispose(); }
+            } finally { if (retainedParents is null) foreach (var handle in held.AsEnumerable().Reverse()) handle.Dispose(); }
         }
         internal void Seal(string output)
         {
@@ -166,7 +178,7 @@ internal sealed class ArchiveEntryCache : IDisposable
             var name = output[prefix.Length..].Replace('\\', '/'); var parts = ValidateRelative(name);
             using var handle = OpenOutput(name, true);
             var baseline = OutputNative.Identity(handle);
-            if (baseline.Size is < 0 or > 536870912) throw new ArchiveOutputException("resource_limit");
+            if (baseline.Size < 0) throw new ArchiveOutputException("resource_limit");
             using var stream = new FileStream(handle, FileAccess.Read);
             var attributes = ArchiveMetadataNative.Attributes(handle);
             var mark = ArchiveMotw.Read(handle); string? zoneDigest;
@@ -187,6 +199,47 @@ internal sealed class ArchiveEntryCache : IDisposable
             } finally { foreach (var directory in held.AsEnumerable().Reverse()) directory.Dispose(); }
             record = record with { Output = stamp, Directories = directories.Values.ToArray() }; Persist();
         }
+        private sealed class ShellOutputLease(SafeFileHandle handle, List<SafeFileHandle> ancestry) : IDisposable
+        {
+            public void Dispose() { handle.Dispose(); CloseChain(ancestry); }
+        }
+        internal IDisposable OpenShellOutput(out string path)
+        {
+            if (disposed || record.Retired || record.Output is not { } output || !MatchesManifest()) throw new ArchiveOutputException("source_unavailable");
+            var ancestry = OpenRootChain(Root); SafeFileHandle? handle = null;
+            try {
+                if (FileId.Read(ancestry[^1]) != record.RootIdentity) throw new ArchiveOutputException("source_changed");
+                handle = OpenOutput(output.Relative, true, ancestry);
+                var baseline = OutputNative.Identity(handle);
+                if (new FileId(baseline.Volume, baseline.IdLow, baseline.IdHigh) != output.Identity || baseline.Size != output.Size || baseline.Modified != output.Modified ||
+                    ArchiveMetadataNative.Attributes(handle) != output.Attributes) throw new ArchiveOutputException("source_changed");
+                var mark = ArchiveMotw.Read(handle);
+                try { if ((mark is not null) != output.ZonePresent || mark is not null && !CryptographicOperations.FixedTimeEquals(SHA256.HashData(mark), Convert.FromHexString(output.ZoneDigest!))) throw new ArchiveOutputException("source_changed"); }
+                finally { if (mark is not null) CryptographicOperations.ZeroMemory(mark); }
+                using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                var bytes = new byte[65536]; long offset = 0;
+                while (offset < output.Size) { var read = RandomAccess.Read(handle, bytes, offset); if (read == 0) throw new ArchiveOutputException("source_changed"); hash.AppendData(bytes, 0, read); offset += read; }
+                if (!CryptographicOperations.FixedTimeEquals(hash.GetHashAndReset(), Convert.FromHexString(output.Digest)) || OutputNative.Identity(handle) != baseline) throw new ArchiveOutputException("source_changed");
+                path = Path.Combine(Root, output.Relative.Replace('/', '\\'));
+                return new ShellOutputLease(handle, ancestry); // Keep the entire exact ancestry through native launch.
+            } catch { handle?.Dispose(); CloseChain(ancestry); throw; }
+        }
+        internal IntPtr OpenVirtualStream(long? expectedSize,CancellationToken cancellationToken,out long actualSize)
+        {
+            if(disposed||record.Retired||record.Output is not {} output||!MatchesManifest())throw new ArchiveOutputException("source_unavailable");
+            using var held=OpenOutput(output.Relative,true);
+            var stamp=OutputNative.Identity(held);
+            var expected=$"v2:{output.Identity.Volume:X}:{output.Identity.High:X16}{output.Identity.Low:X16}:{output.Size:X}:{output.Modified:X}:{output.Digest}";
+            if(ArchiveOutputSession.TargetIdentity(held,cancellationToken)!=expected||stamp.Size!=output.Size||expectedSize is {} size&&stamp.Size!=size)throw new ArchiveOutputException("source_changed");
+            cancellationToken.ThrowIfCancellationRequested();
+            var stable=OutputNative.StableDirectoryPath(held); // Final path of the exact held, verified FILE object.
+            var result=OpenNativeVirtualStream(stable,0x20,0,false,IntPtr.Zero,out var stream); // STGM_READ|SHARE_DENY_WRITE
+            if(result<0)throw new System.Runtime.InteropServices.COMException("virtual_stream_open",result);
+            actualSize=stamp.Size;
+            return stream; // Native +1 is transferred in STGMEDIUM; held binding closes only after this open.
+        }
+        [System.Runtime.InteropServices.DllImport("shlwapi.dll",EntryPoint="SHCreateStreamOnFileEx",CharSet=System.Runtime.InteropServices.CharSet.Unicode,ExactSpelling=true)]
+        private static extern int OpenNativeVirtualStream(string path,uint mode,uint attributes,[System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]bool create,IntPtr template,out IntPtr stream);
         internal bool Eligible(DateTimeOffset now) => record.Retired || record.ExpiresUtcTicks <= now.UtcTicks;
         internal bool Release()
         {
@@ -270,6 +323,7 @@ internal sealed class ArchiveEntryCache : IDisposable
             if (disposed) return; disposed = true;
             manifest?.Dispose(); root?.Dispose();
             foreach (var parent in parents.AsEnumerable().Reverse()) parent.Dispose(); parents.Clear();
+            sourceActivity?.Dispose(); sourceActivity = null;
         }
     }
     private static bool Recoverable(Exception failure) => failure is IOException or InvalidDataException or UnauthorizedAccessException or ArchiveOutputException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException or ArgumentException;
@@ -285,56 +339,93 @@ internal sealed class ArchiveEntryCache : IDisposable
                 for (var index = 0; index < localBatchSize; index++) {
                     var id = localRetirements.Dequeue();
                     if (!leases.TryGetValue(id, out var inactive)) continue;
+                    if (externalHolds.ContainsKey(id)) { localRetirements.Enqueue(id); continue; }
                     if (inactive.Release()) { leases.Remove(id); inactive.Dispose(); removed++; }
                     else localRetirements.Enqueue(id);
                 }
-                using var protectedRoot = ArchiveOutputSession.Open(cacheRoot, Guid.NewGuid());
-                sweep ??= Directory.EnumerateFileSystemEntries(cacheRoot).GetEnumerator();
-                while (inspected < 8) {
-                    if (!sweep.MoveNext()) { sweep.Dispose(); sweep = null; break; }
-                    inspected++; var name = Path.GetFileName(sweep.Current);
-                    var retired = name.EndsWith(".retire.json", StringComparison.Ordinal);
-                    var rawId = retired ? name[..^12] : name;
-                    if (!Guid.TryParseExact(rawId, "D", out var id) || leases.ContainsKey(id)) continue;
+                var roots = InventoryRoots();
+                // One entry from each root per turn: a busy/default root cannot starve old bases.
+                var exhausted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                while (inspected < 8 && exhausted.Count < roots.Length) {
+                    var baseRoot = roots[nextSweepRoot % roots.Length]; nextSweepRoot = (nextSweepRoot + 1) % roots.Length;
+                    if (exhausted.Contains(baseRoot)) continue;
                     try {
-                        using var inactive = Lease.Reopen(cacheRoot, id, retired);
-                        if (!inactive.Eligible(clock.GetUtcNow())) continue;
-                        eligible++; if (inactive.Release()) removed++;
-                    } catch (Exception failure) when (Recoverable(failure)) { }
+                        using var protectedRoot = ProtectSweepRoot(baseRoot);
+                        if (!sweeps.TryGetValue(baseRoot, out var iterator)) sweeps[baseRoot] = iterator = Directory.EnumerateFileSystemEntries(baseRoot).GetEnumerator();
+                        if (!iterator.MoveNext()) { iterator.Dispose(); sweeps.Remove(baseRoot); exhausted.Add(baseRoot); continue; }
+                        inspected++; var name = Path.GetFileName(iterator.Current);
+                        var retired = name.EndsWith(".retire.json", StringComparison.Ordinal);
+                        var rawId = retired ? name[..^12] : name;
+                        if (!Guid.TryParseExact(rawId, "D", out var id) || leases.ContainsKey(id)) continue;
+                        try {
+                            using var inactive = Lease.Reopen(baseRoot, id, retired);
+                            if (!inactive.Eligible(clock.GetUtcNow())) continue;
+                            eligible++; if (inactive.Release()) removed++;
+                        } catch (Exception failure) when (Recoverable(failure)) { }
+                    } catch (Exception failure) when (Recoverable(failure)) {
+                        if (sweeps.Remove(baseRoot, out var iterator)) iterator.Dispose();
+                        exhausted.Add(baseRoot);
+                    }
                 }
-            } catch (Exception failure) when (Recoverable(failure)) { sweep?.Dispose(); sweep = null; }
+            } catch (Exception failure) when (Recoverable(failure)) { }
             try { log?.Write("info", "archive.cache.sweep", Guid.NewGuid(), new Dictionary<string, object?> {
                 ["inspected"] = inspected, ["eligible"] = eligible, ["removed"] = removed, ["elapsed_ms"] = timer.ElapsedMilliseconds }); } catch { }
         }
     }
-    internal Lease Create(Guid operation, Guid session, ulong generation, Guid? requestedId = null)
+    internal Lease Create(Guid operation, Guid session, ulong generation, Guid? requestedId = null, ArchiveTempPolicy? tempPolicy = null)
     {
         lock (this) {
             if (disposed) throw new ObjectDisposedException(nameof(ArchiveEntryCache));
+            var policy = tempPolicy ?? ArchiveTempPolicy.Default; policy.Validate();
             Sweep();
-            if (leases.Count >= 32) throw new ArchiveOutputException("resource_limit");
             var id = requestedId ?? Guid.NewGuid();
             if (id == Guid.Empty || leases.ContainsKey(id) || released.Contains(id)) throw new ArchiveOutputException("invalid_request");
-            var lease = new Lease(cacheRoot, id, operation, session, generation, clock.GetUtcNow() + Retention); leases.Add(id, lease); return lease;
+            var root = policy.BaseDirectory.Length == 0 ? cacheRoot : AdmitCustomRoot(policy);
+            var lease = new Lease(root, id, operation, session, generation, clock.GetUtcNow().AddHours(policy.RetentionHours), policy); leases.Add(id, lease); return lease;
         }
     }
     internal bool Owns(Guid id, Guid operation, Guid session, ulong generation)
     { lock (this) return !released.Contains(id) && leases.TryGetValue(id, out var lease) && lease.Operation == operation && lease.Session == session && lease.Generation == generation; }
+    internal IntPtr OpenVirtualStream(Guid id,Guid operation,Guid session,ulong generation,long? expectedSize,CancellationToken cancellationToken,out long actualSize)
+    { lock(this) {
+        if(!Owns(id,operation,session,generation))throw new ArchiveOutputException("source_unavailable");
+        return leases[id].OpenVirtualStream(expectedSize,cancellationToken,out actualSize);
+    } }
+    internal bool OwnsOrReleased(Guid id, Guid operation, Guid session, ulong generation)
+    { lock (this) return leases.TryGetValue(id, out var lease) && lease.Operation == operation && lease.Session == session && lease.Generation == generation ||
+        releasedOwners.TryGetValue(id, out var owner) && owner == (operation, session, generation); }
+    internal bool HoldExternal(Guid id, Guid operation, Guid session, ulong generation)
+    {
+        lock (this) {
+            if (!Owns(id, operation, session, generation) || externalHolds.ContainsKey(id)) return false;
+            externalHolds[id] = 1; return true;
+        }
+    }
+    internal IDisposable OpenShellOutput(Guid id, out string path, out bool cleanupOnExit)
+    { lock (this) { cleanupOnExit = leases[id].Policy.CleanupOnChildExit; return leases[id].OpenShellOutput(out path); } }
+    internal bool EndExternal(Guid id, bool cleanupOnExit)
+    {
+        lock (this) {
+            externalHolds.Remove(id);
+            return (cleanupOnExit || released.Contains(id)) && Release(id);
+        }
+    }
     internal bool Release(Guid id)
     {
         lock (this) {
-            if (!leases.TryGetValue(id, out var lease)) return false;
+            if (!leases.TryGetValue(id, out var lease)) return releasedOwners.ContainsKey(id);
             RememberReleased(id);
-            if (!lease.Release()) return false;
+            if (externalHolds.ContainsKey(id) || !lease.Release()) return false;
             leases.Remove(id); lease.Dispose(); return true;
         }
     }
     private void RememberReleased(Guid id)
     {
         if (!released.Add(id)) return;
+        if (leases.TryGetValue(id, out var lease)) releasedOwners[id] = (lease.Operation, lease.Session, lease.Generation);
         releasedOrder.Enqueue(id);
         if (leases.ContainsKey(id)) localRetirements.Enqueue(id);
-        if (releasedOrder.Count > 4096) { var oldest = releasedOrder.Dequeue(); if (!leases.ContainsKey(oldest)) released.Remove(oldest); }
+        if (releasedOrder.Count > 4096) { var oldest = releasedOrder.Dequeue(); if (!leases.ContainsKey(oldest)) { released.Remove(oldest); releasedOwners.Remove(oldest); } }
     }
     internal bool Abort(Guid id)
     {
@@ -346,8 +437,9 @@ internal sealed class ArchiveEntryCache : IDisposable
     public void Dispose()
     {
         lock (this) {
-            if (disposed) return; disposed = true; sweep?.Dispose(); sweep = null;
-            foreach (var lease in leases.Values) { if (released.Contains(lease.Id)) lease.Release(); lease.Dispose(); }
+            if (disposed) return; disposed = true;
+            foreach (var iterator in sweeps.Values) iterator.Dispose(); sweeps.Clear();
+            foreach (var lease in leases.Values) { if (released.Contains(lease.Id) && !externalHolds.ContainsKey(lease.Id)) lease.Release(); lease.Dispose(); }
             leases.Clear();
         }
     }

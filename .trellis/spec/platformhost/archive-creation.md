@@ -166,3 +166,114 @@ unchanged in prior outcomes; current exact results belong to sole checkpoint. No
 ### 7. Wrong vs Correct
 Wrong: POSIX flag implies live source FILE cannot block replace. Correct: observed32 -> approved
 edit-only ownership handoff -> real native success and truthful cancellation/failure/unknown facts.
+
+## Scenario: Ordinary 7z edit adapter over the same native transaction
+### 1. Scope / Trigger
+Private `modify_7z` for the separately authorized PhaseE7z slice, not a second writer/commit manager.
+### 2. Signatures
+IsModification includes modify_zip/modify_7z. C# ArchiveJobModify adds optional SourcePrefix; SevenZ
+replace_content requires exactly one ordinary protected input and one old ordinal, never ZIP Add.
+### 3. Contracts
+Original OpenForEdit/source/addition leases/partial-read/edit handoff/CommitVerifiedEdit own native
+authority. Match actual SevenZ intent and negotiated sevenz_modify_v1/source_tree_v1/partial_read_v1.
+Only the exact current edit commit call may freeze its native failure/category/code/state; later
+worker IoFailure or cleanup cannot replace it. Existing unknown/published precedence stays.
+Original task progress adds fixed edit planning/reading/reencoding/verifying/committing phases;
+only changed fixed7z phases use the existing bounded business queue, byte samples stay coalesced.
+Password remains private array/stdio only. No member/path/content/secret diagnostic fields.
+### 4. Validation & Error Matrix
+Malformed action/format/source-prefix -> invalid_edit_request; stale source -> source_changed;
+readback/fidelity error -> no handoff/publication; native5 -> FailedBeforeCommit/code5; network64 ->
+CommitOutcomeUnknown/evidence/no retry; late cancel after native success retains published journal.
+### 5. Good/Base/Bad Cases
+Good: real7z candidate same-path replacement with source FILE readers gone and parents held.
+Base: original ZIP/extract/Test permissions unchanged. Bad: general source sharing widened for edit,
+plain output from encrypted input, foreign argv password, or mutable last-native-error recovery.
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/SevenzEditTests.cs` uses hash-frozen current worker, exact
+LIST/RUN, independent7Zip known metadata/content, source/handoff/cancel/fail/unknown/latecancel.
+Retain ArchiveZipEditCommitTests and original task/OLE/space collections; counts in checkpoint.
+### 7. Wrong vs Correct
+Wrong: feed SevenZ into ZIP editor or release native source early. Correct: Rust7z full candidate
+verification -> same read-complete boundary -> original protected one-shot native publication.
+See [Rust format contract](../nxtools-archive/backend/sevenz-edit.md) for fidelity/refusal limits.
+
+## Scenario: TAR-family edit adapter over the same native transaction
+### 1. Scope / Trigger
+Step3 TAR/TGZ/TXZ editing only; same PhaseE transaction, no new commit/share-mode policy.
+### 2. Signatures
+`modify_tar` matches actual Tar/TarGz/TarXz and negotiates tar_modify_v1/source_tree_v1/partial_read_v1. Optional browser TarEdit facts are completed-worker source qualification, not write authority.
+### 3. Contracts
+Existing Modify ordinals/source-prefix/actions, protected additions, OpenForEdit, held readback, edit_reads_complete and CommitVerifiedEdit remain the owners. Rust verifies the complete outer+TAR candidate and closes all readers before FILE-only handoff. Fixed phases/no-password/correlated terminal native codes reuse the original Job. Final TOCTOU/unknown retention remains unchanged.
+### 4. Validation & Error Matrix
+Stale source/prefix -> source_changed; unsupported structure/readback failure -> no publication; native5 -> FailedBeforeCommit,64 -> unknown/no retry; latecancel keeps published journal. Disk-full112 injected before_flush must preserve source and remove only owned unpublished candidate.
+### 5. Good/Base/Bad Cases
+Good: independently verified same-path candidate after old reader closure. Base: unchanged original ZIP/7z/native lease owners. Bad: suffix grants edit, source FILE release before verification, or injected112 called real disk-fill evidence.
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/TarEditTests.cs`: effects -> exact LIST -> same RUN, frozen matching worker, CPython/bsdtar operations/metadata/empty/source/cancel/native5/64/latecancel/conflict and injected112. [Rust contract](../nxtools-archive/backend/tar-edit.md) defines exact fidelity/limits.
+### 7. Wrong vs Correct
+Wrong: new native replacement algorithm or global sharing relaxation. Correct: separate TAR codec candidate -> original held-source/read-complete/one-publication chain. Physical GUI/installed/release acceptance remains separate.
+
+Step4 interaction amendment: original Job emits Ask for every admitted Modify, including ZIP;
+Runner admits the same existing InteractionPort on modify_zip/modify_7z/modify_tar. Existing optional
+private display remains archive-relative for Modify, never destination-prefixed or native authority.
+No source/output/FILE-only handoff/share/commit policy changes. [Cross-owner edit interaction contract](../nxtools-archive/backend/edit-interactions.md)
+requires exact native ZIP Ask decisions and original TAR/7z/ZIP/preview/control compatibility using
+one explicit current hash-frozen worker; retain initial failures/skips and corrected reruns.
+
+EIC-AC01/02 regression amendment: original Modify ZIP logical implicit-directory merge/allSkip
+must reach Job succeeded_with_warnings with empty publication journal and unchanged source;
+existing native commit probes verify zero flush/publication. Exact native `cancelled` private reply
+must remain worker Cancelled/Job cancelled without another cancel control frame. Rust owns this
+reply mapping; do not change C# Job precedence or use cancellation request state to override real
+published/unknown/sourcechanged/cleanupfailure facts. Original ZIP/TAR/7z actual control-cancel,
+native5/64/latecancel gates remain. [Exact repair contract](../nxtools-archive/backend/edit-interactions.md).
+
+HZ3 observation amendment: explicit ArchiveSpace v2 projects original ArchiveVolumeSources
+identity/primary/members after the same held-source/output observation; v1 remains unchanged.
+No decoder/output/source-write operation or new native lease policy. Strict bounded private
+source_set validates the requested source and unique members, never payload diagnostics.
+Original Job/native re-admission and final publication remain authoritative; Desktop batch
+dedup/explicit retry uses [the cross-owner contract](../nxtools-desktop/backend/archive-batches.md).
+
+## Scenario: HZ3 complete native publication evidence
+### 1. Scope / Trigger
+Generic batch retry must distinguish zero FILE commits from zero output; original native directory
+creation/metadata failure can leave output while CommitJournal is empty. Evidence:
+`repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveOutputSession.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerRunner.cs`,
+`repo:csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs`.
+### 2. Signatures
+`ArchiveOutputSession.OutputPublished() -> bool?`; optional/default-null
+`ArchiveWorkerEvent.OutputPublished` -> `ArchiveJobTerminal.OutputPublished` -> Rust
+`ArchiveJobTerminal.output_published: Option<bool>` (serde default/omitNone). Existing versions and
+file CommitJournal unchanged. This is read-only evidence, never execution/commit/cleanup permission.
+### 3. Contracts
+True: known published file or native-created/completed output directory. Original relative native
+directory-create success records the fact BEFORE fallible inspection; root/wrapper/ancestry retained
+on failure count, not just completed explicit empty-directory requests. Unknown directory creation,
+live/undrained owner or uncertain file commit cannot yield false. False requires original cleanup
+and affirmative zero publication. Runner freezes facts only after worker drain/resources; Job passes
+them through without changing terminal/cancellation/native precedence. Preserve directory-only
+ResultLocation; no recursive deletion/rollback to manufacture zero output. Missing legacy facts are
+unknown. C# fixture env `NXTOOLS_HZ3_NATIVE_EVIDENCE` names its explicit owned export file.
+### 4. Validation & Error Matrix
+Metadata failure after ensured directory -> failed/io_failure, files0/journal[], publishedtrue,
+directory+location retained. File failure before publication with no created directory ->
+publishedfalse after cleanup. Root/ancestry created before later failure -> publishedtrue even when
+no archive result_location is available. CommitOutcomeUnknown -> null, not false. Legacy omission
+and explicitnull deserialize unknown; booleans roundtrip; numeric/string/object/array rejected.
+### 5. Good/Base/Bad Cases
+Good: native failed empty directory stays visible in summary and refuses blind retry; real zero
+output may revalidate. Base: accepted one-shot FILE publication and old DTO omission. Bad: empty
+file journal/commitstateNone/root identity unchanged treated as no output, or delete directory first.
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/Hz3BatchTests.cs` exact two fixtures: matching worker/native
+directory metadata failure plus genuine preflush zero-output control exports exact terminals; wire
+defaults/strictbool and original retained-root/ancestry/unknown-owner controls. Rust production app
+consumes current export and validates summary/retry. Effects -> exact LIST -> same RUN; skips not
+passes. Checked-in actual transcript fallback is replay evidence, not a fresh native/physical run.
+### 7. Wrong vs Correct
+Wrong: `files_committed == 0 && journal.is_empty()` -> replay. Correct: original native complete
+publication fact + clean known precommit journal + immutable pre-native-terminal identity -> explicit
+fresh recheck -> original queue, otherwise original form/reopen. Facts never weaken native permissions.

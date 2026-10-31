@@ -1,0 +1,17 @@
+# Minimal boundaries and diagnostic plan
+
+## Current evidence
+Read-only service registry/process observation: NxToolsUpdateV1 Running/Automatic uses Updater\\Bootstrap\\NxTools.PlatformHost.exe --trusted-update-service (PID5416); desktop PID8460 uses Service\\NxTools.exe --silent-start and child Service\\NxTools.PlatformHost.exe --parent-pid8460 (PID16424). Distinct intended roles; no process/service mutation.
+Floating current renderer+input window readback both visible,TOPMOST,NOACTIVATE; thus no evidence initial creation simply lacks topmost. Current logs show explicit hide/update/show transitions. Current native policy omits WS_EX_TOPMOST from final readback, no observer recovery. Legacy _topmostGuardTimer -> EnsureNativeTopmost is a preserved migration invariant to verify. Current fullscreen geometry-only detector also needs Shell-desktop exclusion; distinguish intentional hide versus occlusion in diagnostic reasons.
+Currency screenshot OCR resolves targetcurrencySelectCNY; exact shape/frame clipping still needs productionbounds tests. Existing official Select exposes FocusRing API; appearance/selection border and redundant halo are different states. Do not remove selected semantics or invent a replacement control.
+Explorer read-only investigation delegated to bounded explorer; await actual shared native seam/log conclusions before implementation, no caller toast masking/time budget inflation.
+
+## Expected files
+FloatingAssistantCoordinator/InputSurface and owned coordinator tests/fixture registry only for native topmost/fullscreen change. Currency settings composition + actual control geometry tests for clipping. Original search/control composition or public focus-ring option only where screenshot/call seam proves redundant halo. ExplorerShellActivation/native observation and exact safe tests for shared Reveal defect; do not fork QuickLaunch/Downloads implementations.
+
+## Tests / invariants
+Red-capable real command dispatch->hidden/show/native downgrade/recovery/readback; wrong HWND/session/retire cannot revive. Existing native observer bounded500ms; repair only on state change and rate-limit failures; diagnostics do not drive feature result. Passive/show flags unchanged, no global hook/vendor Win32 patch.
+Real GPUI select trigger/caret containment at460x320/default/min/theme/scale; pointer+keyboard query/Confirm/Cancel persistence unchanged. Existing physical/native acceptance constraints remain separate.
+
+## Authorized actual-host diagnosis / minimal amendment
+User separately selected full native verification for an owned scratch Reveal target and closing only a newly created identity+directory-verified test window. Actual request opened DOpus13.22 rather than Explorer. Read-only official DOpusRT paths/listsel exports provide precise selected filesystem identity; UIA did not. Add DirectoryOpusTargetObservation.cs and isolated parser/reader fixtures; integrate only NativeExplorerShellPlatform's shared target observation. Reuse ExplorerTargetView and existing ObserveTarget, no Rust/protocol/caller changes. Require live same-session dopus.lister + visible same-PID filedisplaycontainer, exact source-tab flag and parent directory, exact selected target, fresh second paths readback. Sibling helper comes from that running process, no PATH search; fixed readonly commands, bounded time/output/XML, unique temporary output cleanup. No new poller, no accepting folder-only/windowcaption/API success. Existing native authorization covers owned target only, not arbitrary file-manager manipulation.

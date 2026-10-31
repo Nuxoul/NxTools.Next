@@ -1,0 +1,13 @@
+pub(crate) mod bzip;
+pub(crate) mod gzip;
+pub(crate) mod tar;
+pub(crate) mod tgz;
+pub(crate) mod xz;
+pub(crate) mod zip;
+mod zip_aes;
+mod zip_bzip2;
+mod zip_crypto;
+mod zip_deflate64;
+mod zip_lzma;
+mod zip_range;
+pub(crate) mod zstd;

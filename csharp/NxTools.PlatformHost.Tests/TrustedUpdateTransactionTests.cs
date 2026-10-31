@@ -90,6 +90,32 @@ internal static class TrustedUpdateTransactionTests
         await Reject(() => TrustedUpdateBroker.WriteFrameAsync(memory, value, cancelled.Token));
     }
 
+    internal static async Task ArchiveMemberMutationRestoresCompleteOwnedSet()
+    {
+        using var fixture = new Fixture();
+        var previous = fixture.Package(10);
+        var transaction = fixture.Transaction();
+        transaction.Initialize(previous);
+        await fixture.Deployment.DeployAsync(previous, Guid.NewGuid(), CancellationToken.None);
+        var next = fixture.Package(11);
+        var foreign = Path.Combine(fixture.Deployment.Target, "foreign.keep");
+        File.WriteAllText(foreign, "foreign bytes");
+        foreach (var member in TrustedReleaseManifestTests.ArchiveMembers) {
+            fixture.Deployment.FailSequence = 11;
+            fixture.Deployment.FailAfterMember = member;
+            await Reject(() => transaction.ApplyAsync(next, Guid.NewGuid(), CancellationToken.None));
+            Assert(transaction.ReadState().Sequence == 10, "failed archive update cannot commit sequence");
+            using var old = TrustedReleaseManifest.VerifyPackage(previous, fixture.PublicKey, 0);
+            foreach (var file in old.Files)
+                Assert(File.ReadAllBytes(Path.Combine(fixture.Deployment.Target, file.Path)).SequenceEqual(
+                    File.ReadAllBytes(Path.Combine(previous, file.Path))), "complete last-good set restored: " + file.Path);
+            Assert(File.ReadAllText(foreign) == "foreign bytes", "foreign target file preserved");
+        }
+        fixture.Deployment.FailSequence = null;
+        Assert((await transaction.ApplyAsync(next, Guid.NewGuid(), CancellationToken.None)).Sequence == 11,
+            "complete archive release remains retryable");
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly string root = Path.Combine(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR") ?? Path.GetTempPath(), "trusted-update-" + Guid.NewGuid().ToString("N"));
@@ -104,7 +130,7 @@ internal static class TrustedUpdateTransactionTests
             key = Path.Combine(root, "temporary.pem");
             File.WriteAllText(key, rsa.ExportPkcs8PrivateKeyPem());
             PublicKey = rsa.ExportSubjectPublicKeyInfo();
-            Deployment = new DeploymentFixture(PublicKey);
+            Deployment = new DeploymentFixture(PublicKey, Path.Combine(root, "fake-target"));
         }
         internal string Package(long sequence)
         {
@@ -112,22 +138,33 @@ internal static class TrustedUpdateTransactionTests
             Directory.CreateDirectory(Path.Combine(directory, "browser_extension", "nxtools-interceptor"));
             foreach (var name in new[] { "NxTools.exe", "NxTools.PlatformHost.exe", "NxTools.Indexer.exe", "NxTools.BrowserHost.exe", "NxTools.Cli.exe", "LICENSE-MIT", "LICENSE-APACHE", "THIRD_PARTY_NOTICES.md", "browser_extension/nxtools-interceptor/manifest.json" })
                 File.WriteAllText(Path.Combine(directory, name.Replace('/', Path.DirectorySeparatorChar)), "synthetic " + sequence + " " + name);
+            foreach (var name in TrustedReleaseManifestTests.ArchiveMembers)
+                File.WriteAllText(Path.Combine(directory, name), "synthetic " + sequence + " " + name);
             TrustedReleaseManifest.SignPackage(directory, key, sequence, Guid.NewGuid());
             return directory;
         }
         internal TrustedUpdateTransaction Transaction() => new(Store, PublicKey, Deployment, new SilentLog());
         public void Dispose() => Directory.Delete(root, true);
     }
-    private sealed class DeploymentFixture(byte[] publicKey) : TrustedUpdateTransaction.IDeployment
+    private sealed class DeploymentFixture(byte[] publicKey, string target) : TrustedUpdateTransaction.IDeployment
     {
         internal long? FailSequence { get; set; }
+        internal string? FailAfterMember { get; set; }
+        internal string Target => target;
         internal List<long> Sequences { get; } = [];
         internal List<Guid> Correlations { get; } = [];
         public Task DeployAsync(string verifiedPackage, Guid correlationId, CancellationToken cancellationToken)
         {
             using var release = TrustedReleaseManifest.VerifyPackage(verifiedPackage, publicKey, 0);
             Sequences.Add(release.Manifest.ReleaseSequence); Correlations.Add(correlationId);
-            if (FailSequence == release.Manifest.ReleaseSequence) throw new IOException("synthetic mutation failure");
+            Directory.CreateDirectory(target);
+            foreach (var file in release.Files) {
+                var destination = Path.Combine(target, file.Path);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(Path.Combine(verifiedPackage, file.Path), destination, true);
+                if (FailSequence == release.Manifest.ReleaseSequence && (FailAfterMember is null || FailAfterMember == file.Path))
+                    throw new IOException("synthetic mutation-then-throw failure");
+            }
             return Task.CompletedTask;
         }
     }

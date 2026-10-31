@@ -49,3 +49,440 @@ Good:180Hz currentpaint~5.5ms vslegacy~34ms, idle0; reducedentrance1frame. Base:
 Notification35 plus actual ownednative boundedcadence/reduced/foreground/readback. Theme11+optional1,112schema/statecontrastroles each, actual96DPI dark/light0/4GPUIcaptures. Source/compiled/native/AIvisual/user/installed evidence reported separately. Upstream editor serialize.rs Clippy nonminimal_bool remains unmodified/outsideapproval; strict projectpackages use --no-deps and disclose unrestrictedlintfailure.
 ### 7. Wrong vs Correct
 Wrong: configtest provesperceivedsmoothness; is_defaultJSON replacesregistrydefault. Correct: productionoptions + boundednativepaintcomparison; explicitregisteredconfigselection via publicThemeupdate/change.
+
+## Integration closeout amendment — 2026-10-22
+User explicitly approves exactly one equivalent serialize.rs list_item Boolean simplification plus
+rustfmt whitespace in that push_str fragment and element.rs passive-link if block. This supersedes
+the two-file/serializer-outside-approval statements above only for these exact deltas; no allow,
+dependency upgrade or other vendor formatting. markdown-editor-contracts.py reverses serializer to
+originalSHA256, checks16Boolean cases and reverses element whitespace to its approved passive hash.
+Full dependency strict Clippy remains required, not --no-deps substitution. Clipboard UI lifecycle
+gate checks real original rich/source mounts, pending-before-dispatch/item/draft gates, cancel/focus
+and passive readonly document ownership; scratch positive/negative source-mutation tests retain
+gate sensitivity without changing product behavior.
+
+## Scenario: Adjustable Clipboard density and official visual theme draft
+### 1. Scope / Trigger
+Approved density/theme follow-up supersedes wholetext210DIP and Graphite default aliases only; earlier document/action/native contracts remain.
+### 2. Signatures
+`ClipboardSettings.text_card_max_height: u32`, missingdefault160, normalize120..320; `ClipboardApplication::set_text_card_max_height`, `ClipboardPanel::set_text_card_max_height`. `NetworkSettingsView::render_theme_chooser`, official `Radio/RadioGroup::children`, `ScrollableElement::overflow_y_scrollbar`; one original `ThemePreference` and Apply/Cancel.
+Evidence: `repo:rust/crates/nxtools-core/src/lib.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard.rs`, `repo:rust/apps/nxtools-desktop/src/ui/history.rs`, `repo:rust/apps/nxtools-desktop/src/network_settings/theme_chooser.rs`.
+### 3. Contracts
+Wholecard includes header/body/border/feedback, externalgap8 independent. Short natural; summary400/full actionpayload independent; images190/files62 unchanged. Field-only durablemerge before deferred live ListState remeasure preserving logical scroll/query/selection; failure priorlive/no captureIPC. Official NumberInput outer32DIP, finiteinteger guard. Optional feather deferred because resolved ListItem hoverbackground unavailable without added ownership/patch. Light=Latte/Dark=Frappe/Systemsamepair; all explicitofficialthemes/fonts/geometry retained, originalGraphiteassets remain historical. Clean-room NxTools miniatures, reserved marker/border, Light4/Dark6/System1, no globalpreview/autosave/newpair. Nested Settings ScrollBounce requires official overflow_y_scrollbar arbitration; bare inner overflow_y_scroll has valid extent but wheeloffset0. Do not invent custom wheelforwarding. RadioGroup in released0.8.0 is semantic grouping, not arrow-key controller; original Tab/Space remain supported.
+### 4. Validation & Error Matrix
+Missing height ->160; outofrange config normalizes; fractional/negative/string JSON rejected; invalid setting/noop -> no write. Commitfailure -> priorlive and original notification. Draftselection -> no globalchange/diskwrite; Cancel discards; failedSave retains draft/activepalette/retry. Official Latte supportingcontrast below historicalGraphite4.5 and Frappe equalprimaryhover/active are retained published facts, not recolored to satisfy oldtests.
+### 5. Good/Base/Bad Cases
+Good:120DIP longtext reduces summary before keeping feedbackactions inside. Base:160default and selectable210. Bad: clipbuttons/savewholecachedconfig/copy400summary or claim wholewindow is notificationcard. Themegood: scrolltolastSolarizedDark and Tab/Space chooseGruvboxDark with footerreachable; bad: exposeoffscreenchoices/imports as usabilityproof.
+### 6. Tests Required
+Core legacy/integer/clamp/merge75full; realcards4,setting/lifecycle2,feedbackfourcaps; chooser4focused plus originalSaveCancel/optionaltheme tests. Production wheel regression red offset0/max431.5 -> officialscrollwrapper green. Historical natural-layout tests explicitly320 while default160clipping tests remain. Primary paintedforeground compares exactKitrole, not RGB/HSLreverse equality. Full Desktop evidence/failures in taskoutcomes; no physicalIME/mixedDPI/reader/uservisual/installed acceptance.
+### 7. Wrong vs Correct
+Wrong: implicit210constant, bare nested scroll, immediate appwide theme preview. Correct: ownedheightfield->durablemerge->nextturnpresentation; publicKitselection+scrollcompound on originaldraft/save owner.
+
+## Scenario: Probe naming protects asynchronous user edits
+### 1. Scope / Trigger
+Existing NewDownloadView probeconfirmation or HTTP Content-Disposition name; not browserdiscovery/alwaysprobe policy.
+### 2. Signatures
+`content_disposition_file_name`, existing `percent_decode_utf8`; `should_replace_suggested_file_name`; `file_name_edit_generation` captures original InputEvent::Change. Evidence: `repo:rust/crates/nxtools-download/src/http.rs`, `repo:rust/crates/nxtools-download/tests/http_filename_contract.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/new_download_view.rs`.
+### 3. Contracts
+Read ABDM first,oldNxTools second. Plainheader strictUTF8percentdecode once,plusliteral,malformedrawfallback,extendedpriority,Windows-safe validation. Usefulprobe mayreplace URLderived/nonfilenameversionlabel, not genuinecustomextension/genericprobe. Compare editgeneration AND currentvalue before applying oldprobe; editA->B->A remains userintent. Silentset_value hydration doesnotemitChange; originalreplace_all/useredit does. Existing probe generation/cancel/receipt/context/TLS/route/350msgrace/media/fixedhandoff remain; no additionalremoteprobe. Diagnostic source/correlation/generation only, no filename/URL/context payload.
+### 4. Validation & Error Matrix
+InvalidUTF8/escape ->rawliteral then existingvalidation; decodedtraversal ->URLfallback. Genericdownload.zip ->retainusefulcurrentname. Superseded/cancel -> originalretirement, no newhandoff. Edited/cleareddraft ->currentname regardless probe. Externalreportedresource remains unproven without sample.
+### 5. Good/Base/Bad Cases
+Good: encodedURLauto matches once-decoded name and adopts usefulservercandidate; custommy-custom.zip stays. Base: optionalname adoptsserver. Bad: allnonemptybrowsernamesassumedcustom, oldprobeoverwriteslateedit, or percentdecode twice.
+### 6. Tests Required
+Actualloopback8headercases and7realprobe/fixedconfirmationcases; retainexistingcontext/cancel/media/receipt tests, fullDownloadlib117/HTTP26/resolution15/serialengine103. Taskledgerrecords red andgreen; tests not externalserveracceptance.
+### 7. Wrong vs Correct
+Wrong: currentvalue==startvalue means unedited. Correct: original Change revision plus currentvalue and probegeneration guard.
+
+## Historical hovered notification Ctrl+C — cancelled
+The hovered-card Ctrl+C prerequisite proved only settled geometry and the official exit-start business-record gap. User explicitly cancelled that global-hook scheme; do not resume it. The2026-10-23explicit header Copy button below is a separately approved replacement, not permission to consume global Ctrl+C.
+
+## Scenario: Primary Clipboard activation after native reveal
+### 1. Scope / Trigger
+The user reports Ctrl+digits and type-anywhere still failing after summon, with an unrelated hover preview. This amendment preserves the existing input/action owners and adds the missing primary activation step.
+### 2. Signatures
+`ClipboardApplication::{request_popup_activation,finish_popup_activation,retire_popup_activation}`; `PendingPopupActivation { id, popup, started }`; existing `PlatformCommand::ActivateWindow(ActivateWindowCommand { window_handle })`; `ClipboardPanel::{focus_search_for_session,hover_preview_ready}`.
+Evidence: `repo:rust/apps/nxtools-desktop/src/clipboard/popup_activation.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard.rs`, `repo:rust/apps/nxtools-desktop/src/ui/mod.rs`, `repo:csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.NativeMethods.cs`.
+### 3. Contracts
+Hidden GPUI creation with focus:true does not activate its HWND. The existing native visibility adapter uses SW_SHOWNOACTIVATE. After a matching reveal ACK, register pending activation before dispatching the existing native ActivateWindow command. Match command ID, session, window and HWND; after successful native focus/foreground result, defer original search focus and revalidate current/open/editor/overlay state on the next turn. Never call GPUI activate_window on the prepared hidden HWND, which may replay initial placement. Passive preview remains nonactivating. Hide, replacement and disconnect retire pending activation; a three-second logical deadline reports failure without retry loops. Failure retains the visible panel and original notification error owner. New hover entry is checked against CURRENT panel state in the deferred callback; armed number, pending paste/full-item read, query and editor states cannot requeue preview. Leave and idle hover retain the original owner. Diagnostic events carry correlation/session/current/success/fixed reason/elapsed/native code only.
+### 4. Validation & Error Matrix
+Reveal success -> one primary activation command, not inferred keyboard readiness. Duplicate/old reveal or activation -> no new focus effect. Hide/replacement/disconnect -> retired pending; late success cannot refocus. Native failure/timeout/dispatch failure -> clear pending, fixed retry guidance, no false success. Ordinary platform text from a control -> original search InputState; IME/editor/menu protections and original full-by-ID paste remain.
+### 5. Good/Base/Bad Cases
+Good: native reveal -> ActivateWindow ACK -> next-turn search focus. Base: original active-panel Ctrl-first release and Unicode input still work. Bad: show:false/focus:true or GPUI focus alone treated as OS activation; a new hover callback reopens preview during a paste.
+### 6. Tests Required
+`input_followup_` exercises actual application reveal/result queues and panel events: missing native activation and hover requeue were two real reds; four new cases pass, including five retirement/failure modes. Retain eight `input_repair_` regressions, exact typed PasteText/full tail/target and ordinary control ownership. Strict lint, workspace and full Desktop1029/1029 passed at this checkpoint. Synthetic IPC does not certify physical Windows keyboard/IME or installed acceptance.
+### 7. Wrong vs Correct
+Wrong: visibility ACK -> GPUI search focus -> assume keyboard works. Correct: visibility ACK -> pending-before-native-activation -> current ACK -> deferred original search focus. Wrong: cancel old preview once. Correct: also reject new deferred hover while the original operation owns input.
+
+## Scenario: Overflow-only text feather and small static card shadow
+### 1. Scope / Trigger
+User approves a light bottom fade instead of hard clipping and a subtle history-card shadow. Earlier optional-feather deferral is superseded by this public-API composition; notification hovered Ctrl+C is explicitly cancelled by the user, not an outstanding blocker.
+### 2. Signatures
+`HistoryText { id, source, maximum_height, selected, group }`; `MarkdownDocument::bounds() -> Bounds<Pixels>` reads the original canvas cache; `body_feather(document,selected,group,cx)`; public ListItem Styled/`group_hover`, GPUI canvas/fill/linear_gradient and BoxShadow.
+Evidence: `repo:rust/apps/nxtools-desktop/src/ui/history.rs`, `repo:rust/apps/nxtools-desktop/src/ui/markdown_document.rs`, `repo:rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs`.
+### 3. Contracts
+One cached passive document and its existing natural bounds; no reparse or second layout. Cap its visible wrapper using the already-computed body budget. At prepaint compare the current document bottom against that viewport with0.5DIP tolerance; paint at most one14DIP vertical transparent-to-opaque gradient per mounted overflowing body. Short/fitting text has none. Only the prose column fades, never count/source/feedback/actions. The endpoint is the opaque result of the current official card fill over the canvas: normal surface, selected official list_active/accent, hover tokens.list_hover through the existing group_hover. Do not store parallel hover state. No click/action/focus/occlusion callback on the fade; original full paste remains. One card shadow uses black8% alpha, offset(0,1DIP), GPUI blur sigma1DIP, zero spread; no animation, offscreen mask or whole-window shadow. Whole-card cap120..320/default160, image190/file62, gap8 and hit bounds remain unchanged. Test-only finish switch is constant true outside tests, not persisted configuration.
+### 4. Validation & Error Matrix
+Actual overflow -> one bottom quad. Fitting/short body -> no quad. Theme/hover/selection -> endpoint matches actual filled-card composition, including alpha. Missing prepared document -> existing literal fallback, not extra parsing. Fade/gap clicks -> original action/no action respectively. No added idle frame/timer. CPU fixture timing is observational, not a brittle latency threshold or GPU claim.
+### 5. Good/Base/Bad Cases
+Good: clipped prose fades over14DIP while count and buttons remain crisp; a click on the fade pastes the full original. Base: short text and image/file geometry are unchanged. Bad: blur the whole card, repaint a substitute ListItem, fade by character count, duplicate hover state, hide short-content layout defects or introduce a nested scroll owner.
+### 6. Tests Required
+Three `feather_followup_` cases: actual long-body red0quads->green1; short-none, Light/Dark normal/selected/hover endpoint matching and full-original fade click; alternating12x8 forced-draw CPU cost with unchanged document identity/heights and bounded quad count. Framework Style paints fill and border separately: observe the nontransparent fill at exact card coordinates. Hsla JSON serialization quantizes to8bit colors: compare the typed Background directly, not a reconstructed hex color. Drain initial control-mount callbacks before off/on idle comparison; both states then schedule0frames. Measured Debug synthetic median11624.06usoff/11803.74uson (~1.55%,179.68us),2extra quads for2clipped bodies; not GPU/display/installed acceptance. Preserve all height, action, feedback and pointer regressions plus strict/workspace/full Desktop checks.
+### 7. Wrong vs Correct
+Wrong: any non-solid quad proves feather; serialized color inequality means a product color bug. Correct: actual14DIP body-local gradient, exact typed background equality to independently observed card fill, unchanged interaction/geometry and measured static cost.
+
+## Scenario: Clipboard preview requires pointer intent
+### 1. Scope / Trigger
+Summon, history repopulation or repaint beneath a stationary cursor must not open preview. Evidence: `repo:rust/apps/nxtools-desktop/src/ui/history.rs`, `repo:rust/apps/nxtools-desktop/src/ui/mod.rs`, `repo:rust/apps/nxtools-desktop/src/clipboard.rs`, `repo:rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs`.
+### 2. Signatures
+Released Component0.8.0 `ListItem::on_mouse_enter` forwards actual `MouseMoveEvent`; `on_hover` also runs from GPUI pre0.3.9 paint. `ClipboardPanel.preview_pointer: Rc<Cell<Point<Pixels>>>` retains one screen-position baseline. Original `ClipboardApplication::schedule_preview(entered,item,panel_bounds,pointer_position,panel_scale_factor,cx)` and PreviewSession remain sole scheduling owners.
+### 3. Contracts
+Only actual unpressed/non-drag movement enters preview; ignore on_hover(true), retain on_hover(false) leave cancellation. One panel-retained screen position rejects unchanged-coordinate activation/hit refresh across redraws, seeded from window position at construction, updated by bounds observation and normal parent move after row dispatch. Do not initialize a per-render Cell from window.mouse_position: a fresh closure is not cross-render intent memory. Admission remains deferred; validate captured session/query/current row ID and current open/editor/armed/pending/fullread/query readiness before touching the application. Same hovered item is idempotent in original PreviewSession so motion does not restart800ms or allocate another candidate clock. Full-ID hydration, scroll suppression/resume, generations, one passive HWND and C# nativeACK/frame/reveal remain unchanged. No new polling, global input, delay increase, diagnostics stream or styles.
+### 4. Validation & Error Matrix
+Paint/repopulate with no move -> no candidate even after1200ms. Same-coordinate events after redraw -> no candidate. Real movement within an already-hovered text/image row -> original candidate without requiring leave/reentry. Pressed/drag -> no admission. Same item motion -> same generation; leave clears; reentry admits. Deferred old session/query/row -> discard without mutating newer preview.
+### 5. Good/Base/Bad Cases
+Good: panel appears underneath a stationary pointer and remains quiet, then2DIP deliberate motion admits. Base: existing800ms/full-original/native presentation. Bad: on_hover(true) schedules from first paint, require users to leave/reenter, or reset the timer on every mouse event.
+### 6. Tests Required
+Five `idle_preview_` real-panel regressions cover stationary text/image mount, same-position/pressed events, same-row generation/leave/reentry and deferred old session/query. Original stationary mount was executed red before production edits. Drain initial fixture window bounds/focus callbacks before active-motion controls; a late test initialization callback can otherwise reset the test mouse and generate a false leave. Keep input_followup_/input_repair_ and actual preview presentation/800ms tests, strict lint/workspace/fullDesktop and lifecycle/source gates. No physical/installed acceptance is implied.
+### 7. Wrong vs Correct
+Wrong: `.on_hover(|entered,...| schedule_preview(*entered,...))`. Correct: public ListItem movement -> unchanged-position filter -> next-turn current identity/readiness -> original idempotent preview owner; hover exit retains cancellation.
+
+## Scenario: Completion Open With is a compact adjacent action
+### 1. Scope / Trigger
+User requests no visible Open With text, only a button icon to the right of Open File. Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/task_window.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/tests.rs`.
+### 2. Signatures
+Existing `icon_action(id,MaterialIcon::ExpandMore,"选择应用打开下载文件").outline()` uses official Small Button/public icon, accessibility_label and Tooltip. Existing OpenShellTarget OpenWith callback/current task-window identity unchanged.
+### 3. Contracts
+DialogFooter order Drag,Reveal,Open primary,OpenWith24x24outlineicon; no visiblelabel/no extra menu/controller. Direct footer composition avoids Toolbar.child ghost adaptation;440x184client unchanged. Tooltip and accessiblepurpose retained, official pointer/keyboard owner only. Deferred existingapplication command keeps pending-before-dispatch/cancel/retry/currentHWND+generation close. Main-list Reveal never closes unrelated completion windows.
+### 4. Validation & Error Matrix
+Icon button -> one chooser command. Cancel -> keep window/no error notice. Matching confirmed Reveal/Open -> originalwindow removed and keyedregistration released. Failure/timeout/disconnect/stale/duplicate -> original retry/identity rules; not unconditional clickclose.
+### 5. Good/Base/Bad Cases
+Good: OpenFile then24x24caret with accessiblepurpose. Base: chooser Windows API behavior unchanged. Bad:60x24textbutton beforeOpen or custom-painted clickableicon.
+### 6. Tests Required
+Actualproduction geometry red60x24versus24x24, order/bounds/accessibilityname, actualiconclick->typedOpenWith/cancel; originalrealwindow lifecycle/result/isolation regression and main-list context menu. Report screenshots/user/installed acceptance separately.
+### 7. Wrong vs Correct
+Wrong: remove all labels including accessiblepurpose or close immediately afterclick. Correct: omit visible Button.label, retain Tooltip/accessibility and original correlated success-only close.
+
+## Scenario: Explicit notification header copy
+### 1. Scope / Trigger
+User2026-10-23approves Copy immediately left of original Close and fork preservation. Evidence: `repo:rust/apps/nxtools-desktop/src/notifications/copy.rs`, `repo:rust/apps/nxtools-desktop/src/notifications/presentation.rs`, `repo:vendor/gpui-component-080/src/notification.rs`.
+### 2. Signatures
+`Notification::header_action(builder -> AnyElement) -> Self`; `NotificationCenter::{bind_copy_platform,request_copy,handle_copy}`; existing `PasteTextCommand { text,paste_after_write:false,target_window_handle:0,target_focus_window_handle:0 }`. Public slot is defaultNone, official XSmall ghost Button/Copy or Check; no new wire/hook/clipboard engine.
+### 3. Contracts
+Same official top-right toolbar and original Close/list/ToastManager/native noactivate/hiddenframe owners. Header focus scope tab_stopfalse keeps toolbar visible while either control is focused: GPUI KeyDown switches to keyboard modality and suppresses group_hover; hover-only visibility otherwise removes keyboard listeners before Space/Enter release. Optional header omitted during Ending; no custom key dispatcher. Title reserves32DIP at currentrem for two20DIPcontrols+gap beyond official padding; longbody remains originalscroll. Callback stops bubbling and defers to current ID/generation; one pending installed before correlated caller-ID dispatch. Native success alone sets Check; fixed retryTooltip on enqueue/nativefailure/15sdeadline/disconnect; no recursive notice, lifetime reset, action claim or feedbacktimer. <=3retained statuses, oneactivecopy. Snapshot title/message/first8displayeddetails only, <=256KiBUTF8 checked before allocation; overbudget rejects, never truncates. No payload diagnostics. C# WindowsPasteCoordinator copy-only returns before activation/paste branch; pendingWindowswrite cannot be retracted, late result never marks replacement.
+### 4. Validation & Error Matrix
+Old/closed/exitingbusinessgeneration -> no enqueue; pending -> no duplicate; unmatchedresult -> unchanged; replacement/retirement -> oldstatepruned; timeout/disconnect/failure -> retryablecurrentcard, lateackignored. OfficialEnding -> optionalbuttonabsent. Oversize/empty -> failedfeedback/no command. Copy success does not close/remove/repush/change notificationcount, sourceaction or timer.
+### 5. Good/Base/Bad Cases
+Good: focusedCopy+SpaceDown0/SpaceUp1PasteText(fulltext,copyonly), matchedresultCheck; original2snotice expires on originaldeadline. Base: nonheader callers retain5sdefault/originalClose. Bad: activatepopup to receiveCtrlC, group_hover-onlytoolbar loses focusedbutton onKeyDown, queueadmission=>success, copyingactionlabel/internalID, or feedbacknotice recursivelycopies.
+### 6. Tests Required
+`repo:rust/apps/nxtools-desktop/src/notifications/copy_tests.rs`: actualcopy/closeequalheight+leftorder, exactpayload/fulltail/targets0/correlation/pending/failure/retry/oldresult/timeout/disconnect/closed/oversize/keyboardonce/longtitle/originalexpiry. Existing allpositions/LightDark/stackpause/nativescreen suite retained. Final46notificationrelated/fullDesktop1102/strict/workspace/fmtpass; sourcegates/provenance pass. Realclipboard/physicalpointer/DPI/reader/uservisual not performed. One optional review cancelled/no report, not passed. Fork normalpush/diffidentity separately recorded in taskoutcomes.
+### 7. Wrong vs Correct
+Wrong: `.invisible().group_hover(...)` is sufficient for a keyboard-reachable header action. Correct: originalhover OR currentheaderfocus keeps the same official toolbar visible, so native KeyUp reaches official Button's existing listener. Never add a duplicate manual Enter/Space handler.
+
+## Runtime feedback: bounded Select and nonredundant focus (2026-10-24)
+Evidence: `repo:rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs`, `repo:rust/apps/nxtools-desktop/src/main_window/currency_tests.rs`, `repo:rust/apps/nxtools-desktop/src/theme.rs`, `repo:rust/apps/nxtools-desktop/src/theme_graphite_tests.rs`. Same keyed460x320feature shell, Form/Field, official default32DIP Select/SearchableVec and original entity/actions. Released Select::w_full is constrained by parent w_full/min_w_0/max_w164DIP; dropdown menu remains320x160. Actual input snapshot with full Chinese Yuan Renminbi choice previously extendedx280..600; now inside right content edge448. Do not claim outer-wrapper bounds alone prove actual trigger containment.
+Global released Theme.focus_ring=false omits the redundant outside halo only. Preserve original ring/selection palette, official thin tinted edge/internalfocus, focusability and keyboard selection. No vendor/API upgrade, fake Select, enlarged native window, transparent selection or keyboard suppression. Real GPUI currency selection/save/reuse and theme-preference regressions pass; pixel/aesthetic/reader/mixed-DPI/physical acceptance remains unverified. Current fullDesktop result1102pass/1unrelatedschedule assertion failure is recorded in task10-24-runtime-feedback-reveal-ui, not a full-green claim.
+
+## Scenario: Session-only Clipboard fixed display and menu exclusion (2026-10-24)
+### 1. Scope / Trigger
+Approved runtime feedback changes panel auto-dismiss/menu/preview and narrow settings presentation. Evidence: `repo:rust/apps/nxtools-desktop/src/ui/capture_controls.rs`, `repo:rust/apps/nxtools-desktop/src/ui/components/native_context_menu.rs`, `repo:rust/apps/nxtools-desktop/src/network_settings/system_proxy.rs`.
+### 2. Signatures
+`ClipboardPanel::fixed_display` defaults false per construction and clears on explicit close. Official Small ghost Toggle sits left of Recording. Menu session records source device-pixel bounds, pointer origin and current source session; `ReadSystemProxy` returns bounded `SystemProxySnapshot` through the existing command result.
+### 3. Contracts
+Pinned paste stays visible without CopyOnly reactivation; native target focus owner remains original. External foreground can update target except same-process/preview/transientIME. Explicit close/reopen resets pin, never config. Menu open retires pending/visible preview and new/delayed admission stays blocked. Source HWND and overlay click inside source both dismiss menu only; overlay click does not swallow the following independent click. Source dismiss gesture cannot trigger an item. One preview HWND/800ms/generation/nativeACK remains. Proxy read-only InputStates are separate from manual draft; requestID+view generation+window gate, pending-before-dispatch, deferred application. System routing/save model unchanged, PAC/auto/no endpoint/failure truthful. Blacklist editor precedes bounded120DIP row viewport at720x480; footer remains reachable. Tools share official Badge.dot+text from real enabled state. Firefox Small outline action uses exact supplied HTTPS listing and correlated original Shell owner.
+### 4. Validation & Error Matrix
+Menu pending/visible/lateACK -> cancelled/hidden; old source/session -> ignored. Pinned paste -> visible/no activation; unpinned unchanged. Proxy old ID/modeABA/closedview -> discarded; disconnect/5sdeadline -> current read failure, manual untouched. Native admission is not browser-open success.
+### 5. Good/Base/Bad Cases
+Good: menu-overlay click within Clipboard closes only menu, next click acts normally. Base: unpinned original auto-dismiss. Bad: pin is only TOPMOST, saved durable pin, CopyOnly focus branch for pinned paste, system snapshot overwrites manual draft or fabricates PAC address.
+### 6. Tests Required
+Actual panel/menu/preview lateACK/pressedToggle/targetIME/command terminal, proxy synthetic modes/stale/manual, blacklist many/empty/busy/footer, tool keyboard/persistence, Firefox exact command and actual sort button centerline. Source/synthetic evidence is not physical/installed acceptance. Current outcomes and unreproduced startup-size issue: task10-24-runtime-interaction-feedback.
+### 7. Wrong vs Correct
+Wrong: compare only sort wrapper bounds or menu HWND. Correct: actual Button centerline (pre-fix100.5vs102.5DIP) and native-menu overlay screen-point classification; original component/focus owners retained.
+
+## Scenario: Hidden primary first-show preparation (R5,2026-10-24)
+### 1. Scope / Trigger
+Silent/browser/archive-origin primary hidden startup. Live96DPI/notmaximized1904x1021client firstshow and exactDWMlog correlation are in task10-24-runtime-interaction-feedback/r5-live-boot-evidence.md. Evidence: `repo:rust/apps/nxtools-desktop/src/platform_events/main_preparation.rs`, `repo:rust/apps/nxtools-desktop/src/main.rs`, `repo:csharp/NxTools.PlatformHost/Windows/MainWindowPreparation.cs`.
+### 2. Signatures
+`PrepareMainWindowCommand { window_handle,source_process_id,width,height }` carries logicalDIP; `PreparedMainWindow { x,y,width,height,dpi }` returns actualdeviceclient. Originaldispatcher owns optionalpreparation/pendingID/bounded128notificationbuffer/8sdeadline; native5sboundedSTA.
+### 3. Contracts
+HiddenGPUIWindow retainsCW_USEDEFAULT bounds until publicactivate consumes initialplacement; nativeShow/Activate bypasses that. Before publishingHWND/enablingentrypoints, C# verifies authenticatedpipepeer+ownedhiddenroot/samesession, stagesprimarymonitorhidden, readsactualtargetDPI, appliesexact1060x650DIP scaledonce with liveclientinsets, verifiesclient/hidden/DPI. NoSHOW/activate/TOPMOST/stylechange or vendorpatch. Rustpending installedbeforeenqueue; exactcurrentACK+boundedtypedreadback then deferredreadycallback outside dispatcherlease, then originalnotificationreplay. Source/queue/nativefailure/disconnect/deadline/budget -> hiddenfail/quit, nooldACKrevival. Oncenativeprepare only; latertray/summon/floatingrestore keepsoriginalsize/focusowners and userresize. Browsercoldstart mainfocus/show flags unchanged; its minimization occursafterreadiness.
+### 4. Validation & Error Matrix
+Wrongpeer/type/extraDTO/visible/destroyedroot -> reject beforefinalapply; DPIoutside48..960 orclientmismatch -> noreadiness; wrongID/duplicate/retiredACK -> nopublication; disconnectbetweenACK/deferredcommit -> nocallback; overflow128 -> failhidden. Nativecancel islogical, cannot claimuncooperativeAPI stopped; boundedslot retaineduntilactualreturn.
+### 5. Good/Base/Bad Cases
+Good: hiddenprepare/readback thenoriginaltrayreveal, later1200x700userresize surviveshide/show. Base: normalshownstartup retainsoldconstruction. Bad: per-showdefaultreset, GPUIactivate tofixsize stealsfocus or replaysstalebounds, fakeWM_SIZE, SHOWthenresize or nativeBOOL=>clientready.
+### 6. Tests Required
+OwnedCW_USEDEFAULToriginalShow red1904x990vs1060x650, productionprepare+actualclientgreen; noshow/foregroundchange and lateruserresize. C#DPI96/120/144/192/readback/cancel/peer/malformed, Rustactualdispatcher6cases/Protocolwire+capturedscene rejection. FullDesktop1123pass/1unchangedschedulefailure; strictlint/workspacepass. Physicalreboot/mixedDPI/installedacceptance separate; nodeployment.
+### 7. Wrong vs Correct
+Wrong: onlyassertWindowOptionslogicalsize. Correct: actualnativeclientbeforefirstshow plus pendingACK barrier beforeeveryentrypointcanobtainmainHWND.
+
+## Scenario: Archive recent history and leased temporary-file settings
+### 1. Scope / Trigger
+Remaining reference UI continuation2026-10-25. Original UIAC01/02 and association/menu source
+acceptance stay CLOSED. History/temp controls are real consumers, not overall visual acceptance.
+### 2. Signatures
+`ArchiveSettings::{remember_recent,recent_limit,temp:ArchiveTempSettings}`; temp fields
+`base_directory:String,retention_hours:u32,cleanup_on_child_exit:bool`.
+`UiStateStore::{update_recent,flush,changes}` extends its original one bounded writer/thread/file.
+`ArchiveEntryCommand.temp_policy:Option<ArchiveTempPolicy>` is materialize-only; new `Open` action
+requires existing operation/session/generation/lease_id and forbids path/source/output authority.
+Evidence: `repo:rust/apps/nxtools-desktop/src/archive/ui_state.rs`,
+`repo:rust/apps/nxtools-desktop/src/main_window/archive_temp_settings.rs`,
+`repo:csharp/NxTools.PlatformHost/Protocol/ArchiveEntrySession.Open.cs`.
+### 3. Contracts
+Recent defaulttrue/10,0..30; path data stays in original separate local UI-state file, never logs.
+Only successful current top-level reads with actual cleanup and native browser identity enter MRU;
+nested leased archives and accepted/failed reads do not. Dedup case-insensitive, bound30/128KiB raw
+paths/1MiB serialized file. Geometry save preserves latest recent field; clear awaits original writer
+durability receipt and propagates failure, not queue admission as success. Original bounded change
+signal notifies existing views, no polling/new history runtime. Corrupt state blocks overwrite.
+Temp legacy defaultempty/24h/false; retention choices1/6/24/72/168h. Local drive-qualified paths only,
+finite components/reserved names/traversal/device/UNC rejected; C# rechecks real no-reparse ancestry.
+Original Settings/Normal groups/typed NumberInput/dropdown/Switch/render slots/ListItem and actual
+Small outlined Buttons compose controls; temp Input keeps draft and per-input revision. Browse only
+fills unchanged current draft; cancel/late result never saves. Explicit directory save uses original
+locked changed-field merge, detects dirty baseline conflict; retention/exit fields merge separately.
+Successful results keep original ordered/deferred publication; active jobs/leases are not moved.
+Policy snapshots each new materialization into original Cache; chosen base gains only owned namespace.
+Same cache retains bounded old-root discovery; manifest/fileID/hash/MOTW/lease/empty-ancestry deletion
+remain mandatory. Retention is abandoned-file cleanup eligibility, not a deletion deadline.
+Lease-only Open resolves sealed path natively, retains known external-process hold, returns promptly
+and observes only captured process asynchronously. Optionon tries original safe retirement on exit;
+optionoff retires only after browser request. Null handle uses original close/expiry fallback. Edited,
+locked/replaced/foreign files survive. No forced process termination, recursive cleanup or write-back.
+### 4. Validation & Error Matrix
+Invalid config/policy/control fields -> reject without silent defaults. Missing/invalid recent store
+-> visible unavailable, old bytes retained. Failed clear -> error, current archive remains valid.
+Changed directory baseline -> conflict+draft retained; unedited save adopts latest disk. Picker input
+revision/value mismatch -> ignore selected path. Native lease identity mismatch/unsealed -> no launch.
+Disconnect stops observation, never labels it child exit or waits indefinitely for an external app.
+### 5. Good / Base / Bad Cases
+Good: top-level success records MRU, actual list opens original read, clear survives late window close.
+Base: legacy config/default cache and original expiry; default external open has no early cleanup.
+Bad: nested temp path persisted, whole stale UI snapshot resurrects history, Process.Start return
+treated as document exit, arbitrary custom-base recursion or active lease deletion.
+### 6. Tests Required
+Core default/save/reopen/invalid; Protocol materialize-policy/open lease shape. Production Settings
+list/open/clear/draft/save/conflict/late picker/cancel, Light/Dark minimum reachability. Original entry
+representative asserts policy snapshot and correlated lease-only open after materialization. Actual
+splitter/scrollbar press-move-release and old axis tests distinguish gestures from direct offset setup.
+C# exact temp fixtures cover root switch/restart/bounds/reparse/edited/locked/child on-off/null/failure/
+disconnect; no actual Shell launch. Product visual/native/physical/DPI/UIA acceptance remains separate.
+### 7. Wrong vs Correct
+Wrong: draw temp/history switches without consumers, clear memory and claim durable success, or
+pass returned file path back as arbitrary Shell authority. Correct: original UI-state writer receipt,
+original Core save order, materialize snapshot and native lease-only Open with original cache checks.
+Wrong: tests/imports mean reference restored. Correct: report source/automated/physical/visual levels
+separately; user-provided images uninspected means visual requirements remain unaccepted.
+
+## Scenario: Approved six-item UI consistency repair (2026-10-28)
+### 1. Scope / Trigger
+User-approved task `10-28-ui-experience-consistency-repair` supersedes only the old pending-result
+withholding, automatic selection-inspector coupling, row path metadata, Small shared Switch and
+inline submit-validation expectations. No new engine, native owner, framework patch or theme.
+### 2. Signatures
+Original `quick_launch::search::apply_search_update`; `FileDialogSearchPanel` and
+`PlaceFileDialogSearchWindow`; `MainWindow::{sync_download_detail_scope,open_download_detail}`;
+`NewDownloadView::notify_validation_failure`; `DownloadSettingsView::save`; `settings_toggle`.
+Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/search.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/file_dialog_search.rs`,
+`repo:rust/apps/nxtools-desktop/src/main_window/download_page.rs`,
+`repo:rust/apps/nxtools-desktop/src/downloads/new_download_view.rs`,
+`repo:rust/apps/nxtools-desktop/src/ui/components/settings.rs`.
+### 3. Contracts
+Current nonempty local results publish even while index pending. Empty pending preserves rows;
+final empty clears. Keep original 65ms coalescing, generations, IME and old-result execution guard.
+Attached InputGroup/source rails remain36DIP each; root border adds2DIP to requested height.
+Source row and wrapper use min-width0/full available width: child-in-overflowing-parent is not
+root containment. Native placement/focus/readback remain original C# responsibilities.
+Download secondary line uses live total then durable total, formatted size or `大小未知`, not
+save path/URL. Actual image40DIP/fallback30DIP/Shell source48px retain48DIP row and selection edge.
+Full failure remains discoverable in original status/tooltip/details. Single click selects only;
+one-task PopupMenu `查看详情` defers current module/selection/task checks then creates the original
+DownloadDetailScope. Scope gates detail IO/render; close retires presentation only, while changed
+selection/filter/navigation/window retirement invalidates old work. No second inspector controller.
+Explicit probe/submit/Save validation uses existing NotificationCenter, preserves draft and emits
+no duplicate inline banner or validation-driven resize. Persistent native-layout/security/risk
+Alerts stay. Original keyboard repeat/modifier/IME/generation/actual viewport gates remain.
+Shared settings_toggle is released official Medium36x20 in a36DIP control lane; custom SettingField
+content does not inherit parent sizing. Routine explanatory copy may be shortened, never critical
+destructive/restore/trust/privacy disclosures. No payload diagnostics or new notification manager.
+Catalog hint omission must preserve same-row action alignment without fixed-height tiles or empty
+hint placeholders. Current ListItem has centered internal wrappers and no public content_style;
+its root-level public suffix hosts the same official Buttons, bottom-inset4, with bodypb11 reserving
+the32DIPaction plus12DIPgap at normalrem. Keep content-derived row height and original callbacks.
+### 4. Validation & Error Matrix
+Empty pending -> retain last rows, not false final empty. Stale query -> discard. Invalid draft ->
+one shared notice/zero probe or submit effect/no growth. Repeated held Enter -> no duplicate notice.
+Old task/menu/retired scope -> no detail admission or stale reply. Unknown size -> unknown, not0.
+Native clipping/DPI unavailable -> report acceptance gap; TestApp geometry is not native evidence.
+### 5. Good / Base / Bad Cases
+Good: local command appears before queued fake indexer reply; real row context menu explicitly opens
+original details. Base: empty pending keeps old protected rows; current final result replaces them.
+Bad: reject all pending results, test only Kbd inside an overflowing row, or open detail IO on click.
+### 6. Tests Required
+Production panel pending/local/current-generation; whole source row/root/header/Kbd containment;
+actual bitmap40x40 and selection edges; pointer selection/no scope -> real View Details menu/scope;
+original late-reply/ABA/selection/module/window retirement; invalid draft notification count/draft/
+zero effects/no resize; keyboard held Enter/IME/modifier guards; actual official Medium geometry.
+Affected download/settings/Quick Launch aggregates, strict lint, workspace test compile and scoped
+format/source gates are reported separately from native/physical/DPI/visual/user acceptance.
+### 7. Wrong vs Correct
+Wrong: `if pending { return false; }`. Correct: reject only `pending && update_results.is_empty()`.
+Wrong: selected task automatically creates a detail scope. Correct: explicit deferred menu action
+creates the original current scope; selection only maintains or retires it.
+
+## Scenario: Changed summon-hotkey reset (2026-10-28)
+### 1. Scope / Trigger
+User-approved Clipboard/Quick Launch global summon shortcut reset, left of the existing shortcut.
+### 2. Signatures
+`ClipboardApplication::{clipboard_hotkey_is_custom,can_reset_clipboard_hotkey,reset_clipboard_hotkey}`;
+`QuickLaunchApplication::{hotkey_is_custom,can_reset_hotkey,reset_hotkey}`;
+`hotkey_field(...,state,reset:Option<Button>,on_click)` preserves the original recorder/status.
+Evidence: `repo:rust/apps/nxtools-desktop/src/clipboard.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch.rs`,
+`repo:rust/apps/nxtools-desktop/src/main_window/hotkey_reset_tests.rs`.
+### 3. Contracts
+Compare semantic modifiers/key (case-insensitive key), never display text. Defaults come from Core:
+Clipboard Alt+C; QuickLaunch empty modifiers+Control/doubleCtrl. Nondefault binding alone displays
+official Medium32outline `重置` immediately left of recorder. Default binding has no reset element.
+Original Settings/custom slot and right edge/status remain. No Toolbar.child variant adaptation.
+Reset only admits fixeddefault, connected/no pending configuration/no recording. Controller rechecks
+after deferred UI callback; duplicate/pending/recording/disconnect cannot dispatch. Recorded arbitrary
+bindings still require acknowledged recording. Both inputs share private original Configure*/pending
+candidate submission and CommandResult/section-save owner, not fake recording or a new transaction.
+Only matching native success publishes/saves default; failure keeps prior binding and existing
+status/retry. Applied-but-disk-save-failed remains original explicit partial success. Existing request
+ID flows through IPC/native diagnostics; low-frequency submitted/completed events omit binding text.
+### 4. Validation & Error Matrix
+Display-only difference -> no reset. Changed -> left reset. Waiting/applying/recording/disconnected
+-> visible disabled if changed, no effect. Unmatched ACK -> no commit. Rejected ACK -> unchanged
+memory/disk and retryable reset. Successful ACK -> default memory/disk, reset unmounted.
+### 5. Good / Base / Bad Cases
+Good: one official pointer or focused KeyUp gesture sends one Configure*, then matching ACK saves.
+Base: existing recorder/Escape/focus-out and default no-button geometry unchanged.
+Bad: compare localized label, write default before ACK, or forge recording-ready to call set_hotkey.
+### 6. Tests Required
+Actual two Settings pages: default absence/display-copy independence; left same-row32DIPbounds;
+pointer and focused Enter release; pending repeat/no optimistic save; wrong/rejected/success ACK;
+recording-before/afterpauseACK/disconnect UI+owner guards. Original hotkey aggregate retained.
+TestApp `simulate_keystrokes` dispatches key input without the official Button release; use actual
+KeyDownEvent+KeyUpEvent for activation, assert no command before release. No vendor/key-dispatch fix.
+Native registration/physical/DPI/visual/user acceptance remain separate from these fakeIPC tests.
+### 7. Wrong vs Correct
+Wrong: reset -> set recording flags -> set_hotkey(default). Correct: fixed-default admission through
+original configuration owner, preserving the existing acknowledged arbitrary-binding recording gate.
+
+## Scenario: Automatic archive preview and complete drag selections
+### 1. Scope / Trigger
+Release38 archive row/Tree drag, automatic member preview and download context-menu ordering.
+Evidence: `repo:rust/apps/nxtools-desktop/src/archive/model_drag.rs`,
+`repo:rust/apps/nxtools-desktop/src/archive/browser_drag.rs`,
+`repo:rust/apps/nxtools-desktop/src/archive/browser_preview.rs`,
+`repo:rust/apps/nxtools-desktop/src/archive/preview.rs`,
+`repo:rust/apps/nxtools-desktop/src/archive/ui_state.rs`,
+`repo:rust/apps/nxtools-desktop/src/main_window/download_page.rs`.
+### 2. Signatures
+`BrowserModel::freeze_drag_selection_authorized` / `freeze_drag_tree` return complete frozen
+descriptors or a member-specific String error. `preview_visible`, `observe_preview_selection`,
+`sync_preview_selection`, `preview_selection_matches` and `suspend_preview` retain the original
+generation/fingerprint seam. UiState has no enablement field; legacy show_preview is ignored.
+### 3. Contracts
+Initially there is no right preview slot, handle or reserved width. A supported single-file
+selection automatically adds the existing official resizable preview panel; no toolbar/View-menu/
+pane-close opt-in. Conditional child composition avoids the locked component's hidden-slot size
+accounting while retaining official Tree/details/preview handles. Keep the original controller,
+cache, cancellation and passive document/image rendering. Empty/unsupported/multiple/directory
+selection, tab suspend, source invalidation and close clear prior content and reject stale results.
+Cross-entity dispatch is next-turn and rechecks the fingerprint; preview never moves list/primary
+input focus. Name mode fills the measured viewport before/after preview and splitter changes.
+
+Freeze files by original ordinal and directory descendants by original subtree. Missing optional
+metadata, unknown size or resolvable case/name/file-directory conflicts do not veto selection.
+Resolve descriptor names only, merge original directory keys case-insensitively and preserve every
+selected file ordinal. Collision suffixes shorten only the presentation stem at character boundaries
+to fit existing native name/path budgets; original paths and ordinals remain intact. No separate
+root/descriptor/file/request-count or512MiB drag cap. Whole-source/path/kind/integrity, real envelope/
+native representation, general extraction resources and encrypted authorization remain. Genuine
+failure names the member/restriction, never drops items. Original held4DIP/source HWND/connection-
+locked IPC/OLE/async demand and cleanup owners remain.
+
+Official Kit0.8.0 Empty/EmptyHeader/EmptyTitle/EmptyDescription retains stage-specific state copy;
+the public title child carries a nonfocusable semantic Label. Existing retry/source controls are
+Small outlined Buttons outside Toolbar.child transformations. File byte limit, read resources,
+text lines, image dimensions, decode memory and document limits are distinct results; native
+resource failure does not imply an oversized selected file. Limits are unchanged.
+Download PopupMenu builds original capability-driven actions first, then appends the original
+single-selection View Details callback last, without a leading separator or enablement change.
+Existing correlated preview/drag native lifecycle diagnostics remain; no frame/payload probes.
+### 4. Validation & Error Matrix
+| Condition | Required result |
+| --- | --- |
+| Initial/empty/unsupported/multiple/directory selection | No preview slot or reserved right-hand width |
+| Legacy show_preview=false with supported single file | Automatic preview; retain unrelated layout |
+| Old generation or hidden/closed tab | Clear current content, no late publication or focus change |
+| Unknown estimates / collision warning | Complete representable descriptors, actual native accounting |
+| Unrepresentable original path/link/special kind | Specific member/reason; whole selection rejected |
+| Native read resource limit | Read-stage title, not file-size title |
+| Actual byte/line/image/document limit | Corresponding stage-specific visible title |
+| Download single/multiple selection | Details last only where originally available |
+### 5. Good/Base/Bad Cases
+Good: file a plus A/x and a/y yields one renamed directory containing both original descendants.
+Base: selecting an 80 B text file automatically shows its current passive document.
+Bad: historical false hides preview, filename renaming changes content identity, or a generic
+security message masks optional metadata/collision handling defects.
+### 6. Tests Required
+Production ListItem/Tree gesture-to-command, complete ordinal and deferred lifecycle regressions;
+actual GPUI preview state titles, focus, tab/close/cancel, legacy loader/reopen, absent/revealed pane,
+Tree splitter in details/name mode, complete selection and download menu callback. Real worker/native
+IStream regressions are separate from simulated GPUI and physical Explorer/installed/DPI/user visuals.
+### 7. Wrong vs Correct
+Wrong: default enablement true while persisting an off switch, reject OutputCollision before a
+source-bound lease, or test only strings. Correct: no enablement state, original selection-driven
+controller, presentation-only descriptor naming and executable owner-boundary regressions.
+
+## Scenario: Current Quick Launch result availability
+### 1. Scope / Trigger
+Current local, indexed and extension search results arrive while another provider is still running.
+Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/search.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs`,
+`repo:docs/reference-code/quick-launch-research.md`.
+### 2. Signatures
+`handle_indexer_notification` accepts current batches then calls original `refresh_indexed_results`
+for nonempty nonterminal or terminal batches. `search_update_pending` tracks lack of usable current
+rows; `IndexSearchSession.complete` separately tracks terminal provider completion.
+`apply_extension_batch` publishes trusted current rows without importing retained prior-query rows.
+### 3. Contracts
+Current nonempty local/merged/extension results are immediately visible and actionable; do not wait
+for all providers or their terminal batch. Keep the existing65ms input coalescer, matching/ranking,
+final merge, provider execution revalidation and once-only close-on-acceptance behavior. During a
+new query, retained old rows are visual continuity only: Enter, shortcut, pointer and action mode
+cannot execute them. Empty current pending batches preserve that disabled presentation; current
+nonempty batches replace it and enable only current rows. Old generation/session/Input, hidden or
+closed windows, disconnect and retired extension providers retain their original guards.
+Existing correlated provider/publication diagnostics distinguish row availability from complete;
+no query/payload logging or per-keystroke diagnostic stream. Desktop readiness does not establish
+indexed-service computation latency.
+### 4. Validation & Error Matrix
+| Condition | Required result |
+| --- | --- |
+| Current local row, index provider unfinished | Visible/actionable; complete remains false |
+| Current nonterminal index batch has rows | Publish/rank now; real Enter/action works |
+| Current empty pending batch / retained old rows | Keep old display disabled; no stale action |
+| Current nonempty extension batch | Only current merged rows enabled, no retained ordinary rows |
+| Old generation / closed panel / retired provider | No publication or action |
+| Current terminal empty batch / disconnect | Original final-clear/error lifecycle |
+### 5. Good/Base/Bad Cases
+Good: a local command launches before index completion; a current received index row opens before
+terminal transport. Base: terminal results merge with original ordering and selection identity.
+Bad: accepted=1/visible=0 until complete, or enabling retained rows merely because a provider runs.
+### 6. Tests Required
+`search_latency_ready_indexed_rows_publish_before_terminal_batch` drives actual Input/coalescer/
+command/nonterminal batch/list bounds/action mode/Enter dispatch and old-row rejection.
+`ux_repair_real_panel_publishes_local_command_while_index_is_pending` uses actual pointer dispatch;
+`real_panel_late_batches_keep_identity_and_current_input_retires_actions` covers extension freshness.
+Retain existing generation, IME, close, ranking, current-selection and action regressions. Controlled
+publication timings are not live service, physical keyboard or installed-product performance.
+### 7. Wrong vs Correct
+Wrong: search_pending means any provider has unfinished work. Correct: current rows establish
+availability; complete tracks provider termination; stale retained rows grant no execution authority.

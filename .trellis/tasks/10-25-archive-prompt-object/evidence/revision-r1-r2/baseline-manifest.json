@@ -1,0 +1,17 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+        "sha256":  "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+        "baseline":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\revision-r1-r2\\rust__apps__nxtools-desktop__src__archive__job_tests.rs.baseline"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/prd.md",
+        "sha256":  "305121445549cb2cffe7a869ef3b731abf5c008f7711848d0ccb7807c79fed08",
+        "baseline":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\revision-r1-r2\\.trellis__tasks__10-25-archive-prompt-object__prd.md.baseline"
+    },
+    {
+        "path":  ".trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+        "sha256":  "7b83e0caf2547aca5ffcd9c31b3c9aa8944c25ab0705d89fcb8e1c1e2a22eb80",
+        "baseline":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item04\\revision-r1-r2\\.trellis__tasks__10-25-archive-prompt-object__outcomes.md.baseline"
+    }
+]

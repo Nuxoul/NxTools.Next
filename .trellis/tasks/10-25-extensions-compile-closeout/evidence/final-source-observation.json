@@ -1,0 +1,50 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/committed_events.rs",
+        "baseline_sha256":  "b49943302b7e8c258496613c3c95640ca901fce134c553f853b8f746e8cc9866",
+        "final_sha256":  "48af0f1b9cc5eb135313f463467a441651ff79c4c6142fde85f6657112f883f8",
+        "modified":  "2026-10-25T23:32:04.5911480+08:00"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/extensions/event_history.rs",
+        "baseline_sha256":  "0b73805bc60130de2c5b949da72d4ec000948ba6c401d3de3ca49eec2f241b84",
+        "final_sha256":  "cf7a5fa9820ed3a6d0bc97ffbd0c5db3e02cd7a1a682231f2dfeff62f10d58cf",
+        "modified":  "2026-10-25T23:34:52.8832848+08:00"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/api.rs",
+        "baseline_sha256":  "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+        "final_sha256":  "bf7530674c6c66e44a86bc94f87979b88d21a2f0e4cdfd94eea2744349260e9b",
+        "modified":  "2026-10-25T22:45:31.3291280+08:00"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/lib.rs",
+        "baseline_sha256":  "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+        "final_sha256":  "7b11fd0affe2c2ca886bd8f5427481c87f58ddbe6afdb4c1d0c442cb3733457a",
+        "modified":  "2026-10-25T23:28:45.7292765+08:00"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/src/runtime.rs",
+        "baseline_sha256":  "a48ca2946023789995005bc31678cc2182c12c43634078b3a3d29ac9b1f6a062",
+        "final_sha256":  "451c80b7037672542784617a6042423e35a8a6efe7299c77c92d51832f395f77",
+        "modified":  "2026-10-25T23:34:52.7100006+08:00"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/tests/api_contracts.rs",
+        "baseline_sha256":  "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+        "final_sha256":  "c95a1e277218b2d879bd010a5fa626295b5816c05bcb41568badd30bafa5ad45",
+        "modified":  "2026-10-25T22:56:30.5829339+08:00"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/tests/transport_declarations.rs",
+        "baseline_sha256":  "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+        "final_sha256":  "da474caded0cea3ceb1d0cc270dc6595ec850e8ec38284e1d10220fcbda72cb1",
+        "modified":  "2026-10-25T22:42:21.6778594+08:00"
+    },
+    {
+        "path":  "rust/crates/nxtools-extensions/tests/transport_runtime.rs",
+        "baseline_sha256":  "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+        "final_sha256":  "c8f56c374721eb99fd57452c424ffe604e12175f0ea4e6ae27a572cced878cb0",
+        "modified":  "2026-10-25T23:19:09.9692223+08:00"
+    }
+]

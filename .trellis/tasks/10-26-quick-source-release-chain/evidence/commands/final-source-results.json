@@ -1,0 +1,23 @@
+﻿[
+    {
+        "path":  "tests\\architecture\\quick-launch-lifecycle.ps1",
+        "parse":  "PASS"
+    },
+    {
+        "path":  "tests\\architecture\\quick-launch-release-chain.ps1",
+        "parse":  "PASS"
+    },
+    {
+        "path":  "tests\\architecture\\quick-launch-release-chain-tests.ps1",
+        "parse":  "PASS"
+    },
+    {
+        "name":  "SourceOnly required",
+        "expected_rejection":  "PASS",
+        "exit":  1
+    },
+    {
+        "available":  false,
+        "name":  "PSScriptAnalyzer"
+    }
+]

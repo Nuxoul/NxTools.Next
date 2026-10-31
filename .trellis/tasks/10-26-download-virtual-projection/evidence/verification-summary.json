@@ -1,0 +1,23 @@
+{
+  "results": {
+    "audit11-red-01": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1303 filtered out; finished in 0.28s",
+    "audit11-red-10000": "test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 1303 filtered out; finished in 0.79s",
+    "audit11-green-02": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1303 filtered out; finished in 0.70s",
+    "audit11-five-final": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 1303 filtered out; finished in 1.33s",
+    "download-page-related": "test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 1282 filtered out; finished in 22.82s",
+    "download-main-related": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 1281 filtered out; finished in 2.48s",
+    "downloads-related": "test result: ok. 210 passed; 0 failed; 0 ignored; 0 measured; 1098 filtered out; finished in 185.68s",
+    "protected-related": "test result: ok. 69 passed; 0 failed; 0 ignored; 0 measured; 1239 filtered out; finished in 168.88s",
+    "final-alias-and-identity": "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 1285 filtered out; finished in 22.90s"
+  },
+  "test_strict_final": "PASS",
+  "production_strict": "FAIL baseline unused SPACING_12 / DecodedMedia.animated",
+  "workspace_check": "PASS",
+  "workspace_fmt": "FAIL five baseline-identical files",
+  "source_gates": "11 PASS",
+  "full_desktop": "NOT RUN",
+  "native_visual_release": "NOT RUN",
+  "history_files": 3242,
+  "protected_files": 365,
+  "owner_checks": 15
+}

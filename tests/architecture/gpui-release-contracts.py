@@ -66,6 +66,9 @@ def main():
     require("pub fn duration(mut self, duration: Duration)" in notification, "duration API lost")
     require("notification.duration.unwrap_or(Duration::from_secs(5))" in notification, "raw5s default lost")
     require("timeout: autohide.then_some(duration)" in notification, "official timeout forwarding lost")
+    require("pub fn header_action(" in notification and "header_action_builder: None" in notification, "optional header action API/default lost")
+    require("let header_action = if closing" in notification, "header action must retire during official exit")
+    require(notification.index(".when_some(header_action,") < notification.index('Button::new("close")'), "header action must precede original close")
     backend = (ROOT / VENDORS["gpui-pre-windows"][0] / "src/events.rs").read_text("utf-8")
     compact_backend = re.sub(r"\s+", "", backend)
     for token in ["WM_MOUSEACTIVATE => {", "GetWindowLongPtrW(handle, GWL_EXSTYLE)", "WS_EX_NOACTIVATE.0", "if no_activate { MA_NOACTIVATE } else { MA_ACTIVATE }"]:

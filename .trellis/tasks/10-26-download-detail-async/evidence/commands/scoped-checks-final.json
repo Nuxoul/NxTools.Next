@@ -1,0 +1,15 @@
+﻿{
+    "diff":  0,
+    "files":  [
+                  "rust/apps/nxtools-desktop/src/downloads.rs",
+                  "rust/apps/nxtools-desktop/src/downloads/detail_request.rs",
+                  "rust/apps/nxtools-desktop/src/downloads/detail_request_tests.rs",
+                  "rust/apps/nxtools-desktop/src/main_window.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+                  "rust/apps/nxtools-desktop/src/main_window/download_page/detail_async_tests.rs",
+                  "rust/crates/nxtools-download/src/engine/projection.rs",
+                  "rust/crates/nxtools-download/src/storage.rs"
+              ],
+    "fmt":  0
+}

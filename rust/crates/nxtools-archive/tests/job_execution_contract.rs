@@ -183,6 +183,8 @@ fn product_readmission_adapter_preserves_original_intent_and_native_terminal() {
                 native_error_code: None,
                 journal: vec![],
                 output_shortfall: shortfall,
+                result_location: None,
+                output_published: None,
             })
         },
     )

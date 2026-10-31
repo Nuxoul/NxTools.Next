@@ -1,0 +1,11 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/network_settings.rs
++++ queue07/rust/apps/nxtools-desktop/src/network_settings.rs
+@@ -1191,7 +1191,7 @@
+                     title,
+                     help,
+                     format!("global-setting-{slot}-help"),
+-                    332.0,
++                    crate::ui::metrics::ordinary_rem(332.0),
+                     control,
+                 )
+             })

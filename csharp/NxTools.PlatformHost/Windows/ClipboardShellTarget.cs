@@ -11,7 +11,8 @@ internal enum ShellTargetKind
     SelectInExplorer,
     RunElevated,
     RegistryKey,
-    SystemTool
+    SystemTool,
+    OpenInExplorer,
 }
 
 internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
@@ -48,6 +49,7 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
         var kind = action switch
         {
             "open" => ShellTargetKind.Open,
+            "open_in_explorer" => ShellTargetKind.OpenInExplorer,
             "open_with" => ShellTargetKind.OpenWith,
             "select_in_explorer" => ShellTargetKind.SelectInExplorer,
             "run_elevated" => ShellTargetKind.RunElevated,
@@ -89,6 +91,11 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
             error = "The selected Explorer target does not exist.";
             return false;
         }
+        if (kind == ShellTargetKind.OpenInExplorer && !Directory.Exists(value) && !File.Exists(value))
+        {
+            error = "Explorer result location requires an existing filesystem target.";
+            return false;
+        }
         if (kind == ShellTargetKind.RunElevated && !IsSafeElevatedTarget(value))
         {
             error = "The elevated target must be an existing file or an allowlisted system tool.";
@@ -120,13 +127,22 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
                extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase);
     }
 
-    public WindowsCommandResult Launch(Action<string>? stageChanged = null)
+    public WindowsCommandResult Launch(Action<string>? stageChanged = null) => LaunchCore(stageChanged, null, Process.Start);
+
+    // Archive-only optional capture at the SAME ordinary native launch boundary. Generic
+    // Shell behavior/validation/result remains unchanged; injected start is fixture-only.
+    internal WindowsCommandResult LaunchCaptured(Action<Process?> capture, Func<ProcessStartInfo, Process?>? start = null) =>
+        LaunchCore(null, capture, start ?? Process.Start);
+
+    private WindowsCommandResult LaunchCore(Action<string>? stageChanged, Action<Process?>? capture, Func<ProcessStartInfo, Process?> start)
     {
         if (Kind == ShellTargetKind.OpenWith)
         {
             return OpenWithShellDialog.Show(Target, stageChanged);
         }
 
+        if (Kind == ShellTargetKind.OpenInExplorer)
+            return ExplorerShellActivation.EnterAndActivate(Target, stageChanged);
         if (Kind == ShellTargetKind.SelectInExplorer)
         {
             return ExplorerShellActivation.LaunchAndActivate(Target, stageChanged);
@@ -159,7 +175,8 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
                 break;
         }
 
-        _ = Process.Start(startInfo);
+        var process = start(startInfo);
+        if (capture is not null) capture(process);
         return new WindowsCommandResult(true);
     }
 

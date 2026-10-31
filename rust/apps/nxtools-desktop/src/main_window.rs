@@ -38,7 +38,7 @@ use tracing::info;
 
 use crate::clipboard::ClipboardApplication;
 use crate::downloads::DownloadApplication;
-use crate::icons::{CaptionIcon, MaterialIcon};
+use crate::icons::MaterialIcon;
 use crate::network_settings::NetworkSettingsApplication;
 use crate::notifications::NotificationCenter;
 #[cfg(test)]
@@ -70,9 +70,11 @@ use crate::ui::components::titlebar::ModuleHeader;
 use crate::ui::components::volume_scope::{
     automatic_volume_scope_row, empty_volume_scope_row, volume_scope_row, volume_scope_setting,
 };
+#[cfg(test)]
+use crate::ui::metrics::SPACING_12;
 use crate::ui::metrics::{
     BADGE_HEIGHT, CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SIDEBAR_WIDTH, SPACING_4, SPACING_8,
-    SPACING_12, TITLEBAR_HEIGHT,
+    TITLEBAR_HEIGHT,
 };
 use crate::ui::typography::{
     LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE,
@@ -84,6 +86,8 @@ mod archive_page_tests;
 mod clipboard_page;
 mod download_page;
 mod extensions_page;
+#[cfg(test)]
+mod hotkey_reset_tests;
 mod notifications;
 mod quick_launch_page;
 mod shell;
@@ -92,6 +96,9 @@ mod tools_page;
 pub(crate) mod visual_preview;
 
 use self::clipboard_page::*;
+pub(crate) use self::download_page::format_duration;
+#[cfg(test)]
+pub(crate) use self::download_page::projection_tests;
 use self::download_page::*;
 use self::quick_launch_page::*;
 
@@ -160,12 +167,14 @@ pub(crate) struct MainWindow {
     download_detail_tab: DownloadDetailTab,
     download_detail_scroll: ScrollHandle,
     requested_download_detail: Option<DownloadTaskId>,
+    download_detail_scope: Option<crate::downloads::DownloadDetailScope>,
     custom_command_run_as_admin: bool,
     custom_command_run_silently: bool,
     hotkey_focus: FocusHandle,
     module_focus: [FocusHandle; 6],
     tool_focus: FocusHandle,
     currency_tool_focus: FocusHandle,
+    floating_tool_focus: FocusHandle,
     recording_hotkey: Option<HotkeyRecordingTarget>,
     clipboard_overview: ClipboardOverview,
     clipboard_overview_generation: u64,
@@ -180,7 +189,11 @@ pub(crate) struct MainWindowShellContext {
     pub(crate) system_settings: Rc<RefCell<SystemSettings>>,
 }
 impl MainWindow {
-    pub(crate) fn render_tools(&mut self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(crate) fn render_tools(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         tools_page::render_tools(self, window, cx)
     }
 
@@ -251,6 +264,16 @@ impl MainWindow {
                     return;
                 }
                 let query = input.read(cx).value().trim().to_owned();
+                let selected_visible = this.downloads.upgrade().is_some_and(|app| {
+                    app.read(cx).tasks().iter().any(|task| {
+                        Some(task.task.id()) == this.selected_download_task
+                            && this.download_filter.matches(task.task.status())
+                            && download_task_matches_search(task, &query)
+                    })
+                });
+                if !selected_visible {
+                    this.retire_download_detail_scope(cx);
+                }
                 this.download_list_scroll
                     .scroll_to_item(0, ScrollStrategy::Top);
                 this.download_search_log_generation =
@@ -347,6 +370,30 @@ impl MainWindow {
                 },
             )
         });
+        let detail_release = cx.on_release(|this, cx| {
+            if let Some(scope) = this.download_detail_scope.take() {
+                scope.retire();
+                let application = this.downloads.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |app, _| app.retire_task_detail_scope(&scope));
+                });
+            }
+        });
+        let detail_window = window.window_handle().window_id();
+        let detail_view = cx.entity().downgrade();
+        let detail_close = cx.on_window_closed(move |cx, closed| {
+            if closed == detail_window {
+                if let Ok(Some(scope)) =
+                    detail_view.read_with(cx, |view, _| view.download_detail_scope.clone())
+                {
+                    scope.retire();
+                }
+                let view = detail_view.clone();
+                cx.defer(move |cx| {
+                    let _ = view.update(cx, |view, cx| view.retire_download_detail_scope(cx));
+                });
+            }
+        });
         let notification_subscription = cx.observe(&notifications, |_, _, cx| cx.notify());
         let hotkey_focus = cx.focus_handle();
         let hotkey_focus_subscription =
@@ -362,6 +409,8 @@ impl MainWindow {
         subscriptions.extend(downloads_subscription);
         subscriptions.extend(quick_launch_event_subscription);
         subscriptions.push(notification_subscription);
+        subscriptions.push(detail_release);
+        subscriptions.push(detail_close);
         subscriptions.push(hotkey_focus_subscription);
         let initial_download_sort = downloads
             .clone()
@@ -433,6 +482,7 @@ impl MainWindow {
             download_detail_tab: DownloadDetailTab::default(),
             download_detail_scroll: ScrollHandle::new(),
             requested_download_detail: None,
+            download_detail_scope: None,
             clipboard_overview: ClipboardOverview::default(),
             clipboard_overview_generation: 0,
             clipboard_overview_loading: false,
@@ -447,6 +497,7 @@ impl MainWindow {
             module_focus: std::array::from_fn(|_| cx.focus_handle().tab_stop(true)),
             tool_focus: cx.focus_handle().tab_stop(true),
             currency_tool_focus: cx.focus_handle().tab_stop(true),
+            floating_tool_focus: cx.focus_handle().tab_stop(true),
             recording_hotkey: None,
             _subscriptions: subscriptions,
         };
@@ -459,6 +510,9 @@ impl Render for MainWindow {
         crate::ui::motion::observe_motion(window, cx);
         crate::theme::observe_theme(window, cx);
         self.theme = Theme::active(cx);
+        if self.shell.active_module() != MainModule::Downloads {
+            self.retire_download_detail_scope(cx);
+        }
         let content = match self.shell.active_module() {
             MainModule::Downloads => self.render_downloads(cx),
             MainModule::QuickFind => self.render_quick_find(cx),
@@ -499,7 +553,18 @@ impl Render for MainWindow {
 #[cfg(test)]
 mod currency_tests;
 #[cfg(test)]
+mod floating_assistant_tests;
+#[cfg(test)]
 mod tests;
 
 #[cfg(test)]
 mod kit_foundation_tests;
+
+#[cfg(test)]
+mod shared_rem_tests;
+
+#[cfg(test)]
+mod page_rem_tests;
+
+#[cfg(test)]
+mod command_naming_tests;

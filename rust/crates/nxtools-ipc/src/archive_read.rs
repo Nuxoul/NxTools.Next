@@ -351,6 +351,7 @@ impl PlatformBridge {
                 PendingCommand {
                     generation,
                     accepted_at: Instant::now(),
+                    timeout: super::PENDING_COMMAND_TIMEOUT,
                     summon_reply: None,
                 },
             );

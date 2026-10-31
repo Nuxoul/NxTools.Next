@@ -129,6 +129,7 @@ fn captured_case(verb: &str, mode: &str, code: &str) -> std::process::Output {
             "--exact",
             "output_tests::reported_fault_child",
             "--nocapture",
+            "--format=terse",
         ])
         .env(CHILD_CASE, format!("{verb}:{mode}:{code}"))
         .stdout(Stdio::piped())

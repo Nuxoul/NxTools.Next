@@ -1,0 +1,4 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Serial Cargo/strict/fixture effects and honest physical/visual boundaries"}
+{"file":".trellis/tasks/10-24-runtime-feedback-reveal-ui/prd.md","reason":"Exact reported problems and nonmutation scope"}
+{"file":"csharp/NxTools.PlatformHost.Tests/TestEffects.cs","reason":"Exact reviewed fixture selection; no live Shell by default"}
+{"file":".trellis/tasks/10-24-runtime-feedback-reveal-ui/design.md","reason":"Strict active tab/parent/exact selection and native authorization limits"}

@@ -20,6 +20,7 @@ internal static class IndexerServiceInstaller
     private const string DesktopHashValueName = "NxToolsDesktopSha256";
     private const string PlatformHostHashValueName = "NxToolsPlatformHostSha256";
     private const string DesktopPathValueName = "NxToolsDesktopPath";
+    private const string ArchiveHashesValueName = "NxToolsArchiveReleaseSha256";
     private const string ServiceSddl =
         "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)" +
         "(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)" +
@@ -216,6 +217,7 @@ internal static class IndexerServiceInstaller
             using var desktop = TrustedBinary.Open(ValidatePackagedSibling(hostPath, "NxTools.exe"), ReleaseBinaryManifest.DesktopSha256);
             using var indexer = TrustedBinary.Open(ValidatePackagedIndexerPath(hostPath,
                 Path.Combine(AppContext.BaseDirectory, "NxTools.Indexer.exe")), ReleaseBinaryManifest.IndexerSha256);
+            using var archive = OpenArchiveRelease(AppContext.BaseDirectory);
             string hostHash;
             lock (ProcessImageGate) hostHash = _processImage!.Sha256;
             var exists = ServiceExists();
@@ -307,6 +309,7 @@ internal static class IndexerServiceInstaller
             using var browserHostSource = TrustedBinary.Open(
                 browserHostPath,
                 ReleaseBinaryManifest.BrowserHostSha256);
+            using var archiveSources = OpenArchiveRelease(Path.GetDirectoryName(indexerPath)!);
 
             var serviceExists = ServiceExists();
             WriteDeploymentLog(log, correlationId, "source_tuple_verified", started);
@@ -323,7 +326,9 @@ internal static class IndexerServiceInstaller
             var protectedBrowserHostPath =
                 Path.Combine(protectedDirectory, "NxTools.BrowserHost.exe");
             StopProtectedProcesses(
-                [protectedDesktopPath, protectedPlatformHostPath, protectedBrowserHostPath],
+                [protectedDesktopPath, protectedPlatformHostPath, protectedBrowserHostPath,
+                    Path.Combine(protectedDirectory, "NxTools.ShellSelectionHelper.exe"),
+                    Path.Combine(protectedDirectory, "NxTools.ArchiveWorker.exe")],
                 Environment.ProcessId,
                 log, correlationId);
             using var protectedDirectories =
@@ -346,6 +351,9 @@ internal static class IndexerServiceInstaller
                 browserHostSource,
                 protectedDirectory,
                 "NxTools.BrowserHost.exe");
+            foreach (var source in archiveSources.Sources)
+                DeployProtectedBinary(source, protectedDirectory, Path.GetFileName(source.FullPath));
+            using var verifiedArchive = OpenArchiveRelease(protectedDirectory);
             protectedDirectories.Validate();
             ValidateDeployedBinary(
                 protectedIndexerPath,
@@ -385,6 +393,9 @@ internal static class IndexerServiceInstaller
                     PlatformHostHashValueName,
                     platformHostSource.Sha256,
                     RegistryValueKind.String);
+                key.SetValue(ArchiveHashesValueName,
+                    System.Text.Json.JsonSerializer.Serialize(ArchiveReleaseManifest.Files), RegistryValueKind.String);
+                key.SetValue("NxToolsBrowserHostSha256", browserHostSource.Sha256, RegistryValueKind.String);
                 key.SetValue(
                     DesktopPathValueName,
                     protectedDesktopPath,
@@ -486,6 +497,7 @@ internal static class IndexerServiceInstaller
                 BinaryHashMatches(binaryHash, protectedIndexerPath) &&
                 BinaryHashMatches(desktopHash, protectedDesktopPath) &&
                 BinaryHashMatches(platformHostHash, protectedPlatformHostPath) &&
+                RegisteredArchiveReleaseMatches(key, protectedDirectory, platformHostHash) &&
                 RegistrationMatches(
                     new IndexerServiceRegistration(
                         imagePath,
@@ -554,6 +566,7 @@ internal static class IndexerServiceInstaller
                 BinaryHashMatches(desktopHash, protectedDesktopPath) &&
                 BinaryHashMatches(platformHostHash, sourcePlatformHostPath) &&
                 BinaryHashMatches(platformHostHash, protectedPlatformHostPath) &&
+                ArchiveReleaseMatches(sourceDirectory!) && ArchiveReleaseMatches(protectedDirectory) &&
                 RegistrationMatches(
                 new IndexerServiceRegistration(
                     imagePath,
@@ -645,6 +658,7 @@ internal static class IndexerServiceInstaller
                 File.Exists(expectedPath) &&
                 File.Exists(protectedIndexerPath) &&
                 File.Exists(protectedPlatformHostPath) &&
+                ArchiveReleaseMatches(protectedDirectory) &&
                 BinaryHashMatches(registeredIndexerHash, protectedIndexerPath) &&
                 BinaryHashMatches(ReleaseBinaryManifest.IndexerSha256, protectedIndexerPath) &&
                 BinaryHashMatches(registeredDesktopHash, expectedPath) &&
@@ -682,6 +696,7 @@ internal static class IndexerServiceInstaller
                 key?.GetValue(PlatformHostHashValueName) as string;
             return registeredHash is not null &&
                 File.Exists(expectedPath) &&
+                ArchiveReleaseMatches(ProtectedServiceDirectory()) &&
                 BinaryHashMatches(registeredHash, expectedPath);
         }
         catch (Exception error) when (
@@ -704,7 +719,7 @@ internal static class IndexerServiceInstaller
         }
         foreach (var file in release.Files)
         {
-            if (file.Path is "NxTools.exe" or "NxTools.PlatformHost.exe" or "NxTools.Indexer.exe" or "NxTools.BrowserHost.exe") continue;
+            if (file.Path is "NxTools.exe" or "NxTools.PlatformHost.exe" or "NxTools.Indexer.exe" or "NxTools.BrowserHost.exe" || ArchiveReleaseManifest.Files.ContainsKey(file.Path)) continue;
             var relative = file.Path.Replace('/', Path.DirectorySeparatorChar);
             var destination = Path.Combine(protectedDirectory, relative);
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -1074,7 +1089,50 @@ internal static class IndexerServiceInstaller
         }
     }
 
-    private sealed class TrustedBinary : IDisposable
+    // Same stable-handle approval/deployment owner as the original release binaries.
+    internal static ArchiveReleaseLease OpenArchiveRelease(string directory,
+        IReadOnlyDictionary<string, string>? expected = null) => new(directory, expected ?? ArchiveReleaseManifest.Files);
+
+    internal sealed class ArchiveReleaseLease : IDisposable
+    {
+        internal readonly List<TrustedBinary> Sources = [];
+        internal ArchiveReleaseLease(string directory, IReadOnlyDictionary<string, string> expected)
+        {
+            try {
+                if (expected.Count != ArchiveReleaseManifest.Files.Count ||
+                    ArchiveReleaseManifest.Files.Keys.Any(name => !expected.ContainsKey(name)) ||
+                    expected.Values.Any(hash => hash is not { Length: 64 } || !hash.All(char.IsAsciiHexDigit)))
+                    throw new InvalidDataException("Incomplete archive release approval.");
+                foreach (var (name, hash) in expected) Sources.Add(TrustedBinary.Open(Path.Combine(directory, name), hash));
+            } catch { Dispose(); throw; }
+        }
+        public void Dispose() { foreach (var source in Sources) source.Dispose(); Sources.Clear(); }
+    }
+
+    private static bool ArchiveReleaseMatches(string directory)
+    {
+        try { using var lease = OpenArchiveRelease(directory); return true; }
+        catch { return false; }
+    }
+
+    private static bool RegisteredArchiveReleaseMatches(RegistryKey? key, string directory, string platformHostHash)
+    {
+        var json = key?.GetValue(ArchiveHashesValueName) as string;
+        // A different previously approved host may predate archive deployment. This build's
+        // hash binds its new archive approval, so this exception never authorizes a partial current release.
+        if (json is null) {
+            lock (ProcessImageGate) return _processImage is not null &&
+                !string.Equals(platformHostHash, _processImage.Sha256, StringComparison.OrdinalIgnoreCase);
+        }
+        if (json.Length > 4096) return false;
+        try {
+            var hashes = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            if (hashes is null) return false;
+            using var lease = OpenArchiveRelease(directory, hashes); return true;
+        } catch { return false; }
+    }
+
+    internal sealed class TrustedBinary : IDisposable
     {
         private readonly FileStream _stream;
 

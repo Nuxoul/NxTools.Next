@@ -1,0 +1,18 @@
+{
+  "path": "docs/reference-code/archive.md",
+  "baseline_sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78",
+  "after_sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+  "operations": [
+    {
+      "kind": "insert",
+      "baseline_start": 800,
+      "baseline_end": 800,
+      "after_start": 800,
+      "after_end": 834,
+      "baseline_text": "",
+      "after_text": "\n## Directed remaining reference UI continuation (2026-10-25)\n\nRe-read public Bandizip SimpChinese.lang314/407–408/791–799: Recent/Clear/empty history and\ntemp-folder/browse/child-process-exit vocabulary only; no proprietary process lifetime is inferred.\nTracked legacy `git grep ZipArchive|SevenZip|SharpCompress` still finds packaging, not a general\narchive history/window owner. Archiver gui/src/main.rs AppWindow115 -> ui.run158 -> recursive\ntemp_view_dir cleanup159 and view_item697–715 -> selected extraction -> open_path967 are reference\nbehavior only; shared PID temp/global recursive deletion are not safe ownership to copy.\nCurrent history must extend original ArchiveApplication -> successful generation-scoped read ->\nUiStateStore bounded writer; browser geometry saves must not overwrite newer recent data/clear.\nNested temp archives do not enter top-level history. Configuration remains Core section locked\nchanged-field save and original ordered/deferred publication. Existing closed UIAC/Shell slices\nare not reopened. Original PNGs are not reliably visually inspectable in this environment; no\nnew image/physical GUI claim. Temp lifecycle changes require the original cache/lease/native\nopen boundary, never arbitrary recursive cleanup or launch-return-as-child-exit.\nCurrent Kit0.8.0 public Settings/Page/Normal Group/Item/Field, number_input/dropdown/render slots,\nListItem and Small/Medium outlined Button/DropdownButton compose actual history choices/list/menu;\nparent layout arranges controls, no custom painted substitutes or Toolbar.child variant changes.\n\nTemp owner trace verified before implementation: `entry.rs::materialize` -> strict\n`ArchiveEntryContract/ArchiveEntrySession` -> `ArchiveEntryCache.Create` -> original runner output\nand exited/cleanup_complete -> Seal -> Desktop current identity -> existing native Shell boundary\n`ClipboardShellTarget.Launch/Process.Start`. The latter previously discarded Process; worker exit\nis NOT external viewer exit. Existing Cache manifestv2/full fileID/hash/MOTW/directory identity,\nfixed-parent retire record/exact-file+empty ancestry deletion and bounded8+8startup/admission sweep\nremain deletion authority. Settings affect new leases only; old bases need bounded retained discovery\ninside the same cache owner, never user-directory recursion or scan. New typed materialize policy\nand lease-only open resolve owned path natively, not an arbitrary output/executable. Safe UI labels\ndisclose tracked-process-only exit attempts, null-process fallback, edited/locked retention and\nexpiry-as-eligibility. Exact source chain from read-only exploration is preserved in session scratch.\nOriginal named browser cells need full-label Tooltip when ellipsized; official public slot only.\nRecent-clear failure must not turn a ready archive into a stale snapshot. Production handle/scrollbar\npress-move-release regressions will determine concrete layout defects, not direct offset injection.\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

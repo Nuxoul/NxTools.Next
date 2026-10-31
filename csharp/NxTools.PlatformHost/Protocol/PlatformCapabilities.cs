@@ -37,6 +37,7 @@ internal static class PlatformCapabilities
     // Adapter availability only. Each worker must independently negotiate its read contract.
     public const string ArchiveRead = "archive_read_v1";
     public const string ArchiveEntry = "archive_entry_v1";
+    public const string ArchiveVirtualDrag = "archive_virtual_drag_v1";
 
     public static string[] Create(bool clipboardHotKeyAvailable, bool quickLaunchHotKeyAvailable = false)
     {
@@ -44,6 +45,8 @@ internal static class PlatformCapabilities
         {
             ArchiveRead,
             ArchiveEntry,
+            ArchiveVirtualDrag,
+            "archive_virtual_drag_spike_v1", // Legacy alias; shares the production session and bounds.
             ForegroundContext,
             ClipboardTextCapture,
             ClipboardImageCapture,

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -17,14 +18,15 @@ internal static class ArchiveJobPicker {
                 if(cancel.IsCancellationRequested)return new WindowsCommandResult(true,Data:"cancelled");
                 string[] selected;
                 var owner=new Owner(window);
+                var initialDirectory=c.CurrentDirectory is { } candidate && Directory.Exists(candidate)?candidate:"";
                 if(c.Purpose is "folders" or "destination") {
-                    using var dialog=new FolderBrowserDialog{Description="选择文件夹",UseDescriptionForTitle=true,InitialDirectory=c.CurrentDirectory??"",ShowNewFolderButton=true};
+                    using var dialog=new FolderBrowserDialog{Description="选择文件夹",UseDescriptionForTitle=true,InitialDirectory=initialDirectory,ShowNewFolderButton=true};
                     selected=dialog.ShowDialog(owner)==DialogResult.OK?[dialog.SelectedPath]:[];
                 }else if(c.Purpose=="save") {
-                    using var dialog=new SaveFileDialog{Title="保存压缩包",InitialDirectory=c.CurrentDirectory??"",FileName=c.SuggestedName??"",RestoreDirectory=true,CheckPathExists=true,OverwritePrompt=true,AutoUpgradeEnabled=true};
+                    using var dialog=new SaveFileDialog{Title="保存压缩包",InitialDirectory=initialDirectory,FileName=c.SuggestedName??"",RestoreDirectory=true,CheckPathExists=true,OverwritePrompt=true,AutoUpgradeEnabled=true};
                     selected=dialog.ShowDialog(owner)==DialogResult.OK?[dialog.FileName]:[];
                 }else {
-                    using var dialog=new OpenFileDialog{Title="选择源文件",InitialDirectory=c.CurrentDirectory??"",Multiselect=true,CheckFileExists=true,CheckPathExists=true,RestoreDirectory=true,AutoUpgradeEnabled=true};
+                    using var dialog=new OpenFileDialog{Title="选择源文件",InitialDirectory=initialDirectory,Multiselect=true,CheckFileExists=true,CheckPathExists=true,RestoreDirectory=true,AutoUpgradeEnabled=true};
                     selected=dialog.ShowDialog(owner)==DialogResult.OK?dialog.FileNames:[];
                 }
                 if(cancel.IsCancellationRequested || selected.Length==0)return new WindowsCommandResult(true,Data:"cancelled");

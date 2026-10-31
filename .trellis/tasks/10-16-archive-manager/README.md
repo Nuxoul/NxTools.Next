@@ -4,6 +4,35 @@
 The latest user approval supersedes the earlier documentation-only/MVP/P2 proposal. Product labels are Chinese; engineering documents are English.
 Do not declare the first release complete at A–D. Preserve exact phase names/order and record actual evidence.
 
+## Runtime feedback — 2026-10-30
+
+[Current runtime correction](runtime-feedback-2026-10-30.md) records current-result availability,
+Ctrl-only indexed Clipboard paste, initially absent/on-demand archive preview, independent preview
+preparation resources and complete directory drag without tiny business caps. Related Desktop and
+controlled native lifecycle checks are recorded separately from live-service/physical acceptance.
+This later behavior supersedes earlier always-allocated preview and item-count cap wording.
+
+## Release38 drag / automatic preview repair — 2026-10-30
+
+[Current repair](release38-drag-preview-repair.md) defines complete ordinal-preserving drag,
+stage-owned preview budgets, automatic preview without historical opt-out, menu order and cleanup.
+[Installed Release38](installer38-code5-repair-outcomes.md) is already upgraded; this repair does
+not authorize packaging, installation, installed-product launch or HZ5. Historical optional-preview
+wording is superseded by the current user-approved automatic behavior.
+
+## Current task replanning — 2026-10-28
+
+Read [continuation plan](continuation-plan.md) first for the consolidated user feedback,
+non-ZIP edit delivery, HZ2progress/HZ3batch/HZ4crash/HZ5source-reclaim requirements,
+ordered C0–C8 slices and acceptance gates. This is task-file planning, not a prompt to
+another session or product implementation authorization. Root PRD/design/implement/acceptance
+link this amendment; canonical A–F history remains. HZ1 AC01–03 stays independently accepted.
+User decisions remain explicitly pending; HZ5 is included but default-off/destructive and gated.
+Only [current checkpoint](phase-a-checkpoint.md) owns execution status, not historical summaries.
+Use the [pinned local edit reference](../../../docs/reference-code/archive-editing.md) and
+HatchZip focused notes; old0.7.1/preview-optional/ZIP-only/no-manager descriptions below are
+historical where later approved contracts or this explicitly planned scope supersede them.
+
 ## Read in this order
 
 | File | Purpose |
@@ -17,6 +46,14 @@ Do not declare the first release complete at A–D. Preserve exact phase names/o
 | implement.jsonl / check.jsonl | Curated spec/research context for the next AI; not executable code |
 
 Full current UI authority and exact API index are intentionally linked rather than injected as truncated files: read [.trellis/spec/shared/ui-design.md](../../spec/shared/ui-design.md) and [locked Kit index](../../../docs/reference-code/gpui-kit-component-index.md) explicitly before UI changes, including the later amendments. Injection is navigation, not a substitute for full applicable-source review.
+
+## Current source continuation (2026-10-27)
+
+[Single current checkpoint](phase-a-checkpoint.md) and [icons/windows/preferences/Tree/tabs evidence](window-tabs-icons-drag-outcomes.md) record the latest approved implementation. Browser presentation now uses one official tab host; old per-archive HWND wording below is historical. Prior failures, production-lint/global-fmt limits and unrun native/user acceptance remain explicit. No package/install/system mutation authority.
+
+## HatchZip follow-up research (2026-10-27)
+
+[Five-capability research handoff](hatchzip-research-handoff.md) and [reference index](../../../docs/reference-code/hatchzip.md) cover space preflight, progress, batch summaries, real-process crash tests and destructive in-place reclamation. This is source/docs evidence only, not implementation or authorization to mutate source archives. Read the dedicated safety/format/ownership gates before future work; current product status remains solely in phase-a-checkpoint.md.
 
 ## User-confirmed direction
 
@@ -72,6 +109,12 @@ Read the linked task documents, reference note and applicable owner specs before
 The earlier documentation-only results remain historical in [outcomes.md](outcomes.md). Current implementation progress and remaining gates are recorded there separately; documentation checks do not certify product/native/user acceptance.
 
 ## Current implementation checkpoint
+
+Latest explicit amendment starts **Phase F — Explorer integration and genuine native drag** spike only.
+[Current checkpoint](phase-a-checkpoint.md) and [Phase F spike results](phase-f-spike-outcomes.md) own
+current source/controlled evidence, real OLE NOT RUN/time-out and P207 authority gate. Production
+archive-row drag stays disconnected until independent spike acceptance; no actual Registry/Ffull/
+first-release approval. Earlier stage summaries below are retained history.
 
 Latest Phase E continuation: [single current checkpoint](phase-a-checkpoint.md) and
 [authorized delivery outcomes](phase-e-delivery-outcomes.md) supersede historical stage/status

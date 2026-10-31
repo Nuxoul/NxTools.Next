@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "status": "PASS",
+  "checked_at": "2026-10-27T16:18:56.923956+08:00",
+  "source_files_verified": 44,
+  "source_anchor_groups_verified": 166,
+  "topic_and_handoff_documents": 7,
+  "relative_document_links_verified": 29,
+  "nxtools_owner_files_verified": 12,
+  "source_changes_since_manifest": 0,
+  "spec_contracts": {
+    "exit": 0,
+    "stdout": "PASS specs: 114 documents, 14 workspace owners; navigation/evidence/contracts\nScope: source files/links/structure only; not symbol meaning, UI or native/release acceptance."
+  },
+  "scoped_diff_check_exit": 0,
+  "document_sha256": {
+    "docs\\reference-code\\hatchzip.md": "f5e5528b9a33e0591e266a669aa152150a379955faa8bb6f2869a54d39b3a74a",
+    "docs\\reference-code\\hatchzip\\batch-summary.md": "d3264dbf1c12980005b921ba18ec0cace5096f1ba2b9e55802272b8623d8102f",
+    "docs\\reference-code\\hatchzip\\crash-recovery-tests.md": "81931d230499437b1e383cbf0f63063a0cce209a76d93cb12b0c9d32c256f8df",
+    "docs\\reference-code\\hatchzip\\in-place-reclamation.md": "b7ec0ba318b5e9919fbe78587f276b36bfbacec8ab54094e10a7f3b45ac8ee7d",
+    "docs\\reference-code\\hatchzip\\progress.md": "5c2befec5a1676de282f6cca51924ff8417d3fd8b2e697d21925761d08b9740f",
+    "docs\\reference-code\\hatchzip\\space-preflight.md": "d8dcd6e2199204ff270c598a261c2d10017daf61aa4d816c9204aaaa1fbc26c9",
+    ".trellis\\tasks\\10-16-archive-manager\\hatchzip-research-handoff.md": "1c5e121237ad2d2a27bd481debb0a657997f77d9f0faf392ec71390af127f15c"
+  },
+  "reference_git_revision": null,
+  "reference_build_or_tests_executed": false,
+  "product_code_changed_by_research": false,
+  "archive_mutation_executed": false,
+  "installation_executed": false,
+  "limits": "source/hash/navigation/docs validation only, not compiled/native/power-loss/visual/user acceptance"
+}

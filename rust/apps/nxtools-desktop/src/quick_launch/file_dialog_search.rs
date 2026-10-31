@@ -42,6 +42,7 @@ const SEARCH_WIDTH: f32 = 500.0;
 const SEARCH_BAR_HEIGHT: f32 = 36.0;
 const DEFAULT_SOURCE_HEIGHT: f32 = 36.0;
 const SEARCH_RESULTS_HEIGHT: f32 = 264.0;
+const SEARCH_FRAME_HEIGHT: f32 = 2.0;
 const SEARCH_HORIZONTAL_MARGIN: f32 = 16.0;
 const SEARCH_RESULT_LIMIT: usize = 120;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(65);
@@ -121,6 +122,7 @@ pub(super) fn file_dialog_search_bounds(
         width,
         height: bar_height
             .saturating_add(results_height)
+            .saturating_add((SEARCH_FRAME_HEIGHT * scale).round().max(1.0) as i32)
             .saturating_add(default_source_height),
     }
 }
@@ -460,6 +462,8 @@ impl FileDialogSearchPanel {
             .id("file-dialog-default-source")
             .active(move |row| row.bg(theme.surface_pressed))
             .debug_selector(|| "file-dialog-default-source".into())
+            .w_full()
+            .min_w_0()
             .h(px(DEFAULT_SOURCE_HEIGHT))
             .px(px(SPACING_12))
             .flex_none()
@@ -548,6 +552,7 @@ impl FileDialogSearchPanel {
                 window.prevent_default();
                 cx.stop_propagation();
             })
+            .min_w_0()
             .flex_none()
             .into_any_element(),
         )
@@ -1347,7 +1352,7 @@ mod tests {
                 x: 300,
                 y: 840,
                 width: 500,
-                height: 36,
+                height: 38,
             }
         );
     }
@@ -1360,7 +1365,7 @@ mod tests {
                 x: 300,
                 y: 576,
                 width: 500,
-                height: 300,
+                height: 302,
             }
         );
     }
@@ -1373,7 +1378,7 @@ mod tests {
                 x: 375,
                 y: 1_050,
                 width: 625,
-                height: 45,
+                height: 48,
             }
         );
         assert_eq!(
@@ -1382,7 +1387,7 @@ mod tests {
                 x: 450,
                 y: 1_260,
                 width: 750,
-                height: 54,
+                height: 57,
             }
         );
     }
@@ -1451,7 +1456,7 @@ mod tests {
         let (_root, window) = cx.add_window_view(move |window, cx| {
             window.resize(size(
                 px(SEARCH_WIDTH),
-                px(SEARCH_RESULTS_HEIGHT + SEARCH_BAR_HEIGHT),
+                px(SEARCH_RESULTS_HEIGHT + SEARCH_BAR_HEIGHT + SEARCH_FRAME_HEIGHT),
             ));
             let panel = cx.new(|cx| {
                 let mut panel = FileDialogSearchPanel::new(
@@ -1545,7 +1550,7 @@ mod tests {
         let (_root, window) = cx.add_window_view(move |window, cx| {
             window.resize(size(
                 px(288.0),
-                px(SEARCH_BAR_HEIGHT + DEFAULT_SOURCE_HEIGHT),
+                px(SEARCH_BAR_HEIGHT + DEFAULT_SOURCE_HEIGHT + SEARCH_FRAME_HEIGHT),
             ));
             let panel = cx.new(|cx| {
                 FileDialogSearchPanel::new(
@@ -1559,7 +1564,7 @@ mod tests {
         });
         window.simulate_resize(size(
             px(288.0),
-            px(SEARCH_BAR_HEIGHT + DEFAULT_SOURCE_HEIGHT),
+            px(SEARCH_BAR_HEIGHT + DEFAULT_SOURCE_HEIGHT + SEARCH_FRAME_HEIGHT),
         ));
 
         window
@@ -1581,6 +1586,18 @@ mod tests {
             .debug_bounds("file-dialog-default-source-shortcut")
             .expect("default source shortcut rail");
 
+        let root = window
+            .debug_bounds("file-dialog-search-window")
+            .expect("actual root");
+        assert!(
+            row.left() >= root.left() + px(1.0) && row.right() <= root.right() - px(1.0),
+            "whole source row width fits root: row={row:?} root={root:?}"
+        );
+        assert!(row.top() >= root.top() + px(1.0));
+        assert!(
+            row.bottom() <= root.bottom() - px(1.0),
+            "whole source row must fit inside border: row={row:?} root={root:?}"
+        );
         assert_eq!(row.size.height, px(DEFAULT_SOURCE_HEIGHT));
         assert_eq!(icon.size, size(px(26.0), px(26.0)));
         assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
@@ -1614,7 +1631,7 @@ mod tests {
                 x: 116,
                 y: 840,
                 width: 288,
-                height: 36,
+                height: 38,
             }
         );
     }
@@ -1650,7 +1667,7 @@ mod tests {
                 x: 300,
                 y: 840,
                 width: 500,
-                height: 72,
+                height: 74,
             }
         );
     }

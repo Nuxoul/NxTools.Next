@@ -24,6 +24,8 @@ pub enum ArchiveExtractMode {
     Here,
     Name,
     Dialog,
+    SmartDialog,
+    NameDialog,
 }
 
 // Debug is explicitly redacted: paths are not diagnostic data.

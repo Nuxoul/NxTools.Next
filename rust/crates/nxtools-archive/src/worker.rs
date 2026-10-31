@@ -53,6 +53,10 @@ pub struct WorkerRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_entry: Option<crate::worker_browser::BrowserEntry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_authorize: Option<nxtools_protocol::archive_browser::ArchiveBrowserContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_password: Option<Vec<u8>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_extract: Option<nxtools_protocol::archive_job::ArchiveJobExtract>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_execution: Option<bool>,
@@ -89,6 +93,8 @@ pub(crate) struct ReadUpgrade {
 #[serde(deny_unknown_fields)]
 pub struct ExtractOptions {
     pub copy_motw: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reclamation: Option<nxtools_protocol::archive_job::ArchiveReclamationIntent>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -109,6 +115,9 @@ pub struct SevenzCreateOptions {
 impl Drop for WorkerRequest {
     fn drop(&mut self) {
         if let Some(password) = &mut self.password {
+            password.zeroize();
+        }
+        if let Some(password) = &mut self.browser_password {
             password.zeroize();
         }
     }
@@ -173,6 +182,8 @@ impl WorkerRequest {
             conflict_policy: None,
             output_readmission: None,
             browser_entry: None,
+            browser_authorize: None,
+            browser_password: None,
             job_extract: None,
             job_execution: None,
             job_modify: None,
@@ -183,16 +194,17 @@ impl WorkerRequest {
         }
     }
     pub fn validate(&self) -> io::Result<()> {
-        if self.operation == "modify_zip" {
+        if matches!(
+            self.operation.as_str(),
+            "modify_zip" | "modify_7z" | "modify_tar"
+        ) {
             if self.version != 2
                 || self.job_execution != Some(true)
                 || self.read_contract.is_some()
                 || self.job_modify.as_ref().is_none_or(|value| {
-                    value
+                    (if self.operation == "modify_tar" { !matches!(value.browser.format.as_str(), "Tar" | "TarGz" | "TarXz") } else { value.browser.format != if self.operation == "modify_7z" { "SevenZ" } else { "Zip" } }) || value
                         .validate(
-                            if value.action
-                                == nxtools_protocol::archive_job::ArchiveJobModifyAction::Add
-                            {
+                            if matches!(value.action, nxtools_protocol::archive_job::ArchiveJobModifyAction::Add | nxtools_protocol::archive_job::ArchiveJobModifyAction::ReplaceContent) {
                                 2
                             } else {
                                 1
@@ -235,6 +247,32 @@ impl WorkerRequest {
         {
             return Err(io::ErrorKind::InvalidData.into());
         }
+        if self.browser_authorize.as_ref().is_some_and(|context| {
+            self.version != 2
+                || self.operation != "test"
+                || self.password_interaction != Some(true)
+                || self.read_contract.is_some()
+                || self.browser_entry.is_some()
+                || self.password.is_some()
+                || self.delete_source.is_some()
+                || self.job_execution.is_some()
+                || self.conflict_policy.is_some()
+                || self.output_readmission.is_some()
+                || context.validate().is_err()
+                || self.limits.max_entry_bytes > crate::ResourceLimits::default().max_entry_bytes
+                || self.limits.max_output_bytes > crate::ResourceLimits::default().max_output_bytes
+        }) || self.browser_password.as_ref().is_some_and(|password| {
+            self.version != 2
+                || self.browser_entry.is_none()
+                || self.operation != "extract"
+                || self.password.is_some()
+                || self.password_interaction.is_some()
+                || password.len() > 4096
+                || password.contains(&0)
+                || std::str::from_utf8(password).is_err()
+        }) {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
         if let Some(browser) = &self.browser_entry
             && (self.version != 2
                 || self.operation != "extract"
@@ -243,8 +281,8 @@ impl WorkerRequest {
                 || self.conflict_policy.is_some()
                 || self.output_readmission.is_some()
                 || self.delete_source.is_some()
-                || self.limits.max_entry_bytes > 512 << 20
-                || self.limits.max_output_bytes > 512 << 20
+                || self.limits.max_entry_bytes > crate::ResourceLimits::default().max_entry_bytes
+                || self.limits.max_output_bytes > crate::ResourceLimits::default().max_output_bytes
                 || self.limits.max_entries > 100_000
                 || self.limits.max_metadata_bytes > 128 << 20
                 || browser.expected.validate().is_err())
@@ -274,7 +312,12 @@ impl WorkerRequest {
             return Err(io::ErrorKind::InvalidData.into());
         }
         if self.conflict_policy.is_some()
-            && (self.version != 2 || self.operation != "extract" || self.read_contract.is_some())
+            && (self.version != 2
+                || !matches!(
+                    self.operation.as_str(),
+                    "extract" | "modify_zip" | "modify_7z" | "modify_tar"
+                )
+                || self.read_contract.is_some())
         {
             return Err(io::ErrorKind::InvalidData.into());
         }
@@ -284,7 +327,7 @@ impl WorkerRequest {
                 || self.read_contract.is_some() && self.operation != "open"
                 || !matches!(
                     self.operation.as_str(),
-                    "open" | "test" | "extract" | "modify_zip"
+                    "open" | "test" | "extract" | "modify_zip" | "modify_7z" | "modify_tar"
                 )
                 || self.browser_entry.is_some() && self.operation != "extract")
         {
@@ -342,6 +385,8 @@ impl WorkerRequest {
                     | "create_tgz"
                     | "create_txz"
                     | "modify_zip"
+                    | "modify_7z"
+                    | "modify_tar"
             )
             || self.path.is_empty()
             || self.path.len() > 32767
@@ -456,6 +501,23 @@ impl WorkerRequest {
             return Err(io::ErrorKind::InvalidData.into());
         }
         if self.extract_options.is_some() && (self.version != 2 || self.operation != "extract") {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        if let Some(intent) = self.extract_options.as_ref().and_then(|options| options.reclamation) {
+            let options = self.job_extract.as_ref().ok_or(io::ErrorKind::InvalidData)?;
+            if intent.recovery_id.is_nil()
+                || options.reclamation != Some(intent)
+                || options.validate().is_err()
+                || self.job_execution != Some(true)
+                || self.output_readmission.is_some()
+                || self.delete_source.is_some()
+                || self.browser_entry.is_some()
+                || self.password.is_some()
+                || self.browser_password.is_some()
+            {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
+        } else if self.job_extract.as_ref().is_some_and(|options| options.reclamation.is_some()) {
             return Err(io::ErrorKind::InvalidData.into());
         }
         self.encoding()?;
@@ -794,6 +856,9 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
         if request.read_contract.is_some() || request.browser_entry.is_some() {
             accepted.capabilities.push("browser_entry_v1".into());
         }
+        if request.browser_authorize.is_some() {
+            accepted.capabilities.push("browser_authorize_v1".into());
+        }
         accepted
             .capabilities
             .push("source_delete_eligibility_v1".into());
@@ -813,6 +878,20 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
                 | "create_txz"
         ) {
             accepted.capabilities.push("partial_read_v1".into());
+        }
+        if request.operation == "modify_tar" {
+            accepted.capabilities.extend([
+                "tar_modify_v1".into(),
+                "partial_read_v1".into(),
+                "source_tree_v1".into(),
+            ]);
+        }
+        if request.operation == "modify_7z" {
+            accepted.capabilities.extend([
+                "sevenz_modify_v1".into(),
+                "partial_read_v1".into(),
+                "source_tree_v1".into(),
+            ]);
         }
         if request.operation == "modify_zip" {
             accepted.capabilities.extend([
@@ -862,6 +941,9 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
             .capabilities
             .push("zip_output_readmission_v1".into());
         accepted.capabilities.push("zip_risk_v1".into());
+        if request.extract_options.as_ref().is_some_and(|options| options.reclamation.is_some()) {
+            accepted.capabilities.push("stored_zip_reclamation_v1".into());
+        }
     }
     if password_interaction {
         accepted.capabilities.push("password_interaction_v1".into());
@@ -927,6 +1009,12 @@ fn execute<W: Write + Send>(
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
 ) -> crate::Result<(u64, u64)> {
+    // Only original inherited private control can carry preauthorized bytes; never enables prompts.
+    if let Some(mut bytes) = request.browser_password.take() {
+        let secret = std::str::from_utf8(&bytes).map_err(|_| ArchiveError::UnsupportedOperation)?;
+        request.password = Some(secret.to_owned());
+        bytes.zeroize();
+    }
     // Dispatcher/source-acquisition failure invalidates prior facts. Each actual child lifecycle
     // (engine open then extract/test, isolated codec, or creation) owns its own completion marker.
     control.source_delete_begin();
@@ -963,6 +1051,9 @@ fn execute<W: Write + Send>(
                 .map_err(|_| ArchiveError::UnsupportedOperation)?;
         }
         // General jobs permit unencrypted TAR/stream operations without pretending they support passwords.
+    }
+    if request.extract_options.as_ref().is_some_and(|options| options.reclamation.is_some()) {
+        return crate::reclamation::execute(request, control, output, replies);
     }
     if request.password_interaction == Some(true)
         && (!(request.job_execution == Some(true) || request.output_readmission.is_some())
@@ -1008,8 +1099,43 @@ pub(crate) fn execute_attempt<W: Write + Send>(
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
 ) -> crate::Result<(u64, u64)> {
+    if request.operation == "modify_tar" {
+        return crate::worker_tar_edit::execute(request, control, output, replies, interaction);
+    }
+    if request.operation == "modify_7z" {
+        #[cfg(feature = "isolated-codecs")]
+        return crate::worker_sevenz_edit::execute(request, control, output, replies, interaction);
+        #[cfg(not(feature = "isolated-codecs"))]
+        return Err(ArchiveError::UnsupportedOperation);
+    }
     if request.operation == "modify_zip" {
-        return crate::worker_zip_edit::execute(request, control, output, replies);
+        let intent = request
+            .job_modify
+            .as_ref()
+            .ok_or(ArchiveError::UnsupportedOperation)?;
+        // Dispatch from the opened source, never the operation spelling, suffix or create
+        // encoder. Non-ZIP requests cannot enter the accepted ZIP mutation backend.
+        let mut open = OpenRequest::new(&request.path);
+        open.encoding = request
+            .encoding()
+            .map_err(|_| ArchiveError::UnsupportedOperation)?;
+        let snapshot = ArchiveEngine::with_limits(request.limits.into())
+            .open(open, control)
+            .map_err(|error| match error {
+                ArchiveError::UnsupportedFormat => ArchiveError::UnsupportedOperation,
+                other => other,
+            })?;
+        if snapshot.format() != crate::ArchiveFormat::Zip || intent.browser.format != "Zip" {
+            return Err(ArchiveError::UnsupportedOperation);
+        }
+        return crate::worker_zip_edit::execute(
+            request,
+            snapshot,
+            control,
+            output,
+            replies,
+            interaction,
+        );
     }
     if matches!(
         request.operation.as_str(),
@@ -1041,10 +1167,9 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         return result;
     }
     let limits: crate::ResourceLimits = request.limits.into();
-    // Compound metadata discovery needs a full verified outer spool, not target output credit.
-    // Bound that private disk spool by the existing finite metadata reservation; never widen
-    // the request/native admission or treat an unknown outer-stream overflow as a shortfall.
-    let compound = request.output_readmission.is_some()
+    // A selected member still needs the complete verified outer TAR spool for discovery.
+    // Charge that intermediate spool to finite metadata credit, not the selected output cap.
+    let compound = (request.output_readmission.is_some() || request.browser_entry.is_some())
         && crate::worker_job::compound(&request.path).is_some();
     let discovery_limits = if compound {
         crate::worker_job::spool_limits(limits)
@@ -1065,7 +1190,11 @@ pub(crate) fn execute_attempt<W: Write + Send>(
     open.encoding = request
         .encoding()
         .map_err(|_| ArchiveError::UnsupportedOperation)?;
-    let snapshot = engine.open(open, control)?;
+    let snapshot = if request.operation == "extract" && request.output_readmission.is_some() {
+        engine.open_for_output_readmission(open, control)?
+    } else {
+        engine.open(open, control)?
+    };
     let compound = compound
         && matches!(
             snapshot.format(),
@@ -1074,7 +1203,7 @@ pub(crate) fn execute_attempt<W: Write + Send>(
                 | crate::ArchiveFormat::TarXz
                 | crate::ArchiveFormat::TarZstd
         );
-    crate::worker_browser::bind(
+    crate::worker_browser::bind_with_edit(
         request,
         snapshot.session_id(),
         &format!("{:?}", snapshot.format()),
@@ -1085,6 +1214,14 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         output,
         control,
         replies.clone(),
+        None,
+        matches!(
+            snapshot.format(),
+            crate::ArchiveFormat::Tar | crate::ArchiveFormat::TarGz | crate::ArchiveFormat::TarXz
+        )
+        .then_some(nxtools_protocol::archive_browser::TarEditEligibility {
+            refusal: snapshot.capabilities().modification_refusal,
+        }),
     )?;
     // General selection maps immutable original ordinals only after source binding above.
     if request.conflict_policy.is_some()
@@ -1136,6 +1273,7 @@ pub(crate) fn execute_attempt<W: Write + Send>(
                     crate::worker_job::declared_output(&plan),
                 )?;
         }
+        control.configure_extraction_progress(plan.total_bytes(), plan.files().len() as u64);
         let mut native = crate::worker_output::PrivateOutput::new(output, control, replies)
             .extraction_metadata(request.extract_options.is_some())
             .conflicts(

@@ -46,12 +46,17 @@ struct Mailbox {
 }
 pub struct ArchiveReadOperation {
     id: Uuid,
+    connection: u64,
     shared: Weak<Shared>,
     mailbox: Arc<Mutex<Mailbox>>,
 }
 impl ArchiveReadOperation {
     pub fn operation_id(&self) -> Uuid {
         self.id
+    }
+    /// Original IPC admission identity, retained after terminal removes the pending read.
+    pub fn connection_generation(&self) -> u64 {
+        self.connection
     }
     /// Move one batch, never clone a whole archive. Ack only after the consumer retains it.
     pub fn take_batch(&self) -> Option<ArchiveReadBatch> {
@@ -153,6 +158,7 @@ impl ArchiveReadClient {
         }
         Ok(ArchiveReadOperation {
             id,
+            connection,
             shared: Arc::downgrade(&self.shared),
             mailbox,
         })

@@ -1,3 +1,5 @@
+pub mod archive;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -40,6 +42,7 @@ pub struct CliInvocation {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CliCommand {
+    Archive(archive::ArchiveCommand),
     Add {
         url: String,
         directory: PathBuf,
@@ -136,6 +139,13 @@ where
     } else {
         CliHostPolicy::ConnectOrStart
     };
+    if host_policy == CliHostPolicy::ConnectOnly
+        && arguments.first().is_some_and(|a| a == "archive")
+    {
+        return Err(CliError::syntax(
+            "--connect-only 仅适用于下载；归档使用独立的无界面宿主",
+        ));
+    }
     Ok(CliInvocation {
         command: parse_args(arguments, default_directory)?,
         host_policy,
@@ -148,6 +158,10 @@ where
     S: Into<String>,
 {
     let mut args = arguments.into_iter().map(Into::into).collect::<Vec<_>>();
+    if args.first().is_some_and(|value| value == "archive") {
+        args.remove(0);
+        return archive::parse(args).map(CliCommand::Archive);
+    }
     if args.first().is_some_and(|value| value == "download") {
         args.remove(0);
     }
@@ -491,6 +505,14 @@ pub fn run_with_host_policy(
     executable: &Path,
     host_policy: CliHostPolicy,
 ) -> Result<(), CliError> {
+    if let CliCommand::Archive(command) = command {
+        if host_policy == CliHostPolicy::ConnectOnly {
+            return Err(CliError::syntax(
+                "--connect-only 仅适用于下载；归档使用独立的无界面宿主",
+            ));
+        }
+        return archive::run(command, executable);
+    }
     let json_output = command.json_output();
     let mut client = match connect_with_policy(executable, host_policy) {
         Ok(client) => client,
@@ -519,6 +541,7 @@ fn run_connected_command(
 ) -> Result<(), CliError> {
     let json_output = command.json_output();
     let result = match command {
+        CliCommand::Archive(_) => return Err(CliError::syntax("归档不能发送到下载宿主")),
         CliCommand::Add {
             url,
             directory,
@@ -578,6 +601,7 @@ fn run_connected_command(
 impl CliCommand {
     fn json_output(&self) -> bool {
         match self {
+            Self::Archive(command) => command.json,
             Self::Add { json, .. }
             | Self::List { json, .. }
             | Self::Show { json, .. }
@@ -1280,6 +1304,8 @@ pub fn usage() -> &'static str {
   NxTools.Cli.exe download remove <id...> [--delete-file] [--json]
   NxTools.Cli.exe download schedule [--queue <id>] [--start HH:MM] [--stop HH:MM] [--days mon,tue,...] [--json]
   NxTools.Cli.exe download schedule [--queue <id>] --disable [--json]
+  NxTools.Cli.exe archive list|test <source> [--codepage N] [--json]
+  NxTools.Cli.exe archive extract <source> --dest <directory> [--conflict fail|skip|overwrite|rename] [--create-destination] [--codepage N] [--json]
 
 全局选项：--connect-only 只连接已运行的下载宿主，连接失败时不会启动后台桌面。"
 }

@@ -2254,7 +2254,7 @@ fn content_disposition_file_name(value: &str) -> Option<String> {
         if name.eq_ignore_ascii_case("filename*") {
             extended = extended.or_else(|| decode_extended_parameter(&parameter));
         } else if name.eq_ignore_ascii_case("filename") {
-            plain = plain.or(Some(parameter));
+            plain = plain.or_else(|| Some(percent_decode_utf8(&parameter).unwrap_or(parameter)));
         }
     }
     extended.or(plain)

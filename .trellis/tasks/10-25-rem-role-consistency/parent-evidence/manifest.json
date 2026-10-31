@@ -1,0 +1,182 @@
+﻿[
+    {
+        "file":  "accessible_name.log",
+        "bytes":  2136,
+        "sha256":  "06df8d86a677ccc85e0f9a30a3f36a2749ee7f4ec6d658e95ea6d63556058aee"
+    },
+    {
+        "file":  "archive_settings_official_search_never_saves.log",
+        "bytes":  758,
+        "sha256":  "b619822113df5845803242c7dfc58e0a0b11f9e817d4af929ddd8525d828da97"
+    },
+    {
+        "file":  "audit04.log",
+        "bytes":  1962,
+        "sha256":  "0e773e76514cb97384a8a94dc34a5db06e27002bc9e2e2a5b17bfc8e3e17032d"
+    },
+    {
+        "file":  "audit05.log",
+        "bytes":  3956,
+        "sha256":  "dcdc72e2774a07b6ba9b70c89c752ae85ddba80d18b965d1426a3be2a50719ce"
+    },
+    {
+        "file":  "audit06.log",
+        "bytes":  1882,
+        "sha256":  "06c87d94004b7b0f6612a505db10b11248e948ed2c5a18e3f85359c5c3a26170"
+    },
+    {
+        "file":  "bounded-failures.json",
+        "bytes":  664,
+        "sha256":  "8f48a9c525cdcdb8a6d733862bbbe45f8dd92387a02caf7c37eb27022ba3cf37"
+    },
+    {
+        "file":  "checks.json",
+        "bytes":  1357,
+        "sha256":  "a03041e34bcacfef3902a9cc7960c5d1069b9ba103478e48a67a7b6af0d0b043"
+    },
+    {
+        "file":  "clippy.log",
+        "bytes":  332,
+        "sha256":  "4b547d1c8b6261138df6205b24c56cd29558c98992d5c14cefaac130676c9b18"
+    },
+    {
+        "file":  "downloads.log",
+        "bytes":  39972,
+        "sha256":  "478abaf50efa2e10c3b919ff525efd01ae70b94174dd930743b5591f3c714701"
+    },
+    {
+        "file":  "extra-gate.json",
+        "bytes":  128,
+        "sha256":  "7b8454f2f68c59f4fca248477884bc605698dff5b3c51cbe2106732efa4f9c5d"
+    },
+    {
+        "file":  "fmt.log",
+        "bytes":  0,
+        "sha256":  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+        "file":  "gate-archive-release-chain.ps1.log",
+        "bytes":  238,
+        "sha256":  "e1d3ceb842eb886e80e234c152b253676982a0ab810c8f543fa650d55c121315"
+    },
+    {
+        "file":  "gate-clipboard-lifecycle.ps1.log",
+        "bytes":  268,
+        "sha256":  "d1ee867abfd6894a96076c2f7142d387a510c89c0e671b37db93342c5049f13b"
+    },
+    {
+        "file":  "gate-clipboard-ui-lifecycle.ps1.log",
+        "bytes":  1346,
+        "sha256":  "b2e0be13e31a24a2b642de25f21b5efdf81aa77c5ef5d0ef054edc4f095abc2f"
+    },
+    {
+        "file":  "gate-download-ui-lifecycle.ps1.log",
+        "bytes":  100,
+        "sha256":  "14f561e6320560f1e8899e9bb40013da631e3488f309da3cf91c51ebc350b0f5"
+    },
+    {
+        "file":  "gate-gpui-component-catalog.py.log",
+        "bytes":  528,
+        "sha256":  "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389"
+    },
+    {
+        "file":  "gate-gpui-release-contracts.py.log",
+        "bytes":  378,
+        "sha256":  "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d"
+    },
+    {
+        "file":  "gate-markdown-editor-contracts.py.log",
+        "bytes":  480,
+        "sha256":  "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e"
+    },
+    {
+        "file":  "gate-quick-launch-lifecycle.ps1.log",
+        "bytes":  6140,
+        "sha256":  "3ec09873a30631bdcbcb80241a0501e8f4d9ccf8c68300a4c667d2522772ce4a"
+    },
+    {
+        "file":  "gate-spec-contracts.py.log",
+        "bytes":  352,
+        "sha256":  "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42"
+    },
+    {
+        "file":  "gate-ui-consistency.ps1.log",
+        "bytes":  86,
+        "sha256":  "7b3d254db18ef0d80aa03d4876873bf06805d7377db8b1999903d116b2cd606a"
+    },
+    {
+        "file":  "gate-ui-preview-isolation.ps1.log",
+        "bytes":  342,
+        "sha256":  "8e75d9bb98cb0f07aa010802a3d12fb94908c4d7434341967c2f796409fedb0a"
+    },
+    {
+        "file":  "gate-ui-state-lifecycle.ps1.log",
+        "bytes":  108,
+        "sha256":  "b853081a95e8d321da4a03b24df057dc559447b74d31f1113d3a4b021a84860f"
+    },
+    {
+        "file":  "gate-ui-token-boundaries.ps1.log",
+        "bytes":  92,
+        "sha256":  "d6f088ddb9fcfa78d11080e97c45457192cb75d35dc7e4850d86856b749823e1"
+    },
+    {
+        "file":  "gates.json",
+        "bytes":  985,
+        "sha256":  "00c943e3911e87401be7e062327d1579ebca79b3370b0d025ccddce65e37560e"
+    },
+    {
+        "file":  "history_identity.log",
+        "bytes":  3102,
+        "sha256":  "ab295f66ca637a9c891b7d2e5bbd84949e764b49a670b52315656d5b52ecdefb"
+    },
+    {
+        "file":  "integrity-result.json",
+        "bytes":  336,
+        "sha256":  "7f2d261f79c4572f1617d23f7f4247f5f0d86bfcc50467eb811bc8f7ed1894a2"
+    },
+    {
+        "file":  "integrity.log",
+        "bytes":  674,
+        "sha256":  "ebb3084e57ef52e765500c77dc9c576961af1698f7d80b7b9c3339f3a0846b47"
+    },
+    {
+        "file":  "integrity.py",
+        "bytes":  7585,
+        "sha256":  "6d1a68d5a28f3fd805f51538b035a048c4bae3bcd76a9a7202b78417c4777df7"
+    },
+    {
+        "file":  "item06-parent-prereview.md",
+        "bytes":  3720,
+        "sha256":  "0a7821b81486eb25480d4fafe32a3e69b289f40048222ed70922a0bec3a962fd"
+    },
+    {
+        "file":  "main_windowdownload_page.log",
+        "bytes":  5996,
+        "sha256":  "bfa2e50430f00d2f5aea8bd85e3385a60749bbc334b9607b0f3ae9ece12dbbc9"
+    },
+    {
+        "file":  "protected-coverage.json",
+        "bytes":  49,
+        "sha256":  "828a66d48795f83635a78ecce7fed78cf2bed27c2eb46c9138f99f1b02f4202c"
+    },
+    {
+        "file":  "sort_keyboard.log",
+        "bytes":  1410,
+        "sha256":  "7dc44e31190be74370e123c06716146f19f610680a1682e2011c52141fd5849e"
+    },
+    {
+        "file":  "test-results.json",
+        "bytes":  1980,
+        "sha256":  "d92c7f14e304c7fd2aa0e707a09a26be9da8fa2ef4c037295d7966f385510367"
+    },
+    {
+        "file":  "w6_manager_pointer_preview_confirm_and_toggle_commit_real_config.log",
+        "bytes":  806,
+        "sha256":  "9face7cb79cd5a577c1de3e361cb87458ed28fcc9fbf24cab74f646e4250f6f0"
+    },
+    {
+        "file":  "workspace-check.log",
+        "bytes":  332,
+        "sha256":  "28eef548314e2d45c6b36cb109f9fbe27adbf1221d970dffa8ddf4e80f1a4d3f"
+    }
+]

@@ -90,7 +90,9 @@ impl RenderOnce for BlockEditor {
         // renderer must never open a URL on its own.
         let passive = self.passive;
         let render_cx = RenderContext::from_app(cx).on_link_click(move |_, _, _, cx| {
-            if passive { cx.propagate(); }
+            if passive {
+                cx.propagate();
+            }
         });
         let text_style = render_cx.style().clone();
         let mut style = self.state.read(cx).style.resolved(&theme.tokens);

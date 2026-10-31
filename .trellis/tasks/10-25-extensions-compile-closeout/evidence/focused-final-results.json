@@ -1,0 +1,23 @@
+﻿[
+    {
+        "name":  "desktop-closeout-final",
+        "command":  "cargo test -p nxtools-desktop compile_closeout_ -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  220.9501943,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\desktop-closeout-final.log"
+    },
+    {
+        "name":  "desktop-committed-events-final",
+        "command":  "cargo test -p nxtools-desktop extensions::committed_events:: -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  1.307207,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\desktop-committed-events-final.log"
+    },
+    {
+        "name":  "extension-contracts-final",
+        "command":  "cargo test -p nxtools-extensions --test api_contracts --test transport_declarations -- --test-threads=1",
+        "exit":  0,
+        "elapsed_seconds":  14.5130699,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extensions-compile-closeout\\extension-contracts-final.log"
+    }
+]

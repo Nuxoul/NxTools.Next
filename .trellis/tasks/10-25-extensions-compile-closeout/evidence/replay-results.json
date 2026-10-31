@@ -1,0 +1,14 @@
+﻿[
+    {
+        "name":  "historical",
+        "exit":  1
+    },
+    {
+        "name":  "current",
+        "exit":  0
+    },
+    {
+        "name":  "current-mapping-test",
+        "exit":  0
+    }
+]

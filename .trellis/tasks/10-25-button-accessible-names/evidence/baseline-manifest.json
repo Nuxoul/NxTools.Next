@@ -1,0 +1,50 @@
+[
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+        "SHA256":  "55BEA700BA6460DC5E4EE35D61C2F3E8F4D345EF041849463404FF9166B9E865"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/ui/components/path_list.rs",
+        "SHA256":  "99F06D7E2EA942263138E2889327E7E57C8BCFDBED294BDD0CD84EBA15F1BA6B"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+        "SHA256":  "14E0330F998BFADA1B30A3E4CA7CC9B717C663E5FBE8F91B310CA18E43F1A80D"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+        "SHA256":  "6E211AB826784E0AE613516478BB3601F62D39E624106DBA50C36BDB4278B445"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+        "SHA256":  "472851FB3B268B7CCAF8604264B29E6F912E86C03D2F2B1CB9BE0AA4EC71D7C7"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+        "SHA256":  "19A09FFDA2C788A77AD116EED676ADEA94B9E08ACCA0918834F292D533EFECFD"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+        "SHA256":  "293ABABB6E290567A89CF2604866DED43848192B991D83608E7926D00A976D48"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/network_settings.rs",
+        "SHA256":  "DC60DC4F74DEE163DE700E3BF96E5A5AA1BE3171E67FE7A009189055D17A7F25"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs",
+        "SHA256":  "7B73DB0A61A6E7DE8996CE5BD071ECB83D8522EF7D1F084B4CFB34DE8719274A"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+        "SHA256":  "D5F0122BD6638702C361E3C6D71F70DFA6C898C85071204A34DF608BBEA18D75"
+    },
+    {
+        "Path":  "docs/reference-code/gpui-kit-080.md",
+        "SHA256":  "126FB2F69F00A5315E202D0F5F83154CB448D595F93BC747B6C51E2A12641093"
+    },
+    {
+        "Path":  "tests/architecture/download-ui-lifecycle.ps1",
+        "SHA256":  "5D37115D404E6969D47D0994423F085C0F6F2683B64914C5628B9FE6CDBC8F48"
+    }
+]

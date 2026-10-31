@@ -1,0 +1,8 @@
+{
+  "status": "FAILED_BEFORE_ANY_DELTA_PUBLICATION",
+  "script": "publish.py",
+  "line": 27,
+  "error": "AssertionError: previous==current and len(current)==73",
+  "cause": "The evidence parser split after the complete first predicate marker, accidentally excluding the first protocol predicate from both compared sets. The production gate, independent 74-condition matrix, exact delta inverse and executed 100-assertion SourceOnly regression were not changed by this preparation error.",
+  "correction": "Retain the marker at the beginning of the selected compound region before extracting predicates."
+}

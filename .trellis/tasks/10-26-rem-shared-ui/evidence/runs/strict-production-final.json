@@ -1,0 +1,7 @@
+﻿{
+    "name":  "strict-production-final",
+    "command":  "cargo clippy -p nxtools-desktop -- -D warnings",
+    "exit":  101,
+    "elapsed":  30.0862365,
+    "finished":  "2026-10-26T06:59:43.1025246+08:00"
+}

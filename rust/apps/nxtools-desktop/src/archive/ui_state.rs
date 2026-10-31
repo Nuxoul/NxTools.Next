@@ -1,4 +1,4 @@
-//! Independent, path-free archive-browser presentation persistence.
+//! Independent archive-browser presentation and bounded local recent-path persistence.
 //! The owner performs all file IO on one bounded writer thread. A corrupt or invalid
 //! existing file is preserved and locks out writes until restart/explicit recovery;
 //! defaults never overwrite evidence that failed to load.
@@ -15,8 +15,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-const VERSION: u32 = 1;
-const MAX_FILE_BYTES: u64 = 16 * 1024;
+pub(crate) const VERSION: u32 = 2;
+const MAX_FILE_BYTES: u64 = 1024 * 1024;
 const MIN_WINDOW_WIDTH: i32 = 720;
 const MIN_WINDOW_HEIGHT: i32 = 480;
 const MAX_WINDOW_WIDTH: i32 = 16_384;
@@ -76,6 +76,10 @@ pub(crate) struct UiState {
     pub show_comment: bool,
     pub sort: UiSortKey,
     pub descending: bool,
+    #[serde(default = "default_details_view")]
+    pub details_view: bool,
+    #[serde(default)]
+    pub recent: Vec<PathBuf>,
 }
 
 impl Default for UiState {
@@ -89,14 +93,39 @@ impl Default for UiState {
             show_comment: false,
             sort: UiSortKey::Name,
             descending: false,
+            details_view: default_details_view(),
+            recent: Vec::new(),
         }
     }
+}
+
+fn default_details_view() -> bool {
+    true
 }
 
 impl UiState {
     pub(crate) fn validate(&self) -> Result<(), UiStateValidationError> {
         if self.version != VERSION {
             return Err(UiStateValidationError::Version);
+        }
+        if self.recent.len() > 30
+            || self
+                .recent
+                .iter()
+                .map(|path| path.to_string_lossy().len())
+                .sum::<usize>()
+                > 128 * 1024
+            || self.recent.iter().enumerate().any(|(index, path)| {
+                !path.is_absolute()
+                    || path.as_os_str().len() > 32_768
+                    || path.to_string_lossy().contains('\0')
+                    || self.recent[..index].iter().any(|old| {
+                        old.to_string_lossy()
+                            .eq_ignore_ascii_case(&path.to_string_lossy())
+                    })
+            })
+        {
+            return Err(UiStateValidationError::Recent);
         }
         if self.geometry.x.unsigned_abs() > MAX_ABS_ORIGIN as u32
             || self.geometry.y.unsigned_abs() > MAX_ABS_ORIGIN as u32
@@ -123,6 +152,7 @@ pub(crate) enum UiStateValidationError {
     Geometry,
     NameHidden,
     ColumnWidth,
+    Recent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,12 +183,15 @@ struct Shared {
     writable: bool,
     dirty: bool,
     closed: bool,
+    flush_waiters: Vec<async_channel::Sender<bool>>,
 }
 
-/// One nonblocking wake slot; the worker always reads the newest path-free snapshot.
+/// One nonblocking wake slot; the worker always reads the newest owned snapshot.
 pub(crate) struct UiStateStore {
     shared: Arc<Mutex<Shared>>,
     sender: SyncSender<()>,
+    _changed: async_channel::Sender<()>,
+    changes: async_channel::Receiver<()>,
     worker: Option<JoinHandle<()>>,
 }
 
@@ -172,7 +205,10 @@ impl UiStateStore {
             writable: false,
             dirty: false,
             closed: false,
+            flush_waiters: Vec::new(),
         }));
+        let (changed, changes) = async_channel::bounded(1);
+        let worker_changed = changed.clone();
         let (sender, receiver) = mpsc::sync_channel(1);
         let worker_path = path.clone();
         let worker_shared = shared.clone();
@@ -195,10 +231,16 @@ impl UiStateStore {
                         }
                     }
                 }
+                let _ = worker_changed.try_send(());
                 while receiver.recv().is_ok() {
-                    let (snapshot, dirty, closed) = match worker_shared.lock() {
+                    let (snapshot, dirty, closed, waiters) = match worker_shared.lock() {
                         Ok(mut state) => {
-                            let value = (state.current.clone(), state.dirty, state.closed);
+                            let value = (
+                                state.current.clone(),
+                                state.dirty,
+                                state.closed,
+                                std::mem::take(&mut state.flush_waiters),
+                            );
                             state.dirty = false;
                             value
                         }
@@ -215,6 +257,10 @@ impl UiStateStore {
                             state.load = UiStateLoad::Ready(state.current.clone());
                         }
                     }
+                    for waiter in waiters {
+                        let _ = waiter.try_send(writable);
+                    }
+                    let _ = worker_changed.try_send(());
                     if closed {
                         break;
                     }
@@ -224,7 +270,12 @@ impl UiStateStore {
             shared,
             sender,
             worker: Some(worker),
+            _changed: changed,
+            changes,
         })
+    }
+    pub(crate) fn changes(&self) -> async_channel::Receiver<()> {
+        self.changes.clone()
     }
 
     pub(crate) fn load_status(&self) -> UiStateLoad {
@@ -252,6 +303,9 @@ impl UiStateStore {
             .lock()
             .map(|mut state| {
                 if state.writable {
+                    let mut snapshot = snapshot.clone();
+                    // Browser close/resize snapshots do not own history. Never resurrect cleared data.
+                    snapshot.recent = state.current.recent.clone();
                     state.current = snapshot.clone();
                     state.dirty = true;
                 }
@@ -263,6 +317,42 @@ impl UiStateStore {
         }
         match self.sender.try_send(()) {
             Ok(()) | Err(TrySendError::Full(_)) => Ok(()),
+            Err(TrySendError::Disconnected(_)) => Err(UiStateStoreError::Closed),
+        }
+    }
+    pub(crate) fn update_recent(
+        &self,
+        mutate: impl FnOnce(&mut Vec<PathBuf>),
+    ) -> Result<(), UiStateStoreError> {
+        {
+            let mut state = self.shared.lock().map_err(|_| UiStateStoreError::Closed)?;
+            if !state.writable {
+                return Err(UiStateStoreError::Preserved);
+            }
+            let mut next = state.current.clone();
+            mutate(&mut next.recent);
+            next.validate().map_err(|_| UiStateStoreError::Invalid)?;
+            state.current = next;
+            state.dirty = true;
+        }
+        match self.sender.try_send(()) {
+            Ok(()) | Err(TrySendError::Full(_)) => Ok(()),
+            Err(TrySendError::Disconnected(_)) => Err(UiStateStoreError::Closed),
+        }
+    }
+    pub(crate) fn flush(&self) -> Result<async_channel::Receiver<bool>, UiStateStoreError> {
+        let (sender, receiver) = async_channel::bounded(1);
+        {
+            let mut state = self.shared.lock().map_err(|_| UiStateStoreError::Closed)?;
+            if !state.writable || state.flush_waiters.len() >= 4 {
+                return Err(UiStateStoreError::Preserved);
+            }
+            state.flush_waiters.push(sender);
+            // The latest snapshot may be in flight; another owned write makes this receipt durable.
+            state.dirty = true;
+        }
+        match self.sender.try_send(()) {
+            Ok(()) | Err(TrySendError::Full(_)) => Ok(receiver),
             Err(TrySendError::Disconnected(_)) => Err(UiStateStoreError::Closed),
         }
     }
@@ -311,8 +401,28 @@ fn load(path: &Path) -> Result<UiState, UiStateLoadIssue> {
     if bytes.len() as u64 > MAX_FILE_BYTES {
         return Err(UiStateLoadIssue::TooLarge);
     }
-    let state: UiState = serde_json::from_slice(&bytes).map_err(|_| UiStateLoadIssue::Corrupt)?;
+    let mut state: UiState =
+        serde_json::from_slice(&bytes).map_err(|_| UiStateLoadIssue::Corrupt)?;
+    let mut legacy_name_mode = false;
+    if state.version == 1 {
+        // Keep typed deserialization (including duplicate/null-field rejection). v1's
+        // absent mode meant name-list, unlike the current additive Details default.
+        #[derive(Deserialize)]
+        struct LegacyMode {
+            #[serde(default)]
+            details_view: bool,
+        }
+        let legacy: LegacyMode =
+            serde_json::from_slice(&bytes).map_err(|_| UiStateLoadIssue::Corrupt)?;
+        legacy_name_mode = !legacy.details_view;
+        state.version = VERSION;
+    }
+    // Validate the unmodified preferences first: migration must not repair invalid evidence.
     state.validate().map_err(|_| UiStateLoadIssue::Invalid)?;
+    if legacy_name_mode {
+        state.details_view = true;
+        state.visible[..5].fill(true);
+    }
     Ok(state)
 }
 fn save(path: &Path, state: &UiState) -> io::Result<()> {
@@ -356,3 +466,7 @@ fn save(path: &Path, state: &UiState) -> io::Result<()> {
     }
     result
 }
+
+#[cfg(test)]
+#[path = "ui_state_migration_tests.rs"]
+mod migration_tests;

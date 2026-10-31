@@ -23,7 +23,7 @@ keyword search.
 | Download manager | [download.md](download.md) | Indexed; phase 0 contracts and test fixture complete |
 | Quick Launch / Finder | [quick-launch-research.md](quick-launch-research.md) | Investigation in progress |
 | Product shell, startup and notification area | [system-shell.md](system-shell.md) | Indexed |
-| Floating assistant | `assistant.md` | Not inspected for the current slice |
+| Floating assistant | [assistant.md](assistant.md) | Legacy constructors/show/close/native styles, image/GIF, pointer/drop/edge/download source inspected; new slice planning, no runtime acceptance |
 | GPUI/Zed rendering patterns | [gpui.md](gpui.md) | Indexed for P0 visual components |
 | Unified Markdown display/edit | [markdown-editor.md](markdown-editor.md) | Fixed Apache0.1.0 editor, passive/interactive four-surface integration; original payload/native ownership retained |
 | Graphite default themes | [graphite-theme.md](graphite-theme.md) | Approved project Light/Dark via public Kit theme APIs; optional official themes retained, actual96DPI captures separate from user acceptance |
@@ -35,6 +35,8 @@ keyword search.
 | Steward launcher UI/features/performance | [steward.md](steward.md) | Supplied MIT snapshot/source + static screenshot reviewed; benchmark reports not rerun |
 | WinShun launcher / plugin candidates | [winshun.md](winshun.md) | Supplied MIT0.7.3 source reviewed; W1–W10 deferred backlog, no implementation/runtime/benchmark acceptance |
 | Archive manager (Bandizip-style compress/extract) | [archive.md](archive.md) | Bandizip7.32 public resources (no decompilation); Archiver/SupaZip reviewed; proposed design only, no implementation |
+| HatchZip space/progress/batch/crash/reclamation reference | [hatchzip.md](hatchzip.md) | Local0.1.3 snapshot without Git metadata; five source-backed topics and SHA256/symbol manifest; no runtime/tests/native acceptance, destructive mode remains separate design |
+| Multi-format archive editing local-source review | [archive-editing.md](archive-editing.md), [pinned manifest](archive-editing-manifest.json) | bit7z/7-Zip/NanaZip/Ark/PeaZip actual add/delete/rename chains, solid/encryption/volume restrictions, unsafe replacement patterns and per-file licenses; source only, no new backend approval |
 
 ## Entry format
 

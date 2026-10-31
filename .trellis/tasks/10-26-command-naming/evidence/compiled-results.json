@@ -1,0 +1,611 @@
+[
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:16:40.7777007Z",
+    "started_utc": "2026-10-26T03:13:02.3130602Z",
+    "command": "cargo test -p nxtools-desktop audit04_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit04-protection.log",
+    "record": "audit04-protection.json",
+    "evidence_log": "evidence/logs/audit04-protection.log",
+    "log_sha256": "9348a1184e70e6523b91990b922369bd9f2420317fd46e3d6d528883f2be3d50",
+    "summaries": [
+      "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 1293 filtered out; finished in 4.38s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:16:47.3040060Z",
+    "started_utc": "2026-10-26T03:16:41.5684191Z",
+    "command": "cargo test -p nxtools-desktop audit05_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit05-protection.log",
+    "record": "audit05-protection.json",
+    "evidence_log": "evidence/logs/audit05-protection.log",
+    "log_sha256": "5cfcdbea287e82ea2c3f1592d970c0ad428bc2f390a4df29229f0cb796674843",
+    "summaries": [
+      "test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 1284 filtered out; finished in 4.37s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:19:29.5160706Z",
+    "started_utc": "2026-10-26T03:16:48.0911087Z",
+    "command": "cargo test -p nxtools-desktop audit06_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit06-protection.log",
+    "record": "audit06-protection.json",
+    "evidence_log": "evidence/logs/audit06-protection.log",
+    "log_sha256": "2322d5e8847be6691eeca691febb228a4f5619f7ffd0f00adb2dca25c503c532",
+    "summaries": [
+      "test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 1263 filtered out; finished in 160.08s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:58:27.2145588Z",
+    "started_utc": "2026-10-26T02:54:47.7329968Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit08-final-nine.log",
+    "record": "audit08-final-nine.json",
+    "evidence_log": "evidence/logs/audit08-final-nine.log",
+    "log_sha256": "cb1fbd52b785e5d40cfcc70b5e667f38012acd37d8a4a125223270aa82a7767b",
+    "summaries": [
+      "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 1290 filtered out; finished in 2.51s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:51:04.1708449Z",
+    "started_utc": "2026-10-26T03:47:35.2208071Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit08-final-twelve.log",
+    "record": "audit08-final-twelve.json",
+    "evidence_log": "evidence/logs/audit08-final-twelve.log",
+    "log_sha256": "f95f311d124997c01c09da7c2bf08fb9972e59793e66eefcf9f90cecb50b5a95",
+    "summaries": [
+      "test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 1291 filtered out; finished in 4.72s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:46:40.6963369Z",
+    "started_utc": "2026-10-26T02:42:59.4216551Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit08-first-green.log",
+    "record": "audit08-first-green.json",
+    "evidence_log": "evidence/logs/audit08-first-green.log",
+    "log_sha256": "c20bba459525de84f0738813cab73fcc59b4e66a4d32dd7f1408e894a60a2277",
+    "summaries": [
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1289 filtered out; finished in 2.27s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:29:38.6174751Z",
+    "started_utc": "2026-10-26T02:26:22.2249623Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\audit08-label-reds.log",
+    "record": "audit08-label-reds.json",
+    "evidence_log": "evidence/logs/audit08-label-reds.log",
+    "log_sha256": "5649eba871f30eb157eb4bf761af2f2bcba0ee0b6e145ddc3bebac8dbbc517a5",
+    "summaries": [
+      "test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 1.92s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:20:48.1908628Z",
+    "started_utc": "2026-10-26T02:20:17.2557848Z",
+    "command": "cargo test -p nxtools-desktop audit08_clipboard_ -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\clipboard-label-behavior-green.log",
+    "record": "clipboard-label-behavior-green.json",
+    "evidence_log": "evidence/logs/clipboard-label-behavior-green.log",
+    "log_sha256": "43a230e58cc638dd0f8a90fa1409463e11f1a29f73a4d659e121a6aa4be4b566",
+    "summaries": [],
+    "error_headings": [
+      "error[E0063]: missing field `prefer_character_input` in initializer of `gpui::KeyDownEvent`",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\" test) due to 1 previous error"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:16:11.1377366Z",
+    "started_utc": "2026-10-26T02:12:30.8349729Z",
+    "command": "cargo test -p nxtools-desktop audit08_clipboard_command_labels -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\clipboard-label-red.log",
+    "record": "clipboard-label-red.json",
+    "evidence_log": "evidence/logs/clipboard-label-red.log",
+    "log_sha256": "b628f7eb6503c5eff82821862f6db016dacec4c0c98d0a6a0a6ca0d514243989",
+    "summaries": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 0.41s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:57:28.8630835Z",
+    "started_utc": "2026-10-26T03:51:04.9834605Z",
+    "command": "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\downloads-final.log",
+    "record": "downloads-final.json",
+    "evidence_log": "evidence/logs/downloads-final.log",
+    "log_sha256": "621fde1ffe66f534eeab769ac4eb9567142ff8660b6fddb9db31bc9615629e63",
+    "summaries": [
+      "test result: ok. 210 passed; 0 failed; 0 ignored; 0 measured; 1093 filtered out; finished in 175.23s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:02:25.9348352Z",
+    "started_utc": "2026-10-26T02:59:35.3756496Z",
+    "command": "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\downloads-related.log",
+    "record": "downloads-related.json",
+    "evidence_log": "evidence/logs/downloads-related.log",
+    "log_sha256": "fe21399bcb2a5df76414e061aff2b6594ddc48d33c6eb9be5c00a6973149e0dc",
+    "summaries": [
+      "test result: ok. 207 passed; 0 failed; 0 ignored; 0 measured; 1092 filtered out; finished in 169.20s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:42:01.6087120Z",
+    "started_utc": "2026-10-26T03:38:38.5552779Z",
+    "command": "cargo test -p nxtools-desktop audit08_settings_picker_and_export -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\export-label-confirmed-red.log",
+    "record": "export-label-confirmed-red.json",
+    "evidence_log": "evidence/logs/export-label-confirmed-red.log",
+    "log_sha256": "6af5dad325d2e61d647333cab80916db2873e0195e2aedf0cf16fafc3fd38c79",
+    "summaries": [
+      "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 1301 filtered out; finished in 0.76s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:28:44.9520712Z",
+    "started_utc": "2026-10-26T03:28:20.9522817Z",
+    "command": "cargo test -p nxtools-desktop history_identity_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\history-identity-protection.log",
+    "record": "history-identity-protection.json",
+    "evidence_log": "evidence/logs/history-identity-protection.log",
+    "log_sha256": "7e8f0e2d12a4f21a3320f24002b9426036c4b1d7fa0426854f8f84efce5e1bcd",
+    "summaries": [
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 22.37s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:52:22.7463791Z",
+    "started_utc": "2026-10-26T02:52:18.2643939Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\image-label-red-keyboard.log",
+    "record": "image-label-red-keyboard.json",
+    "evidence_log": "evidence/logs/image-label-red-keyboard.log",
+    "log_sha256": "262033bfcb7476f8a424f029f6fe63a985474d663a79bfaf3ab985c749ad86ae",
+    "summaries": [
+      "test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 1290 filtered out; finished in 2.57s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:13:01.0472162Z",
+    "started_utc": "2026-10-26T03:07:08.5692881Z",
+    "command": "cargo test -p nxtools-desktop main_window:: -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\main-window-related.log",
+    "record": "main-window-related.json",
+    "evidence_log": "evidence/logs/main-window-related.log",
+    "log_sha256": "ab9f8d3086afd7e4e3abf81b839d7567537a9256383e6fcd09ac9040e4b82f31",
+    "summaries": [
+      "test result: FAILED. 206 passed; 6 failed; 0 ignored; 0 measured; 1087 filtered out; finished in 106.50s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:32:34.6433941Z",
+    "started_utc": "2026-10-26T02:32:05.1842743Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\menu-confirmed-label-red.log",
+    "record": "menu-confirmed-label-red.json",
+    "evidence_log": "evidence/logs/menu-confirmed-label-red.log",
+    "log_sha256": "555619a963035cb7b7f4c88def54468cb2850d63db6918e1e7f10f6df0a44e6f",
+    "summaries": [],
+    "error_headings": [
+      "error[E0599]: no method named `test_support` found for struct `Stateful<E>` in the current scope",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\" test) due to 1 previous error"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T02:36:45.1186745Z",
+    "started_utc": "2026-10-26T02:33:19.3086536Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\menu-label-confirmed-red-2.log",
+    "record": "menu-label-confirmed-red-2.json",
+    "evidence_log": "evidence/logs/menu-label-confirmed-red-2.log",
+    "log_sha256": "367ca85ae7f76e81f8472b60164700ebe8e4bb32ff8343195c60ffb9dfabe836",
+    "summaries": [
+      "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 1286 filtered out; finished in 1.98s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:57:32.2575418Z",
+    "started_utc": "2026-10-26T03:57:29.9569069Z",
+    "command": "cargo test -p nxtools-desktop accessible_name_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\names-final.log",
+    "record": "names-final.json",
+    "evidence_log": "evidence/logs/names-final.log",
+    "log_sha256": "0f3c7ef249855a6a5decfbe5637b48c0fdf9a11d2a18f84425898971749a4734",
+    "summaries": [
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1296 filtered out; finished in 0.93s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:28:20.0368455Z",
+    "started_utc": "2026-10-26T03:24:58.4252215Z",
+    "command": "cargo test -p nxtools-desktop accessible_name_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\names-protection.log",
+    "record": "names-protection.json",
+    "evidence_log": "evidence/logs/names-protection.log",
+    "log_sha256": "b7b0f00f5e516383cb0e31812276faa77cd60f45685e892494bc73135d8b1dc0",
+    "summaries": [
+      "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 1292 filtered out; finished in 1.07s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:29:05.6761783Z",
+    "started_utc": "2026-10-26T03:29:03.9026661Z",
+    "command": "cargo test -p nxtools-desktop quick_launch::polish_tests:: -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\quick-presentation-related.log",
+    "record": "quick-presentation-related.json",
+    "evidence_log": "evidence/logs/quick-presentation-related.log",
+    "log_sha256": "aeab64fe1848951cd58ac29443337dc3a5662296a4974865213db4ff8524175a",
+    "summaries": [
+      "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1288 filtered out; finished in 0.41s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:34:49.2720313Z",
+    "started_utc": "2026-10-26T03:31:25.7965495Z",
+    "command": "cargo test -p nxtools-desktop audit08_ -- --test-threads=1",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\remaining-download-label-red.log",
+    "record": "remaining-download-label-red.json",
+    "evidence_log": "evidence/logs/remaining-download-label-red.log",
+    "log_sha256": "368102c105d744db382fdaefc32ad92d40cabba912e101ac5995edb8b5a52414",
+    "summaries": [
+      "test result: FAILED. 9 passed; 2 failed; 0 ignored; 0 measured; 1290 filtered out; finished in 2.80s"
+    ],
+    "error_headings": [
+      "error: test failed, to rerun pass `-p nxtools-desktop --bin nxtools-desktop`"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:29:03.0852112Z",
+    "started_utc": "2026-10-26T03:28:45.8362317Z",
+    "command": "cargo test -p nxtools-desktop sort_keyboard_ -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\sort-protection.log",
+    "record": "sort-protection.json",
+    "evidence_log": "evidence/logs/sort-protection.log",
+    "log_sha256": "531c274efc35ac498ea40b201adc24ca6f22eea7701380d3494098dc1effc443",
+    "summaries": [
+      "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1296 filtered out; finished in 15.81s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T04:03:31.0497367Z",
+    "started_utc": "2026-10-26T04:03:14.3705160Z",
+    "command": "cargo clippy -p nxtools-desktop -- -D warnings",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\strict-production-final.log",
+    "record": "strict-production-final.json",
+    "evidence_log": "evidence/logs/strict-production-final.log",
+    "log_sha256": "fbffebd6311296db961048c9ef8b386608725d7f618eb3bfeb5865146ae2fcde",
+    "summaries": [],
+    "error_headings": [
+      "error: unused import: `SPACING_12`",
+      "error: field `animated` is never read",
+      "error: this boolean expression can be simplified",
+      "error: this boolean expression can be simplified",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\") due to 4 previous errors"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:20:51.6292841Z",
+    "started_utc": "2026-10-26T03:20:22.3589352Z",
+    "command": "cargo clippy -p nxtools-desktop -- -D warnings",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\strict-production.log",
+    "record": "strict-production.json",
+    "evidence_log": "evidence/logs/strict-production.log",
+    "log_sha256": "6666ebf55d2bc1596ae7567d8ff77a82e3935a567a90b36bf3235538c736ac51",
+    "summaries": [],
+    "error_headings": [
+      "error: unused import: `SPACING_12`",
+      "error: field `animated` is never read",
+      "error: this boolean expression can be simplified",
+      "error: this boolean expression can be simplified",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\") due to 4 previous errors"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T04:03:13.5548163Z",
+    "started_utc": "2026-10-26T04:02:38.5165634Z",
+    "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\strict-tests-final.log",
+    "record": "strict-tests-final.json",
+    "evidence_log": "evidence/logs/strict-tests-final.log",
+    "log_sha256": "244eacfe3ff23ce752afae52abd762ba6c0f1381431ec6d6913ddc4ed90e3291",
+    "summaries": [],
+    "error_headings": [
+      "error: this boolean expression can be simplified",
+      "error: this boolean expression can be simplified",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\" test) due to 2 previous errors"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:20:21.5746661Z",
+    "started_utc": "2026-10-26T03:19:30.3247926Z",
+    "command": "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+    "exit": 101,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\strict-tests.log",
+    "record": "strict-tests.json",
+    "evidence_log": "evidence/logs/strict-tests.log",
+    "log_sha256": "0015c451eaf07a2550cf571cdcbfe4b8107e4d9ef0dbb9c21022570760f8ee2f",
+    "summaries": [],
+    "error_headings": [
+      "error: this boolean expression can be simplified",
+      "error: this boolean expression can be simplified",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\" test) due to 2 previous errors"
+    ]
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:07:07.7368985Z",
+    "started_utc": "2026-10-26T03:02:26.8439081Z",
+    "command": "cargo test -p nxtools-desktop ui:: -- --test-threads=1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\ui-related.log",
+    "record": "ui-related.json",
+    "evidence_log": "evidence/logs/ui-related.log",
+    "log_sha256": "882cb6273748a710228b3b744ac9967e71bcd0f49dc5e4b40e1830838e92941a",
+    "summaries": [
+      "test result: ok. 237 passed; 0 failed; 0 ignored; 0 measured; 1062 filtered out; finished in 59.58s"
+    ],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T04:04:02.1630220Z",
+    "started_utc": "2026-10-26T04:03:32.0413471Z",
+    "command": "cargo check --workspace --tests",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\workspace-check-final.log",
+    "record": "workspace-check-final.json",
+    "evidence_log": "evidence/logs/workspace-check-final.log",
+    "log_sha256": "531deaedcd7bdc48bd63979b5a3ba0dacd8346e0159181e7ea78f715e4e33693",
+    "summaries": [],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:22:02.4023413Z",
+    "started_utc": "2026-10-26T03:20:52.4254672Z",
+    "command": "cargo check --workspace --tests",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\workspace-check.log",
+    "record": "workspace-check.json",
+    "evidence_log": "evidence/logs/workspace-check.log",
+    "log_sha256": "22d4e43276a0a9fa23b399433ad0201de818129289b769a8b10e1a325c99b0f0",
+    "summaries": [],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T04:04:11.9882358Z",
+    "started_utc": "2026-10-26T04:04:02.9734864Z",
+    "command": "cargo fmt --all -- --check",
+    "exit": 1,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\workspace-fmt-final.log",
+    "record": "workspace-fmt-final.json",
+    "evidence_log": "evidence/logs/workspace-fmt-final.log",
+    "log_sha256": "ca7073e792e760b42cd0795567c708fb415b222e88ecb813775a1f240dd2eebe",
+    "summaries": [],
+    "error_headings": []
+  },
+  {
+    "environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_BUILD_JOBS": "1",
+      "RUSTFLAGS": "-C codegen-units=256"
+    },
+    "finished_utc": "2026-10-26T03:22:12.2996449Z",
+    "started_utc": "2026-10-26T03:22:03.1902719Z",
+    "command": "cargo fmt --all -- --check",
+    "exit": 1,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\command-naming\\workspace-fmt.log",
+    "record": "workspace-fmt.json",
+    "evidence_log": "evidence/logs/workspace-fmt.log",
+    "log_sha256": "9a98f29a71de620cfeb85361922fb54b1278f227e7d9c1704a34974bdf853e3e",
+    "summaries": [],
+    "error_headings": []
+  }
+]

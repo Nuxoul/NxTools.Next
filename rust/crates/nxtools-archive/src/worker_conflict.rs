@@ -38,6 +38,23 @@ pub struct ConflictPrompt {
     pub ticket: PromptTicket,
     pub existing_bytes: Option<u64>,
     pub incoming_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<nxtools_protocol::archive_job::ArchiveJobPromptDisplay>,
+}
+/// Private UI context only; these member names never enter native output authorization.
+pub(crate) fn edit_display(
+    incoming: &str,
+    existing: &str,
+) -> Option<nxtools_protocol::archive_job::ArchiveJobPromptDisplay> {
+    let valid = |value: &str| {
+        !value.is_empty() && value.len() <= 32767 && !value.chars().any(char::is_control)
+    };
+    (valid(incoming) && valid(existing)).then(|| {
+        nxtools_protocol::archive_job::ArchiveJobPromptDisplay {
+            incoming_member: Some(incoming.to_owned()),
+            target: existing.to_owned(),
+        }
+    })
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ExtractionSummary {
@@ -70,6 +87,7 @@ impl<'a> ExtractionConflict<'a> {
         &mut self,
         native: &mut PrivateOutput<'_, W>,
         path: &str,
+        member_path: &str,
         incoming: Option<u64>,
     ) -> Result<Option<Uuid>> {
         let observed = native.call("observe_target", Some(path), None, &[])?;
@@ -88,6 +106,27 @@ impl<'a> ExtractionConflict<'a> {
                 ConflictPolicy::Skip => ConflictDecision::Skip,
                 ConflictPolicy::AutoRename => ConflictDecision::AutoRename,
                 ConflictPolicy::Ask => {
+                    // Exact current member projection, not a basename/progress lookup.
+                    // Display never feeds the native observation/approval paths below.
+                    let display = self
+                        .reserved
+                        .iter()
+                        .find(|entry| {
+                            entry
+                                .display_path()
+                                .replace('\\', "/")
+                                .trim_end_matches('/')
+                                == member_path
+                        })
+                        .and_then(|entry| {
+                            let member = entry.display_path();
+                            (member.len() <= 32767 && path.len() <= 65535).then(|| {
+                                nxtools_protocol::archive_job::ArchiveJobPromptDisplay {
+                                    incoming_member: Some(member.to_owned()),
+                                    target: path.to_owned(),
+                                }
+                            })
+                        });
                     let control: OperationControl = native.control().clone();
                     let response = self.port.request_notified(
                         Prompt::Conflict {
@@ -100,6 +139,7 @@ impl<'a> ExtractionConflict<'a> {
                                 ticket: pending.ticket,
                                 existing_bytes: observed.existing_bytes,
                                 incoming_bytes: incoming,
+                                display: display.clone(),
                             })
                         },
                     )?;
@@ -160,7 +200,7 @@ impl<'a> ExtractionConflict<'a> {
         }
     }
 }
-fn numbered(path: &str, number: u32) -> Result<String> {
+pub(crate) fn numbered(path: &str, number: u32) -> Result<String> {
     let (parent, name) = path
         .rsplit_once('/')
         .map_or(("", path), |(parent, name)| (parent, name));

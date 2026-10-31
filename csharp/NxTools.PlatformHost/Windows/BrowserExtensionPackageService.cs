@@ -15,6 +15,14 @@ public static class BrowserExtensionPackageService
 {
     public const string ChromeFormat = "chrome";
     public const string FirefoxFormat = "firefox";
+    public const string ChromeStoreFormat = "chrome_store";
+
+    public static string NormalizeFormat(string format) =>
+        string.Equals(format, ChromeStoreFormat, StringComparison.OrdinalIgnoreCase) ? ChromeStoreFormat :
+        string.Equals(format, FirefoxFormat, StringComparison.OrdinalIgnoreCase) ? FirefoxFormat : ChromeFormat;
+
+    public static string DefaultStoreExportFileName =>
+        BuildTimestampedExportFileName("NxTools_Chrome_Web_Store", ".zip");
 
     private static readonly byte[] CrxMagic = "Cr24"u8.ToArray();
     private static readonly byte[] CrxSignatureContext = Encoding.ASCII.GetBytes("CRX3 SignedData\0");
@@ -62,14 +70,14 @@ public static class BrowserExtensionPackageService
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        format = NormalizeFormat(format);
         if (string.IsNullOrWhiteSpace(destinationPath))
         {
             var desktop = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             destinationPath = Path.Combine(
                 string.IsNullOrWhiteSpace(desktop) ? "." : desktop,
-                string.Equals(format, FirefoxFormat, StringComparison.OrdinalIgnoreCase)
-                    ? DefaultFirefoxExportFileName
-                    : DefaultExportFileName);
+                format == ChromeStoreFormat ? DefaultStoreExportFileName :
+                format == FirefoxFormat ? DefaultFirefoxExportFileName : DefaultExportFileName);
         }
 
         var extension = Path.GetExtension(destinationPath);
@@ -78,6 +86,7 @@ public static class BrowserExtensionPackageService
         {
             destinationPath = Path.ChangeExtension(destinationPath, ".xpi");
         }
+        if (format == ChromeStoreFormat) destinationPath = Path.ChangeExtension(destinationPath, ".zip");
 
         if (!Directory.Exists(sourceDirectory))
         {
@@ -90,15 +99,20 @@ public static class BrowserExtensionPackageService
             Directory.CreateDirectory(destinationDirectory);
         }
 
-        var tempExtension = string.Equals(format, FirefoxFormat, StringComparison.OrdinalIgnoreCase)
-            ? ".xpi"
-            : ".crx";
+        var tempExtension = format == ChromeStoreFormat ? ".zip" : format == FirefoxFormat ? ".xpi" : ".crx";
         var tempFile = Path.Combine(Path.GetTempPath(), $"nxtools-extension-{Guid.NewGuid():N}{tempExtension}");
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (string.Equals(format, FirefoxFormat, StringComparison.OrdinalIgnoreCase))
+            if (format == ChromeStoreFormat)
+            {
+                var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(sourceDirectory, "manifest.json")))?.AsObject()
+                    ?? throw new InvalidDataException("浏览器扩展 manifest.json 无法解析。");
+                manifest.Remove("key");
+                CreateZipFile(sourceDirectory, tempFile, manifest.ToJsonString());
+            }
+            else if (format == FirefoxFormat)
             {
                 var manifest = CreateFirefoxManifest(sourceDirectory);
                 CreateZipFile(sourceDirectory, tempFile, manifest);
@@ -247,9 +261,32 @@ public static class BrowserExtensionPackageService
             RemoveArrayValue(permissions, "declarativeNetRequest");
         }
 
+        // Firefox event pages have no importScripts, so the XPI must keep the
+        // source manifest's complete ordered background.scripts list
+        // (dependencies first, shared entry last) and drop the unsupported
+        // service_worker key. A legacy manifest without a list keeps the old
+        // single-entry shape.
+        var sourceScripts = (manifest["background"] as JsonObject)?["scripts"] as JsonArray;
+        var scripts = new JsonArray();
+        if (sourceScripts is { Count: > 0 })
+        {
+            foreach (var script in sourceScripts)
+            {
+                var name = script?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    throw new InvalidDataException("浏览器扩展 manifest.json 的 background.scripts 含有无效项。");
+                }
+                scripts.Add(name);
+            }
+        }
+        else
+        {
+            scripts.Add("background.js");
+        }
         manifest["background"] = new JsonObject
         {
-            ["scripts"] = new JsonArray("background.js")
+            ["scripts"] = scripts
         };
         manifest["browser_specific_settings"] = new JsonObject
         {
@@ -265,9 +302,12 @@ public static class BrowserExtensionPackageService
             }
         };
 
-        return manifest.ToJsonString(new()
+        // JsonNode serialization with custom options needs an explicit resolver;
+        // on .NET 8 an options instance without one throws when it is frozen.
+        return manifest.ToJsonString(new System.Text.Json.JsonSerializerOptions
         {
-            WriteIndented = true
+            WriteIndented = true,
+            TypeInfoResolver = new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver()
         });
     }
 

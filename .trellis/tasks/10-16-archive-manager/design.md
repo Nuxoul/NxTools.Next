@@ -4,6 +4,23 @@ Status: **approved implementation contract; product development and isolated ver
 
 Read [PRD](prd.md), [reference evidence](../../../docs/reference-code/archive.md), [implementation order](implement.md) and [acceptance cases](acceptance.md). If an earlier draft sentence conflicts with the more precise safety/lifecycle rules here, these rules govern implementation; record any actual scope change rather than silently dropping a feature.
 
+## Current continuation design amendment — 2026-10-28
+
+[Continuation plan](continuation-plan.md) owns the new experience/edit/HZ2–HZ5 design boundary:
+original OLE/EntrySession progress without target-copy fabrication; actual result reveal;
+shared readable units and readonly preview; per-operation capability; bounded batch projection;
+real-child durable-seam tests; separately gated default-off source mutation/recovery authority.
+Current actual owners, Kit0.8.0/pre0.3.9 and accepted HZ1/WAC/ZIP/native handoff supersede the
+historical proposed file map/0.7.1/no-manager baseline below. Preserve historical contracts,
+but do not recreate already-existing controllers or weaken source protection for HZ5.
+Read [five-project pinned source review](../../../docs/reference-code/archive-editing.md),
+[HZ2](../../../docs/reference-code/hatchzip/progress.md),
+[HZ3](../../../docs/reference-code/hatchzip/batch-summary.md),
+[HZ4](../../../docs/reference-code/hatchzip/crash-recovery-tests.md),
+[HZ5](../../../docs/reference-code/hatchzip/in-place-reclamation.md) before choosing seams.
+New7zbackend/codec/dependency and native source-write capability are decisions/gates, not
+implicitly approved by this planning revision. No product implementation in this turn.
+
 ## 1. Change boundary and source map
 
 Current behavior: no first-class archive manager exists in the inspected Next navigation. ZIP is used for clipboard and extension-package archives, not as a general browser. Legacy NxTools archive behavior was **not exhaustively searched**; before implementation, check the old product for an existing compress/extract interaction and update the reference note if found.

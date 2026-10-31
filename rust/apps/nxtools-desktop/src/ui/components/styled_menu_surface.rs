@@ -195,9 +195,14 @@ impl Render for MenuSurface {
                     super::native_context_menu::mark_keyboard(id, cx);
                 }
             })
-            .capture_any_mouse_down(move |_, _, cx| {
+            .capture_any_mouse_down(move |event, window, cx| {
                 if let Some(id) = id {
-                    super::native_context_menu::mark_pointer(id, cx);
+                    super::native_context_menu::mark_pointer_position(
+                        id,
+                        event.position,
+                        window,
+                        cx,
+                    );
                 }
             })
             .child(

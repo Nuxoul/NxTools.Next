@@ -1,0 +1,708 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "kind": "existing",
+    "after_sha256": "ce8021cbe36f38891430711093f09c84de91eb6ed6096393acc08cf7986f38da",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/network_settings.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/network_settings.rs.baseline",
+    "baseline_sha256": "5cc7930408a3854ab73217cec4c05b89ebb963f9c6d96be43e668e4b3cd9bd82",
+    "operations": [
+      {
+        "before_start": 31,
+        "before_end": 32,
+        "after_start": 31,
+        "after_end": 31,
+        "before_lines": [
+          "use crate::ui::metrics::SPACING_8;\n"
+        ],
+        "after_lines": []
+      },
+      {
+        "before_start": 1022,
+        "before_end": 1022,
+        "after_start": 1021,
+        "after_end": 1022,
+        "before_lines": [],
+        "after_lines": [
+          "        window: &Window,\n"
+        ]
+      },
+      {
+        "before_start": 1125,
+        "before_end": 1126,
+        "after_start": 1125,
+        "after_end": 1126,
+        "before_lines": [
+          "            4 => self.render_blacklist_table(cx),\n"
+        ],
+        "after_lines": [
+          "            4 => self.render_blacklist_table(window, cx),\n"
+        ]
+      },
+      {
+        "before_start": 1135,
+        "before_end": 1136,
+        "after_start": 1135,
+        "after_end": 1136,
+        "before_lines": [
+          "                    .dropdown_menu(move |menu, _, _| {\n"
+        ],
+        "after_lines": [
+          "                    .dropdown_menu(move |menu, window, _| {\n"
+        ]
+      },
+      {
+        "before_start": 1137,
+        "before_end": 1138,
+        "after_start": 1137,
+        "after_end": 1138,
+        "before_lines": [
+          "                            menu.min_w(px(160.0)),\n"
+        ],
+        "after_lines": [
+          "                            menu.min_w(crate::ui::metrics::ordinary_rem(160.0).to_pixels(window.rem_size())),\n"
+        ]
+      },
+      {
+        "before_start": 1163,
+        "before_end": 1164,
+        "after_start": 1163,
+        "after_end": 1164,
+        "before_lines": [
+          "                .w(px(168.0))\n"
+        ],
+        "after_lines": [
+          "                .w(crate::ui::metrics::ordinary_rem(168.0))\n"
+        ]
+      },
+      {
+        "before_start": 1184,
+        "before_end": 1185,
+        "after_start": 1184,
+        "after_end": 1185,
+        "before_lines": [
+          "            SettingItem::render(move |_, _, app| {\n"
+        ],
+        "after_lines": [
+          "            SettingItem::render(move |_, window, app| {\n"
+        ]
+      },
+      {
+        "before_start": 1186,
+        "before_end": 1187,
+        "after_start": 1186,
+        "after_end": 1187,
+        "before_lines": [
+          "                    .update(app, |view, cx| view.render_setting_control(slot, cx))\n"
+        ],
+        "after_lines": [
+          "                    .update(app, |view, cx| view.render_setting_control(slot, window, cx))\n"
+        ]
+      },
+      {
+        "before_start": 1201,
+        "before_end": 1202,
+        "after_start": 1201,
+        "after_end": 1202,
+        "before_lines": [
+          "            SettingItem::render(move |_, _, app| {\n"
+        ],
+        "after_lines": [
+          "            SettingItem::render(move |_, window, app| {\n"
+        ]
+      },
+      {
+        "before_start": 1203,
+        "before_end": 1204,
+        "after_start": 1203,
+        "after_end": 1204,
+        "before_lines": [
+          "                    .update(app, |view, cx| view.render_setting_control(slot, cx))\n"
+        ],
+        "after_lines": [
+          "                    .update(app, |view, cx| view.render_setting_control(slot, window, cx))\n"
+        ]
+      },
+      {
+        "before_start": 1303,
+        "before_end": 1304,
+        "after_start": 1303,
+        "after_end": 1304,
+        "before_lines": [
+          "            .gap(px(SPACING_8))\n"
+        ],
+        "after_lines": [
+          "            .gap_2()\n"
+        ]
+      },
+      {
+        "before_start": 2672,
+        "before_end": 2672,
+        "after_start": 2672,
+        "after_end": 2675,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[cfg(test)]\n",
+          "mod page_rem_tests;\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+    "kind": "existing",
+    "after_sha256": "b789126ec66823ce3d3e8adbbdc8967905d8e9f38c37c881288d420ec4b45f9b",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/network_settings/blacklist.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/network_settings/blacklist.rs.baseline",
+    "baseline_sha256": "5de8a2567a03a0003d4d4dda8a6a4192af93459c2ddb6554c079d935738fc6cf",
+    "operations": [
+      {
+        "before_start": 5,
+        "before_end": 5,
+        "after_start": 5,
+        "after_end": 6,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 25,
+        "before_end": 26,
+        "after_start": 26,
+        "after_end": 27,
+        "before_lines": [
+          "        .h(px(32.0))\n"
+        ],
+        "after_lines": [
+          "        .h_8()\n"
+        ]
+      },
+      {
+        "before_start": 43,
+        "before_end": 44,
+        "after_start": 44,
+        "after_end": 45,
+        "before_lines": [
+          "        .w(px(width))\n"
+        ],
+        "after_lines": [
+          "        .w(ordinary_rem(width))\n"
+        ]
+      },
+      {
+        "before_start": 45,
+        "before_end": 46,
+        "after_start": 46,
+        "after_end": 47,
+        "before_lines": [
+          "        .h(px(ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "        .h(ordinary_rem(ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 95,
+        "before_end": 96,
+        "after_start": 96,
+        "after_end": 97,
+        "before_lines": [
+          "    pub(super) fn render_blacklist_table(&self, cx: &mut Context<Self>) -> AnyElement {\n"
+        ],
+        "after_lines": [
+          "    pub(super) fn render_blacklist_table(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {\n"
+        ]
+      },
+      {
+        "before_start": 98,
+        "before_end": 98,
+        "after_start": 99,
+        "after_end": 101,
+        "before_lines": [],
+        "after_lines": [
+          "        let rows_height = ordinary_rem(if self.rules.is_empty() { 80.0 } else { ROW_HEIGHT * self.rules.len() as f32 })\n",
+          "            .to_pixels(window.rem_size()).min(px(120.0));\n"
+        ]
+      },
+      {
+        "before_start": 100,
+        "before_end": 101,
+        "after_start": 103,
+        "after_end": 104,
+        "before_lines": [
+          "            .h(px(ROW_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "            .h(ordinary_rem(ROW_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 129,
+        "before_end": 132,
+        "after_start": 132,
+        "after_end": 133,
+        "before_lines": [
+          "            // Reserve the upper editor's label/help/control budget at the 720x480 minimum.\n",
+          "            .max_h(px(120.0))\n",
+          "            .overflow_y_scrollbar()\n"
+        ],
+        "after_lines": [
+          "            .w_full()\n"
+        ]
+      },
+      {
+        "before_start": 169,
+        "before_end": 170,
+        "after_start": 170,
+        "after_end": 171,
+        "before_lines": [
+          "                .w_full().h(px(ROW_HEIGHT)).flex_none().px_3().flex().items_center()\n"
+        ],
+        "after_lines": [
+          "                .w_full().h(ordinary_rem(ROW_HEIGHT)).flex_none().px_3().flex().items_center()\n"
+        ]
+      },
+      {
+        "before_start": 173,
+        "before_end": 174,
+        "after_start": 174,
+        "after_end": 175,
+        "before_lines": [
+          "                    .w(px(CLIPBOARD_COLUMN)).flex_none().child(scope_checkbox(\n"
+        ],
+        "after_lines": [
+          "                    .w(ordinary_rem(CLIPBOARD_COLUMN)).flex_none().child(scope_checkbox(\n"
+        ]
+      },
+      {
+        "before_start": 182,
+        "before_end": 183,
+        "after_start": 183,
+        "after_end": 184,
+        "before_lines": [
+          "                    .w(px(QUICK_COLUMN)).flex_none().child(scope_checkbox(\n"
+        ],
+        "after_lines": [
+          "                    .w(ordinary_rem(QUICK_COLUMN)).flex_none().child(scope_checkbox(\n"
+        ]
+      },
+      {
+        "before_start": 191,
+        "before_end": 192,
+        "after_start": 192,
+        "after_end": 193,
+        "before_lines": [
+          "                    .w(px(ACTION_COLUMN)).flex_none().child(Button::new(SharedString::from(format!(\"global-blacklist-remove-{index}\")))\n"
+        ],
+        "after_lines": [
+          "                    .w(ordinary_rem(ACTION_COLUMN)).flex_none().child(Button::new(SharedString::from(format!(\"global-blacklist-remove-{index}\")))\n"
+        ]
+      },
+      {
+        "before_start": 203,
+        "before_end": 204,
+        "after_start": 204,
+        "after_end": 205,
+        "before_lines": [
+          "                    .h(px(80.0))\n"
+        ],
+        "after_lines": [
+          "                    .h_20()\n"
+        ]
+      },
+      {
+        "before_start": 225,
+        "before_end": 226,
+        "after_start": 226,
+        "after_end": 229,
+        "before_lines": [
+          "                    .child(rows),\n"
+        ],
+        "after_lines": [
+          "                    .child(div().debug_selector(|| \"global-blacklist-viewport\".into())\n",
+          "                        .h(rows_height).w_full().flex_none()\n",
+          "                        .child(rows.overflow_y_scrollbar().id(\"global-blacklist-scroll-area\"))),\n"
+        ]
+      },
+      {
+        "before_start": 249,
+        "before_end": 250,
+        "after_start": 252,
+        "after_end": 253,
+        "before_lines": [
+          "            .child(div().w(px(64.0)).flex_none().child(scope_checkbox(\n"
+        ],
+        "after_lines": [
+          "            .child(div().w_16().flex_none().child(scope_checkbox(\n"
+        ]
+      },
+      {
+        "before_start": 260,
+        "before_end": 261,
+        "after_start": 263,
+        "after_end": 264,
+        "before_lines": [
+          "            .child(div().w(px(64.0)).flex_none().child(scope_checkbox(\n"
+        ],
+        "after_lines": [
+          "            .child(div().w_16().flex_none().child(scope_checkbox(\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+    "kind": "existing",
+    "after_sha256": "6fb1e7172c4386477b3425cb5c5d3e9da418bf4a4c5842c23968362d3dd9eac8",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window.rs.baseline",
+    "baseline_sha256": "36961f88fb2518c985d1c436bdc924d7330122f4020a7a7932f1c1c176969361",
+    "operations": [
+      {
+        "before_start": 516,
+        "before_end": 516,
+        "after_start": 516,
+        "after_end": 519,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "#[cfg(test)]\n",
+          "mod page_rem_tests;\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+    "kind": "existing",
+    "after_sha256": "1926b1c486ccf69b351673910a2d8bccdb3a5a88927a7dd9057ddd2c2aca2a21",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/shell.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/shell.rs.baseline",
+    "baseline_sha256": "7e9f44d0c1eb9f1b7b984d35077a7584d4aa1b7fb6c5d5d5dcf386d5b5497a3f",
+    "operations": [
+      {
+        "before_start": 4,
+        "before_end": 4,
+        "after_start": 4,
+        "after_end": 5,
+        "before_lines": [],
+        "after_lines": [
+          "use crate::ui::metrics::ordinary_rem;\n"
+        ]
+      },
+      {
+        "before_start": 63,
+        "before_end": 64,
+        "after_start": 64,
+        "after_end": 65,
+        "before_lines": [
+          "            .h(px(CONTROL_HEIGHT_ACTION))\n"
+        ],
+        "after_lines": [
+          "            .h_7()\n"
+        ]
+      },
+      {
+        "before_start": 117,
+        "before_end": 119,
+        "after_start": 118,
+        "after_end": 120,
+        "before_lines": [
+          "                    .gap(px(SPACING_8))\n",
+          "                    .pl(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                    .gap_2()\n",
+          "                    .pl_3()\n"
+        ]
+      },
+      {
+        "before_start": 137,
+        "before_end": 140,
+        "after_start": 138,
+        "after_end": 141,
+        "before_lines": [
+          "                            .h(px(LINE_HEIGHT_PAGE_TITLE))\n",
+          "                            .text_size(px(TEXT_PAGE_TITLE))\n",
+          "                            .line_height(px(LINE_HEIGHT_PAGE_TITLE))\n"
+        ],
+        "after_lines": [
+          "                            .h(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))\n",
+          "                            .text_size(ordinary_rem(TEXT_PAGE_TITLE))\n",
+          "                            .line_height(ordinary_rem(LINE_HEIGHT_PAGE_TITLE))\n"
+        ]
+      },
+      {
+        "before_start": 147,
+        "before_end": 150,
+        "after_start": 148,
+        "after_end": 151,
+        "before_lines": [
+          "                            .h(px(LINE_HEIGHT_LABEL))\n",
+          "                            .text_size(px(TEXT_LABEL))\n",
+          "                            .line_height(px(LINE_HEIGHT_LABEL))\n"
+        ],
+        "after_lines": [
+          "                            .h(ordinary_rem(LINE_HEIGHT_LABEL))\n",
+          "                            .text_size(ordinary_rem(TEXT_LABEL))\n",
+          "                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))\n"
+        ]
+      },
+      {
+        "before_start": 160,
+        "before_end": 161,
+        "after_start": 161,
+        "after_end": 162,
+        "before_lines": [
+          "                    .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                    .gap_1()\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+    "kind": "existing",
+    "after_sha256": "efd78174d06ffbb917c5c3d7e2760dec38dc8025f5bc1622b5b993372a64f2b2",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/tools_page.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/tools_page.rs.baseline",
+    "baseline_sha256": "4568e336beffcf136977406db371fc5cac6217d18ca38907743bd2c9018c096a",
+    "operations": [
+      {
+        "before_start": 7,
+        "before_end": 8,
+        "after_start": 7,
+        "after_end": 8,
+        "before_lines": [
+          "use crate::ui::metrics::{SPACING_12, SPACING_16};\n"
+        ],
+        "after_lines": [
+          "use crate::ui::metrics::{FEATURE_WINDOW_TITLE_LANE_HEIGHT, ordinary_rem};\n"
+        ]
+      },
+      {
+        "before_start": 57,
+        "before_end": 57,
+        "after_start": 57,
+        "after_end": 67,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "/// One Form label lane, yielding ordinary width to its controls inside the fixed client.\n",
+          "fn tool_settings_label_width(window: &Window) -> gpui_kit::Pixels {\n",
+          "    let rem = window.rem_size();\n",
+          "    let label = ordinary_rem(TOOL_SETTINGS_INFORMATION_WIDTH).to_pixels(rem);\n",
+          "    let controls = ordinary_rem(168.0).to_pixels(rem);\n",
+          "    let insets = ordinary_rem(24.0).to_pixels(rem);\n",
+          "    // Released Small Field has a 4px horizontal label/control gap.\n",
+          "    label.min((window.viewport_size().width - insets - px(4.0) - controls).max(px(0.0)))\n",
+          "}\n"
+        ]
+      },
+      {
+        "before_start": 69,
+        "before_end": 70,
+        "after_start": 79,
+        "after_end": 79,
+        "before_lines": [
+          "    use crate::ui::metrics::FEATURE_WINDOW_TITLE_LANE_HEIGHT;\n"
+        ],
+        "after_lines": []
+      },
+      {
+        "before_start": 75,
+        "before_end": 76,
+        "after_start": 84,
+        "after_end": 84,
+        "before_lines": [
+          "                .w(px(TOOL_SETTINGS_INFORMATION_WIDTH))\n"
+        ],
+        "after_lines": []
+      },
+      {
+        "before_start": 77,
+        "before_end": 78,
+        "after_start": 85,
+        "after_end": 86,
+        "before_lines": [
+          "                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "                .min_h(ordinary_rem(FEATURE_WINDOW_TITLE_LANE_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 80,
+        "before_end": 81,
+        "after_start": 88,
+        "after_end": 89,
+        "before_lines": [
+          "                .gap(px(SPACING_4))\n"
+        ],
+        "after_lines": [
+          "                .gap_1()\n"
+        ]
+      },
+      {
+        "before_start": 91,
+        "before_end": 92,
+        "after_start": 99,
+        "after_end": 100,
+        "before_lines": [
+          "                .min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))\n"
+        ],
+        "after_lines": [
+          "                .min_h(ordinary_rem(FEATURE_WINDOW_TITLE_LANE_HEIGHT))\n"
+        ]
+      },
+      {
+        "before_start": 240,
+        "before_end": 241,
+        "after_start": 248,
+        "after_end": 249,
+        "before_lines": [
+          "                .p(px(SPACING_16))\n"
+        ],
+        "after_lines": [
+          "                .p_4()\n"
+        ]
+      },
+      {
+        "before_start": 248,
+        "before_end": 249,
+        "after_start": 256,
+        "after_end": 257,
+        "before_lines": [
+          "                        .gap(px(SPACING_12))\n"
+        ],
+        "after_lines": [
+          "                        .gap_3()\n"
+        ]
+      },
+      {
+        "before_start": 473,
+        "before_end": 474,
+        "after_start": 481,
+        "after_end": 482,
+        "before_lines": [
+          "                            .label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))\n"
+        ],
+        "after_lines": [
+          "                            .label_width(tool_settings_label_width(window))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+    "kind": "existing",
+    "after_sha256": "7ba97edf433bbbf2dde3054e5876283c6583bee2ddf7f037e715a3618a5b0782",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs.baseline",
+    "baseline_sha256": "0e5335a1ce441cd115d83b9280e697e9fb0e3fbf5f62a5d1258e8512007ebfa3",
+    "operations": [
+      {
+        "before_start": 253,
+        "before_end": 255,
+        "after_start": 253,
+        "after_end": 255,
+        "before_lines": [
+          "            .child(Form::horizontal().small().label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))\n",
+          "                .child(compact_tool_field(\"currency-target-label\",\"currency-target-help\",\"currency-target-control\",\"目标币种\",\"搜索代码、接口名称或常用中文名；数据源包含法币、贵金属及加密货币。\",div().debug_selector(|| \"currency-target\".into()).w_full().min_w_0().max_w(px(164.0)).child(Select::new(&self.target).w_full().menu_width(px(320.0)).menu_max_h(px(160.0)).search_placeholder(\"搜索币种代码或名称\").accessibility_label(\"目标币种\"))))\n"
+        ],
+        "after_lines": [
+          "            .child(Form::horizontal().small().label_width(tool_settings_label_width(window))\n",
+          "                .child(compact_tool_field(\"currency-target-label\",\"currency-target-help\",\"currency-target-control\",\"目标币种\",\"搜索代码、接口名称或常用中文名；数据源包含法币、贵金属及加密货币。\",div().debug_selector(|| \"currency-target\".into()).w_full().min_w_0().max_w(ordinary_rem(164.0)).child(Select::new(&self.target).w_full().menu_width(ordinary_rem(320.0)).menu_max_h(px(160.0)).search_placeholder(\"搜索币种代码或名称\").accessibility_label(\"目标币种\"))))\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+    "kind": "existing",
+    "after_sha256": "653c71ee42465619291ca7367a7f72e4a1150f40f29a7a9ab4e41e0a6241a75a",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs.current",
+    "baseline": "evidence/baselines/rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs.baseline",
+    "baseline_sha256": "02a1829c2cfb0383669264d4e52c3d90edc569935e4d4cf9e2af4a7cd066ac08",
+    "operations": [
+      {
+        "before_start": 582,
+        "before_end": 583,
+        "after_start": 582,
+        "after_end": 583,
+        "before_lines": [
+          "            .label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH));\n"
+        ],
+        "after_lines": [
+          "            .label_width(tool_settings_label_width(window));\n"
+        ]
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs",
+    "kind": "new",
+    "after_sha256": "2d26dbde4a22c40de6236fcfc3ce0538b0e5006b424560ffb114c390f9d23233",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/network_settings/page_rem_tests.rs.current"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs",
+    "kind": "new",
+    "after_sha256": "f2edacc61ec3ac99a5069b60b7f1119539286f015962e8e7a1223ab0914eb4b5",
+    "snapshot": "evidence/current/rust/apps/nxtools-desktop/src/main_window/page_rem_tests.rs.current"
+  },
+  {
+    "path": "docs/reference-code/gpui.md",
+    "kind": "existing",
+    "after_sha256": "45c84547e128505646695b1d38fd32bdc683cdbdcdbf5b680116efb9f55ab5c5",
+    "snapshot": "evidence/current/docs/reference-code/gpui.md.current",
+    "baseline": "evidence/baselines/docs/reference-code/gpui.md.baseline",
+    "baseline_sha256": "25c240ad9bbe004b816aae991d55dffd04b7f7a6769e307b9cd6a3820df263f2",
+    "operations": [
+      {
+        "before_start": 293,
+        "before_end": 293,
+        "after_start": 293,
+        "after_end": 324,
+        "before_lines": [],
+        "after_lines": [
+          "\n",
+          "## Queue08 partial ordinary-page checkpoint (2026-10-26)\n",
+          "This is a blocked checkpoint,not completed consumer or visual acceptance. ActualRoot16/14/18\n",
+          "red→green covers shell ordinarybrand/moduletext,Tools workspaceinsets and linkToolForm label/\n",
+          "controlcoordination inside original1060x650/min920x480 and460x320clients. Nativecaption36,\n",
+          "windowcontrols36x36,176rail,18bitmap and180x160Tools tiles remain fixed. Form.label_width\n",
+          "requiresPixels: one small existingWindow-bound Tool labelallocation yields ordinary264target\n",
+          "to an ordinary168controlreserve after actualclientinsets and released4pxFieldgap. Samepublic\n",
+          "Form/Field/NumberInput/Select/Switch/actions; no geometryinflation or palette/vendorchange.\n",
+          "\n",
+          "Global actual720x480Root14 red: NumberInputheight28 beside fixed168width,and rule40 instead35.\n",
+          "Ordinaryinput/rows/column/checkboxcontainers now userelativeunits while128rail/48footer and\n",
+          "120listcap stayfixed. Actual24longCJKrules wheel-to-last/edit/controlledCheckbox/Tab+Space/\n",
+          "Cancel and originalApplypersistencefailure→retainedInputdraft→retrysectionmerge pass. Released\n",
+          "Scrollable copies source max_size to its wrapper but retains that max on content; directmax_h120\n",
+          "constrained scrollcontent and leftlastrowy1194. Resolve naturalrows at originalWindow rem,\n",
+          "allocate cappedparentheight≤120,and host originalpublicScrollable/stableID with unconstrained\n",
+          "naturalrowcontent. No newscrollhandle/businesscontroller/capturedispatcher;sourcecallback and\n",
+          "originalsavetransaction remain. ExistingSectionwriter/native/deferredownership unchanged.\n",
+          "\n",
+          "ABDM ProxyConfigurableRenderer localdraft/canSave first,then legacySettingsWindow constructor\n",
+          "→WindowAnimationService.Attach→OnOpened/Configure→ApplyCancel/Close→OnClosed and delayed\n",
+          "closingcancellation/finalClose rechecked;MainWindow show/activate/traypreservingclose unchanged.\n",
+          "Avalonia/AWTnativebase unavailable,not inferred. Currentnative/windowallocation is unchanged.\n",
+          "Currency/floatingconsumer adaptations compiled but newall-remconsumer tests remain unexecuted;\n",
+          "Extensions icon28/DescriptionList80/88 preparation didnotcompile/run and productionobservability\n",
+          "wrappers were exactly removed. Finalstrict/check/fmt/relatedsuites are blocked by naturalRust\n",
+          "idle unavailable (independentexpansion_storage_retained test),not claimedgreen. Exactremaining\n",
+          "entries,immutablelogs and preparedtests: `.trellis/tasks/10-26-rem-pages-global-tools/`.\n",
+          "No completeDesktop/native/userdata/system/registry/Host/service/package/install/commit or\n",
+          "physical/DPI/IME/provider/visual/useracceptance;controlledRootfontvariation is notWindowsDPI.\n"
+        ]
+      }
+    ]
+  }
+]

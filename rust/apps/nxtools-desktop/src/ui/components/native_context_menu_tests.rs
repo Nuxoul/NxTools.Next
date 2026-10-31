@@ -59,10 +59,16 @@ fn fixture(cx: &mut TestAppContext) -> Fixture {
                 platform,
                 surface: Some(surface),
                 pointer: false,
+                pointer_inside_source: false,
+                source_bounds: gpui_kit::Bounds::new(
+                    point(gpui_kit::DevicePixels(0), gpui_kit::DevicePixels(0)),
+                    gpui_kit::size(gpui_kit::DevicePixels(200), gpui_kit::DevicePixels(200)),
+                ),
                 ready: false,
                 step: 0,
                 started: Instant::now(),
             }),
+            source_dismiss: None,
         });
         (popup, focus, source)
     });
@@ -230,4 +236,72 @@ fn hidden_menu_retired_trigger_or_disconnect_cannot_reveal(cx: &mut TestAppConte
             );
         }
     }
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_source_pointer_dismiss_restores_source_not_external(cx: &mut TestAppContext) {
+    let fixture = fixture(cx);
+    cx.update(|cx| {
+        cx.global_mut::<NativeMenuState>()
+            .pending
+            .as_mut()
+            .expect("live menu")
+            .ready = true;
+        handle_notification(
+            &PlatformNotification::Event(PlatformEvent::GlobalPointerPressed(
+                nxtools_protocol::PointerPressContext {
+                    window_handle: 1,
+                    root_window_handle: 1,
+                    process_id: std::process::id(),
+                    sampled_at_unix_ms: nxtools_ipc::unix_time_ms(),
+                    event_sequence: 1,
+                },
+            )),
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let mut restored = false;
+    while let Ok(command) = fixture.endpoint.try_receive_command_for_contract_test() {
+        restored |= matches!(
+            command.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ActivateWindow(
+                ActivateWindowCommand { window_handle: 1 }
+            ))
+        );
+    }
+    assert!(
+        restored,
+        "clicking the source panel closes only its menu and restores source focus"
+    );
+    assert!(cx.read(|cx| cx.global::<NativeMenuState>().pending.is_none()));
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_menu_overlay_click_inside_source_only_dismisses_menu(cx: &mut TestAppContext) {
+    let fixture = fixture(cx);
+    cx.update(|cx| result(fixture.id, Some(PLACEMENT), cx));
+    while fixture
+        .endpoint
+        .try_receive_command_for_contract_test()
+        .is_ok()
+    {}
+    let mut popup = VisualTestContext::from_window(fixture.popup, cx);
+    popup.simulate_mouse_down(
+        point(px(25.0), px(25.0)),
+        gpui_kit::MouseButton::Left,
+        Default::default(),
+    );
+    cx.run_until_parked();
+    let mut restored = false;
+    while let Ok(command) = fixture.endpoint.try_receive_command_for_contract_test() {
+        restored |= matches!(
+            command.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ActivateWindow(_))
+        );
+    }
+    assert!(
+        restored,
+        "menu overlay point inside source restores panel instead of outside close"
+    );
 }

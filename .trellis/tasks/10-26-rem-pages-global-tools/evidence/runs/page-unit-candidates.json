@@ -1,0 +1,1104 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings.rs",
+    "candidates": [
+      {
+        "line": 227,
+        "text": "px(GLOBAL_SETTINGS_WINDOW_WIDTH),"
+      },
+      {
+        "line": 228,
+        "text": "px(GLOBAL_SETTINGS_WINDOW_HEIGHT),"
+      },
+      {
+        "line": 1138,
+        "text": "menu.min_w(px(160.0)),"
+      },
+      {
+        "line": 1164,
+        "text": ".w(px(168.0))"
+      },
+      {
+        "line": 1194,
+        "text": "crate::ui::metrics::ordinary_rem(332.0),"
+      },
+      {
+        "line": 1259,
+        "text": ".sidebar_width(px(128.0))"
+      },
+      {
+        "line": 1260,
+        "text": ".sidebar_size_range(px(128.0)..px(200.0))"
+      },
+      {
+        "line": 1294,
+        "text": ".max_h(px(80.0))"
+      },
+      {
+        "line": 1304,
+        "text": ".gap(px(SPACING_8))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+    "candidates": [
+      {
+        "line": 390,
+        "text": ".h(px(48.)),"
+      },
+      {
+        "line": 1383,
+        "text": ".sidebar_width(px(160.0))"
+      },
+      {
+        "line": 1384,
+        "text": ".sidebar_size_range(px(160.0)..px(208.0))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/archive_temp_settings.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs",
+    "candidates": [
+      {
+        "line": 227,
+        "text": "menu.min_w(px(154.0)).max_w(px(154.0)),"
+      },
+      {
+        "line": 292,
+        "text": ".min_w(px(72.0))"
+      },
+      {
+        "line": 372,
+        "text": ".min_w(px(86.0))"
+      },
+      {
+        "line": 544,
+        "text": "crate::ui::metrics::ordinary_rem(300.0),"
+      },
+      {
+        "line": 727,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 728,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 750,
+        "text": ".sidebar_width(px(160.0))"
+      },
+      {
+        "line": 871,
+        "text": ".gap(px(4.0))"
+      },
+      {
+        "line": 910,
+        "text": ".gap(px(4.0))"
+      },
+      {
+        "line": 971,
+        "text": "crate::ui::metrics::ordinary_rem(300.0),"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "candidates": [
+      {
+        "line": 909,
+        "text": ".set_offset(point(px(0.0), px(0.0)));"
+      },
+      {
+        "line": 1072,
+        "text": ".w(px(188.0))"
+      },
+      {
+        "line": 1145,
+        "text": ".h(px(DOWNLOAD_FILTER_STRIP_HEIGHT))"
+      },
+      {
+        "line": 1146,
+        "text": ".px(px(12.0))"
+      },
+      {
+        "line": 1152,
+        "text": ".gap(px(8.0))"
+      },
+      {
+        "line": 1155,
+        "text": ".max_w(px(filter_width))"
+      },
+      {
+        "line": 1157,
+        "text": ".child(div().w(px(filter_width)).flex_none().child(filter_segments)),"
+      },
+      {
+        "line": 1162,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "line": 1172,
+        "text": "menu.min_w(px(160.0)).max_w(px(180.0)),"
+      },
+      {
+        "line": 1376,
+        "text": ".h(ordinary_rem(DOWNLOAD_TASK_ROW_HEIGHT))"
+      },
+      {
+        "line": 1494,
+        "text": ".size(ordinary_rem(26.0))"
+      },
+      {
+        "line": 1506,
+        "text": ".size(px(20.0))"
+      },
+      {
+        "line": 1518,
+        "text": ".size(ordinary_rem(15.0))"
+      },
+      {
+        "line": 1552,
+        "text": ".text_size(ordinary_rem(TEXT_WORKBENCH_BODY))"
+      },
+      {
+        "line": 1553,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_BODY))"
+      },
+      {
+        "line": 1579,
+        "text": ".text_size(ordinary_rem(TEXT_WORKBENCH_SUPPORT))"
+      },
+      {
+        "line": 1580,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))"
+      },
+      {
+        "line": 1601,
+        "text": ".w(px(DOWNLOAD_ERROR_TOOLTIP_WIDTH))"
+      },
+      {
+        "line": 1602,
+        "text": ".h(px(DOWNLOAD_ERROR_TOOLTIP_MAX_HEIGHT))"
+      },
+      {
+        "line": 1609,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 1610,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 1615,
+        "text": ".max_w(px(DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_WIDTH))"
+      },
+      {
+        "line": 1616,
+        "text": ".max_h(px(DOWNLOAD_ERROR_TOOLTIP_SURFACE_MAX_HEIGHT))"
+      },
+      {
+        "line": 1633,
+        "text": ".w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1635,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "line": 1656,
+        "text": ".w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1663,
+        "text": ".h(ordinary_rem(LINE_HEIGHT_WORKBENCH_SUPPORT))"
+      },
+      {
+        "line": 1667,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "line": 1676,
+        "text": ".w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1689,
+        "text": ".w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1702,
+        "text": ".w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1729,
+        "text": ".w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1731,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "line": 1732,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 1742,
+        "text": ".w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))"
+      },
+      {
+        "line": 1747,
+        "text": ".text_size(ordinary_rem(TEXT_LABEL))"
+      },
+      {
+        "line": 1748,
+        "text": ".line_height(ordinary_rem(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 2144,
+        "text": ".size(px(24.0))"
+      },
+      {
+        "line": 2167,
+        "text": ".size(px(24.0))"
+      },
+      {
+        "line": 2177,
+        "text": ".gap(px(0.0))"
+      },
+      {
+        "line": 2181,
+        "text": ".mr(px(SPACING_4))"
+      },
+      {
+        "line": 2182,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 2183,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 2245,
+        "text": ".mx(px(4.0))"
+      },
+      {
+        "line": 2246,
+        "text": ".h(px(18.0))"
+      },
+      {
+        "line": 2247,
+        "text": ".w(px(1.0))"
+      },
+      {
+        "line": 2304,
+        "text": ".set_offset(point(px(0.0), px(0.0)));"
+      },
+      {
+        "line": 2310,
+        "text": ".size(px(24.0))"
+      },
+      {
+        "line": 2315,
+        "text": ".h(px(DOWNLOAD_BATCH_TOOLBAR_HEIGHT))"
+      },
+      {
+        "line": 2319,
+        "text": ".px(px(12.0))"
+      },
+      {
+        "line": 2333,
+        "text": ".px(px(28.0))"
+      },
+      {
+        "line": 2348,
+        "text": ".child(div().absolute().right(px(12.0)).top(px(6.0)).child(clear))"
+      },
+      {
+        "line": 2365,
+        "text": "let tabs = div().debug_selector(|| \"download-detail-tabs\".into()).h(px(DOWNLOAD_DETAIL_TAB_HEIGHT)).flex_none()"
+      },
+      {
+        "line": 2375,
+        "text": "tab_scroll.set_offset(point(px(0.0), px(0.0)));"
+      },
+      {
+        "line": 2393,
+        "text": ".h(px(DOWNLOAD_DETAIL_HEIGHT))"
+      },
+      {
+        "line": 2413,
+        "text": ".px(px(12.0))"
+      },
+      {
+        "line": 2414,
+        "text": ".py(px(8.0))"
+      },
+      {
+        "line": 2551,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 2552,
+        "text": ".child(div().flex().gap(px(24.0)).child(primary).child(secondary))"
+      },
+      {
+        "line": 2622,
+        "text": ".gap(px(SPACING_4));"
+      },
+      {
+        "line": 2627,
+        "text": ".size(px(9.0))"
+      },
+      {
+        "line": 2648,
+        "text": ".h(px(BADGE_HEIGHT))"
+      },
+      {
+        "line": 2653,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 2654,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 2657,
+        "text": ".w(px(38.0))"
+      },
+      {
+        "line": 2663,
+        "text": ".w(px(172.0))"
+      },
+      {
+        "line": 2671,
+        "text": ".child(div().w(px(180.0)).text_color(theme.text).child(format!("
+      },
+      {
+        "line": 2678,
+        "text": ".w(px(72.0))"
+      },
+      {
+        "line": 2692,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 2695,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 2696,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 2766,
+        "text": ".gap(px(24.0))"
+      },
+      {
+        "line": 2814,
+        "text": ".gap(px(PROGRESS_TRACK_HEIGHT))"
+      },
+      {
+        "line": 2892,
+        "text": ".w(px(64.0))"
+      },
+      {
+        "line": 2932,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 2935,
+        "text": ".pb(px(SPACING_4))"
+      },
+      {
+        "line": 2936,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 2937,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 2948,
+        "text": ".label_width(px(100.0))"
+      },
+      {
+        "line": 2974,
+        "text": ".label_width(px(DOWNLOAD_DETAIL_LABEL_WIDTH + 8.0))"
+      },
+      {
+        "line": 3043,
+        "text": ".label_width(px(DOWNLOAD_DETAIL_LABEL_WIDTH + 8.0))"
+      },
+      {
+        "line": 3301,
+        "text": ".w(ordinary_rem(DOWNLOAD_PROGRESS_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3313,
+        "text": ".w(ordinary_rem(DOWNLOAD_TRANSFERRED_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3319,
+        "text": ".w(ordinary_rem(DOWNLOAD_SPEED_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3326,
+        "text": ".w(ordinary_rem(DOWNLOAD_REMAINING_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3337,
+        "text": ".w(ordinary_rem(DOWNLOAD_STATUS_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3342,
+        "text": ".h(ordinary_rem(DOWNLOAD_TABLE_HEADER_HEIGHT))"
+      },
+      {
+        "line": 3350,
+        "text": ".text_size(ordinary_rem(TEXT_META))"
+      },
+      {
+        "line": 3356,
+        "text": ".w(ordinary_rem(DOWNLOAD_CATEGORY_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3370,
+        "text": ".w(ordinary_rem(DOWNLOAD_CREATED_COLUMN_WIDTH))"
+      },
+      {
+        "line": 3420,
+        "text": ".text_size(ordinary_rem(TEXT_META))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_settings.rs",
+    "candidates": [
+      {
+        "line": 455,
+        "text": ".sidebar_width(px(160.0))"
+      },
+      {
+        "line": 456,
+        "text": ".sidebar_size_range(px(160.0)..px(208.0))"
+      },
+      {
+        "line": 1470,
+        "text": "input.bounds().size.width >= px(200.0),"
+      },
+      {
+        "line": 1760,
+        "text": "assert!(activity.top() >= px(0.0) && activity.bottom() <= px(430.0));"
+      },
+      {
+        "line": 1767,
+        "text": "assert!(empty.top() >= px(0.0) && empty.bottom() <= px(430.0));"
+      },
+      {
+        "line": 1811,
+        "text": "position: gpui_kit::point(px(650.0), px(350.0)),"
+      },
+      {
+        "line": 1933,
+        "text": "fn ux_refinement_catalog_short_content_does_not_force_252px(cx: &mut TestAppContext) {"
+      },
+      {
+        "line": 1941,
+        "text": "grid.size.height <= px(220.0),"
+      },
+      {
+        "line": 1960,
+        "text": "(first.center().y - second.center().y).abs() < px(2.0),"
+      },
+      {
+        "line": 1967,
+        "text": "assert_eq!(first.size.height, px(32.0));"
+      },
+      {
+        "line": 2024,
+        "text": "assert_eq!(bounds.size.height, px(32.0));"
+      },
+      {
+        "line": 2080,
+        "text": "window.simulate_resize(size(px(width), px(430.0)));"
+      },
+      {
+        "line": 2082,
+        "text": "let mut previous_right = px(0.0);"
+      },
+      {
+        "line": 2099,
+        "text": "assert_eq!(bounds.size.height, px(32.0));"
+      },
+      {
+        "line": 2102,
+        "text": "&& bounds.right() <= px(width)"
+      },
+      {
+        "line": 2103,
+        "text": "&& bounds.top() >= px(0.0),"
+      },
+      {
+        "line": 2109,
+        "text": "window.simulate_resize(size(px(744.0), px(430.0)));"
+      },
+      {
+        "line": 2205,
+        "text": "assert!(close.bottom() <= px(430.0));"
+      },
+      {
+        "line": 2239,
+        "text": "next.bottom() <= px(430.0),"
+      },
+      {
+        "line": 2248,
+        "text": "px(32.0)"
+      },
+      {
+        "line": 2393,
+        "text": "assert!(choice_node.bounds().size.width >= px(100.0));"
+      },
+      {
+        "line": 2394,
+        "text": "assert!(choice_node.bounds().size.height >= px(32.0));"
+      },
+      {
+        "line": 2538,
+        "text": "window.resize(size(px(744.0), px(430.0)));"
+      },
+      {
+        "line": 2543,
+        "text": "window.simulate_resize(size(px(744.0), px(430.0)));"
+      },
+      {
+        "line": 2589,
+        "text": "&& bounds.top() >= px(0.0)"
+      },
+      {
+        "line": 2590,
+        "text": "&& bounds.bottom() <= px(430.0)"
+      },
+      {
+        "line": 2591,
+        "text": "&& bounds.left() >= px(0.0)"
+      },
+      {
+        "line": 2592,
+        "text": "&& bounds.right() <= px(744.0)"
+      },
+      {
+        "line": 2620,
+        "text": "|| gpui_kit::point(bounds.left() + px(18.0), bounds.center().y),"
+      },
+      {
+        "line": 2632,
+        "text": "position: gpui_kit::point(px(650.0), px(350.0)),"
+      },
+      {
+        "line": 2642,
+        "text": "position: gpui_kit::point(px(650.0), px(350.0)),"
+      },
+      {
+        "line": 2683,
+        "text": ".is_some_and(|bounds| bounds.top() >= px(0.0) && bounds.bottom() <= px(430.0))"
+      },
+      {
+        "line": 2688,
+        "text": "position: gpui_kit::point(px(650.0), px(350.0)),"
+      },
+      {
+        "line": 2784,
+        "text": "bounds.top() >= px(0.0)"
+      },
+      {
+        "line": 2785,
+        "text": "&& bounds.bottom() <= px(430.0)"
+      },
+      {
+        "line": 2786,
+        "text": "&& bounds.right() <= px(744.0)"
+      },
+      {
+        "line": 2917,
+        "text": "position: gpui_kit::point(px(650.0), px(350.0)),"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/notifications.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs",
+    "candidates": [
+      {
+        "line": 365,
+        "text": "crate::ui::metrics::ordinary_rem(280.0),"
+      },
+      {
+        "line": 530,
+        "text": ".sidebar_width(px(QUICK_LAUNCH_SETTINGS_NAV_WIDTH))"
+      },
+      {
+        "line": 1157,
+        "text": ".min_h(px(48.0))"
+      },
+      {
+        "line": 1158,
+        "text": ".py(px(SPACING_8))"
+      },
+      {
+        "line": 1163,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 1170,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 1176,
+        "text": ".text_size(px(TEXT_BODY))"
+      },
+      {
+        "line": 1177,
+        "text": ".line_height(px(LINE_HEIGHT_BODY))"
+      },
+      {
+        "line": 1190,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 1191,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 1209,
+        "text": ".h(px(32.0))"
+      },
+      {
+        "line": 1230,
+        "text": "window.resize(size(px(920.0), px(480.0)));"
+      },
+      {
+        "line": 1248,
+        "text": "window.simulate_resize(size(px(920.0), px(480.0)));"
+      },
+      {
+        "line": 1265,
+        "text": "assert_eq!(toggle.size.height, px(32.0));"
+      },
+      {
+        "line": 1269,
+        "text": "assert!(help.size.width <= px(24.0));"
+      },
+      {
+        "line": 1293,
+        "text": ".gap(px(16.0))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/shell.rs",
+    "candidates": [
+      {
+        "line": 64,
+        "text": ".h(px(CONTROL_HEIGHT_ACTION))"
+      },
+      {
+        "line": 88,
+        "text": ".h(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "line": 118,
+        "text": ".gap(px(SPACING_8))"
+      },
+      {
+        "line": 119,
+        "text": ".pl(px(SPACING_12))"
+      },
+      {
+        "line": 124,
+        "text": ".size(px(18.0))"
+      },
+      {
+        "line": 125,
+        "text": ".rounded(px(RADIUS_CONTROL))"
+      },
+      {
+        "line": 131,
+        "text": ".size(px(18.0))"
+      },
+      {
+        "line": 138,
+        "text": ".h(px(LINE_HEIGHT_PAGE_TITLE))"
+      },
+      {
+        "line": 139,
+        "text": ".text_size(px(TEXT_PAGE_TITLE))"
+      },
+      {
+        "line": 140,
+        "text": ".line_height(px(LINE_HEIGHT_PAGE_TITLE))"
+      },
+      {
+        "line": 148,
+        "text": ".h(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 149,
+        "text": ".text_size(px(TEXT_LABEL))"
+      },
+      {
+        "line": 150,
+        "text": ".line_height(px(LINE_HEIGHT_LABEL))"
+      },
+      {
+        "line": 161,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 268,
+        "text": ".w(px(SIDEBAR_WIDTH))"
+      },
+      {
+        "line": 306,
+        "text": ".p(px(4.0))"
+      },
+      {
+        "line": 429,
+        "text": "let icon = Icon::new(control.icon()).size(px(12.0));"
+      },
+      {
+        "line": 434,
+        "text": ".w(px(TITLEBAR_HEIGHT))"
+      },
+      {
+        "line": 463,
+        "text": ".rounded(px(crate::ui::metrics::RADIUS_NONE))"
+      },
+      {
+        "line": 468,
+        "text": ".size(px(12.0))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page.rs",
+    "candidates": [
+      {
+        "line": 76,
+        "text": ".w(px(TOOL_SETTINGS_INFORMATION_WIDTH))"
+      },
+      {
+        "line": 78,
+        "text": ".min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))"
+      },
+      {
+        "line": 81,
+        "text": ".gap(px(SPACING_4))"
+      },
+      {
+        "line": 92,
+        "text": ".min_h(px(FEATURE_WINDOW_TITLE_LANE_HEIGHT))"
+      },
+      {
+        "line": 108,
+        "text": ".size(px(6.0))"
+      },
+      {
+        "line": 117,
+        "text": ".child(div().size(px(6.0))),"
+      },
+      {
+        "line": 160,
+        "text": ".w(px(180.0))"
+      },
+      {
+        "line": 161,
+        "text": ".h(px(160.0))"
+      },
+      {
+        "line": 180,
+        "text": ".size(px(32.0))"
+      },
+      {
+        "line": 183,
+        "text": ".size(px(32.0))"
+      },
+      {
+        "line": 241,
+        "text": ".p(px(SPACING_16))"
+      },
+      {
+        "line": 249,
+        "text": ".gap(px(SPACING_12))"
+      },
+      {
+        "line": 474,
+        "text": ".label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))"
+      },
+      {
+        "line": 539,
+        "text": "let window_size = size(px(460.0), px(320.0));"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/blacklist.rs",
+    "candidates": [
+      {
+        "line": 26,
+        "text": ".h(px(32.0))"
+      },
+      {
+        "line": 44,
+        "text": ".w(px(width))"
+      },
+      {
+        "line": 46,
+        "text": ".h(px(ROW_HEIGHT))"
+      },
+      {
+        "line": 101,
+        "text": ".h(px(ROW_HEIGHT))"
+      },
+      {
+        "line": 131,
+        "text": ".max_h(px(120.0))"
+      },
+      {
+        "line": 170,
+        "text": ".w_full().h(px(ROW_HEIGHT)).flex_none().px_3().flex().items_center()"
+      },
+      {
+        "line": 174,
+        "text": ".w(px(CLIPBOARD_COLUMN)).flex_none().child(scope_checkbox("
+      },
+      {
+        "line": 183,
+        "text": ".w(px(QUICK_COLUMN)).flex_none().child(scope_checkbox("
+      },
+      {
+        "line": 192,
+        "text": ".w(px(ACTION_COLUMN)).flex_none().child(Button::new(SharedString::from(format!(\"global-blacklist-remove-{index}\")))"
+      },
+      {
+        "line": 204,
+        "text": ".h(px(80.0))"
+      },
+      {
+        "line": 250,
+        "text": ".child(div().w(px(64.0)).flex_none().child(scope_checkbox("
+      },
+      {
+        "line": 261,
+        "text": ".child(div().w(px(64.0)).flex_none().child(scope_checkbox("
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/system_proxy.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/network_settings/theme_chooser.rs",
+    "candidates": [
+      {
+        "line": 57,
+        "text": ".h(px(58.0))"
+      },
+      {
+        "line": 64,
+        "text": ".child(div().w(px(18.0)).h_full().bg(colors.sidebar))"
+      },
+      {
+        "line": 75,
+        "text": ".h(px(16.0))"
+      },
+      {
+        "line": 86,
+        "text": ".h(px(12.0))"
+      },
+      {
+        "line": 92,
+        "text": ".child(div().size(px(6.0)).bg(colors.primary).rounded_sm())"
+      },
+      {
+        "line": 93,
+        "text": ".child(div().h(px(3.0)).w(px(64.0)).bg(colors.foreground)),"
+      },
+      {
+        "line": 95,
+        "text": ".child(div().h(px(3.0)).w(px(88.0)).bg(colors.muted_foreground)),"
+      },
+      {
+        "line": 211,
+        "text": ".h(px(244.0))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/activity.rs",
+    "candidates": [
+      {
+        "line": 31,
+        "text": ".margin_top(px(8.0))"
+      },
+      {
+        "line": 32,
+        "text": ".w((window.viewport_size().width - px(24.0)).min(px(480.0)))"
+      },
+      {
+        "line": 54,
+        "text": ".max_h((window.viewport_size().height - px(160.0)).max(px(64.0)))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/catalog.rs",
+    "candidates": [
+      {
+        "line": 193,
+        "text": ".size(px(28.0))"
+      },
+      {
+        "line": 259,
+        "text": ".max_h((window.viewport_size().height-px(200.0)).max(px(80.0)))"
+      },
+      {
+        "line": 285,
+        "text": "dialog.title(\"如何使用\").w((window.viewport_size().width-px(32.0)).min(px(560.0)))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/environment.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/import_confirmation.rs",
+    "candidates": [
+      {
+        "line": 108,
+        "text": ".w(px(640.0))"
+      },
+      {
+        "line": 217,
+        "text": ".label_width(px(80.0))"
+      },
+      {
+        "line": 267,
+        "text": ".label_width(px(80.0))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/removal.rs",
+    "candidates": [
+      {
+        "line": 51,
+        "text": "let body = div().id(\"extension-remove-review-scroll\").w_full().max_h((window.viewport_size().height-px(190.0)).max(px(80.0))).overflow_y_scroll().flex().flex_col().gap_3()"
+      },
+      {
+        "line": 55,
+        "text": "dialog.title(\"确认移除扩展\").w((window.viewport_size().width-px(32.0)).min(px(560.0))).overlay_closable(false)"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/setting_paths.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/trust_confirmation.rs",
+    "candidates": [
+      {
+        "line": 187,
+        "text": ".label_width(px(88.0))"
+      },
+      {
+        "line": 277,
+        "text": ".label_width(px(88.0))"
+      },
+      {
+        "line": 324,
+        "text": ".w(px(640.0))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/usage.rs",
+    "candidates": []
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/extensions_page/workspace.rs",
+    "candidates": [
+      {
+        "line": 193,
+        "text": ".grid_cols(if window.viewport_size().width >= px(620.0) {"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/currency_settings.rs",
+    "candidates": [
+      {
+        "line": 46,
+        "text": ".w(px(180.0))"
+      },
+      {
+        "line": 47,
+        "text": ".h(px(160.0))"
+      },
+      {
+        "line": 65,
+        "text": ".size(px(32.0))"
+      },
+      {
+        "line": 254,
+        "text": ".child(Form::horizontal().small().label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH))"
+      },
+      {
+        "line": 255,
+        "text": ".child(compact_tool_field(\"currency-target-label\",\"currency-target-help\",\"currency-target-control\",\"目标币种\",\"搜索代码、接口名称或常用中文名；数据源包含法币、贵金属及加密货币。\",div().debug_selector(|| \"currency-target\".into()).w_full().min_w_0().max_w(px(164.0)).child(Select::new(&self.target).w_full().menu_width(px(320.0)).menu_max_h(px(160.0)).search_placeholder(\"搜索币种代码或名称\").accessibility_label(\"目标币种\"))))"
+      }
+    ]
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/tools_page/floating_assistant_settings.rs",
+    "candidates": [
+      {
+        "line": 63,
+        "text": ".w(px(180.0))"
+      },
+      {
+        "line": 64,
+        "text": ".h(px(160.0))"
+      },
+      {
+        "line": 82,
+        "text": ".size(px(32.0))"
+      },
+      {
+        "line": 499,
+        "text": ".menu_max_h(px(144.0)),"
+      },
+      {
+        "line": 583,
+        "text": ".label_width(px(TOOL_SETTINGS_INFORMATION_WIDTH));"
+      }
+    ]
+  }
+]

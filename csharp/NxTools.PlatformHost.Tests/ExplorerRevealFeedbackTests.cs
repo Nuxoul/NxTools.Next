@@ -21,6 +21,12 @@ internal static class ExplorerRevealFeedbackTests
                 Assert(stages.Contains("target_confirmed") && stages.Contains("foreground_not_confirmed"), "separate payload-free stages");
             }
         });
+        WithTargets((directory,_)=>{
+            var views=new Views{Values=[new(new IntPtr(10),new IntPtr(20),true,directory,[])]};
+            Assert(ExplorerShellActivation.ObserveTarget(directory,true,views,true)==new IntPtr(10),"directory entry confirms its active view without a selected child");
+            var entered=new Platform{Views=views,Foreground=new IntPtr(10)};
+            Assert(ExplorerShellActivation.EnterAndActivate(directory,entered).Success && entered.NativeCalls==0 && entered.Activations==1,"existing actual directory view reused without duplicate launch");
+        });
         return Task.CompletedTask;
     }
 
@@ -90,13 +96,39 @@ internal static class ExplorerRevealFeedbackTests
             var fake = new Platform { Views = snapshots, Foreground = root };
             Assert(!ExplorerShellActivation.LaunchAndActivate(file, fake).Success,
                 "hidden matching tab, same-root wrong selection and wrong folder cannot confirm target");
-            Assert(ExplorerShellActivation.ObserveTarget(directory, true, snapshots) == root,
-                "directory requests require active matching folder, not file selection");
+            Assert(ExplorerShellActivation.ObserveTarget(directory, true, snapshots) == IntPtr.Zero,
+                "Reveal directory must not accept entering the directory itself");
+            var parent = Path.GetDirectoryName(directory)!;
+            snapshots.Values = [new(root, new IntPtr(22), true, parent, [directory])];
+            Assert(ExplorerShellActivation.LaunchAndActivate(directory, new Platform { Views = snapshots }).Success,
+                "directory Reveal confirms the exact directory selected in its parent");
+            snapshots.Values = [new(root, new IntPtr(22), true, parent, [directory + "-wrong"])];
+            Assert(!ExplorerShellActivation.LaunchAndActivate(directory, new Platform { Views = snapshots }).Success,
+                "wrong selected directory remains unconfirmed");
+            var driveRoot = Path.GetPathRoot(directory)!;
+            snapshots.Values = [new(root, new IntPtr(22), true, driveRoot, [])];
+            Assert(ExplorerShellActivation.ObserveTarget(driveRoot, true, snapshots) == root,
+                "a drive root has no parent and confirms its own active view");
             snapshots.Values = [new(root, new IntPtr(22), true, directory, [file.ToUpperInvariant()])];
             fake = new Platform { Views = snapshots };
             Assert(ExplorerShellActivation.LaunchAndActivate(file, fake).Success,
                 "exact active-view selection uses case-insensitive full filesystem identity");
             Assert(fake.Observations == 1 && fake.Activations == 1, "production matcher feeds real entry without second worker");
+            Assert(ExplorerShellActivation.ObserveTarget(@"\\?\" + file, false, snapshots) == root,
+                "an extended DOS target and the Shell's normal path identify the same selected file");
+            snapshots.Values = [new(root, new IntPtr(22), true, @"\\?\" + directory, [@"\\?\" + file])];
+            Assert(ExplorerShellActivation.ObserveTarget(file, false, snapshots) == root,
+                "equivalent filesystem prefixes may occur on either side of target observation");
+            snapshots.Values = [new(root, new IntPtr(22), true, directory, [file + ".wrong"])];
+            Assert(ExplorerShellActivation.ObserveTarget(@"\\?\" + file, false, snapshots) == IntPtr.Zero,
+                "prefix normalization must not accept another filename");
+            const string uncDirectory = @"\\fixture-server\fixture-share\下载";
+            const string uncFile = @"\\fixture-server\fixture-share\下载\fixture.bin";
+            snapshots.Values = [new(root, new IntPtr(22), true, uncDirectory, [uncFile])];
+            Assert(ExplorerShellActivation.ObserveTarget(@"\\?\UNC\fixture-server\fixture-share\下载\fixture.bin", false, snapshots) == root,
+                "extended UNC and Shell UNC path aliases preserve exact share and selection");
+            Assert(ExplorerShellActivation.ObserveTarget(@"\\?\UNC\other-server\fixture-share\下载\fixture.bin", false, snapshots) == IntPtr.Zero,
+                "different UNC server identities must never collapse");
         });
         return Task.CompletedTask;
     }
@@ -296,6 +328,8 @@ internal static class ExplorerRevealFeedbackTests
         public Action? DuringObservation;
         public IntPtr Foreground = new(99);
         public IExplorerTargetObservationPlatform? Views;
+        public int NativeCalls;
+        public IntPtr FindEnteredDirectory(string directory)=>Views is null?IntPtr.Zero:ExplorerShellActivation.ObserveTarget(directory,true,Views,true);
         public IntPtr FindConfirmedTarget(string target, bool isDirectory)
         {
             Observations++;
@@ -304,7 +338,7 @@ internal static class ExplorerRevealFeedbackTests
             if (Views is not null) return ExplorerShellActivation.ObserveTarget(target, isDirectory, Views);
             return Confirmed || Observations >= PublishAfter ? new IntPtr(10) : IntPtr.Zero;
         }
-        public int OpenNative(string target, bool isDirectory) => NativeResult;
+        public int OpenNative(string target, bool isDirectory) {NativeCalls++;return NativeResult;}
         public IntPtr FindExplorerWindow(string directory) => new(10); // same folder is intentionally NOT selection evidence
         public void LaunchExplorer(string arguments) => Fallbacks++;
         public bool IsWindow(IntPtr window) => window != IntPtr.Zero && !(DestroyAfterActivation && Activations > 0 && window == new IntPtr(10));

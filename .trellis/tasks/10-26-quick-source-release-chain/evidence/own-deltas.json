@@ -1,0 +1,38 @@
+[
+  {
+    "path": "tests/architecture/quick-launch-lifecycle.ps1",
+    "before_sha256": "445b2bc2af050378d369ea564cc83d28a8f4a53cf89cf20210eb1d9c64ae6d54",
+    "after_sha256": "c6bbd775c86073e63d61d08af6a94b013288285530b5b5671e650566dee11e77",
+    "after_snapshot": "evidence/current/tests/architecture/quick-launch-lifecycle.ps1",
+    "ops": [
+      {
+        "old_start": 1041,
+        "old_end": 1041,
+        "new_start": 1041,
+        "new_end": 1044,
+        "old": "",
+        "new": "JHB1Ymxpc2hlclBhdGggPSBKb2luLVBhdGggJHJvb3QgJ3NjcmlwdHNccHVibGlzaC1yZWxlYXNlLWhvc3RzLnBzMScKJHB1Ymxpc2hlclNvdXJjZSA9IEdldC1Db250ZW50IC1SYXcgLUxpdGVyYWxQYXRoICRwdWJsaXNoZXJQYXRoCi4gKEpvaW4tUGF0aCAkcm9vdCAndGVzdHNcYXJjaGl0ZWN0dXJlXHF1aWNrLWxhdW5jaC1yZWxlYXNlLWNoYWluLnBzMScpCg=="
+      },
+      {
+        "old_start": 1761,
+        "old_end": 1762,
+        "new_start": 1764,
+        "new_end": 1765,
+        "old": "ICAgICRidWlsZFNjcmlwdFNvdXJjZSAtbm90bWF0Y2ggJ3dyaXRlLXJlbGVhc2UtYmluYXJ5LW1hbmlmZXN0XC5wczEnIC1vcgo=",
+        "new": "ICAgIC1ub3QgKFRlc3QtUXVpY2tMYXVuY2hSZWxlYXNlQ2hhaW4gJGJ1aWxkU2NyaXB0U291cmNlICRwdWJsaXNoZXJTb3VyY2UgJG1hbmlmZXN0V3JpdGVyU291cmNlKSAtb3IK"
+      }
+    ]
+  },
+  {
+    "path": "tests/architecture/quick-launch-release-chain.ps1",
+    "new_file": true,
+    "after_sha256": "184f9b983073267e1101709a5245669f1e04d18c4942b75dd380a98c90b10a18",
+    "after_snapshot": "evidence/current/tests/architecture/quick-launch-release-chain.ps1"
+  },
+  {
+    "path": "tests/architecture/quick-launch-release-chain-tests.ps1",
+    "new_file": true,
+    "after_sha256": "3211f1b6129e50909bd9717021d812fbf53c0f7dcf0279686c361e4d0b03a441",
+    "after_snapshot": "evidence/current/tests/architecture/quick-launch-release-chain-tests.ps1"
+  }
+]

@@ -103,7 +103,6 @@ impl MarkdownDocument {
             bounds: Rc::new(Cell::new(Bounds::default())),
         }
     }
-    #[cfg(test)]
     pub(crate) fn bounds(&self) -> Bounds<Pixels> {
         self.bounds.get()
     }

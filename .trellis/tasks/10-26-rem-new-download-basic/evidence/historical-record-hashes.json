@@ -1,0 +1,22 @@
+[
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/prd.md",
+    "sha256": "367720f673fa90bace08d20245ce6b7d6376c18a86aeb9d0994cbdc51ae9decd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/parent-checkpoint-01.md",
+    "sha256": "8ed801ec8c104513e3d438d42fce4eba345a5bfcace2eda321390ba1474e4fe7"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/checkpoint-01/checkpoint-manifest.json",
+    "sha256": "a46aa37c0ccc83d3d303e2c7a374501c6fffa3b52654ab23265011b1942cf2bd"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/preparation-02/manifest.json",
+    "sha256": "c8dcb05dd3e3361b8d7e9b55311566ea28254efee5cf6204502d8530e9284167"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-role-consistency/evidence/desktop-full-once.log",
+    "sha256": "7753e62dcaa29bb39f7ea683db082ceb6cc97485e48220b24d486cc7551d8c48"
+  }
+]

@@ -322,8 +322,8 @@ fn queue10_native_titlebar_keeps_original_drag_host_with_styled_small_close(
     let close = surface
         .debug_bounds("queue10-close")
         .expect("actual Button");
-    assert_eq!(title.size.height, px(36.0));
-    assert_eq!(close.size.height, px(24.0));
+    assert_eq!(title.size.height, px(34.0));
+    assert_eq!(close.size.height, px(33.0));
     assert!(
         close.left() >= title.left()
             && close.right() <= title.right()

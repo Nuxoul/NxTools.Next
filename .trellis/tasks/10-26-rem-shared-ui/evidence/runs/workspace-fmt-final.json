@@ -1,0 +1,7 @@
+﻿{
+    "name":  "workspace-fmt-final",
+    "command":  "cargo fmt --all -- --check",
+    "exit":  0,
+    "elapsed":  8.631927,
+    "finished":  "2026-10-26T07:01:50.6617538+08:00"
+}

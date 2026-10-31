@@ -1,0 +1,59 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/components/action.rs",
+    "region": "prefix before pub(crate) struct SegmentedOption",
+    "unchanged": true,
+    "sha256": "5e585d4a0dae55aa6a7c157a8a3eb8057988746cf4bf0348144b2890e5a876e7",
+    "bytes": 3338
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_view.rs",
+    "region": "prefix before #[derive(Clone, Copy, Debug, PartialEq, Eq)]\npub(crate) enum NewDownloadFooterAction",
+    "unchanged": true,
+    "sha256": "9f7b580548184e31f2410788dd7a0b67178fcce885f5206351cf016d5eb36a3a",
+    "bytes": 50728
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/settings_view.rs",
+    "region": "prefix before     fn render_setting_control(",
+    "unchanged": true,
+    "sha256": "d0cd57cfaf460579a8ed2baa6277167ba637a59371506f3b01767fe46876dc4e",
+    "bytes": 41692
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker.rs",
+    "region": "whole file",
+    "unchanged": true,
+    "sha256": "85c4d20a2a5cdd929563359e6e594f832635cba883a32b18440743caa3a91adb"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/directory_picker_tests.rs",
+    "region": "whole file",
+    "unchanged": true,
+    "sha256": "7e5ab2de7cbea0d829ced2bc73e0ee72360a90791052ed2f70e9c7c3b377f7ab"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/new_download_keyboard_tests.rs",
+    "region": "whole file",
+    "unchanged": true,
+    "sha256": "7c2b43e20fe054049ef8ca37a81e51bbb73b798e88e045fcbf061ebf1715cc29"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history.rs",
+    "region": "whole file",
+    "unchanged": true,
+    "sha256": "eea64001c2d5f522fc7ff1dc3ee40ea6f43532e3ba1db4230c5344313dbf4b39"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/mod.rs",
+    "region": "whole file",
+    "unchanged": true,
+    "sha256": "ada7385cfceb77f353a6933f5593a5a0caefbbcd3e52e112214e0d39d8bd64a2"
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/history_identity_tests.rs",
+    "region": "whole file",
+    "unchanged": true,
+    "sha256": "614bb8a97ae5046a182dc52673a097915cc0a3185356fa16f20adc615a1a03d6"
+  }
+]

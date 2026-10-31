@@ -2,12 +2,14 @@
 pub(crate) mod committed_events;
 mod directory;
 pub(crate) mod download_resolver;
+pub(crate) mod event_history;
 pub(crate) mod feature_adapters;
 pub(crate) mod manual_actions;
 mod manual_notifications;
 pub(crate) mod manual_runs;
 mod runtime_environment;
 pub(crate) mod service;
+pub(crate) mod storage_management;
 pub(crate) mod ui_host;
 use gpui_kit::{Context, Entity, Global, WeakEntity};
 use nxtools_core::AppConfig;
@@ -20,6 +22,14 @@ use tracing::{info, warn};
 
 use crate::notifications::{AppNotification, NotificationLevel};
 use crate::quick_launch::QuickLaunchApplication;
+
+#[derive(Clone, Copy)]
+enum DataCleanup {
+    Unchanged,
+    Retained,
+    Cleared,
+    Pending,
+}
 
 pub(crate) struct ExtensionApplication {
     config_path: PathBuf,
@@ -59,6 +69,7 @@ pub(crate) struct ExtensionApplication {
     /// Last management result (action, durably saved, runtime applied), never presentation text.
     pub(crate) last_commit: Option<(&'static str, bool, bool)>,
     pub(crate) commit_revision: u64,
+    pub(crate) storage_management: storage_management::StorageManagement,
 }
 
 pub(crate) struct ExtensionApplicationGlobal(pub(crate) WeakEntity<ExtensionApplication>);
@@ -99,6 +110,7 @@ impl ExtensionApplication {
             status: None,
             last_commit: None,
             commit_revision: 0,
+            storage_management: Default::default(),
         }
     }
     fn notify_operation(
@@ -149,6 +161,18 @@ impl ExtensionApplication {
         cx.notify();
     }
 
+    pub(crate) fn recent_events(&self) -> Vec<event_history::EventTerminal> {
+        self.event_control
+            .as_ref()
+            .map_or_else(Vec::new, |control| control.recent())
+    }
+    pub(crate) fn latest_event(
+        &self,
+        package: &str,
+        handler: &str,
+    ) -> Option<event_history::EventTerminal> {
+        self.event_control.as_ref()?.latest(package, handler)
+    }
     pub(crate) fn event_paused(&self, package: &str, handler: &str) -> bool {
         self.event_control
             .as_ref()
@@ -284,10 +308,16 @@ impl ExtensionApplication {
             let success = result.success;
             let native_error_code = result.native_error_code;
             cx.defer(move |_| {
-                let _ = reply.try_send(nxtools_extensions::HostReply {
-                    success,
-                    value: serde_json::json!({"native_error_code":native_error_code}),
-                });
+                let mut outcome = if success {
+                    nxtools_extensions::HostReply {
+                        success: true,
+                        value: serde_json::json!({}),
+                    }
+                } else {
+                    nxtools_extensions::HostReply::error("native_failed")
+                };
+                outcome.value["native_error_code"] = serde_json::json!(native_error_code);
+                let _ = reply.try_send(outcome);
             });
             return;
         }
@@ -435,6 +465,7 @@ impl ExtensionApplication {
                             nxtools_extensions::PackageError::ArchiveTooLarge=>"无法导入：扩展包体积、解压后大小或文件数量超过限制。",
                             nxtools_extensions::PackageError::ArchiveInvalid=>"无法导入：请选择有效的 ZIP 扩展包；extension.json 应在根目录或唯一顶层文件夹中。",
                             nxtools_extensions::PackageError::CodeRequired=>"无法导入：扩展包缺少清单声明的脚本或文件，请重新打包。",
+                            nxtools_extensions::PackageError::UnsupportedCapability=>"无法导入：此扩展需要当前版本不支持的 API，请更新程序或联系作者。",
                             nxtools_extensions::PackageError::FileOperation=>"无法读取扩展包，请检查文件是否存在以及访问权限。",
                             _=>"无法导入：扩展清单、功能声明或文件不符合要求，请检查扩展包。",
                         }, cx);
@@ -630,7 +661,9 @@ impl ExtensionApplication {
                 &store,
                 move |values| async move {
                     tokio::task::spawn_blocking(move || {
-                        AppConfig::save_extension_settings(&path, &id, values)
+                        service.commit_config(&path, |path| {
+                            AppConfig::save_extension_settings(path, &id, values)
+                        })
                     })
                     .await
                     .map_err(|_| nxtools_extensions::PackageError::FileOperation)?
@@ -645,11 +678,9 @@ impl ExtensionApplication {
                 app.busy = false;
                 app.commit_revision = app.commit_revision.wrapping_add(1);
                 match outcome {
-                    Ok(Ok(config)) => {
+                    Ok(Ok((config, applied))) => {
                         app.packages = config.extensions;
-                        let applied = app.service.as_ref().is_none_or(|service| {
-                            service.publish_registry(app.packages.clone()).is_ok()
-                        });
+                        app.refresh_committed_storage_metadata();
                         app.last_commit = Some(("settings", true, applied));
                         app.notify_operation(
                             operation_key.clone(),
@@ -851,13 +882,60 @@ impl ExtensionApplication {
         );
     }
 
-    pub(crate) fn remove(&mut self, id: String, cx: &mut Context<Self>) {
-        if let Some(service) = self.service.as_ref() {
-            service.runtime.cancel_package(&id);
+    pub(crate) fn remove_reviewed(
+        &mut self,
+        id: String,
+        reviewed: nxtools_extensions::PackageRegistry,
+        clear_data: bool,
+        cx: &mut Context<Self>,
+    ) {
+        if self.busy || self.packages != reviewed {
+            self.notify_operation(
+                format!("extension-remove-stale-{}", uuid::Uuid::new_v4()),
+                NotificationLevel::Error,
+                "扩展配置已变化；请关闭并重新检查移除影响",
+                cx,
+            );
+            return;
         }
-        self.commit(
+        // Publication after the locked commit cancels owned runs; stale/failed review
+        // must not cancel an otherwise current invocation.
+        let storage = self
+            .service
+            .as_ref()
+            .and_then(|service| service.storage_owner());
+        self.commit_with_cleanup(
             "remove",
-            move |path| AppConfig::remove_extension(path, &id),
+            move |path| match storage {
+                Some(storage) => AppConfig::remove_extension_data_checked(
+                    path, &id, &reviewed, &storage, clear_data,
+                )
+                .map(|(config, pending)| {
+                    (
+                        config,
+                        if pending {
+                            DataCleanup::Pending
+                        } else if clear_data {
+                            DataCleanup::Cleared
+                        } else {
+                            DataCleanup::Retained
+                        },
+                    )
+                }),
+                None => {
+                    // An unconfigured test/host may remove only a package without durable data.
+                    anyhow::ensure!(
+                        reviewed
+                            .packages
+                            .iter()
+                            .find(|package| package.manifest.id == id)
+                            .is_some_and(|package| package.data_uuid.is_none()),
+                        nxtools_extensions::storage::StorageError::Unavailable
+                    );
+                    AppConfig::remove_extension_checked(path, &id, &reviewed)
+                        .map(|config| (config, DataCleanup::Unchanged))
+                }
+            },
             cx,
         );
     }
@@ -918,6 +996,13 @@ impl ExtensionApplication {
         }) else {
             return Err("扩展动作已失效，请重新选择");
         };
+        if handler
+            .accepts
+            .as_ref()
+            .is_some_and(|accepts| !accepts.accepts_context(feature, &context))
+        {
+            return Err("此动作不适用于当前内容类型、数量或大小，请重新选择");
+        }
         let package_name = package.manifest.name.clone();
         let action_name = handler.title.clone();
         let hash = package.content_hash.clone();
@@ -958,6 +1043,20 @@ impl ExtensionApplication {
         operation: impl FnOnce(&std::path::Path) -> anyhow::Result<AppConfig> + Send + 'static,
         cx: &mut Context<Self>,
     ) {
+        self.commit_with_cleanup(
+            action,
+            move |path| operation(path).map(|config| (config, DataCleanup::Unchanged)),
+            cx,
+        );
+    }
+    fn commit_with_cleanup(
+        &mut self,
+        action: &'static str,
+        operation: impl FnOnce(&std::path::Path) -> anyhow::Result<(AppConfig, DataCleanup)>
+        + Send
+        + 'static,
+        cx: &mut Context<Self>,
+    ) {
         if self.busy {
             return;
         }
@@ -981,24 +1080,47 @@ impl ExtensionApplication {
         let started = Instant::now();
         info!(event = "extension.management.accepted", correlation_id=%id, action, "extension change accepted");
         let background = cx.background_executor().clone();
+        let service = self.service.clone();
+        let blocking_executor = service.as_ref().map(|service| service.executor());
         cx.spawn(async move |this, cx| {
-            let outcome = background.spawn(async move { operation(&config_path) }).await;
+            let work = move || {
+                let span = tracing::info_span!("extension.management", correlation_id=%id, action);
+                let _entered = span.enter();
+                info!(event = "extension.management.started");
+                match service {
+                    Some(service) => service.commit_config_with_result(&config_path, operation),
+                    None => operation(&config_path).map(|(config, pending)| (config, true, pending)),
+                }
+            };
+            let outcome = match blocking_executor {
+                Some(executor) => executor.spawn_blocking(work).await.unwrap_or_else(|_| Err(anyhow::anyhow!("extension management worker unavailable"))),
+                None => background.spawn(async move { work() }).await,
+            };
             let _ = this.update(cx, |app, cx| {
                 app.busy = false;
                 if action=="trust" { app.trust_revision=app.trust_revision.wrapping_add(1); }
                 app.commit_revision = app.commit_revision.wrapping_add(1);
                 match outcome {
-                    Ok(config) => {
+                    Ok((config, applied, cleanup)) => {
+                        let cleanup_pending = matches!(cleanup, DataCleanup::Pending);
                         app.packages = config.extensions;
+                        app.refresh_committed_storage_metadata();
                         app.preview = None;
-                        let applied = app.service.as_ref().is_none_or(|service| service.publish_registry(app.packages.clone()).is_ok());
                         app.last_commit = Some((action, true, applied));
-                        app.notify_operation(operation_key.clone(), if applied { NotificationLevel::Success } else { NotificationLevel::Error },
-                            if applied { "已保存" } else { "已保存，但扩展运行时未能应用；请重试" }, cx);
+                        let (level, message) = match (applied, cleanup, action) {
+                            (false, DataCleanup::Pending, "remove") => (NotificationLevel::Error, "扩展已移除，数据待清理，运行时未能应用；请检查后重试"),
+                            (true, DataCleanup::Pending, "remove") => (NotificationLevel::Info, "扩展已移除，数据待清理；请稍后检查并重试"),
+                            (false, _, _) => (NotificationLevel::Error, "已保存，但扩展运行时未能应用；请重试"),
+                            (true, DataCleanup::Cleared, "remove") => (NotificationLevel::Success, "扩展已移除，此安装的数据已清理"),
+                            (true, DataCleanup::Retained, "remove") => (NotificationLevel::Success, "扩展已移除，扩展数据已保留"),
+                            (true, _, "remove") => (NotificationLevel::Success, "扩展已移除"),
+                            (true, _, _) => (NotificationLevel::Success, "已保存"),
+                        };
+                        app.notify_operation(operation_key.clone(), level, message, cx);
                         let snapshot = app.packages.clone();
                         let quick = app.quick_launch.clone();
                         cx.defer(move |cx| { let _ = quick.update(cx, |quick, cx| quick.apply_extension_snapshot(snapshot, cx)); });
-                        info!(event = "extension.management.completed", correlation_id=%id, action, elapsed_ms=started.elapsed().as_millis(), "extension change committed");
+                        info!(event = "extension.management.completed", correlation_id=%id, action, runtime_applied=applied, cleanup_pending, elapsed_ms=started.elapsed().as_millis(), "extension change committed");
                     }
                     Err(error) => {
                         let message: String = match error.downcast_ref::<nxtools_extensions::PackageError>() {

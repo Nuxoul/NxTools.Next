@@ -49,7 +49,7 @@ fn currency_tool_card_settings_keyboard_persistence_bounds_and_reuse(cx: &mut Te
         ]
         .into(),
         names: [
-            ("CNY".into(), "Chinese Yuan".into()),
+            ("CNY".into(), "Chinese Yuan Renminbi".into()),
             ("USD".into(), "US Dollar".into()),
             ("KRW".into(), "South Korean Won".into()),
             ("USDT".into(), "Tether".into()),
@@ -103,6 +103,10 @@ fn currency_tool_card_settings_keyboard_persistence_bounds_and_reuse(cx: &mut Te
         .debug_bounds("tool-currency-card")
         .expect("currency tile");
     assert_eq!(card.size, size(px(180.0), px(160.0)));
+    assert!(
+        window.debug_bounds("tool-currency-status-dot").is_some(),
+        "currency has the same enabled-state indicator as link recognition"
+    );
     window.simulate_click(card.center(), gpui_kit::Modifiers::default());
     window.run_until_parked();
     assert!(window.read(|cx| clipboard.read(cx).currency_status().enabled));
@@ -162,6 +166,37 @@ fn currency_tool_card_settings_keyboard_persistence_bounds_and_reuse(cx: &mut Te
         .expect("target Select");
     assert!(target.size.width > px(100.0));
     assert_eq!(target.size.height, px(32.0));
+    assert!(
+        target.right() <= px(448.0),
+        "Select lane must remain inside native content area: {target:?}"
+    );
+    let target_inputs = settings.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .filter(|node| {
+                node.path().last() == Some(&"input".into())
+                    && node.bounds().top() >= target.top()
+                    && node.bounds().top() < target.bottom()
+            })
+            .collect::<Vec<_>>()
+    });
+    assert!(
+        !target_inputs.is_empty(),
+        "actual released Select input is observed"
+    );
+    for input in target_inputs {
+        assert!(
+            input.bounds().left() >= target.left()
+                && input.bounds().right() <= target.right() + px(1.0),
+            "actual Select input must fit its assigned lane: input={:?}, lane={target:?}",
+            input.bounds()
+        );
+        assert!(
+            input.bounds().right() <= px(448.0),
+            "actual Select frame/caret must not be clipped at the window edge: {:?}",
+            input.bounds()
+        );
+    }
     let update = settings
         .debug_bounds("currency-update")
         .expect("outlined update");

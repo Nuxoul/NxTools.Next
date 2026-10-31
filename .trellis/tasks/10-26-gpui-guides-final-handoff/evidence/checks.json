@@ -1,0 +1,90 @@
+{
+  "status": "FAIL",
+  "purpose": "FINAL_REPORT_ONLY",
+  "product_Rust_native_full_Desktop_invocations": 0,
+  "structure": {
+    "status": "PASS",
+    "reports": 2,
+    "local_links": 78,
+    "original_git_visible_files_unchanged": 8045,
+    "indexed_records_hash_checked": 258,
+    "original_findings": 13,
+    "no_old_manifest_or_product_changes": true,
+    "scope": "REPORT_LINK_SOURCE_HISTORY_INTEGRITY_ONLY"
+  },
+  "commands": [
+    {
+      "name": "spec-contracts",
+      "command": "python tests/architecture/spec-contracts.py",
+      "exit": 0,
+      "expected_exit": 0,
+      "passed": true,
+      "started_utc": "2026-10-26T11:21:44.707486+00:00",
+      "finished_utc": "2026-10-26T11:21:45.389480+00:00",
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/spec-contracts.log",
+      "sha256": "059d5494dcac55eadf7369becd975bb4ef1d7e20a2158f9dba45ef21a134020d",
+      "scope": "DOCUMENTATION_ONLY_NOT_PRODUCT_VERIFICATION"
+    },
+    {
+      "name": "document-scoped-git-diff-check",
+      "command": "git diff --check -- docs/audits/2026-10-26-gpui-guides-final-review.md docs/audits/2026-10-26-gpui-guides-summary-zh.md",
+      "exit": 0,
+      "expected_exit": 0,
+      "passed": true,
+      "started_utc": "2026-10-26T11:21:45.389840+00:00",
+      "finished_utc": "2026-10-26T11:21:45.451920+00:00",
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-scoped-git-diff-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "DOCUMENTATION_ONLY_NOT_PRODUCT_VERIFICATION"
+    },
+    {
+      "name": "document-1-no-index-whitespace",
+      "command": "git -c core.autocrlf=false diff --no-index --check -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt D:\\Code\\NxTools.Next-main\\docs\\audits\\2026-10-26-gpui-guides-final-review.md",
+      "exit": 1,
+      "expected_exit": 0,
+      "passed": false,
+      "started_utc": "2026-10-26T11:21:45.453380+00:00",
+      "finished_utc": "2026-10-26T11:21:45.503324+00:00",
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-1-no-index-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "DOCUMENTATION_ONLY_NOT_PRODUCT_VERIFICATION"
+    },
+    {
+      "name": "document-1-full-new-file-diff",
+      "command": "git -c core.autocrlf=false diff --no-index -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt D:\\Code\\NxTools.Next-main\\docs\\audits\\2026-10-26-gpui-guides-final-review.md",
+      "exit": 1,
+      "expected_exit": 1,
+      "passed": true,
+      "started_utc": "2026-10-26T11:21:45.503660+00:00",
+      "finished_utc": "2026-10-26T11:21:45.555612+00:00",
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-1-full-new-file-diff.log",
+      "sha256": "8535861b64495da490ab1624f16d8938e2024d23effda9e64ce03fc2f1b4c8b2",
+      "scope": "DOCUMENTATION_ONLY_NOT_PRODUCT_VERIFICATION"
+    },
+    {
+      "name": "document-2-no-index-whitespace",
+      "command": "git -c core.autocrlf=false diff --no-index --check -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt D:\\Code\\NxTools.Next-main\\docs\\audits\\2026-10-26-gpui-guides-summary-zh.md",
+      "exit": 1,
+      "expected_exit": 0,
+      "passed": false,
+      "started_utc": "2026-10-26T11:21:45.556078+00:00",
+      "finished_utc": "2026-10-26T11:21:45.610504+00:00",
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-2-no-index-whitespace.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "scope": "DOCUMENTATION_ONLY_NOT_PRODUCT_VERIFICATION"
+    },
+    {
+      "name": "document-2-full-new-file-diff",
+      "command": "git -c core.autocrlf=false diff --no-index -- C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\final-review-handoff\\empty-document.txt D:\\Code\\NxTools.Next-main\\docs\\audits\\2026-10-26-gpui-guides-summary-zh.md",
+      "exit": 1,
+      "expected_exit": 1,
+      "passed": true,
+      "started_utc": "2026-10-26T11:21:45.610822+00:00",
+      "finished_utc": "2026-10-26T11:21:45.667395+00:00",
+      "log": ".trellis/tasks/10-26-gpui-guides-final-handoff/evidence/document-2-full-new-file-diff.log",
+      "sha256": "55f35deb0c1b1af08b3d4de213005332ed23cea6a0fa1b8e0288c14f1b87decc",
+      "scope": "DOCUMENTATION_ONLY_NOT_PRODUCT_VERIFICATION"
+    }
+  ],
+  "expected_diff_exit_note": "git diff --no-index returns1 for the intentional empty-to-new-report difference; whitespace checks separately require0. This is not a hidden test failure."
+}

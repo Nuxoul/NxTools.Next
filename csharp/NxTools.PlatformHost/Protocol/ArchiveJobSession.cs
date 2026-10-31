@@ -33,11 +33,24 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
         internal string? State;
         internal string? Failure;
         internal long LastProgress;
+        internal string? LastProgressPhase;
     }
     internal ArchiveJobSession(IPlatformLog? log=null):this(ArchiveReadHelper.Production(),log){}
     internal void ProbeOutputCommitForFixture(Action<string> probe) {
         if(!string.Equals(Path.GetFileName(Environment.ProcessPath),"NxTools.PlatformHost.Tests.exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Owned test apphost required.");
         runner.OutputCommitCheckpointProbe=probe;
+    }
+    // HZ4 fixture connector only; reuses original owners and cannot be enabled in Release.
+    internal void ProbeLifecycleForFixture(Action<string> probe) {
+#if DEBUG
+        if(!string.Equals(Path.GetFileName(Environment.ProcessPath),"NxTools.PlatformHost.Tests.exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Owned test apphost required.");
+        ProbeOutputCommitForFixture(probe);
+        runner.SourceCheckpointProbe=probe;
+        runner.OutputWriteCheckpointProbe=_=>probe("candidate_write");
+        runner.CleanupCheckpointProbe=()=>probe("before_cleanup");
+#else
+        throw new InvalidOperationException("Release fixture control is disabled.");
+#endif
     }
     internal void ProbeCreateOverwritePreflightForFixture(Action probe) {
         if(!string.Equals(Path.GetFileName(Environment.ProcessPath),"NxTools.PlatformHost.Tests.exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Owned test apphost required.");
@@ -68,21 +81,21 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
             var operation=new Operation(command);active.Add(command.OperationId,operation);
             if(stopped || active.Count>2) {Finish(operation,new("rejected",stopped?"disconnected":"busy",Journal:[]));return ArchiveJobWire.Result(false,stopped?"disconnected":"busy");}
             var request=command.Request!;var limits=request.Limits;var create=request.Create;
-            var kind=request.Kind=="modify"?"modify_zip":request.Kind=="create" ? create!.Format switch {"seven_z"=>"create_7z","gz"=>"create_gzip",var format=>"create_"+format} : request.Kind;
+            var kind=request.Kind=="modify"?(request.Modify!.Browser.Format switch {"SevenZ"=>"modify_7z","Tar" or "TarGz" or "TarXz"=>"modify_tar",_=>"modify_zip"}):request.Kind=="create" ? create!.Format switch {"seven_z"=>"create_7z","gz"=>"create_gzip",var format=>"create_"+format} : request.Kind;
             string? password=null;
             try {
                 if(create?.Password is {} secret)password=new UTF8Encoding(false,true).GetString(secret);
                 var tree=kind is "create_7z" or "create_tar" or "create_tgz" or "create_txz";
                 var admitted=runner.Start(new(command.OperationId,kind,request.Paths[0],(int)request.Codepage,
                     new ArchiveAdmittedLimits(limits.MaxEntries,limits.MaxMetadataBytes,limits.MaxWorkingBytes,limits.MaxEntryBytes,limits.MaxOutputBytes),
-                    Password:password,OutputRoot:kind=="modify_zip"?Path.GetDirectoryName(request.Paths[0]):request.Destination,CreateName:create?.Name,CompressionLevel:create?.Level,
+                    Password:password,OutputRoot:ArchiveWorkerRunner.IsModification(kind)?Path.GetDirectoryName(request.Paths[0]):request.Destination,CreateName:create?.Name,CompressionLevel:create?.Level,
                     TimeoutMs:timeoutMs,
                     ZipOptions:kind=="create_zip"?new(create!.Method!,password is null?"none":"aes256",create.StripSingleRoot,create.ExcludePatterns):null,
-                    SourcePaths:kind=="modify_zip" && request.Modify?.Action=="add"?request.Paths.Skip(1).ToArray():ArchiveWorkerRunner.IsTreeCreation(kind)?request.Paths:null,
+                    SourcePaths:ArchiveWorkerRunner.IsModification(kind) && request.Modify?.Action is ("add" or "replace_content")?request.Paths.Skip(1).ToArray():ArchiveWorkerRunner.IsTreeCreation(kind)?request.Paths:null,
                     TreeOptions:tree?new(create!.StripSingleRoot,create.ExcludePatterns):null,
                     SevenzOptions:kind=="create_7z"?new(create!.Solid??false,password is null?"none":"aes256",create.EncryptHeader??false):null,
-                    ExtractOptions:request.Extract is {} extract?new(extract.CopyMotw):null,
-                    PasswordInteraction:request.Kind is "extract" or "test" or "modify",ConflictPolicy:request.Extract?.Conflict,
+                    ExtractOptions:request.Extract is {} extract?new(extract.CopyMotw,extract.Reclamation):null,
+                    PasswordInteraction:request.Kind is "extract" or "test" or "modify",ConflictPolicy:ArchiveWorkerRunner.IsModification(kind)?"ask":request.Extract?.Conflict,
                     JobExecution:true,JobExtract:request.Extract,OutputReadmission:request.Readmission is {} readmission?JsonSerializer.SerializeToElement(readmission,JsonDefaults.Options):null,
                     VolumeBytes:create?.VolumeBytes,JobModify:request.Modify),
                     confirmCreateOverwrite:request.Kind=="create" && create?.VolumeBytes is null?(target,token)=>ConfirmCreateOverwrite(operation,target,token):null);
@@ -117,7 +130,9 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
             token.ThrowIfCancellationRequested();
             if(stopped || !active.TryGetValue(op.Command.OperationId,out var current) || current!=op || op.Prompt is not null)return false;
             pending=new(TaskCreationOptions.RunContinuationsAsynchronously);op.CreateOverwriteReply=pending;
-            var prompt=new ArchiveJobPrompt(new(op.Command.OperationId,Guid.NewGuid(),op.Command.Generation),"create_overwrite",ExistingBytes:checked((ulong)target.Size));
+            var request=op.Command.Request!;
+            var display=new ArchiveJobPromptDisplay(null,DisplayTarget(request.Destination!,request.Create!.Name));
+            var prompt=new ArchiveJobPrompt(new(op.Command.OperationId,Guid.NewGuid(),op.Command.Generation),"create_overwrite",ExistingBytes:checked((ulong)target.Size),Display:display);
             op.Prompt=prompt;runner.SetPromptWaiting(op.Command.OperationId,true);State(op,"awaiting_conflict");
             Publish(ArchiveJobEvent.For(op.Command,"prompt",prompt:prompt));
         }
@@ -147,10 +162,10 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
             if(item.Kind!="exited")return;
             // Native publication, uncertainty, cleanup and timeout cause always outrank a late reply/cancel.
             var authoritative=item.Category is "commit_outcome_unknown" or "target_changed_after_commit" or "committed_but_verification_failed" or "cancelled_with_committed_output";
-            var nativeCause=item.Category is "source_unavailable" or "source_changed" or "target_changed" or "target_missing" or "target_directory" or "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported" || item.Category?.StartsWith("metadata_",StringComparison.Ordinal)==true || item.Category?.StartsWith("motw_",StringComparison.Ordinal)==true;
+            var nativeCause=item.HasNativeFailure || item.Category is "source_unavailable" or "source_changed" or "target_changed" or "target_missing" or "target_directory" or "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported" || item.Category?.StartsWith("metadata_",StringComparison.Ordinal)==true || item.Category?.StartsWith("motw_",StringComparison.Ordinal)==true;
             var code=!item.CleanupComplete?"cleanup_incomplete":authoritative || nativeCause?item.Category:item.Category=="timeout"?"timeout":op.Failure??(item.Category is "success" or "succeeded_with_warnings"?op.Complete?null:"protocol_violation":Map(item.Category));
             var outcome=code is null?(item.FilesSkipped>0 || item.Category=="succeeded_with_warnings"?"succeeded_with_warnings":"succeeded"):code is "cancelled" or "cancelled_with_committed_output"?"cancelled":"failed";
-            Finish(op,new(outcome,code,(ulong)item.FilesCommitted,item.BytesCommitted,op.Files,op.Bytes,item.FilesSkipped,item.CleanupComplete,item.CommitState,(ulong)item.ElapsedMs,item.NativeErrorCode,item.Journal??[],op.Shortfall));
+            Finish(op,new(outcome,code,(ulong)item.FilesCommitted,item.BytesCommitted,op.Files,op.Bytes,item.FilesSkipped,item.CleanupComplete,item.CommitState,(ulong)item.ElapsedMs,item.NativeErrorCode,item.Journal??[],op.Shortfall,item.ResultLocation,item.OutputPublished));
         }
     }
     private Task<string?> OnFrame(Guid id,JsonElement frame,CancellationToken token) {
@@ -162,7 +177,11 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
                     case "accepted":State(op,"running");break;
                     case "progress":
                         var now=Environment.TickCount64;
-                        if(now-op.LastProgress>=100) {op.LastProgress=now;var progress=frame.GetProperty("progress").Deserialize<ArchiveJobProgress>(ArchiveJobWire.Strict)??throw new InvalidDataException();Publish(ArchiveJobEvent.For(op.Command,"progress",progress:progress),lossless:false);}break;
+                        var progress=frame.GetProperty("progress").Deserialize<ArchiveJobProgress>(ArchiveJobWire.Strict)??throw new InvalidDataException();
+                        if(!progress.Valid)throw new InvalidDataException();
+                        var changed=progress.Phase!=op.LastProgressPhase;
+                        var editStage=op.Command.Request?.Modify?.Browser.Format is ("SevenZ" or "Tar" or "TarGz" or "TarXz") && progress.Phase is ("edit_planning" or "edit_reading" or "edit_reencoding" or "edit_verifying" or "edit_committing");
+                        if(now-op.LastProgress>=100 || changed) {op.LastProgress=now;op.LastProgressPhase=progress.Phase;Publish(ArchiveJobEvent.For(op.Command,"progress",progress:progress),lossless:editStage&&changed);}break;
                     case "password_state":
                         var password=frame.GetProperty("password_state");
                         if(password.GetProperty("state").GetString()=="awaiting_password")Prompt(op,password,"password",password.TryGetProperty("error_code",out var failure)?failure.GetString():null,password.GetProperty("attempt").GetUInt32());break;
@@ -180,9 +199,18 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
         var ticket=value.GetProperty("ticket").Deserialize<ArchiveJobTicket>(ArchiveJobWire.Strict)??throw new InvalidDataException();
         if(ticket.OperationId!=op.Command.OperationId || ticket.PromptId==Guid.Empty || ticket.Generation==0 || op.Prompt is not null)throw new InvalidDataException();
         ulong? Size(string name)=>value.TryGetProperty(name,out var size)&&size.ValueKind==JsonValueKind.Number?size.GetUInt64():null;
-        var prompt=new ArchiveJobPrompt(ticket,kind,code,attempt,Size("existing_bytes"),Size("incoming_bytes")??Size("declared_bytes"),Size("admitted_entry_bytes"));op.Prompt=prompt;
+        ArchiveJobPromptDisplay? display=null;
+        if(kind=="conflict" && value.TryGetProperty("display",out var context) && context.ValueKind!=JsonValueKind.Null) {
+            display=context.Deserialize<ArchiveJobPromptDisplay>(ArchiveJobWire.Strict)??throw new InvalidDataException();
+            if(!display.Valid(kind))throw new InvalidDataException();
+            if(op.Command.Request!.Kind!="modify")display=display with{Target=DisplayTarget(op.Command.Request.Destination!,display.Target)};
+            if(!display.Valid(kind))throw new InvalidDataException();
+        }
+        var prompt=new ArchiveJobPrompt(ticket,kind,code,attempt,Size("existing_bytes"),Size("incoming_bytes")??Size("declared_bytes"),Size("admitted_entry_bytes"),display);op.Prompt=prompt;
         runner.SetPromptWaiting(op.Command.OperationId,true);State(op,"awaiting_"+kind);Publish(ArchiveJobEvent.For(op.Command,"prompt",prompt:prompt));
     }
+    // String presentation only: no native path normalization, observation or authority is added.
+    private static string DisplayTarget(string root,string relative)=>root.TrimEnd('\\')+"\\"+relative.Replace('/','\\');
     private void State(Operation op,string state){if(!active.TryGetValue(op.Command.OperationId,out var current) || current!=op || op.State==state)return;op.State=state;Publish(ArchiveJobEvent.For(op.Command,"state",state));Diagnostic(state,op.Command);}
     private void Finish(Operation op,ArchiveJobTerminal terminal) {
         if(!active.ContainsKey(op.Command.OperationId))return;
@@ -197,7 +225,7 @@ internal sealed class ArchiveJobSession : IAsyncDisposable {
         stopped=true;runner.Stop("consumer_queue_full");events.Writer.TryComplete(new InvalidDataException("Archive job consumer queue full."));
     }
     private void Diagnostic(string phase,ArchiveJobCommand c,ArchiveJobTerminal? t=null){try{log?.Write("info","archive.job."+phase,c.OperationId,new Dictionary<string,object?>{["generation"]=c.Generation,["kind"]=c.Request?.Kind,["category"]=t?.Code,["elapsed_ms"]=t?.ElapsedMs??0,["native_error_code"]=t?.NativeErrorCode,["cleanup_complete"]=t?.CleanupComplete});}catch{}}
-    private static string Map(string? code)=>code is "success" or "succeeded_with_warnings"?code:code is "target_changed" or "target_missing" or "target_directory" or "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported"?code:ArchiveReadSession.Map(code);
+    private static string Map(string? code)=>code?.StartsWith("reclamation_",StringComparison.Ordinal)==true?code:code is "success" or "succeeded_with_warnings"?code:code is "target_changed" or "target_missing" or "target_directory" or "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported"?code:ArchiveReadSession.Map(code);
     internal void Stop(){lock(gate){stopped=true;runner.Stop();events.Writer.TryComplete();progress.Writer.TryComplete();}}
     public async ValueTask DisposeAsync(){Stop();await runner.DrainAsync();runner.Dispose();}
 }

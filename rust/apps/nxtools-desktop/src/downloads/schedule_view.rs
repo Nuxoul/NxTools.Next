@@ -1,4 +1,6 @@
 use super::*;
+use crate::ui::metrics::ordinary_rem;
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::button::{Toggle, ToggleVariants as _};
 use gpui_kit::component::dialog::{DialogContent, DialogFooter};
 use gpui_kit::component::form::{Field, Form};
@@ -17,6 +19,8 @@ pub(crate) struct DownloadScheduleView {
     pub(crate) queue_running: bool,
     pub(crate) saving: bool,
     pub(crate) error: Option<String>,
+    default_enter_held: bool,
+    _activation: Subscription,
 }
 
 impl DownloadScheduleView {
@@ -66,7 +70,37 @@ impl DownloadScheduleView {
             queue_running: queue.is_none_or(|queue| queue.is_running),
             saving: false,
             error: None,
+            default_enter_held: false,
+            _activation: cx
+                .observe_window_activation(window, |this, _, _| this.default_enter_held = false),
         }
+    }
+    fn default_enter(
+        &mut self,
+        event: &gpui_kit::KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if event.keystroke.key != "enter" {
+            return;
+        }
+        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {
+            return;
+        }
+        if event.keystroke.modifiers.modified()
+            || event.prefer_character_input
+            || self.saving
+            || window.has_active_dialog(cx)
+        {
+            return;
+        }
+        let start = self.enabled_start && self.start_time.focus_handle(cx).is_focused(window);
+        let stop = self.enabled_stop && self.stop_time.focus_handle(cx).is_focused(window);
+        if !start && !stop {
+            return;
+        }
+        cx.stop_propagation();
+        self.save(window, cx);
     }
     pub(super) fn finish_save_failure(&mut self, message: String, cx: &mut Context<Self>) {
         self.saving = false;
@@ -133,7 +167,13 @@ impl Render for DownloadScheduleView {
         crate::theme::observe_theme(window, cx);
         self.theme = Theme::active(cx);
         let theme = self.theme;
-        let mut weekdays = div().flex().items_center().gap(px(SPACING_4));
+        let rem = window.rem_size();
+        let trigger_label_width = ordinary_rem(212.0).to_pixels(rem).min(
+            window.viewport_size().width
+                - ordinary_rem(24.0 + 50.0 + 8.0 + 114.0).to_pixels(rem)
+                - px(4.0), // Released Field's internal horizontal gap.
+        );
+        let mut weekdays = div().flex().flex_wrap().items_center().gap_1();
         for (index, day) in DownloadWeekday::ALL.into_iter().enumerate() {
             let selected = self.days.contains(&day);
             weekdays = weekdays.child(
@@ -169,7 +209,8 @@ impl Render for DownloadScheduleView {
                 this.error = None;
                 cx.notify();
             }),
-        );
+        )
+        .label_width(trigger_label_width);
         let stop_control = schedule_trigger_row(
             theme,
             "自动停止",
@@ -182,7 +223,8 @@ impl Render for DownloadScheduleView {
                 this.error = None;
                 cx.notify();
             }),
-        );
+        )
+        .label_width(trigger_label_width);
         let close_application = self.application.clone();
         let cancel_application = self.application.clone();
         let titlebar = client_titlebar(
@@ -203,26 +245,26 @@ impl Render for DownloadScheduleView {
             .size_full()
             .min_h_0()
             .overflow_hidden()
-            .px(px(SPACING_12))
-            .py(px(SPACING_8))
-            .when(self.error.is_some(), |body| body.py(px(SPACING_4)))
-            .gap(px(SPACING_8))
+            .px_3()
+            .py_2()
+            .when(self.error.is_some(), |body| body.py_1())
+            .gap_2()
             .child(
                 StatusBar::new()
-                    .h(px(32.0))
+                    .h_8()
                     .flex_none()
                     .left(
                         div()
                             .flex_1()
-                            .text_size(px(TEXT_BODY))
-                            .line_height(px(LINE_HEIGHT_BODY))
+                            .text_size(ordinary_rem(TEXT_BODY))
+                            .line_height(ordinary_rem(LINE_HEIGHT_BODY))
                             .text_color(theme.text_secondary)
                             .child("默认下载队列"),
                     )
                     .right(
                         div()
-                            .text_size(px(TEXT_LABEL))
-                            .line_height(px(LINE_HEIGHT_LABEL))
+                            .text_size(ordinary_rem(TEXT_LABEL))
+                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                             .text_color(if self.queue_running {
                                 theme.success
                             } else {
@@ -236,14 +278,17 @@ impl Render for DownloadScheduleView {
                     ),
             )
             .child(
-                Form::horizontal().small().label_width(px(82.0)).child(
-                    Field::new()
-                        .label("生效星期")
-                        .items_center()
-                        .gap_0()
-                        .min_h(px(32.0))
-                        .child(weekdays),
-                ),
+                Form::horizontal()
+                    .small()
+                    .label_width(ordinary_rem(82.0).to_pixels(rem))
+                    .child(
+                        Field::new()
+                            .label("生效星期")
+                            .items_center()
+                            .gap_0()
+                            .min_h_8()
+                            .child(weekdays),
+                    ),
             )
             .child(start_control)
             .child(stop_control)
@@ -254,18 +299,23 @@ impl Render for DownloadScheduleView {
                         .id("download-schedule-validation")
                         .debug_selector(|| "download-schedule-validation".into())
                         .w_full()
-                        .h(px(2.0 * LINE_HEIGHT_BODY))
+                        .h(ordinary_rem(2.0 * LINE_HEIGHT_BODY))
                         .flex_none()
-                        .overflow_hidden()
-                        .text_size(px(TEXT_BODY))
-                        .line_height(px(LINE_HEIGHT_BODY))
+                        .overflow_y_scroll()
+                        .text_size(ordinary_rem(TEXT_BODY))
+                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
                         .text_color(theme.danger)
                         .whitespace_normal()
-                        .line_clamp(2)
                         .tooltip(move |window, cx| {
                             Tooltip::new(complete_error.clone()).build(window, cx)
                         })
-                        .child(error),
+                        .child(
+                            div()
+                                .debug_selector(|| "download-schedule-validation-text".into())
+                                .w_full()
+                                .flex_none()
+                                .child(error),
+                        ),
                 )
             })
             .into_any_element();
@@ -276,8 +326,8 @@ impl Render for DownloadScheduleView {
                 .child(
                     div()
                         .flex_1()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
+                        .text_size(ordinary_rem(TEXT_LABEL))
+                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                         .text_color(theme.text_muted)
                         .child("本地时间 · 支持跨午夜"),
                 )
@@ -298,6 +348,7 @@ impl Render for DownloadScheduleView {
                 .child(
                     crate::ui::components::action::primary_action_button(
                         "download-schedule-save",
+                        "应用下载计划",
                         if self.saving {
                             "正在应用…"
                         } else {
@@ -314,18 +365,27 @@ impl Render for DownloadScheduleView {
                 )
                 .into_any_element(),
         );
-        dialog_shell(
-            theme,
-            DialogShellIds {
-                root: "download-schedule-dialog-shell",
-                titlebar: "download-schedule-dialog-titlebar",
-                body: "download-schedule-dialog-body",
-                footer: "download-schedule-dialog-footer",
-            },
-            titlebar,
-            body,
-            footer,
-        )
+        div()
+            .id("download-schedule-keyboard")
+            .size_full()
+            .capture_key_down(cx.listener(Self::default_enter))
+            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {
+                if event.keystroke.key == "enter" {
+                    this.default_enter_held = false;
+                }
+            }))
+            .child(dialog_shell(
+                theme,
+                DialogShellIds {
+                    root: "download-schedule-dialog-shell",
+                    titlebar: "download-schedule-dialog-titlebar",
+                    body: "download-schedule-dialog-body",
+                    footer: "download-schedule-dialog-footer",
+                },
+                titlebar,
+                body,
+                footer,
+            ))
     }
 }
 
@@ -337,79 +397,75 @@ pub(crate) fn schedule_trigger_row(
     input: &Entity<TimeFieldState>,
     id: &'static str,
     on_toggle: impl Fn(&bool, &mut Window, &mut App) + 'static,
-) -> AnyElement {
-    Form::horizontal()
-        .small()
-        .label_width(px(212.0))
-        .child(
-            Field::new()
-                .items_center()
-                .gap_0()
-                .min_h(px(32.0))
-                .label_fn(move |_, _| {
-                    div()
-                        .min_w_0()
-                        .flex()
-                        .items_center()
-                        .gap(px(SPACING_4))
-                        .child(
-                            div()
-                                .debug_selector(move || format!("{id}-title"))
-                                .truncate()
-                                .child(title),
-                        )
-                        .child(crate::ui::components::tooltip::description_help(
-                            format!("{id}-description"),
-                            description,
-                        ))
-                })
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .child(
-                            div()
-                                .debug_selector(move || id.into())
-                                .w(px(50.0))
-                                .h(px(32.0))
-                                .flex_none()
-                                .mr(px(SPACING_8))
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .child(
-                                    Switch::new(id)
-                                        .checked(enabled)
-                                        .accessibility_label(title)
-                                        .on_change(on_toggle),
-                                ),
-                        )
-                        .child(if enabled {
-                            div()
-                                .debug_selector(move || format!("{id}-input"))
-                                .flex_none()
-                                .w(px(114.0))
-                                .child(TimeField::new(input).w_full())
-                                .into_any_element()
-                        } else {
-                            div()
-                                .debug_selector(move || format!("{id}-disabled"))
-                                .h(px(32.0))
-                                .flex_none()
-                                .flex()
-                                .items_center()
-                                .justify_center()
-                                .w(px(114.0))
-                                .text_size(px(TEXT_BODY))
-                                .line_height(px(LINE_HEIGHT_BODY))
-                                .text_color(theme.text_muted)
-                                .text_center()
-                                .child("未启用")
-                                .into_any_element()
-                        }),
-                ),
-        )
-        .into_any_element()
+) -> Form {
+    Form::horizontal().small().child(
+        Field::new()
+            .items_center()
+            .gap_0()
+            .min_h_8()
+            .label_fn(move |_, _| {
+                div()
+                    .min_w_0()
+                    .flex()
+                    .items_center()
+                    .gap_1()
+                    .child(
+                        div()
+                            .debug_selector(move || format!("{id}-title"))
+                            .truncate()
+                            .child(title),
+                    )
+                    .child(crate::ui::components::tooltip::description_help(
+                        format!("{id}-description"),
+                        description,
+                    ))
+            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .child(
+                        div()
+                            .debug_selector(move || id.into())
+                            .w(ordinary_rem(50.0))
+                            .h_8()
+                            .flex_none()
+                            .mr_2()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .child(
+                                Switch::new(id)
+                                    .checked(enabled)
+                                    .accessibility_label(title)
+                                    .on_change(on_toggle),
+                            ),
+                    )
+                    .child(if enabled {
+                        div()
+                            .debug_selector(move || format!("{id}-input"))
+                            .flex_none()
+                            .w(ordinary_rem(114.0))
+                            .child(TimeField::new(input).w_full())
+                            .into_any_element()
+                    } else {
+                        div()
+                            .debug_selector(move || format!("{id}-disabled"))
+                            .h_8()
+                            .flex_none()
+                            .flex()
+                            .items_center()
+                            .justify_center()
+                            .w(ordinary_rem(114.0))
+                            .text_size(ordinary_rem(TEXT_BODY))
+                            .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                            .text_color(theme.text_muted)
+                            .text_center()
+                            .child("未启用")
+                            .into_any_element()
+                    }),
+            ),
+    )
 }
 
 pub(crate) fn parse_clock_minute(value: &str) -> Result<u16, &'static str> {

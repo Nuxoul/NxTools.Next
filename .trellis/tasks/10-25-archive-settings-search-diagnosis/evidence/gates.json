@@ -1,0 +1,22 @@
+﻿[
+    {
+        "name":  "gpui-component-catalog.py",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\gate-gpui-component-catalog.py.log"
+    },
+    {
+        "name":  "gpui-release-contracts.py",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\gate-gpui-release-contracts.py.log"
+    },
+    {
+        "name":  "markdown-editor-contracts.py",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\gate-markdown-editor-contracts.py.log"
+    },
+    {
+        "name":  "spec-contracts.py",
+        "exit":  0,
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\archive-settings-search\\gate-spec-contracts.py.log"
+    }
+]

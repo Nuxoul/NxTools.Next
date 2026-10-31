@@ -1,0 +1,446 @@
+﻿[
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ElevatedDirectoryHelperRequested",
+        "source":  "protocolSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "EnsureElevatedDirectoryHelper",
+        "source":  "protocolSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "QuickLaunchDirectoryContextResolved",
+        "source":  "protocolSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "elevated_directory_helper_command",
+        "source":  "quickLaunchSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "acknowledged_elevated_helper_pipe",
+        "source":  "quickLaunchSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "elevated_helper_status_matches_request",
+        "source":  "quickLaunchSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "directory_context_resolution_matches",
+        "source":  "quickLaunchSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "REQUEST_MAX_AGE_MS",
+        "source":  "quickLaunchSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "QuickLaunchDirectoryContextResolvedEvent",
+        "source":  "windowsAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "IsQuickLaunchContextRequestCurrent",
+        "source":  "windowsAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "Task\\.Run",
+        "source":  "windowsAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ElevatedDirectoryNavigationClient\\.IsElevatedContext",
+        "source":  "directoryNavigationAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "RequiresElevatedHelper",
+        "source":  "directoryNavigationAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "PipeOptions\\.CurrentUserOnly",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "RandomNumberGenerator\\.GetBytes\\(32\\)",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "GetNamedPipeClientProcessId",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ProcessIdToSessionId",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "TokenElevation",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ElevatedDirectoryNavigationSessionRegistry",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "BoundedTextFrameReader",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "MaximumRendezvousAttempts",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "_sessionOrderNodes",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "foregroundProvider\\.Capture",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "PreserveRequestedFocus",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "terminateAfterResponse",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "response\\.Fatal",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "BoundedStaOperationRunner\\.TryRun",
+        "source":  "explorerAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "Fatal: true",
+        "source":  "explorerAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "cancellationToken\\.ThrowIfCancellationRequested",
+        "source":  "explorerAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "WTSQueryUserToken",
+        "source":  "elevatedHelperProcessBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "CreateProcessAsUser",
+        "source":  "elevatedHelperProcessBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "winsta0\\\\default",
+        "source":  "elevatedHelperProcessBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "GetNamedPipeClientProcessId",
+        "source":  "localPipeSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "client_session_id",
+        "source":  "localPipeSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "client_process_id",
+        "source":  "indexerServiceHostSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "client_session_id",
+        "source":  "indexerServiceHostSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "authorized_packaged_desktop",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "require_packaged_desktop",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "registered_hash_matches",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "NxToolsDesktopSha256",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "NxToolsDesktopPath",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "NxToolsPlatformHostSha256",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "packaged_platform_host_path",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "BROKER_TIMEOUT",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "try_wait\\(\\)",
+        "source":  "indexerElevatedBrokerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "DesktopHashValueName",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "PlatformHostHashValueName",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "DesktopPathValueName",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ProtectedVendorDirectory",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ProtectedServiceDirectory",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "HardenServiceDirectory",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "TrustedBinary\\.Open",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ReleaseBinaryManifest\\.IndexerSha256",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "ReleaseBinaryManifest\\.DesktopSha256",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "PinCurrentProcessImage",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "DeploymentSourceMatchesDestination",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "FileFlagOpenReparsePoint",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "GetNamedSecurityInfo",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "\"/reset\"",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "icacls\\.exe",
+        "source":  "indexerServiceInstallerSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "launch_protected_desktop_after_current_exit",
+        "source":  "desktopMainSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "protected_package_matches_release",
+        "source":  "desktopMainSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "NxTools\\.Indexer\\.exe",
+        "source":  "desktopMainSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "NxTools\\.PlatformHost\\.exe",
+        "source":  "desktopMainSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "OneCommanderFocusTracker",
+        "source":  "oneCommanderAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "AutomationElement\\.FocusedElement",
+        "source":  "oneCommanderAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "Fatal: true",
+        "source":  "oneCommanderAdapterSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "capture\\.Failure\\?\\.Fatal",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "IndexerSha256",
+        "source":  "releaseManifestSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "DesktopSha256",
+        "source":  "releaseManifestSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "Get-FileHash",
+        "source":  "manifestWriterSource"
+    },
+    {
+        "violated":  true,
+        "operator":  "-notmatch",
+        "pattern":  "write-release-binary-manifest\\.ps1",
+        "source":  "buildScriptSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-notmatch",
+        "pattern":  "IsApprovedProtectedPlatformHost",
+        "source":  "elevatedDirectoryNavigationSource"
+    },
+    {
+        "violated":  false,
+        "operator":  "-match",
+        "pattern":  "runas",
+        "source":  "indexerElevatedBrokerSource"
+    }
+]

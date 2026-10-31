@@ -7,6 +7,18 @@ temporary + immediate target recheck + single atomic path replacement. User acce
 to replacement TOCTOU. No delete/truncate/backup-first, no automatic retry after published/unknown
 outcome, no power-loss guarantee. Source lease/parents/reparse/integrity/budgets remain mandatory.
 
+## Continuation acceptance amendment — 2026-10-28
+
+[Continuation plan](continuation-plan.md) adds stable requirement IDs UX01–UX05, EDIT01/02,
+HZ2–HZ5 and named V-UX/V-PROGRESS/V-DRAG/V-BATCH/V-EDIT/V-CRASH/V-RECLAIM/V-REGRESSION gates.
+Original56IDs and past results remain unchanged; new planned cases are NOT executed PASS.
+Real Explorer latency/actual target completion differs from fake consumer/materialization;
+source-preserving crash tests differ from resumable recovery and VM power loss. HZ5 requires
+new consent/native-object authority/output-readback→durable-journal→source-mutation proof,
+ordinary/keep mode byte preservation and actual allocation gain; no simple DeleteSource test.
+New per-format edit tests preserve existing ZIP record fidelity and precise native commit facts.
+No real product/system/destructive source operation is authorized by this planning document.
+
 ## Engine and interoperability
 
 | ID | Fixture / operation | Required observable result |

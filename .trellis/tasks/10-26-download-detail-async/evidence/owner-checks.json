@@ -1,0 +1,96 @@
+[
+  {
+    "name": "audit11 projection/filter/sort/selection/capabilities unchanged",
+    "result": "PASS",
+    "sha256": "f3c356a5661b45ca307e64441af4cae3df813eb2b4126fb4ecb5d7eac880849d"
+  },
+  {
+    "name": "audit11 virtual range snapshot and resource implementation unchanged",
+    "result": "PASS",
+    "sha256": "ab32f1351625498c8907e012e5895cd470654142e9225be6b751de8b2475d34b"
+  },
+  {
+    "name": "detail renderer/masking/context/batch/headers/persistence unchanged",
+    "result": "PASS",
+    "sha256": "8297fc999710cf3f2b49fe36d68237e3ec63e49ebc2e145bf0ef5d644a129958"
+  },
+  {
+    "name": "owned row display/paint/callbacks except explicit scope retirement",
+    "result": "PASS",
+    "sha256": "f78df8e7ac516cd6f4a3a41e83a4917f14db83a8933cb3131bb9e8bb20de376f"
+  },
+  {
+    "name": "engine original task/snapshot code unchanged",
+    "result": "PASS",
+    "sha256": "a1f1f55cbfb1c0d8251a22aa47cf5fe3e902b9c6413af2c8fa6e496b63bd8c7c"
+  },
+  {
+    "name": "engine command_task_detail storage/diagnostics unchanged",
+    "result": "PASS",
+    "sha256": "2a054771be8ecb7760e6eac481f3d616e77f136b025af8cc4cfbce28ce1a4881"
+  },
+  {
+    "name": "store queries/schema/lock implementation unchanged",
+    "result": "PASS",
+    "sha256": "06159ff55e62c7a27d79765e9c440c08076be1d7c93476ab9ade81f283a7f68f"
+  },
+  {
+    "name": "Download reference exact baseline prefix",
+    "result": "PASS"
+  },
+  {
+    "name": "native close/tray/minimize/maximize policy unchanged",
+    "result": "PASS",
+    "sha256": "942e759f72b9fce7f69798560d487808e0708a6070c7d446d6e99a57792dd4d1"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/downloads/window_support.rs",
+    "result": "PASS",
+    "sha256": "6c9bd7cdfda8b011b5cfbc59141f1cd1de3ffb02ef4e6470aefd1e4afcbabd4e"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/downloads/artifact_actions.rs",
+    "result": "PASS",
+    "sha256": "c8a9ed36aaaf2a38c641f7aefb256b3eccb3ba71e40e7b761d8a21407e7423b3"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs",
+    "result": "PASS",
+    "sha256": "c56f29eae6514f1dc6aa1dfef88e6b74ed41da0b7ebb66330a4749552188fd7a"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/downloads/completion_shutdown_impl.rs",
+    "result": "PASS",
+    "sha256": "168285c3c031246943850b920f89079efcd9986580301d65e1b3d0f8615206be"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/main_window/download_page/projection_tests.rs",
+    "result": "PASS",
+    "sha256": "813532ea76951192b5e08cbb874a72ae381867e6ffb1851158a98690fc6fabaf"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+    "result": "PASS",
+    "sha256": "529dde267f681d13a5aebb10976af02c3896dd8e345a58a731190013dbed4269"
+  },
+  {
+    "name": "unchanged protected owner rust/apps/nxtools-desktop/src/main_window/tests.rs",
+    "result": "PASS",
+    "sha256": "bde7e002a0054d3051550e6a03f00cc64c7832ffa333ffafaf69cf914cd09952"
+  },
+  {
+    "name": "unchanged protected owner rust/crates/nxtools-download/src/engine.rs",
+    "result": "PASS",
+    "sha256": "f8c8fa9532116c4629764fd164b5815273dab121850d7548d2cae1bb806376d0"
+  },
+  {
+    "name": "unchanged protected owner rust/crates/nxtools-download/src/lib.rs",
+    "result": "PASS",
+    "sha256": "4e23048245615bc965137eba152d91f332c97da7e68bd1122be5bc5a2256061d"
+  },
+  {
+    "name": "unchanged protected owner rust/crates/nxtools-download/src/message.rs",
+    "result": "PASS",
+    "sha256": "2d3b6a56d3f2c49085bc9a6c2a80547879504d8caae29e10fc61f7789e92367c"
+  }
+]

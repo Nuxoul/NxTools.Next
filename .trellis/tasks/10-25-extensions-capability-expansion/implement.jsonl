@@ -1,0 +1,10 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust state/GPUI rendering/C# Windows ownership and deferred current-identity lifecycles"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Pending-before-dispatch, atomic section persistence, cancellation and diagnostic privacy"}
+{"file":".trellis/spec/shared/verification.md","reason":"Workstation serial memory policy, effects authorization and evidence levels"}
+{"file":".trellis/spec/nxtools-extensions/backend/quality-guidelines.md","reason":"Legacy trust/runtime/cleanup/feature and configuration contracts"}
+{"file":".trellis/spec/nxtools-extensions/backend/database-guidelines.md","reason":"Original Core transaction, strict staging and data/config ownership"}
+{"file":".trellis/spec/nxtools-network/backend/quality-guidelines.md","reason":"Immutable routes and real bounded loopback/proxy verification"}
+{"file":".trellis/spec/nxtools-indexer/backend/quality-guidelines.md","reason":"Scoped query boundaries, service authorization and deferred LocalSystem release acceptance"}
+{"file":"docs/reference-code/winshun.md","reason":"Reference-first resident W10 and settings/process invariants"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Versioned scoped search/session DTO compatibility; full QuickLaunch reference read manually via verified task research to avoid truncation"}
+{"file":".trellis/tasks/10-25-extensions-capability-expansion/research/current-owners.md","reason":"Current owner call chains, already locked dependency evidence and resolved product policy"}

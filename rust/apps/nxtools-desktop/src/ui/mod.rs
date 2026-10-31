@@ -343,6 +343,7 @@ pub(crate) struct ClipboardPanel {
     pending_action: Option<(uuid::Uuid, ClipboardAction, i64)>,
     pending_action_started_at: Option<(uuid::Uuid, Instant)>,
     is_open: bool,
+    fixed_display: bool,
     hide_suppressed_until: Instant,
     last_observed_size: gpui_kit::Size<Pixels>,
     size_tracking_enabled: bool,
@@ -354,8 +355,10 @@ pub(crate) struct ClipboardPanel {
     category_sources: HashMap<String, HashSet<String>>,
     category_request_generation: u64,
     modifier_actions: ClipboardModifierActions,
+    text_card_max_height: u32,
     active_modifier_action: Option<(ClipboardClickModifier, ClipboardClickAction)>,
     list_scroll: ListState,
+    preview_pointer: Rc<std::cell::Cell<Point<Pixels>>>,
     image_resource_cache: Rc<RefCell<BoundedImageResourceCache>>,
     list_thumbnails: HashMap<String, Option<PathBuf>>,
     thumbnail_pending: HashSet<String>,
@@ -364,6 +367,7 @@ pub(crate) struct ClipboardPanel {
     icon_colors_pending: bool,
     list_is_scrolled: bool,
     list_width: f32,
+    focus_scope: gpui_kit::FocusHandle,
     search_input: Entity<InputState>,
     search_scope: ClipboardSearchScope,
     armed_number_key: Option<efficiency::ArmedNumberKey>,
@@ -400,6 +404,29 @@ impl ClipboardPanel {
         }
     }
 
+    pub(crate) fn focus_search_for_session(
+        &self,
+        session_id: uuid::Uuid,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.session_id == session_id && self.search_input_ready(window, cx) {
+            self.focus_search_input(window, cx);
+        }
+    }
+
+    fn hover_preview_ready(&self) -> bool {
+        self.is_open
+            && self.category_editor.is_none()
+            && self.editing_item_id.is_none()
+            && self.armed_number_key.is_none()
+            && self.pending_action.is_none()
+            && self.pending_action_started_at.is_none()
+            && self.full_item_request.is_none()
+            && !self.search_pending
+            && self.query_error.is_none()
+    }
+
     pub(crate) fn enable_size_tracking(&mut self, window: &Window) {
         // Capture confirmed initial viewport, not hidden HWND defaults.
         self.last_observed_size = window.viewport_size();
@@ -407,6 +434,8 @@ impl ClipboardPanel {
     }
 
     fn observe_panel_bounds(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.preview_pointer
+            .set(window.bounds().origin + window.mouse_position());
         let viewport = window.viewport_size();
         if !self.size_tracking_enabled || !self.is_open || viewport == self.last_observed_size {
             return;
@@ -769,6 +798,16 @@ impl ClipboardPanel {
                 panel.focus_search_input(window, cx);
             }
         });
+        let focus_scope = cx.focus_handle();
+        let focus_lost_subscription = cx.on_focus_lost(window, |panel, window, cx| {
+            // A strong handle can outlive its row. Restore only while this panel is
+            // still the mounted ancestor, never after a different owner replaced it.
+            if window.focus_lost_restore_target(cx).as_ref() == Some(&panel.focus_scope)
+                && panel.search_input_ready(window, cx)
+            {
+                panel.focus_search_input(window, cx);
+            }
+        });
         let bounds_subscription = cx.observe_window_bounds(window, |panel, window, cx| {
             panel.observe_panel_bounds(window, cx);
         });
@@ -875,6 +914,7 @@ impl ClipboardPanel {
             pending_action: None,
             pending_action_started_at: None,
             is_open: true,
+            fixed_display: false,
             categories,
             hide_suppressed_until: Instant::now() + POPUP_OPEN_GRACE,
             last_observed_size: window.viewport_size(),
@@ -886,8 +926,12 @@ impl ClipboardPanel {
             category_editor: None,
             category_scroll: ScrollHandle::new(),
             modifier_actions,
+            text_card_max_height: nxtools_core::default_clipboard_text_card_max_height(),
             active_modifier_action: None,
             list_scroll,
+            preview_pointer: Rc::new(std::cell::Cell::new(
+                window.bounds().origin + window.mouse_position(),
+            )),
             image_resource_cache: Rc::new(RefCell::new(BoundedImageResourceCache::new(
                 IMAGE_RESOURCE_CACHE_CAPACITY,
             ))),
@@ -898,6 +942,7 @@ impl ClipboardPanel {
             icon_colors_pending: false,
             list_is_scrolled: false,
             list_width: 0.0,
+            focus_scope,
             search_input,
             search_scope: ClipboardSearchScope::Content,
             query_dispatch_generation: 0,
@@ -925,10 +970,38 @@ impl ClipboardPanel {
                 navigation_subscription,
                 bounds_subscription,
                 activation_subscription,
+                focus_lost_subscription,
             ]
             .into_iter()
             .chain(notification_subscription)
             .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn text_card_max_height_for_test(&self) -> u32 {
+        self.text_card_max_height
+    }
+
+    pub(crate) fn with_text_card_max_height(mut self, height: u32) -> Self {
+        self.text_card_max_height = height.clamp(
+            nxtools_core::CLIPBOARD_TEXT_CARD_MIN_HEIGHT,
+            nxtools_core::CLIPBOARD_TEXT_CARD_MAX_HEIGHT,
+        );
+        self
+    }
+
+    pub(crate) fn set_text_card_max_height(&mut self, height: u32, cx: &mut Context<Self>) {
+        let height = height.clamp(
+            nxtools_core::CLIPBOARD_TEXT_CARD_MIN_HEIGHT,
+            nxtools_core::CLIPBOARD_TEXT_CARD_MAX_HEIGHT,
+        );
+        if self.text_card_max_height != height {
+            self.text_card_max_height = height;
+            let scroll_top = self.list_scroll.logical_scroll_top();
+            self.list_scroll.reset(self.entries.borrow().len());
+            self.list_scroll.scroll_to(scroll_top);
+            cx.notify();
         }
     }
 
@@ -2190,6 +2263,9 @@ impl ClipboardPanel {
                 );
                 window.activate_window();
                 cx.notify();
+            } else if self.fixed_display {
+                // Native paste already restored the target. Do not reactivate this panel.
+                cx.notify();
             } else {
                 self.close_with_reason(
                     window,
@@ -2255,6 +2331,18 @@ impl ClipboardPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.fixed_display {
+            if foreground.window_handle != popup_window_handle
+                && foreground.window_handle != preview_window_handle
+                && foreground.process_id != std::process::id()
+                && foreground.window_handle != 0
+                && !is_transient_foreground_host(&foreground.process_name)
+            {
+                self.target = foreground.clone();
+                self.dismiss_preview_for_input("fixed_focus_left", cx);
+            }
+            return;
+        }
         if crate::notifications::screen::owns_native_window(foreground.window_handle, cx) {
             return;
         }
@@ -2337,6 +2425,9 @@ impl ClipboardPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.fixed_display {
+            return;
+        }
         if crate::notifications::screen::owns_native_window(press.pressed_root_window_handle, cx) {
             return;
         }
@@ -2372,7 +2463,9 @@ impl ClipboardPanel {
     }
 
     pub(crate) fn close_from_native_menu(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.close_with_reason(window, cx, PopupCloseReason::Escape);
+        if !self.fixed_display {
+            self.close_with_reason(window, cx, PopupCloseReason::Escape);
+        }
     }
 
     fn close_with_reason(
@@ -2401,6 +2494,7 @@ impl ClipboardPanel {
         let session_id = self.session_id;
         let final_viewport = window.viewport_size();
         self.is_open = false;
+        self.fixed_display = false;
         self.full_item_request = None;
         self.extension_feedback.clear();
         if let Some(center) = crate::notifications::current(cx) {
@@ -2456,6 +2550,7 @@ impl Render for ClipboardPanel {
         }
         let theme = self.theme;
         let modifier_actions = self.modifier_actions;
+        let text_card_max_height = self.text_card_max_height;
         let entries_empty = self.entries.borrow().is_empty();
         let search_query = self.search_input.read(cx).value().trim().to_owned();
         let search_loading = self.search_pending;
@@ -2523,7 +2618,9 @@ impl Render for ClipboardPanel {
         let resize_application = self.application.clone();
         let extension_feedback = self.extension_feedback.clone();
         let capture_controls = self.render_capture_controls(cx);
+        let preview_motion = Rc::clone(&self.preview_pointer);
         let content = div()
+            .track_focus(&self.focus_scope)
             .relative()
             .size_full()
             .font_family(UI_FONT_FAMILY)
@@ -2531,6 +2628,21 @@ impl Render for ClipboardPanel {
             .flex()
             .flex_col()
             .gap(px(0.0))
+            .capture_any_mouse_down(|_, window, cx| {
+                if components::native_context_menu::consume_source_press(window, cx) {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            })
+            .capture_any_mouse_up(|_, window, cx| {
+                if components::native_context_menu::consume_source_release(window, cx) {
+                    window.prevent_default();
+                    cx.stop_propagation();
+                }
+            })
+            .on_mouse_move(move |event, window, _| {
+                preview_motion.set(window.bounds().origin + event.position);
+            })
             .on_modifiers_changed(move |event, _window, app| {
                 let _ = modifier_panel.update(app, |panel, cx| {
                     let action =
@@ -2810,13 +2922,16 @@ impl Render for ClipboardPanel {
                         let summary_counts = self.summary_counts.clone();
                         let open_targets = self.open_targets.clone();
                         let shell_application = self.application.clone();
+                        let preview_session_id = self.session_id;
+                        let preview_query_generation = self.query_dispatch_generation;
+                        let preview_pointer = Rc::clone(&self.preview_pointer);
                         let item_feedback = extension_feedback.clone();
                         let image_resource_cache = Rc::clone(&self.image_resource_cache);
                         let thumbnails = self.list_thumbnails.clone();
                         let source_icon_colors = self.source_icon_colors.clone();
                         let theme = self.theme;
                         container.child(
-                            list(self.list_scroll.clone(), move |index, window, app| {
+                            list(self.list_scroll.clone(), move |index, _window, app| {
                                 let Some(entry) = entries.borrow().get(index).cloned() else {
                                     return div().into_any_element();
                                 };
@@ -2928,6 +3043,8 @@ impl Render for ClipboardPanel {
                                 );
                                 let preview_enabled = !is_editing_category;
                                 let preview_application = shell_application.clone();
+                                let preview_panel = history_panel.clone();
+                                let preview_pointer = Rc::clone(&preview_pointer);
                                 let on_preview = Rc::new(
                                     move |entered: bool,
                                           item: ClipboardItem,
@@ -2938,8 +3055,25 @@ impl Render for ClipboardPanel {
                                         if !preview_enabled {
                                             return;
                                         }
+                                        // Activation/hit-test refresh can deliver the same coordinates.
+                                        if entered && preview_pointer.replace(pointer_position) == pointer_position {
+                                            return;
+                                        }
                                         let application = preview_application.clone();
+                                        let panel = preview_panel.clone();
                                         app.defer(move |cx| {
+                                            if entered && components::native_context_menu::any_active(cx) {
+                                                return;
+                                            }
+                                            let current = panel.update(cx, |panel, _| {
+                                                panel.session_id == preview_session_id
+                                                    && panel.query_dispatch_generation == preview_query_generation
+                                                    && (!entered || (panel.hover_preview_ready()
+                                                        && panel.entries.borrow().get(index).is_some_and(|entry| entry.id == item.id)))
+                                            }).unwrap_or(false);
+                                            if !current {
+                                                return;
+                                            }
                                             let _ = application.update(cx, |application, cx| {
                                                 application.schedule_preview(
                                                     entered,
@@ -2953,35 +3087,11 @@ impl Render for ClipboardPanel {
                                         });
                                     },
                                 );
-                                let actions_focused = ["edit", "pin", "favorite", "delete"]
-                                    .into_iter()
-                                    .map(|key| {
-                                        gpui_kit::SharedString::from(format!(
-                                            "clipboard-item-action-{index}-{key}"
-                                        ))
-                                    })
-                                    .any(|id| {
-                                        window
-                                            .use_keyed_state(id, app, |_, cx| cx.focus_handle())
-                                            .read(app)
-                                            .is_focused(window)
-                                    })
-                                    || window
-                                        .use_keyed_state(
-                                            ("clipboard-open-target", index),
-                                            app,
-                                            |_, cx| cx.focus_handle(),
-                                        )
-                                        .read(app)
-                                        .is_focused(window)
-                                    || window
-                                        .use_keyed_state(
-                                            ("history-row-action", index),
-                                            app,
-                                            |_, cx| cx.focus_handle(),
-                                        )
-                                        .read(app)
-                                        .is_focused(window);
+                                let extension_actions = crate::extensions::manual_actions::available_for("clipboard", Some(nxtools_extensions::InputSelection {
+                                    kind: match entry.kind { nxtools_clipboard::ClipboardKind::Text => nxtools_extensions::InputKind::Text, nxtools_clipboard::ClipboardKind::Image => nxtools_extensions::InputKind::Image, nxtools_clipboard::ClipboardKind::Files => nxtools_extensions::InputKind::Files },
+                                    count: if entry.kind == nxtools_clipboard::ClipboardKind::Files { entry.file_paths.len() } else { 1 },
+                                    bytes: if entry.kind == nxtools_clipboard::ClipboardKind::Text { text_character_count.unwrap_or_else(|| entry.text.chars().count()) } else { entry.file_paths.iter().map(String::len).sum() },
+                                }), app);
                                 history_row(
                                     theme,
                                     entry,
@@ -2997,15 +3107,15 @@ impl Render for ClipboardPanel {
                                         source_icon_color,
                                         list_image,
                                         text_character_count,
+                                        text_card_max_height,
                                         open_targets: resolved_targets,
                                         action: on_action,
                                         management: on_management,
                                         open: on_open,
                                         preview: on_preview,
-                                        extension_actions: crate::extensions::manual_actions::available("clipboard", app),
+                                        extension_actions,
                                         extension_feedback: feedback,
                                     },
-                                    actions_focused,
                                 )
                                 .into_any_element()
                             })
@@ -3855,3 +3965,6 @@ mod notification_tests;
 
 #[cfg(test)]
 mod efficiency_tests;
+
+#[cfg(test)]
+mod history_identity_tests;

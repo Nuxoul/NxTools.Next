@@ -13,7 +13,9 @@ use crate::downloads::DownloadApplication;
 use crate::network_settings::NetworkSettingsApplication;
 use crate::quick_launch::QuickLaunchApplication;
 
+mod main_preparation;
 use crate::ui::motion::UiMotionPreference;
+pub(crate) use main_preparation::MainWindowPreparation;
 pub(crate) struct PlatformEventDispatcher {
     platform: Rc<PlatformBridge>,
     browser_startup_window: Option<BrowserStartupWindow>,
@@ -27,6 +29,8 @@ pub(crate) struct PlatformEventDispatcher {
     downloads: Entity<DownloadApplication>,
     pending_tray_restore: Option<PendingTrayRestore>,
     silent_startup_wait: Option<SilentStartupWait>,
+    main_preparation: Option<MainWindowPreparation>,
+    main_preparation_failed: bool,
     _task: Task<()>,
 }
 
@@ -58,6 +62,7 @@ impl PlatformEventDispatcher {
         main_window_handle: i64,
         hidden_startup: bool,
         targets: PlatformApplicationTargets,
+        main_preparation: Option<MainWindowPreparation>,
         cx: &mut Context<Self>,
     ) -> Self {
         let receiver = platform.notification_receiver();
@@ -90,7 +95,7 @@ impl PlatformEventDispatcher {
             .detach();
             wait
         });
-        Self {
+        let dispatcher = Self {
             platform,
             browser_startup_window,
             main_window_handle,
@@ -100,13 +105,25 @@ impl PlatformEventDispatcher {
             downloads: targets.downloads,
             pending_tray_restore: None,
             silent_startup_wait,
+            main_preparation,
+            main_preparation_failed: false,
             _task: task,
-        }
+        };
+        dispatcher.schedule_main_preparation_deadline(cx);
+        dispatcher
     }
 
     fn forward(&mut self, notification: PlatformNotification, cx: &mut Context<Self>) {
+        if self.main_preparation_failed {
+            return;
+        }
+        if self.intercept_main_preparation(&notification, cx) {
+            return;
+        }
         crate::archive::handle(notification.clone(), cx);
         crate::notifications::screen::handle(notification.clone(), cx);
+        crate::notifications::copy::handle(notification.clone(), cx);
+        crate::tools::floating_assistant::handle(notification.clone(), cx);
         match &notification {
             PlatformNotification::Connected => {
                 if let Some(wait) = self.silent_startup_wait.take() {

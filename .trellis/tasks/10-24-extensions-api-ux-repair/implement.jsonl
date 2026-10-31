@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/nxtools-extensions/backend/quality-guidelines.md", "reason": "Runtime, identity, cancellation and feature boundaries"}
+{"file": ".trellis/spec/shared/ui-component-selection.md", "reason": "Official current compound controls and deferred callback owners"}
+{"file": "docs/reference-code/winshun.md", "reason": "Verified plugin reference lifecycle"}
+{"file": "docs/audits/2026-10-24-extensions-api-ux-review.md", "reason": "Approved F1-F9 requirements and evidence"}

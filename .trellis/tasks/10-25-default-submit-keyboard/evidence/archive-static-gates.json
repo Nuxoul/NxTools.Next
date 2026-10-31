@@ -1,0 +1,14 @@
+﻿[
+    {
+        "name":  "archive-cli.py",
+        "exit_code":  0
+    },
+    {
+        "name":  "archive-phase-f-shell.py",
+        "exit_code":  0
+    },
+    {
+        "name":  "archive-phase-f-spike.py",
+        "exit_code":  0
+    }
+]

@@ -1,7 +1,14 @@
-# NxTools notification duration patch on Component0.8.0
+# NxTools notification extensions on Component0.8.0
 
-User-authorized2026-10-21 upgrade carries the original approved2026-10-20patch to published gpui-component0.8.0. Archive SHA2564097e161cc81e86323b439664be0cdd4f7c56148e867ed6f67fd72b966b6c2d1; Apache-2.0 LICENSE-APACHE retained. NXTOOLS-UPSTREAM.json records every shipped file hash. Fresh release source, not an old vendor transplant; old0.7.1/0.5.1snapshots remain inactive historical evidence.
+User-authorized2026-10-21 upgrade carries the original2026-10-20duration patch to published gpui-component0.8.0. User2026-10-23 additionally authorizes a compact header copy-button slot. Archive SHA2564097e161cc81e86323b439664be0cdd4f7c56148e867ed6f67fd72b966b6c2d1; Apache-2.0 LICENSE-APACHE retained. NXTOOLS-UPSTREAM.json preserves original published file hashes. Only src/notification.rs differs; no registry edits/version upgrade/backend switch.
 
-Only src/notification.rs differs: optional duration field, public duration(Duration)builder, admission snapshot default5seconds forwarded to original ToastOptions.timeout when autohide=true. Rawunconfigured callers5s/autohidefalsepersistent/systemdeliveryplatformowned unchanged. NxTools1-60/default6 remains owned setting; officialNotificationList/ToastManager sole countdown/hover/focus/pause/stack/close/animation owners. No new clock/card/palette/APIbeyond originalduration.
+## Duration
+Optional duration field/public duration(Duration) builder snapshots at admission and forwards to original ToastOptions.timeout. Raw unconfigured callers retain5seconds; autohidefalse remains persistent and system delivery stays platform-owned. Product1–60/default6 policy is not part of the generic component. Official NotificationList/ToastManager retains sole countdown/hover/focus/pause/stack/close/animation ownership.
 
-Run python tests/architecture/gpui-release-contracts.py, plus --upstream with checksum-verified extractedsources for independent source comparison. Desktop notification expiry/presentation/screen/settings tests provide compiled behavior, not physical/native/installed/user visual acceptance. Current graph Kit/Base/Component/Assets0.8.0 + defaultpre0.3.9. No registry edits.
+## Optional header action
+`Notification::header_action(builder -> AnyElement)` defaults absent and adds caller-owned compact control immediately left of existing close in the same top-right toolbar. Hover or focus within the enabled header keeps it visible; this prevents GPUI keyboard-modality hover suppression removing controls before Enter/Space release. Optional content is omitted during official Ending; it does not change autohide/body actions/dismiss. Caller owns business/current-generation/result feedback and content reservation. No clipboard/global-key hook, extra clock/card/palette or private lifecycle controller.
+
+## Preservation
+The user-authorized fork is https://github.com/Nuxoul/gpui-kit. Generic duration/header patches are ported as focused commits onto its current main, preserving upstream fully_visible_bounds correction; local locked0.8.0 source remains based on published release. External gpui-pre-windows patch is only separately documented/archived, not activated by the fork. Task `.trellis/tasks/10-23-notification-copy-button/` records final remote commits and verification.
+
+Run python tests/architecture/gpui-release-contracts.py (optional --upstream for verified published sources), notification production regression suite, strict/workspace/fmt and relevant source gates. Source/compiled tests are not physical/native/installed/user visual acceptance.

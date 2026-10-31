@@ -1,0 +1,83 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/efficiency_tests.rs
+@@ -2579,3 +2579,80 @@
+         assert!(panel.is_open, "outside menu dismissal respects fixed mode");
+     });
+ }
++
++#[gpui_kit::test]
++fn audit06_shared_clipboard_fixed_card_caps_gap_and_feather_do_not_scale(cx: &mut TestAppContext) {
++    let f = fixture(cx);
++    let mut surface = VisualTestContext::from_window(f.window, cx);
++    let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());
++    let first_id = f
++        .panel
++        .read_with(&surface, |panel, _| panel.entries.borrow()[0].id);
++    for base in [16.0, 14.0, 18.0] {
++        surface.update(|_, cx| {
++            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))
++        });
++        for (kind, expected) in [
++            (ClipboardKind::Text, 160.0),
++            (ClipboardKind::Image, 190.0),
++            (ClipboardKind::Files, 62.0),
++        ] {
++            f.panel.update_in(&mut surface, |panel, _, cx| {
++                let mut items = panel.entries.borrow_mut();
++                items.truncate(1);
++                items[0].kind = kind;
++                items[0].text = "合成正文段落\n\n".repeat(60);
++                items[0].image_width = 1000;
++                items[0].image_height = 2000;
++                items[0].file_paths = vec!["synthetic-file.txt".into()];
++                drop(items);
++                panel.list_scroll.reset(1);
++                cx.notify();
++            });
++            surface.update(|window, cx| {
++                window.refresh();
++                window.draw(cx).clear(cx);
++            });
++            assert_eq!(surface.update(|window, _| window.rem_size()), px(base));
++            let card = surface.update(|window, _| {
++                gpui_kit::base::test_support::snapshots(window)
++                    .into_iter()
++                    .find(|node| node.label() == Some(format!("剪贴板记录 {first_id}").as_str()))
++                    .expect("original ListItem")
++                    .bounds()
++            });
++            if kind == ClipboardKind::Text {
++                assert!(
++                    card.size.height <= px(expected) && card.size.height >= px(expected - 2.0),
++                    "fixed text cap (not a forced natural height) at base {base}: {card:?}"
++                );
++            } else {
++                assert_eq!(
++                    card.size.height,
++                    px(expected),
++                    "fixed {kind:?} card at base {base}"
++                );
++            }
++            let slot = surface
++                .debug_bounds("history-row-slot-0")
++                .expect("original paging slot");
++            assert!((slot.bottom() - card.bottom() - px(8.0)).abs() < px(0.1));
++            assert_eq!(
++                surface
++                    .debug_bounds("clipboard-source-0")
++                    .expect("fixed source rail")
++                    .size
++                    .height,
++                px(24.0)
++            );
++            if kind == ClipboardKind::Text {
++                assert_eq!(
++                    body_feather_quads(&mut surface).len(),
++                    1,
++                    "original14DIPbody feather remains fixed"
++                );
++            }
++        }
++    }
++    surface.update(|_, cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));
++}

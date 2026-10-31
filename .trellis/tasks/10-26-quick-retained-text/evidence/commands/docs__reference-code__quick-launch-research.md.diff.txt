@@ -1,0 +1,31 @@
+--- docs/reference-code/quick-launch-research.md [live baseline]
++++ docs/reference-code/quick-launch-research.md [current]
+@@ -1393,3 +1393,28 @@
+ ## 2026-10-24 Reveal replacement-host recurrence
+ Current runtime logs share native_request_accepted -> observation_browser_interfaces_missing -> target_not_confirmed. Initial read-only .NET8STA probing saw4ShellWindows candidates exposing IServiceProvider but not IWebBrowser2; their QueryService also failed and no Explorer folder root existed. This alone DOES NOT identify an Explorer-version defect. A separately user-authorized synthetic scratch-file Reveal reproduced the actual mismatch: Windows opened Directory Opus13.22, while the confirmation reader accepted Explorer roots only. Existing SwiftList/Next DOpus entry files and invariants above were reread; no legacy NxTools equivalent or proprietary Listary native source is available.
+ Official reference https://docs.dopus.com/doku.php?id=reference:dopusrt_reference:retrieving_file_and_folder_information documents `dopusrt.exe /info <output>,paths` and `<output>,listsel,<tab>`. Actual read-only exports show `results command/result`, path text plus lister/tab/active_tab/tab_state, and selected `items path/lister/tab` with item@path. In this13.22fixture active source tab has active_tab=1/tab_state=1, visible dopus.filedisplaycontainer under the same dopus.lister/PID; inactive matching tab is hidden. Preserve strict active-tab/current-parent/exact-selection/nativeidentity proof; display_path is localized and is not filesystem identity. Planned owner DirectoryOpusTargetObservation reuses ExplorerTargetView/ObserveTarget, a same-running-process sibling helper, fresh bounded private XML, no mutation commands, and second paths readback. Helper failure/unknown schema/stale/hidden/wrong selection fail closed; no caller toast masking or timeout expansion. Provider-only Explorer traversal remains separately synthetic-tested hardening, NOT the demonstrated DOpus fix. Layout/focus/placement/native launch and existing8attempts/75ms/onefallback remain.
++
++### Audit #13 retained presentation ownership review (2026-10-26)
++
++- Re-read Listary managed SearchMode.Results/selection and SearchWindowBase event
++  bindings -> ShowWindow/base.Show/Activate/Hide/Close/input focus first. Only the
++  managed application boundary is available, not Listary's proprietary native engine.
++- SwiftList second: current `App/Views/QuickSearchWindow/Helpers/
++  QuickSearchWindowInputHandler.cs` and `QuickSearchWindowLifecycle.cs` preserve
++  original nested action/IME/Escape/show-hide/focus owners. The earlier indexed
++  input handler without Helpers is absent in this source snapshot. WPF/native
++  implementation is not inferred from application sources.
++- GPUI coding guide persistent UI text requires stable SharedString in the original
++  view/entity, cloned by handle in elements; mutable edit/format buffers and original
++  domain/transport/execution payload remain separate. Locked pre0.3.9 StyledText::new
++  accepts Into<SharedString> and retains it; it does not repair repeated String cloning.
++- Next panel new/prepare_for_show/replace_results/recent-directory updates are the
++  result presentation commit boundaries; render_result currently copies long title,
++  subtitle/fallback and a full SearchResult into hover callbacks each frame. Original
++  action-mode levels/items retain display labels/titles separately from executable
++  action/session/path payload and editable filter. Prepare full shared display values
++  at those owners without another cache/search controller or rewriting Finder/IPC data.
++- Preserve exact text, highlight/order, generation/selection, captured preview payload,
++  action stack/query restoration and original release/close/focus/native budgets.
++  Evidence owner: `.trellis/tasks/10-26-quick-retained-text/`; real repeated production
++  render handle identity is distinct from native/DPI/visual/user acceptance.

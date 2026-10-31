@@ -447,7 +447,10 @@ foreach ($requiredCustomCommandEditorContract in @(
     'quick-launch-custom-command-master',
     'quick-launch-custom-command-detail',
     'const COMMAND_MASTER_ROW_HEIGHT: f32 = 40.0',
-    'CONTROL_HEIGHT_INPUT',
+    'Input::new(input).aria_label(label)',
+    'Input::new(&inputs.program)',
+    'Field::new().label(label).child(',
+    'fn custom_command_input_has_one_full_width_kit_frame('
     'LINE_HEIGHT_WORKBENCH_BODY',
     'LINE_HEIGHT_WORKBENCH_SUPPORT',
     'Checkbox::new(',
@@ -573,7 +576,8 @@ foreach ($requiredDiagnosticsContract in @(
     'quick-launch-diagnostics-history-metrics',
     'quick-launch-diagnostics-performance-metrics',
     'quick-launch-diagnostics-log-row',
-    'CONTROL_HEIGHT_INPUT',
+    '.h(ordinary_rem(DIAGNOSTICS_ROW_HEIGHT))',
+    '.h_8()',
     'TEXT_BODY',
     'LINE_HEIGHT_BODY',
     'TEXT_LABEL',
@@ -1039,6 +1043,9 @@ $desktopMainPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs'
 $desktopMainSource = Get-Content -Raw -LiteralPath $desktopMainPath
 $buildScriptPath = Join-Path $root 'scripts\build.ps1'
 $buildScriptSource = Get-Content -Raw -LiteralPath $buildScriptPath
+$publisherPath = Join-Path $root 'scripts\publish-release-hosts.ps1'
+$publisherSource = Get-Content -Raw -LiteralPath $publisherPath
+. (Join-Path $root 'tests\architecture\quick-launch-release-chain.ps1')
 $manifestWriterPath = Join-Path $root 'scripts\write-release-binary-manifest.ps1'
 $manifestWriterSource = Get-Content -Raw -LiteralPath $manifestWriterPath
 $releaseManifestPath = Join-Path $root `
@@ -1759,7 +1766,7 @@ if ($protocolSource -notmatch 'ElevatedDirectoryHelperRequested' -or
     $releaseManifestSource -notmatch 'IndexerSha256' -or
     $releaseManifestSource -notmatch 'DesktopSha256' -or
     $manifestWriterSource -notmatch 'Get-FileHash' -or
-    $buildScriptSource -notmatch 'write-release-binary-manifest\.ps1' -or
+    -not (Test-QuickLaunchReleaseChain $buildScriptSource $publisherSource $manifestWriterSource) -or
     $elevatedDirectoryNavigationSource -notmatch 'IsApprovedProtectedPlatformHost' -or
     $indexerElevatedBrokerSource -match 'runas') {
     throw @'

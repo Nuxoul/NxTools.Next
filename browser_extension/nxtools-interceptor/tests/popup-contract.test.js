@@ -5,7 +5,8 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 const html = fs.readFileSync(path.join(root, "popup.html"), "utf8");
 const css = fs.readFileSync(path.join(root, "popup.css"), "utf8");
-const script = fs.readFileSync(path.join(root, "popup.js"), "utf8");
+const popupScripts = [...html.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
+const script = popupScripts.map(f => fs.readFileSync(path.join(root, f), "utf8")).join("\n");
 const contentScript = fs.readFileSync(path.join(root, "content-script.js"), "utf8");
 const shadowStyles = require(path.join(root, "shadow-styles.js"));
 function cssRule(selector) {
@@ -20,7 +21,8 @@ test("production popup retains all semantic pages and original controls", () => 
   assert.equal((html.match(/role="tab"/g) || []).length, 4);
   assert.equal((html.match(/role="tabpanel"/g) || []).length, 4);
   assert.match(script, /event\.key === "ArrowRight"/); assert.match(script, /event\.key === "Home"/);
-  for (const text of ["弹出下载确认窗口", "Native Messaging", "合并 · 后续", "批量加入队列", "更改会自动保存", "携带 Cookie"]) assert.ok(html.includes(text));
+  for (const text of ["弹出下载确认窗口", "连接 NxTools 桌面端", "批量加入队列", "更改会自动保存", "携带 Cookie", "不会自动启动桌面端"]) assert.ok(html.includes(text));
+  assert.doesNotMatch(html, /mergeResourcesButton|合并 · 后续/, "disabled merge placeholder is not offered");
   assert.match(script, /type:\s*"popup_send_resources"/);
   assert.doesNotMatch(html, /WebSocket 地址|交接后等待手动开始/);
 });
@@ -58,9 +60,11 @@ test("tabs have stable underline and filter pressed state", () => {
   assert.match(script,/button\.setAttribute\("aria-pressed", String\(Boolean\(enabled\)\)\)/);
 });
 test("resource context and three metadata fields remain available", () => {
-  assert.match(script,/const chips = \[\s*resolution \? \{ text: resolution, important: true \} : null,\s*\{ text: resourceKindLabel\(info\.kind\), important: true \},\s*resource\.size \? \{ text: formatBytes\(resource\.size\) \} : null\s*\]\.filter\(Boolean\)/);
-  assert.match(script,/info\.badge \|\| ""/); assert.match(script,/trackHint,\s*blobNote/);
-  assert.match(script,/data-resource-preview/); assert.match(script,/aria-label="选择/);
+  assert.match(script,/function resourceMetaText\(resource\)/);
+  for (const field of ["resourceKindLabel", "info.resolution", "formatBytes(resource.size)"]) assert.ok(script.includes(field), field);
+  assert.match(script,/info\.badge \|\| ""/); assert.match(script,/trackHint, blobNote/);
+  assert.match(script,/resourcePreview: resource\.id/); assert.match(script,/`选择 \$\{name\}`/);
+  assert.doesNotMatch(script,/innerHTML|escapeHtml/, "popup renders with DOM APIs only");
   assert.match(cssRule("input.resource-check"),/width:\s*16px/);
   assert.doesNotMatch(cssRule("input.resource-check"),/display:\s*none/);
 });

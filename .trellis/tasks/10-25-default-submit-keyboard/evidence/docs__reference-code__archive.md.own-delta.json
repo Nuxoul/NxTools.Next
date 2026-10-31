@@ -1,0 +1,18 @@
+{
+  "path": "docs/reference-code/archive.md",
+  "baseline_sha256": "c7279c1af88aa986c65ab21c55fb799e2f4f40e1e89292a3614780fd6ad05c5c",
+  "after_sha256": "0b7e6e9cbebf64f6e02ec862052154aa60a99dd51d349db56174ac168b80cc78",
+  "operations": [
+    {
+      "kind": "insert",
+      "baseline_start": 770,
+      "baseline_end": 770,
+      "after_start": 770,
+      "after_end": 800,
+      "baseline_text": "",
+      "after_text": "\n## 2026-10-25 — audit #5 confirmation/default-submit source boundary\n\nRechecked the allowed Bandizip IDD_ARCHIVE480–494 and IDD_ASK_DUPEFILE579–588 text resources;\nthese identify the decision fields/actions, not verified native default-key behavior. Licensed\nArchiver gui/ui/app.slint401–408 uses LineEdit plus a primary create-ok Button;430/442 explicitly\nroute LineEdit accepted to find/password actions. gui/src/main.rs::start_create485–508 snapshots\nand validates options, clears/closes the draft then calls the original background spawn;\n::do_extract718–748 snapshots selected source/destination; AppWindow::new115 -> callbacks ->\nui.run158 is the Slint lifecycle boundary. Framework native internals were not inspected. The old\nNxTools tracked-source investigation did not identify a general archive operation UI.\n\nExact current Component0.8.0 dialog/footer.rs::DialogAction122–132 has only an outer div click\ndispatcher and a private anchor; it exposes no public Button trigger. Component button/button.rs\n857–865 forwards activation only when Button.on_click exists, while Base Button/div own the real\nkeyboard-release boundary. A local composition may use official Button public child/on_click and\npublic FocusHandle::dispatch_action with exported dialog::Confirm, exactly one activation source\nfeeding the original Dialog on_ok/deferred reply. A zero-size non-Tab child focus node keeps\npointer activation routed to its own Dialog even when pointer press intentionally preserves focus.\nDo not use an empty click callback, private anchor API, vendor change or second reply controller.\nBase Dialog installs a root Enter Confirm keybinding; CreateOverwrite must additionally require\nthis prompt's explicit button activation, not blindly approve when only root/body has focus.\n\nOriginal OperationForm::submit/capture, busy/pending_format/retirement and deferred submit_form\nremain the admission owner. Default submission is confined to explicitly allowed focused editing\ncontrols, after child component handling, with IME/modifier/held/busy/layer guards. Existing masked\npassword, Textarea, Select and format-discard Dialog keep their local semantics. The original\nform client/scroll/fixed-footer budgets, source/draft/ticket/native identity and diagnostic privacy\nremain unchanged. New task evidence: `.trellis/tasks/10-25-default-submit-keyboard/`; previous\naudit #4's unresolved diagnostic/history stays immutable and is closed only by new #5 evidence.\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

@@ -1,0 +1,8 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Exact test counts/exits and serial memory policy; no false native acceptance"}
+{"file":".trellis/spec/nxtools-extensions/backend/quality-guidelines.md","reason":"Original-boundary compatibility, trust, current identity and cleanup regressions"}
+{"file":".trellis/spec/nxtools-extensions/backend/database-guidelines.md","reason":"Secret/config atomicity and independent durable data preservation"}
+{"file":".trellis/spec/nxtools-network/backend/quality-guidelines.md","reason":"Proxy route/cancel and real loopback response budget assertions"}
+{"file":".trellis/spec/nxtools-indexer/backend/quality-guidelines.md","reason":"Synthetic query isolation versus deferred real service acceptance"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official compound slots, visible variants and no layout-only acceptance claim"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Locked graph/exact released API and only approved vendor deltas"}
+{"file":".trellis/tasks/10-25-extensions-capability-expansion/research/current-owners.md","reason":"Verify changed behavior at actual current owner seams, not duplicate adapters"}

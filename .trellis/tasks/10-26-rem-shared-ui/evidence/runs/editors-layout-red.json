@@ -1,0 +1,7 @@
+﻿{
+    "name":  "editors-layout-red",
+    "command":  "cargo test -p nxtools-desktop audit06_shared_editors -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  201.1749523,
+    "finished":  "2026-10-26T05:36:34.6041207+08:00"
+}

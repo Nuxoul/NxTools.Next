@@ -1,0 +1,40 @@
+{
+  "level": "Read-only source observation, not native/product acceptance; reference-order limitation in outcomes",
+  "files": [
+    {
+      "path": "D:\\Code\\ab-download-manager-master\\desktop\\app\\src\\main\\kotlin\\com\\abdownloadmanager\\desktop\\cli\\download\\remove\\RemoveDownload.kt",
+      "sha256": "240899ad5b8d59347e9da9cfe4e0e6ccb6a33e96db4c8427c7a82ab8b1ff26f6",
+      "bytes": 1009
+    },
+    {
+      "path": "D:\\Code\\NxTools\\Views\\MainWindow.axaml.cs",
+      "sha256": "082312f684254c8c0c5bf74e652844014060b737fd5fa81f1d978b0f06cf9e2e",
+      "bytes": 118807
+    },
+    {
+      "path": "D:\\Code\\NxTools\\Views\\SettingsWindow.axaml.cs",
+      "sha256": "a5169be3f4af3388648dc0590a8ce43de26228341536490083adc9353fea6d15",
+      "bytes": 5450
+    },
+    {
+      "path": "D:\\Code\\NxTools\\Services\\ClipboardHistoryService.cs",
+      "sha256": "d3a4b3f99f2a7206fc14d3663e43773b4216ab874effdd58d0cf7a4341929602",
+      "bytes": 27403
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost\\Windows\\WindowsPlatformAdapter.cs",
+      "sha256": "131645c5ea8e8032f229b796608d7fbb2621a7ca71e12366d8dc19d0a4182860",
+      "bytes": 67550
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost\\Windows\\BrowserExtensionExportDialog.cs",
+      "sha256": "c14e8279a4b74655d42c27ec8cacd961801f3c67e5f394fe2eb7d645be790146",
+      "bytes": 2677
+    },
+    {
+      "path": "D:\\Code\\NxTools.Next-main\\rust\\crates\\nxtools-download\\src\\engine.rs",
+      "sha256": "f8c8fa9532116c4629764fd164b5815273dab121850d7548d2cae1bb806376d0",
+      "bytes": 201200
+    }
+  ]
+}

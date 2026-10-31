@@ -15,12 +15,14 @@ use uuid::Uuid;
 pub(crate) struct EventControl {
     guard: Arc<Mutex<EventGuard>>,
     changed: tokio::sync::watch::Sender<u64>,
+    history: Arc<Mutex<VecDeque<super::event_history::EventTerminal>>>,
 }
 impl Default for EventControl {
     fn default() -> Self {
         Self {
             guard: Default::default(),
             changed: tokio::sync::watch::channel(0).0,
+            history: Default::default(),
         }
     }
 }
@@ -62,6 +64,57 @@ impl EventControl {
             self.terminal(package, handler, false);
         }
     }
+    pub(crate) fn recent(&self) -> Vec<super::event_history::EventTerminal> {
+        self.history
+            .lock()
+            .map(|history| history.iter().rev().cloned().collect())
+            .unwrap_or_default()
+    }
+    pub(crate) fn latest(
+        &self,
+        package: &str,
+        handler: &str,
+    ) -> Option<super::event_history::EventTerminal> {
+        self.history
+            .lock()
+            .ok()?
+            .iter()
+            .rev()
+            .find(|item| item.package_id == package && item.handler_id == handler)
+            .cloned()
+    }
+    fn record(&self, terminal: super::event_history::EventTerminal) {
+        let Ok(mut history) = self.history.lock() else {
+            return;
+        };
+        if history.iter().any(|item| {
+            item.event_id == terminal.event_id
+                && item.package_id == terminal.package_id
+                && item.handler_id == terminal.handler_id
+        }) {
+            return;
+        }
+        if let Ok(mut guard) = self.guard.lock() {
+            let before = guard.is_paused(&terminal.package_id, &terminal.handler_id);
+            guard.terminal(
+                &terminal.package_id,
+                &terminal.handler_id,
+                terminal.outcome.success(),
+                Instant::now(),
+            );
+            if !before && guard.is_paused(&terminal.package_id, &terminal.handler_id) {
+                tracing::warn!(event="extension.event.paused", correlation_id=%terminal.correlation_id, "automatic handler paused after repeated failures");
+            }
+        }
+        history.push_back(terminal);
+        while history.len() > 64 {
+            history.pop_front();
+        }
+        drop(history);
+        self.changed
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
+    }
+    #[cfg(test)]
     fn terminal(&self, package: &str, handler: &str, success: bool) {
         if let Ok(mut guard) = self.guard.lock() {
             let before = guard.is_paused(package, handler);
@@ -249,7 +302,9 @@ fn dispatch(
             let handler = handler.id.clone();
             let context = context.clone();
             let causality = causality.clone();
+            let correlation_id = causality.root_id;
             tokio::spawn(async move {
+                let started = Instant::now();
                 let (_cancel, cancellation) = tokio::sync::watch::channel(false);
                 let result = runtime
                     .invoke(InvokeRequest {
@@ -263,11 +318,17 @@ fn dispatch(
                         batches: None,
                     })
                     .await;
-                let success = result
-                    .as_ref()
-                    .is_ok_and(|outcome| outcome.status != "error");
-                control.terminal(&package, &handler, success);
-                tracing::info!(event="extension.event.terminal",event_id=%id,success,"committed extension event terminated");
+                let outcome = super::event_history::EventOutcome::from_result(&result);
+                control.record(super::event_history::EventTerminal {
+                    event_id: id,
+                    correlation_id,
+                    package_id: package,
+                    handler_id: handler,
+                    at_unix_ms: nxtools_ipc::unix_time_ms(),
+                    elapsed_ms: started.elapsed().as_millis(),
+                    outcome,
+                });
+                tracing::info!(event="extension.event.terminal",event_id=%id,success=outcome.success(),"committed extension event terminated");
             });
         }
     }
@@ -276,6 +337,57 @@ fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn remediation_event_terminal_history_is_bounded_typed_deduplicated_and_does_not_replay() {
+        use super::super::event_history::{EventOutcome, EventTerminal};
+        let control = EventControl::default();
+        let id = Uuid::new_v4();
+        let terminal = EventTerminal {
+            event_id: id,
+            correlation_id: id,
+            package_id: "fixture".into(),
+            handler_id: "event".into(),
+            at_unix_ms: 1,
+            elapsed_ms: 17,
+            outcome: EventOutcome::from_result(&Err(nxtools_extensions::RuntimeError::Timeout)),
+        };
+        control.record(terminal.clone());
+        control.record(terminal);
+        assert_eq!(control.recent().len(), 1);
+        assert_eq!(
+            control
+                .latest("fixture", "event")
+                .expect("last failure")
+                .outcome,
+            EventOutcome::Timeout
+        );
+        for index in 0..70 {
+            control.record(EventTerminal {
+                event_id: Uuid::new_v4(),
+                correlation_id: id,
+                package_id: "fixture".into(),
+                handler_id: "event".into(),
+                at_unix_ms: index,
+                elapsed_ms: 0,
+                outcome: EventOutcome::Protocol,
+            });
+        }
+        assert_eq!(control.recent().len(), 64);
+        let before = control.recent().len();
+        control.retry("fixture", "event").expect("resume");
+        assert_eq!(
+            control.recent().len(),
+            before,
+            "recovery neither dispatches nor replays old events"
+        );
+        assert!(
+            control
+                .latest("fixture", "event")
+                .expect("history retained")
+                .summary()
+                .contains("插件协议无效")
+        );
+    }
     #[test]
     fn actual_background_engine_commit_is_observed_once_without_private_request_or_progress() {
         let root = tempfile::tempdir().expect("fixture");
@@ -354,5 +466,61 @@ mod tests {
         control.retry("fixture", "event").expect("retry");
         assert!(!control.is_paused("fixture", "event"));
         assert!(changes.has_changed().expect("restored notice"));
+    }
+}
+
+#[cfg(test)]
+mod compile_closeout_tests {
+    use super::*;
+    use crate::extensions::event_history::{EventOutcome, EventTerminal};
+    use nxtools_extensions::RuntimeError;
+
+    #[test]
+    fn compile_closeout_unsupported_transport_is_unavailable_failure_without_replay() {
+        let control = EventControl::default();
+        let now = Instant::now();
+        for index in 0..3 {
+            let id = Uuid::new_v4();
+            control
+                .guard
+                .lock()
+                .expect("original event guard")
+                .admit(
+                    true,
+                    id,
+                    "fixture.transport",
+                    "event",
+                    &Causality::root(id),
+                    now + std::time::Duration::from_secs(index),
+                )
+                .expect("admit a distinct synthetic event");
+            let terminal = EventTerminal {
+                event_id: id,
+                correlation_id: id,
+                package_id: "fixture.transport".into(),
+                handler_id: "event".into(),
+                at_unix_ms: index as i64,
+                elapsed_ms: 0,
+                outcome: EventOutcome::from_result(&Err(RuntimeError::UnsupportedTransport)),
+            };
+            control.record(terminal.clone());
+            control.record(terminal);
+            let observed = control
+                .latest("fixture.transport", "event")
+                .expect("original terminal history");
+            assert_eq!(observed.outcome, EventOutcome::Unavailable);
+            assert!(!observed.outcome.success());
+        }
+        assert_eq!(
+            control.recent().len(),
+            3,
+            "duplicate terminals stay deduplicated"
+        );
+        assert!(control.is_paused("fixture.transport", "event"));
+        control
+            .retry("fixture.transport", "event")
+            .expect("explicit circuit retry");
+        assert!(!control.is_paused("fixture.transport", "event"));
+        assert_eq!(control.recent().len(), 3, "retry never replays old events");
     }
 }

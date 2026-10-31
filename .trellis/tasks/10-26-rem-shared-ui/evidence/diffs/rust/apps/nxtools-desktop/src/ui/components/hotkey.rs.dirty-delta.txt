@@ -1,0 +1,45 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/hotkey.rs
+@@ -1,8 +1,8 @@
+ use gpui_kit::component::{Disableable, button::Button, label::Label};
+-use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
++use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*};
+ 
+ use crate::theme::Theme;
+-use crate::ui::metrics::{SPACING_4, SPACING_8};
++use crate::ui::metrics::ordinary_rem;
+ use crate::ui::typography::UI_MONO_FONT_FAMILY;
+ 
+ pub(crate) const HOTKEY_FIELD_WIDTH: f32 = 260.0;
+@@ -77,24 +77,25 @@
+         );
+     div()
+         .debug_selector(move || selector.into())
+-        .w(px(HOTKEY_FIELD_WIDTH))
+-        .min_w(px(HOTKEY_FIELD_WIDTH))
++        .w(ordinary_rem(HOTKEY_FIELD_WIDTH))
++        .max_w_full()
++        .min_w_0()
+         .flex()
+         .flex_col()
+-        .gap(px(SPACING_4))
++        .gap_1()
+         .child(trigger)
+         .child(
+             div()
+                 .w_full()
+                 .flex()
+                 .items_center()
+-                .gap(px(SPACING_8))
++                .gap_2()
+                 .child(
+                     div()
+                         .debug_selector(move || state_selector.clone())
+-                        .size(px(HOTKEY_STATE_MARKER_SIZE))
++                        .size(ordinary_rem(HOTKEY_STATE_MARKER_SIZE))
+                         .flex_none()
+-                        .rounded(px(HOTKEY_STATE_MARKER_SIZE / 2.0))
++                        .rounded_full()
+                         .bg(marker_color),
+                 )
+                 .child(

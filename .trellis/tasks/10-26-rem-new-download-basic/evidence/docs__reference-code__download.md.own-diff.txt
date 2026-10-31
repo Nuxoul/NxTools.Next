@@ -1,0 +1,34 @@
+--- live task-start baseline/docs/reference-code/download.md
++++ own current/docs/reference-code/download.md
+@@ -2994,3 +2994,31 @@
+ Popover keyboard ownership; base-font fixtures do not establish native/DPI/visual acceptance.
+ This continuation has separate evidence in `.trellis/tasks/10-25-rem-new-download/`; the prior
+ accepted bounded slice and failed complete Desktop run remain immutable history.
++
++## Audit #6 Queue04: basic New Download relative roles (2026-10-26)
++
++The bounded basic slice retains Component0.8.0 Small Form/Field, Medium/default Input and
++outlined paste/directory Buttons, plus original footer variants and callbacks. Native compact
++560x176 and ordinary confirmed560x246 remain fixed (34caption/44footer); the separate278media
++base and all error/media sizing and hidden-target native handoff functions are unchanged.
++Ordinary16/8body insets,72label rail,32control composition,12/18guidance and inspector text,
++13/14vector sizes,120x112ordinary inspector and command gaps now follow the accepted16px
++design base through metrics::ordinary_rem or GPUI scale builders. Form.label_width resolves
++Rems to Pixels at the Window boundary. Released Small Form/Field internal6/4pixel gaps and
++inherited label line metrics remain official; no vendor/theme/font override is added.
++
++One bounded body scrollbar retains intrinsic form/error height. Compact fallback error wraps
++instead of permanently truncating one line; expanded/confirmed errors retain the original
++official Alert through a nonshrinking local layout slot. Actual40-line synthetic error wheel
++scroll reaches its full end while the fixed footer remains available. Long original Inputs
++retain their complete values/entities and accept actual pointer focus,End and tail editing.
++Ordinary path-picker rails are local composition only; media uses the original shared helper,
++and media inspector pixel roles remain for the next slice. Category/calendar/Popover/media
++option internals and all original input/probe/picker/submit/deferred callbacks are preserved.
++
++Evidence lives in `.trellis/tasks/10-26-rem-new-download-basic/`: actual production Root16/14/18,
++paint-time inherited type,default density,scroll-end,public focus sequence and real Cancel
++pointer checks. Controlled base-font variation is not Windows DPI; source/compiled fixtures
++do not establish physical/native/IME/reader/visual/user or installed-release acceptance.
++The earlier compile-only checkpoints and full Desktop failure remain immutable history;
++this bounded slice does not close original audit#6 or authorize a full Desktop/package run.

@@ -1,0 +1,35 @@
+--- task-start
++++ independent-observed
+@@ -419,6 +419,32 @@
+         )
+     }
+     #[gpui_kit::test]
++    fn expansion_storage_metadata_projection_keeps_current_provider_generation_and_rows(
++        cx: &mut TestAppContext,
++    ) {
++        cx.update(gpui_kit::init);
++        let (_root, application, _endpoint) =
++            super::super::tests::quick_launch_application_fixture(cx);
++        let (cancel, cancellation) = tokio::sync::watch::channel(false);
++        application.update(cx, |app, cx| {
++            let manifest = br#"{"schema_version":1,"id":"fixture.metadata","name":"Metadata","version":"1","handlers":[{"id":"run","title":"Run","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://fixture.test/"}}]}"#;
++            app.config.extensions.install(nxtools_extensions::ImportPreview::from_json(manifest).expect("preview"), "owned".into(), false).expect("install");
++            app.extension_providers.generation = 31;
++            app.extension_providers.query = "unchanged".into();
++            app.extension_providers.cancels.push(cancel);
++            app.extension_providers.order.push("existing".into());
++            let mut bound = app.config.extensions.clone();
++            bound.packages[0].data_uuid = Some(uuid::Uuid::new_v4());
++            app.refresh_extension_storage_metadata(&bound, cx);
++            assert_eq!(app.config.extensions, bound);
++            assert_eq!(app.extension_providers.generation, 31);
++            assert_eq!(app.extension_providers.query, "unchanged");
++            assert_eq!(app.extension_providers.order, vec!["existing".to_owned()]);
++            assert_eq!(app.extension_providers.cancels.len(), 1);
++            assert!(!*cancellation.borrow(), "metadata must not cancel a running provider");
++        });
++    }
++    #[gpui_kit::test]
+     fn real_panel_late_batches_keep_identity_and_current_input_retires_actions(
+         cx: &mut TestAppContext,
+     ) {

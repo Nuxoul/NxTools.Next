@@ -51,11 +51,25 @@ impl ArchiveSourceBinding {
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct SevenzEditEligibility {
+    pub refusal: Option<crate::archive_job::ArchiveModificationRefusal>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TarEditEligibility {
+    pub refusal: Option<crate::archive_job::ArchiveModificationRefusal>,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ArchiveBrowserContext {
     pub snapshot_id: Uuid,
     pub format: String,
     pub comment: String,
     pub source: ArchiveSourceBinding,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sevenz_edit: Option<SevenzEditEligibility>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tar_edit: Option<TarEditEligibility>,
 }
 impl ArchiveBrowserContext {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
@@ -84,12 +98,85 @@ impl ArchiveBrowserContext {
         Ok(())
     }
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveTempPolicy {
+    pub base_directory: String,
+    pub retention_hours: u32,
+    pub cleanup_on_child_exit: bool,
+}
+impl ArchiveTempPolicy {
+    pub fn validate(&self) -> Result<(), ArchiveReadError> {
+        let path = &self.base_directory;
+        if !matches!(self.retention_hours, 1 | 6 | 24 | 72 | 168) {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
+        if path.is_empty() {
+            return Ok(());
+        }
+        let bytes = path.as_bytes();
+        if bytes.len() > 4096
+            || bytes.len() < 3
+            || !bytes[0].is_ascii_alphabetic()
+            || &bytes[1..3] != b":\\"
+            || path.chars().any(char::is_control)
+            || path[3..].contains(['/', ':', '*', '?', '"', '<', '>', '|'])
+            || (path.len() > 3 && path[3..].trim_end_matches('\\').split('\\').count() > 59)
+            || path.ends_with("\\\\")
+            || (path.len() > 3
+                && path[3..].trim_end_matches('\\').split('\\').any(|part| {
+                    let stem = part
+                        .split('.')
+                        .next()
+                        .unwrap_or_default()
+                        .trim_end_matches(' ')
+                        .to_ascii_uppercase();
+                    part.is_empty()
+                        || part.encode_utf16().count() > 255
+                        || matches!(part, "." | "..")
+                        || part.ends_with([' ', '.'])
+                        || matches!(
+                            stem.as_str(),
+                            "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+                        )
+                        || stem
+                            .strip_prefix("COM")
+                            .or_else(|| stem.strip_prefix("LPT"))
+                            .is_some_and(|suffix| {
+                                matches!(
+                                    suffix,
+                                    "1" | "2"
+                                        | "3"
+                                        | "4"
+                                        | "5"
+                                        | "6"
+                                        | "7"
+                                        | "8"
+                                        | "9"
+                                        | "¹"
+                                        | "²"
+                                        | "³"
+                                )
+                            })
+                }))
+        {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArchiveEntryAction {
     Materialize,
+    Preview,
+    PreviewText,
+    Open,
     Cancel,
     Release,
+    Authorize,
+    Revoke,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -116,6 +203,8 @@ pub struct ArchiveEntryCommand {
     /// Non-secret opt-in for the original private worker InteractionPort; never a password.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub password_interaction: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temp_policy: Option<ArchiveTempPolicy>,
 }
 impl ArchiveEntryCommand {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
@@ -129,8 +218,22 @@ impl ArchiveEntryCommand {
         {
             return Err(ArchiveReadError::InvalidRequest);
         }
+        if let Some(policy) = &self.temp_policy {
+            if !matches!(
+                self.action,
+                ArchiveEntryAction::Materialize
+                    | ArchiveEntryAction::Preview
+                    | ArchiveEntryAction::PreviewText
+            ) {
+                return Err(ArchiveReadError::InvalidRequest);
+            }
+            policy.validate()?;
+        }
         match self.action {
-            ArchiveEntryAction::Materialize => {
+            ArchiveEntryAction::Materialize
+            | ArchiveEntryAction::Preview
+            | ArchiveEntryAction::PreviewText
+            | ArchiveEntryAction::Authorize => {
                 let path = self
                     .path
                     .as_deref()
@@ -143,7 +246,13 @@ impl ArchiveEntryCommand {
                     || path.contains('/')
                     || path.chars().any(char::is_control)
                     || !valid_codepage(self.codepage)
-                    || self.ordinal.is_none()
+                    || (self.action == ArchiveEntryAction::Authorize) != self.ordinal.is_none()
+                    || self.action == ArchiveEntryAction::Authorize
+                        && (!self.password_interaction || self.lease_id.is_some())
+                    || matches!(
+                        self.action,
+                        ArchiveEntryAction::Preview | ArchiveEntryAction::PreviewText
+                    ) && self.lease_id.is_some()
                     || self.depth > 3
                 {
                     return Err(ArchiveReadError::InvalidRequest);
@@ -152,8 +261,19 @@ impl ArchiveEntryCommand {
                     .as_ref()
                     .ok_or(ArchiveReadError::InvalidRequest)?
                     .validate()?;
+                if self.action == ArchiveEntryAction::Authorize
+                    && !matches!(
+                        self.browser.as_ref().map(|browser| browser.format.as_str()),
+                        Some("Zip" | "SevenZ" | "Rar4" | "Rar5")
+                    )
+                {
+                    return Err(ArchiveReadError::InvalidRequest);
+                }
             }
-            ArchiveEntryAction::Cancel | ArchiveEntryAction::Release => {
+            ArchiveEntryAction::Cancel
+            | ArchiveEntryAction::Release
+            | ArchiveEntryAction::Open
+            | ArchiveEntryAction::Revoke => {
                 if self.password_interaction
                     || self.path.is_some()
                     || self.browser.is_some()
@@ -161,7 +281,14 @@ impl ArchiveEntryCommand {
                     || self.codepage != 0
                     || self.depth != 0
                     || self.copy_motw.is_some()
-                    || (self.action == ArchiveEntryAction::Release) != self.lease_id.is_some()
+                    || matches!(
+                        self.action,
+                        ArchiveEntryAction::Release
+                            | ArchiveEntryAction::Open
+                            | ArchiveEntryAction::Revoke
+                    ) != self.lease_id.is_some()
+                    || self.action == ArchiveEntryAction::Revoke
+                        && self.lease_id != Some(self.operation_id)
                 {
                     return Err(ArchiveReadError::InvalidRequest);
                 }
@@ -189,6 +316,28 @@ pub struct ArchiveEntryResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn preview_purposes_keep_original_shape_and_refuse_lease_authority() {
+        for action in ["preview", "preview_text"] {
+            let value = serde_json::json!({"version":1,"operation_id":Uuid::new_v4(),
+                "session_id":Uuid::new_v4(),"generation":1,"action":action,
+                "path":"C:\\owned\\source.zip","ordinal":0,
+                "browser":{"snapshot_id":Uuid::new_v4(),"format":"Zip","comment":"",
+                    "source":{"native":"v1:fixture","digest":vec![0;32],"size":0,"modified_unix_ns":0}}});
+            let command: ArchiveEntryCommand = serde_json::from_value(value).expect("preview wire");
+            assert!(command.validate().is_ok());
+            assert_eq!(
+                serde_json::to_value(&command).expect("roundtrip")["action"],
+                action
+            );
+            let mut illegal = command.clone();
+            illegal.lease_id = Some(Uuid::new_v4());
+            assert_eq!(illegal.validate(), Err(ArchiveReadError::InvalidRequest));
+            illegal = command.clone();
+            illegal.ordinal = None;
+            assert_eq!(illegal.validate(), Err(ArchiveReadError::InvalidRequest));
+        }
+    }
     #[test]
     fn browser_command_refuses_output_authority_and_stale_shape() {
         let mut value = serde_json::json!({"version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),"generation":1,"action":"cancel"});
@@ -256,5 +405,107 @@ mod tests {
         limits.browser_context = true;
         assert!(limits.validate().is_err());
         assert!(limits.validate_for(2).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod authorization_tests {
+    use super::*;
+    #[test]
+    fn authorize_revoke_are_nonsecret_no_output_shapes_and_unknown_formats_refuse() {
+        let mut command = ArchiveEntryCommand {
+            version: 1,
+            operation_id: Uuid::new_v4(),
+            session_id: Uuid::new_v4(),
+            generation: 1,
+            action: ArchiveEntryAction::Authorize,
+            path: Some(r"C:\owned\source.zip".into()),
+            codepage: 0,
+            ordinal: None,
+            browser: Some(ArchiveBrowserContext {
+                snapshot_id: Uuid::new_v4(),
+                format: "Zip".into(),
+                comment: String::new(),
+                source: ArchiveSourceBinding {
+                    native: "v1:test".into(),
+                    digest: [1; 32],
+                    size: 1,
+                    modified_unix_ns: 1,
+                },
+                sevenz_edit: None,
+                tar_edit: None,
+            }),
+            lease_id: None,
+            depth: 0,
+            copy_motw: Some(true),
+            password_interaction: true,
+            temp_policy: None,
+        };
+        command.validate().expect("authorize source only");
+        let value = serde_json::to_value(&command).expect("wire");
+        assert!(
+            value.get("password").is_none()
+                && value.get("output_root").is_none()
+                && value.get("ordinal").is_none()
+        );
+        command.ordinal = Some(0);
+        assert!(command.validate().is_err());
+        command.ordinal = None;
+        command.browser.as_mut().expect("browser").format = "Gzip".into();
+        assert!(command.validate().is_err());
+        command.action = ArchiveEntryAction::Revoke;
+        command.path = None;
+        command.browser = None;
+        command.copy_motw = None;
+        command.password_interaction = false;
+        command.lease_id = Some(command.operation_id);
+        command.validate().expect("exact revoke");
+        command.lease_id = Some(Uuid::new_v4());
+        assert!(command.validate().is_err());
+    }
+}
+
+#[cfg(test)]
+mod remaining_temp_tests {
+    use super::*;
+    #[test]
+    fn ui_remaining_temp_policy_is_consumed_and_open_is_lease_scoped() {
+        let mut value = serde_json::json!({"version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),"generation":1,"action":"open","lease_id":Uuid::new_v4()});
+        let command: ArchiveEntryCommand =
+            serde_json::from_value(value.clone()).expect("lease open");
+        assert!(command.validate().is_ok(), "owned lease open action");
+        value["temp_policy"] = serde_json::json!({"base_directory":"C:\\owned","retention_hours":6,"cleanup_on_child_exit":true});
+        assert!(
+            serde_json::from_value::<ArchiveEntryCommand>(value.clone())
+                .map_or(true, |command| command.validate().is_err()),
+            "control never grants output authority"
+        );
+        for (base, hours) in [("", 24), (r"C:\owned", 6), (r"D:\", 168)] {
+            assert!(
+                ArchiveTempPolicy {
+                    base_directory: base.into(),
+                    retention_hours: hours,
+                    cleanup_on_child_exit: true
+                }
+                .validate()
+                .is_ok()
+            );
+        }
+        for (base, hours) in [
+            (r"relative", 24),
+            (r"\\server\share", 24),
+            (r"C:\owned\..\other", 24),
+            ("", 0),
+        ] {
+            assert!(
+                ArchiveTempPolicy {
+                    base_directory: base.into(),
+                    retention_hours: hours,
+                    cleanup_on_child_exit: false
+                }
+                .validate()
+                .is_err()
+            );
+        }
     }
 }

@@ -1,0 +1,65 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/ui/components/state.rs
++++ queue07/rust/apps/nxtools-desktop/src/ui/components/state.rs
+@@ -3,10 +3,13 @@
+ use gpui_kit::component::label::Label;
+ use gpui_kit::component::spinner::Spinner;
+ use gpui_kit::component::{Icon, Sizable};
+-use gpui_kit::{App, ClickEvent, Div, SharedString, Window, div, prelude::*, px};
++#[cfg(test)]
++use gpui_kit::px;
++use gpui_kit::{App, ClickEvent, Div, SharedString, Window, div, prelude::*};
+ 
+ use crate::icons::MaterialIcon;
+ use crate::theme::Theme;
++use crate::ui::metrics::ordinary_rem;
+ 
+ pub(crate) const WORK_STATE_ICON_SIZE: f32 = 18.0;
+ pub(crate) const WORK_STATE_MIN_HEIGHT: f32 = 72.0;
+@@ -25,7 +28,7 @@
+     div()
+         .debug_selector(move || selector.into())
+         .w_full()
+-        .min_h(px(WORK_STATE_MIN_HEIGHT))
++        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))
+         .flex_none()
+         .child(
+             Empty::new()
+@@ -50,7 +53,10 @@
+                                     div()
+                                         .debug_selector(move || icon_selector.clone())
+                                         .flex_none()
+-                                        .child(Icon::new(icon).size(px(WORK_STATE_ICON_SIZE))),
++                                        .child(
++                                            Icon::new(icon)
++                                                .size(ordinary_rem(WORK_STATE_ICON_SIZE)),
++                                        ),
+                                 )
+                                 .child(
+                                     div()
+@@ -91,7 +97,7 @@
+     div()
+         .debug_selector(move || selector.into())
+         .w_full()
+-        .min_h(px(WORK_STATE_MIN_HEIGHT))
++        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))
+         .flex_none()
+         .p_3()
+         .flex()
+@@ -147,7 +153,7 @@
+     div()
+         .debug_selector(move || selector.into())
+         .w_full()
+-        .min_h(px(WORK_STATE_MIN_HEIGHT))
++        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))
+         .flex_none()
+         .child(
+             div()
+@@ -207,7 +213,7 @@
+         .debug_selector(move || selector.into())
+         .w_full()
+         .flex_none()
+-        .min_h(px(WORK_STATE_MIN_HEIGHT))
++        .min_h(ordinary_rem(WORK_STATE_MIN_HEIGHT))
+         .child(state)
+         .when(focused, |state| {
+             state.child(

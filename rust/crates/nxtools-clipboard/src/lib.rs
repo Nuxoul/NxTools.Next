@@ -478,6 +478,7 @@ pub enum CaptureOutcome {
 pub struct ClipboardHistory {
     connection: Connection,
     database_path: PathBuf,
+    read_session: uuid::Uuid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -594,6 +595,7 @@ impl ClipboardHistory {
         Ok(Self {
             connection,
             database_path,
+            read_session: uuid::Uuid::new_v4(),
         })
     }
 

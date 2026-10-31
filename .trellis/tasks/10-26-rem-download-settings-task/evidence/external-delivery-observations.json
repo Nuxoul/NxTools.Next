@@ -1,0 +1,44 @@
+[
+  {
+    "path": "rust/crates/nxtools-core/src/extensions.rs",
+    "observed_sha256": "15b1681292aedc7141b90843d8d9dd1d0b3ac6e3b11ba87474866b424e975d43",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Independent shared-source observation only; failure snapshots/logs retained separately; no outside repair attributed"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/registry.rs",
+    "observed_sha256": "3c9c75106b673c47d7f291465320bd17bf8d560bfeb16a5c0d01a967ba47631a",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Independent shared-source observation only; failure snapshots/logs retained separately; no outside repair attributed"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/storage.rs",
+    "observed_sha256": "3f6143a07c56d81f42d16772a0c542ee4b552a35140d0791a6820d252734e724",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Independent shared-source observation only; failure snapshots/logs retained separately; no outside repair attributed"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/storage_calls.rs",
+    "observed_sha256": "5a1eba9727ec3377a2ef9cdf07b156c236432c8421ab4579db53e2a20ba87c90",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Independent shared-source observation only; failure snapshots/logs retained separately; no outside repair attributed"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/runtime_storage.rs",
+    "observed_sha256": "ca51cd1828e0e129e8f236fc7949d42949ad59272b588ab26bb41e8699b0f8b4",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Independent shared-source observation only; failure snapshots/logs retained separately; no outside repair attributed"
+  },
+  {
+    "path": "rust/crates/nxtools-extensions/src/runtime.rs",
+    "observed_sha256": "3668cd1511bed897b7fbd2ac8de81ec9075edc81b9d46f61c21a7ae246e0c68a",
+    "owned_edit": false,
+    "task_start_baseline_available": false,
+    "note": "Independent shared-source observation only; failure snapshots/logs retained separately; no outside repair attributed"
+  }
+]

@@ -1,0 +1,14 @@
+[
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/checkpoint-01/compact-confirmed-red.log",
+    "sha256": "031c6a8e3996c0c9c65b94eb16dcebc20af02f13b9b9a2caceef393d03c8bd25"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/checkpoint-01/blocker-rust__apps__nxtools-desktop__src__extensions__event_history.rs.observed",
+    "sha256": "d8a8fc08c6724aef546b13c00cbeb014a71c64daec699d13a5bf23c7b25bcd62"
+  },
+  {
+    "path": ".trellis/tasks/10-25-rem-new-download/evidence/checkpoint-01/checkpoint-manifest.json",
+    "sha256": "a46aa37c0ccc83d3d303e2c7a374501c6fffa3b52654ab23265011b1942cf2bd"
+  }
+]

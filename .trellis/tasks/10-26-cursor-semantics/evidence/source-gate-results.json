@@ -1,0 +1,79 @@
+[
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/download-ui-lifecycle.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\download-ui-lifecycle.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/download-ui-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/desktop-shell-lifecycle.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\desktop-shell-lifecycle.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/desktop-shell-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/clipboard-ui-lifecycle.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\clipboard-ui-lifecycle.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/clipboard-ui-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-token-boundaries.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\ui-token-boundaries.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/ui-token-boundaries.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-consistency.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\ui-consistency.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/ui-consistency.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-state-lifecycle.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\ui-state-lifecycle.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/ui-state-lifecycle.log"
+  },
+  {
+    "command": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/architecture/ui-motion-policy.ps1",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\ui-motion-policy.log",
+    "level": "Source only",
+    "evidence_log": "evidence/logs/ui-motion-policy.log"
+  },
+  {
+    "command": "python tests/architecture/gpui-component-catalog.py",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\gpui-component-catalog.log",
+    "level": "Source/document/provenance only",
+    "evidence_log": "evidence/logs/gpui-component-catalog.log"
+  },
+  {
+    "command": "python tests/architecture/gpui-release-contracts.py",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\gpui-release-contracts.log",
+    "level": "Source/document/provenance only",
+    "evidence_log": "evidence/logs/gpui-release-contracts.log"
+  },
+  {
+    "command": "python tests/architecture/markdown-editor-contracts.py",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\markdown-editor-contracts.log",
+    "level": "Source/document/provenance only",
+    "evidence_log": "evidence/logs/markdown-editor-contracts.log"
+  },
+  {
+    "command": "python tests/architecture/spec-contracts.py",
+    "exit": 0,
+    "log": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\cursor-semantics\\spec-contracts.log",
+    "level": "Source/document/provenance only",
+    "evidence_log": "evidence/logs/spec-contracts.log"
+  }
+]

@@ -1,0 +1,37 @@
+--- live-task-start-dirty/docs/reference-code/gpui.md
++++ queue08-blocked-checkpoint/docs/reference-code/gpui.md
+@@ -291,3 +291,34 @@
+ inside the window alone. No custom capture dispatcher, new business/scroll controller, source
+ payload/native/placement/focus policy changes or vendor edits. Controlled Root16/14/18 compiled
+ evidence is not Windows DPI, screenshot/user, physical/native/provider or release acceptance.
++
++## Queue08 partial ordinary-page checkpoint (2026-10-26)
++This is a blocked checkpoint,not completed consumer or visual acceptance. ActualRoot16/14/18
++red→green covers shell ordinarybrand/moduletext,Tools workspaceinsets and linkToolForm label/
++controlcoordination inside original1060x650/min920x480 and460x320clients. Nativecaption36,
++windowcontrols36x36,176rail,18bitmap and180x160Tools tiles remain fixed. Form.label_width
++requiresPixels: one small existingWindow-bound Tool labelallocation yields ordinary264target
++to an ordinary168controlreserve after actualclientinsets and released4pxFieldgap. Samepublic
++Form/Field/NumberInput/Select/Switch/actions; no geometryinflation or palette/vendorchange.
++
++Global actual720x480Root14 red: NumberInputheight28 beside fixed168width,and rule40 instead35.
++Ordinaryinput/rows/column/checkboxcontainers now userelativeunits while128rail/48footer and
++120listcap stayfixed. Actual24longCJKrules wheel-to-last/edit/controlledCheckbox/Tab+Space/
++Cancel and originalApplypersistencefailure→retainedInputdraft→retrysectionmerge pass. Released
++Scrollable copies source max_size to its wrapper but retains that max on content; directmax_h120
++constrained scrollcontent and leftlastrowy1194. Resolve naturalrows at originalWindow rem,
++allocate cappedparentheight≤120,and host originalpublicScrollable/stableID with unconstrained
++naturalrowcontent. No newscrollhandle/businesscontroller/capturedispatcher;sourcecallback and
++originalsavetransaction remain. ExistingSectionwriter/native/deferredownership unchanged.
++
++ABDM ProxyConfigurableRenderer localdraft/canSave first,then legacySettingsWindow constructor
++→WindowAnimationService.Attach→OnOpened/Configure→ApplyCancel/Close→OnClosed and delayed
++closingcancellation/finalClose rechecked;MainWindow show/activate/traypreservingclose unchanged.
++Avalonia/AWTnativebase unavailable,not inferred. Currentnative/windowallocation is unchanged.
++Currency/floatingconsumer adaptations compiled but newall-remconsumer tests remain unexecuted;
++Extensions icon28/DescriptionList80/88 preparation didnotcompile/run and productionobservability
++wrappers were exactly removed. Finalstrict/check/fmt/relatedsuites are blocked by naturalRust
++idle unavailable (independentexpansion_storage_retained test),not claimedgreen. Exactremaining
++entries,immutablelogs and preparedtests: `.trellis/tasks/10-26-rem-pages-global-tools/`.
++No completeDesktop/native/userdata/system/registry/Host/service/package/install/commit or
++physical/DPI/IME/provider/visual/useracceptance;controlledRootfontvariation is notWindowsDPI.

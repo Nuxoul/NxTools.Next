@@ -1,0 +1,13 @@
+﻿{
+    "environment":  {
+                        "CARGO_INCREMENTAL":  "0",
+                        "CARGO_BUILD_JOBS":  "1",
+                        "_LINK_":  "/DEBUG:NONE",
+                        "RUSTFLAGS":  "-C codegen-units=256"
+                    },
+    "finished_utc":  "2026-10-26T09:35:00.4667271Z",
+    "started_utc":  "2026-10-26T09:34:20.4496321Z",
+    "command":  "cargo --config profile.test.package.nxtools-desktop.debug=0 test -p nxtools-desktop --bin nxtools-desktop audit13_ -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\quick-retained-text\\audit13-five-final-01.log"
+}

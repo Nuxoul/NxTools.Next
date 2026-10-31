@@ -35,6 +35,9 @@ impl AssetSource for NxToolsAssets {
             "material-symbols/folder.svg" => {
                 Some(include_bytes!("../assets/material-symbols/folder.svg"))
             }
+            "material-symbols/folder-filled.svg" => Some(include_bytes!(
+                "../assets/material-symbols/folder-filled.svg"
+            )),
             "material-symbols/folder-zip.svg" => {
                 Some(include_bytes!("../assets/material-symbols/folder-zip.svg"))
             }
@@ -117,9 +120,13 @@ impl AssetSource for NxToolsAssets {
             "caption/maximize.svg" => Some(include_bytes!("../assets/caption/maximize.svg")),
             "caption/restore.svg" => Some(include_bytes!("../assets/caption/restore.svg")),
             "caption/close.svg" => Some(include_bytes!("../assets/caption/close.svg")),
-            "brand/nxtools.png" => Some(include_bytes!(
-                "../../../../browser_extension/nxtools-interceptor/icons/icon-32.png"
-            )),
+            "brand/nxtools.png" => Some(include_bytes!("../assets/brand/nxtools-32.png")),
+            "brand/archive.png" => Some(include_bytes!("../assets/brand/nxtools-archive-32.png")),
+            //20DIP caption/tree canvases need40source pixels at200%; reuse existing derivatives.
+            "brand/nxtools-40.png" => Some(include_bytes!("../assets/brand/nxtools-40.png")),
+            "brand/archive-40.png" => {
+                Some(include_bytes!("../assets/brand/nxtools-archive-40.png"))
+            }
             _ => None,
         };
         match bytes {
@@ -142,6 +149,9 @@ impl AssetSource for NxToolsAssets {
             .chain(
                 [
                     "brand/nxtools.png",
+                    "brand/archive.png",
+                    "brand/nxtools-40.png",
+                    "brand/archive-40.png",
                     "icons/check.svg",
                     "icons/chevron-right.svg",
                     "icons/circle-x.svg",
@@ -219,6 +229,7 @@ mod tests {
             "icons/chevron-right.svg",
             "icons/circle-x.svg",
             "brand/nxtools.png",
+            "brand/archive.png",
         ] {
             assert!(
                 NxToolsAssets

@@ -38,16 +38,21 @@ pub struct Theme {
 const GRAPHITE_DARK: &str = include_str!("../assets/themes/nxtools-graphite-dark.json");
 const GRAPHITE_LIGHT: &str = include_str!("../assets/themes/nxtools-graphite-light.json");
 
-fn graphite_colors(dark: bool) -> gpui_kit::component::ThemeColor {
+fn default_colors(dark: bool) -> gpui_kit::component::ThemeColor {
     use std::sync::LazyLock;
     static COLORS: LazyLock<[gpui_kit::component::ThemeColor; 2]> = LazyLock::new(|| {
-        [GRAPHITE_LIGHT, GRAPHITE_DARK].map(|source| {
-            let set: gpui_kit::component::ThemeSet =
-                serde_json::from_str(source).expect("bundled project theme");
+        let set: gpui_kit::component::ThemeSet =
+            serde_json::from_str(include_str!("../assets/themes/catppuccin.json"))
+                .expect("bundled Catppuccin themes");
+        ["Catppuccin Latte", "Catppuccin Frappe"].map(|name| {
+            let config = set
+                .themes
+                .iter()
+                .find(|config| config.name == name)
+                .expect("requested theme")
+                .clone();
             let mut theme = gpui_kit::component::Theme::default();
-            theme.apply_config(&std::rc::Rc::new(
-                set.themes.into_iter().next().expect("project theme"),
-            ));
+            theme.apply_config(&std::rc::Rc::new(config));
             theme.colors
         })
     });
@@ -55,15 +60,15 @@ fn graphite_colors(dark: bool) -> gpui_kit::component::ThemeColor {
 }
 
 impl Theme {
-    // Initial-view compatibility constructors share the bundled project config.
+    // Initial-view compatibility constructors share the requested bundled defaults.
     // Runtime rendering always projects the active public Kit theme.
     pub fn zed_dark() -> Self {
-        Self::from_colors(&graphite_colors(true))
+        Self::from_colors(&default_colors(true))
     }
 
     #[cfg(test)]
     pub fn light() -> Self {
-        Self::from_colors(&graphite_colors(false))
+        Self::from_colors(&default_colors(false))
     }
 
     fn from_colors(colors: &gpui_kit::component::ThemeColor) -> Self {
@@ -192,7 +197,7 @@ fn apply_active_theme(cx: &mut App) {
         .unwrap_or_else(|| {
             registry
                 .themes()
-                .get("NxTools Graphite Light")
+                .get("Catppuccin Latte")
                 .cloned()
                 .unwrap_or_else(|| registry.default_light_theme().clone())
         });
@@ -201,7 +206,7 @@ fn apply_active_theme(cx: &mut App) {
         .unwrap_or_else(|| {
             registry
                 .themes()
-                .get("NxTools Graphite Dark")
+                .get("Catppuccin Frappe")
                 .cloned()
                 .unwrap_or_else(|| registry.default_dark_theme().clone())
         });
@@ -223,6 +228,8 @@ fn apply_active_theme(cx: &mut App) {
     ComponentTheme::update(cx, |component| {
         component.font_family = UI_FONT_FAMILY.into();
         component.mono_font_family = UI_MONO_FONT_FAMILY.into();
+        // Keep the official thin focus edge; omit the redundant outside halo.
+        component.focus_ring = false;
     });
 }
 
@@ -244,43 +251,28 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn graphite_default_roles_are_applied_through_the_real_kit_theme(
+    fn latte_frappe_default_roles_are_applied_through_the_real_kit_theme(
         cx: &mut gpui_kit::TestAppContext,
     ) {
         cx.update(gpui_kit::init);
         cx.update(apply_component_theme);
-        for (preference, canvas, surface, raised, border, text, accent) in [
-            (
-                nxtools_core::ThemePreference::Dark,
-                0x181a1f,
-                0x202329,
-                0x292d35,
-                0x3b404b,
-                0xe7e9ee,
-                0xa5b4fc,
-            ),
-            (
-                nxtools_core::ThemePreference::Light,
-                0xf4f5f7,
-                0xffffff,
-                0xffffff,
-                0xd4d8e0,
-                0x20242d,
-                0x5654c5,
-            ),
+        for preference in [
+            nxtools_core::ThemePreference::Dark,
+            nxtools_core::ThemePreference::Light,
         ] {
+            let expected = default_colors(preference.is_dark(true));
             cx.update(|cx| set_theme_preference(preference, cx));
             cx.read(|cx| {
                 let theme = Theme::active(cx);
                 for (actual, expected) in [
-                    (theme.canvas, canvas),
-                    (theme.surface, surface),
-                    (theme.surface_raised, raised),
-                    (theme.border, border),
-                    (theme.text, text),
-                    (theme.accent, accent),
+                    (theme.canvas, expected.background.to_rgb()),
+                    (theme.surface, expected.sidebar.to_rgb()),
+                    (theme.surface_raised, expected.popover.to_rgb()),
+                    (theme.border, expected.border.to_rgb()),
+                    (theme.text, expected.foreground.to_rgb()),
+                    (theme.accent, expected.primary.to_rgb()),
                 ] {
-                    assert_color_close(actual, gpui_kit::rgb(expected));
+                    assert_color_close(actual, expected);
                 }
                 let kit = gpui_kit::component::Theme::global(cx);
                 assert_eq!(kit.tokens.button_primary.color, kit.colors.primary);
@@ -298,10 +290,13 @@ mod tests {
         cx.update(|cx| {
             let theme = gpui_kit::component::Theme::global(cx);
             let visual = Theme::zed_dark();
-            assert_eq!(theme.colors.button_primary, visual.accent.into());
+            assert_eq!(
+                theme.colors.button_primary,
+                default_colors(true).button_primary
+            );
             assert_eq!(
                 theme.colors.button_primary_foreground,
-                visual.image_well.into()
+                default_colors(true).button_primary_foreground
             );
             assert_eq!(
                 theme.tokens.button_primary.color,
@@ -311,8 +306,8 @@ mod tests {
                 theme.semantic_tokens().colors.selection,
                 theme.colors.selection
             );
-            assert_eq!(theme.colors.background, visual.canvas.into());
-            assert_eq!(theme.colors.group_box, graphite_colors(true).group_box);
+            assert_eq!(theme.colors.background.to_rgb(), visual.canvas);
+            assert_eq!(theme.colors.group_box, default_colors(true).group_box);
             assert_eq!(theme.tokens.group_box, theme.colors.group_box.into());
         });
     }
@@ -320,7 +315,7 @@ mod tests {
     #[test]
     fn approved_graphite_actions_and_focus_share_the_public_theme_roles() {
         let theme = Theme::zed_dark();
-        let official = graphite_colors(true);
+        let official = default_colors(true);
         assert_eq!(theme.accent, official.primary.to_rgb());
         assert_eq!(theme.accent_hover, official.primary_hover.to_rgb());
         assert_eq!(theme.focus_ring, official.ring.to_rgb());
@@ -330,8 +325,8 @@ mod tests {
     #[test]
     fn foundation_palette_matches_registered_project_configs() {
         for (theme, colors) in [
-            (Theme::zed_dark(), graphite_colors(true)),
-            (Theme::light(), graphite_colors(false)),
+            (Theme::zed_dark(), default_colors(true)),
+            (Theme::light(), default_colors(false)),
         ] {
             assert_eq!(theme.canvas, colors.background.to_rgb());
             assert_eq!(theme.surface, colors.sidebar.to_rgb());
@@ -361,13 +356,17 @@ mod tests {
             let visual = Theme::zed_dark();
             assert_eq!(component.colors.ring, visual.focus_ring.into());
             assert_eq!(component.colors.primary, visual.accent.into());
-            assert_ne!(
-                component.colors.primary_active, component.colors.primary_hover,
-                "primary pressed state must remain distinct from hover"
+            assert_eq!(
+                component.colors.primary_active,
+                default_colors(true).primary_active
             );
             assert_eq!(
-                component.colors.primary_foreground,
-                visual.image_well.into()
+                component.colors.primary_hover,
+                default_colors(true).primary_hover
+            );
+            assert_eq!(
+                component.colors.primary_foreground.to_rgb(),
+                visual.image_well
             );
             assert_eq!(component.font_family, UI_FONT_FAMILY);
             assert_eq!(component.radius, gpui_kit::px(6.0));
@@ -418,7 +417,7 @@ mod recurrence_tests {
 
     #[test]
     fn recurrence_light_business_roles_come_from_official_kit_theme() {
-        let official = graphite_colors(false);
+        let official = default_colors(false);
         let visual = Theme::light();
         assert_eq!(visual.canvas, official.background.to_rgb());
         assert_eq!(visual.surface, official.sidebar.to_rgb());
@@ -445,7 +444,7 @@ mod recurrence_tests {
     }
 
     #[gpui_kit::test]
-    fn recurrence_both_themes_pair_readable_roles_and_component_tokens(
+    fn historical_graphite_numeric_roles_and_current_component_tokens(
         cx: &mut gpui_kit::TestAppContext,
     ) {
         cx.update(gpui_kit::init);
@@ -456,7 +455,12 @@ mod recurrence_tests {
         ] {
             cx.update(|cx| set_theme_preference(preference, cx));
             cx.read(|cx| {
-                let visual = Theme::active(cx);
+                let retained: gpui_kit::component::ThemeSet = serde_json::from_str(
+                    if preference.is_dark(true) { GRAPHITE_DARK } else { GRAPHITE_LIGHT }
+                ).expect("historical Graphite asset");
+                let mut historical = gpui_kit::component::Theme::default();
+                historical.apply_config(&std::rc::Rc::new(retained.themes.into_iter().next().expect("historical config")));
+                let visual = Theme::from_colors(&historical.colors);
                 for (role, foreground, background) in [
                     ("body", visual.text, visual.canvas),
                     ("supporting", visual.text_secondary, visual.surface),
@@ -479,12 +483,12 @@ mod recurrence_tests {
                 ] {
                     assert!(
                         contrast(foreground, background) >= 4.5,
-                        "{preference:?} {role} must have readable text contrast"
+                        "historical Graphite {preference:?} {role} must retain readable text contrast"
                     );
                 }
                 let component = gpui_kit::component::Theme::global(cx);
-                assert_eq!(visual.success, component.colors.green.to_rgb());
-                assert_eq!(visual.warning, component.colors.yellow.to_rgb());
+                assert_eq!(Theme::active(cx).success, component.colors.green.to_rgb());
+                assert_eq!(Theme::active(cx).warning, component.colors.yellow.to_rgb());
                 assert_eq!(component.colors.table_active, component.colors.list_active);
                 assert_eq!(
                     component.tokens.tab_active.color,

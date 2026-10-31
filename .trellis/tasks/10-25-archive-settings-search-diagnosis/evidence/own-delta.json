@@ -1,0 +1,78 @@
+{
+  "path": "rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+  "before_sha256": "b994f486276cb05f4561e7365b86c2afd5452acc04f7d8ab5dee2b9ec75dcaf2",
+  "after_sha256": "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d",
+  "outside_target_prefix_equal": true,
+  "outside_target_suffix_equal": true,
+  "operations": [
+    {
+      "kind": "replace",
+      "before_start": 182,
+      "before_end": 183,
+      "after_start": 182,
+      "after_end": 183,
+      "before_lines": [
+        "#[gpui_kit::test]\n"
+      ],
+      "after_lines": [
+        "#[gpui_kit::test(iterations = 8)]\n"
+      ]
+    },
+    {
+      "kind": "replace",
+      "before_start": 194,
+      "before_end": 195,
+      "after_start": 194,
+      "after_end": 195,
+      "before_lines": [
+        "        gpui_kit::base::test_support::snapshots(window)\n"
+      ],
+      "after_lines": [
+        "        let inputs = gpui_kit::base::test_support::snapshots(window)\n"
+      ]
+    },
+    {
+      "kind": "replace",
+      "before_start": 196,
+      "before_end": 199,
+      "after_start": 196,
+      "after_end": 204,
+      "before_lines": [
+        "            .find(|node| node.role() == Some(gpui_kit::Role::TextInput))\n",
+        "            .expect(\"official search\")\n",
+        "            .bounds()\n"
+      ],
+      "after_lines": [
+        "            .filter(|node| {\n",
+        "                node.role() == Some(gpui_kit::Role::TextInput)\n",
+        "                    && node.path().contains(&\"archive-official-settings\".into())\n",
+        "                    && node.path().contains(&\"settings-sidebar\".into())\n",
+        "            })\n",
+        "            .collect::<Vec<_>>();\n",
+        "        assert_eq!(inputs.len(), 1, \"one official Settings sidebar search\");\n",
+        "        inputs[0].bounds()\n"
+      ]
+    },
+    {
+      "kind": "insert",
+      "before_start": 204,
+      "before_end": 204,
+      "after_start": 209,
+      "after_end": 220,
+      "before_lines": [],
+      "after_lines": [
+        "    assert!(window.update(|window, _| {\n",
+        "        gpui_kit::base::test_support::snapshots(window)\n",
+        "            .iter()\n",
+        "            .any(|node| {\n",
+        "                node.role() == Some(gpui_kit::Role::TextInput)\n",
+        "                    && node.path().contains(&\"archive-official-settings\".into())\n",
+        "                    && node.path().contains(&\"settings-sidebar\".into())\n",
+        "                    && node.focused() == Some(true)\n",
+        "                    && node.value() == Some(\"压缩后测试\")\n",
+        "            })\n",
+        "    }));\n"
+      ]
+    }
+  ]
+}

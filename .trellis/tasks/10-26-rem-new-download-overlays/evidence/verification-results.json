@@ -1,0 +1,58 @@
+[
+    {
+        "name":  "overlay-final",
+        "command":  "cargo test -p nxtools-desktop audit06_overlay_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T03:21:02.7363014+08:00",
+        "end":  "2026-10-26T03:25:24.8969782+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\overlay-final.log"
+    },
+    {
+        "name":  "audit06-final",
+        "command":  "cargo test -p nxtools-desktop audit06_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T03:25:25.0086141+08:00",
+        "end":  "2026-10-26T03:30:11.9809351+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\audit06-final.log"
+    },
+    {
+        "name":  "audit05-final",
+        "command":  "cargo test -p nxtools-desktop audit05_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T03:30:12.0164416+08:00",
+        "end":  "2026-10-26T03:30:17.8910299+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\audit05-final.log"
+    },
+    {
+        "name":  "download-page-final",
+        "command":  "cargo test -p nxtools-desktop main_window::download_page::kit_migration_tests -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T03:30:17.9299489+08:00",
+        "end":  "2026-10-26T03:30:40.4600829+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\download-page-final.log"
+    },
+    {
+        "name":  "desktop-clippy",
+        "command":  "cargo clippy -p nxtools-desktop --tests -- -D warnings",
+        "exit":  0,
+        "start":  "2026-10-26T03:30:40.4922335+08:00",
+        "end":  "2026-10-26T03:31:27.4381848+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\desktop-clippy.log"
+    },
+    {
+        "name":  "workspace-check",
+        "command":  "cargo check --workspace --tests",
+        "exit":  0,
+        "start":  "2026-10-26T03:31:27.4683997+08:00",
+        "end":  "2026-10-26T03:32:33.0191757+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\workspace-check.log"
+    },
+    {
+        "name":  "workspace-fmt",
+        "command":  "cargo fmt --all -- --check",
+        "exit":  1,
+        "start":  "2026-10-26T03:32:33.0475014+08:00",
+        "end":  "2026-10-26T03:32:41.4391435+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-new-download-overlays\\workspace-fmt.log"
+    }
+]

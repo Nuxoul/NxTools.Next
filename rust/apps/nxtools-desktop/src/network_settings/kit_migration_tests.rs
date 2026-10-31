@@ -588,13 +588,15 @@ fn balance_global_controls_use_a_bounded_lane_and_address_gets_more_space(cx: &m
 }
 
 fn choose_light_theme(surface: &mut VisualTestContext) {
-    let trigger = surface
-        .debug_bounds("global-theme-mode")
-        .expect("actual theme dropdown");
-    surface.simulate_click(trigger.center(), Default::default());
-    surface.run_until_parked();
-    surface.simulate_keystrokes("up");
-    surface.simulate_keystrokes("enter");
+    select_page(surface, 3);
+    let light = surface.update(|window, _| {
+        test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.label() == Some("默认浅色"))
+            .expect("official visual theme Radio")
+            .bounds()
+    });
+    surface.simulate_click(light.center(), Default::default());
     surface.run_until_parked();
 }
 
@@ -663,4 +665,347 @@ fn theme_draft_cancel_save_and_reopen_preserve_one_palette_owner(cx: &mut TestAp
     );
     cx.update(|cx| application.update(cx, |app, cx| app.close_window(cx)));
     let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn density_theme_visual_radios_fit_minimum_and_keep_disabled_draft_local(cx: &mut TestAppContext) {
+    let (application, view, mut surface, directory) = fixture(cx);
+    select_page(&mut surface, 3);
+    let scroll = surface
+        .debug_bounds("global-theme-preview-scroll")
+        .expect("bounded previews");
+    let footer = surface
+        .debug_bounds("network-settings-save")
+        .expect("fixed footer");
+    assert!(
+        scroll.bottom() <= footer.top(),
+        "theme body must not hide Apply"
+    );
+    let nodes = surface.update(|window, _| test_support::snapshots(window));
+    for preference in nxtools_core::ThemePreference::ALL {
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.label() == Some(preference.label())),
+            "all existing choices retained: {preference:?}"
+        );
+    }
+    let original = std::fs::read(directory.join("config.json")).expect("saved config");
+    choose_light_theme(&mut surface);
+    assert_eq!(
+        std::fs::read(directory.join("config.json")).expect("draft only"),
+        original
+    );
+    let checked = surface.update(|window, _| test_support::snapshots(window));
+    let selected = checked
+        .iter()
+        .find(|node| node.label() == Some("默认浅色"))
+        .expect("selected Radio");
+    assert_eq!(selected.checked(), Some(true));
+    let initial_bounds = selected.bounds();
+    surface.simulate_mouse_move(initial_bounds.center(), None, Default::default());
+    surface.refresh().expect("hover is not selection");
+    let hovered = surface.update(|window, _| test_support::snapshots(window));
+    assert_eq!(
+        hovered
+            .iter()
+            .find(|node| node.label() == Some("默认浅色"))
+            .expect("stable Radio")
+            .bounds(),
+        initial_bounds
+    );
+    let system = hovered
+        .iter()
+        .find(|node| node.label() == Some("跟随系统"))
+        .expect("system")
+        .bounds();
+    view.update(&mut surface, |view, cx| {
+        view.saving = true;
+        cx.notify();
+    });
+    surface.refresh().expect("disabled chooser");
+    surface.simulate_click(system.center(), Default::default());
+    surface.run_until_parked();
+    assert_eq!(
+        view.read_with(&surface, |view, _| view.theme_preference),
+        nxtools_core::ThemePreference::Light
+    );
+    view.update(&mut surface, |view, cx| {
+        view.saving = false;
+        cx.notify();
+    });
+    surface.refresh().expect("enabled chooser");
+    let mut reached = false;
+    for _ in 0..40 {
+        surface.update(|window, cx| window.focus_next(cx));
+        surface.refresh().expect("real Tab");
+        reached = surface
+            .update(|window, _| test_support::snapshots(window))
+            .iter()
+            .any(|node| node.label() == Some("跟随系统") && node.focused() == Some(true));
+        if reached {
+            break;
+        }
+    }
+    assert!(reached, "official System Radio reachable by Tab");
+    release_space(&mut surface);
+    assert_eq!(
+        view.read_with(&surface, |view, _| view.theme_preference),
+        nxtools_core::ThemePreference::System
+    );
+    application.update(&mut surface, |app, cx| app.close_window(cx));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn density_theme_failed_save_keeps_active_palette_and_retryable_draft(cx: &mut TestAppContext) {
+    let (application, view, mut surface, directory) = fixture(cx);
+    choose_light_theme(&mut surface);
+    let previous = surface.read(Theme::active).canvas;
+    std::fs::write(directory.join("config.json"), b"{broken").expect("failed durable commit");
+    let apply = surface
+        .debug_bounds("network-settings-save")
+        .expect("Apply");
+    surface.simulate_click(apply.center(), Default::default());
+    surface.run_until_parked();
+    assert_eq!(surface.read(Theme::active).canvas, previous);
+    view.read_with(&surface, |view, _| {
+        assert_eq!(view.theme_preference, nxtools_core::ThemePreference::Light);
+        assert!(!view.saving, "failed save remains retryable");
+    });
+    application.read_with(&surface, |app, cx| {
+        assert!(
+            app.notifications
+                .read(cx)
+                .items()
+                .iter()
+                .any(|notice| notice.title.as_ref() == "全局设置未能保存或应用"),
+            "original notification owner reports failure"
+        );
+    });
+    assert_eq!(
+        std::fs::read(directory.join("config.json")).expect("no overwrite"),
+        b"{broken"
+    );
+    application.update(&mut surface, |app, cx| app.close_window(cx));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &mut TestAppContext) {
+    let (application, view, mut surface, directory) = fixture(cx);
+    select_page(&mut surface, 3);
+    let scroll = surface
+        .debug_bounds("global-theme-preview-scroll")
+        .expect("theme viewport");
+    let pointer = gpui_kit::point(scroll.right() - px(40.0), scroll.center().y);
+    surface.simulate_mouse_move(pointer, None, Default::default());
+    for _ in 0..6 {
+        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: pointer,
+            delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(-500.0))),
+            modifiers: Default::default(),
+            touch_phase: gpui_kit::TouchPhase::Moved,
+        });
+        surface.run_until_parked();
+        surface.refresh().expect("theme scroll");
+        surface.update(|window, cx| window.draw(cx).clear(cx));
+    }
+    let last = surface
+        .update(|window, _| test_support::snapshots(window))
+        .into_iter()
+        .find(|node| node.label() == Some("Solarized Dark"))
+        .expect("last official Radio")
+        .bounds();
+    assert!(
+        last.top() >= scroll.top() && last.bottom() <= scroll.bottom(),
+        "last choice reachable: {last:?} in {scroll:?}"
+    );
+    surface.simulate_click(last.center(), Default::default());
+    surface.run_until_parked();
+    assert_eq!(
+        view.read_with(&surface, |view, _| view.theme_preference),
+        nxtools_core::ThemePreference::SolarizedDark
+    );
+    let mut reached = false;
+    for _ in 0..50 {
+        surface.update(|window, cx| window.focus_next(cx));
+        surface.refresh().expect("official Tab frame");
+        reached = surface
+            .update(|window, _| test_support::snapshots(window))
+            .iter()
+            .any(|node| node.label() == Some("Gruvbox Dark") && node.focused() == Some(true));
+        if reached {
+            break;
+        }
+    }
+    assert!(reached, "theme option reachable by the original Tab owner");
+    release_space(&mut surface);
+    assert_eq!(
+        view.read_with(&surface, |view, _| view.theme_preference),
+        nxtools_core::ThemePreference::GruvboxDark
+    );
+    let apply = surface
+        .debug_bounds("network-settings-save")
+        .expect("Apply remains visible");
+    assert!(apply.top() >= scroll.bottom() && apply.bottom() <= px(480.0));
+    application.update(&mut surface, |app, cx| app.close_window(cx));
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_blacklist_add_is_before_list(cx: &mut TestAppContext) {
+    let (application, _, mut surface, directory) = fixture(cx);
+    select_page(&mut surface, 2);
+    let add = surface
+        .debug_bounds("global-blacklist-new-row")
+        .expect("add editor");
+    let list = surface
+        .debug_bounds("global-blacklist-table")
+        .expect("blacklist table");
+    assert!(
+        add.bottom() <= list.top(),
+        "add application must remain above the blacklist"
+    );
+    cx.update(|cx| application.update(cx, |application, cx| application.close_window(cx)));
+    std::fs::remove_dir_all(directory).expect("cleanup synthetic config");
+}
+
+#[gpui_kit::test]
+fn runtime_feedback_system_proxy_preserves_manual_and_rejects_stale_result(
+    cx: &mut TestAppContext,
+) {
+    let (application, view, mut surface, directory) = fixture(cx);
+    let (platform, endpoint) = nxtools_ipc::platform_bridge(16);
+    endpoint.set_connected_for_contract_test(true);
+    application.update(&mut surface, |owner, _| {
+        owner.platform = Some(Rc::new(platform))
+    });
+    view.update_in(&mut surface, |view, window, cx| {
+        view.host
+            .update(cx, |input, cx| input.set_value("manual.test", window, cx));
+        view.port
+            .update(cx, |input, cx| input.set_value("8081", window, cx));
+        view.select_proxy_mode(NetworkProxyMode::System, cx);
+    });
+    surface.run_until_parked();
+    let old = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("snapshot request")
+        .id;
+    view.update(&mut surface, |view, cx| {
+        view.select_proxy_mode(NetworkProxyMode::ManualHttp, cx);
+        view.select_proxy_mode(NetworkProxyMode::System, cx);
+    });
+    surface.run_until_parked();
+    let current = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("replacement snapshot")
+        .id;
+    let snapshot = nxtools_protocol::system_proxy::SystemProxySnapshot {
+        auto_detect: false,
+        pac_configured: false,
+        endpoints: vec![nxtools_protocol::system_proxy::SystemProxyEndpoint {
+            protocol: "all".into(),
+            host: "127.0.0.1".into(),
+            port: 7890,
+        }],
+    };
+    application.update(&mut surface, |owner, cx| {
+        owner.complete_system_proxy(old, Some(snapshot.clone()), cx)
+    });
+    view.read_with(&surface, |view, _| assert!(view.proxy_loading));
+    application.update(&mut surface, |owner, cx| {
+        owner.complete_system_proxy(current, Some(snapshot), cx)
+    });
+    surface.run_until_parked();
+    view.read_with(&surface, |view, cx| {
+        assert!(!view.proxy_loading && !view.proxy_read_failed);
+        assert_eq!(view.proxy_rows[0].1.read(cx).value().as_str(), "127.0.0.1");
+        assert_eq!(view.proxy_rows[0].2.read(cx).value().as_str(), "7890");
+        assert_eq!(view.host.read(cx).value().as_str(), "manual.test");
+        assert_eq!(view.port.read(cx).value().as_str(), "8081");
+        assert_eq!(view.mode, NetworkProxyMode::System);
+    });
+    application.update(&mut surface, |owner, cx| owner.close_window(cx));
+    std::fs::remove_dir_all(directory).expect("cleanup synthetic config");
+}
+
+#[gpui_kit::test]
+fn accessible_name_global_apply_is_actual_button_and_stable_while_saving(cx: &mut TestAppContext) {
+    let (application, view, mut surface, directory) = fixture(cx);
+    let path = directory.join("config.json");
+    let before = std::fs::read(&path).expect("synthetic original config");
+    for saving in [false, true] {
+        view.update_in(&mut surface, |view, _, cx| {
+            view.saving = saving;
+            cx.notify();
+        });
+        surface.refresh().expect("actual global Apply state");
+        let button = surface
+            .update(|window, _| test_support::snapshots(window))
+            .into_iter()
+            .find(|node| {
+                node.path().last()
+                    == Some(&gpui_kit::ElementId::from("network-settings-save-button"))
+            })
+            .expect("actual Global Apply Button, not footer wrapper");
+        assert_eq!(button.role(), Some(gpui_kit::Role::Button));
+        assert_eq!(button.label(), Some("应用全局设置"));
+        if saving {
+            surface.simulate_click(button.bounds().center(), Default::default());
+            surface.run_until_parked();
+            assert!(view.read_with(&surface, |view, _| view.saving));
+            assert_eq!(std::fs::read(&path).expect("busy never saves"), before);
+        }
+    }
+    application.update(&mut surface, |application, cx| application.close_window(cx));
+    std::fs::remove_dir_all(directory).expect("remove isolated global fixture");
+}
+
+#[gpui_kit::test]
+fn audit06_shared_global_settings_minimum_keeps_actual_footer_and_cancel_owner(
+    cx: &mut TestAppContext,
+) {
+    let (application, view, mut surface, directory) = fixture(cx);
+    let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());
+    let path = directory.join("config.json");
+    let before = std::fs::read(&path).expect("owned original config");
+    for base in [16.0, 14.0, 18.0] {
+        surface.update(|_, cx| {
+            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))
+        });
+        view.update(&mut surface, |_, cx| cx.notify());
+        surface.update(|window, cx| {
+            window.refresh();
+            window.draw(cx).clear(cx);
+        });
+        assert_eq!(surface.update(|window, _| window.rem_size()), px(base));
+        let footer = surface
+            .debug_bounds("network-settings-footer")
+            .expect("fixed original footer");
+        assert_eq!(footer.size.height, px(48.0));
+        assert_eq!(footer.bottom(), px(480.0));
+        for id in [
+            "network-settings-cancel-button",
+            "network-settings-save-button",
+        ] {
+            let action = control_bounds(&mut surface, id);
+            assert!(
+                action.left() >= footer.left()
+                    && action.right() <= footer.right()
+                    && action.top() >= footer.top()
+                    && action.bottom() <= footer.bottom()
+            );
+            assert!((action.size.height - px(24.0 * base / 16.0)).abs() <= px(0.5));
+        }
+        assert_eq!(std::fs::read(&path).expect("layout cannot save"), before);
+    }
+    let cancel = control_bounds(&mut surface, "network-settings-cancel-button");
+    surface.simulate_click(cancel.center(), Default::default());
+    surface.run_until_parked();
+    assert!(application.read_with(&surface, |application, _| application.window.is_none()));
+    assert_eq!(std::fs::read(&path).expect("Cancel retains config"), before);
+    cx.update(|cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));
+    std::fs::remove_dir_all(directory).expect("remove isolated fixture");
 }

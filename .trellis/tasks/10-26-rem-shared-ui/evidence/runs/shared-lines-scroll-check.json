@@ -1,0 +1,7 @@
+﻿{
+    "name":  "shared-lines-scroll-check",
+    "command":  "cargo test -p nxtools-desktop audit06_shared -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  243.56327159999998,
+    "finished":  "2026-10-26T06:06:55.2680121+08:00"
+}

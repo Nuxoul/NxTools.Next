@@ -1,0 +1,117 @@
+{
+  "path": "rust/crates/nxtools-protocol/src/archive_job.rs",
+  "baseline_sha256": "ba43ca319c8a09494f9684c8d681fe2db0365b6a4eb7c72422bc9a06e431ee7f",
+  "delivery_sha256": "faafa7969d7887bf7a19ea632fdbff6a8a2b88a072c81c5aa4544ae2e1888a8a",
+  "operations": [
+    {
+      "tag": "replace",
+      "baseline_start": 926,
+      "baseline_end": 927,
+      "delivery_start": 926,
+      "delivery_end": 927,
+      "baseline_text": "        .unwrap()\n",
+      "delivery_text": "        .expect(\"legacy typed prompt event\")\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 932,
+      "baseline_end": 933,
+      "delivery_start": 932,
+      "delivery_end": 933,
+      "baseline_text": "        assert!(e.prompt.as_ref().unwrap().display.is_none());\n",
+      "delivery_text": "        assert!(e.prompt.as_ref().expect(\"prompt\").display.is_none());\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 934,
+      "baseline_end": 935,
+      "delivery_start": 934,
+      "delivery_end": 935,
+      "baseline_text": "            serde_json::to_value(&e).unwrap()[\"prompt\"]\n",
+      "delivery_text": "            serde_json::to_value(&e).expect(\"legacy event wire\")[\"prompt\"]\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 939,
+      "baseline_end": 940,
+      "delivery_start": 939,
+      "delivery_end": 940,
+      "baseline_text": "        e.prompt.as_mut().unwrap().display = Some(ArchiveJobPromptDisplay {\n",
+      "delivery_text": "        e.prompt.as_mut().expect(\"prompt\").display = Some(ArchiveJobPromptDisplay {\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 944,
+      "baseline_end": 945,
+      "delivery_start": 944,
+      "delivery_end": 945,
+      "baseline_text": "        let wire = serde_json::to_value(&e).unwrap();\n",
+      "delivery_text": "        let wire = serde_json::to_value(&e).expect(\"display event wire\");\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 946,
+      "baseline_end": 947,
+      "delivery_start": 946,
+      "delivery_end": 947,
+      "baseline_text": "            serde_json::from_value::<ArchiveJobEvent>(wire.clone()).unwrap(),\n",
+      "delivery_text": "            serde_json::from_value::<ArchiveJobEvent>(wire.clone()).expect(\"display roundtrip\"),\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 959,
+      "baseline_end": 960,
+      "delivery_start": 959,
+      "delivery_end": 966,
+      "baseline_text": "            e.prompt.as_mut().unwrap().display.as_mut().unwrap().target = invalid;\n",
+      "delivery_text": "            e.prompt\n                .as_mut()\n                .expect(\"prompt\")\n                .display\n                .as_mut()\n                .expect(\"display\")\n                .target = invalid;\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 962,
+      "baseline_end": 963,
+      "delivery_start": 968,
+      "delivery_end": 975,
+      "baseline_text": "        e.prompt.as_mut().unwrap().display.as_mut().unwrap().target = \"x\".repeat(65535);\n",
+      "delivery_text": "        e.prompt\n            .as_mut()\n            .expect(\"prompt\")\n            .display\n            .as_mut()\n            .expect(\"display\")\n            .target = \"x\".repeat(65535);\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 964,
+      "baseline_end": 965,
+      "delivery_start": 976,
+      "delivery_end": 977,
+      "baseline_text": "        e.prompt.as_mut().unwrap().kind = ArchiveJobPromptKind::Password;\n",
+      "delivery_text": "        e.prompt.as_mut().expect(\"prompt\").kind = ArchiveJobPromptKind::Password;\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 969,
+      "baseline_end": 970,
+      "delivery_start": 981,
+      "delivery_end": 982,
+      "baseline_text": "        e.prompt.as_mut().unwrap().kind = ArchiveJobPromptKind::CreateOverwrite;\n",
+      "delivery_text": "        e.prompt.as_mut().expect(\"prompt\").kind = ArchiveJobPromptKind::CreateOverwrite;\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 976,
+      "baseline_end": 977,
+      "delivery_start": 988,
+      "delivery_end": 989,
+      "baseline_text": "            .unwrap()\n",
+      "delivery_text": "            .expect(\"prompt\")\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 979,
+      "baseline_end": 980,
+      "delivery_start": 991,
+      "delivery_end": 992,
+      "baseline_text": "            .unwrap()\n",
+      "delivery_text": "            .expect(\"display\")\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

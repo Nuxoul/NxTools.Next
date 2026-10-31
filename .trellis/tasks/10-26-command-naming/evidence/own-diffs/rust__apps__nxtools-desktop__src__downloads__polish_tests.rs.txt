@@ -1,0 +1,165 @@
+--- live-task-start/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
++++ own-delivery/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
+@@ -3279,7 +3279,7 @@
+     accessible_actual_button(
+         &mut surface,
+         "download-settings-pick-directory",
+-        "选择默认保存目录",
++        "选择默认保存目录…",
+     );
+     let apply = accessible_actual_button(
+         &mut surface,
+@@ -3323,7 +3323,7 @@
+     accessible_actual_button(
+         &mut surface,
+         "download-settings-pick-ffmpeg-button",
+-        "选择 FFmpeg 可执行文件",
++        "选择 FFmpeg 可执行文件…",
+     );
+     accessible_actual_button(
+         &mut surface,
+@@ -3950,3 +3950,144 @@
+         assert!(!saving, "weekday activation never invokes Apply");
+     }
+ }
++
++#[gpui_kit::test]
++fn audit08_settings_picker_and_export_labels_keep_objects_and_cancel(cx: &mut TestAppContext) {
++    let (application, directory, mut surface) = queue02_settings_window(cx);
++    accessible_actual_button(
++        &mut surface,
++        "download-settings-pick-directory",
++        "选择默认保存目录…",
++    );
++    for (id, label) in [
++        (
++            "download-settings-extension-export-chrome-button",
++            "导出 Chrome / Edge (.crx)…",
++        ),
++        (
++            "download-settings-extension-export-firefox-button",
++            "导出 Firefox (.xpi)…",
++        ),
++        (
++            "download-settings-extension-export-store-button",
++            "导出 Chrome 商店 (.zip)…",
++        ),
++    ] {
++        let hit = reveal_download_setting(&mut surface, id);
++        accessible_actual_button(&mut surface, id, label);
++        assert!(hit.right() <= px(984.) && hit.bottom() <= px(590.));
++    }
++    select_official_download_page(&mut surface, DownloadSettingsPage::Transfer);
++    accessible_actual_button(
++        &mut surface,
++        "download-settings-pick-ffmpeg-button",
++        "选择 FFmpeg 可执行文件…",
++    );
++    surface.update(|window, _| window.remove_window());
++    assert!(
++        !directory.join("config.json").exists(),
++        "reading labels never saves settings"
++    );
++    drop(application);
++    std::fs::remove_dir_all(directory).expect("owned settings fixture");
++}
++
++#[gpui_kit::test]
++fn audit08_new_download_directory_label_keeps_picker_object(cx: &mut TestAppContext) {
++    cx.update(gpui_kit::init);
++    let (application, directory, _endpoint) = window_fixture(cx);
++    application.update(cx, |app, cx| app.open_new_download_window(cx));
++    cx.run_until_parked();
++    let (handle, view) = application.read_with(cx, |app, _| {
++        (
++            app.new_download_window.expect("window"),
++            app.new_download_view.clone().expect("view"),
++        )
++    });
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    view.update_in(&mut surface, |view, _, cx| {
++        view.probe = Some(DownloadProbe {
++            resolution: None,
++            final_url: "https://synthetic.invalid/no-request".into(),
++            file_name: Some("合成文件.bin".into()),
++            total_bytes: Some(8),
++            supports_ranges: false,
++            content_type: None,
++            validator: Default::default(),
++            media: None,
++        });
++        cx.notify();
++    });
++    surface.simulate_resize(new_download_window_size(true));
++    surface.refresh().expect("confirmed synthetic form");
++    accessible_actual_button(&mut surface, "download-pick-directory", "选择下载目录…");
++    surface.update(|window, _| window.remove_window());
++    std::fs::remove_dir_all(directory).expect("owned form fixture");
++}
++
++#[gpui_kit::test]
++fn audit08_browser_export_pointer_once_and_picker_cancel_keep_data(cx: &mut TestAppContext) {
++    cx.update(gpui_kit::init);
++    let (application, directory, endpoint) = window_fixture(cx);
++    endpoint.set_connected_for_contract_test(true);
++    application.update(cx, |app, cx| app.open_settings_window(cx));
++    cx.run_until_parked();
++    let handle = application.read_with(cx, |app, _| app.settings_window.expect("settings"));
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    surface.simulate_resize(size(px(984.), px(650.)));
++    surface.refresh().expect("original settings");
++    for (id, format) in [
++        ("download-settings-extension-export-chrome-button", "chrome"),
++        (
++            "download-settings-extension-export-firefox-button",
++            "firefox",
++        ),
++        (
++            "download-settings-extension-export-store-button",
++            "chrome_store",
++        ),
++    ] {
++        let hit = reveal_download_setting(&mut surface, id);
++        surface.simulate_click(hit.center(), Modifiers::default());
++        surface.run_until_parked();
++        let commands = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
++            .filter(|command| {
++                matches!(
++                    command.message,
++                    nxtools_protocol::Message::PlatformCommand(
++                        PlatformCommand::ExportBrowserExtension(_)
++                    )
++                )
++            })
++            .collect::<Vec<_>>();
++        assert_eq!(
++            commands.len(),
++            1,
++            "one original export request per pointer gesture"
++        );
++        let command = &commands[0];
++        assert!(
++            matches!(&command.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExportBrowserExtension(export)) if export.format == format && export.destination.is_empty())
++        );
++        application.update(&mut surface, |app, cx| {
++            app.handle_platform_notification(
++                PlatformNotification::CommandResult {
++                    correlation_id: command.id,
++                    result: PlatformCommandResult {
++                        success: true,
++                        error: None,
++                        native_error_code: None,
++                        data: Some(String::new()),
++                    },
++                },
++                cx,
++            )
++        });
++        surface.run_until_parked();
++        assert!(application.read_with(&surface, |app, _| app.pending_extension_export.is_none()));
++        assert!(!directory.join("config.json").exists());
++    }
++    assert!(application.read_with(&surface, |app, _| app.tasks.is_empty()));
++    surface.update(|window, _| window.remove_window());
++    std::fs::remove_dir_all(directory).expect("owned export fixture");
++}

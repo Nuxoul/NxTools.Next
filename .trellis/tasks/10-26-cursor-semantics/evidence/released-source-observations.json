@@ -1,0 +1,45 @@
+{
+  "scope": "Read-only exact released source observations. No public cursor observation recipe/compiled or native acceptance established. Registry untouched.",
+  "files": [
+    {
+      "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\review-gpui-pre\\gpui-pre-0.3.9\\src\\window.rs",
+      "sha256": "44f32319b9385fa6dbc15c36b3edea00a26208309b37283ae4f9bd4bead674f8",
+      "bytes": 379878
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\review-gpui-pre\\gpui-pre-0.3.9\\src\\elements\\div.rs",
+      "sha256": "f320948b8f90e36b7100ac3e0e061235d1e9422aeb323918e313f7d69980cfa9",
+      "bytes": 225044
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\review-gpui-pre\\gpui-pre-0.3.9\\src\\app\\test_context.rs",
+      "sha256": "897a16840cc23f36e125d90be35c2d0b243710ec8e67c4b41a22aa800e6624ba",
+      "bytes": 49231
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\review-gpui-pre\\gpui-pre-0.3.9\\src\\platform\\test\\platform.rs",
+      "sha256": "296df7c83bc522af226752183c2bb5dcdf17d7a38ee7dcb2ef356b41ceecf968",
+      "bytes": 26383
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\gpui-base-0.8.0\\src\\button.rs",
+      "sha256": "b000a1e05c22f63dc41cd027d89a0c78472424c9ff102503eb4faa31a7d4bb33",
+      "bytes": 19632
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\gpui-base-0.8.0\\src\\checkbox.rs",
+      "sha256": "36bd84c9815c350aff5b108eb2126006c495459fc5aa8b2438e6b64beb9ca8c4",
+      "bytes": 23536
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\gpui-base-0.8.0\\src\\tabs.rs",
+      "sha256": "301dce5f2715fbb9fe33dce6e7a6e2b2fe40d4fbab45ba9defe3a0c7e2bef141",
+      "bytes": 14102
+    },
+    {
+      "path": "C:\\Users\\Administrator\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\gpui-base-0.8.0\\src\\link.rs",
+      "sha256": "33644ecef3506038c4b0020c21b3c1906986bfbfc9493b20b4e6eafdb8d5f3ae",
+      "bytes": 16487
+    }
+  ]
+}

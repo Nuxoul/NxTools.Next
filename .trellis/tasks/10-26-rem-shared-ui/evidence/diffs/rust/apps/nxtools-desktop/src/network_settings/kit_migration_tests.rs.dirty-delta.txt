@@ -1,0 +1,53 @@
+--- task-start-dirty/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs
++++ queue07/rust/apps/nxtools-desktop/src/network_settings/kit_migration_tests.rs
+@@ -962,3 +962,50 @@
+     application.update(&mut surface, |application, cx| application.close_window(cx));
+     std::fs::remove_dir_all(directory).expect("remove isolated global fixture");
+ }
++
++#[gpui_kit::test]
++fn audit06_shared_global_settings_minimum_keeps_actual_footer_and_cancel_owner(
++    cx: &mut TestAppContext,
++) {
++    let (application, view, mut surface, directory) = fixture(cx);
++    let original = surface.read(|cx| gpui_kit::component::Theme::global(cx).clone());
++    let path = directory.join("config.json");
++    let before = std::fs::read(&path).expect("owned original config");
++    for base in [16.0, 14.0, 18.0] {
++        surface.update(|_, cx| {
++            gpui_kit::component::Theme::update(cx, |theme| theme.font_size = px(base))
++        });
++        view.update(&mut surface, |_, cx| cx.notify());
++        surface.update(|window, cx| {
++            window.refresh();
++            window.draw(cx).clear(cx);
++        });
++        assert_eq!(surface.update(|window, _| window.rem_size()), px(base));
++        let footer = surface
++            .debug_bounds("network-settings-footer")
++            .expect("fixed original footer");
++        assert_eq!(footer.size.height, px(48.0));
++        assert_eq!(footer.bottom(), px(480.0));
++        for id in [
++            "network-settings-cancel-button",
++            "network-settings-save-button",
++        ] {
++            let action = control_bounds(&mut surface, id);
++            assert!(
++                action.left() >= footer.left()
++                    && action.right() <= footer.right()
++                    && action.top() >= footer.top()
++                    && action.bottom() <= footer.bottom()
++            );
++            assert!((action.size.height - px(24.0 * base / 16.0)).abs() <= px(0.5));
++        }
++        assert_eq!(std::fs::read(&path).expect("layout cannot save"), before);
++    }
++    let cancel = control_bounds(&mut surface, "network-settings-cancel-button");
++    surface.simulate_click(cancel.center(), Default::default());
++    surface.run_until_parked();
++    assert!(application.read_with(&surface, |application, _| application.window.is_none()));
++    assert_eq!(std::fs::read(&path).expect("Cancel retains config"), before);
++    cx.update(|cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));
++    std::fs::remove_dir_all(directory).expect("remove isolated fixture");
++}

@@ -30,6 +30,25 @@ if ($main -notmatch 'should_summon_running_instance' -or
     $main -match 'boot_dpi_compensated_size') {
     throw 'Desktop startup must keep silent lifecycle policy and bind bounded logical window bounds to the same native display.'
 }
+
+# A hidden GPUI constructor keeps CW_USEDEFAULT native bounds until prepared.
+# Native restore routes must never see the advisory HWND before exact client readiness.
+$mainPreparation = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events\main_preparation.rs') -Raw
+$nativePreparation = Get-Content (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\MainWindowPreparation.cs') -Raw
+$nativeMainWindow = Get-Content (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.MainWindow.cs') -Raw
+foreach ($contract in @('let publish_main', 'if !main_show', 'MainWindowPreparation::new', 'main_preparation,')) {
+    if (-not $main.Contains($contract)) { throw "Hidden main startup publication is missing $contract" }
+}
+foreach ($contract in @('PrepareMainWindow', 'preparation.pending = Some(id)', 'readback.matches(', 'cx.defer(', 'preparation.ready.take()', 'MAX_BUFFERED_STARTUP_NOTIFICATIONS', 'MAIN_PREPARATION_TIMEOUT')) {
+    if (-not $mainPreparation.Contains($contract)) { throw "Hidden main startup readiness is missing $contract" }
+}
+if (-not $nativePreparation.Contains('actual.Client != target') -or -not $nativePreparation.Contains('actual.Visible') -or
+    -not $nativeMainWindow.Contains('!IsWindowVisible(window)') -or -not $nativeMainWindow.Contains('SwpNoZOrder | SwpNoActivate')) {
+    throw 'Main preparation requires a still-hidden owned HWND and exact native client readback without activation.'
+}
+if ($nativeMainWindow -match 'SwpShowWindow|ShowWindow\(|ActivateWindow\(') {
+    throw 'Main preparation must never show or activate the primary window.'
+}
 if ($eventWindow -notmatch 'ResolveApprovedDesktopExecutablePath' -or
     $eventWindow -notmatch 'ApplyStartupRegistration' -or
     $eventWindow -match 'AppContext\.BaseDirectory.*NxTools\.exe') {
@@ -51,18 +70,26 @@ if ($windowsAdapter -notmatch 'DeleteValue\("NxTools", throwOnMissingValue: fals
 if ($desktopSources -match '(?:\bfont_family\s*\(\s*|\b(?:const|static)\s+UI_(?:MONO_)?FONT_FAMILY\s*:\s*[^=;()"{}\r\n]+=\s*)"[^"\r\n]*,') {
     throw 'GPUI font_family must name one actual family, not a CSS fallback list.'
 }
-if ($mainWindow -notmatch 'send_command\(PlatformCommand::BeginWindowMove') {
-    throw 'Main titlebar drag must reach the typed native move command.'
+if ($mainWindow -notmatch 'event\.click_count == 2' -or
+    $mainWindow -notmatch 'PlatformCommand::ToggleWindowMaximized' -or
+    $mainWindow -notmatch 'PlatformCommand::BeginWindowMove' -or
+    $mainWindow -notmatch 'send_command\(command\)') {
+    throw 'Main titlebar must retain typed single-press move and double-click native maximize/restore dispatch.'
 }
 if ($platformEvents -notmatch 'send_command_correlated' -or
     $platformEvents -notmatch 'TrayAction::Open' -or
     $platformEvents -notmatch 'TrayAction::Exit') {
     throw 'Tray restore and exit must retain their typed correlated lifecycle.'
 }
-foreach ($size in 16, 32, 48, 128) {
-    if ($desktopBuild -notmatch "icon-$size\.png") {
-        throw "Desktop Windows resource must include the $size px formal brand icon."
-    }
+# Validate actual decoded ICO frames (including20/24/40/64/256), not obsolete PNG
+# filenames in build.rs. The generator is read-only here; it never runs a build.
+& python (Join-Path $root 'scripts\generate-approved-icons.py') --check
+if ($LASTEXITCODE -ne 0) { throw 'Approved icon derivatives are stale or missing.' }
+& python (Join-Path $root 'tests\architecture\approved-icons.py')
+if ($LASTEXITCODE -ne 0) { throw 'Approved icon resource/consumer regression failed.' }
+if ($desktopBuild -notmatch '\(1, "assets/brand/nxtools\.ico"\)' -or
+    $desktopBuild -notmatch '\(2, "assets/brand/nxtools-archive\.ico"\)') {
+    throw 'Desktop must embed distinct approved application1 and archive2 icon groups.'
 }
 if ($trayPresentation -notmatch 'Tooltip = "NxTools"' -or
     $trayPresentation -notmatch 'OpenLabel = "打开 NxTools"' -or

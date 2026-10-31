@@ -8,6 +8,7 @@
 #define MyAppPublisher "NxTools"
 #define MyAppExeName "NxTools.exe"
 #define PackageDir "..\artifacts\win-x64"
+#include "..\artifacts\installer\bootstrap-migration-input.iss"
 
 [Setup]
 AppId={{8C1E4E9A-52B7-4A0E-9F5D-2A1C3B7D9E10}
@@ -22,6 +23,8 @@ OutputBaseFilename=NxTools.Next-setup-{#MyAppVersion}
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=..\rust\apps\nxtools-desktop\assets\brand\nxtools.ico
+SetupLogging=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog commandline
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -30,7 +33,7 @@ ChangesEnvironment=no
 ; Restart Manager coordinates only the exact installed files, not name-wide kills.
 CloseApplications=yes
 RestartApplications=no
-CloseApplicationsFilter=NxTools.exe,NxTools.PlatformHost.exe,NxTools.Indexer.exe,NxTools.Cli.exe,NxTools.BrowserHost.exe
+CloseApplicationsFilter=NxTools.exe,NxTools.PlatformHost.exe,NxTools.Indexer.exe,NxTools.Cli.exe,NxTools.BrowserHost.exe,NxTools.ArchiveWorker.exe,NxTools.ShellSelectionHelper.exe
 
 
 [Tasks]
@@ -43,18 +46,26 @@ Name: "autostart"; Description: "开机自动启动 NxTools"; \
 ; Upgrade cleanup runs before file replacement, including the approved protected
 ; desktop outside {app}. Embedded only; never deployed as a user workaround.
 Source: "close-owned-processes.ps1"; Flags: dontcopy
+Source: "bootstrap-migration.ps1"; Flags: dontcopy
 Source: "{#PackageDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\NxTools.PlatformHost.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\NxTools.Indexer.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\NxTools.Cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\NxTools.BrowserHost.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\NxTools.ArchiveWorker.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\NxTools.ShellSelectionHelper.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\NxTools.ShellSelectionHelper.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\NxTools.ShellSelectionHelper.deps.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\NxTools.ShellSelectionHelper.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\THIRD_PARTY_NOTICES.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\LICENSE-APACHE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\LICENSE-MIT"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\browser_extension\*"; DestDir: "{app}\browser_extension"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#PackageDir}\NxTools.release.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "{#PackageDir}\NxTools.release.sig"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; Extract these exact NEW sidecars before any owned-file mutation. The files[]
+; SHA256 table is rollback input, not a replacement for trusted verification.
+Source: "{#PackageDir}\NxTools.release.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PackageDir}\NxTools.release.sig"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -79,46 +90,144 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 [Code]
 var
   UpgradeFilesCommitted, UpgradeFinalizationFailed: Boolean;
+  UpgradePreparationReady: Boolean;
   UpgradeStatePath, UpgradeCorrelation: String;
-  UpgradeNewBrowserHostHash: String;
+  UpgradeNewManifestPath, UpgradeNewSignaturePath: String;
+  BootstrapMigrationDirectory: String;
+
+function PreservePreparationDiagnostics(SourcePath, Correlation: String; Started: Boolean; ResultCode: Integer): String;
+var
+  DirectoryPath, Summary: String;
+begin
+  Result := ExtractFileDir(SourcePath);
+  try
+    DirectoryPath := ExpandConstant('{localappdata}\NxTools\NxTools.Next\logs\installer\') + Correlation;
+    if not ForceDirectories(DirectoryPath) then Exit;
+    Summary := 'correlation=' + Correlation + Chr(13) + Chr(10) +
+      'started=' + IntToStr(Ord(Started)) + Chr(13) + Chr(10) + 'exit=' + IntToStr(ResultCode);
+    SaveStringToFile(DirectoryPath + '\launch.txt', Summary, False);
+    if FileExists(SourcePath) then
+      FileCopy(SourcePath, DirectoryPath + '\preparation.jsonl', False);
+    FileCopy(ExpandConstant('{log}'), DirectoryPath + '\setup.log', False);
+    Result := DirectoryPath;
+    Log('installer.upgrade_diagnostics.saved directory=' + Result);
+  except
+    Log('installer.upgrade_diagnostics.unavailable');
+  end;
+end;
+
+function EnsureBootstrapMigration(): String;
+var
+  DetectionPath, Parameters, PowerShellPath, MigrationHost: String;
+  ResultCode: Integer;
+  Started: Boolean;
+begin
+  Result := '';
+  BootstrapMigrationDirectory := '';
+  ExtractTemporaryFile('bootstrap-migration.ps1');
+  DetectionPath := ExpandConstant('{tmp}\bootstrap-migration.ps1');
+  PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + DetectionPath +
+    '" -ManifestPath "' + UpgradeNewManifestPath + '"';
+  Log('installer.bootstrap_migration.detecting');
+  Started := Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if Started and (ResultCode = 0) then Exit;
+  if (not Started) or (ResultCode <> 10) then
+  begin
+    Result := '无法验证现有更新服务，尚未替换应用文件。请保留安装日志供检查。';
+    Exit;
+  end;
+  if MsgBox('此旧版本需要升级更新组件才能继续安装。安装器将请求一次管理员授权，完成后自动继续；不会更换发布公钥或清除数据。', mbConfirmation, MB_OKCANCEL) <> IDOK then
+  begin
+    Result := '你已取消更新组件升级，尚未替换应用文件。';
+    Exit;
+  end;
+  { Extract the ORIGINAL normal-install entries, preserving their relative directories.
+    Inno stores this payload once; no second complete ZIP is embedded. }
+  ExtractTemporaryFiles('{app}\*');
+  BootstrapMigrationDirectory := ExpandConstant('{tmp}\') + '{app}';
+  MigrationHost := BootstrapMigrationDirectory + '\NxTools.PlatformHost.exe';
+  if CompareText(GetSHA256OfFile(MigrationHost), '{#BootstrapMigrationHostSha256}') <> 0 then
+  begin
+    Result := '安装包内的更新组件校验失败，尚未替换应用文件。';
+    Exit;
+  end;
+end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   PowerShellPath, CleanupPath, Parameters, Correlation, FailureDetail: String;
+  DiagnosticPath, DiagnosticDirectory: String;
   ResultCode: Integer;
   Started: Boolean;
 begin
   Result := '';
   NeedsRestart := False;
+  UpgradePreparationReady := False;
   ExtractTemporaryFile('close-owned-processes.ps1');
+  ExtractTemporaryFile('NxTools.release.json');
+  ExtractTemporaryFile('NxTools.release.sig');
+  UpgradeNewManifestPath := ExpandConstant('{tmp}\NxTools.release.json');
+  UpgradeNewSignaturePath := ExpandConstant('{tmp}\NxTools.release.sig');
+  Result := EnsureBootstrapMigration();
+  if Result <> '' then Exit;
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   CleanupPath := ExpandConstant('{tmp}\close-owned-processes.ps1');
   Correlation := GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' +
     ExtractFileName(ExpandConstant('{tmp}'));
+  StringChangeEx(Correlation, '.', '-', True);
   UpgradeCorrelation := Correlation;
   UpgradeStatePath := ExpandConstant('{app}\.NxTools.BrowserHost-upgrade.json');
+  DiagnosticPath := ExpandConstant('{tmp}\preparation-') + Correlation + '.jsonl';
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     CleanupPath + '" -InstallDirectory "' + ExpandConstant('{app}') +
-    '" -CorrelationId "' + Correlation + '" -StatePath "' + UpgradeStatePath + '"';
+    '" -CorrelationId "' + Correlation + '" -StatePath "' + UpgradeStatePath +
+    '" -DiagnosticPath "' + DiagnosticPath + '"';
+  { The helper's default preparation entry validates/recovers any OLD journal
+    before fresh suspension. New sidecars never authorize old recovery deletion. }
+  Parameters := Parameters + ' -NewManifestPath "' + UpgradeNewManifestPath +
+    '" -NewSignaturePath "' + UpgradeNewSignaturePath + '"';
+  if BootstrapMigrationDirectory <> '' then
+    Parameters := Parameters + ' -BootstrapMigrationPackage "' + BootstrapMigrationDirectory + '"';
   Log('installer.upgrade_close.started correlation=' + Correlation);
-  WizardForm.StatusLabel.Caption := '正在关闭旧版 NxTools，请稍候…';
-  Started := Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  if Started and (ResultCode = 5) then
+  WizardForm.StatusLabel.Caption := '正在恢复上次安装并准备升级，请稍候…';
+  if (BootstrapMigrationDirectory <> '') or
+    RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxToolsIndexerV1') then
   begin
-    Log('installer.upgrade_close.elevation_required correlation=' + Correlation);
-    Started := ShellExec('runas', PowerShellPath, Parameters, '', SW_HIDE,
-      ewWaitUntilTerminated, ResultCode);
+    if BootstrapMigrationDirectory <> '' then
+    begin
+      WizardForm.StatusLabel.Caption := '正在升级更新组件并准备安装，请在 Windows 提示时允许…';
+      Log('installer.bootstrap_migration.elevation_requested correlation=' + Correlation);
+    end else
+    begin
+      WizardForm.StatusLabel.Caption := '正在准备已安装的受保护组件，请在 Windows 提示时允许…';
+      Log('installer.upgrade_close.protected_elevation_requested correlation=' + Correlation);
+    end;
+    { Service presence requests privileges ONLY. The original helper still verifies exact
+      paths/hashes and recovery authority before any owned mutation; no validation bypass. }
+    Started := ShellExec('runas', PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end else
+  begin
+    Started := Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    if Started and (ResultCode = 5) then
+    begin
+      Log('installer.upgrade_close.elevation_required correlation=' + Correlation);
+      Started := ShellExec('runas', PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
   end;
+  DiagnosticDirectory := PreservePreparationDiagnostics(DiagnosticPath, Correlation, Started, ResultCode);
   if (not Started) or (ResultCode <> 0) then
   begin
     FailureDetail := IntToStr(ResultCode);
     Log('installer.upgrade_close.failed correlation=' + Correlation + ' code=' + FailureDetail);
-    Result := '安装程序无法关闭属于本次升级的旧版 NxTools，尚未替换程序文件。' +
-      Chr(13) + Chr(10) + '请重试安装，并在 Windows 请求权限时允许安装程序关闭旧进程。' +
+    Result := '安装程序未能验证或恢复上次安装，或无法完成本次升级准备；尚未继续替换文件，恢复日志已保留。' +
+      Chr(13) + Chr(10) + '请保留以下诊断目录供检查，不要手工删除恢复文件或反复重试。' +
+      Chr(13) + Chr(10) + DiagnosticDirectory +
       Chr(13) + Chr(10) + '错误码：' + FailureDetail;
     Exit;
   end;
   Log('installer.upgrade_close.completed correlation=' + Correlation);
+  UpgradePreparationReady := True;
 end;
 
 procedure FinalizeUpgradeFiles(Committed: Boolean);
@@ -127,14 +236,15 @@ var
   ResultCode: Integer;
   Started: Boolean;
 begin
-  if (UpgradeStatePath = '') or not FileExists(UpgradeStatePath) then Exit;
+  if UpgradeStatePath = '' then Exit;
+  if (not FileExists(UpgradeStatePath)) and (not FileExists(UpgradeStatePath + '.pending')) then Exit;
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' +
     ExpandConstant('{tmp}\close-owned-processes.ps1') + '" -InstallDirectory "' +
     ExpandConstant('{app}') + '" -StatePath "' + UpgradeStatePath +
     '" -CorrelationId "' + UpgradeCorrelation + '" -Finalize';
   if Committed then Parameters := Parameters + ' -Committed';
-  if (not Committed) and (UpgradeNewBrowserHostHash <> '') then
-    Parameters := Parameters + ' -RollbackNewSha256 "' + UpgradeNewBrowserHostHash + '"';
+  { All new hashes were captured from extracted package sidecars before suspension.
+    Never derive rollback deletion authority from a post-failure installed file. }
   Started := Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   if Started and (ResultCode = 5) then
@@ -144,7 +254,7 @@ begin
   begin
     UpgradeFinalizationFailed := True;
     Log('installer.upgrade_files.failed correlation=' + UpgradeCorrelation + ' code=' + IntToStr(ResultCode));
-    RaiseException('无法完成浏览器宿主的安装恢复或清理，错误码：' + IntToStr(ResultCode));
+    RaiseException('无法完成安装文件集合的恢复或清理，已保留恢复日志，错误码：' + IntToStr(ResultCode));
   end;
   Log('installer.upgrade_files.finalized correlation=' + UpgradeCorrelation);
 end;
@@ -170,8 +280,6 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
   begin
-    if FileExists(ExpandConstant('{app}\NxTools.BrowserHost.exe')) then
-      UpgradeNewBrowserHostHash := GetSHA256OfFile(ExpandConstant('{app}\NxTools.BrowserHost.exe'));
     PrepareTrustedUpdate();
     FinalizeUpgradeFiles(True);
     UpgradeFilesCommitted := True;
@@ -180,7 +288,7 @@ end;
 
 procedure DeinitializeSetup();
 begin
-  if (not UpgradeFilesCommitted) and (not UpgradeFinalizationFailed) then FinalizeUpgradeFiles(False);
+  if UpgradePreparationReady and (not UpgradeFilesCommitted) and (not UpgradeFinalizationFailed) then FinalizeUpgradeFiles(False);
 end;
 
 function UpgradeCanLaunch(): Boolean;

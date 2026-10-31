@@ -1,0 +1,7 @@
+{
+  "original_path": ".trellis\\tasks\\10-25-archive-prompt-object\\evidence\\revision-r1-r2\\unresolved-diagnostics\\create-keyboard-unresolved-probe.rs.txt",
+  "original_sha256": "d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c",
+  "current_only_change": "functionname audit04_ -> audit05_;completeoriginalfunctionbyteidenticalotherwise",
+  "restored_sha256": "77850e9305098256ccf80679d0f71d3d33762637ffbf05fb6dc0fc890e70cdee",
+  "assertions_preserved": true
+}

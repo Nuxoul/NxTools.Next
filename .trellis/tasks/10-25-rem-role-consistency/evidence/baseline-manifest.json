@@ -1,0 +1,50 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/metrics.rs",
+    "sha256": "352f74abed01b155e23df2ebbcf2a09d96b39a201137693744ddd8415b1acb40",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\rust__apps__nxtools-desktop__src__ui__metrics.rs.baseline",
+    "bytes": 3443
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/ui/typography.rs",
+    "sha256": "a23ca9f2c045cc8d6b2b58661ed28ee0dcd54889871c9b8f806fc71cb4fdee1e",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\rust__apps__nxtools-desktop__src__ui__typography.rs.baseline",
+    "bytes": 2015
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/schedule_view.rs",
+    "sha256": "9ff0ef94d2e1739132488dbfab8e37c8f610553867f51771633c74b771f0f45e",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\rust__apps__nxtools-desktop__src__downloads__schedule_view.rs.baseline",
+    "bytes": 21857
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/downloads/polish_tests.rs",
+    "sha256": "867f91ed203f5ed55f88ed0b29a6d9f6541411e5e39d945fc06ee08b0220d734",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\rust__apps__nxtools-desktop__src__downloads__polish_tests.rs.baseline",
+    "bytes": 142864
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+    "sha256": "dbb8cd5f614c5c4a16b7c2aa27905457dd222a1bd9373d3962893f6c1abbbb7d",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\rust__apps__nxtools-desktop__src__main_window__download_page.rs.baseline",
+    "bytes": 129934
+  },
+  {
+    "path": "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+    "sha256": "d11a415c105b5858cafd3a64a21111b67b3554c7f5e6589d261c998a4ab2bddf",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\rust__apps__nxtools-desktop__src__main_window__download_page__kit_migration_tests.rs.baseline",
+    "bytes": 49397
+  },
+  {
+    "path": "docs/reference-code/download.md",
+    "sha256": "5f3e162f9a49ff7f261014aab4d78e2e3825209f8178295e94f63eba777411b6",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\docs__reference-code__download.md.baseline",
+    "bytes": 262735
+  },
+  {
+    "path": "docs/reference-code/gpui-kit-080.md",
+    "sha256": "d9574c70daa0530aa67daa3e8372af02e129cde1c0d13ca915ce0683c2f5476c",
+    "baseline": "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\docs__reference-code__gpui-kit-080.md.baseline",
+    "bytes": 8204
+  }
+]

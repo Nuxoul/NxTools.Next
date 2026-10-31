@@ -1,0 +1,32 @@
+--- task-start
++++ independent-observed
+@@ -182,11 +182,13 @@
+             open_download_engine_from_config(download_database_path.clone(), &config)
+                 .context("failed to initialize the download engine")?;
+         let (extension_service, extension_ui_calls) =
+-            crate::extensions::service::ExtensionService::new(
++            crate::extensions::service::ExtensionService::new_with_storage(
+                 &download_engine,
+                 config.extensions.clone(),
+                 Some(clipboard_worker.clone()),
+                 true,
++                config_path.clone(),
++                paths.data_dir.join("extensions-data"),
+             )?;
+         start_download_host(download_engine.clone())?;
+         let download_default_directory = std::env::var_os("USERPROFILE")
+@@ -240,11 +242,13 @@
+     let (engine, _network_policy) =
+         open_download_engine_from_config(paths.data_dir.join("downloads.sqlite3"), &config)
+             .context("failed to initialize the background download engine")?;
+-    let (_extensions, _) = crate::extensions::service::ExtensionService::new(
++    let (_extensions, _) = crate::extensions::service::ExtensionService::new_with_storage(
+         &engine,
+         config.extensions.clone(),
+         None,
+         false,
++        paths.config_file(),
++        paths.data_dir.join("extensions-data"),
+     )?;
+     let background_events = engine
+         .take_event_receiver()

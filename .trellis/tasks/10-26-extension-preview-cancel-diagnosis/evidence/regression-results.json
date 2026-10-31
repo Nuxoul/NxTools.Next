@@ -1,0 +1,7 @@
+﻿{
+    "name":  "animated-reopen-regression",
+    "command":  "cargo test -p nxtools-desktop main_window::extensions_page::tests::preview_cancel_after_animated_entrance_keeps_reopened_identity_and_config -- --exact --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed_seconds":  74.7018145,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\extension-preview-cancel\\animated-reopen-regression.log"
+}

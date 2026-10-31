@@ -15,10 +15,11 @@ gpui-kit = { workspace = true, features = [
     "tree-sitter-rust", "tree-sitter-sql", "tree-sitter-tsx", "tree-sitter-typescript",
 ] }
 gpui-kit-markdown-editor.workspace = true
-image.workspace = true
+image = { workspace = true, features = ["gif", "jpeg", "bmp", "webp"] }
 imagesize.workspace = true
 markdown.workspace = true
 reqwest.workspace = true
+flate2 = { version = "=1.1.9", default-features = false, features = ["zlib-rs"] }
 nxtools-archive = { path = "../../crates/nxtools-archive" }
 nxtools-clipboard = { path = "../../crates/nxtools-clipboard" }
 nxtools-core = { path = "../../crates/nxtools-core" }
@@ -46,6 +47,7 @@ gpui-kit = { workspace = true, features = ["test-support"] }
 tempfile = "3.20.0"
 nxtools-extensions = { path = "../../crates/nxtools-extensions", features = ["test-support"] }
 zip.workspace = true
+nxtools-download = { path = "../../crates/nxtools-download", features = ["test-support"] }
 
 [build-dependencies]
 embed-resource = "3.0.11"

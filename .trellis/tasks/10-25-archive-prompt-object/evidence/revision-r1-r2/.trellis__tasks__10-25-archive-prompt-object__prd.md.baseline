@@ -1,0 +1,30 @@
+# 原报告 #4 — 归档覆盖确认的当前决策对象
+
+## 授权与阶段
+仅第 6 次单项整改；沿用 `Phase A — Engine contracts and safety foundation` 的既有稳定化，不推进/关闭 A–F。#1/#9/#10/#3/#2 已由父会话限定验收，不返修。交付后停止，父独立 review；其余 backlog 未授权。
+
+## 最小缺口与真实边界
+现有 `JobProgressView::show_prompt` 的 Conflict 只有大小，CreateOverwrite 只有通用说明；相同大小的连续冲突不可辨认。原目标身份/发布未证明有误。
+
+链路：原 format/codec -> `PrivateOutput::begin_extracted_file` -> `ExtractionConflict::begin` 原 ticket -> 私有 worker frame -> `ArchiveJobSession.Prompt` -> typed ArchiveJobEvent -> 原 bridge/job record -> `refresh_job`/`ProgressSnapshot` -> 原官方 Dialog。CreateOverwrite 原 runner 预检 -> session immutable command/ticket -> 同一 typed event/UI。
+
+最小变化：可选、仅展示的 prompt 对象快照（incoming member + target）。worker 的当前 plan 映射只产生展示信息，C# 用本次 command 的目标根组成 UI 标识；CreateOverwrite 用该 command 的 destination/create name。原观察 token、路径操作、source session/ordinal、覆写验证/预算均不读取新字段。
+
+## 兼容与隐私
+- 保留 wire version 1、worker schema 及 strict unknown-field 拒绝；可选字段缺失/None 不序列化。
+- 新接收端接受旧载荷，缺字段显示“本次提示未提供对象标识”，不借进度/selection/别的 ticket 补值、不默认同意覆盖。
+- 旧严格接收端不能接受带新增字段的新载荷；不宣称双向混版兼容，不放宽 parser，不擅自升版本。原产品原子发行/匹配 worker 部署边界保持。
+- 对象只在 UI/private typed payload 出现。Rust Debug/C# ToString 脱敏；诊断仍只有原 correlation/state/terminal/count/elapsed/native code。
+
+## UI/API 选择
+沿 Bandizip 允许文本资源 IDD_ASK_DUPEFILE 的 existing/incoming 双对象结构（未运行/未验证其动态布局）。官方 Component0.8.0 `Dialog` 原 title/body/footer/Action/Close owner，`DescriptionList::vertical().columns(1)` 只读 metadata 公共槽，原 Button outline/default Medium32、Checkbox 原单 owner。Dialog 的 body scroll 与独立 footer 已在 exact released source 核实；不改 560x300/default、480x260/min client。完整长 Unicode 路径不删除字符；正文 wrap/受控滚动，必要完整标识可在正文滚到末尾。无新 Clipboard/Shell/native 交互。
+
+## 保持不变量
+原 native identity、entry ordinal/source revision、overwrite validation、有限资源预算/path safety、临时输出完整验证/原子发布、密码 secret、ticket generation、once reply、cancel/disconnect/timeout/apply-all、跨实体 defer 完全保留。非 Conflict/CreateOverwrite 不整改；不动 #5 Enter/#8 文案、codec、安全或 OS 策略。
+
+## 验证与授权限制
+先有效红再绿：真实 typed notification -> 原 job state -> 实际官方 Dialog 的可观测内容；同大小不同目录/ticket、两 job/迟到 reply、CreateOverwrite；原按钮/Checkbox/keyboard/pointer 单次回复；长 Unicode、缺字段/非法类型、原尺寸/滚动/动作可达。原 engine/worker/C# fixtures 只允许 GUID 临时合成文件、受控 adapter；日志 sentinel 不泄漏。保留原安全断言。
+
+运行 focused Archive/Desktop/Protocol/IPC、必要 effect-reviewed C# fixtures、strict owner Clippy/workspace check/fmt/source gates；完整 Desktop 最多一轮。每 Rust shell 单 job/no incremental/codegen256；自然等待其他 Cargo，不能干预。无 Release/package/install/product/PlatformHost/服务/实际 HWND/Shell/picker/真实用户数据/registry/commit/push/递归代理。
+
+每 existing file 编辑前 dirty baseline 已存本会话 item04 scratch；最终 task evidence 发布 exact own-delta/manifest/protected hash 与每条验收证据。source/compiled/synthetic/render 与 native/physical IME/DPI/reader/visual/user acceptance 分开；额外 QuickLaunch source gate 历史 FAIL 保留。

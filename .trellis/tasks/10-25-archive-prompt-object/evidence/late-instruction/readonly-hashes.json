@@ -1,0 +1,22 @@
+﻿[
+    {
+        "path":  "rust/crates/nxtools-protocol/src/lib.rs",
+        "sha256":  "b19d21a17d720365839374ed51394be717b395d549ea04fc5263f128c24a6384"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+        "sha256":  "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/archive/progress.rs",
+        "sha256":  "6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3"
+    },
+    {
+        "path":  "vendor/gpui-component-080/src/button/button.rs",
+        "sha256":  "fdd2ed48d6ba0efe6945e7ea041b46738e3e266556d1adc91276d79ade158174"
+    },
+    {
+        "path":  "vendor/gpui-component-080/src/dialog/footer.rs",
+        "sha256":  "ea3f8401c3455f0aced322f3ea6b9479c60b36d5213a624998a0e159f7d96e90"
+    }
+]

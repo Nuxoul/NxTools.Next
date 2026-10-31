@@ -250,6 +250,9 @@ fn run(
                 center.set_duration_seconds(app_config.system.notification_duration_seconds, cx);
             });
             let platform_bridge = Rc::new(platform_bridge);
+            notifications.update(cx, |center, _| {
+                center.bind_copy_platform(Rc::clone(&platform_bridge))
+            });
             crate::archive::register(
                 Rc::clone(&platform_bridge),
                 app_config.archive.clone(),
@@ -461,23 +464,60 @@ fn run(
                         .flatten()
                 })
                 .unwrap_or_default();
-            if let Ok(source) = &window {
+            let main_source: Option<gpui_kit::AnyWindowHandle> =
+                window.as_ref().ok().map(|source| (*source).into());
+            let prepared_notifications = screen_notifications.clone();
+            let prepared_platform = Rc::clone(&platform_bridge);
+            let prepared_downloads = downloads.downgrade();
+            let prepared_quick_launch = quick_launch.downgrade();
+            let prepared_config = app_config.clone();
+            let prepared_config_path = config_path.clone();
+            let publish_main = move |cx: &mut App| {
+                let Some(source) = main_source else {
+                    return;
+                };
+                if !cx.windows().contains(&source) {
+                    return;
+                }
                 crate::notifications::screen::attach(
-                    screen_notifications,
-                    Rc::clone(&platform_bridge),
-                    (*source).into(),
+                    prepared_notifications.clone(),
+                    Rc::clone(&prepared_platform),
+                    source,
                     cx,
                 );
-            }
-            if main_window_handle != 0
-                && let Ok(paths) = AppPaths::discover()
-            {
-                SingleInstanceGuard::record_main_window_handle(
-                    &paths,
-                    "desktop",
+                if main_window_handle != 0
+                    && let Ok(paths) = AppPaths::discover()
+                {
+                    SingleInstanceGuard::record_main_window_handle(
+                        &paths,
+                        "desktop",
+                        main_window_handle,
+                    );
+                }
+                let assistant = cx.new(|cx| {
+                    crate::tools::floating_assistant::FloatingAssistantApplication::new(
+                        Rc::clone(&prepared_platform),
+                        prepared_config,
+                        prepared_config_path,
+                        prepared_notifications,
+                        source,
+                        prepared_downloads,
+                        prepared_quick_launch,
+                        cx,
+                    )
+                });
+                crate::tools::floating_assistant::register(assistant.clone(), cx);
+                cx.defer(move |cx| assistant.update(cx, |assistant, cx| assistant.start(cx)));
+            };
+            let main_preparation = if !main_show {
+                Some(platform_events::MainWindowPreparation::new(
                     main_window_handle,
-                );
-            }
+                    publish_main,
+                ))
+            } else {
+                cx.defer(publish_main);
+                None
+            };
             let dispatcher = cx.new(|cx| {
                 PlatformEventDispatcher::new(
                     Rc::clone(&platform_bridge),
@@ -490,6 +530,7 @@ fn run(
                         downloads,
                         global_settings: network_settings,
                     },
+                    main_preparation,
                     cx,
                 )
             });
@@ -721,7 +762,15 @@ fn protected_package_matches_release(release: &Path, protected: &Path) -> Result
     let Some(protected_directory) = protected.parent() else {
         return Ok(false);
     };
-    for name in ["NxTools.Indexer.exe", "NxTools.PlatformHost.exe"] {
+    for name in [
+        "NxTools.Indexer.exe",
+        "NxTools.PlatformHost.exe",
+        "NxTools.ArchiveWorker.exe",
+        "NxTools.ShellSelectionHelper.exe",
+        "NxTools.ShellSelectionHelper.dll",
+        "NxTools.ShellSelectionHelper.deps.json",
+        "NxTools.ShellSelectionHelper.runtimeconfig.json",
+    ] {
         if !matching_files(
             &release_directory.join(name),
             &protected_directory.join(name),
@@ -913,16 +962,56 @@ mod protected_desktop_tests {
                 "NxTools.PlatformHost.exe",
                 b"approved platform host".as_slice(),
             ),
+            (
+                "NxTools.ArchiveWorker.exe",
+                b"current archive member".as_slice(),
+            ),
+            (
+                "NxTools.ShellSelectionHelper.exe",
+                b"current archive member".as_slice(),
+            ),
+            (
+                "NxTools.ShellSelectionHelper.dll",
+                b"current archive member".as_slice(),
+            ),
+            (
+                "NxTools.ShellSelectionHelper.deps.json",
+                b"current archive member".as_slice(),
+            ),
+            (
+                "NxTools.ShellSelectionHelper.runtimeconfig.json",
+                b"current archive member".as_slice(),
+            ),
         ] {
             std::fs::write(release_dir.join(name), bytes).expect("release binary");
             std::fs::write(protected_dir.join(name), bytes).expect("protected binary");
         }
         let release = release_dir.join("NxTools.exe");
         let protected = protected_dir.join("NxTools.exe");
-        assert!(
-            protected_package_matches_release(&release, &protected)
-                .expect("compare identical packages")
-        );
+        for name in [
+            "NxTools.ArchiveWorker.exe",
+            "NxTools.ShellSelectionHelper.exe",
+            "NxTools.ShellSelectionHelper.dll",
+            "NxTools.ShellSelectionHelper.deps.json",
+            "NxTools.ShellSelectionHelper.runtimeconfig.json",
+        ] {
+            std::fs::remove_file(protected_dir.join(name)).expect("remove protected member");
+            assert!(
+                !protected_package_matches_release(&release, &protected)
+                    .expect("missing archive release member rejects redirect")
+            );
+            std::fs::write(release_dir.join(name), b"current archive member")
+                .expect("release archive member");
+            std::fs::write(protected_dir.join(name), b"old archive member")
+                .expect("old protected archive member");
+            assert!(
+                !protected_package_matches_release(&release, &protected)
+                    .expect("mixed archive release member rejects redirect")
+            );
+            std::fs::write(protected_dir.join(name), b"current archive member")
+                .expect("matching archive member");
+        }
+        assert!(protected_package_matches_release(&release, &protected).expect("complete package"));
         std::fs::write(protected_dir.join("NxTools.Indexer.exe"), b"older indexer")
             .expect("replace protected indexer");
         assert!(

@@ -1,0 +1,7 @@
+﻿{
+    "name":  "downloads-related",
+    "command":  "cargo test -p nxtools-desktop downloads:: -- --test-threads=1",
+    "exit":  101,
+    "elapsed":  79.3589379,
+    "finished":  "2026-10-26T06:38:47.5078113+08:00"
+}

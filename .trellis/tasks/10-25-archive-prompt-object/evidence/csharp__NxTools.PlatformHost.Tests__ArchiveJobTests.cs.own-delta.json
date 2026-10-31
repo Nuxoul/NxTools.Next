@@ -1,0 +1,45 @@
+{
+  "path": "csharp/NxTools.PlatformHost.Tests/ArchiveJobTests.cs",
+  "baseline_sha256": "a22d8aecbf7d69394add2b98ecc8ba6d6d2885373abd8b638bf3fc98e5b1bcc1",
+  "delivery_sha256": "559bd980b786e394d7d02dc872a7e4c1154dcc3c93c8c03e9fd1692575843068",
+  "operations": [
+    {
+      "tag": "insert",
+      "baseline_start": 26,
+      "baseline_end": 26,
+      "delivery_start": 26,
+      "delivery_end": 33,
+      "baseline_text": "",
+      "delivery_text": "        var oldPrompt=new ArchiveJobPrompt(new(Guid.NewGuid(),Guid.NewGuid(),1),\"conflict\");\n        Check(!JsonSerializer.SerializeToElement(oldPrompt,JsonDefaults.Options).TryGetProperty(\"display\",out _),\"legacy display omission\");\n        Check(JsonSerializer.Deserialize<ArchiveJobPrompt>(JsonSerializer.Serialize(oldPrompt,JsonDefaults.Options),ArchiveJobWire.Strict)!.Display is null,\"legacy missing display\");\n        var display=new ArchiveJobPromptDisplay(\"private-member-sentinel/同名.txt\",@\"C:\\owned\\private-target-sentinel\\同名.txt\");\n        Check(display.Valid(\"conflict\") && !(oldPrompt with{Display=display}).ToString().Contains(\"sentinel\"),\"typed display redaction\");\n        Check(!new ArchiveJobPromptDisplay(null,\"x\").Valid(\"conflict\") && !new ArchiveJobPromptDisplay(\"x\",\"line\\nbreak\").Valid(\"conflict\"),\"invalid display bounds/shape\");\n        try{JsonSerializer.Deserialize<ArchiveJobPromptDisplay>(\"{\\\"incoming_member\\\":\\\"x\\\",\\\"target\\\":\\\"y\\\",\\\"authority\\\":true}\",ArchiveJobWire.Strict);throw new InvalidOperationException(\"unknown display authority accepted\");}catch(JsonException){}\n"
+    },
+    {
+      "tag": "replace",
+      "baseline_start": 47,
+      "baseline_end": 48,
+      "delivery_start": 54,
+      "delivery_end": 56,
+      "baseline_text": "            await using var first=ArchiveJobSession.ForOwnedTestPackage(root);await using var second=ArchiveJobSession.ForOwnedTestPackage(root);await using var third=ArchiveReadSession.ForOwnedTestPackage(root);\n",
+      "delivery_text": "            var displayLog=new JobLog();\n            await using var first=ArchiveJobSession.ForOwnedTestPackage(root,displayLog);await using var second=ArchiveJobSession.ForOwnedTestPackage(root,displayLog);await using var third=ArchiveReadSession.ForOwnedTestPackage(root);\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 51,
+      "baseline_end": 51,
+      "delivery_start": 59,
+      "delivery_end": 61,
+      "baseline_text": "",
+      "delivery_text": "            Check(prompt.Prompt!.Display==new ArchiveJobPromptDisplay(\"a.txt\",Path.Combine(a,\"a.txt\")) && otherPrompt.Prompt!.Display==new ArchiveJobPromptDisplay(\"a.txt\",Path.Combine(b,\"a.txt\")),\"two current jobs retain distinct same-size targets\");\n            Check(!prompt.Prompt.ToString().Contains(root) && !otherPrompt.Prompt.ToString().Contains(root),\"nested prompt record redaction\");\n"
+    },
+    {
+      "tag": "insert",
+      "baseline_start": 56,
+      "baseline_end": 56,
+      "delivery_start": 66,
+      "delivery_end": 67,
+      "baseline_text": "",
+      "delivery_text": "            Check(displayLog.Records.All(line=>!line.Contains(root) && !line.Contains(\"a.txt\") && !line.Contains(\"existing-a\")),\"original job/runner sink does not log display payload\");\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

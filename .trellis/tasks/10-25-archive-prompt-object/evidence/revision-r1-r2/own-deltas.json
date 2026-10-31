@@ -1,0 +1,245 @@
+[
+  {
+    "path": "rust/apps/nxtools-desktop/src/archive/job_tests.rs",
+    "baseline_sha256": "1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e",
+    "after_sha256": "4917e4b991d546ade834b06dcc1090857a11ef3802eeccdd31e20970c165d3e4",
+    "operations": [
+      {
+        "kind": "delete",
+        "baseline_start": 1070,
+        "baseline_end": 1146,
+        "after_start": 1070,
+        "after_end": 1070,
+        "baseline_text": "fn audit04_create_keyboard_release_and_missing_object_cancel_are_once_only(\n    cx: &mut gpui_kit::TestAppContext,\n) {\n    let (owner, endpoint) = super::super::tests::setup(cx);\n    let id = owner.update(cx, |app, cx| {\n        app.submit_job(request(1), completion(), cx)\n            .expect(\"original job admission\")\n    });\n    cx.run_until_parked();\n    let prompt = object_prompt(id, \"create_overwrite\", None, r\"C:\\owned\\本次.zip\");\n    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);\n    object_replies(&endpoint);\n    surface.update(|window, cx| window.focus_next(cx));\n    // Traverse the original Dialog focus scope, never call its reply/confirm helper.\n    for _ in 0..8 {\n        if object_node(&mut surface, \"确认覆盖\").focused() == Some(true) {\n            break;\n        }\n        surface.simulate_keystrokes(\"tab\");\n    }\n    assert_eq!(object_node(&mut surface, \"确认覆盖\").focused(), Some(true));\n    surface.simulate_event(gpui_kit::KeyDownEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"space press\"),\n        is_held: false,\n        prefer_character_input: false,\n    });\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"space release\"),\n    });\n    object_draw(&mut surface);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, prompt.ticket);\n    assert_eq!(\n        replies[0].decision,\n        Some(ArchiveJobConflictDecision::Overwrite)\n    );\n    surface.simulate_event(gpui_kit::KeyUpEvent {\n        keystroke: gpui_kit::Keystroke::parse(\"space\").expect(\"duplicate release\"),\n    });\n    object_draw(&mut surface);\n    assert!(object_replies(&endpoint).is_empty());\n    let mut missing = object_prompt(\n        id,\n        \"conflict\",\n        Some(\"not-displayed.txt\"),\n        r\"C:\\not-displayed.txt\",\n    );\n    missing.display = None;\n    let ticket = missing.ticket.clone();\n    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);\n    let labels = object_labels(&mut surface);\n    assert_eq!(\n        labels\n            .iter()\n            .filter(|label| label.as_str() == \"本次提示未提供对象标识\")\n            .count(),\n        2\n    );\n    assert!(\n        !labels\n            .iter()\n            .any(|label| label.contains(\"本次.zip\") || label.contains(\"not-displayed\"))\n    );\n    assert!(\n        object_replies(&endpoint).is_empty(),\n        \"missing metadata never auto-approves\"\n    );\n    surface.simulate_keystrokes(\"escape\");\n    object_draw(&mut surface);\n    let replies = object_replies(&endpoint);\n    assert_eq!(replies.len(), 1);\n    assert_eq!(replies[0].ticket, ticket);\n    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);\n}\n#[gpui_kit::test]\n",
+        "after_text": ""
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/prd.md",
+    "baseline_sha256": "305121445549cb2cffe7a869ef3b731abf5c008f7711848d0ccb7807c79fed08",
+    "after_sha256": "70e31e1d4a9461ba9a1b05c55b7881d5bf75d4cc12cc84809c05439399150e82",
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start": 0,
+        "baseline_end": 1,
+        "after_start": 0,
+        "after_end": 1,
+        "baseline_text": "# 原报告 #4 — 归档覆盖确认的当前决策对象\n",
+        "after_text": "# Audit #4 — Current decision object in archive overwrite confirmation\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 2,
+        "baseline_end": 4,
+        "after_start": 2,
+        "after_end": 3,
+        "baseline_text": "## 授权与阶段\n仅第 6 次单项整改；沿用 `Phase A — Engine contracts and safety foundation` 的既有稳定化，不推进/关闭 A–F。#1/#9/#10/#3/#2 已由父会话限定验收，不返修。交付后停止，父独立 review；其余 backlog 未授权。\n",
+        "after_text": "## Authorization and canonical phase\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 5,
+        "baseline_end": 7,
+        "after_start": 4,
+        "after_end": 5,
+        "baseline_text": "## 最小缺口与真实边界\n现有 `JobProgressView::show_prompt` 的 Conflict 只有大小，CreateOverwrite 只有通用说明；相同大小的连续冲突不可辨认。原目标身份/发布未证明有误。\n",
+        "after_text": "This is the sixth individually authorized correction, limited to original audit item #4. It stabilizes the existing `Phase A — Engine contracts and safety foundation`; it does not advance or close Phase A–F. Items #1/#9/#10/#3/#2 have separate limited parent acceptance and must not be reopened. Stop after delivery for independent parent review. Item seven and the remaining backlog are not authorized.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 8,
+        "baseline_end": 9,
+        "after_start": 6,
+        "after_end": 7,
+        "baseline_text": "链路：原 format/codec -> `PrivateOutput::begin_extracted_file` -> `ExtractionConflict::begin` 原 ticket -> 私有 worker frame -> `ArchiveJobSession.Prompt` -> typed ArchiveJobEvent -> 原 bridge/job record -> `refresh_job`/`ProgressSnapshot` -> 原官方 Dialog。CreateOverwrite 原 runner 预检 -> session immutable command/ticket -> 同一 typed event/UI。\n",
+        "after_text": "The current parent review requests only R1/R2 closeout: relocate the newly introduced, unresolved CreateOverwrite keyboard diagnostic outside default product regressions while preserving it completely, and translate this PRD and outcomes into English. Do not repair the keyboard behavior, change production display code, overwrite historical evidence, or repeat the complete Desktop suite.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 10,
+        "baseline_end": 11,
+        "after_start": 8,
+        "after_end": 9,
+        "baseline_text": "最小变化：可选、仅展示的 prompt 对象快照（incoming member + target）。worker 的当前 plan 映射只产生展示信息，C# 用本次 command 的目标根组成 UI 标识；CreateOverwrite 用该 command 的 destination/create name。原观察 token、路径操作、source session/ordinal、覆写验证/预算均不读取新字段。\n",
+        "after_text": "## Smallest behavior gap and actual boundary\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 12,
+        "baseline_end": 17,
+        "after_start": 10,
+        "after_end": 11,
+        "baseline_text": "## 兼容与隐私\n- 保留 wire version 1、worker schema 及 strict unknown-field 拒绝；可选字段缺失/None 不序列化。\n- 新接收端接受旧载荷，缺字段显示“本次提示未提供对象标识”，不借进度/selection/别的 ticket 补值、不默认同意覆盖。\n- 旧严格接收端不能接受带新增字段的新载荷；不宣称双向混版兼容，不放宽 parser，不擅自升版本。原产品原子发行/匹配 worker 部署边界保持。\n- 对象只在 UI/private typed payload 出现。Rust Debug/C# ToString 脱敏；诊断仍只有原 correlation/state/terminal/count/elapsed/native code。\n",
+        "after_text": "Before this correction, `JobProgressView::show_prompt` showed only sizes for Conflict and generic prose for CreateOverwrite. Consecutive conflicts with equal sizes were not distinguishable. This does not establish incorrect target identity or publication in the underlying operation.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 18,
+        "baseline_end": 20,
+        "after_start": 12,
+        "after_end": 13,
+        "baseline_text": "## UI/API 选择\n沿 Bandizip 允许文本资源 IDD_ASK_DUPEFILE 的 existing/incoming 双对象结构（未运行/未验证其动态布局）。官方 Component0.8.0 `Dialog` 原 title/body/footer/Action/Close owner，`DescriptionList::vertical().columns(1)` 只读 metadata 公共槽，原 Button outline/default Medium32、Checkbox 原单 owner。Dialog 的 body scroll 与独立 footer 已在 exact released source 核实；不改 560x300/default、480x260/min client。完整长 Unicode 路径不删除字符；正文 wrap/受控滚动，必要完整标识可在正文滚到末尾。无新 Clipboard/Shell/native 交互。\n",
+        "after_text": "The actual chain is the original format/codec -> `PrivateOutput::begin_extracted_file` -> `ExtractionConflict::begin` and its original ticket -> private worker frame -> `ArchiveJobSession.Prompt` -> typed `ArchiveJobEvent` -> original bridge/job record -> `refresh_job`/`ProgressSnapshot` -> original official Dialog. CreateOverwrite follows the original runner preflight -> session immutable command/ticket -> the same typed event/UI chain.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 21,
+        "baseline_end": 23,
+        "after_start": 14,
+        "after_end": 15,
+        "baseline_text": "## 保持不变量\n原 native identity、entry ordinal/source revision、overwrite validation、有限资源预算/path safety、临时输出完整验证/原子发布、密码 secret、ticket generation、once reply、cancel/disconnect/timeout/apply-all、跨实体 defer 完全保留。非 Conflict/CreateOverwrite 不整改；不动 #5 Enter/#8 文案、codec、安全或 OS 策略。\n",
+        "after_text": "The minimal change is an optional, presentation-only prompt snapshot containing the incoming archive member and target. The current worker plan supplies exact display context; C# combines it with this immutable command's destination root for UI identification. CreateOverwrite uses that command's destination/create name. Native observation tokens, filesystem paths used for operations, source session/ordinal, overwrite validation and budgets never consume the new fields.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 24,
+        "baseline_end": 26,
+        "after_start": 16,
+        "after_end": 17,
+        "baseline_text": "## 验证与授权限制\n先有效红再绿：真实 typed notification -> 原 job state -> 实际官方 Dialog 的可观测内容；同大小不同目录/ticket、两 job/迟到 reply、CreateOverwrite；原按钮/Checkbox/keyboard/pointer 单次回复；长 Unicode、缺字段/非法类型、原尺寸/滚动/动作可达。原 engine/worker/C# fixtures 只允许 GUID 临时合成文件、受控 adapter；日志 sentinel 不泄漏。保留原安全断言。\n",
+        "after_text": "## Compatibility and privacy\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 27,
+        "baseline_end": 28,
+        "after_start": 18,
+        "after_end": 22,
+        "baseline_text": "运行 focused Archive/Desktop/Protocol/IPC、必要 effect-reviewed C# fixtures、strict owner Clippy/workspace check/fmt/source gates；完整 Desktop 最多一轮。每 Rust shell 单 job/no incremental/codegen256；自然等待其他 Cargo，不能干预。无 Release/package/install/product/PlatformHost/服务/实际 HWND/Shell/picker/真实用户数据/registry/commit/push/递归代理。\n",
+        "after_text": "- Preserve wire version 1, the original worker schema, and strict unknown-field rejection. Missing/None optional display is omitted on serialization.\n- New receivers accept old payloads. Missing context explicitly shows `本次提示未提供对象标识`; never borrow progress, selection or another ticket's data, invent a path, or approve overwrite automatically.\n- Old strict receivers cannot accept populated new fields. Do not claim bidirectional mixed-version compatibility, relax the parser or silently increase the version. Preserve the original atomic product release/matching-worker deployment boundary.\n- Objects appear only in UI/private typed payloads. Redact Rust Debug and C# ToString. Diagnostics retain only the original correlation/state/terminal/count/elapsed/native-code fields; no per-frame or file-tick logging.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 29,
+        "baseline_end": 30,
+        "after_start": 23,
+        "after_end": 42,
+        "baseline_text": "每 existing file 编辑前 dirty baseline 已存本会话 item04 scratch；最终 task evidence 发布 exact own-delta/manifest/protected hash 与每条验收证据。source/compiled/synthetic/render 与 native/physical IME/DPI/reader/visual/user acceptance 分开；额外 QuickLaunch source gate 历史 FAIL 保留。\n",
+        "after_text": "## Component/API selection and layout\n\nUse the existing/incoming structure evidenced by the allowed Bandizip `IDD_ASK_DUPEFILE` text resources. That evidence is not a live application or dynamic-layout verification. Preserve official Component0.8.0 `Dialog` title/body/footer/Action/Close ownership and use the public read-only metadata slots of `DescriptionList::vertical().columns(1)`. Keep the original Button outline/default Medium32 tier and single Checkbox owner.\n\nThe exact released Dialog implementation provides body scrolling separate from its footer. Keep default 560x300 and minimum 480x260 client dimensions. Retain every character of long Unicode identifiers; wrap and scroll the body so the complete identifier is recoverable. Keep overwrite/skip/rename/cancel and apply-all reachable in the original fixed footer. Do not add Clipboard/Shell/native interactions, fake controls, a second dialog, focus owner or reply dispatcher.\n\n## Preserved invariants and exclusions\n\nPreserve native identity, entry ordinal/source revision, overwrite validation, finite resource budgets/path safety, fully verified temporary output/atomic publication, password secrecy, ticket generation, once-only reply, cancel/disconnect/timeout/apply-to-all and deferred cross-entity work. Non-Conflict/CreateOverwrite prompts are not being redesigned. Do not change #5 Enter behavior, #8 wording, codecs, safety or OS policy.\n\n## Verification and evidence boundaries\n\nEstablish executable red/green evidence at the real typed notification -> original job state -> actual official Dialog boundary. Cover equal-size members in different directories/tickets, two jobs, consecutive tickets and late replies, CreateOverwrite's current output, original pointer/keyboard/Checkbox once-only decisions, long Unicode content, missing/invalid typed fields, original client budgets, real scrolling and reachable actions. Keep original security assertions. Worker/C# fixtures may use only GUID-owned temporary synthetic files and controlled adapters; verify sentinel privacy through the original diagnostic sink.\n\nThe initial implementation verification covers focused Archive/Desktop/Protocol/IPC, effect-reviewed C# fixtures, strict owner Clippy/workspace check/format/source gates, and at most one complete Desktop run. Its actual failed and passing results remain historical evidence, not replaceable by later shared-tree results. R1/R2 verification is narrower: six standard audit04 tests, original archive job regressions, required scoped lint/format/diff and document gates. The outstanding CreateOverwrite Space diagnostic remains **UNRESOLVED / NOT ACCEPTED**, outside default regression registration, with its complete original source, expected-one assertion, dependencies, commands and failed logs preserved in task evidence. Pointer/fallback success does not certify keyboard activation.\n\nEvery Rust shell uses `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, `RUSTFLAGS=-C codegen-units=256`, serial execution, sufficient timeout and natural-idle waiting. Do not kill, pause, reserve or reorder another process/session. No Release/package/install, product/PlatformHost/service, actual HWND/Shell/picker/clipboard, real user config/database/archive/registry, commit/push or recursive delegation is authorized.\n\nSave each existing file's current dirty baseline before editing; it is not a HEAD baseline. Preserve prior task evidence and parent-review documents. On a concurrent path change, stop that path and report rather than overwrite it. Publish exact forward/reverse-reconstructable deltas, versioned manifests, frozen-artifact hashes and acceptance mapping. Distinguish source/compiled/synthetic/headless semantic/geometry evidence from native lifecycle, physical input/IME/DPI, UIA/reader, screenshots/visual and user acceptance. Keep the previously failed extra Quick Launch source gate explicit; do not repair build/security/gates here.\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  },
+  {
+    "path": ".trellis/tasks/10-25-archive-prompt-object/outcomes.md",
+    "baseline_sha256": "7b83e0caf2547aca5ffcd9c31b3c9aa8944c25ab0705d89fcb8e1c1e2a22eb80",
+    "after_sha256": "624b194cbcf2ab56f25c70ac855f6c63fb94bcd9cd8b38938dea699fcab85d0a",
+    "operations": [
+      {
+        "kind": "replace",
+        "baseline_start": 0,
+        "baseline_end": 1,
+        "after_start": 0,
+        "after_end": 1,
+        "baseline_text": "# 原报告 #4 — 当前决策对象交付（待父 review，非验收）\n",
+        "after_text": "# Audit #4 — Current decision object delivery and R1/R2 correction\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 2,
+        "baseline_end": 4,
+        "after_start": 2,
+        "after_end": 3,
+        "baseline_text": "## 结果与范围\n仅第 6 次单项／原 #4。Conflict 官方 Dialog 显示当前 prompt 的传入成员和完整被覆盖目标；CreateOverwrite 显示本次输出压缩包。对象绑定在原 ticket 的 `ArchiveJobPrompt.display` 内，不从 progress、selection/index 或其他 job 重建。旧载荷无字段显示“本次提示未提供对象标识”，不伪造标识、不自动批准。沿用 `Phase A — Engine contracts and safety foundation` 稳定化，不宣称阶段或整体 UI 完成；交父 review 后停止，第 7 项未授权。\n",
+        "after_text": "## Status, authorization and phase\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 5,
+        "baseline_end": 14,
+        "after_start": 4,
+        "after_end": 5,
+        "baseline_text": "## 真实链路与变更\n1. 现有 ZIP、TAR/四种 compound、Gzip/BZip2/XZ/Zstd、7z/RAR 原输出调用均汇入 `PrivateOutput::begin_extracted_file`。普通格式已传入 plan-prefixed target；隔离 codec 在原 `plan_paths` 映射。\n2. `PrivateOutput.display_prefix` 只记本次 `reserve_subfolder` 成功的展示前缀，绝不替代会影响 native 操作的 `plan_prefix`。从完整当前相对名精确匹配原 immutable entries，保留原 member 字符串。没有 basename/全局 progress 猜测，没有 codec 接口／dispatch 修改。\n3. `ExtractionConflict::begin` 在原 Ask pending ticket 的通知中附 display；domain `Prompt::Conflict` 不增加路径，避免其派生 Debug 泄漏。原 native path、observation token 和所有 decision 分支不读取 display。\n4. `ArchiveJobSession.Prompt` 严格解析 UI-only display，用本次不可变 Command.Request.Destination 纯字符串组成目标展示；不调用新 filesystem API。CreateOverwrite 的原 runner native 预检回调从同一 immutable Command 的 Destination/Create.Name 创建 display。\n5. 原 typed event -> bridge -> job record -> `refresh_job` -> `ProgressSnapshot` -> `JobProgressView::show_prompt` 原 owner 不变。原 `reply_job` 的 prompt 相等/ticket/kind/terminal/一次回复 guard、原 C# Reply/InteractionPort 不变。\n6. 原官方 Component0.8.0 Dialog body/footer、DescriptionList vertical/one column/borderless 公共 slot + Label；Button outline/default Medium32 和 Checkbox 仍是原控件/回调。只把同一 Checkbox 放入原 Dialog 的固定 footer，保证 apply-all 不随长正文滚走。无第二 focus/close/reply dispatcher。\n7. 完整标识每 24 Unicode scalar 插入视觉换行，不删字符/不省略/不当 Markdown；原完整字符串附给实际 Label-role 语义节点，长正文可滚到底。没有 Clipboard/Shell/OS 动作。原 client 默认560x300、最小480x260未改。\n8. 必要构造适配仅 readmission 的 `display: None`、旧 Destination fixture 的 None，以及 CLI 两个测试 literal 的 None；原安全断言未删减。未改 worker.rs/worker_wire.rs（两者已保存 baseline，最终列为观察未改）。\n",
+        "after_text": "This remains the sixth individually authorized item, original audit #4. Conflict now presents this prompt's incoming member and complete overwrite target; CreateOverwrite presents this operation's output archive target. The snapshot belongs to the original ticket in `ArchiveJobPrompt.display`, not progress, selection/index or another job. Missing legacy fields explicitly show `本次提示未提供对象标识`, without an invented identifier or automatic approval.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 15,
+        "baseline_end": 20,
+        "after_start": 6,
+        "after_end": 7,
+        "baseline_text": "## 兼容、隐私与安全不变量\n- 版本保持 job1／原 worker schema；`display` optional/default，None 省略。新接收端读旧载荷成功；旧严格接收端会拒绝新 populated 字段，**不是双向混版兼容**。没有放宽 deny_unknown_fields／C# strict、没有擅升版本或增加 capability/预算授权。\n- display typed shape 仅 Conflict（有 member）／CreateOverwrite（无 member），有限 UTF-8 bytes 与无控制字符；非法类型/未知字段拒绝。缺字段只 honest fallback。\n- Rust `ArchiveJobPromptDisplay::Debug` 和 C# record ToString `[PRIVATE]`；外层 prompt/event 的嵌套输出不含新 payload。原 correlation/accepted/state/terminal/count/elapsed/native-code 诊断不变，无 tick/per-frame 日志。实际原 C# sink sentinel 通过。\n- native identity/source session/entry ordinal、overwrite validation、path safety、有限资源预算、temp 输出完整验证/发布、password clearing、ticket/generation、once reply、cancel/disconnect/timeout/apply-all、cleanup-held slot 和跨实体 defer 保持。未改 native output/session/runner、安全策略、codec 或依赖/vendor。\n",
+        "after_text": "This is stabilization within `Phase A — Engine contracts and safety foundation`, not Phase A–F or overall UI completion. The initial parent review is **CHANGES REQUESTED / NOT ACCEPTED**, with no confirmed production display-chain blocker from its one directed pass. The current correction is limited to R1/R2. Stop after re-delivery for the parent's concrete correction review; item seven is not authorized.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 21,
+        "baseline_end": 25,
+        "after_start": 8,
+        "after_end": 9,
+        "baseline_text": "## 参考与 API 证据\n重新只读 Bandizip `D:\\Tool\\Bandizip\\langs\\SimpChinese.lang:579`–588 的 existing/incoming/Skip/Overwrite/Rename/apply-all。未运行 Bandizip GUI、未反编译/反汇编/提取依赖；资源不证明动态布局。\n重新只读 licensed Archiver `D:\\Code\\Archiver-main\\core\\src\\lib.rs:230` decoder 和 `:665` 单文件 File::create；没有复制 truncating publication/progress-name 作为授权。旧 NxTools 无已识别的一般归档 UI，不杜撰迁移来源。\n精确 Component0.8.0 `dialog/dialog.rs:735`/769–786 的 viewport/body-scroll/footer，`description_list.rs` vertical/columns/item、Label 与 footer public slots 已读。索引已追加到 `docs/reference-code/archive.md`，不覆盖历史结论。\n",
+        "after_text": "## R1/R2 changes in this revision\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 26,
+        "baseline_end": 28,
+        "after_start": 10,
+        "after_end": 57,
+        "baseline_text": "## 实际验证（source/compiled/synthetic，不是 visual/user acceptance）\n| 检查 | 实际结果与证据 |\n",
+        "after_text": "### R1 — complete unresolved diagnostic outside default regressions\n\nOnly the newly introduced `audit04_create_keyboard_release_and_missing_object_cancel_are_once_only` function was removed from default `archive/job_tests.rs`. Its complete original 76 lines, including `#[gpui_kit::test]`, real Tab/focus/Space down-up, expected-one reply assertion, duplicate-release assertions and the entire later fallback/cancel section, are preserved byte-for-byte in:\n\n`evidence/revision-r1-r2/unresolved-diagnostics/create-keyboard-unresolved-probe.rs.txt`\n\nThe complete source context, original file hash and reproduction dependencies are preserved beside it. The original `job_tests.rs` revision-start SHA256 is `1723f2428a980d14a06871069c41ae5a92c5746f308e7e37c52f89347a5c639e`; the complete diagnostic function SHA256 is `d961cc97bed5db46c476dc1d10ee5036eb2d0c26b52bc867308854178d1d277c`, identical to the earlier saved diagnostic. It is explicitly **UNRESOLVED / NOT ACCEPTED**, not included by a Rust module/Cargo target, not ignored or conditionally bypassed, and not counted as a passing test. No pre-existing regression or assertion was removed. The six independently passing audit04 regressions remain standard tests, including CreateOverwrite pointer/missing-object cancellation and Conflict keyboard activation.\n\nNo product keyboard behavior was fixed: the original Button/DialogAction/on_ok ownership, vendor sources and #5/default Enter behavior are unchanged. Historical failures remain intact: focused **6/7** and the sole complete Desktop run **1207/1208**, with this diagnostic as their failure. No new complete Desktop run was performed to replace that record.\n\n### R2 — English engineering documents\n\nThis task's `prd.md` and `outcomes.md` were intentionally rewritten in English, as required by `.trellis/spec/index.md:39`. Exact phase/API/test names, red/green and intermediate-failure history, compatibility, concurrency and acceptance limits are retained. Product Chinese labels/copy, raw logs, evidence source and other task documents were not translated or rewritten. The original Chinese document bytes remain available through their initial baselines/deltas and this revision's saved baselines. Parent-review documents and the original manifests remain immutable.\n\n## Production chain and original implementation changes\n\n1. Existing ZIP, TAR/four compound formats, Gzip/BZip2/XZ/Zstd and isolated 7z/RAR output calls enter `PrivateOutput::begin_extracted_file`. Ordinary formats already provide the plan-prefixed target; isolated codecs use the original `plan_paths` mapping.\n2. `PrivateOutput.display_prefix` records only the presentation prefix after this `reserve_subfolder` succeeds. It never replaces native `plan_prefix`. The complete current relative name is matched exactly against the immutable entries and retains the original member string. There is no basename/global-progress guess and no codec interface or dispatch change.\n3. `ExtractionConflict::begin` attaches the display snapshot to the notification for the original Ask pending ticket. Domain `Prompt::Conflict` gains no path fields that could leak through its derived Debug. Original native paths, observation tokens and every decision branch do not consume display.\n4. `ArchiveJobSession.Prompt` strictly parses presentation-only display and combines the target with the same immutable `Command.Request.Destination` using string operations, not new filesystem APIs. The original CreateOverwrite runner preflight callback uses that command's Destination/Create.Name.\n5. The original typed event -> bridge -> job record -> `refresh_job` -> `ProgressSnapshot` -> `JobProgressView::show_prompt` owner remains. Original `reply_job` prompt equality/ticket/kind/terminal/once-only guards, C# Reply and InteractionPort are unchanged.\n6. Official Component0.8.0 Dialog body/footer, vertical one-column borderless DescriptionList public slots and Label display the metadata. Original outline/default Medium32 Buttons and the same Checkbox callbacks remain. Only the Checkbox's placement moves into the original fixed footer so long body content cannot scroll apply-all out of reach. There is no second focus/close/reply dispatcher.\n7. Full identifiers receive a visual newline every 24 Unicode scalar values; characters are not removed, ellipsized or parsed as Markdown. The actual Label-role semantic node retains the original full string, and the body can scroll to its end. There is no new Clipboard/Shell/OS action. Default560x300 and minimum480x260 client sizes remain.\n8. Necessary construction adaptations are only `display: None` for readmission, the existing Destination fixture and two CLI test literals; their safety assertions remain. `worker.rs` and `worker_wire.rs` were observed/baselined but not modified by this item.\n\nR1/R2 freezes this entire production implementation. Its only Rust source edit is relocation of the one newly introduced diagnostic; the other two existing-file edits are the document translations.\n\n## Compatibility, privacy and preserved safety contracts\n\n- Keep job wire version1 and the original worker schema. `display` is optional/defaulted and omitted for None. New receivers read old omitted payloads; old strict receivers reject populated new fields. This is **one-way legacy reading, not bidirectional mixed-version compatibility**. No unknown-field relaxation, version increase, capability or budget grant is introduced.\n- Typed display is valid only for Conflict with a member or CreateOverwrite without a member, with finite UTF-8 byte bounds and no control characters. Invalid types/unknown fields are rejected; missing context has an honest fallback.\n- Rust `ArchiveJobPromptDisplay::Debug` and C# record ToString use `[PRIVATE]`; nested prompt/event printing does not disclose the new payload. Original correlated accepted/state/terminal/count/elapsed/native-code events remain low-noise, without ticks/per-frame logs. Synthetic sentinel checks through the actual original C# sink passed.\n- Preserve native identity/source session/entry ordinal, overwrite validation, path safety, finite resource budgets, fully verified temporary output/publication, password clearing, ticket/generation, once-only reply, cancel/disconnect/timeout/apply-all, cleanup-held slots and deferred cross-entity work. Native output/session/runner, safety policy, codecs, dependencies and vendor code were not changed.\n\n## Reference and exact API evidence\n\nRead-only reference inspection revisited Bandizip `D:\\Tool\\Bandizip\\langs\\SimpChinese.lang:579`–588 for existing/incoming/Skip/Overwrite/Rename/apply-all. No Bandizip GUI, decompilation, disassembly or dependency extraction was performed; resources do not prove dynamic layout.\n\nLicensed Archiver `D:\\Code\\Archiver-main\\core\\src\\lib.rs:230` decoder selection and `:665` single-file File::create were re-read. Truncating publication/progress-name callbacks were not copied as authorization. No general old NxTools archive UI was identified; no migration source is invented.\n\nExact Component0.8.0 `dialog/dialog.rs:735` and769–786 provide viewport limits, body scrolling and a separate footer. DescriptionList vertical/columns/item, Label and footer public slots were read. Only the verified entries/call chain/invariants were appended to `docs/reference-code/archive.md`, preserving historical conclusions.\n\n## Historical implementer verification — immutable results\n\nThese are source/compiled/synthetic/headless observations, not visual or user acceptance. Original logs remain in `evidence/` and retain their bytes even when a historical filename contains “green”.\n\n| Check | Actual original result |\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 29,
+        "baseline_end": 42,
+        "after_start": 58,
+        "after_end": 72,
+        "baseline_text": "| typed-wire 有效红 | 新增两条已编译测试0/2，运行时 strict parser 因 display 不存在拒绝；`desktop-object-red.log`。不是 compile failure。 |\n| 真实 UI 有效红 | typed 模型贯通后，受控仅去掉原 Dialog 两个 prompt_objects slot；同两条0/2，分别在实际 incoming/output target missing 断言失败。立刻恢复整文件 SHA256 `6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3`；`desktop-real-ui-red.log`。 |\n| focused UI | 最终7条6PASS/1FAIL，`desktop-object-final.log`。两个对象、两 job/同 sizes/连续ticket/旧迟到reply、pointer覆盖/跳过/重命名/apply-all、Create pointer与missing fallback cancel、Conflict Tab+Space单次deferred reply、长Unicode真滚动固定footer通过。Create keyboard FAIL 保留，见下。 |\n| 原 worker producer | `prompt_display_contract`2/2，涵盖18次格式/策略运行：10 engine formats+ZIP/TAR Name，7z非solid/solid+RAR4/5+7z/RAR Name；真实worker/InteractionPort，controlled fake native 观察token，Skip不分配/写入/发布。 |\n| 原 worker/安全直接回归 | interaction4 + job2 + output_readmission3 + prompt2 + cancel1 + extraction9 + wire18 = **39/39**。原取消/stale/source/预算/完整性/cleanup断言保留。`worker-direct-regressions.log`。不是全部 Archive 套件或 native acceptance。 |\n| Protocol | 归档job6/6，含旧省略/roundtrip/严格未知类型/shape/bounds/Debug sentinel；整套79/80，唯一无关 default-apps FAIL；两份日志保留。 |\n| IPC | 原42/42，`ipc-regressions.log`；使用隔离临时管道/合成身份，不连接真实产品/服务。 |\n| C# build | `dotnet build ...Tests.csproj --no-restore` 最终0warnings/0errors；初次新增测试 nullable CS8602 已本地修复并留原日志，不当行为红。 |\n| C# 精确 fixtures | LIST5后同组RUN5/PASS5/SKIP0：create confirmation cancel/changed target、detached preflight cancellation slot、strict wire/pre-cancel picker（不创建picker）、session conflict global admission cancel、ZIP decisions。仅GUID临时合成sources/output/helpercopy+原Job/worker，未执行产品/服务/实际HWND/Shell/registry。`csharp-five-fixtures.log`。 |\n| strict Clippy | Archive isolated-codecs --tests PASS；Protocol --tests PASS；Desktop --tests FAIL于未改 shell_integration.rs:256 needless_update。本项新增unwrap均改expect，不加allow。 |\n| workspace check/fmt | `cargo check --workspace --tests` PASS。workspace fmt 曾FAIL于本项新增两行与无关archive_page.rs；仅本项两行局部修正后8个本项Rust文件 scoped rustfmt --check PASS。没有改无关格式或重跑全仓格式猎绿。 |\n| 唯一完整 Desktop | **1207PASS/1FAIL/0ignored，共1208**，236.99s测试阶段；唯一本次新增CreateOverwrite keyboard失败。`desktop-full-once.log`。本项只有这一轮完整Desktop，不重跑猎绿；其余全部（含原Unlock）PASS，不归因对象展示修复。 |\n| source gates | 10 related PASS：catalog/release/Markdown/spec、archiveCLI/PhaseF shell/spike/release chain、ClipboardUI/DownloadUI。额外QuickLaunch gate仍FAIL1765（历史build writer检查），不改security/build/gate凑绿。 |\n",
+        "after_text": "| Typed-wire executable red | Two new tests compiled; runtime strict decoding rejected unknown display, **0/2**. `desktop-object-red.log`; not a compilation failure. |\n| Initial actual Dialog green | After the typed/producer/UI changes, both real Dialog object tests passed, **2/2**. `desktop-object-first-green.log`. |\n| Actual UI executable red | With the typed model working, a controlled removal of only the two Dialog prompt_objects slots produced **0/2** at actual incoming/output-target-missing assertions. Both slots were immediately restored to progress.rs SHA256 `6fc8f43dabefde15197d8d7f55b5b5050236c3aa299bbeda6310ce2d9422efe3`. `desktop-real-ui-red.log`. This is not an old-keyboard runtime comparison. |\n| Expanded/final focused UI | Initially **4/5**, then **6/7** after independent pointer/fallback and Conflict keyboard coverage. The CreateOverwrite Space diagnostic consistently failed with actual0/expected1; an explicit KeyDown/Up attempt did not resolve it. All failures remain in `desktop-object-expanded.log`, `desktop-object-input-green.log`, `desktop-object-final.log`. |\n| Worker producer matrix | `prompt_display_contract` **2/2**, covering18 format/strategy runs:10 engine formats plus ZIP/TAR Name, 7z non-solid/solid and RAR4/5 plus7z/RAR Name. Real worker/InteractionPort, controlled fake native observation tokens; Skip never allocates/writes/publishes. |\n| Direct worker/safety regressions | interaction4 + job2 + output_readmission3 + prompt2 + cancel1 + extraction9 + wire18 = **39/39**. Original cancel/stale/source/budget/integrity/cleanup assertions remain. `worker-direct-regressions.log`; not the entire Archive suite or native product acceptance. |\n| Protocol | Archive job **6/6**, including omission/roundtrip/strict type/unknown-field/shape/bounds/Debug sentinel. Full Protocol **79/80** with the Default Apps negative-test failure preserved. Do not call that full suite green or assert causality merely because lib.rs was not edited by this item. |\n| IPC | **42/42**, `ipc-regressions.log`; isolated temporary pipes/synthetic identities, not real product/service connections. |\n| C# build | Final Tests build without restore: **0warnings/0errors**. The first build found CS8602 in the newly added test; the local nullable annotation was corrected and its failed build log retained, not counted as behavioral red. |\n| Exact C# fixtures | Exact LIST5 then RUN5/PASS5/SKIP0: create confirmation cancel/changed-target, detached preflight cancellation slot, strict wire/pre-cancel picker without opening a picker, session conflict/global admission/cancel, and ZIP decision matrix. GUID-owned synthetic source/output/helper copies with original Job/worker; no product/service/actual HWND/Shell/registry execution. `csharp-five-fixtures.log`. |\n| Strict Clippy | Initial new-test unwrap violations were corrected to contextual expect without suppression. Archive isolated-codecs --tests and Protocol --tests passed. Desktop --tests then failed at the shared `archive/shell_integration.rs:256` needless_update. The temporary shared launch_entry unused-import warning later disappeared externally; it is not attributed to this item. |\n| Workspace check/format | `cargo check --workspace --tests` passed. Workspace format initially failed for two new protocol test lines plus shared `main_window/archive_page.rs:798`; only the new lines were locally formatted. Eight task Rust files then passed scoped rustfmt --check. No unrelated owner was edited to obtain green results. |\n| Sole complete Desktop run | **1207 passed / 1 failed / 0 ignored,1208 total**,236.99s test execution. The sole failure was the newly introduced CreateOverwrite Space diagnostic. `desktop-full-once.log` remains a failed historical run. All other tests, including the original Unlock test, passed; that is not attributed to this display repair. No complete rerun occurred in R1/R2. |\n| Source gates | Ten related gates passed: catalog/release/Markdown/spec, archiveCLI/PhaseF shell/spike/release chain, ClipboardUI/DownloadUI. The extra Quick Launch gate still failed at1765; no build/security/gate repair was attempted. |\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 43,
+        "baseline_end": 44,
+        "after_start": 73,
+        "after_end": 74,
+        "baseline_text": "所有 Rust shell 均 CARGO_BUILD_JOBS=1、CARGO_INCREMENTAL=0、RUSTFLAGS=-C codegen-units=256，串行自然等待其他cargo/rustc，不kill/暂停/请求他人让出；充分timeout，无重复构建/残留worker。没有Release/package/install/commit/push/递归代理。\n",
+        "after_text": "Every original Rust shell used `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0`, `RUSTFLAGS=-C codegen-units=256`, serial natural-idle waiting and sufficient timeout. No process/session was killed, paused or asked to yield/reserve/reorder. No duplicate build or residual worker was reported at delivery. No Release/package/install/commit/push/recursive delegation occurred.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 45,
+        "baseline_end": 51,
+        "after_start": 75,
+        "after_end": 76,
+        "baseline_text": "## 保留失败与限定交付\n1. **CreateOverwrite Space激活缺口**：`audit04_create_keyboard_release_and_missing_object_cancel_are_once_only` 明确Tab到实际“确认覆盖”Button，KeyDown/Up后0回复而期望1；失败未删除/ignore/降断言。原 baseline 的 DialogAction.child(Button) 从未附 Button.on_click，当前本项也逐字保留该 owner；locked Button/Base仅on_click存在才装keyboard handler，外层DialogAction靠pointer冒泡。是源代码可追溯的既有边界，但本轮没有把原baseline完整替换再编译来声称旧runtime验收。父明确要求不顺手修此缺口。本项Create pointer正向另测通过，不能冒充keyboard通过。该失败测试后半fallback在此用例未执行；独立pointer/fallback测试实际通过。\n2. **Protocol full 79/80**：未修改 `lib.rs:2332` 的 `default_apps_fixed_empty_payload_rejects_arbitrary_targets` 失败，归档display测试PASS；不修无关命令。\n3. **Desktop strict Clippy**：未修改 `archive/shell_integration.rs:256` needless_update；不修改该owner或加suppression。\n4. **全仓fmt**：无关 `main_window/archive_page.rs:798` 差异保留；本项scoped fmt全通过。\n5. **Extra QuickLaunch source gate**：原1765 compound FAIL保留。\n",
+        "after_text": "## Outstanding diagnostic and Protocol attribution limits\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 52,
+        "baseline_end": 53,
+        "after_start": 77,
+        "after_end": 78,
+        "baseline_text": "以上使本交付**不是全绿／未验收**，等待父独立review判断#4限定范围。不推进下项。\n",
+        "after_text": "### CreateOverwrite Space remains unresolved\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 54,
+        "baseline_end": 58,
+        "after_start": 79,
+        "after_end": 80,
+        "baseline_text": "## Dirty baseline 与并发边界\n每existing file写前保存当下dirtybaseline，非HEAD。最终13个existing task文件有delta、1个新worker测试、PRD/outcomes；另外2个已观察源码文件未修改。13个前五项production保护hash全部一致。\n两次外部rustfmt重排发生于本项新增区域：Rust job_tests首次追加后1E0F→E176；Protocol新增后9325→EE7F。均立即停写/报父，保存live边界，获明确受限恢复后只做本项必要adaptation；未覆盖格式变化。证据区分原dirtybaseline、外部live、后续自身改动，且验证原preexisting内容保持（唯一必要旧literal None列明）。\n父可读 `evidence/` 内含精确baseline、own-delta双向重建、manifest与日志；不要求父跨本会话scratch。无先前parent-review修改。\n",
+        "after_text": "`audit04_create_keyboard_release_and_missing_object_cancel_are_once_only` reached the actual focused `确认覆盖` Button and sent explicit Space KeyDown/KeyUp, then received0 replies instead of1. Its later fallback section did not execute; only the separate passing pointer/fallback test establishes that behavior. R1 relocates this newly introduced out-of-scope diagnostic, not any old regression, and does not repair keyboard activation.\n"
+      },
+      {
+        "kind": "replace",
+        "baseline_start": 59,
+        "baseline_end": 61,
+        "after_start": 81,
+        "after_end": 124,
+        "baseline_text": "## 未执行／不能推断\n未启动真实Desktop/PlatformHost/服务/原生HWND/Explorer/Shell/picker/真实剪贴板；未读写真实用户config/db/archive/registry。未做physical input/IME、多DPI、UIA/reader、屏幕截图/视觉对照或用户验收。headless semantic/geometry/paint生命周期不等同accessibility reader或native UI验收。C# scoped native-file/Job fixtures不等同真实应用生命周期；跨层链路由各真实边界的合成测试证明，未运行一个实际产品进程的完整端到端UI会话。\n",
+        "after_text": "The original baseline's DialogAction.child(Button), on_ok, on_cancel and Conflict decision callback lines match the delivered implementation after stripping indentation only; `evidence/late-instruction/footer-compare.json` preserves that comparison. Exact locked Component/Button/Base source installs keyboard activation only when on_click exists, while the original outer DialogAction owns pointer click dispatch. This is source evidence supporting the existing owner limitation, **not a separately run complete old-UI runtime proof**. No shared production baseline was restored to reproduce the old keyboard path, no no-op on_click/new dispatcher/vendor patch was added, and no default-Enter or overall accessibility success is claimed.\n\n### Historical Protocol failure is not rewritten\n\nThe original full Protocol panic at `lib.rs:2332:13` asserts that `open_default_apps_settings` decoding rejects the loop's data. The log does not print the current loop value, so its exact failing input cannot be recovered or invented. At the later read-only check, the source listed four inputs: `{\"uri\":\"ms-settings:privacy\"}`, `{\"path\":\"C:\\\\x\"}`, null and an empty array. The then-current lib.rs SHA256 was `b19d21a17d720365839374ed51394be717b395d549ea04fc5263f128c24a6384`, with a dedicated empty-map Deserialize Visitor at491–513 and the test at2342. The original failed-run lib.rs hash/full snapshot was not saved; those different source times cannot be conflated.\n\nA bounded read-only call-chain/own-delta check found separate tagged PlatformCommand branches for ArchiveJob and OpenDefaultAppsSettings; the new display belongs to ArchiveJobEvent.prompt, and this item changed neither that enum/default-apps DTO/parser/test nor serde dependencies. This supports branch separation but does not prove full causality. Earlier “unrelated” wording was too absolute and was explicitly corrected by `late-instruction-addendum.md`. No protocol-wide green or Default Apps fix is claimed from the initial delivery.\n\n## Parent review results — separate attribution\n\n`parent-review.md` is immutable and records the parent's own directed pass: focused6/7 with the same keyboard failure, worker display2/2 plus safety37/37, Archive Protocol6/6, IPC42/42, C#build0warnings/0errors and exactLIST5/RUN5/PASS5/SKIP0, ten related source gates,13 exact dirty-deltas/16 source hashes/81 evidence hashes/13 protected hashes and concurrency-segment reconstruction.\n\nOn the later shared tree, the parent also ran the Default Apps test alone **1/1PASS**, strict Desktop/Archive/Protocol Clippy **PASS**, and workspace format **PASS**. These shared-tree changes are not attributed to audit #4 and do not replace the implementer's historical Protocol79/80, Desktop Clippy or format failures. A targeted Default Apps pass is not a full Protocol rerun. The parent's first PowerShell aggregate-result script had a scope/array error after native command results were captured; this is recorded as a harness aggregation error, not a product failure or repeated-runtime-test justification.\n\n## Fresh R1/R2 verification\n\n| Check | Actual revision result |\n| --- | --- |\n| Standard `cargo test -p nxtools-desktop audit04_ -- --test-threads=1` | **6/6PASS,0failed,0ignored**. Only the six object-display-scope regressions are registered; unresolved keyboard diagnosis is not counted as green. |\n| Original archive job regressions | **11/11PASS**, using `archive::application::jobs::tests::` with `--skip audit04_`; no original test/assertion was removed. |\n| Strict Desktop lint | `cargo clippy -p nxtools-desktop --tests -- -D warnings` **PASS** on the current shared tree. This is not a repair of the historical shared-tree failure. |\n| Scoped format | `rustfmt --check --edition 2024 --config skip_children=true .../archive/job_tests.rs` **PASS**; no formatter write or whole-tree formatting. |\n| Document/source gates and diff | spec114documents/14owners, component catalog, GPUI release, pinned Markdown editor, and scoped git diff --check all **PASS**. These are static checks, not product/native acceptance. |\n\nRevision checks use the same required low-memory Rust environment, serial idle waiting and sufficient timeout. Document/spec gates, exact-scope/diff and versioned-manifest/frozen-hash checks are recorded in `evidence/revision-r1-r2/`. This revision does not rerun complete Desktop, full Protocol, worker/native/C# suites, or the previously failed extra Quick Launch gate; their historical and parent-run results remain separately labeled.\n\nOne revision evidence-aggregation command used invalid PowerShell `ConvertTo-Json -InputObject @(...)+@(...)` argument composition and failed after the four additional source hashes had been checked. The corrected command first assigned the combined array, then serialized it; all28 frozen source rows were retained. This tool-script error did not modify product files, invalidate the captured native command results, or cause any runtime test rerun.\n\n## Dirty baselines, concurrent edits and versioned evidence\n\nEvery original existing file was saved at its current dirty baseline before editing, not at HEAD. The first delivery had13 changed existing task files, one new worker test and two task documents, plus two observed-but-unmodified source files. All13 prior-item protected production hashes matched. Exact old baseline bytes, forward/reverse reconstructable own-deltas and original logs remain in `evidence/`; parent-review files are not edited.\n\nTwo original external formatter events were detected and writing stopped immediately: job_tests after its initial append changed1E0F -> E176, and Protocol after its append changed9325 -> EE7F. Original baselines and observed live snapshots were retained. The parent explicitly authorized only bounded resumed changes; external formatting was not claimed as this item's work. The job_tests pre-existing849-line prefix was verified byte-identical, and its original-own/external-format/resumed-own three segments are exactly reconstructable. Protocol's exact pre-format intermediate bytes were not saved, so no isolated exact formatter delta is invented; task-start -> final and observed-live -> resumed-final are exact. The sole necessary old fixture adaptation was display:None, not a changed behavior assertion.\n\nR1/R2 saves new current dirty baselines for job_tests, PRD and outcomes. The original `evidence/delivery-manifest.json` SHA256 `bea18e4b467792ba69e46cb825d96b405a63e684634c1638e92ea64d27371924`, `own-deltas.json` SHA256 `ce07e982cc393e881976240d5cd20900db633bb21db074b278f60bb5b14d277b`, historical manifests/logs and parent-review documents remain frozen. Those original manifests describe the original version; the new revision manifest records the three changed current hashes, their baseline -> after deltas and the unchanged protected sources. It does not silently make the old manifest describe the revised documents/test registration.\n\nThe complete unresolved diagnostic source hash, context/dependencies, original failed commands/logs and status remain readable under `evidence/revision-r1-r2/unresolved-diagnostics/`. Fresh revision logs and exact change/frozen-artifact checks are separately indexed. No cross-session scratch access is required for parent review.\n\n## Not executed and acceptance limits\n\nNo real Desktop/PlatformHost/service, native HWND/Explorer/Shell/picker/clipboard or real user config/database/archive/registry was operated. No physical input/IME, multiple-DPI, UIA/reader, screenshot/visual comparison or user acceptance was performed. Headless semantic/geometry/paint lifecycle evidence is not reader or native UI acceptance; C# scoped native-file/Job fixtures are not live application lifecycle acceptance. Cross-layer synthetic tests cover real boundaries separately, not one live product process/UI end-to-end session.\n\nThe production CreateOverwrite keyboard diagnostic remains outstanding. Standard6/6 verifies only this item’s display/preserved-decision scope. Historical failed suites and the extra Quick Launch source gate remain explicit. R1/R2 re-delivery is **pending parent inspection and acceptance**, with no phase or next-item advancement.\n"
+      }
+    ],
+    "forward_verified": true,
+    "reverse_verified": true
+  }
+]

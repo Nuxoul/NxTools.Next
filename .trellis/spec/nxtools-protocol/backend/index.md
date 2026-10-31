@@ -7,3 +7,22 @@ Read [engineering](../../shared/engineering.md), [structure](directory-structure
 
 ## Quality Check
 `cargo test -p nxtools-protocol --lib`; affected IPC/C# roundtrips and lifecycle tests; scoped lint/check/fmt per [verification](../../shared/verification.md). No actual native command required for DTO tests. [Standards entry](../../index.md).
+
+Archive7z additive contracts: `ArchiveJobModifyAction::ReplaceContent` is SevenZ-only with2paths/
+1ordinal/valueNone; optional source_prefix binds implicit-directory rename to its old descendant.
+Optional ArchiveBrowserContext.sevenz_edit is advisory actual-open eligibility; missing legacy
+facts do not grant edit authority. Rust/C# strict shape checks and original source revision/attempt
+remain. See [owning format contract](../../nxtools-archive/backend/sevenz-edit.md).
+
+HZ3 explicit ArchiveSpace version2 adds optional bounded private source_set facts while version1
+shape remains unchanged; exact Rust/C#/caller binding and limits are in
+[archive batch contract](../../nxtools-desktop/backend/archive-batches.md). These read-only native
+observations grant no execution/write authority; missing facts fail closed for dedup/retry.
+
+HZ3-AC01 adds optional `ArchiveJobTerminal.output_published: Option<bool>` / C# `bool?`:
+absent/null is unknown, false is affirmative native zero-output evidence, true includes retained
+directory output. Default omission/strictboolean remain symmetric; facts do not grant execution,
+commit or cleanup authority and do not change native terminal precedence. See
+[native publication contract](../../platformhost/archive-creation.md) and original batch contract.
+
+HZ5 adds optional `ArchiveJobExtract.reclamation {mode:start|continue,recovery_id:UUID}` with symmetric Rust/C# full/Here/Ask/nonnil/no-readmission validation. Absence preserves ordinary extraction; Continue is a new Start, not live Resume. See [reclamation contract](../../nxtools-archive/backend/reclamation.md).

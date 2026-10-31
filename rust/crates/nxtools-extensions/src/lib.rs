@@ -1,21 +1,42 @@
 //! Host-neutral package identity and invocation contracts for NxTools extensions.
 //! Parsing and preview never execute an action or start an interpreter.
 
+mod api;
 mod archive;
+pub use api::{RequiredMethod, method_catalog, method_minimum_transport, supports_method};
+mod blob_calls;
+pub mod blobs;
 mod broker;
 mod bundle;
 mod bundled;
 pub mod command_template;
+mod data_plane;
+pub use data_plane::{DataAck, DataFrame};
 mod credential_transport;
 mod events;
+pub mod http;
+mod input;
+pub use input::{AcceptedInput, InputKind, InputSelection};
 mod invocation;
+mod network_declaration;
+pub use network_declaration::{MAX_NETWORK_ORIGINS, NetworkDeclaration, NetworkOrigin};
+mod page_cursors;
+pub use page_cursors::PageCursors;
 mod registry;
 mod resolver_routing;
 mod result_merge;
 pub use resolver_routing::{HandlerReference, ResolverCycleGuard, ResolverRoutingError};
+mod progress;
+pub use progress::{InvocationProgress, ProgressFrame};
 mod runtime;
 mod script;
+mod session;
+pub use session::{InvocationSession, SessionNotice};
+mod setting_validation;
+pub use setting_validation::{ChoiceLabel, ChoiceOption, TextValidation};
 mod settings_transaction;
+pub mod storage;
+mod storage_calls;
 mod strict_json;
 mod trust;
 pub use broker::{BrokerClient, BrokerError, BrokerEvent, BrokerRun, BrokerStart};
@@ -27,12 +48,14 @@ pub use invocation::{
     ProviderItem,
 };
 pub use registry::{InstalledPackage, PackageRegistry};
+/// Installation data identity is metadata owned by the host/Core transaction, not the script.
+pub type InstallationDataId = uuid::Uuid;
 pub use result_merge::{MergedRow, ResultMerge};
 pub use runtime::{
     ExtensionRuntime, FeatureAdapter, HostContext, HostFuture, HostReply, InvokeOutcome,
     InvokeRequest, RuntimeError,
 };
-pub use script::{ScriptProgram, ScriptRuntime, Setting, SettingType, UrlMatch};
+pub use script::{RuntimeMode, ScriptProgram, ScriptRuntime, Setting, SettingType, UrlMatch};
 pub use settings_transaction::{
     SecretFuture, SecretStore, SecretStoreError, SettingsDraft, SettingsSaveError, save_settings,
 };
@@ -67,6 +90,10 @@ pub struct Manifest {
     pub files: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub settings: Vec<Setting>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub requires: Vec<RequiredMethod>,
+    #[serde(default, skip_serializing_if = "NetworkDeclaration::is_empty")]
+    pub network: NetworkDeclaration,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -88,6 +115,8 @@ pub struct Handler {
     #[serde(default)]
     pub keywords: Vec<String>,
     pub action: DeclarativeAction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accepts: Option<AcceptedInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +172,8 @@ pub enum PackageError {
     ManifestTooLarge,
     #[error("unsupported extension schema version")]
     UnsupportedVersion,
+    #[error("extension requires an unsupported host method or version")]
+    UnsupportedCapability,
     #[error("invalid extension manifest")]
     InvalidManifest,
     #[error("extension package already exists; replacement must be explicit")]
@@ -188,6 +219,23 @@ impl Manifest {
             return Err(PackageError::UnsupportedVersion);
         }
         script::validate_script_manifest(self)?;
+        self.network.validate()?;
+        let mut required = HashSet::new();
+        if self.requires.len() > 32
+            || self.requires.iter().any(|requirement| {
+                !method_minimum_transport(&requirement.method, requirement.version).is_some_and(
+                    |minimum| {
+                        minimum
+                            <= self
+                                .runtime
+                                .as_ref()
+                                .map_or(1, |runtime| runtime.protocol_version)
+                    },
+                ) || !required.insert(&requirement.method)
+            })
+        {
+            return Err(PackageError::UnsupportedCapability);
+        }
         if !valid_id(&self.id)
             || !valid_text(&self.name, 256)
             || !valid_text(&self.version, 64)
@@ -234,6 +282,13 @@ impl Manifest {
                 }
             }
             handler.action.validate(false)?;
+            if let Some(accepts) = &handler.accepts
+                && (!accepts.validate()
+                    || handler.entry != "action"
+                    || !matches!(handler.feature.as_str(), "clipboard" | "downloads"))
+            {
+                return Err(PackageError::InvalidManifest);
+            }
             if let DeclarativeAction::Script { entry_file } = &handler.action {
                 if self.runtime.is_none() || !self.files.contains(entry_file) {
                     return Err(PackageError::InvalidManifest);

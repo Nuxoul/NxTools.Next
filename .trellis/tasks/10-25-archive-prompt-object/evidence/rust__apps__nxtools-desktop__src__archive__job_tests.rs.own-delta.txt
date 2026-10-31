@@ -1,0 +1,460 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/archive/job_tests.rs
++++ delivery/rust/apps/nxtools-desktop/src/archive/job_tests.rs
+@@ -448,6 +448,7 @@
+         incoming_bytes: Some(7),
+         approved_limit: None,
+         attempt: 1,
++        display: None,
+     };
+     let mut event = terminal(id, true);
+     event.kind = ArchiveJobEventKind::Prompt;
+@@ -847,3 +848,449 @@
+         "late completion must not restore older browser preferences"
+     );
+ }
++
++// Audit #4: the same typed prompt object must reach the original production Dialog.
++fn object_prompt(id: Uuid, kind: &str, member: Option<&str>, target: &str) -> ArchiveJobPrompt {
++    serde_json::from_value(serde_json::json!({
++        "ticket":{"operation_id":id,"prompt_id":Uuid::new_v4(),"generation":1},
++        "kind":kind,"error_code":null,"attempt":0,"existing_bytes":10,
++        "incoming_bytes":10,"approved_limit":null,
++        "display":{"incoming_member":member,"target":target}
++    }))
++    .expect("current decision object must cross the real typed wire")
++}
++fn show_object_prompt(
++    owner: &Entity<ArchiveApplication>,
++    endpoint: &nxtools_ipc::PlatformServerEndpoint,
++    id: Uuid,
++    prompt: ArchiveJobPrompt,
++    cx: &mut gpui_kit::TestAppContext,
++) -> gpui_kit::VisualTestContext {
++    let mut event = terminal(id, true);
++    event.kind = ArchiveJobEventKind::Prompt;
++    event.terminal = None;
++    event.prompt = Some(prompt);
++    // Exercise serialization, validation, original job notification and retained window.
++    let event: ArchiveJobEvent =
++        serde_json::from_slice(&serde_json::to_vec(&event).expect("encode original prompt event"))
++            .expect("decode original prompt event");
++    event.validate().expect("bounded typed event");
++    deliver(owner, endpoint, event, cx);
++    cx.run_until_parked();
++    let window = owner.read_with(cx, |app, _| {
++        app.jobs.records[&id]
++            .window
++            .as_ref()
++            .expect("original progress window")
++            .0
++    });
++    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
++    surface.update(|window, cx| {
++        window.activate_window();
++        window.draw(cx).clear(cx);
++    });
++    surface
++}
++fn object_labels(surface: &mut gpui_kit::VisualTestContext) -> Vec<String> {
++    surface.update(|window, _| {
++        gpui_kit::base::test_support::snapshots(window)
++            .into_iter()
++            .filter_map(|node| node.label().map(str::to_owned))
++            .collect()
++    })
++}
++#[gpui_kit::test]
++fn audit04_conflict_dialog_displays_ticket_member_and_full_target(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original job admission")
++    });
++    cx.run_until_parked();
++    let member = "资料甲/同名.txt";
++    let target = r"C:\owned\输出甲\资料甲\同名.txt";
++    let prompt = object_prompt(id, "conflict", Some(member), target);
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++    let labels = object_labels(&mut surface);
++    assert!(
++        labels.iter().any(|label| label == member),
++        "actual Dialog incoming member missing"
++    );
++    assert!(
++        labels.iter().any(|label| label == target),
++        "actual Dialog current target missing"
++    );
++    assert!(
++        owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.as_ref()
++            == Some(&prompt))
++    );
++}
++#[gpui_kit::test]
++fn audit04_create_dialog_displays_current_output_target(cx: &mut gpui_kit::TestAppContext) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original job admission")
++    });
++    cx.run_until_parked();
++    let target = r"C:\owned\输出乙\本次压缩包.zip";
++    let prompt = object_prompt(id, "create_overwrite", None, target);
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt, cx);
++    assert!(
++        object_labels(&mut surface)
++            .iter()
++            .any(|label| label == target),
++        "actual Dialog output target missing"
++    );
++}
++
++fn object_draw(surface: &mut gpui_kit::VisualTestContext) {
++    surface.run_until_parked();
++    surface.update(|window, cx| {
++        window.activate_window();
++        window.draw(cx).clear(cx);
++    });
++}
++fn object_node(
++    surface: &mut gpui_kit::VisualTestContext,
++    label: &str,
++) -> gpui_kit::base::test_support::ElementSnapshot {
++    object_draw(surface);
++    surface
++        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
++        .into_iter()
++        .find(|node| node.label() == Some(label))
++        .expect("painted production control")
++}
++fn object_click(surface: &mut gpui_kit::VisualTestContext, label: &str) {
++    let bounds = object_node(surface, label).bounds();
++    surface.simulate_event(gpui_kit::MouseDownEvent {
++        position: bounds.center(),
++        button: gpui_kit::MouseButton::Left,
++        ..Default::default()
++    });
++    surface.simulate_event(gpui_kit::MouseUpEvent {
++        position: bounds.center(),
++        button: gpui_kit::MouseButton::Left,
++        modifiers: Default::default(),
++        click_count: 1,
++    });
++    object_draw(surface);
++}
++fn object_replies(endpoint: &nxtools_ipc::PlatformServerEndpoint) -> Vec<ArchiveJobReply> {
++    let mut replies = vec![];
++    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
++        if let Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) = envelope.message
++            && command.action == ArchiveJobAction::Reply
++        {
++            replies.push(command.reply.expect("original typed reply"));
++        }
++    }
++    replies
++}
++#[gpui_kit::test]
++fn audit04_two_jobs_consecutive_tickets_keep_objects_and_once_decision(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let ids: Vec<_> = (1..=2)
++        .map(|n| {
++            owner.update(cx, |app, cx| {
++                app.submit_job(request(n), completion(), cx)
++                    .expect("original job admission")
++            })
++        })
++        .collect();
++    cx.run_until_parked();
++    let first = object_prompt(
++        ids[0],
++        "conflict",
++        Some("甲/同名.txt"),
++        r"C:\owned\甲\同名.txt",
++    );
++    let other = object_prompt(
++        ids[1],
++        "conflict",
++        Some("乙/同名.txt"),
++        r"C:\owned\乙\同名.txt",
++    );
++    let mut a = show_object_prompt(&owner, &endpoint, ids[0], first.clone(), cx);
++    let mut b = show_object_prompt(&owner, &endpoint, ids[1], other.clone(), cx);
++    assert!(!object_labels(&mut a).contains(&other.display.as_ref().expect("other object").target));
++    assert!(!object_labels(&mut b).contains(&first.display.as_ref().expect("first object").target));
++    object_replies(&endpoint);
++    object_click(&mut a, "应用到此任务后续冲突");
++    object_click(&mut a, "覆盖");
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, first.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::Overwrite)
++    );
++    assert!(replies[0].apply_to_all);
++    let next = object_prompt(
++        ids[0],
++        "conflict",
++        Some("丙/同名.txt"),
++        r"C:\owned\丙\同名.txt",
++    );
++    a = show_object_prompt(&owner, &endpoint, ids[0], next.clone(), cx);
++    assert!(object_labels(&mut a).contains(&next.display.as_ref().expect("next object").target));
++    assert!(!object_labels(&mut a).contains(&first.display.as_ref().expect("first object").target));
++    // Negative stale delivery only; successful decisions above/below use actual controls.
++    a.update(|_, cx| {
++        owner.update(cx, |app, cx| {
++            app.reply_job(ids[0], first.clone(), replies[0].clone(), cx)
++        })
++    });
++    object_draw(&mut a);
++    assert!(object_replies(&endpoint).is_empty());
++    assert!(a.update(|window, cx| window.has_active_dialog(cx)));
++    object_click(&mut a, "跳过");
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, next.ticket);
++    assert_eq!(replies[0].decision, Some(ArchiveJobConflictDecision::Skip));
++    assert!(
++        !replies[0].apply_to_all,
++        "next ticket must not inherit UI checkbox state"
++    );
++    object_click(&mut b, "自动重命名");
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, other.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::AutoRename)
++    );
++}
++#[gpui_kit::test]
++fn audit04_create_keyboard_release_and_missing_object_cancel_are_once_only(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original job admission")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\本次.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++    object_replies(&endpoint);
++    surface.update(|window, cx| window.focus_next(cx));
++    // Traverse the original Dialog focus scope, never call its reply/confirm helper.
++    for _ in 0..8 {
++        if object_node(&mut surface, "确认覆盖").focused() == Some(true) {
++            break;
++        }
++        surface.simulate_keystrokes("tab");
++    }
++    assert_eq!(object_node(&mut surface, "确认覆盖").focused(), Some(true));
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("space press"),
++        is_held: false,
++        prefer_character_input: false,
++    });
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("space release"),
++    });
++    object_draw(&mut surface);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, prompt.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::Overwrite)
++    );
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("duplicate release"),
++    });
++    object_draw(&mut surface);
++    assert!(object_replies(&endpoint).is_empty());
++    let mut missing = object_prompt(
++        id,
++        "conflict",
++        Some("not-displayed.txt"),
++        r"C:\not-displayed.txt",
++    );
++    missing.display = None;
++    let ticket = missing.ticket.clone();
++    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);
++    let labels = object_labels(&mut surface);
++    assert_eq!(
++        labels
++            .iter()
++            .filter(|label| label.as_str() == "本次提示未提供对象标识")
++            .count(),
++        2
++    );
++    assert!(
++        !labels
++            .iter()
++            .any(|label| label.contains("本次.zip") || label.contains("not-displayed"))
++    );
++    assert!(
++        object_replies(&endpoint).is_empty(),
++        "missing metadata never auto-approves"
++    );
++    surface.simulate_keystrokes("escape");
++    object_draw(&mut surface);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, ticket);
++    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);
++}
++#[gpui_kit::test]
++fn audit04_long_unicode_body_scroll_keeps_fixed_footer_and_complete_identifier(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original job admission")
++    });
++    cx.run_until_parked();
++    let member = format!(
++        "甲目录/{}/末尾-完整标识.txt",
++        "很长的Unicode😀路径/".repeat(100)
++    );
++    let target = format!("C:\\owned\\输出\\{}", member.replace('/', "\\"));
++    let prompt = object_prompt(id, "conflict", Some(&member), &target);
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt, cx);
++    for dimensions in [(560., 300.), (480., 260.)] {
++        surface.simulate_resize(gpui_kit::size(px(dimensions.0), px(dimensions.1)));
++        object_draw(&mut surface);
++        assert!(object_labels(&mut surface).contains(&member));
++        assert!(object_labels(&mut surface).contains(&target));
++        let button = object_node(&mut surface, "跳过").bounds();
++        let apply = object_node(&mut surface, "应用到此任务后续冲突").bounds();
++        assert!(button.origin.y >= px(0.) && button.bottom() <= px(dimensions.1));
++        assert!(button.right() <= px(dimensions.0) && button.size.height == px(32.));
++        assert!(apply.origin.y >= px(0.) && apply.bottom() <= button.origin.y);
++        let before = surface
++            .debug_bounds("archive-prompt-target")
++            .expect("painted target")
++            .origin
++            .y;
++        for _ in 0..80 {
++            surface.simulate_event(gpui_kit::ScrollWheelEvent {
++                position: gpui_kit::point(px(240.), px(90.)),
++                delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(-1000.))),
++                ..Default::default()
++            });
++            object_draw(&mut surface);
++        }
++        let target_bounds = surface
++            .debug_bounds("archive-prompt-target")
++            .expect("painted target after scroll");
++        assert!(
++            target_bounds.origin.y < before,
++            "real production body must scroll"
++        );
++        assert!(
++            target_bounds.bottom() <= apply.origin.y,
++            "complete target end must be recoverable above fixed actions"
++        );
++        assert_eq!(
++            object_node(&mut surface, "跳过").bounds(),
++            button,
++            "footer must not scroll"
++        );
++    }
++    object_replies(&endpoint);
++    object_click(&mut surface, "跳过");
++    assert_eq!(object_replies(&endpoint).len(), 1);
++}
++
++#[gpui_kit::test]
++fn audit04_create_pointer_then_missing_object_cancel_preserves_original_ticket(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original admission")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(id, "create_overwrite", None, r"C:\owned\pointer-target.zip");
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++    object_replies(&endpoint);
++    object_click(&mut surface, "确认覆盖");
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, prompt.ticket);
++    assert_eq!(
++        replies[0].decision,
++        Some(ArchiveJobConflictDecision::Overwrite)
++    );
++    assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
++    let mut missing = object_prompt(id, "conflict", Some("absent-member"), "absent-target");
++    missing.display = None;
++    let ticket = missing.ticket.clone();
++    surface = show_object_prompt(&owner, &endpoint, id, missing, cx);
++    let labels = object_labels(&mut surface);
++    assert_eq!(
++        labels
++            .iter()
++            .filter(|label| label.as_str() == "本次提示未提供对象标识")
++            .count(),
++        2
++    );
++    assert!(!labels.iter().any(|label| label.contains("pointer-target")
++        || label.contains("absent-member")
++        || label.contains("absent-target")));
++    assert!(object_replies(&endpoint).is_empty());
++    object_click(&mut surface, "取消任务");
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, ticket);
++    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);
++}
++#[gpui_kit::test]
++fn audit04_conflict_tab_space_keeps_original_button_and_deferred_reply(
++    cx: &mut gpui_kit::TestAppContext,
++) {
++    let (owner, endpoint) = super::super::tests::setup(cx);
++    let id = owner.update(cx, |app, cx| {
++        app.submit_job(request(1), completion(), cx)
++            .expect("original admission")
++    });
++    cx.run_until_parked();
++    let prompt = object_prompt(
++        id,
++        "conflict",
++        Some("keyboard/同名.txt"),
++        r"C:\owned\keyboard\同名.txt",
++    );
++    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
++    object_replies(&endpoint);
++    surface.update(|window, cx| window.focus_next(cx));
++    for _ in 0..12 {
++        if object_node(&mut surface, "跳过").focused() == Some(true) {
++            break;
++        }
++        surface.simulate_keystrokes("tab");
++    }
++    assert_eq!(object_node(&mut surface, "跳过").focused(), Some(true));
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("space press"),
++        is_held: false,
++        prefer_character_input: false,
++    });
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("space release"),
++    });
++    object_draw(&mut surface);
++    let replies = object_replies(&endpoint);
++    assert_eq!(replies.len(), 1);
++    assert_eq!(replies[0].ticket, prompt.ticket);
++    assert_eq!(replies[0].decision, Some(ArchiveJobConflictDecision::Skip));
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("space").expect("duplicate release"),
++    });
++    object_draw(&mut surface);
++    assert!(object_replies(&endpoint).is_empty());
++}

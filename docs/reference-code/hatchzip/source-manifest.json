@@ -1,0 +1,1409 @@
+{
+  "schema": 1,
+  "captured_at": "2026-10-27T16:16:44.743333+08:00",
+  "source_root": "D:\\Code\\hatchzip-main",
+  "git_revision": null,
+  "git_metadata_available": false,
+  "reported_package_version": "0.1.3",
+  "evidence_level": "source review only",
+  "runtime_executed": false,
+  "tests_executed": false,
+  "source_mutation_executed": false,
+  "hash_timing": "captured after source inspection; no claim of an immutable opening baseline",
+  "files": [
+    {
+      "path": "Cargo.toml",
+      "sha256": "b311292aaa0af37de25ed067be831b7b491151e146c2945b8b2ef2b4ef949374",
+      "bytes": 1046,
+      "lines": 35,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "version = \"0.1.3\"",
+          "lines": [
+            6,
+            15
+          ]
+        },
+        {
+          "text": "license = \"MIT OR Apache-2.0\"",
+          "lines": [
+            10
+          ]
+        }
+      ]
+    },
+    {
+      "path": "LICENSE-MIT",
+      "sha256": "371b44349d190536b657a4e126de275d04234d562234b339ffd792a2bded3518",
+      "bytes": 1070,
+      "lines": 27,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "Copyright (c) 2026 Yash Bavadiya",
+          "lines": [
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "path": "LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "bytes": 9723,
+      "lines": 176,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "Apache License",
+          "lines": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "path": "LICENSE-UNRAR",
+      "sha256": "6ecc1687808b7d66b24f874755abfed7464d9751ed0001cd4e8e5d9bf397ff8a",
+      "bytes": 1976,
+      "lines": 42,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "re-create RAR compression algorithm",
+          "lines": [
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "path": "README.md",
+      "sha256": "75b1027555f47fb069132c85da7f2655bae7ca5559a3b4c49fd25f048e94e2fe",
+      "bytes": 23232,
+      "lines": 311,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "## Highlights",
+          "lines": [
+            45
+          ]
+        },
+        {
+          "text": "### See whether it fits",
+          "lines": [
+            151
+          ]
+        },
+        {
+          "text": "### Several archives",
+          "lines": [
+            196
+          ]
+        },
+        {
+          "text": "## License",
+          "lines": [
+            301
+          ]
+        }
+      ]
+    },
+    {
+      "path": "TODO.md",
+      "sha256": "2d56afe61593bef6ad092f39568332e26b3b37cb4c73a6251f964101fdf9ef5b",
+      "bytes": 12723,
+      "lines": 120,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "## GUI, like WinRAR and 7-Zip",
+          "lines": [
+            47
+          ]
+        },
+        {
+          "text": "## Safety and polish",
+          "lines": [
+            112
+          ]
+        }
+      ]
+    },
+    {
+      "path": "docs/how-it-works.md",
+      "sha256": "48f62813e79aaa76d4b53f2ffb2b2bdb487b0e6cacfe1d0d702b0efe92ea8ce4",
+      "bytes": 36178,
+      "lines": 247,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "## One batch",
+          "lines": [
+            65
+          ]
+        },
+        {
+          "text": "## Crash safety",
+          "lines": [
+            158
+          ]
+        },
+        {
+          "text": "## Restore",
+          "lines": [
+            186
+          ]
+        },
+        {
+          "text": "## The space check",
+          "lines": [
+            210
+          ]
+        }
+      ]
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "64e91debe4e9603e85bd3c2d35ec08785e2715c82126c05a9bbb36dffc570e31",
+      "bytes": 3983,
+      "lines": 107,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "HATCHZIP_EXPECT_PUNCH:",
+          "lines": [
+            85
+          ]
+        },
+        {
+          "text": "cargo test --workspace",
+          "lines": [
+            82
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/lib.rs",
+      "sha256": "efc13b1a5fb5978341f776d63866a60ed62181a34e381b761261bface86472e9",
+      "bytes": 830,
+      "lines": 23,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub mod engine;",
+          "lines": [
+            16
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/session.rs",
+      "sha256": "309c808f6c59656b9a1b23970ab9cc00b7ca246390184f8e3fd32956df3bfe28",
+      "bytes": 20173,
+      "lines": 544,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn locate(",
+          "lines": [
+            17
+          ]
+        },
+        {
+          "text": "pub fn open(",
+          "lines": [
+            40
+          ]
+        },
+        {
+          "text": "pub fn open_encrypted(",
+          "lines": [
+            116
+          ]
+        },
+        {
+          "text": "fn check_collisions(",
+          "lines": [
+            200
+          ]
+        },
+        {
+          "text": "pub struct SpacePlan",
+          "lines": [
+            307
+          ]
+        },
+        {
+          "text": "pub fn plan(",
+          "lines": [
+            356
+          ]
+        },
+        {
+          "text": "pub fn begin(",
+          "lines": [
+            409
+          ]
+        },
+        {
+          "text": "pub fn clear_uncommitted(",
+          "lines": [
+            428
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/engine.rs",
+      "sha256": "33599a6f38dd9632a67bbe2b282bdcc00d9b94cdc1a4388dd7846063fdaac70b",
+      "bytes": 67232,
+      "lines": 1735,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn resume(",
+          "lines": [
+            133
+          ]
+        },
+        {
+          "text": "fn build(",
+          "lines": [
+            184
+          ]
+        },
+        {
+          "text": "pub fn space_needed(",
+          "lines": [
+            438
+          ]
+        },
+        {
+          "text": "fn stream_cost(",
+          "lines": [
+            486
+          ]
+        },
+        {
+          "text": "fn solid_cost(",
+          "lines": [
+            527
+          ]
+        },
+        {
+          "text": "pub struct Progress",
+          "lines": [
+            756
+          ]
+        },
+        {
+          "text": "pub struct Run",
+          "lines": [
+            766
+          ]
+        },
+        {
+          "text": "pub fn execute(",
+          "lines": [
+            777
+          ]
+        },
+        {
+          "text": "fn commit(",
+          "lines": [
+            827
+          ]
+        },
+        {
+          "text": "fn save_point(",
+          "lines": [
+            1026
+          ]
+        },
+        {
+          "text": "fn ensure_room(",
+          "lines": [
+            1295
+          ]
+        },
+        {
+          "text": "fn next_batch(",
+          "lines": [
+            1319
+          ]
+        },
+        {
+          "text": "fn finish(self",
+          "lines": [
+            727,
+            1422
+          ]
+        },
+        {
+          "text": "pub(crate) fn crash_point(",
+          "lines": [
+            1712
+          ]
+        },
+        {
+          "text": "pub fn human(",
+          "lines": [
+            1722
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/fsutil.rs",
+      "sha256": "0901eae6c0546994b235773d6841b4c983d7b2a3c13f6b416ffe1d5002ff1cdb",
+      "bytes": 8957,
+      "lines": 252,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn available_space(",
+          "lines": [
+            10
+          ]
+        },
+        {
+          "text": "pub fn write_atomic(",
+          "lines": [
+            43
+          ]
+        },
+        {
+          "text": "pub fn can_punch(",
+          "lines": [
+            69
+          ]
+        },
+        {
+          "text": "fn punch_probe(",
+          "lines": [
+            111
+          ]
+        },
+        {
+          "text": "fn punched_ranges_free_space_and_nothing_else(",
+          "lines": [
+            202
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/journal.rs",
+      "sha256": "058c4200aa1ff7499cad10a458e2de01b9c2c75e4deb771967885c54bc44fa8f",
+      "bytes": 10967,
+      "lines": 288,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "const VERSION:",
+          "lines": [
+            23
+          ]
+        },
+        {
+          "text": "const KEEP_VERSION:",
+          "lines": [
+            28
+          ]
+        },
+        {
+          "text": "pub struct Resume",
+          "lines": [
+            42
+          ]
+        },
+        {
+          "text": "pub struct Journal",
+          "lines": [
+            64
+          ]
+        },
+        {
+          "text": "pub fn create(",
+          "lines": [
+            144
+          ]
+        },
+        {
+          "text": "pub fn load(",
+          "lines": [
+            168
+          ]
+        },
+        {
+          "text": "pub fn save(",
+          "lines": [
+            213
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/restore.rs",
+      "sha256": "01a782ed86fe8f0ae5b0a94a12ab8a72889b7b97f5ae8b37df97bc2f02eb1ef1",
+      "bytes": 10967,
+      "lines": 285,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn restore(",
+          "lines": [
+            61
+          ]
+        },
+        {
+          "text": "fn discard(",
+          "lines": [
+            221
+          ]
+        },
+        {
+          "text": "pub(crate) fn recover(",
+          "lines": [
+            261
+          ]
+        },
+        {
+          "text": "restore-appended",
+          "lines": [
+            181
+          ]
+        },
+        {
+          "text": "restore-written",
+          "lines": [
+            187
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/mod.rs",
+      "sha256": "f6495c840e7592f64ccef2728187510cf63df51bcedcffc2941fffcd0eec95a8",
+      "bytes": 12217,
+      "lines": 377,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub struct Unit",
+          "lines": [
+            45
+          ]
+        },
+        {
+          "text": "pub fn open(",
+          "lines": [
+            216
+          ]
+        },
+        {
+          "text": "pub fn rebuild_index(",
+          "lines": [
+            251
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/storage.rs",
+      "sha256": "f0d65057e7a19c7b11776c0cfdbbde7bd442913ce04f22842c78243fbe8920ea",
+      "bytes": 22381,
+      "lines": 654,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub struct Storage",
+          "lines": [
+            30
+          ]
+        },
+        {
+          "text": "pub fn open(",
+          "lines": [
+            69
+          ]
+        },
+        {
+          "text": "pub fn protect(",
+          "lines": [
+            130
+          ]
+        },
+        {
+          "text": "fn may_change(",
+          "lines": [
+            138
+          ]
+        },
+        {
+          "text": "pub fn set_len(",
+          "lines": [
+            201
+          ]
+        },
+        {
+          "text": "pub fn punch(",
+          "lines": [
+            230
+          ]
+        },
+        {
+          "text": "pub fn cut_to(",
+          "lines": [
+            257
+          ]
+        },
+        {
+          "text": "pub fn write_at(",
+          "lines": [
+            294
+          ]
+        },
+        {
+          "text": "pub fn remove(self",
+          "lines": [
+            342
+          ]
+        },
+        {
+          "text": "pub fn first_volume(",
+          "lines": [
+            384
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/resumable.rs",
+      "sha256": "e90ab72888c1c3c538b1b55197e5d9bdd491c997c815faebb52e4a0a71559926",
+      "bytes": 33301,
+      "lines": 920,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub struct Decoder",
+          "lines": [
+            31
+          ]
+        },
+        {
+          "text": "struct Inflate",
+          "lines": [
+            106
+          ]
+        },
+        {
+          "text": "pub struct Gzip",
+          "lines": [
+            394
+          ]
+        },
+        {
+          "text": "inflatePrime",
+          "lines": [
+            169
+          ]
+        },
+        {
+          "text": "inflateSetDictionary",
+          "lines": [
+            176
+          ]
+        },
+        {
+          "text": "fn deflate_resumes_from_every_block_boundary(",
+          "lines": [
+            644
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/zip.rs",
+      "sha256": "1fbf27ee7354ad5487cd59439a44f7e07ea56ffeb55d93047da1ec2241b62a8e",
+      "bytes": 16884,
+      "lines": 470,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn open(",
+          "lines": [
+            43
+          ]
+        },
+        {
+          "text": "fn stream(",
+          "lines": [
+            126
+          ]
+        },
+        {
+          "text": "unit.encrypted || e.encrypted()",
+          "lines": [
+            130
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/tar.rs",
+      "sha256": "8fc2ffbca5ffd7e430ff3b99fd4b66e98177dc3e6a6935e2bbfa466f79e97f64",
+      "bytes": 6946,
+      "lines": 207,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn open(",
+          "lines": [
+            31
+          ]
+        },
+        {
+          "text": "fn stream(",
+          "lines": [
+            158
+          ]
+        },
+        {
+          "text": "crc: None",
+          "lines": [
+            167
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/sevenz.rs",
+      "sha256": "bfaae190d2810d9ba78a376d4795204cb13735512ca06dbe821e776484b325cb",
+      "bytes": 11810,
+      "lines": 351,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn open(",
+          "lines": [
+            33
+          ]
+        },
+        {
+          "text": "anti-items",
+          "lines": [
+            55
+          ]
+        },
+        {
+          "text": "pub fn rebuild_header(",
+          "lines": [
+            214
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/targz.rs",
+      "sha256": "da10adfe99104ff4f1bd5016d16a94787f9eec3e65dbe6b1e3cd7dd16e0ccc4e",
+      "bytes": 23037,
+      "lines": 648,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn open(",
+          "lines": [
+            492
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/archive/rar.rs",
+      "sha256": "addda83323f4c6249261c8e4db7b358107de446e2b4d54249e994565a7d5f7f1",
+      "bytes": 52140,
+      "lines": 1554,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn open(",
+          "lines": [
+            234
+          ]
+        },
+        {
+          "text": "fn serial(",
+          "lines": [
+            967
+          ]
+        },
+        {
+          "text": "fn stream(",
+          "lines": [
+            973
+          ]
+        },
+        {
+          "text": "fn refuses_in_place(",
+          "lines": [
+            992
+          ]
+        },
+        {
+          "text": "fn password_check(",
+          "lines": [
+            1002
+          ]
+        },
+        {
+          "text": "const MAX_DICT:",
+          "lines": [
+            57
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/core/src/platform/windows.rs",
+      "sha256": "45778411a55d55d37152776572342d462b1c5cf79b4f59eef41353fb28667654",
+      "bytes": 7792,
+      "lines": 223,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn open_exclusive(",
+          "lines": [
+            12
+          ]
+        },
+        {
+          "text": "pub fn sync_dir(",
+          "lines": [
+            73
+          ]
+        },
+        {
+          "text": "pub fn same_filesystem(",
+          "lines": [
+            77
+          ]
+        },
+        {
+          "text": "pub fn punch_hole(",
+          "lines": [
+            110
+          ]
+        },
+        {
+          "text": "pub fn allocated_bytes(",
+          "lines": [
+            178
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/src/main.rs",
+      "sha256": "665e09ec342c56090407a23ac856c83a7a97324e627adbf4ed5373f1e14aa8b3",
+      "bytes": 26006,
+      "lines": 778,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn distinct(",
+          "lines": [
+            233
+          ]
+        },
+        {
+          "text": "fn each(",
+          "lines": [
+            247
+          ]
+        },
+        {
+          "text": "fn report(",
+          "lines": [
+            268
+          ]
+        },
+        {
+          "text": "fn extract_all(",
+          "lines": [
+            501
+          ]
+        },
+        {
+          "text": "fn summary(",
+          "lines": [
+            578
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/src/args.rs",
+      "sha256": "63182dbcb9c14bfb0136d9e83bfce7c82df188dc31b91b8493a829dd7ad8df6d",
+      "bytes": 6394,
+      "lines": 194,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": []
+    },
+    {
+      "path": "crates/gui/src/work.rs",
+      "sha256": "5bdddbf4915bf5e732b3db6902527931c8753a2a8520007c59172b4619ab2976",
+      "bytes": 25378,
+      "lines": 752,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub struct Counters",
+          "lines": [
+            19
+          ]
+        },
+        {
+          "text": "pub enum Update",
+          "lines": [
+            91
+          ]
+        },
+        {
+          "text": "pub fn run(",
+          "lines": [
+            131
+          ]
+        },
+        {
+          "text": "fn extract(",
+          "lines": [
+            228,
+            504
+          ]
+        },
+        {
+          "text": "session::begin(",
+          "lines": [
+            289
+          ]
+        },
+        {
+          "text": "let run = Run {",
+          "lines": [
+            312
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/src/runner.rs",
+      "sha256": "e641de023c6fd4f5ede3d8e0043ad3fb504d9dd3fe3ff459a9cbafc03c67ef9f",
+      "bytes": 8677,
+      "lines": 270,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "const TICK:",
+          "lines": [
+            19
+          ]
+        },
+        {
+          "text": "pub fn start_queue(",
+          "lines": [
+            103
+          ]
+        },
+        {
+          "text": "fn step(",
+          "lines": [
+            115
+          ]
+        },
+        {
+          "text": "fn next_in_queue(",
+          "lines": [
+            136
+          ]
+        },
+        {
+          "text": "fn launch(",
+          "lines": [
+            177
+          ]
+        },
+        {
+          "text": "pub fn may_close(",
+          "lines": [
+            219
+          ]
+        },
+        {
+          "text": "fn on_update(",
+          "lines": [
+            242
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/src/task.rs",
+      "sha256": "f1af5cf9ddbf3b8b928575cc78b0003dc8bf9f2e8deb846714869457c9acf554",
+      "bytes": 19402,
+      "lines": 539,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "const READING_AFTER:",
+          "lines": [
+            36
+          ]
+        },
+        {
+          "text": "pub fn apply(",
+          "lines": [
+            139
+          ]
+        },
+        {
+          "text": "pub fn tick(",
+          "lines": [
+            271
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/src/text.rs",
+      "sha256": "dbdafe3b5e4bf7685e9532686bee74154e136b4dacfa46acfa6dfa65adde1fef",
+      "bytes": 11984,
+      "lines": 362,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn duration(",
+          "lines": [
+            36
+          ]
+        },
+        {
+          "text": "pub fn plan_view(",
+          "lines": [
+            71
+          ]
+        },
+        {
+          "text": "pub struct Rate",
+          "lines": [
+            149
+          ]
+        },
+        {
+          "text": "pub fn per_second(",
+          "lines": [
+            180
+          ]
+        },
+        {
+          "text": "pub fn describe(",
+          "lines": [
+            187
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/src/task_window.rs",
+      "sha256": "0ba59af1fbbb54d74e68ea875de7c2d85ae93f93e4be6c4fb2ef315b35dcc360",
+      "bytes": 4607,
+      "lines": 147,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn job_for(",
+          "lines": [
+            39
+          ]
+        },
+        {
+          "text": "pub fn build(",
+          "lines": [
+            77
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/src/settings.rs",
+      "sha256": "04a75252272da5fd3de02c13652035da9ea94190363c4897040976724ada3f22",
+      "bytes": 4602,
+      "lines": 131,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub const DEFAULT_KEEP_FREE:",
+          "lines": [
+            14
+          ]
+        },
+        {
+          "text": "pub fn load_from(",
+          "lines": [
+            49
+          ]
+        },
+        {
+          "text": "pub fn save_to(",
+          "lines": [
+            56
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/ui/parts.slint",
+      "sha256": "bfe621aa4e20ffba6afe2656880f6e9c74e6b051d62e53ff5068eaf3f4d2eb2f",
+      "bytes": 9727,
+      "lines": 345,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "export enum Phase",
+          "lines": [
+            4
+          ]
+        },
+        {
+          "text": "export component SpacePanel",
+          "lines": [
+            78
+          ]
+        },
+        {
+          "text": "export component Progress",
+          "lines": [
+            152
+          ]
+        },
+        {
+          "text": "export component TaskButtons",
+          "lines": [
+            204
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/gui/ui/task-window.slint",
+      "sha256": "e04057c3be135a5ec2a35dae66247f11e0e97af227718593b3fbe86e8f3f66b5",
+      "bytes": 3432,
+      "lines": 115,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "export component TaskWindow",
+          "lines": [
+            6
+          ]
+        },
+        {
+          "text": "preferred-height: 270px;",
+          "lines": [
+            26
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/common/mod.rs",
+      "sha256": "7732b36a2be8049e8e76efc11456285cecd5011e5b4f51e3dba9a520237d332a",
+      "bytes": 9719,
+      "lines": 299,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "pub fn hatchzip(",
+          "lines": [
+            52
+          ]
+        },
+        {
+          "text": "pub fn assert_tree(",
+          "lines": [
+            75
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/extract.rs",
+      "sha256": "7e946706307b0e3e0f16501673d13a83c8041e03cd27c930e70edbddc9826e72",
+      "bytes": 16128,
+      "lines": 471,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn resumes_after_a_crash_at_any_point(",
+          "lines": [
+            87
+          ]
+        },
+        {
+          "text": "fn refuses_to_start_without_enough_space(",
+          "lines": [
+            156
+          ]
+        },
+        {
+          "text": "fn a_resumed_run_stays_in_its_output_folder(",
+          "lines": [
+            356
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/formats.rs",
+      "sha256": "36f73679e41cbf2523d02017aca051f865385baac17c4bbffe415685a36d4e97",
+      "bytes": 10792,
+      "lines": 329,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn resumes_7z_after_a_crash(",
+          "lines": [
+            107
+          ]
+        },
+        {
+          "text": "fn resumes_tar_after_a_crash(",
+          "lines": [
+            154
+          ]
+        },
+        {
+          "text": "fn split_zip_resumes_across_volume_boundaries(",
+          "lines": [
+            262
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/keep.rs",
+      "sha256": "fca1eef2aa83e0cdc7bff22bf1c9dbd43293933b64d64accbef2a5341cf65dd1",
+      "bytes": 11874,
+      "lines": 357,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn every_format_keeps_its_archive_byte_for_byte(",
+          "lines": [
+            63
+          ]
+        },
+        {
+          "text": "fn an_interrupted_run_resumes_and_still_keeps_the_archive(",
+          "lines": [
+            99
+          ]
+        },
+        {
+          "text": "fn the_space_plan_for_keeping_counts_every_file(",
+          "lines": [
+            278
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/streaming.rs",
+      "sha256": "f27cdfd800113a2c3b091a3d4f038b3437c7ea4b029f9bc6cec32ea97fb689d2",
+      "bytes": 15064,
+      "lines": 430,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn crash_inside_the_entry(",
+          "lines": [
+            133
+          ]
+        },
+        {
+          "text": "fn damage_inside_a_streamed_entry_keeps_its_progress(",
+          "lines": [
+            225
+          ]
+        },
+        {
+          "text": "fn restore_refuses_an_archive_with_a_partly_freed_entry(",
+          "lines": [
+            393
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/targz.rs",
+      "sha256": "ec75579cbbc73d1fcf4a8ac2c3e6e4fe379163808400911873af7ee24af7a7e3",
+      "bytes": 30158,
+      "lines": 829,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn a_tar_gz_survives_a_crash_at_every_step_of_a_resume_point(",
+          "lines": [
+            270
+          ]
+        },
+        {
+          "text": "fn the_space_check_for_a_tar_gz_counts_freeing_only_where_it_works(",
+          "lines": [
+            597
+          ]
+        },
+        {
+          "text": "fn without_hole_punching_a_tar_gz_is_kept_whole_and_still_resumes(",
+          "lines": [
+            624
+          ]
+        },
+        {
+          "text": "fn restore_refuses_a_partly_freed_tar_gz(",
+          "lines": [
+            654
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/restore.rs",
+      "sha256": "85526340d057add0434e8bc27b2356d5e0d7929aece3c57d4e445a92c0b3c56e",
+      "bytes": 25300,
+      "lines": 710,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn an_interrupted_restore_can_be_run_again_or_extracted(",
+          "lines": [
+            617
+          ]
+        },
+        {
+          "text": "fn check_with_unzip(",
+          "lines": [
+            297
+          ]
+        },
+        {
+          "text": "fn check_with_7z(",
+          "lines": [
+            320
+          ]
+        },
+        {
+          "text": "fn check_with_tar(",
+          "lines": [
+            337
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/rar.rs",
+      "sha256": "614c884c71d4c9a073a3871a301aa9ba778ec785550712e3f375bcb531b9122f",
+      "bytes": 41085,
+      "lines": 1216,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn crash_at_every_commit_rar5_set(",
+          "lines": [
+            684
+          ]
+        },
+        {
+          "text": "fn crash_at_every_commit_rar4_set(",
+          "lines": [
+            689
+          ]
+        },
+        {
+          "text": "fn solid_archives_are_refused_in_place_and_extract_when_kept(",
+          "lines": [
+            846
+          ]
+        },
+        {
+          "text": "fn an_interrupted_restore_can_be_run_again(",
+          "lines": [
+            1192
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/large.rs",
+      "sha256": "93446091b7c61787153fc9d887c1b0e5e6e5bde223f2b20b6cbbe1e6674f09d0",
+      "bytes": 5798,
+      "lines": 155,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn entries_past_4_gib_extract_and_resume(",
+          "lines": [
+            119
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/layout.rs",
+      "sha256": "51d50992c293413e4904d414914e1c7021aad288b4cf88744db86048436189e1",
+      "bytes": 17611,
+      "lines": 500,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn a_colliding_archive_among_several_is_refused_untouched(",
+          "lines": [
+            415
+          ]
+        }
+      ]
+    },
+    {
+      "path": "crates/cli/tests/several.rs",
+      "sha256": "9616ead8f8ac91d65666a6f07c1db563ded3700c87e7f5f307b0170976cb4207",
+      "bytes": 7992,
+      "lines": 259,
+      "review_scope": "bounded source windows / named anchors; not complete security audit",
+      "anchors": [
+        {
+          "text": "fn extracts_several_archives_one_after_another(",
+          "lines": [
+            50
+          ]
+        },
+        {
+          "text": "fn a_failure_in_the_middle_stops_with_a_summary(",
+          "lines": [
+            100
+          ]
+        },
+        {
+          "text": "fn volumes_of_one_split_archive_count_once(",
+          "lines": [
+            244
+          ]
+        }
+      ]
+    }
+  ]
+}

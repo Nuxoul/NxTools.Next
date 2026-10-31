@@ -1,0 +1,18 @@
+{
+  "path": "csharp/NxTools.PlatformHost.Tests/ArchiveCreateOverwriteTests.cs",
+  "baseline_sha256": "05e3956547312f9cd0dc07fe2f6f6f100cba4962d79dbb7aea51708e76700d41",
+  "delivery_sha256": "908866e37ffc59210e8e757ef0d15e866bfbb6a75fbccf8211ffa4d0b02cc8a5",
+  "operations": [
+    {
+      "tag": "replace",
+      "baseline_start": 26,
+      "baseline_end": 27,
+      "delivery_start": 26,
+      "delivery_end": 30,
+      "baseline_text": "            Check(item.OperationId==command.OperationId && item.SessionId==command.SessionId && item.Generation==command.Generation && prompt.Kind==\"create_overwrite\" && prompt.Ticket.OperationId==command.OperationId && prompt.Ticket.Generation==command.Generation && prompt.Ticket.PromptId!=Guid.Empty && prompt.ExistingBytes==8,\"typed current native observation\");return prompt;\n",
+      "delivery_text": "            Check(item.OperationId==command.OperationId && item.SessionId==command.SessionId && item.Generation==command.Generation && prompt.Kind==\"create_overwrite\" && prompt.Ticket.OperationId==command.OperationId && prompt.Ticket.Generation==command.Generation && prompt.Ticket.PromptId!=Guid.Empty && prompt.ExistingBytes==8,\"typed current native observation\");\n            var target=Path.Combine(command.Request!.Destination!,command.Request.Create!.Name);\n            Check(prompt.Display is {IncomingMember:null} && prompt.Display.Target==target,\"current immutable create target\");\n            Check(!prompt.ToString().Contains(target) && !prompt.Display!.ToString().Contains(target),\"create prompt diagnostic redaction\");return prompt;\n"
+    }
+  ],
+  "forward_verified": true,
+  "reverse_verified": true
+}

@@ -15,7 +15,16 @@ pub(crate) fn list(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Vec<ArchiveEntry>> {
-    preflight(file, limits, control)?;
+    list_for_output_preflight(file, path, limits, control, false)
+}
+pub(crate) fn list_for_output_preflight(
+    file: &mut File,
+    path: &Path,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    declared_output: bool,
+) -> Result<Vec<ArchiveEntry>> {
+    let declared = scan(file, limits, control, !declared_output, false)?;
     let name = path
         .file_stem()
         .and_then(|name| name.to_str())
@@ -34,7 +43,7 @@ pub(crate) fn list(
         provenance: NameProvenance::FormatUnicode,
         kind: EntryKind::File,
         // Index declarations are admission evidence, not verified payload sizes.
-        size: None,
+        size: declared_output.then_some(declared),
         compressed_size: Some(file.metadata()?.len()),
         method: 0x21, // XZ terminal LZMA2 filter ID, not a ZIP method number.
         encrypted: false,
@@ -69,6 +78,7 @@ pub(crate) fn extract(
     {
         return Err(ArchiveError::SourceChanged);
     }
+    output.confirm_zip_entry(&snapshot.entries[0], limits)?;
     if let Some(root) = plan.subfolder() {
         output.ensure_directory(root)?;
     }
@@ -294,6 +304,26 @@ pub(crate) fn preflight(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<()> {
+    scan(file, limits, control, true, false).map(|_| ())
+}
+pub(crate) fn edit_preflight(
+    file: &mut (impl Read + Seek),
+    limits: &ResourceLimits,
+    control: &OperationControl,
+) -> Result<()> {
+    let outer_limits = ResourceLimits {
+        max_entry_bytes: limits.max_output_bytes,
+        ..*limits
+    };
+    scan(file, &outer_limits, control, true, true).map(|_| ())
+}
+fn scan(
+    file: &mut (impl Read + Seek),
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    enforce_output: bool,
+    edit: bool,
+) -> Result<u64> {
     if limits.max_working_bytes < 256 * 1024 {
         return Err(ArchiveError::ResourceLimit);
     }
@@ -318,6 +348,9 @@ pub(crate) fn preflight(
             return Err(ArchiveError::CorruptArchive);
         }
         streams += 1;
+        if edit && streams != 1 {
+            return Err(ArchiveError::UnsupportedOperation);
+        }
         if streams > limits.max_entries {
             return Err(ArchiveError::ResourceLimit);
         }
@@ -377,7 +410,9 @@ pub(crate) fn preflight(
         if body[cursor..].iter().any(|byte| *byte != 0) {
             return Err(ArchiveError::CorruptArchive);
         }
-        if expanded_total > limits.max_entry_bytes || expanded_total > limits.max_output_bytes {
+        if enforce_output
+            && (expanded_total > limits.max_entry_bytes || expanded_total > limits.max_output_bytes)
+        {
             return Err(ArchiveError::ResourceLimit);
         }
         let start = index_start
@@ -400,6 +435,13 @@ pub(crate) fn preflight(
         }
         let mut offset = start + 12;
         for (packed, size) in records {
+            if edit {
+                let mut descriptor = [0; 2];
+                at(file, offset, &mut descriptor)?;
+                if descriptor[1] & 3 != 0 {
+                    return Err(ArchiveError::UnsupportedOperation);
+                }
+            }
             block(file, offset, packed, size, header[7], limits, control)?;
             offset += padded(packed)?;
         }
@@ -412,7 +454,7 @@ pub(crate) fn preflight(
         return Err(ArchiveError::CorruptArchive);
     }
     file.rewind()?;
-    Ok(())
+    Ok(expanded_total)
 }
 fn decode_error(failure: std::io::Error) -> ArchiveError {
     if let Some(typed) = failure

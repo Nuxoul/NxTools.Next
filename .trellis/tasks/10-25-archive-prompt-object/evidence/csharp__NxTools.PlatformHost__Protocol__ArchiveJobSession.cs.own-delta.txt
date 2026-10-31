@@ -1,0 +1,33 @@
+--- dirty-baseline/csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs
++++ delivery/csharp/NxTools.PlatformHost/Protocol/ArchiveJobSession.cs
+@@ -117,7 +117,9 @@
+             token.ThrowIfCancellationRequested();
+             if(stopped || !active.TryGetValue(op.Command.OperationId,out var current) || current!=op || op.Prompt is not null)return false;
+             pending=new(TaskCreationOptions.RunContinuationsAsynchronously);op.CreateOverwriteReply=pending;
+-            var prompt=new ArchiveJobPrompt(new(op.Command.OperationId,Guid.NewGuid(),op.Command.Generation),"create_overwrite",ExistingBytes:checked((ulong)target.Size));
++            var request=op.Command.Request!;
++            var display=new ArchiveJobPromptDisplay(null,DisplayTarget(request.Destination!,request.Create!.Name));
++            var prompt=new ArchiveJobPrompt(new(op.Command.OperationId,Guid.NewGuid(),op.Command.Generation),"create_overwrite",ExistingBytes:checked((ulong)target.Size),Display:display);
+             op.Prompt=prompt;runner.SetPromptWaiting(op.Command.OperationId,true);State(op,"awaiting_conflict");
+             Publish(ArchiveJobEvent.For(op.Command,"prompt",prompt:prompt));
+         }
+@@ -180,9 +182,18 @@
+         var ticket=value.GetProperty("ticket").Deserialize<ArchiveJobTicket>(ArchiveJobWire.Strict)??throw new InvalidDataException();
+         if(ticket.OperationId!=op.Command.OperationId || ticket.PromptId==Guid.Empty || ticket.Generation==0 || op.Prompt is not null)throw new InvalidDataException();
+         ulong? Size(string name)=>value.TryGetProperty(name,out var size)&&size.ValueKind==JsonValueKind.Number?size.GetUInt64():null;
+-        var prompt=new ArchiveJobPrompt(ticket,kind,code,attempt,Size("existing_bytes"),Size("incoming_bytes")??Size("declared_bytes"),Size("admitted_entry_bytes"));op.Prompt=prompt;
++        ArchiveJobPromptDisplay? display=null;
++        if(kind=="conflict" && value.TryGetProperty("display",out var context) && context.ValueKind!=JsonValueKind.Null) {
++            display=context.Deserialize<ArchiveJobPromptDisplay>(ArchiveJobWire.Strict)??throw new InvalidDataException();
++            if(!display.Valid(kind))throw new InvalidDataException();
++            display=display with{Target=DisplayTarget(op.Command.Request!.Destination!,display.Target)};
++            if(!display.Valid(kind))throw new InvalidDataException();
++        }
++        var prompt=new ArchiveJobPrompt(ticket,kind,code,attempt,Size("existing_bytes"),Size("incoming_bytes")??Size("declared_bytes"),Size("admitted_entry_bytes"),display);op.Prompt=prompt;
+         runner.SetPromptWaiting(op.Command.OperationId,true);State(op,"awaiting_"+kind);Publish(ArchiveJobEvent.For(op.Command,"prompt",prompt:prompt));
+     }
++    // String presentation only: no native path normalization, observation or authority is added.
++    private static string DisplayTarget(string root,string relative)=>root.TrimEnd('\\')+"\\"+relative.Replace('/','\\');
+     private void State(Operation op,string state){if(!active.TryGetValue(op.Command.OperationId,out var current) || current!=op || op.State==state)return;op.State=state;Publish(ArchiveJobEvent.For(op.Command,"state",state));Diagnostic(state,op.Command);}
+     private void Finish(Operation op,ArchiveJobTerminal terminal) {
+         if(!active.ContainsKey(op.Command.OperationId))return;

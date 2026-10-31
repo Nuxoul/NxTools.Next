@@ -1,0 +1,27 @@
+﻿[
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+        "baseline_sha256":  "b994f486276cb05f4561e7365b86c2afd5452acc04f7d8ab5dee2b9ec75dcaf2",
+        "observed_sha256":  "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/main_window/archive_page.rs",
+        "baseline_sha256":  "935b46db9ceef4e95aea1a102e9236d845095c117fb7dc1b0263e241562aec2f",
+        "observed_sha256":  "935b46db9ceef4e95aea1a102e9236d845095c117fb7dc1b0263e241562aec2f"
+    },
+    {
+        "path":  "rust/apps/nxtools-desktop/src/theme.rs",
+        "baseline_sha256":  "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c",
+        "observed_sha256":  "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c"
+    },
+    {
+        "path":  "docs/reference-code/archive.md",
+        "baseline_sha256":  "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+        "observed_sha256":  "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4"
+    },
+    {
+        "path":  "vendor/gpui-component-080/src/setting/settings.rs",
+        "baseline_sha256":  "632c9539c26bc57e0c625a228524a17cd1af438b299a526c204217d63f8cc6c3",
+        "observed_sha256":  "632c9539c26bc57e0c625a228524a17cd1af438b299a526c204217d63f8cc6c3"
+    }
+]

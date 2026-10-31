@@ -1,0 +1,31 @@
+--- dirty-baseline/docs/reference-code/download.md
++++ own-after/docs/reference-code/download.md
+@@ -2910,3 +2910,28 @@
+ Task .trellis/tasks/10-25-download-sort-keyboard/ records actual MainWindow red-green,
+ temporary-config restart and interaction checks; compiled snapshots are not native/reader/
+ physical/DPI/visual/user acceptance.
++
++## Audit #5 daily-schedule default-submit prerequisite (2026-10-25)
++
++ABDM first: desktop QueueInfoComponent.kt::createConfigurableList148–155/247–301 owns
++independent start/end schedule flags and nonempty weekdays. app-utils OptionsDialog.kt::
++BaseOptionDialog delegates to Compose DialogWindow visible/modeless/close request, disposes
++its focus-loss listener; AWT/Compose native internals are not inspected. Legacy next:
++SettingsWindow.axaml::SchedulerSection900 and .axaml.cs constructor15 -> animation attach18
++-> OnOpened21/ConfigureForCurrentScope -> SaveButton_Click68/ApplySettingsCommand -> Close;
++OnClosed185 cancels through the original command. WindowAnimationService.Attach13–49 owns
++guarded delayed close; Avalonia native base is unavailable. These are schedule/close owner
++references, not proof of a window-wide default Enter implementation.
++
++Current Next DownloadScheduleView::save92 -> deferred DownloadApplication::
++set_default_queue_schedule -> original DownloadQueueAction::SetSchedule/engine store -> refresh
++and original close_schedule_window; it is not a new AppConfig write. TimeField/TimeFieldState
++are current production controls, not the old raw-HH:MM Input noted in historical migration.
++Exact Base0.8.0 time_field.rs keybindings23–30 own digit/arrow/segment/Tab editing and have no
++Enter action; on_key_down418 handles only unmodified one-character edits. Default Apply may
++therefore handle an otherwise unconsumed plain Enter only on an enabled focused TimeField,
++with held/modifier/character/busy/Dialog guards and the original save/defer owner. Other
++Buttons and child layers keep their own action/release semantics; no shared keyboard-helper,
++engine/persistence/native/geometry change. Preserve 430x326 fixed client, original input state,
++validation/cancel/close and prior audit#1/#9 behavior. New red/green evidence belongs only to
++`.trellis/tasks/10-25-default-submit-keyboard/`, not native/physical/reader/user acceptance.

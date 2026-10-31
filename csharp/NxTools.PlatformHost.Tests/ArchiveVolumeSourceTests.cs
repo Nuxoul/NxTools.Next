@@ -22,6 +22,11 @@ internal static class ArchiveVolumeSourceTests
             var bytes = File.ReadAllBytes(fixture);
             Require(bytes.Length > 64, "fixture must contain encoded data beyond the signature");
             File.WriteAllBytes(source, bytes[..48]); File.WriteAllBytes(second, bytes[48..]);
+            var observedCommand=new NxTools.PlatformHost.Protocol.ArchiveSpaceCommand(2,Guid.NewGuid(),Guid.NewGuid(),1,source,Path.Combine(root.FullName,"output"),null,null);
+            var observedResult=ArchiveSpacePreflight.Observe(observedCommand);Require(observedResult.Success,"HZ3 original source-set observation");
+            var observed=System.Text.Json.JsonSerializer.Deserialize<NxTools.PlatformHost.Protocol.ArchiveSpaceObservation>(observedResult.Data!,NxTools.PlatformHost.Protocol.JsonDefaults.Options)!;
+            Require(observed.SourceSet is {Members.Count:2}&&observed.SourceSet.Primary==source&&observed.SourceSet.Members.Contains(second),"HZ3 observations expose only original validated family members");
+            Require(!Directory.Exists(observedCommand.Destination),"HZ3 source-set identification does not create output");
             using (var family = ArchiveVolumeSources.Open(source, 1 << 20, 1 << 20))
             {
                 Require(family.Paths.Count == 2 && family.PrimaryPath == source, "ordered sevenz family");
@@ -58,6 +63,18 @@ internal static class ArchiveVolumeSourceTests
                 Require(single.Paths.Count == 1 && single.Identity() == single.Primary.ReadmissionIdentity(), "single-file fallback");
                 RejectWriter(zip);
             }
+            // The target-output quota is not the size of the encoded ZIP source. Only the
+            // private extraction-preflight path may borrow the existing metadata reservation.
+            ExpectFailure(() => ArchiveVolumeSources.Open(zip, 1 << 20, 1));
+            using (var preflight = ArchiveVolumeSources.Open(zip, 1 << 20, 1, zipOutputPreflight: true))
+            {
+                Require(preflight.Paths.Count == 1, "finite ZIP preflight keeps original source set");
+                RejectWriter(zip); preflight.Verify();
+            }
+            ExpectFailure(() => ArchiveVolumeSources.Open(zip, 32, 1, zipOutputPreflight: true));
+            var impostor = Path.Combine(root.FullName, "impostor.zip");
+            File.WriteAllBytes(impostor, new byte[512]);
+            ExpectFailure(() => ArchiveVolumeSources.Open(impostor, 1 << 20, 1, zipOutputPreflight: true));
             var z01 = Path.Combine(root.FullName, "multi.Z01");
             var end = Path.Combine(root.FullName, "multi.zip");
             File.WriteAllBytes(z01, "PK\x03\x04"u8.ToArray());

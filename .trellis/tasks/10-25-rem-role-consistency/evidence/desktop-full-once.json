@@ -1,0 +1,8 @@
+﻿{
+    "name":  "desktop-full-once",
+    "command":  "cargo test -p nxtools-desktop -- --test-threads=1",
+    "exit_code":  101,
+    "elapsed_seconds":  493.42,
+    "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\da6a2ca3-52f0-41f1-a333-3b5548154f0b\\item06\\desktop-full-once.log",
+    "fmt_exit":  0
+}

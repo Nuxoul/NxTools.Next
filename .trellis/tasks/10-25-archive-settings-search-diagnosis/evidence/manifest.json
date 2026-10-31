@@ -1,0 +1,186 @@
+{
+  "task": "Queue02 Archive Settings search diagnosis",
+  "created_at": "2026-10-26T00:16:39.000887+08:00",
+  "result": "resolved test locator defect; production unchanged",
+  "root_cause": "first TextInput was a page NumberInput at seed3, not official Settings sidebar search",
+  "own_modified_source": "rust/apps/nxtools-desktop/src/main_window/archive_page_tests.rs",
+  "after_sha256": "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d",
+  "documents": [
+    {
+      "path": ".trellis/tasks/10-25-archive-settings-search-diagnosis/prd.md",
+      "sha256": "117aa173c8ab51c25ccd291bfbb827e31c03b7937db5f21e211b426d53ea009e"
+    },
+    {
+      "path": ".trellis/tasks/10-25-archive-settings-search-diagnosis/outcomes.md",
+      "sha256": "ba49d2a6718f54d66aabdb8bc9ec4548d9775106ae23186b366dfbfbe44a3c62"
+    }
+  ],
+  "evidence": [
+    {
+      "path": "evidence/archive_page_tests.node-probe.rs.txt",
+      "sha256": "865ae63b5c48b39fcb21f0e1a592869431046ef8b4de739a4b38a6f0bca6f151",
+      "bytes": 44719
+    },
+    {
+      "path": "evidence/baseline-manifest.json",
+      "sha256": "b4b4807084c4ee600473f1eefea878a4bb3b94c3c9c4c55a766c2d2f8d5e4668",
+      "bytes": 1702
+    },
+    {
+      "path": "evidence/baselines/docs__reference-code__archive.md.baseline",
+      "sha256": "d27675547b011db78524f02a47ed76d3206e51c9233ca2c9014841900238d1f4",
+      "bytes": 68633
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__main_window__archive_page.rs.baseline",
+      "sha256": "935b46db9ceef4e95aea1a102e9236d845095c117fb7dc1b0263e241562aec2f",
+      "bytes": 66317
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__main_window__archive_page_tests.rs.baseline",
+      "sha256": "b994f486276cb05f4561e7365b86c2afd5452acc04f7d8ab5dee2b9ec75dcaf2",
+      "bytes": 43874
+    },
+    {
+      "path": "evidence/baselines/rust__apps__nxtools-desktop__src__theme.rs.baseline",
+      "sha256": "1897c12fb43bbe912e5583e6df8caf5d6e2edcc75a80e95662c78079e81b7d7c",
+      "bytes": 21386
+    },
+    {
+      "path": "evidence/baselines/vendor__gpui-component-080__src__setting__settings.rs.baseline",
+      "sha256": "632c9539c26bc57e0c625a228524a17cd1af438b299a526c204217d63f8cc6c3",
+      "bytes": 14185
+    },
+    {
+      "path": "evidence/current/archive_page_tests.rs.current",
+      "sha256": "e477ec40ec93a5f3300235f2e33981af6251c8ecc0daaa37fb9cc4c1cfc5ec3d",
+      "bytes": 44664
+    },
+    {
+      "path": "evidence/desktop-strict-clippy.log",
+      "sha256": "33cdd3dc7753be8857610093f5347e2300491a8ef03527d73be5db5f6e1075d0",
+      "bytes": 148
+    },
+    {
+      "path": "evidence/final-results.json",
+      "sha256": "31a21f024e400cc376760f90e9ae327abfad4507ef8eaec0461f95f5806ce205",
+      "bytes": 1978
+    },
+    {
+      "path": "evidence/final-source-observations.json",
+      "sha256": "73bb96b99c90cc6aed1768ace4fbe3de89f52a2c4f487f0e3c374fb9db314c73",
+      "bytes": 1395
+    },
+    {
+      "path": "evidence/fixed-archive-settings-group.log",
+      "sha256": "d37809a41c8867d52d146b2209a9c827d5a44069dfde2d123b69d3de5950940b",
+      "bytes": 4838
+    },
+    {
+      "path": "evidence/fixed-standard-eight-seeds.log",
+      "sha256": "fada657a1405cc2ee878add05328060d6292c622a5cd8878343969e7906947cf",
+      "bytes": 918
+    },
+    {
+      "path": "evidence/gate-gpui-component-catalog.py.log",
+      "sha256": "d508ffc615b51fc827a0a8b280acec42ea8596e3cef3f49845543e05d65fa389",
+      "bytes": 528
+    },
+    {
+      "path": "evidence/gate-gpui-release-contracts.py.log",
+      "sha256": "d22ce13c09797856b64b92fb5bcb22b0750ee5efb37fc43cedc33bec9a9c646d",
+      "bytes": 378
+    },
+    {
+      "path": "evidence/gate-markdown-editor-contracts.py.log",
+      "sha256": "d95abab1d8451614bdf3595cac32feca35fa81deec3c11e70bf4689bf358002e",
+      "bytes": 480
+    },
+    {
+      "path": "evidence/gate-spec-contracts.py.log",
+      "sha256": "159ab0161e43c6e4c33e0fb418542c07db49b9e9b591413adec6d1061a811a42",
+      "bytes": 352
+    },
+    {
+      "path": "evidence/gates.json",
+      "sha256": "cea2a7cdf68bebed8f907505b7f172894c10bb9615eecbfb02cc6c089a03601e",
+      "bytes": 990
+    },
+    {
+      "path": "evidence/historical-references.json",
+      "sha256": "a7240d9a7e8ee83d22da23d5d3cf706e40257084a193f94f58f174a3dc9c6f61",
+      "bytes": 539
+    },
+    {
+      "path": "evidence/inspected-source-hashes.json",
+      "sha256": "7c9af6d68bb9720ee83a9739f9bfad9cb77a94405d7ea0a76b5137d5d0a2202d",
+      "bytes": 1267
+    },
+    {
+      "path": "evidence/original-archive-settings-group.log",
+      "sha256": "3bfd598d1e68ac4114de4703068a1038a6a16978187377afa9b7078ca7143bb9",
+      "bytes": 4838
+    },
+    {
+      "path": "evidence/original-focused.log",
+      "sha256": "ac7f0e1f7d0d69402c6ac6b93eac81d7dab2823d9d2e39de128d0c113baec236",
+      "bytes": 758
+    },
+    {
+      "path": "evidence/original-runs.json",
+      "sha256": "996e01f63cc0e90b4f95628409d64a0a79dc09e698714c33d62f4f16b150607a",
+      "bytes": 846
+    },
+    {
+      "path": "evidence/original-seed-run.json",
+      "sha256": "c8d3f23a39f2b56f24320aa68910438a512888a45041eaff12c8e8153ad6c24e",
+      "bytes": 240
+    },
+    {
+      "path": "evidence/original-seeds-0-7.log",
+      "sha256": "c2099a26cb09d00557cd0d814640f39bf568176ef153d7970aaf78b0d5d03a00",
+      "bytes": 2094
+    },
+    {
+      "path": "evidence/own-delta.json",
+      "sha256": "223cf87a3924a8b2a87065999836a14f628133b6e60622ce0dccb25f02ff60f6",
+      "bytes": 2790
+    },
+    {
+      "path": "evidence/protected-checks.json",
+      "sha256": "4dedbefd36dc984ffcb0e7d0d837997f064ca60123c57288f0f56063f408650c",
+      "bytes": 619
+    },
+    {
+      "path": "evidence/scoped-format.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "evidence/seed3-fixed.json",
+      "sha256": "402ef2bd797b6a9cd22e6677d484b92c35b04cc2a0c6485dce31e5071fff9dbe",
+      "bytes": 237
+    },
+    {
+      "path": "evidence/seed3-fixed.log",
+      "sha256": "d78feb36857d6a9201d1251af1eec57204e4f39d05f65d8a6975b2af801e37ea",
+      "bytes": 942
+    },
+    {
+      "path": "evidence/seed3-node-probe.log",
+      "sha256": "71de6906c1dcdea838c572c727e8b18074e8b7a2a56663837282c45d62108acd",
+      "bytes": 9386
+    },
+    {
+      "path": "evidence/verify.py",
+      "sha256": "dbd02a8d857dd8ed73ef59ca05014a54925e53c33195c3b0c981ab14dd7807d1",
+      "bytes": 2705
+    },
+    {
+      "path": "evidence/workspace-check.log",
+      "sha256": "d751dc10e1b197fdd823c143f34858cf800f5c9293b5b7934c54006b881d444c",
+      "bytes": 148
+    }
+  ],
+  "complete_desktop_runs": 0
+}

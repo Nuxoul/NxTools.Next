@@ -184,6 +184,40 @@ impl ClipboardHistory {
         )
     }
 
+    /// Independent full-content keyset page for trusted extension reads. The worker
+    /// compares this connection's mutation count before continuing an existing cursor.
+    pub fn extension_page(
+        &self,
+        query: &str,
+        cursor: Option<ClipboardPageCursor>,
+        limit: usize,
+    ) -> Result<(ClipboardHistoryPage, String), ClipboardHistoryError> {
+        let revision = self.mutation_revision()?;
+        let page = self.query_page(
+            query,
+            None,
+            false,
+            None,
+            ClipboardSearchScope::Extended,
+            0,
+            limit.clamp(1, 32),
+            None,
+            cursor,
+        )?;
+        Ok((page, revision))
+    }
+
+    pub fn mutation_revision(&self) -> Result<String, ClipboardHistoryError> {
+        let external: i64 = self
+            .connection
+            .query_row("PRAGMA data_version", [], |row| row.get(0))?;
+        Ok(format!(
+            "{}:{}:{external}",
+            self.read_session,
+            self.connection.total_changes()
+        ))
+    }
+
     pub fn search_extended(
         &self,
         query: &str,

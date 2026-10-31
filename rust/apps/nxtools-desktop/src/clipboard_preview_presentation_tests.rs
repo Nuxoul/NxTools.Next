@@ -846,3 +846,56 @@ fn height_feedback_cancelled_measurement_cannot_start_native_presentation(cx: &m
     );
     fixture.shutdown.shutdown().expect("fixture worker");
 }
+
+#[gpui_kit::test]
+fn runtime_feedback_menu_cancels_visible_preview_and_late_ack(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let fixture = setup(cx);
+    struct Source;
+    impl gpui_kit::Render for Source {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            gpui_kit::div()
+        }
+    }
+    let (_, source) = cx.add_window_view(|_, _| Source);
+    let source_handle = source.update(|window, _| window.window_handle());
+    fixture.application.update(cx, |owner, cx| {
+        owner.begin_initial_preview_presentation(stage(), cx)
+    });
+    let request = receive(&fixture, cx);
+    let (bridge, _endpoint) = nxtools_ipc::platform_bridge(4);
+    let _token = cx.update(|cx| {
+        crate::ui::components::native_context_menu::install_pending_for_test(
+            source_handle,
+            Rc::new(bridge),
+            cx,
+        )
+    });
+    fixture
+        .application
+        .update(cx, |owner, _| owner.preview.visible = true);
+    fixture.application.update(cx, |owner, cx| {
+        owner.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: request.id,
+                result: nxtools_protocol::PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    fixture.application.read_with(cx, |owner, _| {
+        assert!(!owner.preview.visible);
+        assert!(owner.preview.pending_stage.is_none());
+        assert!(owner.preview.candidate.is_none());
+    });
+    fixture.shutdown.shutdown().expect("stop fixture");
+}

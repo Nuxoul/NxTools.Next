@@ -1,0 +1,278 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
++++ own-after/rust/apps/nxtools-desktop/src/downloads/polish_tests.rs
+@@ -3385,3 +3385,275 @@
+     surface.update(|window, _| window.remove_window());
+     std::fs::remove_dir_all(directory).expect("remove isolated probe fixture");
+ }
++
++#[gpui_kit::test]
++fn audit05_schedule_timefield_enter_saves_original_queue_once(cx: &mut TestAppContext) {
++    cx.update(gpui_kit::init);
++    let (application, directory, _endpoint) = window_fixture(cx);
++    let owned_application = application.clone();
++    let slot = Rc::new(std::cell::RefCell::new(None));
++    let opened = slot.clone();
++    let (_, surface) = cx.add_window_view(move |window, cx| {
++        let view = cx.new(|cx| DownloadScheduleView::new(owned_application, None, window, cx));
++        *opened.borrow_mut() = Some(view.clone());
++        Root::new(view, window, cx)
++    });
++    let handle = surface.update(|window, _| window.window_handle());
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    surface.simulate_resize(size(px(430.), px(326.)));
++    surface.refresh().expect("production schedule");
++    let view = slot.borrow().clone().expect("schedule view");
++    let toggle = surface
++        .debug_bounds("download-schedule-start-toggle")
++        .expect("start switch");
++    surface.simulate_click(toggle.center(), Modifiers::default());
++    view.update_in(&mut surface, |view, window, cx| {
++        let focus = view.start_time.focus_handle(cx);
++        focus.focus(window, cx);
++    });
++    surface.simulate_keystrokes("right up");
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: gpui_kit::Keystroke::parse("enter").expect("schedule Enter"),
++        is_held: false,
++        prefer_character_input: false,
++    });
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("enter").expect("schedule release"),
++    });
++    surface.run_until_parked();
++    let saved = application.read_with(&surface, |application, _| {
++        application
++            .default_queue()
++            .and_then(|queue| queue.schedule.clone())
++    });
++    let saved =
++        saved.expect("actual focused TimeField Enter must save through original queue command");
++    assert!(saved.daily.enabled_start && !saved.daily.enabled_stop);
++    assert_eq!(
++        saved.daily.start_minute, 151,
++        "TimeField local minute editing precedes default Apply"
++    );
++    assert!(view.read_with(&surface, |view, _| view.saving));
++    surface.simulate_event(gpui_kit::KeyUpEvent {
++        keystroke: gpui_kit::Keystroke::parse("enter").expect("duplicate release"),
++    });
++    surface.run_until_parked();
++    assert_eq!(
++        application.read_with(&surface, |application, _| application
++            .default_queue()
++            .and_then(|queue| queue.schedule.clone())),
++        Some(saved)
++    );
++    let _ = std::fs::remove_dir_all(directory);
++}
++
++fn audit05_schedule_key(
++    surface: &mut VisualTestContext,
++    key: &str,
++    down: bool,
++    held: bool,
++    character: bool,
++) {
++    let keystroke = gpui_kit::Keystroke::parse(key).expect("schedule key");
++    if down {
++        surface.simulate_event(gpui_kit::KeyDownEvent {
++            keystroke,
++            is_held: held,
++            prefer_character_input: character,
++        });
++    } else {
++        surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });
++    }
++    surface.run_until_parked();
++}
++fn audit05_schedule_fixture(
++    cx: &mut TestAppContext,
++) -> (
++    Entity<DownloadApplication>,
++    Entity<DownloadScheduleView>,
++    VisualTestContext,
++    tempfile::TempDir,
++    DownloadEngine,
++) {
++    cx.update(gpui_kit::init);
++    let temp = tempfile::tempdir().expect("owned schedule storage");
++    let directory = temp.path().to_path_buf();
++    let config = AppConfig::default();
++    config
++        .save_to(&directory.join("config.json"))
++        .expect("owned config");
++    let engine =
++        DownloadEngine::open(directory.join("downloads.sqlite3")).expect("owned persistent queue");
++    let observed = engine.clone();
++    let (platform, _endpoint) = nxtools_ipc::platform_bridge(16);
++    let app = cx.new(|cx| {
++        let notifications = cx.new(|_| NotificationCenter::default());
++        DownloadApplication::new(
++            engine,
++            Rc::new(platform),
++            notifications,
++            DownloadRuntimeContext {
++                fallback_default_directory: directory.clone(),
++                config,
++                config_path: directory.join("config.json"),
++                log_directory: directory.clone(),
++                database_path: directory.join("downloads.sqlite3"),
++                ffmpeg_install_directory: directory.join("tools"),
++            },
++            cx,
++        )
++    });
++    let owned_app = app.clone();
++    let slot = Rc::new(std::cell::RefCell::new(None));
++    let opened = slot.clone();
++    let (_, surface) = cx.add_window_view(move |window, cx| {
++        let view = cx.new(|cx| DownloadScheduleView::new(owned_app, None, window, cx));
++        *opened.borrow_mut() = Some(view.clone());
++        Root::new(view, window, cx)
++    });
++    let handle = surface.update(|window, _| window.window_handle());
++    let mut surface = VisualTestContext::from_window(handle, cx);
++    surface.simulate_resize(size(px(430.), px(326.)));
++    surface.refresh().expect("fixed schedule");
++    let view = slot.borrow().clone().expect("real schedule view");
++    (app, view, surface, temp, observed)
++}
++fn audit05_queue_schedule(engine: &DownloadEngine) -> Option<DownloadSchedule> {
++    let result = engine.handle_command(DownloadCommandEnvelope {
++        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
++        request_id: uuid::Uuid::new_v4(),
++        origin: RequestOrigin::Internal,
++        command: DownloadCommand::Snapshot {
++            query: DownloadQuery::default(),
++        },
++    });
++    let DownloadCommandOutcome::Snapshot(snapshot) = result.outcome else {
++        panic!("original queue snapshot")
++    };
++    snapshot
++        .queues
++        .into_iter()
++        .find(|queue| queue.id == "default")
++        .and_then(|queue| queue.schedule)
++}
++#[gpui_kit::test]
++fn audit05_schedule_guards_and_persistent_queue_leave_config_unchanged(cx: &mut TestAppContext) {
++    let (app, view, mut surface, temp, engine) = audit05_schedule_fixture(cx);
++    let config = std::fs::read(temp.path().join("config.json")).expect("config before");
++    let toggle = surface
++        .debug_bounds("download-schedule-start-toggle")
++        .expect("start toggle");
++    surface.simulate_click(toggle.center(), Modifiers::default());
++    view.update_in(&mut surface, |view, window, cx| {
++        view.start_time.focus_handle(cx).focus(window, cx)
++    });
++    surface.refresh().expect("time focus");
++    for key in ["ctrl-enter", "alt-enter", "shift-enter"] {
++        audit05_schedule_key(&mut surface, key, true, false, false);
++        audit05_schedule_key(&mut surface, key, false, false, false);
++    }
++    for (held, character) in [(true, false), (false, true)] {
++        audit05_schedule_key(&mut surface, "enter", true, held, character);
++        audit05_schedule_key(&mut surface, "enter", false, false, false);
++    }
++    assert!(audit05_queue_schedule(&engine).is_none());
++    view.update_in(&mut surface, |view, _, _| view.saving = true);
++    audit05_schedule_key(&mut surface, "enter", true, false, false);
++    audit05_schedule_key(&mut surface, "enter", false, false, false);
++    assert!(audit05_queue_schedule(&engine).is_none());
++    view.update_in(&mut surface, |view, _, _| {
++        view.saving = false;
++        view.days.clear();
++    });
++    audit05_schedule_key(&mut surface, "enter", true, false, false);
++    assert!(view.read_with(&surface, |view, _| view.error.is_some()));
++    assert!(audit05_queue_schedule(&engine).is_none());
++    view.update_in(&mut surface, |view, _, _| {
++        view.error = None;
++        view.days.insert(DownloadWeekday::ALL[0]);
++    });
++    audit05_schedule_key(&mut surface, "enter", true, false, false);
++    audit05_schedule_key(&mut surface, "enter", true, true, false);
++    assert!(
++        audit05_queue_schedule(&engine).is_none(),
++        "invalid initial press cannot retry after draft changes before release"
++    );
++    audit05_schedule_key(&mut surface, "enter", false, false, false);
++    audit05_schedule_key(&mut surface, "enter", true, false, false);
++    audit05_schedule_key(&mut surface, "enter", false, false, false);
++    let saved = audit05_queue_schedule(&engine).expect("normal Enter persisted original queue");
++    assert_eq!(saved.daily.days, vec![DownloadWeekday::ALL[0]]);
++    assert!(saved.daily.enabled_start);
++    assert!(view.read_with(&surface, |view, _| view.saving));
++    let reopened =
++        DownloadEngine::open(temp.path().join("downloads.sqlite3")).expect("reopen own queue");
++    assert_eq!(audit05_queue_schedule(&reopened), Some(saved));
++    assert_eq!(
++        std::fs::read(temp.path().join("config.json")).expect("config after"),
++        config,
++        "schedule does not rewrite AppConfig"
++    );
++    assert!(
++        app.read_with(&surface, |app, _| app.tasks.is_empty()),
++        "no network task is created"
++    );
++}
++#[gpui_kit::test]
++fn audit05_schedule_cancel_and_reopened_window_do_not_apply_old_release(cx: &mut TestAppContext) {
++    let (app, view, mut surface, temp, engine) = audit05_schedule_fixture(cx);
++    let config = std::fs::read(temp.path().join("config.json")).expect("config before cancel");
++    let handle = surface.update(|window, _| window.window_handle());
++    app.update(&mut surface, |app, _| app.schedule_window = Some(handle));
++    let toggle = surface
++        .debug_bounds("download-schedule-start-toggle")
++        .expect("toggle");
++    surface.simulate_click(toggle.center(), Modifiers::default());
++    let cancel = surface
++        .debug_bounds("download-schedule-secondary-cancel-action")
++        .expect("Cancel");
++    surface.simulate_click(cancel.center(), Modifiers::default());
++    surface.run_until_parked();
++    assert!(audit05_queue_schedule(&engine).is_none());
++    assert!(!view.read_with(&surface, |view, _| view.saving));
++    app.update(&mut surface, |app, cx| app.open_schedule_window(cx));
++    surface.run_until_parked();
++    let next = app.read_with(&surface, |app, _| {
++        app.schedule_window.expect("new schedule")
++    });
++    assert_ne!(next, handle);
++    let mut reopened = VisualTestContext::from_window(next, &surface);
++    reopened.refresh().expect("reopened schedule");
++    audit05_schedule_key(&mut reopened, "enter", false, false, false);
++    assert!(audit05_queue_schedule(&engine).is_none());
++    // Actual Tab to the original Cancel Button: Enter must close, not save.
++    reopened.update(|window, cx| window.focus_next(cx));
++    for _ in 0..24 {
++        let focused = reopened.update(|window, _| {
++            gpui_kit::base::test_support::snapshots(window)
++                .into_iter()
++                .any(|node| node.label() == Some("取消") && node.focused() == Some(true))
++        });
++        if focused {
++            break;
++        }
++        reopened.simulate_keystrokes("tab");
++        reopened.refresh().expect("Cancel focus");
++    }
++    assert!(
++        reopened.update(|window, _| gpui_kit::base::test_support::snapshots(window)
++            .into_iter()
++            .any(|node| node.label() == Some("取消") && node.focused() == Some(true))),
++        "actual Cancel Button must own Enter"
++    );
++    audit05_schedule_key(&mut reopened, "enter", true, false, false);
++    audit05_schedule_key(&mut reopened, "enter", false, false, false);
++    assert!(
++        app.read_with(&reopened, |app, _| app.schedule_window.is_none()),
++        "keyboard Cancel closes only its original schedule window"
++    );
++    assert!(audit05_queue_schedule(&engine).is_none());
++    assert_eq!(
++        std::fs::read(temp.path().join("config.json")).expect("config unchanged"),
++        config
++    );
++}

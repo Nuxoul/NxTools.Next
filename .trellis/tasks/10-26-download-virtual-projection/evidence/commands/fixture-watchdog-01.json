@@ -1,0 +1,8 @@
+﻿{
+    "watchdog_ms":  30000,
+    "process_id":  95732,
+    "completed":  true,
+    "exit":  null,
+    "utc":  "2026-10-26T06:48:54.1145810Z",
+    "executable":  "D:\\Code\\NxTools.Next-main\\target\\debug\\deps\\nxtools_desktop-bc43045ce72e2830.exe"
+}

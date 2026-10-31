@@ -1,0 +1,96 @@
+--- dirty-baseline/rust/apps/nxtools-desktop/src/downloads/schedule_view.rs
++++ own-after/rust/apps/nxtools-desktop/src/downloads/schedule_view.rs
+@@ -1,4 +1,5 @@
+ use super::*;
++use gpui_kit::component::WindowExt as _;
+ use gpui_kit::component::button::{Toggle, ToggleVariants as _};
+ use gpui_kit::component::dialog::{DialogContent, DialogFooter};
+ use gpui_kit::component::form::{Field, Form};
+@@ -17,6 +18,8 @@
+     pub(crate) queue_running: bool,
+     pub(crate) saving: bool,
+     pub(crate) error: Option<String>,
++    default_enter_held: bool,
++    _activation: Subscription,
+ }
+ 
+ impl DownloadScheduleView {
+@@ -66,7 +69,37 @@
+             queue_running: queue.is_none_or(|queue| queue.is_running),
+             saving: false,
+             error: None,
+-        }
++            default_enter_held: false,
++            _activation: cx
++                .observe_window_activation(window, |this, _, _| this.default_enter_held = false),
++        }
++    }
++    fn default_enter(
++        &mut self,
++        event: &gpui_kit::KeyDownEvent,
++        window: &mut Window,
++        cx: &mut Context<Self>,
++    ) {
++        if event.keystroke.key != "enter" {
++            return;
++        }
++        if event.is_held || std::mem::replace(&mut self.default_enter_held, true) {
++            return;
++        }
++        if event.keystroke.modifiers.modified()
++            || event.prefer_character_input
++            || self.saving
++            || window.has_active_dialog(cx)
++        {
++            return;
++        }
++        let start = self.enabled_start && self.start_time.focus_handle(cx).is_focused(window);
++        let stop = self.enabled_stop && self.stop_time.focus_handle(cx).is_focused(window);
++        if !start && !stop {
++            return;
++        }
++        cx.stop_propagation();
++        self.save(window, cx);
+     }
+     pub(super) fn finish_save_failure(&mut self, message: String, cx: &mut Context<Self>) {
+         self.saving = false;
+@@ -315,18 +348,27 @@
+                 )
+                 .into_any_element(),
+         );
+-        dialog_shell(
+-            theme,
+-            DialogShellIds {
+-                root: "download-schedule-dialog-shell",
+-                titlebar: "download-schedule-dialog-titlebar",
+-                body: "download-schedule-dialog-body",
+-                footer: "download-schedule-dialog-footer",
+-            },
+-            titlebar,
+-            body,
+-            footer,
+-        )
++        div()
++            .id("download-schedule-keyboard")
++            .size_full()
++            .capture_key_down(cx.listener(Self::default_enter))
++            .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {
++                if event.keystroke.key == "enter" {
++                    this.default_enter_held = false;
++                }
++            }))
++            .child(dialog_shell(
++                theme,
++                DialogShellIds {
++                    root: "download-schedule-dialog-shell",
++                    titlebar: "download-schedule-dialog-titlebar",
++                    body: "download-schedule-dialog-body",
++                    footer: "download-schedule-dialog-footer",
++                },
++                titlebar,
++                body,
++                footer,
++            ))
+     }
+ }
+ 

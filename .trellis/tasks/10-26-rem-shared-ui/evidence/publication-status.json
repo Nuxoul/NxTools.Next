@@ -1,0 +1,10 @@
+{
+  "own_existing_dirty_deltas": 21,
+  "new_test_snapshots": 2,
+  "protected_desktop_sources": 212,
+  "historical_records": 779,
+  "external_modified_sources": 6,
+  "external_new_sources": 2,
+  "interrupted_publication": "First write-once publication stopped on independent service.rs movement. Existing208files preserved; continued under new snapshot paths, no evidence overwritten.",
+  "scope": "No complete Desktop/native/user data/packaging/install/commit/delegation."
+}

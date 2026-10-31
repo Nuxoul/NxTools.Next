@@ -1,0 +1,13 @@
+{
+  "manifest_evidence_hashes": 85,
+  "live_existing": 8,
+  "live_new": 2,
+  "bidirectional_own_deltas": 8,
+  "test_prefixes": 3,
+  "external_append_separate": true,
+  "protected-manifest.json": 13,
+  "item04-frozen.json": 124,
+  "complete_probe_only_name_changed": true,
+  "unchanged_original_owner_sections": 3,
+  "worker_full_log_verified_not_parent_run": "1232/1232; zero ignored; 258.96s"
+}

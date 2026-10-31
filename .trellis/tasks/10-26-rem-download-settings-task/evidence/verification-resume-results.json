@@ -1,0 +1,34 @@
+[
+    {
+        "name":  "aux-final-resume",
+        "command":  "cargo test -p nxtools-desktop audit06_aux_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:32:37.5941998+08:00",
+        "end":  "2026-10-26T04:37:55.3777054+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\aux-final-resume.log"
+    },
+    {
+        "name":  "downloads-final",
+        "command":  "cargo test -p nxtools-desktop downloads:: -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:37:55.6785900+08:00",
+        "end":  "2026-10-26T04:44:47.4378363+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\downloads-final.log"
+    },
+    {
+        "name":  "audit06-final",
+        "command":  "cargo test -p nxtools-desktop audit06_ -- --test-threads=1 --nocapture",
+        "exit":  0,
+        "start":  "2026-10-26T04:44:47.4783418+08:00",
+        "end":  "2026-10-26T04:46:48.8636457+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\audit06-final.log"
+    },
+    {
+        "name":  "audit05-final",
+        "command":  "cargo test -p nxtools-desktop audit05_ -- --test-threads=1 --nocapture",
+        "exit":  101,
+        "start":  "2026-10-26T04:46:48.8996439+08:00",
+        "end":  "2026-10-26T04:46:53.0330239+08:00",
+        "log":  "C:\\Users\\Administrator\\.pi-desktop\\scratch\\7faedce5-fc3c-4ab5-bf6d-95910fa4f600\\rem-download-settings-task\\audit05-final.log"
+    }
+]

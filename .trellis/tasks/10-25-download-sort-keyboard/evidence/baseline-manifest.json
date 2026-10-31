@@ -1,0 +1,18 @@
+[
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/main_window/download_page.rs",
+        "SHA256":  "0268656B9019EF75CD3E2557B55B9527116BA3CA054A63F6212F90159278DDC3"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/main_window/download_page/kit_migration_tests.rs",
+        "SHA256":  "E9D7C81998B9C05599B4BAFDC5ECF5397803C36DCE41202566DFCCE082EF56A2"
+    },
+    {
+        "Path":  "rust/apps/nxtools-desktop/src/main_window/tests.rs",
+        "SHA256":  "A75743C4FBB201CA43BF5A3ACF7AC4ADBC81D84F6102CF60E65850A99409B02B"
+    },
+    {
+        "Path":  "docs/reference-code/download.md",
+        "SHA256":  "2E9D7815C04397DC785FD81069FD45BDD12109491E921F508EDD81CB80CC63A3"
+    }
+]

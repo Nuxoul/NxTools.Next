@@ -1,0 +1,11 @@
+{
+  "own_deltas_bidirectional": 6,
+  "captured_live_sources": 8,
+  "evidence_hashes": 94,
+  "protected": 17,
+  "frozen_history": 345,
+  "owner_sections_recomputed": 16,
+  "old_prefixes_verified": 3,
+  "reference_failure_hashes": 14,
+  "worker_full_suite": "FAIL 1237 passed/1 failed/0 ignored;281.18s; not parent full run"
+}

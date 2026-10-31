@@ -1,0 +1,7 @@
+﻿{
+    "name":  "global-behavior-run",
+    "command":  "cargo test -p nxtools-desktop network_settings::page_rem_tests:: -- --test-threads=1 --nocapture",
+    "exit":  101,
+    "elapsed":  204.32481629999998,
+    "finished":  "2026-10-26T08:05:16.0757236+08:00"
+}
