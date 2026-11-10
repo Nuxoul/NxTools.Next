@@ -45,6 +45,19 @@ internal interface IExecuteCommand
     [PreserveSig] int Execute();
 }
 
+[ComImport, Guid("A08CE4D0-FA25-44AB-B57C-C7B1C323E0B9"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IExplorerCommand
+{
+    [PreserveSig] int GetTitle(IShellItemArray? selection, out IntPtr title);
+    [PreserveSig] int GetIcon(IShellItemArray? selection, out IntPtr icon);
+    [PreserveSig] int GetToolTip(IShellItemArray? selection, out IntPtr tooltip);
+    [PreserveSig] int GetCanonicalName(out Guid name);
+    [PreserveSig] int GetState(IShellItemArray? selection, [MarshalAs(UnmanagedType.Bool)] bool slow, out uint state);
+    [PreserveSig] int Invoke(IShellItemArray? selection, IntPtr bindContext);
+    [PreserveSig] int GetFlags(out uint flags);
+    [PreserveSig] int EnumSubCommands(out IntPtr commands);
+}
+
 [ComImport, Guid("00000001-0000-0000-C000-000000000046"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IClassFactory
 {
@@ -68,6 +81,8 @@ internal enum ShellVerb
     ExtractDialog,
     Test,
     Compress,
+    CompressZip,
+    CompressSevenZ,
 }
 
 internal enum SelectionFailure
@@ -186,7 +201,7 @@ internal interface IHelperLog
 /// exactly once. No timer, no coalescing with other invocations, no codec work in callbacks.
 /// </summary>
 [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
-internal sealed class ArchiveSelectionCommand : IExecuteCommand, IObjectWithSelection
+internal sealed partial class ArchiveSelectionCommand : IExecuteCommand, IObjectWithSelection
 {
     internal const int SOk = 0;
     internal const int EFail = unchecked((int)0x80004005);
@@ -371,7 +386,7 @@ internal sealed class ArchiveSelectionClassFactory : IClassFactory
     {
         result = IntPtr.Zero;
         if (outer != IntPtr.Zero) return ClassENoAggregation;
-        if (iid != IidIUnknown && iid != IidIExecuteCommand && iid != IidIObjectWithSelection)
+        if (iid != IidIUnknown && iid != IidIExecuteCommand && iid != IidIObjectWithSelection && iid != typeof(IExplorerCommand).GUID)
             return ArchiveSelectionCommand.ENoInterface;
         if (!_lifetime.TryAddObject()) return ArchiveSelectionCommand.EFail;
         var command = new ArchiveSelectionCommand(_verb, _forwarder, _log, _lifetime.Cancellation, _lifetime.ReleaseObject);
@@ -455,13 +470,13 @@ internal sealed class ServerLifetime : IDisposable
 
 /// <summary>
 /// F-AC01: explicit COM identity for one <see cref="ArchiveSelectionCommand"/> exposing exactly
-/// IUnknown/IExecuteCommand (block slot 0) and IObjectWithSelection (slot 1) in SDK vtable order.
+/// IUnknown/IExecuteCommand (slot 0), IObjectWithSelection (slot 1), IExplorerCommand (slot 2).
 /// The built-in CCW gives no notification on final IUnknown::Release, and GC/finalizer-based
 /// retirement would be nondeterministic and run off the STA. Here the reference count is owned
 /// explicitly, so the final Release retires the command (selection + lifetime slot) synchronously
 /// on the calling thread, exactly once. An executed command already retired; Retire is idempotent.
 /// </summary>
-internal static class SelectionCommandIdentity
+internal static partial class SelectionCommandIdentity
 {
     private static readonly Guid IidIUnknown = new("00000000-0000-0000-C000-000000000046");
     private static readonly Guid IidIExecuteCommand = typeof(IExecuteCommand).GUID;
@@ -482,10 +497,11 @@ internal static class SelectionCommandIdentity
         internal int References = 1;
     }
 
-    // Delegates stay rooted for the process lifetime; the two tables are never freed.
+    // Delegates stay rooted for the process lifetime; the tables are never freed.
     internal static readonly Delegate[] Rooted;
     private static readonly IntPtr ExecuteTable;
     private static readonly IntPtr SelectionTable;
+    private static readonly IntPtr ExplorerTable;
 
     static SelectionCommandIdentity()
     {
@@ -510,9 +526,11 @@ internal static class SelectionCommandIdentity
             new PointerFn((self, value) => Call(self - SlotSize, command => SetSelection(command, value))),
             new GetSelectionFn((IntPtr self, ref Guid iid, out IntPtr result) => GetSelection(self - SlotSize, ref iid, out result)),
         };
-        Rooted = execute.Concat(selection).ToArray();
+        var explorer = ExplorerMethods();
+        Rooted = execute.Concat(selection).Concat(explorer).ToArray();
         ExecuteTable = Table(execute);
         SelectionTable = Table(selection);
+        ExplorerTable = Table(explorer);
     }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] private delegate int GetSelectionFn(IntPtr self, ref Guid iid, out IntPtr result);
@@ -520,10 +538,11 @@ internal static class SelectionCommandIdentity
     /// <summary>Returns the IUnknown/IExecuteCommand pointer carrying one owned reference.</summary>
     internal static IntPtr Create(ArchiveSelectionCommand command)
     {
-        var block = Marshal.AllocHGlobal(3 * SlotSize);
+        var block = Marshal.AllocHGlobal(4 * SlotSize);
         Marshal.WriteIntPtr(block, 0, ExecuteTable);
         Marshal.WriteIntPtr(block, SlotSize, SelectionTable);
-        Marshal.WriteIntPtr(block, 2 * SlotSize, GCHandle.ToIntPtr(GCHandle.Alloc(new Owner(command))));
+        Marshal.WriteIntPtr(block, 2 * SlotSize, ExplorerTable);
+        Marshal.WriteIntPtr(block, 3 * SlotSize, GCHandle.ToIntPtr(GCHandle.Alloc(new Owner(command))));
         return block;
     }
 
@@ -536,12 +555,13 @@ internal static class SelectionCommandIdentity
     }
 
     private static Owner OwnerOf(IntPtr block) =>
-        (Owner)GCHandle.FromIntPtr(Marshal.ReadIntPtr(block, 2 * SlotSize)).Target!;
+        (Owner)GCHandle.FromIntPtr(Marshal.ReadIntPtr(block, 3 * SlotSize)).Target!;
 
     private static int QueryInterface(IntPtr block, ref Guid iid, out IntPtr result)
     {
         if (iid == IidIUnknown || iid == IidIExecuteCommand) result = block;
         else if (iid == IidIObjectWithSelection) result = block + SlotSize;
+        else if (iid == typeof(IExplorerCommand).GUID) result = block + 2 * SlotSize;
         else
         {
             result = IntPtr.Zero;
@@ -559,7 +579,7 @@ internal static class SelectionCommandIdentity
         var remaining = Interlocked.Decrement(ref owner.References);
         if (remaining == 0)
         {
-            GCHandle.FromIntPtr(Marshal.ReadIntPtr(block, 2 * SlotSize)).Free();
+            GCHandle.FromIntPtr(Marshal.ReadIntPtr(block, 3 * SlotSize)).Free();
             Marshal.FreeHGlobal(block);
             owner.Command.Retire();
         }

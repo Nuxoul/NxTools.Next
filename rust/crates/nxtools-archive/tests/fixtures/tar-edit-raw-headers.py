@@ -15,6 +15,7 @@ import sys
 import tarfile
 import threading
 import uuid
+from bulk_peer import BulkPeer
 
 
 def pax_record(key, value, padded=False):
@@ -128,7 +129,7 @@ def run_worker(worker, source, candidate, edit, incoming):
     original = source.read_bytes()
     operation, token, source_id = (str(uuid.uuid4()) for _ in range(3))
     edit["browser"] = dict(snapshot_id=str(uuid.uuid4()), format="Tar", comment="", source=dict(native="v1:fixture", digest=list(hashlib.sha256(original).digest()), size=len(original), modified_unix_ns=source.stat().st_mtime_ns))
-    request = dict(schema=2, operation_id=operation, op="start", operation="modify_tar", path=str(source), job_execution=True, password_interaction=True, job_modify=edit)
+    request = dict(schema=2, bulk_transfer=1, operation_id=operation, op="start", operation="modify_tar", path=str(source), job_execution=True, password_interaction=True, job_modify=edit)
     child = subprocess.Popen([str(worker), "--archive-worker"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     timed_out = threading.Event()
     def expire():
@@ -140,9 +141,9 @@ def run_worker(worker, source, candidate, edit, incoming):
     wire, output = [], bytearray()
     opened = closed = commits = 0
     handed = False
+    peer = BulkPeer(request)
     def send(value):
-        body = json.dumps(value, separators=(",", ":")).encode()
-        child.stdin.write(struct.pack("<I", len(body)) + body)
+        child.stdin.write(peer.encode(value))
         child.stdin.flush()
     def exact(length):
         result = b""
@@ -155,7 +156,7 @@ def run_worker(worker, source, candidate, edit, incoming):
     try:
         send(request)
         while True:
-            frame = json.loads(exact(struct.unpack("<I", exact(4))[0]))
+            frame = peer.read(exact)
             wire.append(frame)
             if frame["op"] in ("complete", "failure"):
                 terminal = frame

@@ -74,6 +74,7 @@ struct CallbackState<'a> {
     entry_bytes: u64,
     total_bytes: u64,
     error: Option<ArchiveError>,
+    selected_limit: Option<u64>,
     output: Option<&'a mut (dyn CodecOutput + Send)>,
     token: Option<uuid::Uuid>,
     pending: Vec<(uuid::Uuid, crate::metadata::OutputMetadata)>,
@@ -141,7 +142,12 @@ extern "C" fn callback(
                 };
                 state.entry_bytes = entry;
                 state.total_bytes = total;
-                if entry > state.limits.max_entry_bytes || total > state.limits.max_output_bytes {
+                if entry > state.limits.max_entry_bytes
+                    || total > state.limits.max_output_bytes
+                    || state
+                        .selected_limit
+                        .is_some_and(|limit| state.token.is_some() && entry > limit)
+                {
                     state.error = Some(ArchiveError::ResourceLimit);
                     return -1;
                 }
@@ -294,6 +300,7 @@ pub(super) fn execute(
         next_volume: 0,
         notifying_ansi: false,
         limits,
+        selected_limit: None,
         entry_bytes: 0,
         total_bytes: 0,
         error: None,
@@ -515,4 +522,299 @@ pub(super) fn execute(
     }; // All decoded bytes remain charged.
     let pending = std::mem::take(&mut state.pending);
     Ok((entries, files, bytes, pending))
+}
+
+/// Keep one ordered TEST cursor for the drag; a backward ordinal starts one counted replay.
+pub(super) fn retained<W: Write + Send>(
+    request: &WorkerRequest,
+    control: &OperationControl,
+    output: &mut W,
+    replies: ReplyPort,
+    drag: &crate::worker_drag::DragPort,
+    set: &volumes::SourceSet,
+    entries: std::sync::Arc<[ArchiveEntry]>,
+) -> Result<(u64, u64)> {
+    let mut handle = Some(open_retained(request, control)?);
+    let mut cursor = 0usize;
+    let mut volume_cursor = 0usize;
+    set.verify(control)?;
+    crate::worker_drag::run_codec(
+        request,
+        control,
+        output,
+        replies,
+        drag,
+        |current, demand, native| {
+            let selected = crate::worker_browser::selected(current, &entries)?
+                .ok_or(ArchiveError::SourceChanged)?;
+            let index = usize::try_from(demand.ordinal).map_err(|_| ArchiveError::SourceChanged)?;
+            if selected.id().ordinal != demand.ordinal || index >= entries.len() {
+                return Err(ArchiveError::SourceChanged);
+            }
+            let replay = index < cursor;
+            if replay {
+                drop(handle.take());
+                handle = Some(open_retained(request, control)?);
+                cursor = 0;
+                volume_cursor = 0;
+            }
+            native.source_checkpoint("codec_opened")?;
+            native.source_checkpoint("source_decoding")?;
+            let (token, written) = process_retained(
+                handle.as_ref().ok_or(ArchiveError::IoFailure)?,
+                &mut cursor,
+                index,
+                request,
+                current,
+                &entries,
+                control,
+                native,
+                replay,
+                &mut volume_cursor,
+            )?;
+            let result = (|| {
+                set.verify(control)?;
+                native.source_checkpoint("source_precommit")?;
+                selected.metadata.validate()?;
+                native.set_file_metadata(token, selected.metadata)?;
+                native.commit_file(token)?;
+                Ok(written)
+            })();
+            if result.is_err() {
+                native.abort_file(token);
+            }
+            result
+        },
+    )
+}
+
+struct RetainedHandle {
+    native: Handle,
+    _path: Vec<u16>,
+}
+
+struct InstalledCallback(*const native::Handle);
+impl Drop for InstalledCallback {
+    fn drop(&mut self) {
+        // SAFETY: the native handle remains live until after this callback is detached.
+        unsafe {
+            native::RARSetCallback(self.0, None, 0);
+        }
+    }
+}
+fn open_retained(request: &WorkerRequest, control: &OperationControl) -> Result<RetainedHandle> {
+    let mut path: Vec<u16> = Path::new(&request.path).as_os_str().encode_wide().collect();
+    if path.contains(&0) {
+        return Err(ArchiveError::UnsafePath);
+    }
+    path.push(0);
+    let initial = Box::new(Mutex::new(retained_state(request, control, None, None)));
+    let mut open = native::OpenArchiveDataEx::new(path.as_ptr(), native::RAR_OM_EXTRACT);
+    open.callback = Some(callback);
+    open.user_data = (&*initial as *const Mutex<CallbackState<'_>>) as native::LPARAM;
+    control.record_work(|work| work.rar_decoder_opens += 1);
+    // SAFETY: path and callback state live until the opening call completes.
+    let raw = unsafe { native::RAROpenArchiveEx(std::ptr::addr_of_mut!(open)) };
+    if raw.is_null() || open.open_result != 0 {
+        if !raw.is_null() {
+            drop(Handle(raw));
+        }
+        if let Some(error) = initial.lock().map_err(|_| ArchiveError::IoFailure)?.error {
+            return Err(error);
+        }
+        return Err(native_error(
+            open.open_result as i32,
+            request.password.is_some(),
+        ));
+    }
+    let handle = Handle(raw);
+    // SAFETY: remove the temporary opening callback before its owner is dropped.
+    unsafe {
+        native::RARSetCallback(raw, None, 0);
+    }
+    if open.flags & native::ROADF_VOLUME != 0 && open.flags & native::ROADF_FIRSTVOLUME == 0 {
+        return Err(ArchiveError::MissingVolume);
+    }
+    Ok(RetainedHandle {
+        native: handle,
+        _path: path,
+    })
+}
+
+fn retained_state<'a>(
+    request: &WorkerRequest,
+    control: &OperationControl,
+    output: Option<&'a mut (dyn CodecOutput + Send)>,
+    selected_limit: Option<u64>,
+) -> CallbackState<'a> {
+    CallbackState {
+        control: control.clone(),
+        password: request
+            .password
+            .as_deref()
+            .map(|value| value.encode_utf16().collect()),
+        limits: crate::worker_browser::decode_limits(request),
+        entry_bytes: 0,
+        total_bytes: 0,
+        error: None,
+        selected_limit,
+        output,
+        token: None,
+        pending: Vec::new(),
+        decoding_checkpoint: false,
+        volume_names: request
+            .volume_paths
+            .iter()
+            .skip(1)
+            .map(|path| {
+                let mut name: Vec<u16> = Path::new(path).as_os_str().encode_wide().collect();
+                name.push(0);
+                name
+            })
+            .collect(),
+        next_volume: 0,
+        notifying_ansi: false,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_retained<W: Write + Send>(
+    handle: &RetainedHandle,
+    cursor: &mut usize,
+    index: usize,
+    original: &WorkerRequest,
+    current: &WorkerRequest,
+    entries: &[ArchiveEntry],
+    control: &OperationControl,
+    output: &mut PrivateOutput<'_, W>,
+    replay: bool,
+    volume_cursor: &mut usize,
+) -> Result<(uuid::Uuid, u64)> {
+    let mut state = retained_state(
+        original,
+        control,
+        Some(output),
+        Some(current.limits.max_entry_bytes),
+    );
+    state.next_volume = *volume_cursor;
+    let context = Box::new(Mutex::new(state));
+    // SAFETY: callback state stays boxed and live until InstalledCallback is dropped.
+    unsafe {
+        native::RARSetCallback(
+            handle.native.0,
+            Some(callback),
+            (&*context as *const Mutex<CallbackState<'_>>) as native::LPARAM,
+        );
+    }
+    let attached = InstalledCallback(handle.native.0);
+    let mut result = None;
+    while *cursor <= index {
+        control.checkpoint()?;
+        // SAFETY: zeroed pack1 header and owned live native TEST handle.
+        let mut header: PackedHeader = unsafe { std::mem::zeroed() };
+        let code = unsafe { read_header(handle.native.0, std::ptr::addr_of_mut!(header)) };
+        if let Some(error) = context.lock().map_err(|_| ArchiveError::IoFailure)?.error {
+            return Err(error);
+        }
+        if code != 0 {
+            return Err(if code == native::ERAR_END_ARCHIVE {
+                ArchiveError::SourceChanged
+            } else {
+                native_error(code, original.password.is_some())
+            });
+        }
+        let expected = entries.get(*cursor).ok_or(ArchiveError::SourceChanged)?;
+        let name = header.filename_w;
+        let end = name
+            .iter()
+            .position(|unit| *unit == 0)
+            .ok_or(ArchiveError::ResourceLimit)?;
+        let name = String::from_utf16(&name[..end]).map_err(|_| ArchiveError::CorruptArchive)?;
+        let size = (u64::from(header.unp_size_high) << 32) | u64::from(header.unp_size);
+        let kind = if header.redir_type != 0 {
+            EntryKind::Link
+        } else if header.flags & native::RHDF_DIRECTORY != 0 {
+            EntryKind::Directory
+        } else {
+            EntryKind::File
+        };
+        let ticks = (u64::from(header.mtime_high) << 32) | u64::from(header.mtime_low);
+        let metadata = crate::metadata::OutputMetadata {
+            modified: (ticks != 0).then_some(crate::metadata::ModifiedTime::FiletimeUtc { ticks }),
+            attributes: (header.host_os == 2).then_some(crate::metadata::WindowsAttributes {
+                read_only: header.file_attr & 1 != 0,
+                hidden: header.file_attr & 2 != 0,
+            }),
+        };
+        if expected.id().ordinal != *cursor as u64
+            || expected.display_path != name
+            || expected.kind != kind
+            || expected.size != (size != UNKNOWN_SIZE).then_some(size)
+            || expected.encrypted != (header.flags & native::RHDF_ENCRYPTED != 0)
+            || expected.crc32 != Some(header.file_crc)
+            || expected.metadata != metadata
+            || u16::try_from(header.method).ok() != Some(expected.method)
+            || expected.compressed_size.is_some_and(|packed| {
+                packed != ((u64::from(header.pack_size_high) << 32) | u64::from(header.pack_size))
+            })
+        {
+            return Err(ArchiveError::SourceChanged);
+        }
+        if u64::from(header.dict_size).saturating_mul(1024) > original.limits.max_working_bytes {
+            return Err(ArchiveError::ResourceLimit);
+        }
+        let selected = *cursor == index;
+        let mut state = context.lock().map_err(|_| ArchiveError::IoFailure)?;
+        state.entry_bytes = 0;
+        state.token = None;
+        if selected {
+            if expected
+                .size
+                .is_some_and(|value| value > current.limits.max_entry_bytes)
+            {
+                return Err(ArchiveError::ResourceLimit);
+            }
+            let relative = expected.display_path.replace('\\', "/");
+            let token = state
+                .output
+                .as_mut()
+                .ok_or(ArchiveError::IoFailure)?
+                .begin_extracted_file(relative.trim_end_matches('/'), expected.size)?
+                .ok_or(ArchiveError::OutputCollision)?;
+            state.pending.push((token, metadata));
+            state.token = Some(token);
+        }
+        drop(state);
+        // SAFETY: RAR_TEST advances solid history without a filesystem destination.
+        let code = unsafe {
+            native::RARProcessFileW(handle.native.0, native::RAR_TEST, ptr::null(), ptr::null())
+        };
+        let mut state = context.lock().map_err(|_| ArchiveError::IoFailure)?;
+        if let Some(error) = state.error {
+            return Err(error);
+        }
+        if code != 0 {
+            return Err(native_error(code, expected.encrypted));
+        }
+        if size != UNKNOWN_SIZE && state.entry_bytes != size {
+            return Err(ArchiveError::CorruptArchive);
+        }
+        if selected {
+            result = Some((
+                state.token.ok_or(ArchiveError::IoFailure)?,
+                state.entry_bytes,
+            ));
+            state.pending.clear();
+        } else if replay {
+            control.record_work(|work| work.rar_replayed_entries += 1);
+        }
+        *cursor += 1;
+    }
+    *volume_cursor = context
+        .lock()
+        .map_err(|_| ArchiveError::IoFailure)?
+        .next_volume;
+    drop(attached);
+    drop(context);
+    result.ok_or(ArchiveError::SourceChanged)
 }

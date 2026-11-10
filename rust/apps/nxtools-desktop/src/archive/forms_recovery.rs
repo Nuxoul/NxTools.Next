@@ -62,7 +62,7 @@ impl OperationForm {
                     let _ = local.update(cx, |form, cx| {
                         form.apply_recovery(
                             epoch,
-                            Err("归档操作所有者已关闭，请重新打开表单。".into()),
+                            Err("压缩包操作所有者已关闭，请重新打开表单。".into()),
                             window,
                             cx,
                         )

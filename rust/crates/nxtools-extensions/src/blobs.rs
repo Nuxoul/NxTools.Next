@@ -10,7 +10,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::PathBuf,
     sync::{
-        Arc, Condvar, Mutex, OnceLock,
+        Arc, Condvar, Mutex, OnceLock, Weak,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
@@ -21,6 +21,11 @@ use uuid::Uuid;
 #[path = "blob_host_io.rs"]
 mod host_io;
 pub use host_io::HostBlobWriter;
+#[path = "blob_recovery.rs"]
+mod recovery;
+#[cfg(test)]
+#[path = "blob_shutdown_tests.rs"]
+mod shutdown_tests;
 
 pub const MAX_BLOB_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_RUN_BLOB_BYTES: usize = 16 * 1024 * 1024;
@@ -61,6 +66,7 @@ struct Store {
     io: Arc<Semaphore>,
     slots: Arc<Semaphore>,
     root: Arc<Root>,
+    runs: Mutex<Vec<Weak<Run>>>,
 }
 struct Cleanup {
     path: PathBuf,
@@ -76,64 +82,96 @@ struct Cleanup {
 struct Root {
     path: PathBuf,
     pending: Mutex<Vec<Cleanup>>,
-    cleanup_lock: Mutex<()>,
+    cleanup_lock: Mutex<Option<recovery::OwnerLease>>,
     wake: Condvar,
     closing: AtomicBool,
-    worker_started: AtomicBool,
+    worker: Mutex<CleanupWorker>,
+    joining: AtomicBool,
+    completion: tokio::sync::watch::Sender<Option<Result<(), BlobError>>>,
     active: AtomicUsize,
     io: Arc<Semaphore>,
 }
+#[derive(Default)]
+struct CleanupWorker {
+    thread: Option<std::thread::JoinHandle<()>>,
+    result: Option<Result<(), BlobError>>,
+}
 impl Drop for Store {
     fn drop(&mut self) {
-        let _pending = self
-            .root
-            .pending
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        self.root.closing.store(true, Ordering::Release);
-        self.root.wake.notify_one();
+        self.root.close();
     }
 }
 impl Root {
+    fn close(&self) {
+        let _pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        self.closing.store(true, Ordering::Release);
+        self.wake.notify_all();
+    }
     fn ensure_worker(self: &Arc<Self>) -> Result<(), BlobError> {
-        if self.worker_started.swap(true, Ordering::AcqRel) {
+        let mut worker = self.worker.lock().map_err(|_| BlobError::Io)?;
+        if worker.thread.is_some() || worker.result.is_some() {
             return Ok(());
         }
         let root = self.clone();
-        std::thread::Builder::new()
-            .name("extension-blob-cleanup".into())
-            .spawn(move || {
-                loop {
-                    if let Ok(permit) = root.io.clone().try_acquire_owned() {
-                        let _permit = permit;
-                        let _ = root.cleanup();
+        worker.thread = Some(
+            std::thread::Builder::new()
+                .name("extension-blob-cleanup".into())
+                .spawn(move || {
+                    let mut recovered = false;
+                    loop {
+                        let mut clean = false;
+                        let permit = root.io.clone().try_acquire_owned().ok();
+                        if permit.is_some() {
+                            if !recovered {
+                                recovery::recover(&root.path);
+                                recovered = true;
+                            }
+                            clean = root.cleanup().is_ok();
+                        }
+                        let pending = root
+                            .pending
+                            .lock()
+                            .unwrap_or_else(|poison| poison.into_inner());
+                        if recovered
+                            && clean
+                            && root.closing.load(Ordering::Acquire)
+                            && root.active.load(Ordering::Acquire) == 0
+                            && pending.is_empty()
+                        {
+                            drop(pending);
+                            // Admission is closed and no backing can create another file now.
+                            if root.cleanup().is_ok() {
+                                break;
+                            }
+                            continue;
+                        }
+                        drop(permit);
+                        // Failed deletion and IO contention retain ownership and retry on this thread.
+                        if recovered && clean && pending.is_empty() {
+                            drop(root.wake.wait(pending));
+                        } else {
+                            drop(root.wake.wait_timeout(pending, Duration::from_millis(250)));
+                        }
                     }
-                    let pending = root
-                        .pending
-                        .lock()
-                        .unwrap_or_else(|poison| poison.into_inner());
-                    if root.closing.load(Ordering::Acquire)
-                        && root.active.load(Ordering::Acquire) == 0
-                        && pending.is_empty()
-                    {
-                        break;
-                    }
-                    // A failed delete retains every permit. One fixed owner retries; no replacement task.
-                    if pending.is_empty() {
-                        drop(root.wake.wait(pending));
-                    } else {
-                        drop(root.wake.wait_timeout(pending, Duration::from_millis(250)));
-                    }
-                }
-            })
-            .map_err(|_| {
-                self.worker_started.store(false, Ordering::Release);
-                BlobError::Io
-            })?;
+                })
+                .map_err(|_| BlobError::Io)?,
+        );
         Ok(())
     }
+    fn join(self: &Arc<Self>) -> Result<(), BlobError> {
+        self.ensure_worker()?;
+        // Serialize all callers through the same join, including the complete-result handoff.
+        let mut worker = self.worker.lock().map_err(|_| BlobError::Io)?;
+        if let Some(thread) = worker.thread.take() {
+            worker.result = Some(thread.join().map_err(|_| BlobError::Io));
+        }
+        worker.result.unwrap_or(Err(BlobError::Io))
+    }
     fn cleanup(&self) -> Result<(), BlobError> {
-        let _serial = self.cleanup_lock.lock().map_err(|_| BlobError::Io)?;
+        let mut lease = self.cleanup_lock.lock().map_err(|_| BlobError::Io)?;
         let pending = std::mem::take(&mut *self.pending.lock().map_err(|_| BlobError::Io)?);
         let mut retained = Vec::new();
         for mut item in pending {
@@ -171,14 +209,20 @@ impl Root {
         if failed {
             return Err(BlobError::Io);
         }
-        if self.active.load(Ordering::Acquire) == 0 {
+        if self.active.load(Ordering::Acquire) == 0
+            && self.pending.lock().map_err(|_| BlobError::Io)?.is_empty()
+        {
+            if lease.is_some() {
+                match std::fs::remove_file(self.path.join(recovery::OWNER)) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => return Err(BlobError::Io),
+                }
+                drop(lease.take());
+            }
             match std::fs::remove_dir(&self.path) {
                 Ok(()) => {}
-                Err(failure)
-                    if matches!(
-                        failure.kind(),
-                        std::io::ErrorKind::NotFound | std::io::ErrorKind::DirectoryNotEmpty
-                    ) => {}
+                Err(failure) if matches!(failure.kind(), std::io::ErrorKind::NotFound) => {}
                 Err(_) => return Err(BlobError::Io),
             }
         }
@@ -208,28 +252,40 @@ impl BlobStore {
     /// Composition supplies a fresh host-owned root, never an extension parameter.
     pub fn new(root: PathBuf) -> Self {
         let io = Arc::new(Semaphore::new(4));
-        Self(Arc::new(Store {
+        let store = Self(Arc::new(Store {
             bytes: Arc::new(Semaphore::new(MAX_GLOBAL_BLOB_BYTES)),
             io: io.clone(),
             slots: Arc::new(Semaphore::new(256)),
+            runs: Mutex::new(Vec::new()),
             root: Arc::new(Root {
                 path: root,
                 pending: Mutex::new(Vec::new()),
-                cleanup_lock: Mutex::new(()),
+                cleanup_lock: Mutex::new(None),
                 wake: Condvar::new(),
                 closing: AtomicBool::new(false),
-                worker_started: AtomicBool::new(false),
+                worker: Mutex::new(CleanupWorker::default()),
+                joining: AtomicBool::new(false),
+                completion: tokio::sync::watch::channel(None).0,
                 active: AtomicUsize::new(0),
                 io,
             }),
-        }))
+        }));
+        // Startup recovery runs on the same finite IO owner, even when this instance has no blobs.
+        let _ = store.0.root.ensure_worker();
+        store
     }
     pub fn invocation(&self, identity: InvocationIdentity, session_id: Uuid) -> BlobRun {
-        BlobRun(Arc::new(Run {
+        let mut runs = self
+            .0
+            .runs
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        runs.retain(|run| run.strong_count() != 0);
+        let run = BlobRun(Arc::new(Run {
             store: self.clone(),
             identity,
             session_id,
-            retired: AtomicBool::new(false),
+            retired: AtomicBool::new(self.0.root.closing.load(Ordering::Acquire)),
             bytes: Arc::new(Semaphore::new(MAX_RUN_BLOB_BYTES)),
             slots: Arc::new(Semaphore::new(MAX_SLOTS)),
             in_flight: AtomicUsize::new(0),
@@ -239,10 +295,46 @@ impl BlobStore {
                 transfers: 0,
                 bytes: 0,
             }),
-        }))
+        }));
+        runs.push(Arc::downgrade(&run.0));
+        run
     }
     pub fn available_bytes(&self) -> usize {
         self.0.bytes.available_permits()
+    }
+    pub(crate) fn close(&self) {
+        self.0.root.close();
+        let mut runs = self
+            .0
+            .runs
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        for run in runs.drain(..).filter_map(|run| run.upgrade()) {
+            BlobRun(run).retire();
+        }
+    }
+    /// Close admission, retire live runs, and wait for the original physical cleanup owner.
+    pub async fn shutdown(&self) -> Result<(), BlobError> {
+        self.close();
+        let root = self.0.root.clone();
+        let mut completion = root.completion.subscribe();
+        if !root.joining.swap(true, Ordering::AcqRel) {
+            let correlation_id = Uuid::new_v4();
+            let started = Instant::now();
+            tracing::info!(event="extension.blob.shutdown_accepted", %correlation_id);
+            // One shared join leaves blocking workers and all four IO permits available.
+            tokio::task::spawn_blocking(move || {
+                let result = root.join();
+                tracing::info!(event="extension.blob.shutdown_terminal", %correlation_id, success=result.is_ok(), elapsed_ms=started.elapsed().as_millis());
+                root.completion.send_replace(Some(result));
+            });
+        }
+        loop {
+            if let Some(result) = *completion.borrow_and_update() {
+                return result;
+            }
+            completion.changed().await.map_err(|_| BlobError::Io)?;
+        }
     }
     pub async fn cleanup(&self) -> Result<(), BlobError> {
         let permit = self
@@ -345,7 +437,7 @@ impl Drop for Backing {
             });
         }
         self.root.active.fetch_sub(1, Ordering::AcqRel);
-        self.root.wake.notify_one();
+        self.root.wake.notify_all();
     }
 }
 struct Download {
@@ -401,6 +493,7 @@ impl Backing {
 impl BlobRun {
     pub fn check(&self, current: &InvocationIdentity, session: Uuid) -> Result<(), BlobError> {
         if self.0.retired.load(Ordering::Acquire)
+            || self.0.store.0.root.closing.load(Ordering::Acquire)
             || current != &self.0.identity
             || session != self.0.session_id
         {
@@ -532,7 +625,12 @@ impl BlobRun {
         let upload = Uuid::new_v4();
         let root = self.0.store.0.root.clone();
         let path = root.path.join(id.to_string());
-        root.active.fetch_add(1, Ordering::AcqRel);
+        root.ensure_worker()?;
+        {
+            let _pending = root.pending.lock().map_err(|_| BlobError::Io)?;
+            self.current()?;
+            root.active.fetch_add(1, Ordering::AcqRel);
+        }
         let backing = Arc::new(Backing {
             id,
             upload,
@@ -583,8 +681,10 @@ impl BlobRun {
         let path = backing.path.clone();
         let retained = backing;
         self.io(move || {
-            root.ensure_worker()?;
-            let _root_guard = root.cleanup_lock.lock().map_err(|_| BlobError::Io)?;
+            let mut lease = root.cleanup_lock.lock().map_err(|_| BlobError::Io)?;
+            if root.closing.load(Ordering::Acquire) {
+                return Err(BlobError::Stale);
+            }
             match std::fs::create_dir(&root.path) {
                 Ok(()) => {}
                 Err(failure) if failure.kind() == std::io::ErrorKind::AlreadyExists => {}
@@ -594,6 +694,7 @@ impl BlobRun {
             if !metadata.is_dir() || is_reparse(&metadata) {
                 return Err(BlobError::Io);
             }
+            recovery::create_lease(&root.path, &mut lease)?;
             let file = OpenOptions::new()
                 .create_new(true)
                 .read(true)

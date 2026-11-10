@@ -10,7 +10,7 @@ internal static class ExtensionManifestPickerTests
 {
     public static Task ParserPreservesTypedWireAndRejectsInvalidPayloads()
     {
-        var envelope = Request(new { CurrentPath = @"C:\Synthetic\扩展.json" });
+        var envelope = Request(new { CurrentPath = @"C:\Synthetic\扩展.json", SourceWindowHandle = 1L, SourceProcessId = 1u });
         var wire = JsonSerializer.Serialize(envelope, JsonDefaults.Options);
         var decoded = JsonSerializer.Deserialize<ProtocolEnvelope>(wire, JsonDefaults.Options)!;
         Assert(PlatformCommandParser.ParsePickExtensionManifest(decoded).CurrentPath == @"C:\Synthetic\扩展.json",
@@ -23,7 +23,7 @@ internal static class ExtensionManifestPickerTests
         Reject(() => PlatformCommandParser.ParsePickExtensionManifest(Request(new { })));
         Reject(() => PlatformCommandParser.ParsePickExtensionManifest(Request(new { CurrentPath = (string?)null })));
         Reject(() => PlatformCommandParser.ParsePickExtensionManifest(Request(new { CurrentPath = 42 })));
-        Assert(PlatformCommandParser.ParsePickExtensionManifest(Request(new { CurrentPath = "" })).CurrentPath == "",
+        Assert(PlatformCommandParser.ParsePickExtensionManifest(Request(new { CurrentPath = "", SourceWindowHandle = 1L, SourceProcessId = 1u })).CurrentPath == "",
             "empty initial path is valid");
         return Task.CompletedTask;
     }
@@ -33,7 +33,7 @@ internal static class ExtensionManifestPickerTests
         const string manifest = @"C:\Synthetic\cleaner.zip";
         const string directory = @"C:\Synthetic";
         var calls = 0;
-        var result = ExtensionManifestPicker.PickCore(new("  " + manifest + "  "), CancellationToken.None,
+        var result = ExtensionManifestPicker.PickCore(new("  " + manifest + "  ", 1, 1), CancellationToken.None,
             path => path == manifest, path => path == directory, settings =>
             {
                 calls++;
@@ -47,14 +47,14 @@ internal static class ExtensionManifestPickerTests
                 return manifest;
             });
         Assert(result.Success && result.Data == manifest && calls == 1, "selection returns only the chosen path");
-        result = ExtensionManifestPicker.PickCore(new(directory), CancellationToken.None,
+        result = ExtensionManifestPicker.PickCore(new(directory, 1, 1), CancellationToken.None,
             _ => false, path => path == directory, settings =>
             {
                 Assert(settings.InitialDirectory == directory && settings.FileName == "", "directory seed has no filename");
                 return null;
             });
         Assert(result.Success && result.Data == "", "dialog dismissal returns successful empty path");
-        result = ExtensionManifestPicker.PickCore(new(@"C:\Missing\runner.exe"), CancellationToken.None,
+        result = ExtensionManifestPicker.PickCore(new(@"C:\Missing\runner.exe", 1, 1), CancellationToken.None,
             _ => false, _ => false, settings =>
             {
                 Assert(settings.InitialDirectory == "" && settings.FileName == "", "missing or non-ZIP seed does not preselect a program");
@@ -68,15 +68,15 @@ internal static class ExtensionManifestPickerTests
     {
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
-        var result = ExtensionManifestPicker.Pick(new(""), cancellation.Token);
+        var result = ExtensionManifestPicker.Pick(new("", 1, 1), cancellation.Token);
         Assert(!result.Success && result.Data is null, "pre-cancelled production entry must never enter native runner");
-        result = ExtensionManifestPicker.PickCore(new(""), cancellation.Token,
+        result = ExtensionManifestPicker.PickCore(new("", 1, 1), cancellation.Token,
             _ => throw new InvalidOperationException("file probe must not run"),
             _ => throw new InvalidOperationException("directory probe must not run"),
             _ => throw new InvalidOperationException("dialog must not run"));
         Assert(!result.Success && result.Data is null, "pre-cancel stops every callback");
         using var lateCancellation = new CancellationTokenSource();
-        result = ExtensionManifestPicker.PickCore(new(""), lateCancellation.Token, _ => false, _ => false,
+        result = ExtensionManifestPicker.PickCore(new("", 1, 1), lateCancellation.Token, _ => false, _ => false,
             _ => { lateCancellation.Cancel(); return @"C:\Synthetic\late.zip"; });
         Assert(!result.Success && result.Data is null, "session cancellation drops a late selected path");
         return Task.CompletedTask;
@@ -86,12 +86,12 @@ internal static class ExtensionManifestPickerTests
     {
         foreach (var selection in new[] { @"C:\Synthetic\runner.exe", @"C:\Synthetic\missing.zip", @"C:\Synthetic\extension.json" })
         {
-            var result = ExtensionManifestPicker.PickCore(new(""), CancellationToken.None,
+            var result = ExtensionManifestPicker.PickCore(new("", 1, 1), CancellationToken.None,
                 path => path.EndsWith(".exe", StringComparison.Ordinal), _ => false, _ => selection);
             Assert(!result.Success && result.Data is null && !result.Error!.Contains(selection),
                 "non-ZIP or missing selection is rejected without exposing paths");
         }
-        var failed = ExtensionManifestPicker.PickCore(new(""), CancellationToken.None, _ => false, _ => false,
+        var failed = ExtensionManifestPicker.PickCore(new("", 1, 1), CancellationToken.None, _ => false, _ => false,
             _ => throw new Win32Exception(5, "private path or payload"));
         Assert(!failed.Success && failed.NativeErrorCode == 5 && !failed.Error!.Contains("private"),
             "native failure preserves code, not raw exception payload");

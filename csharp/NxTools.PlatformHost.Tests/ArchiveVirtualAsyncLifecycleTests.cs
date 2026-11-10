@@ -104,10 +104,11 @@ internal static class ArchiveVirtualAsyncLifecycleTests
                     Check(Slot<End>(capability,7)(capability,unchecked((int)0x80004004),IntPtr.Zero,0)==0,"receiver abort End ends held ownership");
                     var terminal=await done.WaitAsync(TimeSpan.FromSeconds(20));Check(!terminal.Success,"receiver failure cannot be fake-success");
                     Check(Read(ref held,2)=="ne"&&original!.QueryGetData(ref request)<0,"native stream after End/retirement; late gets reject");
-                    Check(mode=="disconnect"
-                        ? events.Last().Phase=="failed"&&events.Last().CleanupComplete==false&&terminal.Error=="virtual_cleanup_incomplete"
-                        : events.Last().Phase==(mode=="receiver_abort"?"failed":"cancelled")&&events.Last().CleanupComplete==true,
-                        "truthful failure/cancel/disconnected release status");
+                    Check(entries.ActiveWorkerCountForFixture==0,"actual worker slot remains occupied after receiver terminal: "+mode);
+                    using(var reopened=File.Open(path,FileMode.Open,FileAccess.ReadWrite,FileShare.None))Check(reopened.CanWrite,"original native source actually released");
+                    Check(events.Last().Phase==(mode=="receiver_abort"?"failed":"cancelled")&&events.Last().CleanupComplete==true&&
+                        (mode!="disconnect"||terminal.Error=="virtual_cancelled"),
+                        "truthful failure/cancel/disconnected release status: "+mode+"/"+events.Last().Phase+"/"+events.Last().CleanupComplete+"/"+terminal.Error);
                     Check(events.Last().NativeErrorCode==unchecked((int)0x80004004),"target HRESULT at original boundary");
                     await dispatcher.DrainAsync();
                 }finally{if(capability!=IntPtr.Zero)Marshal.Release(capability);if(held.unionmember!=IntPtr.Zero)ReleaseStgMedium(ref held);}
@@ -116,11 +117,14 @@ internal static class ArchiveVirtualAsyncLifecycleTests
     }
     internal static async Task ActualMultiDirectoryUnknownProgressAndEndOrdering()
     {
+        await ActualMemberByteProgress();
         var root=Root();try {
             var path=Path.Combine(root,"tree.zip");Zip(path,true);var browser=await Browse(root,path);
             foreach(var earlyEnd in new[]{false,true}) {
-                await using var entries=ArchiveEntrySession.ForOwnedTestPackage(root);var command=Command(browser,path,true);
-                var log=new CaptureLog();var events=new ConcurrentQueue<ArchiveVirtualDragProgress>();
+                var log=new CaptureLog();
+                await using var entries=ArchiveEntrySession.ForOwnedTestPackage(root,log);var command=Command(browser,path,true);
+                entries.ProbeWriteForFixture(_=>Thread.Sleep(125));
+                var events=new ConcurrentQueue<ArchiveVirtualDragProgress>();
                 using var inLoop=new ManualResetEventSlim();using var exitLoop=new ManualResetEventSlim();var pointer=IntPtr.Zero;STGMEDIUM held=default;
                 await using var drag=new ArchiveVirtualDragSession(entries,log,validSource:(_,_)=>true,prepare:_=>null,pressed:()=>true,escape:()=>false,loop:(data,_)=>{
                     pointer=Capability(data);Check(Slot<Start>(pointer,5)(pointer,IntPtr.Zero)==0,"start");
@@ -141,15 +145,93 @@ internal static class ArchiveVirtualAsyncLifecycleTests
                     Check(!done.IsCompleted&&events.All(e=>e.Phase!="finished"),"cache ready != target complete; End alone != loop end");
                     Check(events.All(e=>e.FilesTotal==2&&e.BytesTotal is null&&e.SessionId==command.SessionId&&e.Generation==1),"file-only total, any unknown stays unknown");
                     Check(events.Any(e=>e.Phase=="materializing"&&e.CurrentIndex==1&&e.CurrentMember=="root/one.txt")&&events.Any(e=>e.Phase=="target_copying"),"demand/current frozen descriptor and copy phase");
+                    var ordered=events.ToArray();
+                    Check(ordered.Select(e=>e.Sequence).All(value=>value is >0)&&
+                        ordered.Zip(ordered.Skip(1)).All(pair=>pair.First.Sequence<pair.Second.Sequence),"native snapshots have original publication order");
+                    Check(ordered.Any(e=>e.CurrentIndex==2&&e.CurrentRequestId==command.Items![2].Entry.OperationId&&
+                        e.CurrentBytesDone==0&&e.CurrentBytesTotal is null&&e.BytesDone==3&&e.BytesProcessed==3),
+                        "member switch resets only current processed bytes; unknown total remains unknown");
+                    Check(ordered.All(e=>e.CurrentIndex is not {} index||e.CurrentRequestId==command.Items![index].Entry.OperationId),
+                        "each published descriptor is bound to its frozen request");
                     exitLoop.Set();await Task.Delay(120);
                     if(!earlyEnd){Check(!done.IsCompleted,"loop end alone != EndOperation");Check(Slot<End>(pointer,7)(pointer,0,IntPtr.Zero,1)==0,"receiver reports success");}
                     var result=await done.WaitAsync(TimeSpan.FromSeconds(20));Check(result.Success,"receiver+loop+cleanup success");
                     var final=events.Last();Check(final.Phase=="finished"&&final.Code=="receiver_reported_complete"&&final.CleanupComplete==true&&final.FilesDone==2&&final.BytesDone==6,"actual sealed6 bytes/2 files not source/archive size");
+                    Check(final.BytesProcessed==6&&final.CurrentBytesDone==3&&final.Sequence is >0,"terminal sealed/processed bytes never double-count");
+                    Check(new[]{"descriptor_delivered","async_start","async_end","ole_return","terminal"}.All(stage=>
+                        log.Lines.Any(line=>line.Contains("archive.virtual_drag."+stage,StringComparison.Ordinal))),
+                        "bounded descriptor/receiver/OLE lifecycle observations share original drag correlation");
+                    Check(log.Lines.Any(line=>line.Contains("archive.entry.drag.cleanup",StringComparison.Ordinal)&&
+                        line.Contains("seal_count",StringComparison.Ordinal)&&line.Contains("cursor_ms",StringComparison.Ordinal)),
+                        "aggregate Seal and verified native cursor time belongs to original cleanup");
                     Check(events.Count<=12&&log.Lines.All(line=>!line.Contains("root/one.txt",StringComparison.Ordinal)&&!line.Contains(path,StringComparison.Ordinal)),"bounded original callback and payload-free diagnostics");
                     Check(Read(ref held,3)=="one","stream handle survives early/late End + retirement");
                 }finally{exitLoop.Set();if(pointer!=IntPtr.Zero)Marshal.Release(pointer);if(held.unionmember!=IntPtr.Zero)ReleaseStgMedium(ref held);}
             }
         }finally{Directory.Delete(root,true);}
+    }
+    private static async Task ActualMemberByteProgress()
+    {
+        var root=Root();
+        try {
+            var path=Path.Combine(root,"progress.zip");
+            const int length=2*1024*1024;
+            using(var zip=ZipFile.Open(path,ZipArchiveMode.Create)) {
+                using var output=zip.CreateEntry("large.bin",CompressionLevel.NoCompression).Open();
+                output.Write(new byte[length]);
+            }
+            var browser=await Browse(root,path);
+            await using var entries=ArchiveEntrySession.ForOwnedTestPackage(root);
+            entries.ProbeWriteForFixture(_=>Thread.Sleep(25));
+            var command=Command(browser,path);
+            command=command with { Items=[command.Items![0] with { Name="large.bin",Size=length }] };
+            var snapshots=new ConcurrentQueue<JsonElement>();
+            var capability=IntPtr.Zero;
+            using var allReady=new ManualResetEventSlim();
+            await using var drag=new ArchiveVirtualDragSession(entries,validSource:(_,_)=>true,prepare:_=>null,
+                pressed:()=>true,escape:()=>false,loop:(data,_)=>{
+                    capability=Capability(data);
+                    Check(Slot<Start>(capability,5)(capability,IntPtr.Zero)==0,"progress receiver start");
+                    var format=Format(ArchiveVirtualFileDataObject.ContentsFormat,0,TYMED.TYMED_ISTREAM);
+                    data.GetData(ref format,out var medium);
+                    try { Check(Read(ref medium,1)=="\0","real verified stream payload"); }
+                    finally { ReleaseStgMedium(ref medium); }
+                    allReady.Set();return(0x00040100,1);
+                });
+            drag.Progress=e=>snapshots.Enqueue(e.Payload.GetProperty("data").Clone());
+            var completed=drag.Dispatch(Wire(command),1);
+            try {
+                Check(await Task.Run(()=>SpinWait.SpinUntil(()=>snapshots.Any(e=>e.GetProperty("phase").GetString()=="materializing"&&
+                    e.TryGetProperty("current_bytes_done",out var bytes)&&bytes.ValueKind==JsonValueKind.Number&&bytes.GetUInt64()>0),TimeSpan.FromSeconds(20))),
+                    "original worker must publish a nonzero current snapshot before Seal");
+                var stale=JsonSerializer.SerializeToElement(new { op="progress",progress=new {
+                    drag_demand=new { request_id=Guid.NewGuid(), index=0, ordinal=0UL }, current_bytes_done=(ulong)length+1,
+                    current_bytes_total=(ulong)length } },JsonDefaults.Options);
+                var ingress=typeof(ArchiveEntrySession).GetMethod("OnVirtualRunner",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)!;
+                Check((bool)ingress.Invoke(entries,[new ArchiveWorkerEvent("frame",command.OperationId,Frame:stale)])!,
+                    "original runner callback consumes stale progress without granting output or cancelling worker");
+                Check(await Task.Run(()=>allReady.Wait(TimeSpan.FromSeconds(20))),"bounded original worker materialization");
+                await Task.Delay(120);
+                Check(!completed.IsCompleted,"verified cache is not receiver completion");
+                Check(snapshots.Any(e=>e.GetProperty("phase").GetString()=="materializing"&&
+                    e.TryGetProperty("current_bytes_done",out var bytes)&&bytes.ValueKind==JsonValueKind.Number&&
+                    bytes.GetUInt64()>0&&bytes.GetUInt64()<length),"actual worker current bytes must arrive before Seal");
+                var observed=snapshots.Select(e=>e.Deserialize<ArchiveVirtualDragProgress>(JsonDefaults.Options)!).ToArray();
+                Check(observed.Any(e=>e.Phase=="materializing"&&e.CurrentIndex==0&&e.CurrentRequestId==command.Items![0].Entry.OperationId&&
+                    e.BytesDone==0&&e.CurrentBytesDone is >0 and <length&&e.BytesProcessed==e.CurrentBytesDone&&e.CurrentBytesTotal==length),
+                    "real worker snapshot preserves current request and processed-versus-sealed units");
+                Check(observed.All(e=>e.BytesProcessed is null||e.BytesProcessed<=length)&&
+                    observed.Zip(observed.Skip(1)).All(pair=>pair.First.Sequence<pair.Second.Sequence),
+                    "wrong-demand injection cannot publish oversize bytes or regress sequence");
+                Check(snapshots.All(e=>e.GetProperty("phase").GetString()!="finished"),"no early success");
+            } finally {
+                if(capability!=IntPtr.Zero) {
+                    Slot<End>(capability,7)(capability,0,IntPtr.Zero,1);
+                    Marshal.Release(capability);
+                }
+                await completed.WaitAsync(TimeSpan.FromSeconds(20));
+            }
+        } finally { Directory.Delete(root,true); }
     }
     private sealed class TrackedInput:IDisposable {internal bool Disposed;public void Dispose()=>Disposed=true;}
     private sealed class CaptureLog:IPlatformLog {internal readonly ConcurrentQueue<string> Lines=new();public void Write(string level,string eventName,Guid? correlationId=null,IReadOnlyDictionary<string,object?>? fields=null)=>Lines.Enqueue(JsonSerializer.Serialize(new{eventName,correlationId,fields}));}

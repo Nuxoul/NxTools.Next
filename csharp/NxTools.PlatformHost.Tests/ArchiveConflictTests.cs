@@ -35,7 +35,7 @@ internal static class ArchiveConflictTests
         try {
             File.Copy(worker, helper); copied = true;
             ArchivePasswordTicket? priorJobTicket = null;
-            foreach (var mode in new[] { "ask_overwrite", "skip", "rename", "overwrite_policy", "skip_policy", "rename_policy", "apply_overwrite", "apply_skip", "apply_rename", "next_job", "changed", "cancel", "cancel_after_commit", "rename_race", "internal_collision", "reserved_rename" }) {
+            foreach (var mode in new[] { "ask_overwrite", "skip", "rename", "overwrite_policy", "skip_policy", "rename_policy", "apply_overwrite", "apply_skip", "apply_rename", "next_job", "changed", "cancel", "cancel_after_commit", "rename_occupied", "internal_collision", "reserved_rename" }) {
                 var owned = Directory.CreateDirectory(Path.Combine(root.FullName, mode));
                 var source = Path.Combine(owned.FullName, "tiny.zip");
                 var two = mode.StartsWith("apply_", StringComparison.Ordinal) || mode is "next_job" or "cancel" or "cancel_after_commit" or "internal_collision" or "reserved_rename";
@@ -52,10 +52,7 @@ internal static class ArchiveConflictTests
                 using var runner = ArchiveWorkerRunner.ForPackage(events.Enqueue, log);
                 var id = Guid.NewGuid();
                 var policy = mode == "overwrite_policy" ? "overwrite" : mode == "skip_policy" ? "skip" : mode == "rename_policy" ? "auto_rename" : "ask";
-                var raced = false;
-                runner.OutputCommitCheckpointProbe = stage => {
-                    if (mode == "rename_race" && stage == "before_flush" && !raced) { raced = true; File.WriteAllText(Path.Combine(output.FullName, "a (2).txt"), "external-racer"); }
-                };
+                if (mode == "rename_occupied") File.WriteAllText(Path.Combine(output.FullName, "a (2).txt"), "external-occupant");
                 Check(runner.Start(new(id, "extract", source, 0, new { max_entries = 100 }, OutputRoot: output.FullName, ConflictPolicy: policy)), "actual ZIP conflict admission");
                 var expectsPrompt = policy == "ask" && mode != "internal_collision";
                 if (expectsPrompt) {
@@ -71,7 +68,7 @@ internal static class ArchiveConflictTests
                     if (mode is "cancel" or "cancel_after_commit") {
                         Check(runner.RespondConflict(id, ticket, null), "typed conflict Cancel");
                     } else {
-                        var decision = mode is "skip" or "apply_skip" or "next_job" ? "skip" : mode is "rename" or "rename_race" or "apply_rename" or "reserved_rename" ? "auto_rename" : "overwrite";
+                        var decision = mode is "skip" or "apply_skip" or "next_job" ? "skip" : mode is "rename" or "rename_occupied" or "apply_rename" or "reserved_rename" ? "auto_rename" : "overwrite";
                         Check(runner.RespondConflict(id, ticket, decision, mode.StartsWith("apply_", StringComparison.Ordinal)), "typed decision");
                         if (mode == "apply_overwrite") priorJobTicket = ticket;
                         if (mode == "next_job") {
@@ -93,23 +90,23 @@ internal static class ArchiveConflictTests
                 var skipped = mode is "skip" or "skip_policy" ? 1UL : mode is "apply_skip" or "next_job" ? 2UL : 0UL;
                 Check(terminal.FilesSkipped == skipped, "accurate Skip count: " + mode);
                 if (mode == "changed") {
-                    Check(terminal.Category == "target_changed" && terminal.FilesCommitted == 0 && File.ReadAllText(oldA) == "external-change", "old approval cannot replace changed target");
+                    Check(terminal.Category == "success" && terminal.FilesCommitted == 1 && File.ReadAllText(oldA) == "incoming-a.txt", "approved overwrite truncates the current final target without stale fingerprint");
                 } else if (mode is "cancel" or "cancel_after_commit") {
                     Check(terminal.FilesCommitted == (mode == "cancel_after_commit" ? 1 : 0) && terminal.Category == (mode == "cancel_after_commit" ? "cancelled_with_committed_output" : "cancelled"), "truthful cancellation count");
                     Check(File.ReadAllText(oldA) == (mode == "cancel_after_commit" ? "incoming-a.txt" : "original-a") && File.ReadAllText(oldB) == "original-b", "cancel retains previous commits and old targets");
-                } else if (mode is "internal_collision" or "rename_race") {
-                    Check(Prompts(events).Length == (mode == "internal_collision" ? 0 : 1) && terminal.FilesCommitted == 0, "refusal before publication");
+                } else if (mode == "internal_collision") {
+                    Check(Prompts(events).Length == 0 && terminal.FilesCommitted == 0, "internal collision refused before publication");
                     var failure = events.Single(e => e.Frame is { } f && f.GetProperty("op").GetString() == "failure").Frame!.Value;
-                    Check(failure.GetProperty("error_code").GetString() == "OutputCollision", "typed internal/raced collision");
-                    if (mode == "rename_race") Check(File.ReadAllText(Path.Combine(output.FullName, "a (2).txt")) == "external-racer", "no-replace race retained external output");
+                    Check(failure.GetProperty("error_code").GetString() == "OutputCollision", "typed internal collision");
                 } else {
                     Check(terminal.Category == (skipped > 0 ? "succeeded_with_warnings" : "success") && terminal.FilesCommitted == (two ? 2 - (int)skipped : 1 - (int)skipped), "truthful output terminal: " + mode);
                     if (skipped > 0) Check(File.ReadAllText(oldA) == "original-a", "Skip retained old bytes");
-                    else if (mode is "rename" or "rename_policy" or "apply_rename" or "reserved_rename") {
+                    else if (mode is "rename" or "rename_policy" or "apply_rename" or "reserved_rename" or "rename_occupied") {
                         Check(File.ReadAllText(oldA) == "original-a", "rename retained original");
-                        Check(File.ReadAllText(Path.Combine(output.FullName, mode == "reserved_rename" ? "a (3).txt" : "a (2).txt")) == "incoming-a.txt", "deterministic same-directory numbered name");
+                        Check(File.ReadAllText(Path.Combine(output.FullName, mode is "reserved_rename" or "rename_occupied" ? "a (3).txt" : "a (2).txt")) == "incoming-a.txt", "deterministic same-directory numbered name");
                         if (mode == "apply_rename") Check(File.ReadAllText(Path.Combine(output.FullName, "b (2).txt")) == "incoming-b.txt", "rename apply-all");
                         if (mode == "reserved_rename") Check(File.ReadAllText(Path.Combine(output.FullName, "a (2).txt")) == "incoming-a (2).txt", "planned original name not stolen by rename");
+                        if (mode == "rename_occupied") Check(File.ReadAllText(Path.Combine(output.FullName, "a (2).txt")) == "external-occupant", "occupied auto-rename candidate retained");
                     } else {
                         Check(File.ReadAllText(oldA) == "incoming-a.txt", "native overwrite exact bytes");
                         if (two) Check(File.ReadAllText(oldB) == "incoming-b.txt", "second native overwrite exact bytes");

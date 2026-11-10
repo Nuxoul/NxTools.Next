@@ -129,6 +129,7 @@ pub struct ClipboardApplication {
     config: AppConfig,
     config_path: PathBuf,
     notifications: Entity<NotificationCenter>,
+    downloads: Option<WeakEntity<crate::downloads::DownloadApplication>>,
     last_cleanup_at_unix_ms: i64,
     pending_configuration: HashSet<uuid::Uuid>,
     pending_blacklist_configuration: HashMap<uuid::Uuid, (uuid::Uuid, std::time::Instant)>,
@@ -468,6 +469,7 @@ impl ClipboardApplication {
             config,
             config_path,
             notifications,
+            downloads: None,
             last_cleanup_at_unix_ms: 0,
             pending_configuration: HashSet::new(),
             pending_blacklist_configuration: HashMap::new(),
@@ -493,6 +495,23 @@ impl ClipboardApplication {
             pending_extension_copies: HashMap::new(),
         };
         application
+    }
+
+    pub(crate) fn bind_downloads(
+        &mut self,
+        downloads: WeakEntity<crate::downloads::DownloadApplication>,
+    ) {
+        self.downloads = Some(downloads);
+    }
+
+    pub(crate) fn take_link_panel_download_owner(
+        &mut self,
+        panel: AnyWindowHandle,
+    ) -> Option<WeakEntity<crate::downloads::DownloadApplication>> {
+        if !self.forget_link_panel_if_current(panel) {
+            return None;
+        }
+        self.downloads.clone()
     }
 
     pub(crate) fn clipboard_settings(&self) -> ClipboardSettings {
@@ -652,12 +671,28 @@ impl ClipboardApplication {
         self.history_worker.clone()
     }
 
-    pub(crate) fn request_clipboard_export(&mut self, cx: &mut Context<Self>) {
-        self.request_clipboard_archive_path(ClipboardArchiveOperation::Export, cx);
+    pub(crate) fn request_clipboard_export(
+        &mut self,
+        source_window_handle: i64,
+        cx: &mut Context<Self>,
+    ) {
+        self.request_clipboard_archive_path(
+            ClipboardArchiveOperation::Export,
+            source_window_handle,
+            cx,
+        );
     }
 
-    pub(crate) fn request_clipboard_import(&mut self, cx: &mut Context<Self>) {
-        self.request_clipboard_archive_path(ClipboardArchiveOperation::Import, cx);
+    pub(crate) fn request_clipboard_import(
+        &mut self,
+        source_window_handle: i64,
+        cx: &mut Context<Self>,
+    ) {
+        self.request_clipboard_archive_path(
+            ClipboardArchiveOperation::Import,
+            source_window_handle,
+            cx,
+        );
     }
 
     pub(crate) fn request_clipboard_database_backup(&mut self, cx: &mut Context<Self>) {
@@ -668,7 +703,11 @@ impl ClipboardApplication {
         self.start_clipboard_database_operation(ClipboardDatabaseOperation::Compact, cx);
     }
 
-    pub(crate) fn request_clipboard_storage_migration(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn request_clipboard_storage_migration(
+        &mut self,
+        source_window_handle: i64,
+        cx: &mut Context<Self>,
+    ) {
         if self.clipboard_management_busy() {
             self.notify_info(
                 STORAGE_NOTIFICATION_ID,
@@ -682,7 +721,11 @@ impl ClipboardApplication {
         match self
             .platform
             .send_command(PlatformCommand::PickClipboardStorageDirectory(
-                PickClipboardStorageDirectoryCommand { current_directory },
+                PickClipboardStorageDirectoryCommand {
+                    current_directory,
+                    source_window_handle,
+                    source_process_id: std::process::id(),
+                },
             )) {
             Ok(command_id) => {
                 self.pending_storage_picker = Some(command_id);
@@ -701,12 +744,13 @@ impl ClipboardApplication {
     fn request_clipboard_archive_path(
         &mut self,
         operation: ClipboardArchiveOperation,
+        source_window_handle: i64,
         cx: &mut Context<Self>,
     ) {
         if self.clipboard_management_busy() {
             self.notify_info(
                 ARCHIVE_NOTIFICATION_ID,
-                "历史归档",
+                "历史压缩包",
                 "已有剪贴板数据操作正在进行",
                 cx,
             );
@@ -722,6 +766,8 @@ impl ClipboardApplication {
                 PickClipboardArchivePathCommand {
                     mode,
                     suggested_file_name: "NxTools-clipboard.nxtclip".into(),
+                    source_window_handle,
+                    source_process_id: std::process::id(),
                 },
             )) {
             Ok(command_id) => {
@@ -730,7 +776,7 @@ impl ClipboardApplication {
             Err(error) => {
                 self.notify_error(
                     ARCHIVE_NOTIFICATION_ID,
-                    "历史归档",
+                    "历史压缩包",
                     format!("无法打开文件选择器：{error}"),
                     cx,
                 );
@@ -748,9 +794,9 @@ impl ClipboardApplication {
         self.management_operation_active = true;
         self.notify_progress(
             ARCHIVE_NOTIFICATION_ID,
-            "历史归档",
+            "历史压缩包",
             match operation {
-                ClipboardArchiveOperation::Export => "正在导出便携归档…",
+                ClipboardArchiveOperation::Export => "正在导出便携压缩包…",
                 ClipboardArchiveOperation::Import => "正在导入并合并历史…",
             },
             cx,
@@ -792,14 +838,19 @@ impl ClipboardApplication {
                     Ok(message) => {
                         this.notify_success(
                             ARCHIVE_NOTIFICATION_ID,
-                            "历史归档",
+                            "历史压缩包",
                             message.clone(),
                             cx,
                         );
                     }
                     Err(error) => {
                         let message = format!("数据操作失败：{error}");
-                        this.notify_error(ARCHIVE_NOTIFICATION_ID, "历史归档", message.clone(), cx);
+                        this.notify_error(
+                            ARCHIVE_NOTIFICATION_ID,
+                            "历史压缩包",
+                            message.clone(),
+                            cx,
+                        );
                     }
                 }
                 this.finish_clipboard_management_operation(cx);
@@ -1034,6 +1085,15 @@ impl ClipboardApplication {
         self.link_panel.generation += 1;
     }
 
+    /// A deferred callback may retire only the panel window that accepted its action.
+    pub(crate) fn forget_link_panel_if_current(&mut self, window: AnyWindowHandle) -> bool {
+        if self.link_panel.window != Some(window) {
+            return false;
+        }
+        self.forget_link_panel();
+        true
+    }
+
     /// Snapshot of the link panel user settings for the settings window.
     pub(crate) fn link_panel_settings(&self) -> (bool, u64, LinkPanelPosition) {
         (
@@ -1225,7 +1285,34 @@ impl ClipboardApplication {
         target: &str,
         target_kind: DetectedLinkKind,
         value_length: usize,
+        ordinary: bool,
+        cx: &mut gpui_kit::App,
     ) {
+        let route = if ordinary {
+            if self.config.clipboard.link_panel_copy_only
+                || (target_kind == DetectedLinkKind::Web
+                    && !self.config.clipboard.link_panel_auto_open_browser)
+            {
+                LinkPanelRoute::Copy
+            } else {
+                route
+            }
+        } else {
+            route
+        };
+        if route == LinkPanelRoute::Copy {
+            let correlation_id = uuid::Uuid::new_v4();
+            let started_at = Instant::now();
+            info!(event = "tools.link_panel.copy_started", %correlation_id,
+                target_kind = target_kind.label(), value_length,
+                "ordinary link panel copy accepted");
+            self.note_panel_copied(target.to_owned());
+            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(target.to_owned()));
+            info!(event = "tools.link_panel.copy_completed", %correlation_id,
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                "ordinary link panel copy completed");
+            return;
+        }
         let correlation_id = uuid::Uuid::new_v4();
         let started_at = Instant::now();
         let Some(command) =
@@ -1245,6 +1332,7 @@ impl ClipboardApplication {
         let action = match route {
             LinkPanelRoute::Browser => ShellOpenAction::Open,
             LinkPanelRoute::OpenShell { action } => action,
+            LinkPanelRoute::Copy => unreachable!("copy routes return before shell dispatch"),
         };
         info!(
             event = "tools.link_panel.route_started",
@@ -2611,7 +2699,7 @@ impl ClipboardApplication {
                 if self.pending_archive_picker.take().is_some() {
                     self.notify_error(
                         ARCHIVE_NOTIFICATION_ID,
-                        "历史归档",
+                        "历史压缩包",
                         "Windows 文件选择器连接已重置",
                         cx,
                     );
@@ -2670,8 +2758,8 @@ impl ClipboardApplication {
                 if self.pending_archive_picker.take().is_some() {
                     self.notify_error(
                         ARCHIVE_NOTIFICATION_ID,
-                        "历史归档",
-                        "历史归档选择已因 Windows 连接断开而取消",
+                        "历史压缩包",
+                        "历史压缩包选择已因 Windows 连接断开而取消",
                         cx,
                     );
                 }
@@ -2764,7 +2852,7 @@ impl ClipboardApplication {
                             "文件选择失败：{}",
                             result.error.as_deref().unwrap_or("未知 Windows 错误")
                         );
-                        self.notify_error(ARCHIVE_NOTIFICATION_ID, "历史归档", message, cx);
+                        self.notify_error(ARCHIVE_NOTIFICATION_ID, "历史压缩包", message, cx);
                     } else if let Some(path) = result.data.filter(|path| !path.is_empty()) {
                         self.start_clipboard_archive_operation(operation, PathBuf::from(path), cx);
                     }
@@ -3187,6 +3275,7 @@ impl ClipboardApplication {
             | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::SystemThemePreferenceChanged(_)
             | PlatformEvent::QuickLaunchPanelRequested(_)
+            | PlatformEvent::QuickLaunchKeyboardHealthChanged(_)
             | PlatformEvent::QuickLaunchDirectoryContextResolved(_)
             | PlatformEvent::QuickLaunchAutoSwitchRequested(_)
             | PlatformEvent::QuickLaunchFileDialogSearchHostChanged(_)
@@ -4103,4 +4192,196 @@ mod asset_tests {
         });
         shutdown.shutdown().expect("flush synthetic worker");
     }
+    #[gpui_kit::test]
+    fn ref01_row_uses_saved_settings_at_activation_and_stale_close_preserves_reopened_panel(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use crate::tools::link_detector::DetectedLink;
+        use gpui_kit::VisualTestContext;
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        cx.executor().allow_parking();
+        let temporary = tempfile::tempdir().expect("synthetic link state");
+        let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
+            temporary.path().join("history.db"),
+            temporary.path().join("assets"),
+            ClipboardRetentionPolicy {
+                max_items: 1000,
+                retention_days: 30,
+            },
+            1000,
+        )
+        .expect("synthetic history worker");
+        let (platform, endpoint) = nxtools_ipc::platform_bridge(32);
+        endpoint.set_connected_for_contract_test(true);
+        let config_path = temporary.path().join("config.json");
+        let mut config = AppConfig::default();
+        config.clipboard.link_panel_copy_only = true;
+        config.clipboard.link_panel_auto_open_browser = false;
+        config
+            .save_to(&config_path)
+            .expect("seed saved clipboard settings");
+        let application = cx.update(|cx| {
+            let notifications = cx.new(|_| NotificationCenter::default());
+            cx.new(|cx| {
+                ClipboardApplication::new(
+                    worker.clone(),
+                    Rc::new(platform),
+                    config,
+                    config_path.clone(),
+                    notifications,
+                    cx,
+                )
+            })
+        });
+        let link = |target: &str| {
+            vec![DetectedLink {
+                display: "synthetic web target".into(),
+                copy_value: target.into(),
+                kind: DetectedLinkKind::Web,
+            }]
+        };
+        application.update(cx, |app, cx| {
+            app.show_link_panel(link("https://first.invalid"), cx)
+        });
+        let first = *cx.windows().last().expect("first panel");
+        application.update(cx, |app, cx| {
+            app.show_link_panel(link("https://second.invalid"), cx)
+        });
+        assert_eq!(
+            cx.windows(),
+            vec![first],
+            "restage original panel and timer"
+        );
+        application.update(cx, |app, _| {
+            app.config.clipboard.link_panel_copy_only = false;
+            app.config.clipboard.link_panel_auto_open_browser = true;
+            app.save_clipboard_section().expect("persist current route");
+        });
+        let saved = AppConfig::load_from(&config_path).expect("read durable route");
+        assert!(
+            !saved.clipboard.link_panel_copy_only && saved.clipboard.link_panel_auto_open_browser
+        );
+        let mut surface = VisualTestContext::from_window(first, cx);
+        surface.refresh().expect("restaged production row");
+        let row = surface
+            .debug_bounds("link-panel-name-0")
+            .expect("real row target");
+        surface.simulate_click(row.center(), Default::default());
+        surface.run_until_parked();
+        assert!(cx.windows().is_empty());
+        let commands = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .filter_map(|envelope| match envelope.message {
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                    command,
+                )) => Some(command),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            commands,
+            vec![OpenShellTargetCommand {
+                target: "https://second.invalid".into(),
+                action: ShellOpenAction::Open,
+            }],
+            "current persisted settings win over capture-time settings"
+        );
+        application.update(cx, |app, cx| {
+            app.show_link_panel(link("https://third.invalid"), cx)
+        });
+        let third = *cx.windows().last().expect("replacement panel");
+        assert_ne!(first, third);
+        application.update(cx, |app, _| {
+            assert!(
+                !app.forget_link_panel_if_current(first),
+                "old callback cannot retire replacement"
+            );
+            assert_eq!(app.link_panel.window, Some(third));
+            app.config.clipboard.link_panel_auto_open_browser = false;
+            app.save_clipboard_section()
+                .expect("persist disabled auto-open");
+        });
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string("untouched".into()));
+        let mut surface = VisualTestContext::from_window(third, cx);
+        surface.refresh().expect("replacement production row");
+        let row = surface
+            .debug_bounds("link-panel-name-0")
+            .expect("replacement row");
+        surface.simulate_click(row.center(), Default::default());
+        surface.run_until_parked();
+        assert_eq!(
+            cx.read_from_clipboard()
+                .expect("copied target")
+                .text()
+                .as_deref(),
+            Some("https://third.invalid")
+        );
+        assert!(
+            endpoint.try_receive_command_for_contract_test().is_err(),
+            "no native open without opt-in"
+        );
+        // Close one actual row, reopen before its deferred owner callback, then
+        // let the stale callback run while a replacement panel is live.
+        application.update(cx, |app, cx| {
+            app.show_link_panel(link("https://retired.invalid"), cx)
+        });
+        let retired = *cx.windows().last().expect("retired panel");
+        let mut retired_surface = VisualTestContext::from_window(retired, cx);
+        retired_surface.refresh().expect("retired row");
+        let retired_row = retired_surface
+            .debug_bounds("link-panel-name-0")
+            .expect("retired row hit target");
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string("before-stale".into()));
+        let reopener = application.clone();
+        let retired_id = retired.window_id();
+        let replacement_opened = Rc::new(std::cell::Cell::new(false));
+        let opened = Rc::clone(&replacement_opened);
+        let _reopen_on_close = cx.update(|cx| {
+            cx.on_window_closed(move |cx, closed| {
+                if closed == retired_id {
+                    assert_eq!(
+                        cx.read_from_clipboard()
+                            .and_then(|item| item.text())
+                            .as_deref(),
+                        Some("before-stale"),
+                        "replacement is established before deferred row copying"
+                    );
+                    reopener.update(cx, |app, cx| {
+                        app.show_link_panel(link("https://current.invalid"), cx)
+                    });
+                    opened.set(true);
+                }
+            })
+        });
+        retired_surface.simulate_click(retired_row.center(), Default::default());
+        assert!(
+            replacement_opened.get(),
+            "actual close opens the replacement"
+        );
+        let current = *cx.windows().last().expect("current panel");
+        assert_ne!(retired, current);
+        cx.run_until_parked();
+        assert_eq!(
+            cx.windows(),
+            vec![current],
+            "stale action keeps current window"
+        );
+        assert_eq!(
+            cx.read_from_clipboard()
+                .expect("clipboard after stale action")
+                .text()
+                .as_deref(),
+            Some("before-stale"),
+            "stale ordinary copy cannot overwrite clipboard"
+        );
+        assert!(endpoint.try_receive_command_for_contract_test().is_err());
+        current
+            .update(cx, |_, window, _| window.remove_window())
+            .expect("close current fixture");
+        worker.shutdown().expect("flush synthetic history");
+    }
 }
+
+#[cfg(test)]
+#[path = "clipboard_link_copy_tests.rs"]
+mod link_copy_tests;

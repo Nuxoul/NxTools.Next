@@ -25,7 +25,10 @@ fn capability_source() -> nxtools_protocol::archive_browser::ArchiveSourceBindin
         modified_unix_ns: 1,
     }
 }
-fn mount(cx: &mut TestAppContext, count: usize) -> (Entity<ArchiveBrowser>, VisualTestContext) {
+pub(super) fn mount(
+    cx: &mut TestAppContext,
+    count: usize,
+) -> (Entity<ArchiveBrowser>, VisualTestContext) {
     mount_mode(cx, count, true)
 }
 fn mount_mode(
@@ -2135,8 +2138,17 @@ fn sevenz_edit_proven_facts_enable_original_controls_and_preserve_zip(cx: &mut T
     surface.update(|_, cx| {
         view.update(cx, |view, cx| {
             view.format = "SevenZ".into();
-            view.edit_source = Some(capability_source());
-            view.edit_eligibility = Some(Ok(()));
+            let context = nxtools_protocol::archive_browser::ArchiveBrowserContext {
+                snapshot_id: view.model.as_ref().expect("snapshot").snapshot,
+                format: "SevenZ".into(),
+                comment: String::new(),
+                source: capability_source(),
+                sevenz_edit: Some(nxtools_protocol::archive_browser::SevenzEditEligibility {
+                    refusal: None,
+                }),
+                tar_edit: None,
+            };
+            view.bind_edit_context(&context, cx);
             assert_eq!(
                 view.operation_refusal(O::Add),
                 None,
@@ -2390,4 +2402,730 @@ fn step4_directory_refresh_transforms_paths_and_drops_stale_generation(cx: &mut 
             })
         });
     }
+}
+
+fn opt05_browser_catalog(browser: &mut ArchiveBrowser) -> Vec<u64> {
+    let snapshot = Uuid::new_v4();
+    let mut entries = (0..61_440)
+        .map(|ordinal| entry(ordinal, format!("unselected-{ordinal:05}")))
+        .collect::<Vec<_>>();
+    for ordinal in 61_440..65_536 {
+        let mut directory = entry(ordinal, format!("d{ordinal:05}/"));
+        directory.kind = "Directory".into();
+        directory.size = None;
+        entries.push(directory);
+    }
+    let mut model = BrowserModel::new(snapshot, entries);
+    model
+        .selected
+        .extend((61_440..65_536).map(|ordinal| RowId::Folder(snapshot, format!("d{ordinal:05}"))));
+    assert_eq!(model.entries.len(), 65_536);
+    assert_eq!(model.selected.len(), 4_096);
+    browser.model = Some(model);
+    browser.edit_eligibility = Some(Ok(()));
+    browser.edit_source = Some(capability_source());
+    (61_440..65_536).collect()
+}
+
+#[gpui_kit::test]
+fn opt05_before_browser_selection_three_trials(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let expected = opt05_browser_catalog(browser);
+        for trial in 1..=3 {
+            for boundary in ["extract", "delete", "edit_admission"] {
+                let mut work = SelectionWork::default();
+                let started = std::time::Instant::now();
+                let (ordinals, admitted) = match boundary {
+                    "extract" => (
+                        browser
+                            .selected_ordinals_observed(&mut work)
+                            .expect("extract selection"),
+                        true,
+                    ),
+                    "delete" => (
+                        browser
+                            .edit_selection_observed(ArchiveJobModifyAction::Delete, &mut work)
+                            .expect("exactly 4096 empty directories fit original intent limit")
+                            .1,
+                        true,
+                    ),
+                    _ => (
+                        Vec::new(),
+                        browser.edit_members_current_observed(
+                            ArchiveJobModifyAction::Delete,
+                            &expected,
+                            None,
+                            None,
+                            &mut work,
+                        ),
+                    ),
+                };
+                let elapsed_us = started.elapsed().as_micros();
+                assert!(admitted);
+                if boundary != "edit_admission" {
+                    assert_eq!(ordinals, expected);
+                }
+                eprintln!(
+                    "OPT05_SELECTION {}",
+                    serde_json::json!({
+                        "boundary": boundary, "trial": trial,
+                        "build_mode": if cfg!(debug_assertions) { "debug" } else { "release" },
+                        "catalog": 65_536, "selected_ids": expected.len(),
+                        "elapsed_us": elapsed_us, "work": work,
+                    })
+                );
+            }
+        }
+    });
+}
+
+#[gpui_kit::test]
+fn opt05_red_browser_extract_single_pass(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let expected = opt05_browser_catalog(browser);
+        let mut work = SelectionWork::default();
+        assert_eq!(
+            browser
+                .selected_ordinals_observed(&mut work)
+                .expect("extract"),
+            expected
+        );
+        assert!(
+            work.catalog_visits <= 65_536
+                && work.path_normalizations <= 65_536
+                && work.prefix_probes <= 65_536 * 16 + 4_096 * 64,
+            "Extract must expand once, not once per selected directory: {work:?}"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn opt05_red_browser_delete_single_pass(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let expected = opt05_browser_catalog(browser);
+        let mut work = SelectionWork::default();
+        assert_eq!(
+            browser
+                .edit_selection_observed(ArchiveJobModifyAction::Delete, &mut work)
+                .expect("delete")
+                .1,
+            expected
+        );
+        assert!(
+            work.catalog_visits <= 65_536
+                && work.path_normalizations <= 65_536
+                && work.prefix_probes <= 65_536 * 16 + 4_096 * 64,
+            "Delete must expand once, not once per selected directory: {work:?}"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn opt05_red_browser_edit_admission_single_lookup(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let expected = opt05_browser_catalog(browser);
+        let mut work = SelectionWork::default();
+        assert!(browser.edit_members_current_observed(
+            ArchiveJobModifyAction::Delete,
+            &expected,
+            None,
+            None,
+            &mut work
+        ));
+        assert!(
+            work.ordinal_probes <= 65_536 + 4_096,
+            "final edit admission must not linearly find every selected ordinal: {work:?}"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn opt05_browser_selection_preserves_subtrees_empty_hidden_and_stale_guards(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let snapshot = Uuid::new_v4();
+        let mut entries = [r"a\sub\z", "ab/peer", "a/", "a/empty/", "a/sub/x"]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, name)| {
+                let mut item = entry(ordinal as u64, name.into());
+                if name.ends_with('/') {
+                    item.kind = "Directory".into();
+                    item.size = None;
+                }
+                item
+            })
+            .collect::<Vec<_>>();
+        let original = entries
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>();
+        browser.model = Some(BrowserModel::new(snapshot, entries.clone()));
+        browser.edit_eligibility = Some(Ok(()));
+        browser.edit_source = Some(capability_source());
+        browser.model.as_mut().expect("model").select(
+            RowId::Folder(snapshot, "a".into()),
+            false,
+            false,
+        );
+        let mut work = SelectionWork::default();
+        assert_eq!(
+            browser
+                .selected_ordinals_observed(&mut work)
+                .expect("extract subtree"),
+            [0, 2, 3, 4]
+        );
+        assert_eq!(
+            browser
+                .edit_selection_observed(ArchiveJobModifyAction::Delete, &mut work)
+                .expect("delete subtree")
+                .1,
+            [0, 2, 3, 4]
+        );
+        let model = browser.model.as_mut().expect("model");
+        assert_eq!(
+            model
+                .entries
+                .iter()
+                .map(|entry| entry.name.clone())
+                .collect::<Vec<_>>(),
+            original
+        );
+        model.enter("a");
+        model.filter = "empty".into();
+        model.reproject();
+        model.select_all();
+        assert_eq!(
+            browser
+                .selected_ordinals()
+                .expect("explicit empty directory"),
+            [3]
+        );
+        assert!(
+            browser.edit_members_current(ArchiveJobModifyAction::Delete, &[0, 2, 3, 4], None, None),
+            "frozen intent is independent of current filtered selection"
+        );
+        assert!(!browser.edit_members_current(
+            ArchiveJobModifyAction::Delete,
+            &[65_536],
+            None,
+            None
+        ));
+        browser.model.as_mut().expect("model").selected =
+            std::collections::BTreeSet::from([RowId::Folder(Uuid::new_v4(), "a/empty".into())]);
+        assert!(browser.selected_ordinals().is_none());
+        assert!(
+            browser
+                .edit_selection(ArchiveJobModifyAction::Delete)
+                .is_none()
+        );
+        browser.status = BrowserStatus::Stale("source changed".into());
+        assert!(
+            browser
+                .edit_selection(ArchiveJobModifyAction::Delete)
+                .is_none()
+        );
+        browser.status = BrowserStatus::Ready;
+        entries[0].warning_codes.push("OutputCollision".into());
+        browser.model = Some(BrowserModel::new(snapshot, entries));
+        assert!(!browser.edit_members_current(ArchiveJobModifyAction::Delete, &[0], None, None));
+    });
+}
+
+#[gpui_kit::test]
+fn opt05_browser_noncontiguous_ordinals_bind_once_and_expand_in_catalog_order(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let snapshot = Uuid::new_v4();
+        let mut empty = entry(3, "a/empty/".into());
+        empty.kind = "Directory".into();
+        browser.model = Some(BrowserModel::new(
+            snapshot,
+            vec![
+                entry(9, "a\\sub\\z".into()),
+                empty,
+                entry(7, "ab/peer".into()),
+                entry(2, "a/sub/x".into()),
+            ],
+        ));
+        browser.edit_source = Some(capability_source());
+        browser.edit_eligibility = Some(Ok(()));
+        browser.model.as_mut().expect("original model").select(
+            RowId::Folder(snapshot, "a".into()),
+            false,
+            false,
+        );
+        let mut work = SelectionWork::default();
+        assert_eq!(
+            browser
+                .selected_ordinals_observed(&mut work)
+                .expect("catalog order"),
+            [9, 3, 2]
+        );
+        assert_eq!(
+            browser
+                .edit_selection(ArchiveJobModifyAction::Delete)
+                .expect("delete")
+                .1,
+            [9, 3, 2]
+        );
+        work = SelectionWork::default();
+        assert!(browser.edit_members_current_observed(
+            ArchiveJobModifyAction::Delete,
+            &[2, 9],
+            None,
+            None,
+            &mut work
+        ));
+        assert_eq!(work.ordinal_probes, 6);
+        assert!(!browser.edit_members_current(ArchiveJobModifyAction::Delete, &[0], None, None));
+    });
+}
+
+#[gpui_kit::test]
+fn opt05_browser_edit_refresh_binds_frozen_members_once(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 0);
+    view.update(&mut surface, |browser, _| {
+        let ordinals = opt05_browser_catalog(browser);
+        let snapshot = browser.model.as_ref().expect("original snapshot").snapshot;
+        let intent = serde_json::from_value(serde_json::json!({
+            "browser": {"snapshot_id": snapshot, "format": "Zip", "comment": "", "source": capability_source()},
+            "action": "delete", "ordinals": ordinals, "value": null, "source_prefix": null
+        })).expect("frozen delete intent");
+        let mut work = SelectionWork::default();
+        browser.prepare_edit_refresh_observed(&intent, 7, &mut work);
+        let hint = browser.edit_refresh.as_ref().expect("original one-shot hint");
+        assert_eq!(hint.generation, 7);
+        assert!(hint.selected.is_empty());
+        assert_eq!(hint.folder, "");
+        assert!(work.ordinal_probes <= 65_536 + 4_096,
+            "refresh must bind frozen ordinals once, not per transformed path: {work:?}");
+        assert!(work.root_normalizations <= 4_096
+            && work.prefix_probes <= 65_536 * 16 + 4_096 * 64, "{work:?}");
+    });
+}
+
+#[gpui_kit::test]
+fn opt07_backspace_selects_focuses_and_reveals_departed_child_and_root_is_noop(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 0);
+    let snapshot = Uuid::new_v4();
+    surface.update(|window, cx| {
+        view.update(cx, |v, cx| {
+            v.install(
+                snapshot,
+                (0..240)
+                    .map(|i| entry((i * 7 + 3) as u64, format!("folder-{i:03}/child.txt")))
+                    .collect(),
+                "Zip".into(),
+                window,
+                cx,
+            );
+            v.navigate("folder-219".into(), window, cx);
+            v.list_focus.focus(window, cx);
+        })
+    });
+    draw(&mut surface);
+    key(&mut surface, "backspace");
+    let expected = RowId::Folder(snapshot, "folder-219".into());
+    view.read_with(&surface, |v, _| {
+        let model = v.model.as_ref().expect("same catalog");
+        assert!(model.folder.is_empty());
+        assert_eq!(
+            model.selected.iter().cloned().collect::<Vec<_>>(),
+            vec![expected.clone()]
+        );
+        assert_eq!(model.focused.as_ref(), Some(&expected));
+    });
+    let row = surface
+        .debug_bounds("archive-folder-folder-219")
+        .expect("departed child rendered after reveal");
+    let viewport = surface
+        .debug_bounds("archive-horizontal")
+        .expect("original list viewport");
+    assert!(
+        row.top() >= viewport.top() && row.bottom() <= viewport.bottom(),
+        "selected child is visible"
+    );
+    key(&mut surface, "backspace");
+    view.read_with(&surface, |v, _| {
+        let model = v.model.as_ref().expect("root catalog");
+        assert_eq!(
+            model.selected.iter().cloned().collect::<Vec<_>>(),
+            vec![expected.clone()]
+        );
+        assert_eq!(
+            model.focused.as_ref(),
+            Some(&expected),
+            "root Up cannot clear current selection"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn opt07_archive_find_shortcut_is_independent_of_current_folder_filter(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 4);
+    click(&mut surface, 1, Modifiers::default(), 1);
+    let selected = view.read_with(&surface, |v, _| {
+        v.model.as_ref().expect("catalog").selected.clone()
+    });
+    key(&mut surface, "ctrl-f");
+    assert!(view.read_with(&surface, |v, _| v.filter_visible));
+    assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+    key(&mut surface, "escape");
+    key(&mut surface, "ctrl-shift-f");
+    assert!(
+        surface.update(|window, cx| window.has_active_dialog(cx)),
+        "archive-wide Find opens in the original Root"
+    );
+    assert_eq!(
+        view.read_with(&surface, |v, _| v
+            .model
+            .as_ref()
+            .expect("catalog")
+            .selected
+            .clone()),
+        selected,
+        "opening Find does not replace unrelated browser selection"
+    );
+    assert!(matches!(
+        view.read_with(&surface, |v, _| v.status.clone()),
+        BrowserStatus::Ready
+    ));
+}
+
+#[gpui_kit::test]
+fn opt07_refresh_and_encoding_restore_location_or_nearest_surviving_ancestor(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 0);
+    surface.update(|window, cx| {
+        view.update(cx, |v, cx| {
+            v.settings.auto_enter_single_root = false;
+            v.install(
+                Uuid::new_v4(),
+                vec![
+                    entry(71, "a/b/item.txt".into()),
+                    entry(99, "other.txt".into()),
+                ],
+                "Zip".into(),
+                window,
+                cx,
+            );
+            v.navigate("a/b".into(), window, cx);
+            let id = v
+                .model
+                .as_ref()
+                .expect("catalog")
+                .visible()
+                .iter()
+                .find(|r| !r.parent)
+                .expect("file")
+                .id
+                .clone();
+            v.model.as_mut().expect("catalog").select(id, false, false);
+            v.command(Command::Refresh, window, cx);
+            v.generation += 1;
+            v.install(
+                Uuid::new_v4(),
+                vec![
+                    entry(107, "a/b/item.txt".into()),
+                    entry(119, "other.txt".into()),
+                ],
+                "Zip".into(),
+                window,
+                cx,
+            );
+            let model = v.model.as_ref().expect("fresh snapshot");
+            assert_eq!(
+                model.folder, "a/b",
+                "refresh preserves an existing internal location"
+            );
+            assert!(
+                model.selected.is_empty() && model.focused.is_none(),
+                "old immutable IDs retire"
+            );
+            v.command(Command::Encoding(936), window, cx);
+            v.generation += 1;
+            v.install(
+                Uuid::new_v4(),
+                vec![
+                    entry(201, "a/sibling.txt".into()),
+                    entry(219, "other.txt".into()),
+                ],
+                "Zip".into(),
+                window,
+                cx,
+            );
+            assert_eq!(
+                v.model.as_ref().expect("encoding snapshot").folder,
+                "a",
+                "missing child restores nearest surviving ancestor"
+            );
+            assert_eq!(v.codepage, 936);
+        })
+    });
+    draw(&mut surface);
+}
+
+#[gpui_kit::test]
+fn opt07_find_query_pointer_and_enter_navigate_original_noncontiguous_member(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 0);
+    let snapshot = Uuid::new_v4();
+    surface.update(|window, cx| {
+        view.update(cx, |v, cx| {
+            v.settings.auto_enter_single_root = false;
+            v.install(
+                snapshot,
+                vec![
+                    entry(71, "a/needle.txt".into()),
+                    entry(503, r"b\needle.txt".into()),
+                    entry(999, "unrelated.txt".into()),
+                ],
+                "Zip".into(),
+                window,
+                cx,
+            );
+            let model = v.model.as_mut().expect("catalog");
+            model.select(RowId::Entry(snapshot, 999), false, false);
+            v.update_summary();
+            v.list_focus.focus(window, cx);
+        })
+    });
+    key(&mut surface, "ctrl-shift-f");
+    assert!(
+        surface.update(|window, cx| window.has_active_dialog(cx)),
+        "original Find modal"
+    );
+    surface.simulate_input("needle");
+    draw(&mut surface);
+    click_named(&mut surface, "b/needle.txt", Role::ListBoxOption);
+    assert_eq!(
+        view.read_with(&surface, |v, _| v
+            .model
+            .as_ref()
+            .expect("browser")
+            .selected
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()),
+        vec![RowId::Entry(snapshot, 999)],
+        "query/result selection is local until explicit navigation"
+    );
+    key(&mut surface, "enter");
+    assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+    view.read_with(&surface, |v, _| {
+        let model = v.model.as_ref().expect("same catalog");
+        assert_eq!(model.folder, "b");
+        assert_eq!(
+            model.selected.iter().cloned().collect::<Vec<_>>(),
+            vec![RowId::Entry(snapshot, 503)]
+        );
+        assert_eq!(model.focused, Some(RowId::Entry(snapshot, 503)));
+        assert!(
+            v.open_dispatches.is_empty(),
+            "Find navigation never executes the member"
+        );
+        assert!(!v.open_pending && v.read_id.is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn opt07_find_menu_invalid_query_empty_and_cancel_leave_browser_selection(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 3);
+    click(&mut surface, 1, Modifiers::default(), 1);
+    let selected = view.read_with(&surface, |v, _| {
+        v.model.as_ref().expect("catalog").selected.clone()
+    });
+    click_named(&mut surface, "查看", Role::Button);
+    click_named(&mut surface, "查找整个压缩包  Ctrl+Shift+F", Role::MenuItem);
+    assert!(surface.update(|window, cx| window.has_active_dialog(cx)));
+    surface.simulate_input("no-such-member");
+    draw(&mut surface);
+    assert!(
+        surface.debug_bounds("archive-find-empty").is_some(),
+        "no-match state is explicit"
+    );
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("[");
+    click_named(&mut surface, "通配符", Role::CheckBox);
+    assert!(
+        surface.debug_bounds("archive-find-invalid").is_some(),
+        "invalid wildcard cannot reuse old results"
+    );
+    click_named(&mut surface, "关闭查找", Role::Button);
+    assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+    assert_eq!(
+        view.read_with(&surface, |v, _| v
+            .model
+            .as_ref()
+            .expect("catalog")
+            .selected
+            .clone()),
+        selected
+    );
+}
+
+#[gpui_kit::test]
+fn opt07_repeated_render_does_not_expand_catalog_and_keeps_virtual_controls_bounded(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 10_000);
+    view.update(&mut surface, |v, cx| {
+        v.format = "Tar".into();
+        v.edit_source = Some(capability_source());
+        v.edit_eligibility = Some(Ok(()));
+        cx.notify();
+    });
+    surface.update(|window, cx| view.update(cx, |v, cx| v.list_focus.focus(window, cx)));
+    key(&mut surface, "end");
+    assert_eq!(
+        view.read_with(&surface, |v, _| v
+            .model
+            .as_ref()
+            .expect("catalog")
+            .selected
+            .len()),
+        1,
+        "actual keyboard selection before measurement"
+    );
+    let projection = view.read_with(&surface, |v, _| {
+        v.model.as_ref().expect("loaded catalog").work.get()
+    });
+    view.update(&mut surface, |v, cx| {
+        v.catalog_presentation_visits.set(0);
+        v.rendered_rows.set(0);
+        cx.notify();
+    });
+    draw(&mut surface);
+    draw(&mut surface);
+    view.read_with(&surface, |v, _| {
+        let visits = v.catalog_presentation_visits.get();
+        let rendered = v.rendered_rows.get();
+        println!("OPT07 render catalog=10000 projection={projection:?} repeated_catalog_visits={visits} rendered_controls={rendered}");
+        assert!(rendered > 0 && rendered < 200, "only visible controls are built");
+        assert_eq!(v.model.as_ref().expect("same catalog").work.get(), projection, "render does not rebuild model/tree");
+        assert_eq!(visits, 0, "render uses transition-owned readiness, not full catalog scans");
+    });
+}
+
+#[gpui_kit::test]
+fn opt07_find_explicit_implicit_directories_and_duplicate_names_keep_original_ids(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface) = mount(cx, 0);
+    let snapshot = Uuid::new_v4();
+    surface.update(|window, cx| {
+        view.update(cx, |v, cx| {
+            let mut directory = entry(101, "explicit/".into());
+            directory.kind = "Directory".into();
+            v.install(
+                snapshot,
+                vec![
+                    directory,
+                    entry(717, "implicit/child.txt".into()),
+                    entry(23, "x/same.txt".into()),
+                    entry(77, r"y\same.txt".into()),
+                ],
+                "Zip".into(),
+                window,
+                cx,
+            );
+            v.list_focus.focus(window, cx);
+        })
+    });
+    for (query, label, expected) in [
+        (
+            "explicit",
+            "explicit",
+            RowId::Folder(snapshot, "explicit".into()),
+        ),
+        (
+            "implicit",
+            "implicit",
+            RowId::Folder(snapshot, "implicit".into()),
+        ),
+        ("same", "y/same.txt", RowId::Entry(snapshot, 77)),
+    ] {
+        key(&mut surface, "ctrl-shift-f");
+        surface.simulate_input(query);
+        draw(&mut surface);
+        let selector = if query == "same" {
+            "archive-find-result-1"
+        } else {
+            "archive-find-result-0"
+        };
+        let position = surface
+            .debug_bounds(selector)
+            .expect("Find result bounds")
+            .center();
+        surface.simulate_click(position, Default::default());
+        draw(&mut surface);
+        assert!(
+            surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)
+                .iter()
+                .any(|node| node.label() == Some(label) && node.selected() == Some(true))),
+            "{query}: exact Find result selected"
+        );
+        key(&mut surface, "enter");
+        assert_eq!(
+            view.read_with(&surface, |v, _| v
+                .model
+                .as_ref()
+                .expect("same snapshot")
+                .selected
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()),
+            vec![expected],
+            "{query}: original identity selected after Enter"
+        );
+        assert!(view.read_with(&surface, |v, _| v.open_dispatches.is_empty()));
+    }
+}
+
+#[gpui_kit::test]
+fn opt07_find_can_locate_original_warning_row_without_executing(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, 0);
+    let snapshot = Uuid::new_v4();
+    surface.update(|window, cx| {
+        view.update(cx, |v, cx| {
+            let mut warning = entry(411, "folder/collision.txt".into());
+            warning.warning_codes = vec!["OutputCollision".into()];
+            v.install(
+                snapshot,
+                vec![warning, entry(777, "other.txt".into())],
+                "Zip".into(),
+                window,
+                cx,
+            );
+            v.list_focus.focus(window, cx);
+        })
+    });
+    key(&mut surface, "ctrl-shift-f");
+    surface.simulate_input("collision");
+    draw(&mut surface);
+    click_named(&mut surface, "folder/collision.txt", Role::ListBoxOption);
+    key(&mut surface, "enter");
+    assert_eq!(
+        view.read_with(&surface, |v, _| v
+            .model
+            .as_ref()
+            .expect("catalog")
+            .focused
+            .clone()),
+        Some(RowId::Entry(snapshot, 411))
+    );
+    assert!(view.read_with(&surface, |v, _| v.open_dispatches.is_empty()));
 }

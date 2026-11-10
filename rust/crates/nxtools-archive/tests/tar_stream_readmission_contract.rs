@@ -1,7 +1,7 @@
-use nxtools_archive::{
-    output_readmission::ReadmissionOptions,
-    worker::{WorkerRequest, read_frame, write_frame},
-};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
+use nxtools_archive::{output_readmission::ReadmissionOptions, worker::WorkerRequest};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
@@ -17,6 +17,7 @@ fn run(name: &str, entry: u64, total: u64) -> (Value, Vec<Value>, Vec<String>) {
     let mut request = WorkerRequest::open(id, root.join(name).to_string_lossy().into_owned());
     request.version = 2;
     request.operation = "extract".into();
+    request.bulk_transfer = Some(1);
     request.limits.max_entry_bytes = entry;
     request.limits.max_output_bytes = total;
     request.output_readmission = Some(ReadmissionOptions {

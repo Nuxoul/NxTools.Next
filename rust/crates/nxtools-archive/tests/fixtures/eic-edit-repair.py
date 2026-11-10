@@ -11,6 +11,7 @@ import threading
 import uuid
 import zipfile
 from pathlib import Path
+from bulk_peer import BulkPeer
 
 worker, root, scenario = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
 cancel = scenario.startswith("reply-")
@@ -41,7 +42,7 @@ op, token, directory_id, same_id, fresh_id = (str(uuid.uuid4()) for _ in range(5
 intent = dict(browser=dict(snapshot_id=str(uuid.uuid4()), format=fmt, comment="", source=dict(native="v1:fixture", digest=list(hashlib.sha256(original).digest()), size=len(original), modified_unix_ns=source.stat().st_mtime_ns)), action="rename" if cancel else "add", ordinals=[0] if cancel else [])
 if cancel:
     intent["value"] = "new.txt"
-request = dict(schema=2, operation_id=op, op="start", operation={"Zip":"modify_zip", "Tar":"modify_tar", "SevenZ":"modify_7z"}[fmt], path=str(source), job_execution=True, job_modify=intent)
+request = dict(schema=2, bulk_transfer=1, operation_id=op, op="start", operation={"Zip":"modify_zip", "Tar":"modify_tar", "SevenZ":"modify_7z"}[fmt], path=str(source), job_execution=True, job_modify=intent)
 if not cancel:
     request.update(password_interaction=True, conflict_policy="ask")
 child = subprocess.Popen([str(worker), "--archive-worker"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -50,10 +51,10 @@ timer.start()
 wire, output = [], bytearray()
 counts = dict(commit=0, begin=0, source_open=0, source_close=0, prompts=0)
 handed = False
+peer = BulkPeer(request)
 
 def send(value):
-    body = json.dumps(value, separators=(",", ":")).encode()
-    child.stdin.write(struct.pack("<I", len(body)) + body)
+    child.stdin.write(peer.encode(value))
     child.stdin.flush()
 
 def exact(count):
@@ -67,7 +68,7 @@ def exact(count):
 try:
     send(request)
     while True:
-        frame = json.loads(exact(struct.unpack("<I", exact(4))[0]))
+        frame = peer.read(exact)
         wire.append(frame)
         if frame["op"] in ("complete", "failure"):
             terminal = frame
@@ -136,6 +137,10 @@ elif scenario in ("implicit-skip", "explicit-skip"):
     assert terminal["op"] == "complete" and counts["prompts"] == 1
     assert counts["commit"] == counts["begin"] == counts["source_open"] == 0 and not output, result
     assert any(item.get("extraction_summary", {}).get("files_skipped") == 1 for item in wire)
+    work = terminal["work"]
+    assert work["eligibility_checks"] == 1, ("fresh all-Skip qualification", result)
+    assert work["zip_local_checks"] == work["zip_descriptor_checks"] == len(expected), result
+    assert all(work[name] == 0 for name in ("zip_member_decodes", "zip_source_payload_decodes", "zip_addition_payload_decodes", "zip_candidate_payload_decodes")), result
 elif scenario == "kind-conflict":
     assert terminal["op"] == "failure" and terminal["error_code"] == "OutputCollision" and counts["begin"] == counts["commit"] == 0, result
 else:

@@ -256,3 +256,66 @@ PID/fixed-process-name failure attribution around the full candidate Stop call s
 observable. Prior real38installation had no running desktop and does not establish running-tuple
 upgrade acceptance; require a separately authorized actual running-product upgrade before closing
 this new report. Original user41log lacks PID, so the historical object cannot be identified later.
+
+## Installer missing updater-root boundary — 2026-11-06
+
+The user's three actual Setup logs distinguish successful existing installations at08:12 and18:39
+from the22:28detect-stage rejection. The failing log has neither child launch/exit details nor
+an upgrade-close event; it does not prove a particular internal exception. Read-only execution
+of the original `bootstrap-migration.ps1` reproduces exit1 on the current machine: the fixed
+same-publisher LocalSystem service registration survives, but native GetFileAttributes reports3
+for both Updater root and bootstrap image. No service, registry or installed file was changed.
+
+Verified original call chain: Inno `PrepareToInstall` extracts release sidecars, calls
+`EnsureBootstrapMigration`, then invokes `close-owned-processes.ps1` before normal replacement.
+Old detection hashes the registered bootstrap and returns1 when missing. Its pure decision test
+covered null registration, while the Inno fixture substituted a fixed-exit detection script;
+neither executed this whole missing-root path. The original maintenance command verifies existing
+enrollment/bootstrap and cannot provision a missing tree. `TrustedUpdateBroker.IsEnrolled` also
+treats surviving service registration as enrollment, so ordinary enrollment cannot recover it.
+
+The explicitly approved repair preserves first-install skip and normal maintenance. New exit11
+requires exact service path/account/publisher/hash shape and genuine whole-root absence. Inno
+explains recovery, obtains confirmation/UAC, verifies the original extracted Host, and supplies
+the repair GUID through the helper to `TrustedMissingBootstrapRepair`. The C# boundary verifies
+the complete signed package/exact caller before stopping the approved service and entering the
+existing deployment gate; original provisioning is reused through `EnrollMissingRoot` after
+revalidation. Existing roots/journals are never deleted. Completion validates enrollment, actual
+signed bootstrap and the original protocol marker format before continuing installation.
+
+Lifecycle invariants: no file replacement on cancel/refusal, no automatic UAC retry, no service
+mutation during tests, no foreign key/path acceptance, no ordinary enrollment bypass, no claims
+of installed recovery from injected SCM tests. Diagnostics retain fixed stage/native/exit facts
+before any early rejection. Matching entry/Inno/C# regressions belong to the installer owner.
+
+## Fresh archive creation recommendation
+
+`rust/crates/nxtools-core/src/archive.rs` and `ArchiveIntegrationIntent` recommend the historical open/smart/here/name/test commands plus Create for a fresh configuration. Integration remains disabled until explicit Apply. Missing legacy `menu_commands` fields retain the five-command fallback; explicit empty/custom lists remain unchanged.
+
+`ArchiveSelectionHandlerPlan` maps selected Create to both `*` and `Directory` in flat and cascade layouts. The existing Compress helper forwards one complete ordered file/folder/mixed selection through `--archive-compress`; no per-file launch loop or extraction-output path is involved. Core defaults/serde tests, pure registration plans and fake grouped-dispatch fixtures cover this boundary. Real Explorer registration/gesture acceptance remains separate.
+
+## Installer process exclusion with a stopped Demand updater — 2026-11-09
+
+Actual correlation `20261109110405-is-9R3J9TM5Z7-tmp` completed bootstrap detection as
+compatible, then failed elevated32-bit process_close with InvalidDataException at
+`installer/close-owned-processes.ps1:Resolve-UpgradeUpdaterProcessId`, attributed to Host PID39164.
+The PID was absent at later observation; its exact former role is not established by that log.
+
+The original read-only chain is Stop-UpgradeTargets -> CIM-null Host candidate ->
+Get-UpgradeUpdaterProcessId -> fixed Registry/bootstrap hash -> native ReadUpdaterService ->
+Resolve-UpgradeUpdaterProcessId. Read-only replay on the report machine reproduces the same
+exception/line with a matching path, LocalSystem account, publisher and bootstrap hash, while
+SCM reports Stopped/PID0/own-process and Demand start. No process/service mutation is required.
+
+`csharp/NxTools.PlatformHost/Windows/TrustedUpdateBroker.cs:ProvisionEnrollment` registers Demand;
+BrokerService.OnStart owns one ServeAsync continuation and then Stop, and StartIfStopped starts
+only a real later request. The native-contracts demand/one-shot scenario therefore makes Stopped
+an ordinary lifecycle state, not an identity violation.
+
+Keep fixed registration/hash/type validation before any result. A validated Stopped/PID0 updater
+has no process to exclude; return0 and retain the candidate's original QueryImage/exact-target/
+same-handle Stop boundary. Running exclusion still needs its validated positive SCM PID. Stopped
+with nonzero PID, malformed status, foreign registration/hash/type and unknown native failures
+remain refusals. No service startup, stop, blanket process-name skip or recovery deletion is added.
+Extend `tests/architecture/installer-process-identity.ps1` at both the original resolver and
+CIM-null discovery call site. Read-only machine replay is not actual installed-upgrade acceptance.

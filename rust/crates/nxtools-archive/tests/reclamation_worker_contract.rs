@@ -194,6 +194,7 @@ fn reclamation_intent_cannot_be_wrapped_by_finite_output_readmission() {
         generation: 1,
         action: ArchiveJobAction::Start,
         reply: None,
+        batch_id: None,
         request: Some(ArchiveJobRequest {
             kind: ArchiveJobKind::Extract,
             paths: vec!["C:\\owned\\a.zip".into()],

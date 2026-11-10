@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NxTools.PlatformHost.Diagnostics;
 
 namespace NxTools.PlatformHost.Windows;
@@ -16,7 +17,8 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         Task RemoveSupersededAsync(VerifiedRelease previous, VerifiedRelease failed, CancellationToken cancellationToken)
             => Task.CompletedTask;
     }
-    internal sealed record State(long Sequence, Guid ReleaseId, string ManifestSha256);
+    internal sealed record State(long Sequence, Guid ReleaseId, string ManifestSha256,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool DeploymentPending = false);
     private sealed record Journal(State Previous, State Next);
     private string Active => Path.Combine(directory, "active");
     private string Pending => Path.Combine(directory, "pending");
@@ -26,14 +28,18 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
 
     internal State ReadState() => Read<State>(StatePath);
 
-    internal void Initialize(string package)
+    internal void Initialize(string package, bool requireInitialDeployment = false)
     {
         using var release = TrustedReleaseManifest.VerifyPackage(package, publicKey, 0);
-        var state = new State(release.Manifest.ReleaseSequence, release.Manifest.ReleaseId, release.ManifestSha256);
+        var state = new State(release.Manifest.ReleaseSequence, release.Manifest.ReleaseId, release.ManifestSha256,
+            requireInitialDeployment);
         if (File.Exists(StatePath))
         {
-            if (ReadState() != state) throw new InvalidDataException("Enrollment snapshot changed.");
-            VerifySnapshot(Active, state).Dispose();
+            var existing = ReadState();
+            if (existing with { DeploymentPending = requireInitialDeployment } != state ||
+                requireInitialDeployment && !existing.DeploymentPending)
+                throw new InvalidDataException("Enrollment snapshot changed.");
+            VerifySnapshot(Active, existing).Dispose();
             return;
         }
         if (Directory.Exists(Active))
@@ -100,6 +106,24 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         cancellationToken.ThrowIfCancellationRequested();
         var previous = ReadState();
         var next = new State(release.Manifest.ReleaseSequence, release.Manifest.ReleaseId, release.ManifestSha256);
+        if (previous.DeploymentPending)
+        {
+            if (next.Sequence < previous.Sequence || next.Sequence == previous.Sequence &&
+                (next.ReleaseId != previous.ReleaseId || next.ManifestSha256 != previous.ManifestSha256))
+                throw new InvalidDataException("Release downgrade/replay rejected.");
+            // A repair snapshot is an ordinary complete signed package, not recovery-only admission.
+            using (var initial = TrustedReleaseManifest.VerifyPackage(Active, publicKey, 0))
+            {
+                if (initial.Manifest.ReleaseSequence != previous.Sequence ||
+                    initial.Manifest.ReleaseId != previous.ReleaseId || initial.ManifestSha256 != previous.ManifestSha256)
+                    throw new InvalidDataException("Initial deployment snapshot changed.");
+                Event("initial_deployment_started", correlationId, started);
+                await deployment.DeployAsync(Active, initial, correlationId, CancellationToken.None);
+            }
+            previous = previous with { DeploymentPending = false };
+            Write(StatePath, previous);
+            Event("initial_deployment_committed", correlationId, started);
+        }
         if (next == previous)
         {
             VerifySnapshot(Active, previous).Dispose();

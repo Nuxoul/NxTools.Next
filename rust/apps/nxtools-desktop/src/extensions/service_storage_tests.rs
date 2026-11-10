@@ -511,3 +511,55 @@ fn expansion_storage_service_drop_releases_real_owner_after_executor_grace() {
         }
     }
 }
+
+#[test]
+fn blob_shutdown_service_joins_original_executor_despite_retained_clones() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Retired(Arc<AtomicBool>);
+    impl Drop for Retired {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+    for ui in [false, true] {
+        let root = tempfile::tempdir().expect("isolated service shutdown");
+        let path = root.path().join("config.json");
+        AppConfig::default().save_to(&path).expect("config");
+        let engine = DownloadEngine::open(root.path().join("downloads.db")).expect("engine");
+        let (service, _) = ExtensionService::new_with_storage(
+            &engine,
+            PackageRegistry::default(),
+            None,
+            ui,
+            path,
+            root.path().join("data"),
+        )
+        .expect("service");
+        let retained = service.clone();
+        let storage = Arc::downgrade(service.storage.as_ref().expect("storage"));
+        let retired = Arc::new(AtomicBool::new(false));
+        let guard = Retired(retired.clone());
+        let (entered, ready) = std::sync::mpsc::channel();
+        service.executor.spawn(async move {
+            let _guard = guard;
+            entered.send(()).expect("task entered original executor");
+            std::future::pending::<()>().await;
+        });
+        ready
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .expect("executor is driving tasks");
+        service.shutdown_and_wait().expect("explicit stop and join");
+        assert!(
+            retired.load(Ordering::Acquire),
+            "shutdown must join original executor even while service clones remain"
+        );
+        retained.shutdown_and_wait().expect("same completed owner");
+        drop(service);
+        drop(retained);
+        drop(engine);
+        assert!(
+            storage.upgrade().is_none(),
+            "joined executor released real storage owner"
+        );
+    }
+}

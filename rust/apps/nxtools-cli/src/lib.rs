@@ -143,7 +143,7 @@ where
         && arguments.first().is_some_and(|a| a == "archive")
     {
         return Err(CliError::syntax(
-            "--connect-only 仅适用于下载；归档使用独立的无界面宿主",
+            "--connect-only 仅适用于下载；压缩包使用独立的无界面宿主",
         ));
     }
     Ok(CliInvocation {
@@ -508,7 +508,7 @@ pub fn run_with_host_policy(
     if let CliCommand::Archive(command) = command {
         if host_policy == CliHostPolicy::ConnectOnly {
             return Err(CliError::syntax(
-                "--connect-only 仅适用于下载；归档使用独立的无界面宿主",
+                "--connect-only 仅适用于下载；压缩包使用独立的无界面宿主",
             ));
         }
         return archive::run(command, executable);
@@ -541,7 +541,7 @@ fn run_connected_command(
 ) -> Result<(), CliError> {
     let json_output = command.json_output();
     let result = match command {
-        CliCommand::Archive(_) => return Err(CliError::syntax("归档不能发送到下载宿主")),
+        CliCommand::Archive(_) => return Err(CliError::syntax("压缩包不能发送到下载宿主")),
         CliCommand::Add {
             url,
             directory,

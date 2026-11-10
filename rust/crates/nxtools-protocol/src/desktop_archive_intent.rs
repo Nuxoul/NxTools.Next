@@ -14,6 +14,9 @@ pub enum ArchiveIntentAction {
     Open,
     Extract,
     Compress,
+    CompressZip,
+    #[serde(rename = "compress_7z")]
+    CompressSevenZ,
     Test,
 }
 

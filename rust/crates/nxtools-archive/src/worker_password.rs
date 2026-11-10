@@ -79,6 +79,7 @@ pub(crate) fn execute<W: Write + Send>(
     replies: ReplyPort,
     metadata: &MetadataCredit,
     interaction: &InteractionPort,
+    source_lease: Option<&crate::worker::NativeReadLease>,
 ) -> Result<(u64, u64)> {
     // One original source acquisition/Job. Only the password changes; all request intent stays.
     let mut password = request.password.take().map(SecretPassword::from_owned);
@@ -103,6 +104,7 @@ pub(crate) fn execute<W: Write + Send>(
                     replies,
                     metadata,
                     interaction,
+                    source_lease,
                 );
             }
             return Err(ArchiveError::UnsupportedOperation);
@@ -152,6 +154,7 @@ pub(crate) fn execute<W: Write + Send>(
             replies.clone(),
             metadata,
             interaction,
+            source_lease,
         );
         if let Some(mut value) = read.password.take() {
             value.zeroize();
@@ -191,6 +194,7 @@ pub(crate) fn execute<W: Write + Send>(
                     replies,
                     metadata,
                     interaction,
+                    source_lease,
                 );
                 if let Some(mut value) = request.password.take() {
                     value.zeroize();

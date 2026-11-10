@@ -51,7 +51,7 @@ internal static class ArchiveExtractPasswordTests
                 var id = Guid.NewGuid(); var writes = 0; var published = 0;
                 runner.OutputWriteCheckpointProbe = _ => { Check(States(events, "extracting").Length == 1, "only password-approved single extraction can write"); writes++; };
                 runner.OutputCommitCheckpointProbe = stage => {
-                    if (stage == "native_published") { published++; if (mode == "after_commit_cancel" && published == 1) Check(runner.Cancel(id), "cancel after actual publication"); }
+                    if (stage == "native_closed") { published++; if (mode == "after_commit_cancel" && published == 1) Check(runner.Cancel(id), "cancel after actual close"); }
                 };
                 Check(runner.Start(new(id, "extract", source, 936, new { max_entries = 100, max_entry_bytes = 1048576, max_output_bytes = 1048576 },
                     OutputRoot: output.FullName, PasswordInteraction: true, ConflictPolicy: mode == "zip_conflict" ? "auto_rename" : "ask", ExtractOptions: new(false))), "encrypted extraction password admission");

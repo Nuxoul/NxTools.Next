@@ -257,7 +257,59 @@ pub(crate) fn render_tools(
                         .gap_3()
                         .child(entry)
                         .child(currency_settings::render_card(this, window, cx))
+                        .child(render_raw_join(this, cx))
                         .child(floating_assistant_settings::render_card(this, window, cx)),
+                ),
+        )
+        .into_any_element()
+}
+
+fn render_raw_join(this: &MainWindow, cx: &mut Context<MainWindow>) -> AnyElement {
+    ListItem::new("tool-raw-join-item")
+        .debug_selector(|| "tool-raw-join-tile".into())
+        .accessibility_label("普通编号文件合并工具")
+        .w(px(180.0))
+        .h(px(160.0))
+        .flex_none()
+        .rounded_lg()
+        .bg(this.theme.surface)
+        .child(
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .items_center()
+                .justify_center()
+                .gap_2()
+                .child(Label::new("普通编号文件合并"))
+                .child(Label::new("按序连接 · 保留源文件"))
+                .child(
+                    Button::new("tool-raw-join-open")
+                        .debug_selector(|| "tool-raw-join-open".into())
+                        .label("打开…")
+                        .outline()
+                        .with_size(gpui_kit::component::Size::Medium)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            let existing = this
+                                .tool_settings_windows
+                                .get(crate::tools::raw_join::TOOL_ID)
+                                .copied();
+                            let platform = this.platform.clone();
+                            let owner = cx.entity().downgrade();
+                            cx.defer(move |cx| {
+                                let opened = crate::tools::raw_join::open(platform, existing, cx);
+                                let _ = owner.update(cx, |this, cx| {
+                                    if let Some(opened) = opened {
+                                        this.tool_settings_windows
+                                            .insert(crate::tools::raw_join::TOOL_ID, opened);
+                                    } else {
+                                        this.tool_settings_windows
+                                            .remove(crate::tools::raw_join::TOOL_ID);
+                                    }
+                                    cx.notify();
+                                });
+                            });
+                        })),
                 ),
         )
         .into_any_element()

@@ -97,7 +97,7 @@ impl PlatformBridge {
                 PendingCommand {
                     generation: origin,
                     accepted_at: Instant::now(),
-                    timeout: super::PENDING_COMMAND_TIMEOUT,
+                    timeout: Some(super::PENDING_COMMAND_TIMEOUT),
                     summon_reply: None,
                 },
             );
@@ -250,6 +250,7 @@ mod tests {
             copy_motw: None,
             password_interaction: true,
             temp_policy: None,
+            preview_options: None,
         }
     }
     #[test]
@@ -271,6 +272,7 @@ mod tests {
             lease_id: Some(command.operation_id),
             password_interaction: false,
             temp_policy: None,
+            preview_options: None,
             copy_motw: None,
             depth: 0,
             ..command.clone()

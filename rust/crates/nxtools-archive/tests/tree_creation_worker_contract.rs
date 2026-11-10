@@ -1,5 +1,7 @@
 //! Actual worker rendezvous regression; C# fixtures separately prove protected native handles/Job.
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
@@ -33,7 +35,7 @@ fn tree_worker_requires_complete_readback_and_preserves_first_typed_failure() {
             let operation = Uuid::new_v4();
             let source = Uuid::new_v4();
             let token = Uuid::new_v4();
-            let mut request = json!({"schema":2,"operation_id":operation,"op":"start","operation":format!("create_{format}"),"path":"authorized-source","create_name":format!("created.{format}"),"tree_options":{"strip_single_root":false,"exclude_patterns":[]}});
+            let mut request = json!({"schema":2,"bulk_transfer":1,"operation_id":operation,"op":"start","operation":format!("create_{format}"),"path":"authorized-source","create_name":format!("created.{format}"),"tree_options":{"strip_single_root":false,"exclude_patterns":[]}});
             if format != "tar" {
                 request["compression_level"] = json!("fast");
             }

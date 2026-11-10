@@ -90,14 +90,43 @@ internal static class ArchiveVirtualTreeTests
             var bad=wrapped.DeepClone().AsObject();bad["items"]![0]!["name"]=unsafeRoot;
             Reject(bad,"unsafe wrapper cannot enter descriptor");
         }
-        foreach(var name in new[]{"\u007f","\u0085",new string('界',86)}) {
-            var bad=Raw(Command());bad["items"]![0]!["name"]=name;Reject(bad,"Rust/native component control and UTF8 byte bounds agree");
+        foreach(var name in new[]{"\u007f","\u0085",new string('界',256)}) {
+            var bad=Raw(Command());bad["items"]![0]!["name"]=name;Reject(bad,"Windows component/control/UTF-16 bounds");
         }
-        var unicode=Raw(Command());unicode["items"]![0]!["name"]=new string('界',85);Parse(unicode);
+        foreach(var length in new[]{85,86,255}) {
+            var unicode=Raw(Command());unicode["items"]![0]!["name"]=new string('界',length);Parse(unicode);
+        }
         return Task.CompletedTask;
+    }
+    private static void LongRootSerializedRustCommandAndDescriptor()
+    {
+        var wire=Path.Combine(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")!,"archive-r45-n01-long-root-wire.json");
+        var envelope=JsonSerializer.Deserialize<ProtocolEnvelope>(File.ReadAllText(wire),JsonDefaults.Options)!;
+        envelope.Validate();
+        var command=ArchiveVirtualDragWire.Parse(envelope);
+        var wrapper=new string('界',86);
+        Check(System.Text.Encoding.UTF8.GetByteCount(wrapper)==258&&wrapper.Length==86,"UTF-8 transport bytes differ from Windows component UTF-16 units");
+        Check(command.Plan is {Count:3}&&command.Items is {Length:3}&&command.Items[0].Name==wrapper&&command.Items[0].Directory&&
+            command.Items[1].Name==wrapper+"/empty"&&command.Items[1].Directory&&command.Items[1].Entry.Ordinal==0&&
+            command.Items[2].Name==wrapper+"/file"&&!command.Items[2].Directory&&command.Items[2].Entry.Ordinal==1,
+            "serialized Rust Root retains unshortened wrapper, descriptors and original ordinals");
+        using var data=new ArchiveVirtualFileDataObject(command.Plan!,_=>throw new InvalidOperationException("descriptors cannot demand content"));
+        var request=Format(ArchiveVirtualFileDataObject.DescriptorFormat,-1,TYMED.TYMED_HGLOBAL);
+        data.GetData(ref request,out var medium);
+        try{var pointer=GlobalLock(medium.unionmember);try{
+            Check(Marshal.ReadInt32(pointer)==3,"Root wrapper belongs to full descriptor index array");
+            for(var index=0;index<3;index++) {
+                var name=index switch{0=>wrapper,1=>wrapper+@"\empty",_=>wrapper+@"\file"};
+                var at=pointer+4+index*592;
+                Check(Marshal.PtrToStringUni(at+72)==name,"FILEDESCRIPTORW UTF-16 name and original casing");
+                Check(Marshal.ReadInt16(at+72+name.Length*2)==0,"FILEDESCRIPTORW NUL terminator stays within 260 WCHAR");
+                Check(Marshal.ReadInt32(at+36)==(index==2?0x80:0x10),"directory versus file native attributes");
+            }
+        }finally{GlobalUnlock(medium.unionmember);}}finally{ReleaseStgMedium(ref medium);}
     }
     internal static Task SdkDescriptorsAndDirectoryRefusal()
     {
+        LongRootSerializedRustCommandAndDescriptor();
         OrdinaryDirectorySdkAndNativeDemand();
         Known64BitDescriptorSize();
         // JSON keeps this regression compilable against the old nonnullable descriptor API.
@@ -288,6 +317,102 @@ internal static class ArchiveVirtualTreeTests
             }
         }finally{if(retained.unionmember!=IntPtr.Zero)ReleaseStgMedium(ref retained);Directory.Delete(root,true);}
     }
+    internal static async Task ActualSealedSizeAccountingWithoutExtraCursor()
+    {
+        var worker=Worker();var root=Root();var payload=new string('a',256*1024);var noAccountingCursor=true;
+        try {
+            File.Copy(worker,Path.Combine(root,ArchiveReadHelper.DeploymentName));var path=Path.Combine(root,"accounting.zip");
+            using(var zip=ZipFile.Open(path,ZipArchiveMode.Create)){FileEntry(zip,"unknown.txt",payload);FileEntry(zip,"known.txt",payload);zip.CreateEntry("zero.txt");}
+            var browser=await Browse(root,path);
+            for(var trial=0;trial<3;trial++) {
+                await using(var entries=ArchiveEntrySession.ForOwnedTestPackage(root)) {
+                    var raw=Raw(Command(browser,path));raw["items"]=new JsonArray(Item(raw,"unknown.txt",0,null),Item(raw,"known.txt",1,(ulong)payload.Length),Item(raw,"zero.txt",2,0));
+                    var command=Parse(raw);var ready=new List<ulong>();
+                    await using var content=new ArchiveVirtualContent(entries,command.Items!,(ulong)payload.Length*2+1,progress:(_,isReady,bytes)=>{if(isReady)ready.Add(bytes);});
+                    using var data=new ArchiveVirtualFileDataObject(command.Items!.Select(item=>new ArchiveVirtualFile(item.Name,(long?)item.Size)).ToArray(),index=>content.Open(index,CancellationToken.None));
+                    var pointer=Marshal.GetComInterfaceForObject(data,typeof(System.Runtime.InteropServices.ComTypes.IDataObject));STGMEDIUM first=default;
+                    var clock=System.Diagnostics.Stopwatch.StartNew();
+                    try {
+                        var get=NativeGetData(pointer);var request=Format(ArchiveVirtualFileDataObject.ContentsFormat,0,TYMED.TYMED_ISTREAM);
+                        Check(get(pointer,ref request,out first)==0,"original native demand materializes unknown member");
+                        var firstMs=clock.Elapsed.TotalMilliseconds;var firstCounts=entries.CacheVerificationForFixture;
+                        Check(Stat(ref first)==payload.Length&&Read(ref first,1)=="a","unknown descriptor has actual sealed Stat and bytes");
+                        noAccountingCursor&=firstCounts==new ArchiveEntryCache.VerificationCounts(payload.Length,payload.Length,1,1);
+                        Check(get(pointer,ref request,out var repeat)==0,"repeated native demand");
+                        try{Check(Read(ref repeat,payload.Length)==payload,"independent repeated cursor begins at zero");}finally{ReleaseStgMedium(ref repeat);}
+                        Check(Read(ref first,payload.Length-1)==payload[1..],"first cursor position remains independent");
+                        foreach(var index in new[]{1,2}) {
+                            var next=Format(ArchiveVirtualFileDataObject.ContentsFormat,index,TYMED.TYMED_ISTREAM);
+                            Check(get(pointer,ref next,out var medium)==0,"known and zero native demands");
+                            try{Check(Stat(ref medium)==(index==1?payload.Length:0)&&Read(ref medium,index==1?payload.Length:0)==(index==1?payload:""),"exact known/zero output bytes");}finally{ReleaseStgMedium(ref medium);}
+                        }
+                        var counts=entries.CacheVerificationForFixture;
+                        noAccountingCursor&=counts==new ArchiveEntryCache.VerificationCounts(payload.Length*2L,payload.Length*3L,4,4);
+                        Check(ready.SequenceEqual(new[]{(ulong)payload.Length,(ulong)payload.Length,0UL}),"sealed actual bytes charge each distinct index exactly once");
+                        Console.WriteLine($"OBS archive.drag.accounting operation_id={command.Items![0].Entry.OperationId} trial={trial+1} first_ms={firstMs:F3} demand_ms={clock.Elapsed.TotalMilliseconds:F3} first_seal_hash_bytes={firstCounts.SealHashBytes} first_cursor_hash_bytes={firstCounts.CursorHashBytes} first_cursor_opens={firstCounts.CursorOpens} seal_hash_bytes={counts.SealHashBytes} cursor_hash_bytes={counts.CursorHashBytes} cursor_checks={counts.CursorChecks} cursor_opens={counts.CursorOpens}");
+                    }finally{if(first.unionmember!=IntPtr.Zero)ReleaseStgMedium(ref first);Marshal.Release(pointer);}
+                }
+                Check(!Directory.GetFiles(root,"manifest.json",SearchOption.AllDirectories).Any()&&!Directory.GetFiles(root,".nxpart-*",SearchOption.AllDirectories).Any()&&!Directory.GetFiles(root,"*.txt",SearchOption.AllDirectories).Any(),"native published outputs and exact leases cleaned after each trial");
+            }
+            Check(noAccountingCursor,"first materialization must use Seal size without a size-only cursor or full cache hash; each real cursor still hashes once");
+        }finally{Directory.Delete(root,true);}
+    }
+    internal static async Task ActualFirstAndRepeatedCursorTamper()
+    {
+        var worker=Worker();var root=Root();
+        try {
+            File.Copy(worker,Path.Combine(root,ArchiveReadHelper.DeploymentName));var path=Path.Combine(root,"tamper.zip");
+            using(var zip=ZipFile.Open(path,ZipArchiveMode.Create))FileEntry(zip,"one.txt","one");
+            var browser=await Browse(root,path);
+            var retainedOutputs=new HashSet<string>();
+            foreach(var beforeFirst in new[]{true,false}) {
+                await using var entries=ArchiveEntrySession.ForOwnedTestPackage(root);
+                var raw=Raw(Command(browser,path));raw["items"]=new JsonArray(Item(raw,"one.txt",0,null));
+                string? outputPath=null;
+                void Tamper(){outputPath=Directory.GetFiles(Path.Combine(root,"archive","sessions"),"one.txt",SearchOption.AllDirectories).Single(candidate=>!retainedOutputs.Contains(candidate));var time=File.GetLastWriteTimeUtc(outputPath);File.WriteAllText(outputPath,"bad");File.SetLastWriteTimeUtc(outputPath,time);}
+                if(beforeFirst)entries.SealedCheckpointForFixture(Tamper);
+                await using(var content=new ArchiveVirtualContent(entries,Parse(raw).Items!,3)) {
+                    if(!beforeFirst){var first=content.Open(0,CancellationToken.None);Marshal.Release(first);Tamper();}
+                    try{var stream=content.Open(0,CancellationToken.None);Marshal.Release(stream);throw new InvalidOperationException("same-size same-time tamper must not return a native cursor");}
+                    catch(ArchiveOutputException failure){Check(failure.Stage=="source_changed","original consumer rejects changed sealed bytes");}
+                    var counts=entries.CacheVerificationForFixture;
+                    Check(counts.SealHashBytes==3&&counts.CursorHashBytes>=3&&counts.CursorChecks>=1,"Seal and actual target verification remain full-content checks");
+                }
+                Check(outputPath is not null&&File.ReadAllText(outputPath)=="bad","original cleanup retains changed output");retainedOutputs.Add(outputPath!);
+            }
+        }finally{Directory.Delete(root,true);}
+    }
+    internal static Task CacheCursorIntegrityAndLifetime()
+    {
+        var root=Root();
+        try {
+            using var cache=ArchiveEntryCache.ForOwnedTestCache(root);
+            foreach(var repeat in new[]{false,true}) {
+                var lease=cache.Create(Guid.NewGuid(),Guid.NewGuid(),1);var path=Path.Combine(lease.Root,"files","one.txt");
+                var before=cache.VerificationForFixture;
+                using(var output=ArchiveOutputSession.Open(Path.Combine(lease.Root,"files"),lease.Operation)) {
+                    var token=output.BeginFile("one.txt");Check(output.Write(token,"one"u8.ToArray()),"original native output write");Check(output.Commit(token).Category=="committed","original native publication");
+                }
+                lease.Seal(path);
+                if(repeat){var stream=cache.OpenVirtualStream(lease.Id,lease.Operation,lease.Session,lease.Generation,null,CancellationToken.None,out var size);Check(size==3,"real cursor actual size");Marshal.Release(stream);}
+                var timestamp=File.GetLastWriteTimeUtc(path);File.WriteAllText(path,"bad");File.SetLastWriteTimeUtc(path,timestamp);
+                try{var stream=cache.OpenVirtualStream(lease.Id,lease.Operation,lease.Session,lease.Generation,null,CancellationToken.None,out _);Marshal.Release(stream);throw new InvalidOperationException("same-size same-time tamper accepted");}
+                catch(ArchiveOutputException failure){Check(failure.Stage=="source_changed","first/repeated cache cursor still hashes sealed bytes");}
+                var after=cache.VerificationForFixture;
+                Check(after.SealHashBytes-before.SealHashBytes==3&&after.CursorHashBytes-before.CursorHashBytes==(repeat?6:3)&&
+                    after.CursorChecks-before.CursorChecks==(repeat?2:1)&&after.CursorOpens-before.CursorOpens==(repeat?1:0),"owner observations count full Seal/cursor hash reads separately from native cursor opens");
+                Check(!cache.Release(lease.Id)&&File.ReadAllText(path)=="bad","changed output retained by original cleanup");
+            }
+            var clean=cache.Create(Guid.NewGuid(),Guid.NewGuid(),1);var cleanPath=Path.Combine(clean.Root,"files","clean.txt");File.WriteAllText(cleanPath,"one");clean.Seal(cleanPath);
+            var first=cache.OpenVirtualStream(clean.Id,clean.Operation,clean.Session,clean.Generation,null,CancellationToken.None,out _);
+            var second=cache.OpenVirtualStream(clean.Id,clean.Operation,clean.Session,clean.Generation,3,CancellationToken.None,out _);
+            var a=new STGMEDIUM{tymed=TYMED.TYMED_ISTREAM,unionmember=first};var b=new STGMEDIUM{tymed=TYMED.TYMED_ISTREAM,unionmember=second};
+            try{Check(Read(ref a,1)=="o"&&Read(ref b,3)=="one","native cursors independent");Check(!cache.Release(clean.Id),"target-held stream retains owned output");Check(Read(ref a,2)=="ne","transferred stream survives retirement");}
+            finally{ReleaseStgMedium(ref a);ReleaseStgMedium(ref b);}
+            cache.Sweep();Check(!File.Exists(cleanPath),"original bounded sweep removes released unlocked output");
+            return Task.CompletedTask;
+        }finally{Directory.Delete(root,true);}
+    }
     internal static async Task ActualUnknownZstdReadToNativeStream()
     {
         var root=Root();STGMEDIUM held=default;
@@ -343,11 +468,11 @@ internal static class ArchiveVirtualTreeTests
             // Output budgets remain independent of encoded source admission.
             using(var zip=ZipFile.Open(path,ZipArchiveMode.Create)){FileEntry(zip,"one.txt",new string('a',700));FileEntry(zip,"two.txt",new string('b',700));zip.CreateEntry("zero.txt");}
             var browser=await Browse(root,path);
-            foreach(var mode in new[]{"known_oversize","unknown_oversize","concurrent","repeat","estimate_mismatch","zero_remaining"}) {
+            foreach(var mode in new[]{"known_oversize","unknown_oversize","concurrent","repeat","estimate_mismatch","zero_estimate","zero_remaining"}) {
                 await using var entries=ArchiveEntrySession.ForOwnedTestPackage(root);long written=0;entries.ProbeWriteForFixture(bytes=>Interlocked.Add(ref written,bytes));
                 var raw=Raw(Command(browser,path));
                 var limit=mode=="zero_remaining"?700UL:1300UL;
-                raw["items"]=mode=="estimate_mismatch"?new JsonArray(Item(raw,"one.txt",0,699)):
+                raw["items"]=mode is "estimate_mismatch" or "zero_estimate"?new JsonArray(Item(raw,"one.txt",0,mode=="zero_estimate"?0UL:699UL),Item(raw,"two.txt",1,null)):
                     new JsonArray(Item(raw,"one.txt",0,null),Item(raw,"two.txt",1,mode=="known_oversize"?700UL:null),Item(raw,"zero.txt",2,0));
                 var command=Parse(raw);var content=new ArchiveVirtualContent(entries,command.Items!,limit);
                 try {
@@ -356,13 +481,15 @@ internal static class ArchiveVirtualTreeTests
                     if(mode=="concurrent") {
                         var results=await Task.WhenAll(Task.Run(()=>Open(0)),Task.Run(()=>Open(1))).WaitAsync(TimeSpan.FromSeconds(40));
                         Check(results.Count(ok=>ok)==1,"simultaneous distinct unknown requests cannot oversubscribe remaining budget");
-                    }else if(mode=="estimate_mismatch")Check(!Open(0),"known wrong estimate must not publish medium");
+                    }else if(mode is "estimate_mismatch" or "zero_estimate"){Check(!Open(0),"wrong declared estimate must not publish medium");Check(!Open(1),"wrong zero/known estimate cannot replace actual sealed budget charge");}
                     else {
                         Check(Open(0),"first unknown file fits");
-                        if(mode=="repeat")for(var i=0;i<3;i++)Check(Open(0),"repeat validates without charging twice");
+                        if(mode=="repeat") {
+                            for(var i=0;i<3;i++)Check(Open(0),"repeat validates without charging twice");
+                            Check(Open(2),"repeat did not double-charge actual bytes; zero-byte file fits positive remaining budget");
+                        }
                         if(mode=="zero_remaining")Check(!Open(2),"exhausted budget refuses even zero-byte entries without worker bypass");
                         else Check(!Open(1),"original worker remaining limit refuses second file before output");
-                        if(mode=="repeat")Check(Open(2),"repeat did not double-charge actual bytes; zero-byte file fits positive remaining budget");
                     }
                     Check(Interlocked.Read(ref written)==700,"only first700 bytes passed original worker output; overbudget output never written");
                 }finally{await content.DisposeAsync();}

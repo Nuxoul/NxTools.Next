@@ -54,16 +54,14 @@ pub(crate) fn quick_launch_catalog_refresh_query(
     (is_open && !action_mode_active).then_some(query)
 }
 
-pub(crate) fn quick_launch_panel_height(
-    query: &str,
-    action_mode_active: bool,
-    recent_directory_mode_active: bool,
-) -> f32 {
-    if quick_launch_results_visible(query, action_mode_active, recent_directory_mode_active) {
-        PANEL_HEIGHT
-    } else {
-        COLLAPSED_PANEL_HEIGHT
-    }
+pub(crate) fn quick_launch_panel_height(list_height: f32, has_status: bool) -> f32 {
+    COLLAPSED_PANEL_HEIGHT
+        + list_height
+        + if has_status {
+            LAUNCHER_STATUS_FOOTER_HEIGHT
+        } else {
+            0.0
+        }
 }
 
 pub(crate) fn recent_directory_results(

@@ -1,5 +1,8 @@
-//! Actual worker rendezvous: schema2 alone does not grant an old host new native actions.
-use nxtools_archive::worker::{ExtractOptions, WorkerRequest, read_frame, write_frame};
+//! Ordinary close carries metadata only after explicit extraction-options negotiation.
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
+use nxtools_archive::worker::{ExtractOptions, WorkerRequest};
 use serde_json::{Value, json};
 use std::{
     collections::HashSet,
@@ -35,10 +38,13 @@ fn actual_worker_preserves_old_schema2_native_actions_and_explicit_metadata_nego
             let mut request = WorkerRequest::open(id, path.to_string_lossy().into_owned());
             request.version = 2;
             request.operation = "extract".into();
-            request.extract_options = copy.map(|copy_motw| ExtractOptions { copy_motw, reclamation: None });
+            request.bulk_transfer = Some(1);
+            request.extract_options = copy.map(|copy_motw| ExtractOptions {
+                copy_motw,
+                reclamation: None,
+            });
             write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("request");
             let mut active = HashSet::new();
-            let mut staged = HashSet::new();
             let mut commits = 0;
             let terminal = loop {
                 let frame: Value = read_frame(child.stdout.as_mut().expect("stdout"))
@@ -64,21 +70,7 @@ fn actual_worker_preserves_old_schema2_native_actions_and_explicit_metadata_nego
                                 )
                             );
                         }
-                        "file_metadata" => {
-                            assert!(
-                                copy.is_some(),
-                                "old host must never receive an unknown metadata action"
-                            );
-                            let key = Uuid::parse_str(call["token"].as_str().expect("token"))
-                                .expect("uuid");
-                            assert!(active.contains(&key) && staged.insert(key));
-                            serde_json::from_value::<nxtools_archive::metadata::OutputMetadata>(
-                                call["metadata"].clone(),
-                            )
-                            .expect("typed metadata")
-                            .validate()
-                            .expect("valid source metadata");
-                        }
+                        "file_metadata" => panic!("ordinary metadata must travel with close"),
                         "directory_metadata" => {
                             assert!(copy.is_some());
                         }
@@ -86,7 +78,15 @@ fn actual_worker_preserves_old_schema2_native_actions_and_explicit_metadata_nego
                             let key = Uuid::parse_str(call["token"].as_str().expect("token"))
                                 .expect("uuid");
                             assert!(active.remove(&key));
-                            assert_eq!(staged.remove(&key), copy.is_some());
+                            assert_eq!(call.get("metadata").is_some(), copy.is_some());
+                            if copy.is_some() {
+                                serde_json::from_value::<nxtools_archive::metadata::OutputMetadata>(
+                                    call["metadata"].clone(),
+                                )
+                                .expect("typed close metadata")
+                                .validate()
+                                .expect("valid source metadata");
+                            }
                             commits += 1;
                         }
                         action => panic!("unexpected action {action}"),
@@ -97,7 +97,7 @@ fn actual_worker_preserves_old_schema2_native_actions_and_explicit_metadata_nego
                 }
             };
             assert_eq!(terminal["op"], "complete", "{fixture}/{copy:?}: {terminal}");
-            assert!(commits > 0 && active.is_empty() && staged.is_empty());
+            assert!(commits > 0 && active.is_empty());
             drop(child.stdin.take());
             let result = child.wait_with_output().expect("reaped worker");
             assert!(result.status.success() && result.stderr.is_empty());

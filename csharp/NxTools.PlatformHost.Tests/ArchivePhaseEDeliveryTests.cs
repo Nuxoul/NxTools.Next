@@ -137,4 +137,57 @@ internal static class ArchivePhaseEDeliveryTests
             passed=true;
         }finally{FinishRoot(root,passed);}
     }
+    internal static async Task ActualExplicitSplitSizesLimitsAndCancellation()
+    {
+        var root=Root();var passed=false;
+        try {
+            var bytes=new byte[150000];new Random(1718).NextBytes(bytes);
+            var source=Path.Combine(root,"small.bin");File.WriteAllBytes(source,bytes);
+            foreach(var format in new[]{"zip","seven_z"}) {
+                var destination=Path.Combine(root,"exact-"+format);Directory.CreateDirectory(destination);
+                var name=format=="zip"?"exact.zip":"exact.7z";
+                var request=Create(source,destination,format,name);
+                request=request with { Create=request.Create! with { VolumeBytes=66560 } };
+                await using(var jobs=ArchiveJobSession.ForOwnedTestPackage(root)) {
+                    var result=await Run(jobs,request);
+                    Check(result.Outcome=="succeeded"&&result.CleanupComplete&&result.FilesCommitted>=2,"explicit KiB native split "+format+" "+result.Code);
+                    var parts=Directory.GetFiles(destination);
+                    Check(parts.All(part=>new FileInfo(part).Length<=66560),"writer retains exact requested byte capacity");
+                    await Oracle(Path.Combine(destination,format=="zip"?name:name+".001"),Path.Combine(root,"exact-oracle-"+format),bytes);
+                }
+                foreach(var late in new[]{false,true}) {
+                    var cancelled=Path.Combine(root,"cancel-"+format+"-"+late);Directory.CreateDirectory(cancelled);
+                    await using var jobs=ArchiveJobSession.ForOwnedTestPackage(root);
+                    var command=Start(Create(source,cancelled,format,name));var requested=false;
+                    jobs.ProbeOutputCommitForFixture(stage=>{
+                        if(!requested&&stage==(late?"native_published":"before_flush")) {
+                            requested=true;
+                            Check(jobs.Dispatch(Wire(command with {Action="cancel",Request=null})).Success,"original exact cancellation admission");
+                        }
+                    });
+                    Check(jobs.Dispatch(Wire(command)).Success,"cancelled split admission");
+                    var result=await Finish(jobs);
+                    Check(requested&&result.Outcome=="cancelled"&&result.CleanupComplete,"actual split cancellation/cleanup "+format+" "+result.Code);
+                    Check(late?result.FilesCommitted>0:result.FilesCommitted==0,"late publication facts must survive cancellation");
+                    Check(!Directory.GetFiles(cancelled,".nxpart-*").Any(),"owned incomplete candidates cleaned after worker exit");
+                    Check(result.Journal is {} journal&&journal.Where(item=>item.Published==true).All(item=>item.State=="Committed"&&item.Cleanup=="retained"),"published journal truth");
+                }
+            }
+            var large=Path.Combine(root,"count.bin");
+            using(var stream=File.Create(large)) {
+                var block=new byte[65536];
+                for(var index=0;index<1024;index++)stream.Write(block);
+            }
+            var limited=Path.Combine(root,"count-limit");Directory.CreateDirectory(limited);
+            await using(var jobs=ArchiveJobSession.ForOwnedTestPackage(root)) {
+                var request=Create(large,limited,"zip","limit.zip");
+                request=request with {Create=request.Create! with {Level="store",Method="store"}};
+                var result=await Run(jobs,request);
+                Check(result.Outcome=="failed"&&result.Code=="resource_limit"&&result.FilesCommitted==0&&result.CleanupComplete,"writer refuses more than1024volumes before publication "+result.Code);
+                Check(!Directory.EnumerateFileSystemEntries(limited).Any(),"count-limit refusal has zero published/owned partial files");
+            }
+            Check(File.ReadAllBytes(source).SequenceEqual(bytes)&&new FileInfo(large).Length==67108864,"all original sources retained");
+            passed=true;
+        } finally {FinishRoot(root,passed);}
+    }
 }

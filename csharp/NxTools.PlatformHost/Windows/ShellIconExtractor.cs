@@ -11,10 +11,14 @@ internal static class ShellIconExtractor
     private const uint ShgfiLargeIcon = 0x000000000;
     private const uint ShgfiSmallIcon = 0x000000001;
     private const uint ShgfiUseFileAttributes = 0x000000010;
+    private const uint ShgfiSystemIconIndex = 0x000004000;
+    private const int ShilJumbo = 4;
+    private const uint ImageListDrawTransparent = 0x00000001;
     private const uint FileAttributeNormal = 0x00000080;
     private const uint FileAttributeDirectory = 0x00000010;
     private const string FolderTypeTarget = "nxtools-folder-type:directory";
     private const string FileTypePrefix = "nxtools-file-type:.";
+    private static readonly Guid ImageListInterfaceId = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
 
     internal static WindowsCommandResult ExtractOnSta(
         ExtractShellIconCommand command,
@@ -39,7 +43,21 @@ internal static class ShellIconExtractor
                 operationCancellation =>
                 {
                     operationCancellation.ThrowIfCancellationRequested();
-                    var result = operation(command);
+                    WindowsCommandResult result;
+                    try
+                    {
+                        result = operation(command);
+                    }
+                    catch (OperationCanceledException) when (operationCancellation.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception exception)
+                    {
+                        result = new WindowsCommandResult(false, "shell_icon_extract_failed", Fatal: true,
+                            NativeErrorCode: exception is System.ComponentModel.Win32Exception native
+                                ? native.NativeErrorCode : exception.HResult);
+                    }
                     operationCancellation.ThrowIfCancellationRequested();
                     return result;
                 },
@@ -49,10 +67,12 @@ internal static class ShellIconExtractor
         {
             return new WindowsCommandResult(
                 false,
-                error ?? "Shell icon extraction timed out.",
-                Fatal: true);
+                cancellationToken.IsCancellationRequested ? "shell_icon_cancelled" : "shell_icon_sta_unavailable",
+                Fatal: true,
+                NativeErrorCode: cancellationToken.IsCancellationRequested ? 995 :
+                    error?.Contains("timed out", StringComparison.OrdinalIgnoreCase) == true ? 1460 : null);
         }
-        return result ?? new WindowsCommandResult(false, "Shell icon extraction returned no result.");
+        return result ?? new WindowsCommandResult(false, "shell_icon_no_result");
     }
 
     public static WindowsCommandResult Extract(ExtractShellIconCommand command) =>
@@ -66,13 +86,13 @@ internal static class ShellIconExtractor
         cancellationToken.ThrowIfCancellationRequested();
         if (command.Size is < 16 or > 256)
         {
-            return new WindowsCommandResult(false, "The requested shell icon size is unsupported.");
+            return new WindowsCommandResult(false, "shell_icon_size_unsupported", NativeErrorCode: 87);
         }
         var target = ResolveIconTarget(command.Target);
         cancellationToken.ThrowIfCancellationRequested();
         if (target is null)
         {
-            return new WindowsCommandResult(false, "The shell icon target does not exist.");
+            return new WindowsCommandResult(false, "shell_icon_target_unavailable", NativeErrorCode: 2);
         }
 
         var targetType = target.UseFileAttributes
@@ -87,7 +107,7 @@ internal static class ShellIconExtractor
             target.IconIndex,
             command.Size,
             lastWriteTicks,
-            targetType);
+            target.IconIndex is null && command.Size > 32 ? targetType + "/image-list" : targetType);
         string? extractionError = null;
         int? nativeErrorCode = null;
         var cacheHitOrCreated = (cache ?? IconCache.Shared).TryGetOrCreate(key, destination =>
@@ -109,7 +129,7 @@ internal static class ShellIconExtractor
             if (iconHandle == IntPtr.Zero)
             {
                 nativeErrorCode = Marshal.GetLastWin32Error();
-                extractionError = "Windows Shell did not return an icon.";
+                extractionError = "shell_icon_query_failed";
                 return false;
             }
             try
@@ -130,14 +150,14 @@ internal static class ShellIconExtractor
             catch (ExternalException error)
             {
                 nativeErrorCode = error.ErrorCode;
-                extractionError = error.Message;
+                extractionError = "shell_icon_png_encode_failed";
                 return false;
             }
             finally
             {
                 _ = DestroyIcon(iconHandle);
             }
-        }, out var destinationPath);
+        }, out var destinationPath, IsCachedPngValid);
 
         cancellationToken.ThrowIfCancellationRequested();
         if (cacheHitOrCreated)
@@ -145,7 +165,25 @@ internal static class ShellIconExtractor
             return new WindowsCommandResult(true, Data: destinationPath);
         }
         return new WindowsCommandResult(false, extractionError ??
-            "The shell icon could not be cached.", NativeErrorCode: nativeErrorCode);
+            "shell_icon_cache_failed", NativeErrorCode: nativeErrorCode);
+    }
+
+    private static bool IsCachedPngValid(string path)
+    {
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var decoder = new System.Windows.Media.Imaging.PngBitmapDecoder(stream,
+                System.Windows.Media.Imaging.BitmapCreateOptions.PreservePixelFormat,
+                System.Windows.Media.Imaging.BitmapCacheOption.OnLoad);
+            return decoder.Frames.Count == 1 && decoder.Frames[0].PixelWidth is > 0 and <= 256
+                && decoder.Frames[0].PixelHeight is > 0 and <= 256;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+            or NotSupportedException or FileFormatException or ArgumentException or ExternalException)
+        {
+            return false;
+        }
     }
 
     internal static uint ShellIconFlags(ShellIconTarget target, uint size) =>
@@ -154,6 +192,11 @@ internal static class ShellIconExtractor
 
     private static IntPtr ExtractShellIcon(ShellIconTarget target, uint size)
     {
+        if (size > 32)
+        {
+            var highResolution = ExtractHighResolutionShellIcon(target);
+            if (highResolution != IntPtr.Zero) return highResolution;
+        }
         var flags = ShellIconFlags(target, size);
         var result = SHGetFileInfo(
             target.Path,
@@ -162,6 +205,33 @@ internal static class ShellIconExtractor
             (uint)Marshal.SizeOf<ShFileInfo>(),
             flags);
         return result == IntPtr.Zero ? IntPtr.Zero : info.IconHandle;
+    }
+
+    private static IntPtr ExtractHighResolutionShellIcon(ShellIconTarget target)
+    {
+        var flags = ShgfiSystemIconIndex | (target.UseFileAttributes ? ShgfiUseFileAttributes : 0);
+        if (SHGetFileInfo(target.Path, target.FileAttributes, out var info,
+                (uint)Marshal.SizeOf<ShFileInfo>(), flags) == IntPtr.Zero)
+            return IntPtr.Zero;
+        var interfaceId = ImageListInterfaceId;
+        var status = SHGetImageList(ShilJumbo, ref interfaceId, out var imageList);
+        if (imageList == IntPtr.Zero) return IntPtr.Zero;
+        try
+        {
+            if (status < 0) return IntPtr.Zero;
+            // IUnknown has three slots; seven IImageList methods precede GetIcon.
+            var table = Marshal.ReadIntPtr(imageList);
+            var getIcon = Marshal.GetDelegateForFunctionPointer<ImageListGetIcon>(
+                Marshal.ReadIntPtr(table, 10 * IntPtr.Size));
+            var iconStatus = getIcon(imageList, info.IconIndex, ImageListDrawTransparent, out var icon);
+            if (iconStatus >= 0) return icon;
+            if (icon != IntPtr.Zero) _ = DestroyIcon(icon);
+            return IntPtr.Zero;
+        }
+        finally
+        {
+            _ = Marshal.Release(imageList);
+        }
     }
 
     private static IntPtr ExtractIndexedIcon(string target, int iconIndex, uint size)
@@ -371,6 +441,15 @@ internal static class ShellIconExtractor
         }
         return null;
     }
+
+    [DllImport("shell32.dll", PreserveSig = true)]
+    private static extern int SHGetImageList(
+        int imageList,
+        ref Guid interfaceId,
+        out IntPtr result);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ImageListGetIcon(IntPtr imageList, int index, uint flags, out IntPtr icon);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern IntPtr SHGetFileInfo(

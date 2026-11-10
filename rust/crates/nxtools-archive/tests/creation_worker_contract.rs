@@ -1,4 +1,7 @@
-use nxtools_archive::worker::{WorkerRequest, read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
+use nxtools_archive::worker::WorkerRequest;
 use serde_json::{Value, json};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
@@ -26,6 +29,7 @@ fn actual_creation_worker_requires_full_partial_readback_before_any_publication(
             let mut request = WorkerRequest::open(id, source.to_string_lossy().into_owned());
             request.version = 2;
             request.operation = operation.into();
+            request.bulk_transfer = Some(1);
             request.create_name = Some("created.archive".into());
             request.compression_level = Some("normal".into());
             write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("start");

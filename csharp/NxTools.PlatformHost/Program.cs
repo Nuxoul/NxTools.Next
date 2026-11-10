@@ -56,6 +56,16 @@ internal static class Program
         using var log = PlatformLog.CreateDefault();
         if (args.Length == 1 && args[0] == "--maintain-trusted-bootstrap")
             return TrustedBootstrapMaintenanceWindows.Run(log);
+        if (args.Length > 0 && args[0] == "--repair-missing-trusted-bootstrap")
+            return args.Length == 2 && Guid.TryParseExact(args[1], "D", out var repairCorrelation) && repairCorrelation != Guid.Empty
+                ? TrustedMissingBootstrapRepair.Run(log, repairCorrelation)
+                : 2;
+        if (args.Length > 0 && args[0] == "--uninstall-protected-components")
+            return args.Length == 3 && Guid.TryParseExact(args[2], "D", out var uninstallCorrelation) &&
+                uninstallCorrelation != Guid.Empty
+                ? TrustedUninstallCleanup.Run(log, uninstallCorrelation, args[1])
+                : 2;
+
         if (args.Length == 1 && args[0] == "--trusted-update-service")
             return TrustedUpdateBroker.RunService(log);
         if (args.Length == 1 && args[0] == "--prepare-trusted-update")
@@ -69,6 +79,9 @@ internal static class Program
             if (!System.Security.Principal.WindowsIdentity.GetCurrent().IsSystem) return 1;
             return IndexerServiceInstaller.InstallElevated(args[1], log, trustedCorrelation, enrollUpdater: false);
         }
+        if (args.Length == 2 && args[0] == "--configure-indexer-lifetime" &&
+            Guid.TryParseExact(args[1], "D", out var lifetimeCorrelation) && lifetimeCorrelation != Guid.Empty)
+            return IndexerServiceInstaller.ConfigureLifetimeElevated(log, lifetimeCorrelation);
         if (IndexerServiceInstaller.TryParseInstallArguments(args, out var indexerPath, out var installCorrelation))
         {
             return IndexerServiceInstaller.InstallElevated(indexerPath!, log, installCorrelation);
@@ -94,12 +107,14 @@ internal static class Program
             shutdown.Cancel();
         };
 
-        using var platformAdapter = new WindowsPlatformAdapter(new ForegroundContextProvider(), log);
+        var parentProcessId = ParseParentProcessId(args);
+        using var platformAdapter = new WindowsPlatformAdapter(new ForegroundContextProvider(), log,
+            clipboardConsumerProcessId: parentProcessId);
         var client = new PlatformPipeClient(
             ProtocolConstants.DefaultPipeName,
             platformAdapter,
             log);
-        var parentMonitor = MonitorParentAsync(ParseParentProcessId(args), shutdown);
+        var parentMonitor = MonitorParentAsync(parentProcessId, shutdown);
 
         try
         {

@@ -157,11 +157,15 @@ internal sealed class DirectoryOpusTargetObservation(
 }
 
 // Runs on the existing detached Shell STA, never on the serial pipe reader/event thread.
-internal sealed class NativeDirectoryOpusTargetPlatform(Action<string>? stageChanged = null) : IDirectoryOpusTargetPlatform
+internal sealed class NativeDirectoryOpusTargetPlatform(
+    Action<string>? stageChanged = null, Action<Process>? terminateHelper = null) : IDirectoryOpusTargetPlatform
 {
     private readonly Stopwatch _budget = Stopwatch.StartNew();
     private const int TotalBudgetMs = 1500;
     private const int ExportBudgetMs = 250;
+    // A retiring export keeps its slot: failed cleanup cannot accumulate paths or replacement workers.
+    private static readonly SemaphoreSlim ExportOwners = new(2, 2);
+    private readonly Action<Process> _terminateHelper = terminateHelper ?? (static process => process.Kill());
 
     public IReadOnlyList<DirectoryOpusObservationHost> CaptureHosts()
     {
@@ -207,21 +211,23 @@ internal sealed class NativeDirectoryOpusTargetPlatform(Action<string>? stageCha
         var remaining = Math.Min(ExportBudgetMs, TotalBudgetMs - (int)_budget.ElapsedMilliseconds);
         if (remaining <= 0 || (command != "paths" && (!command.StartsWith("listsel,0x", StringComparison.Ordinal) ||
             !long.TryParse(command.AsSpan(10), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var tab) || tab <= 0))) return null;
+        if (!ExportOwners.Wait(0)) { Report("observation_dopus_cleanup_busy"); return null; }
         var temporary = Path.Combine(Path.GetTempPath(), "nxtools-dopus-observe-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(temporary);
         var output = Path.Combine(temporary, "result.xml");
-        var clock = Stopwatch.StartNew();
+        Process? process = null;
         try
         {
+            Directory.CreateDirectory(temporary);
+            var clock = Stopwatch.StartNew();
             var info = new ProcessStartInfo(host.Helper) { UseShellExecute = false, CreateNoWindow = true };
             info.ArgumentList.Add("/info");
             info.ArgumentList.Add(output + "," + command);
-            using var process = Process.Start(info);
+            process = Process.Start(info);
             if (process is null) return null;
             if (!process.WaitForExit(remaining))
             {
                 // This is exactly our helper child, never the user's DOpus process.
-                process.Kill();
+                _terminateHelper(process);
                 var cleanupBudget = Math.Clamp(TotalBudgetMs - (int)_budget.ElapsedMilliseconds, 0, 25);
                 if (!process.WaitForExit(cleanupBudget)) Report("observation_dopus_helper_exit_unconfirmed");
                 Report("observation_dopus_helper_timeout");
@@ -249,10 +255,36 @@ internal sealed class NativeDirectoryOpusTargetPlatform(Action<string>? stageCha
         }
         finally
         {
-            try { File.Delete(output); Directory.Delete(temporary); }
-            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
-            { Report("observation_dopus_cleanup_failed"); }
+            if (!TryCleanupExport(process, output, temporary))
+            {
+                Report("observation_dopus_cleanup_failed");
+                Report("observation_dopus_cleanup_deferred");
+                _ = RetryCleanupExport(process, output, temporary);
+            }
         }
+    }
+
+    private static bool TryCleanupExport(Process? process, string output, string temporary)
+    {
+        try
+        {
+            if (process is not null && !process.HasExited) return false;
+            File.Delete(output);
+            Directory.Delete(temporary);
+        }
+        catch (DirectoryNotFoundException) { /* The exact export directory is already gone. */ }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+        { return false; }
+        process?.Dispose();
+        ExportOwners.Release();
+        return true;
+    }
+
+    private async Task RetryCleanupExport(Process? process, string output, string temporary)
+    {
+        do { await Task.Delay(250).ConfigureAwait(false); }
+        while (!TryCleanupExport(process, output, temporary));
+        Report("observation_dopus_cleanup_completed");
     }
 
     private void Report(string stage)

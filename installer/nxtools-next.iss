@@ -47,6 +47,10 @@ Name: "autostart"; Description: "开机自动启动 NxTools"; \
 ; desktop outside {app}. Embedded only; never deployed as a user workaround.
 Source: "close-owned-processes.ps1"; Flags: dontcopy
 Source: "bootstrap-migration.ps1"; Flags: dontcopy
+; Uninstall support is installed so the real uninstaller can run exact-image shutdown
+; and current-user cleanup before Inno removes {app}.
+Source: "close-owned-processes.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
+Source: "uninstall-cleanup.ps1"; DestDir: "{app}\installer-support"; Flags: ignoreversion
 Source: "{#PackageDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\NxTools.PlatformHost.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PackageDir}\NxTools.Indexer.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -92,8 +96,11 @@ var
   UpgradeFilesCommitted, UpgradeFinalizationFailed: Boolean;
   UpgradePreparationReady: Boolean;
   UpgradeStatePath, UpgradeCorrelation: String;
+  UninstallCorrelation: String;
   UpgradeNewManifestPath, UpgradeNewSignaturePath: String;
   BootstrapMigrationDirectory: String;
+  BootstrapRepairMissing: Boolean;
+  UninstallRemovePersonalData: Boolean;
 
 function PreservePreparationDiagnostics(SourcePath, Correlation: String; Started: Boolean; ResultCode: Integer): String;
 var
@@ -118,26 +125,36 @@ end;
 
 function EnsureBootstrapMigration(): String;
 var
-  DetectionPath, Parameters, PowerShellPath, MigrationHost: String;
+  DetectionPath, Parameters, PowerShellPath, MigrationHost, DetectionDiagnostic, DiagnosticDirectory, Prompt: String;
   ResultCode: Integer;
   Started: Boolean;
 begin
   Result := '';
   BootstrapMigrationDirectory := '';
+  BootstrapRepairMissing := False;
+  DetectionDiagnostic := ExpandConstant('{tmp}\bootstrap-detection-') + UpgradeCorrelation + '.jsonl';
   ExtractTemporaryFile('bootstrap-migration.ps1');
   DetectionPath := ExpandConstant('{tmp}\bootstrap-migration.ps1');
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + DetectionPath +
-    '" -ManifestPath "' + UpgradeNewManifestPath + '"';
+    '" -ManifestPath "' + UpgradeNewManifestPath + '" -DiagnosticPath "' + DetectionDiagnostic + '" -CorrelationId "' + UpgradeCorrelation + '"';
   Log('installer.bootstrap_migration.detecting');
   Started := Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Log('installer.bootstrap_migration.detected started=' + IntToStr(Ord(Started)) + ' exit=' + IntToStr(ResultCode) + ' correlation=' + UpgradeCorrelation);
+  DiagnosticDirectory := PreservePreparationDiagnostics(DetectionDiagnostic, UpgradeCorrelation, Started, ResultCode);
+  if FileExists(DetectionDiagnostic) then FileCopy(DetectionDiagnostic, DiagnosticDirectory + '\bootstrap-detection.jsonl', False);
   if Started and (ResultCode = 0) then Exit;
-  if (not Started) or (ResultCode <> 10) then
+  if (not Started) or ((ResultCode <> 10) and (ResultCode <> 11)) then
   begin
-    Result := '无法验证现有更新服务，尚未替换应用文件。请保留安装日志供检查。';
+    Result := '无法检查更新组件，尚未替换应用文件。诊断日志：' + DiagnosticDirectory;
     Exit;
   end;
-  if MsgBox('此旧版本需要升级更新组件才能继续安装。安装器将请求一次管理员授权，完成后自动继续；不会更换发布公钥或清除数据。', mbConfirmation, MB_OKCANCEL) <> IDOK then
+  BootstrapRepairMissing := (ResultCode = 11);
+  if BootstrapRepairMissing then
+    Prompt := '已登记的 NxTools 更新组件文件缺失。安装器需要一次管理员授权来修复更新组件，然后继续安装；不会更换发布公钥或删除已有数据。'
+  else
+    Prompt := '此旧版本需要升级更新组件才能继续安装。安装器将请求一次管理员授权，完成后自动继续；不会更换发布公钥或清除数据。';
+  if MsgBox(Prompt, mbConfirmation, MB_OKCANCEL) <> IDOK then
   begin
     Result := '你已取消更新组件升级，尚未替换应用文件。';
     Exit;
@@ -164,6 +181,8 @@ begin
   Result := '';
   NeedsRestart := False;
   UpgradePreparationReady := False;
+  UpgradeCorrelation := GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' + ExtractFileName(ExpandConstant('{tmp}'));
+  StringChangeEx(UpgradeCorrelation, '.', '-', True);
   ExtractTemporaryFile('close-owned-processes.ps1');
   ExtractTemporaryFile('NxTools.release.json');
   ExtractTemporaryFile('NxTools.release.sig');
@@ -173,9 +192,7 @@ begin
   if Result <> '' then Exit;
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   CleanupPath := ExpandConstant('{tmp}\close-owned-processes.ps1');
-  Correlation := GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' +
-    ExtractFileName(ExpandConstant('{tmp}'));
-  StringChangeEx(Correlation, '.', '-', True);
+  Correlation := UpgradeCorrelation;
   UpgradeCorrelation := Correlation;
   UpgradeStatePath := ExpandConstant('{app}\.NxTools.BrowserHost-upgrade.json');
   DiagnosticPath := ExpandConstant('{tmp}\preparation-') + Correlation + '.jsonl';
@@ -189,6 +206,8 @@ begin
     '" -NewSignaturePath "' + UpgradeNewSignaturePath + '"';
   if BootstrapMigrationDirectory <> '' then
     Parameters := Parameters + ' -BootstrapMigrationPackage "' + BootstrapMigrationDirectory + '"';
+  if BootstrapRepairMissing then
+    Parameters := Parameters + ' -RepairMissingBootstrap';
   Log('installer.upgrade_close.started correlation=' + Correlation);
   WizardForm.StatusLabel.Caption := '正在恢复上次安装并准备升级，请稍候…';
   if (BootstrapMigrationDirectory <> '') or
@@ -350,10 +369,88 @@ begin
   end;
 end;
 
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+function InitializeUninstall(): Boolean;
 var
-  ResultCode: Integer;
+  Choice: Integer;
 begin
-  if (CurUninstallStep = usUninstall) and OwnedIndexerService() then
-    Exec(ExpandConstant('{sys}\sc.exe'), 'stop NxToolsIndexerV1', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := True;
+  UninstallRemovePersonalData := True;
+  UninstallCorrelation := GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' +
+    ExtractFileName(ExpandConstant('{tmp}'));
+  StringChangeEx(UninstallCorrelation, '.', '-', True);
+  if UninstallSilent then Exit;
+  Choice := MsgBox(
+    '卸载将默认删除 NxTools 的设置、历史记录、缓存、日志和扩展运行数据，但保留已下载的最终文件。' +
+    Chr(13) + Chr(10) + Chr(13) + Chr(10) +
+    '选择“是”删除个人数据；选择“否”明确保留个人数据；选择“取消”退出卸载。',
+    mbConfirmation, MB_YESNOCANCEL);
+  if Choice = IDCANCEL then
+    Result := False
+  else
+    UninstallRemovePersonalData := Choice = IDYES;
+end;
+
+procedure RunProtectedUninstallCleanup();
+var
+  HostPath, Parameters: String;
+  ResultCode: Integer;
+  Started: Boolean;
+begin
+  if (not RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxToolsIndexerV1')) and
+    (not RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxToolsUpdateV1')) and
+    (not DirExists(ExpandConstant('{commonappdata}\NxTools\NxTools.Next\Service'))) and
+    (not DirExists(ExpandConstant('{commonappdata}\NxTools\NxTools.Next\Updater'))) then Exit;
+  HostPath := ExpandConstant('{app}\NxTools.PlatformHost.exe');
+  Parameters := '--uninstall-protected-components "' + ExpandConstant('{app}') +
+    '" ' + UninstallCorrelation;
+  Log('installer.protected_uninstall.authorization_requested correlation=' + UninstallCorrelation);
+  Started := ShellExec('runas', HostPath, Parameters, '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode);
+  if (not Started) or (ResultCode <> 0) then
+  begin
+    Log('installer.protected_uninstall.failed correlation=' + UninstallCorrelation +
+      ' code=' + IntToStr(ResultCode));
+    RaiseException('无法验证或删除 NxTools 受保护服务与部署；恢复现场和未知组件已保留。错误码：' +
+      IntToStr(ResultCode));
+  end;
+  Log('installer.protected_uninstall.completed correlation=' + UninstallCorrelation);
+end;
+
+procedure RunUninstallCleanup();
+var
+  PowerShellPath, CleanupPath, ClosePath, Parameters, Correlation: String;
+  ResultCode: Integer;
+  Started: Boolean;
+begin
+  PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  CleanupPath := ExpandConstant('{app}\installer-support\uninstall-cleanup.ps1');
+  ClosePath := ExpandConstant('{app}\installer-support\close-owned-processes.ps1');
+  Correlation := UninstallCorrelation;
+  Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + CleanupPath +
+    '" -Operation Uninstall -InstallDirectory "' + ExpandConstant('{app}') +
+    '" -ConfigRoot "' + ExpandConstant('{userappdata}\NxTools\NxTools.Next\config') +
+    '" -DataRoot "' + ExpandConstant('{userappdata}\NxTools\NxTools.Next\data') +
+    '" -CacheRoot "' + ExpandConstant('{localappdata}\NxTools\NxTools.Next\cache') +
+    '" -LogRoot "' + ExpandConstant('{localappdata}\NxTools\NxTools.Next\data\logs') +
+    '" -LocalProductRoot "' + ExpandConstant('{localappdata}\NxTools\NxTools.Next') +
+    '" -CloseLibraryPath "' + ClosePath + '" -CorrelationId "' + Correlation + '"';
+  if UninstallRemovePersonalData then Parameters := Parameters + ' -RemovePersonalData';
+  Log('installer.uninstall_cleanup.started correlation=' + Correlation +
+    ' remove_personal=' + IntToStr(Ord(UninstallRemovePersonalData)));
+  Started := Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if (not Started) or (ResultCode <> 0) then
+  begin
+    Log('installer.uninstall_cleanup.failed correlation=' + Correlation + ' code=' + IntToStr(ResultCode));
+    RaiseException('无法完成 NxTools 归属进程或卸载数据清理；未将失败视为成功。错误码：' + IntToStr(ResultCode));
+  end;
+  Log('installer.uninstall_cleanup.completed correlation=' + Correlation);
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    RunProtectedUninstallCleanup();
+    RunUninstallCleanup();
+  end;
 end;

@@ -201,9 +201,41 @@ Verified current NxTools.Next call chain for the link-detector tool settings and
 Verified 2026-10-02 local-target link-panel route contract:
 
 - `DetectedLinkKind` carries `Web`, `LocalFile` or `LocalDirectory`; detector acceptance remains limited to known Web targets and existing drive/UNC paths, with file-vs-directory determined by the filesystem.
-- `link_panel_route` honors the persisted global copy-only preference first (default `true`), so no kind launches while copy-only is enabled. When copy-only is disabled, local files map to `OpenShellTarget(SelectInExplorer)`, local directories map to `OpenShellTarget(Open)`, and only Web targets consult the opt-in browser-auto-open setting.
+- `ClipboardApplication::dispatch_link_panel_route` honors the current global copy-only preference first (default `true`), so ordinary rows never launch while copy-only is enabled. When copy-only is disabled, local files map to `OpenShellTarget(SelectInExplorer)`, local directories map to `OpenShellTarget(Open)`, and only Web targets consult the opt-in browser-auto-open setting. The view's `link_panel_route` describes explicit open targets only.
 - `link_panel_shell_command` is shared by production dispatch and tests. It preserves the original local target and rejects a Web kind on the shell branch; local targets are never synthesized into `https://` URLs.
-- The row removes its panel window before recording the copied echo, dispatching the selected route, and writing the original target back to the clipboard. Diagnostics use kind/length/correlation/result only, never the path or URL payload.
+- The row removes its own window before deferring owner routing; copy routes record echo suppression before writing the original target, and open routes dispatch only the typed Shell command. Diagnostics use kind/length/correlation/result only, never the path or URL payload.
+
+REF-01 current production contract (2026-11-09): `LinkPanelView::render` retains
+the 420-DIP single reusable Root popup, 28-DIP stateless ListItem rows, independent
+XSmall ghost `复制链接`/`复制路径` and named `打开链接`/`打开文件位置`/`打开文件夹`
+Button actions, and StatusBar footer. Component 0.8.0
+`vendor/gpui-component-080/src/list/list_item.rs::ListItem` exposes `child`,
+`on_click`, `accessibility_label` and focus through its base; the Button's own
+click/focus boundary is not transformed by a Toolbar parent. The released
+`button/button.rs::Button` supports the XSmall ghost tier and named labels;
+`status_bar.rs::StatusBar` accepts public `left`/`right` slots and supplies
+its own border/padding. The panel fixes its row/chrome bounds without repainting
+an ordinary control or moving an action into a Toolbar.
+
+`LinkPanelView` closes its own window first, then defers a window-identity-checked
+callback to `ClipboardApplication::dispatch_link_panel_route`. That owner reads
+the **current** persisted clipboard settings, not a render-time snapshot:
+`link_panel_copy_only` wins for Web, LocalFile and LocalDirectory; if it is off,
+Web requires `link_panel_auto_open_browser` to open, otherwise it copies; local
+file and directory still use the original C# Shell target actions. Named Copy
+always copies; named open always sends the typed Shell command, regardless of
+ordinary preferences. Echo suppression is recorded before writing clipboard
+text. Reusing a live window resets the old auto-hide task and placement/size;
+the old window's deferred callback cannot retire or route against a replacement.
+The earlier historical settings-independent UI amendment does not apply to
+ordinary row activation under REF-01. Tests:
+`rust/apps/nxtools-desktop/src/tools/polish_tests.rs::ref01_production_row_and_copy_pointer_key_release_use_current_preferences`,
+`::ref01_named_open_action_bypasses_ordinary_settings_without_copy`, and
+`rust/apps/nxtools-desktop/src/clipboard.rs::ref01_row_uses_saved_settings_at_activation_and_stale_close_preserves_reopened_panel`.
+
+The close/reopen lifecycle regression uses GPUI's existing window-closed observer to establish the replacement panel before deferred row dispatch, and asserts clipboard state at that boundary. A test must not assume that VisualTestContext::simulate_click returns before application deferred work has drained. Production callbacks remain next-turn and window-identity guarded; no extra application-turn delay or test-only dispatch controller is introduced.
+
+Explicit Copy uses the same close observer boundary in `clipboard_link_copy_tests.rs`: the replacement exists before the original Copy callback, sentinel clipboard and platform commands stay unchanged, and captured tracing has one copy_started plus exactly one copy_cancelled(reason=panel_replaced) with the same correlation and elapsed_ms. Normal and ownerless Copy each retain one copy_completed. No links/paths/clipboard text enter those events, and no extra deferred turn or retry is added.
 
 ## GPUI settings and popup ownership invariant
 
@@ -899,3 +931,78 @@ by efficiency.rs::number_shortcut_index's legacy empty-query branch. Require Con
 keep original item ID/query generation, Ctrl-first release, IME/editor/menu ownership and native
 success-only paste lifecycle. Ordinary numbers must reach the existing InputState without a paste
 command; do not add another dispatcher or global hook.
+
+## Capture staging ownership (2026-11-06)
+
+Legacy `Services/ClipboardCaptureService.cs` injects synchronous image-stream and image-file
+save delegates into the capture service. `Services/ClipboardHistoryService.cs::SaveImage` and
+`SaveImageFile` store the managed image before repository publication; caller source files are
+not disposable capture staging. This is distinct from Next's asynchronous C# to Rust transport.
+
+Verified Next boundary: `WindowsPlatformAdapter.EventWindow.ReadClipboardContent` creates the
+image, then `QueueCapturedEvent` stages native formats and publishes `ClipboardCapturedEvent`.
+`PlatformPipeClient` forwards paths, not file bytes. `clipboard_worker.rs::persist_capture` owns
+received staging through asset promotion and history commit and removes it on success, rejection
+and failure. A completed pipe write is not proof that this worker has consumed a path. Captures
+may survive a Host restart while the original Desktop still drains its worker queue.
+
+Required invariants: each newly created capture file has an owner before writing starts; partial
+writes and prepublication failures remove only those files; successful publication transfers
+ownership without deleting files needed by Rust. Stop/pause must retire unpublished tail work.
+Fallback paste files and the shared icon cache retain their separate owners. Recovery may retire
+only a recorded inactive capture run, never a live Host/Desktop run or unowned legacy flat files.
+This slice changes no layout, placement, focus, popup show/hide or native-format selection policy.
+
+Legacy native lifetime was traced through `Views/MainWindow.axaml.cs::OnOpened` ->
+`EnsureClipboardNativeService` -> `Services/ClipboardNativeService.Start` ->
+`ClipboardMessageWindowService` -> `ClipboardChanged` -> `CaptureClipboardSnapshotAsync` ->
+`ClipboardCaptureService.CaptureSnapshotAsync` -> native-format in-memory reads -> ViewModel save
+delegates -> `ClipboardHistoryService` -> `ClipboardRepository.Save`. `OnClosed` unsubscribes and
+disposes the native service's focus/hotkey/message-window owners; `MainWindowViewModel.Dispose`
+also disposes `ClipboardHistoryPopupDataSource` and unsubscribes `HistoryChanged`. The old
+HistoryService writes persistent images before its repository transaction without immediate
+failed-save compensation; Next keeps its stronger full-reference/shared-asset cleanup contract.
+
+Next's `ForegroundContextProvider.TryStageProcessIcon` returns a shared LocalAppData `IconCache`
+path. Capture transport must copy that icon into capture-owned staging before either side may
+delete it. Native capture listeners, message-window show/hide, focus restoration and fallback
+paste retention stay with their existing owners.
+
+## Capture image budget boundaries (2026-11-06)
+
+Rechecked legacy `ClipboardCaptureService.CaptureSnapshotAsync` and `TrySaveImageFile`:
+file/text image promotion failure preserves the original representation; native images prefer
+`ClipboardNativeFormatService.TryExtractImagePayload` PNG/DIB bytes and use lossless bitmap
+encoding only as fallback. Next's established canonical PNG pipeline remains unchanged here.
+Its capture settings bound encoded output bytes and pixels independently; the source file's
+compressed length is not a substitute for either bound. Over-budget images are skipped, not
+scaled or truncated, while independent text/file/native representations retain their owners.
+
+The native Image API must return an image before its dimensions can be inspected. File images
+can first use the existing GDI+ metadata read, then undergo the existing full validation only
+after the pixel budget passes. PNG output must stop at the configured encoded-byte budget.
+Canonical DIB conversion checks its existing32MiB pixel-buffer ceiling before explicit full validation and
+additional bitmap/DIB allocations. Codec initialization and native clipboard materialization
+can still allocate internally; these boundaries do not claim a process-wide memory ceiling.
+Capture staging ownership, partial-write cleanup, pause epochs, popup placement/focus and the
+separate direct-paste fallback lifetime stay unchanged.
+
+## Publication-tail payload ownership (2026-11-06)
+
+Legacy `ClipboardCaptureService.CaptureSnapshotAsync` passes native bytes/image streams to the
+synchronous HistoryService save delegates before returning; it has no asynchronous native-byte
+publication tail. Next's verified chain is `QueueCapturedEvent` -> source icon extraction and
+run-owned copy -> `StageNativeFormats` -> `ClipboardCapturedEvent` ->
+`PlatformEventEnvelopeFactory.Create` -> `PlatformPipeClient.ForwardEventsAsync`/`WriteLoopAsync`.
+Only paths, sizes and metadata cross that handoff; native-format arrays belong to the tail.
+
+Keep the original serial task chain and64-entry admission. Add payload-byte admission before
+scheduling: charge array LongLength and retained strings' UTF-16 bytes, not declared format size
+or file content length. The regular tail budget is32MiB; one larger legal capture may enter only
+when the tail is completely empty and excludes all other work until retired. Accepted order,
+existing drop throttling, pause epochs and staged-file ownership remain unchanged. Release the
+charge only after work/cleanup finishes and task-held payload references are cleared. A blocked
+or cancelled native call retains its charge until it actually returns; no replacement work or GC.
+This changes neither event/pipe queue capacities nor their existing frame/session cleanup.
+The bound covers charged tail payload, not the producer's current capture, CLR object overhead,
+native/IO buffers, downstream metadata or process working set.

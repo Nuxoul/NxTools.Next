@@ -75,3 +75,19 @@ physical Explorer/foreign targets, installed products, mixed DPI or user visuals
 Wrong: a directory has more items than the worker/cache concurrency so refuse it. Correct: complete
 immutable descriptor tree -> actual frame/native representation -> on-demand original worker ->
 independent lease/stream -> actual cleanup.
+
+## Scenario: Batch password wire
+### 1. Scope / Trigger
+Additive original ArchiveJob v1 fields for OPT-07; no new execution/entry/OLE authority. Evidence: `repo:rust/crates/nxtools-protocol/src/archive_job.rs`, `repo:csharp/NxTools.PlatformHost/Protocol/ArchiveJobContract.cs`.
+### 2. Signatures
+`ArchiveJobCommand.batch_id: Option<Uuid>` defaults absent/omitted. `ArchiveJobReply.remember_batch_password: bool` defaults false/omitted. `ArchiveJobAction::RetireBatch` serializes `retire_batch`; normal original identities/version validation remains.
+### 3. Contracts
+Non-nil batch when present; explicit remember requires bound batch plus Password-kind reply with non-null valid PrivatePassword. Cancellation/conflict cannot remember. Reply ticket operation must equal command operation; original session/generation/ticket owner validates live eligibility separately. Retirement has no request/reply and requires batch_id==operation_id==session_id, generation>0; production emits generation1. Legacy absent fields parse and reserialize without additions. Secret Debug remains redacted/drop-cleared. Protocol validates shape, not retained secret or scheduler state. Native eligibility/zeroing belongs to [PlatformHost](../../platformhost/archive-workflows.md).
+### 4. Validation & Error Matrix
+Absent optional fields -> original behavior. Nil batch, unbound remember, null-password remember, conflict remember, mismatched ticket or retirement identity -> InvalidRequest. Unknown version -> IncompatibleVersion. No fallback/replay/persistent candidate is introduced.
+### 5. Good/Base/Bad Cases
+Good: explicit matching password reply with bound batch. Base: CLI original constructors use None/false. Bad: batch UUID treated as native operation authority, or absent consent treated as true.
+### 6. Tests Required
+`opt07_batch_password_fields_preserve_legacy_and_bind_explicit_consent` asserts legacy omission/default, explicit consent binding, invalid shapes, retirement identity and private Debug. Preserve all original Job/protocol tests and symmetric C# strict parser/serialized-session fixtures. Old host support is not inferred from DTO compatibility.
+### 7. Wrong vs Correct
+Wrong: default-true/serialized secret history. Correct: additive omitted defaults -> typed strict validation -> current original session/ticket eligibility -> protected native owner.

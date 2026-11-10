@@ -1,0 +1,2637 @@
+{
+  "schema": 1,
+  "configuration": "Debug",
+  "cache_policy": "no_system_cache_flush",
+  "trials_per_boundary": 3,
+  "before_pair": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\opt05-before-pair\\Debug",
+  "after_pair": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\opt05-delivery-pair\\Debug",
+  "total_io_bytes": null,
+  "internal_codec_io_bytes": null,
+  "peak_memory_bytes": null,
+  "metric_scope": {
+    "zip_record_seeks": "local/descriptor admission only; not total seeks",
+    "tar_record_scans": "ordinary fixed-header parser; excludes strict edit parser",
+    "tar_plan_bytes": "cumulative admitted locator backing capacity; before HashMap, after ordinal Vec; not peak memory",
+    "normalization_allocations": "owned normalized results, not allocator calls",
+    "native_owner_latency": "owned native route including fixture staging and checkpoint assertions",
+    "format_cleanup_ms": "not independently timed; completion and exclusive reopen asserted"
+  },
+  "zip": {
+    "sources": [
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt05-zip-fd39e38d-a0de-41e0-bff9-fbc5647fb418\\measurements-before.json",
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt05-zip-fd39e38d-a0de-41e0-bff9-fbc5647fb418\\measurements-delivery.json"
+    ],
+    "before": {
+      "add": {
+        "latency_ms": {
+          "trials": [
+            342.334,
+            342.388,
+            336.92
+          ],
+          "median": 342.334,
+          "min": 336.92,
+          "max": 342.388
+        },
+        "zip_local_checks": 774,
+        "zip_descriptor_checks": 516,
+        "zip_record_seeks": 1034,
+        "zip_source_payload_decodes": 128,
+        "zip_addition_payload_decodes": 1,
+        "zip_candidate_payload_decodes": 129,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "comment": {
+        "latency_ms": {
+          "trials": [
+            339.216,
+            340.653,
+            343.7
+          ],
+          "median": 340.653,
+          "min": 339.216,
+          "max": 343.7
+        },
+        "zip_local_checks": 768,
+        "zip_descriptor_checks": 512,
+        "zip_record_seeks": 1024,
+        "zip_source_payload_decodes": 128,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 128,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "delete": {
+        "latency_ms": {
+          "trials": [
+            336.83,
+            338.574,
+            344.788
+          ],
+          "median": 338.574,
+          "min": 336.83,
+          "max": 344.788
+        },
+        "zip_local_checks": 766,
+        "zip_descriptor_checks": 511,
+        "zip_record_seeks": 1021,
+        "zip_source_payload_decodes": 128,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 127,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "metadata_extract_one": {
+        "latency_ms": {
+          "trials": [
+            23.222,
+            24.882,
+            24.261
+          ],
+          "median": 24.261,
+          "min": 23.222,
+          "max": 24.882
+        },
+        "zip_local_checks": 1025,
+        "zip_descriptor_checks": 1024,
+        "zip_record_seeks": 1537,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 639064
+      },
+      "metadata_open": {
+        "latency_ms": {
+          "trials": [
+            57.825,
+            57.47,
+            58.072
+          ],
+          "median": 57.825,
+          "min": 57.47,
+          "max": 58.072
+        },
+        "zip_local_checks": 2048,
+        "zip_descriptor_checks": 2048,
+        "zip_record_seeks": 3072,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 319532
+      },
+      "metadata_test": {
+        "latency_ms": {
+          "trials": [
+            35.941,
+            32.816,
+            33.328
+          ],
+          "median": 33.328,
+          "min": 32.816,
+          "max": 35.941
+        },
+        "zip_local_checks": 2048,
+        "zip_descriptor_checks": 1024,
+        "zip_record_seeks": 2560,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 319532
+      },
+      "overwrite": {
+        "latency_ms": {
+          "trials": [
+            333.621,
+            346.598,
+            338.955
+          ],
+          "median": 338.955,
+          "min": 333.621,
+          "max": 346.598
+        },
+        "zip_local_checks": 772,
+        "zip_descriptor_checks": 515,
+        "zip_record_seeks": 1031,
+        "zip_source_payload_decodes": 128,
+        "zip_addition_payload_decodes": 1,
+        "zip_candidate_payload_decodes": 128,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "rename": {
+        "latency_ms": {
+          "trials": [
+            338.734,
+            349.704,
+            344.509
+          ],
+          "median": 344.509,
+          "min": 338.734,
+          "max": 349.704
+        },
+        "zip_local_checks": 768,
+        "zip_descriptor_checks": 512,
+        "zip_record_seeks": 1024,
+        "zip_source_payload_decodes": 128,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 128,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      }
+    },
+    "after": {
+      "add": {
+        "latency_ms": {
+          "trials": [
+            331.672,
+            336.455,
+            339.314
+          ],
+          "median": 336.455,
+          "min": 331.672,
+          "max": 339.314
+        },
+        "zip_local_checks": 258,
+        "zip_descriptor_checks": 258,
+        "zip_record_seeks": 388,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 129,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "comment": {
+        "latency_ms": {
+          "trials": [
+            339.054,
+            332.392,
+            334.68
+          ],
+          "median": 334.68,
+          "min": 332.392,
+          "max": 339.054
+        },
+        "zip_local_checks": 256,
+        "zip_descriptor_checks": 256,
+        "zip_record_seeks": 384,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 128,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "delete": {
+        "latency_ms": {
+          "trials": [
+            338.549,
+            335.778,
+            342.103
+          ],
+          "median": 338.549,
+          "min": 335.778,
+          "max": 342.103
+        },
+        "zip_local_checks": 255,
+        "zip_descriptor_checks": 255,
+        "zip_record_seeks": 382,
+        "zip_source_payload_decodes": 1,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 127,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "metadata_extract_one": {
+        "latency_ms": {
+          "trials": [
+            25.195,
+            24.47,
+            24.97
+          ],
+          "median": 24.97,
+          "min": 24.47,
+          "max": 25.195
+        },
+        "zip_local_checks": 1024,
+        "zip_descriptor_checks": 1024,
+        "zip_record_seeks": 1536,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 639064
+      },
+      "metadata_open": {
+        "latency_ms": {
+          "trials": [
+            46.73,
+            42.092,
+            44.788
+          ],
+          "median": 44.788,
+          "min": 42.092,
+          "max": 46.73
+        },
+        "zip_local_checks": 1024,
+        "zip_descriptor_checks": 1024,
+        "zip_record_seeks": 1536,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 319532
+      },
+      "metadata_test": {
+        "latency_ms": {
+          "trials": [
+            25.448,
+            23.08,
+            22.53
+          ],
+          "median": 23.08,
+          "min": 22.53,
+          "max": 25.448
+        },
+        "zip_local_checks": 1024,
+        "zip_descriptor_checks": 1024,
+        "zip_record_seeks": 1536,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 319532
+      },
+      "overwrite": {
+        "latency_ms": {
+          "trials": [
+            334.436,
+            335.016,
+            334.296
+          ],
+          "median": 334.436,
+          "min": 334.296,
+          "max": 335.016
+        },
+        "zip_local_checks": 257,
+        "zip_descriptor_checks": 257,
+        "zip_record_seeks": 386,
+        "zip_source_payload_decodes": 1,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 128,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      },
+      "rename": {
+        "latency_ms": {
+          "trials": [
+            327.139,
+            333.532,
+            337.739
+          ],
+          "median": 333.532,
+          "min": 327.139,
+          "max": 337.739
+        },
+        "zip_local_checks": 256,
+        "zip_descriptor_checks": 256,
+        "zip_record_seeks": 384,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 128,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 0,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 0,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 2,
+        "revision_bytes": 16815148
+      }
+    }
+  },
+  "tar": {
+    "sources": [
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\opt05-tar-92Vjo1\\before-baseline.json",
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\opt05-tar-92Vjo1\\delivery-baseline.json"
+    ],
+    "before": {
+      "Tar/engine_open": {
+        "latency_ms": {
+          "trials": [
+            73.231,
+            69.974,
+            77.288
+          ],
+          "median": 73.231,
+          "min": 69.974,
+          "max": 77.288
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 1,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 4259840,
+        "terminal_to_exit_ms": null
+      },
+      "Tar/worker_extract": {
+        "latency_ms": {
+          "trials": [
+            437.514,
+            432.843,
+            442.376
+          ],
+          "median": 437.514,
+          "min": 432.843,
+          "max": 442.376
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 448,
+        "revision_passes": 5,
+        "revision_bytes": 5324800,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.29,
+            2.588,
+            2.517
+          ],
+          "median": 2.517,
+          "min": 2.29,
+          "max": 2.588
+        }
+      },
+      "Tar/worker_materialize": {
+        "latency_ms": {
+          "trials": [
+            161.376,
+            156.905,
+            162.431
+          ],
+          "median": 161.376,
+          "min": 156.905,
+          "max": 162.431
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 448,
+        "revision_passes": 5,
+        "revision_bytes": 5324800,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.311,
+            2.297,
+            2.279
+          ],
+          "median": 2.297,
+          "min": 2.279,
+          "max": 2.311
+        }
+      },
+      "Tar/worker_retained": {
+        "latency_ms": {
+          "trials": [
+            230.06,
+            234.805,
+            231.89
+          ],
+          "median": 231.89,
+          "min": 230.06,
+          "max": 234.805
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 2,
+        "tar_index_builds": 3,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 3,
+        "tar_plan_bytes": 1344,
+        "revision_passes": 7,
+        "revision_bytes": 7454720,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.288,
+            2.688,
+            2.289
+          ],
+          "median": 2.289,
+          "min": 2.288,
+          "max": 2.688
+        }
+      },
+      "Tar/worker_test": {
+        "latency_ms": {
+          "trials": [
+            146.496,
+            122.005,
+            122.119
+          ],
+          "median": 122.119,
+          "min": 122.005,
+          "max": 146.496
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 2,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 4259840,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.659,
+            2.329,
+            2.219
+          ],
+          "median": 2.329,
+          "min": 2.219,
+          "max": 2.659
+        }
+      },
+      "TarGz/engine_open": {
+        "latency_ms": {
+          "trials": [
+            11.077,
+            11.589,
+            12.527
+          ],
+          "median": 11.589,
+          "min": 11.077,
+          "max": 12.527
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 1,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 7592,
+        "terminal_to_exit_ms": null
+      },
+      "TarGz/worker_extract": {
+        "latency_ms": {
+          "trials": [
+            357.92,
+            360.951,
+            372.331
+          ],
+          "median": 360.951,
+          "min": 357.92,
+          "max": 372.331
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 448,
+        "revision_passes": 5,
+        "revision_bytes": 9490,
+        "terminal_to_exit_ms": {
+          "trials": [
+            3.064,
+            2.463,
+            2.598
+          ],
+          "median": 2.598,
+          "min": 2.463,
+          "max": 3.064
+        }
+      },
+      "TarGz/worker_materialize": {
+        "latency_ms": {
+          "trials": [
+            82.677,
+            82.821,
+            88.442
+          ],
+          "median": 82.821,
+          "min": 82.677,
+          "max": 88.442
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 448,
+        "revision_passes": 5,
+        "revision_bytes": 9490,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.575,
+            2.306,
+            2.271
+          ],
+          "median": 2.306,
+          "min": 2.271,
+          "max": 2.575
+        }
+      },
+      "TarGz/worker_retained": {
+        "latency_ms": {
+          "trials": [
+            112.813,
+            110.988,
+            117.065
+          ],
+          "median": 112.813,
+          "min": 110.988,
+          "max": 117.065
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 2,
+        "tar_index_builds": 3,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 3,
+        "tar_plan_bytes": 1344,
+        "revision_passes": 7,
+        "revision_bytes": 13286,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.572,
+            2.399,
+            2.64
+          ],
+          "median": 2.572,
+          "min": 2.399,
+          "max": 2.64
+        }
+      },
+      "TarGz/worker_test": {
+        "latency_ms": {
+          "trials": [
+            64.241,
+            63.98,
+            61.37
+          ],
+          "median": 63.98,
+          "min": 61.37,
+          "max": 64.241
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 2,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 7592,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.44,
+            2.237,
+            2.681
+          ],
+          "median": 2.44,
+          "min": 2.237,
+          "max": 2.681
+        }
+      },
+      "TarXz/engine_open": {
+        "latency_ms": {
+          "trials": [
+            54.794,
+            53.919,
+            59.136
+          ],
+          "median": 54.794,
+          "min": 53.919,
+          "max": 59.136
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 1,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 2272,
+        "terminal_to_exit_ms": null
+      },
+      "TarXz/worker_extract": {
+        "latency_ms": {
+          "trials": [
+            401.817,
+            414.903,
+            400.693
+          ],
+          "median": 401.817,
+          "min": 400.693,
+          "max": 414.903
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 448,
+        "revision_passes": 5,
+        "revision_bytes": 2840,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.518,
+            2.628,
+            2.299
+          ],
+          "median": 2.518,
+          "min": 2.299,
+          "max": 2.628
+        }
+      },
+      "TarXz/worker_materialize": {
+        "latency_ms": {
+          "trials": [
+            125.037,
+            125.359,
+            129.322
+          ],
+          "median": 125.359,
+          "min": 125.037,
+          "max": 129.322
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 448,
+        "revision_passes": 5,
+        "revision_bytes": 2840,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.446,
+            2.639,
+            2.364
+          ],
+          "median": 2.446,
+          "min": 2.364,
+          "max": 2.639
+        }
+      },
+      "TarXz/worker_retained": {
+        "latency_ms": {
+          "trials": [
+            142.585,
+            135.205,
+            135.557
+          ],
+          "median": 135.557,
+          "min": 135.205,
+          "max": 142.585
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 2,
+        "tar_index_builds": 3,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 3,
+        "tar_plan_bytes": 1344,
+        "revision_passes": 7,
+        "revision_bytes": 3976,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.679,
+            2.254,
+            2.66
+          ],
+          "median": 2.66,
+          "min": 2.254,
+          "max": 2.679
+        }
+      },
+      "TarXz/worker_test": {
+        "latency_ms": {
+          "trials": [
+            105.286,
+            102.643,
+            106.336
+          ],
+          "median": 105.286,
+          "min": 102.643,
+          "max": 106.336
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 2129920,
+        "tar_record_scans": 2,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 38,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 2272,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.508,
+            2.885,
+            2.259
+          ],
+          "median": 2.508,
+          "min": 2.259,
+          "max": 2.885
+        }
+      }
+    },
+    "after": {
+      "Tar/engine_open": {
+        "latency_ms": {
+          "trials": [
+            80.585,
+            74.378,
+            75.62
+          ],
+          "median": 75.62,
+          "min": 74.378,
+          "max": 80.585
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 256,
+        "revision_passes": 4,
+        "revision_bytes": 4259840,
+        "terminal_to_exit_ms": null
+      },
+      "Tar/worker_extract": {
+        "latency_ms": {
+          "trials": [
+            463.174,
+            477.001,
+            462.72
+          ],
+          "median": 463.174,
+          "min": 462.72,
+          "max": 477.001
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 256,
+        "revision_passes": 5,
+        "revision_bytes": 5324800,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.36,
+            3.113,
+            2.589
+          ],
+          "median": 2.589,
+          "min": 2.36,
+          "max": 3.113
+        }
+      },
+      "Tar/worker_materialize": {
+        "latency_ms": {
+          "trials": [
+            170.478,
+            165.169,
+            166.508
+          ],
+          "median": 166.508,
+          "min": 165.169,
+          "max": 170.478
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 256,
+        "revision_passes": 5,
+        "revision_bytes": 5324800,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.879,
+            2.505,
+            2.771
+          ],
+          "median": 2.771,
+          "min": 2.505,
+          "max": 2.879
+        }
+      },
+      "Tar/worker_retained": {
+        "latency_ms": {
+          "trials": [
+            252.584,
+            248.927,
+            240.329
+          ],
+          "median": 248.927,
+          "min": 240.329,
+          "max": 252.584
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 3,
+        "tar_plan_bytes": 256,
+        "revision_passes": 7,
+        "revision_bytes": 7454720,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.589,
+            2.563,
+            2.818
+          ],
+          "median": 2.589,
+          "min": 2.563,
+          "max": 2.818
+        }
+      },
+      "Tar/worker_test": {
+        "latency_ms": {
+          "trials": [
+            132.087,
+            131.003,
+            132.203
+          ],
+          "median": 132.087,
+          "min": 131.003,
+          "max": 132.203
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 0,
+        "outer_decoded_bytes": 0,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 256,
+        "revision_passes": 4,
+        "revision_bytes": 4259840,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.572,
+            2.943,
+            2.917
+          ],
+          "median": 2.917,
+          "min": 2.572,
+          "max": 2.943
+        }
+      },
+      "TarGz/engine_open": {
+        "latency_ms": {
+          "trials": [
+            7.054,
+            6.594,
+            7.461
+          ],
+          "median": 7.054,
+          "min": 6.594,
+          "max": 7.461
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 256,
+        "revision_passes": 4,
+        "revision_bytes": 7592,
+        "terminal_to_exit_ms": null
+      },
+      "TarGz/worker_extract": {
+        "latency_ms": {
+          "trials": [
+            382.05,
+            372.283,
+            383.683
+          ],
+          "median": 382.05,
+          "min": 372.283,
+          "max": 383.683
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 256,
+        "revision_passes": 5,
+        "revision_bytes": 9490,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.819,
+            2.895,
+            3.108
+          ],
+          "median": 2.895,
+          "min": 2.819,
+          "max": 3.108
+        }
+      },
+      "TarGz/worker_materialize": {
+        "latency_ms": {
+          "trials": [
+            86.972,
+            85.285,
+            85.668
+          ],
+          "median": 85.668,
+          "min": 85.285,
+          "max": 86.972
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 256,
+        "revision_passes": 5,
+        "revision_bytes": 9490,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.928,
+            2.858,
+            2.894
+          ],
+          "median": 2.894,
+          "min": 2.858,
+          "max": 2.928
+        }
+      },
+      "TarGz/worker_retained": {
+        "latency_ms": {
+          "trials": [
+            124.227,
+            121.093,
+            124.286
+          ],
+          "median": 124.227,
+          "min": 121.093,
+          "max": 124.286
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 3,
+        "tar_plan_bytes": 256,
+        "revision_passes": 7,
+        "revision_bytes": 13286,
+        "terminal_to_exit_ms": {
+          "trials": [
+            3.223,
+            2.815,
+            3.086
+          ],
+          "median": 3.086,
+          "min": 2.815,
+          "max": 3.223
+        }
+      },
+      "TarGz/worker_test": {
+        "latency_ms": {
+          "trials": [
+            59.72,
+            60.242,
+            59.934
+          ],
+          "median": 59.934,
+          "min": 59.72,
+          "max": 60.242
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 256,
+        "revision_passes": 4,
+        "revision_bytes": 7592,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.648,
+            2.885,
+            2.819
+          ],
+          "median": 2.819,
+          "min": 2.648,
+          "max": 2.885
+        }
+      },
+      "TarXz/engine_open": {
+        "latency_ms": {
+          "trials": [
+            25.595,
+            23.954,
+            24.867
+          ],
+          "median": 24.867,
+          "min": 23.954,
+          "max": 25.595
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 256,
+        "revision_passes": 4,
+        "revision_bytes": 2272,
+        "terminal_to_exit_ms": null
+      },
+      "TarXz/worker_extract": {
+        "latency_ms": {
+          "trials": [
+            392.51,
+            393.34,
+            403.896
+          ],
+          "median": 393.34,
+          "min": 392.51,
+          "max": 403.896
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 256,
+        "revision_passes": 5,
+        "revision_bytes": 2840,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.551,
+            2.6,
+            2.652
+          ],
+          "median": 2.6,
+          "min": 2.551,
+          "max": 2.652
+        }
+      },
+      "TarXz/worker_materialize": {
+        "latency_ms": {
+          "trials": [
+            101.323,
+            102.38,
+            102.266
+          ],
+          "median": 102.266,
+          "min": 101.323,
+          "max": 102.38
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 256,
+        "revision_passes": 5,
+        "revision_bytes": 2840,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.513,
+            2.82,
+            3.112
+          ],
+          "median": 2.82,
+          "min": 2.513,
+          "max": 3.112
+        }
+      },
+      "TarXz/worker_retained": {
+        "latency_ms": {
+          "trials": [
+            142.957,
+            145.867,
+            150.856
+          ],
+          "median": 145.867,
+          "min": 142.957,
+          "max": 150.856
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 3,
+        "tar_plan_bytes": 256,
+        "revision_passes": 7,
+        "revision_bytes": 3976,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.828,
+            2.62,
+            2.899
+          ],
+          "median": 2.828,
+          "min": 2.62,
+          "max": 2.899
+        }
+      },
+      "TarXz/worker_test": {
+        "latency_ms": {
+          "trials": [
+            82.177,
+            81.722,
+            81.159
+          ],
+          "median": 81.722,
+          "min": 81.159,
+          "max": 82.177
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 1064960,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 19,
+        "tar_payload_seeks": 16,
+        "tar_plan_bytes": 256,
+        "revision_passes": 4,
+        "revision_bytes": 2272,
+        "terminal_to_exit_ms": {
+          "trials": [
+            2.496,
+            2.459,
+            2.468
+          ],
+          "median": 2.468,
+          "min": 2.459,
+          "max": 2.496
+        }
+      }
+    }
+  },
+  "native_compound": {
+    "sources": [
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt05-formats-6c6b11ef-f2da-402a-bd32-64dcfb7fe6b0\\measurements-before.json",
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt05-formats-6c6b11ef-f2da-402a-bd32-64dcfb7fe6b0\\measurements-delivery.json"
+    ],
+    "before": {
+      "targz/browser_open": {
+        "latency_ms": {
+          "trials": [
+            279.3434,
+            123.1438,
+            124.5205
+          ],
+          "median": 124.5205,
+          "min": 123.1438,
+          "max": 279.3434
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 1,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 4120,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/extract_all": {
+        "latency_ms": {
+          "trials": [
+            208.2992,
+            196.8351,
+            179.6982
+          ],
+          "median": 196.8351,
+          "min": 179.6982,
+          "max": 208.2992
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 48,
+        "revision_passes": 5,
+        "revision_bytes": 5150,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/extract_selected_last": {
+        "latency_ms": {
+          "trials": [
+            153.1564,
+            151.9105,
+            168.7343
+          ],
+          "median": 153.1564,
+          "min": 151.9105,
+          "max": 168.7343
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 48,
+        "revision_passes": 5,
+        "revision_bytes": 5150,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/materialize_last": {
+        "latency_ms": {
+          "trials": [
+            222.4164,
+            172.7061,
+            169.6726
+          ],
+          "median": 172.7061,
+          "min": 169.6726,
+          "max": 222.4164
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 48,
+        "revision_passes": 5,
+        "revision_bytes": 5150,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/test": {
+        "latency_ms": {
+          "trials": [
+            167.7274,
+            107.5344,
+            155.0104
+          ],
+          "median": 155.0104,
+          "min": 107.5344,
+          "max": 167.7274
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 4120,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/browser_open": {
+        "latency_ms": {
+          "trials": [
+            187.6754,
+            154.3103,
+            185.6826
+          ],
+          "median": 185.6826,
+          "min": 154.3103,
+          "max": 187.6754
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 1,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 1888,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/extract_all": {
+        "latency_ms": {
+          "trials": [
+            245.6554,
+            213.0203,
+            213.7818
+          ],
+          "median": 213.7818,
+          "min": 213.0203,
+          "max": 245.6554
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 48,
+        "revision_passes": 5,
+        "revision_bytes": 2360,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/extract_selected_last": {
+        "latency_ms": {
+          "trials": [
+            154.2532,
+            186.4233,
+            216.6677
+          ],
+          "median": 186.4233,
+          "min": 154.2532,
+          "max": 216.6677
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 48,
+        "revision_passes": 5,
+        "revision_bytes": 2360,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/materialize_last": {
+        "latency_ms": {
+          "trials": [
+            233.7272,
+            219.3311,
+            203.3807
+          ],
+          "median": 219.3311,
+          "min": 203.3807,
+          "max": 233.7272
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 48,
+        "revision_passes": 5,
+        "revision_bytes": 2360,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/test": {
+        "latency_ms": {
+          "trials": [
+            200.8216,
+            186.2691,
+            182.728
+          ],
+          "median": 186.2691,
+          "min": 182.728,
+          "max": 200.8216
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 2,
+        "outer_decoded_bytes": 266240,
+        "tar_record_scans": 2,
+        "tar_index_builds": 0,
+        "tar_header_seeks": 6,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 0,
+        "revision_passes": 4,
+        "revision_bytes": 1888,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      }
+    },
+    "after": {
+      "targz/browser_open": {
+        "latency_ms": {
+          "trials": [
+            273.6955,
+            140.5518,
+            139.7851
+          ],
+          "median": 140.5518,
+          "min": 139.7851,
+          "max": 273.6955
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 16,
+        "revision_passes": 4,
+        "revision_bytes": 4120,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/extract_all": {
+        "latency_ms": {
+          "trials": [
+            190.0125,
+            197.3614,
+            182.8156
+          ],
+          "median": 190.0125,
+          "min": 182.8156,
+          "max": 197.3614
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 16,
+        "revision_passes": 5,
+        "revision_bytes": 5150,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/extract_selected_last": {
+        "latency_ms": {
+          "trials": [
+            145.5847,
+            185.6364,
+            189.9398
+          ],
+          "median": 185.6364,
+          "min": 145.5847,
+          "max": 189.9398
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 16,
+        "revision_passes": 5,
+        "revision_bytes": 5150,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/materialize_last": {
+        "latency_ms": {
+          "trials": [
+            241.4472,
+            173.6733,
+            156.6306
+          ],
+          "median": 173.6733,
+          "min": 156.6306,
+          "max": 241.4472
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 16,
+        "revision_passes": 5,
+        "revision_bytes": 5150,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "targz/test": {
+        "latency_ms": {
+          "trials": [
+            183.8709,
+            109.5198,
+            154.7801
+          ],
+          "median": 154.7801,
+          "min": 109.5198,
+          "max": 183.8709
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 16,
+        "revision_passes": 4,
+        "revision_bytes": 4120,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/browser_open": {
+        "latency_ms": {
+          "trials": [
+            154.4675,
+            168.0206,
+            123.6474
+          ],
+          "median": 154.4675,
+          "min": 123.6474,
+          "max": 168.0206
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 0,
+        "tar_plan_bytes": 16,
+        "revision_passes": 4,
+        "revision_bytes": 1888,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/extract_all": {
+        "latency_ms": {
+          "trials": [
+            212.9547,
+            210.3806,
+            181.3322
+          ],
+          "median": 210.3806,
+          "min": 181.3322,
+          "max": 212.9547
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 16,
+        "revision_passes": 5,
+        "revision_bytes": 2360,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/extract_selected_last": {
+        "latency_ms": {
+          "trials": [
+            216.0691,
+            188.6314,
+            202.265
+          ],
+          "median": 202.265,
+          "min": 188.6314,
+          "max": 216.0691
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 16,
+        "revision_passes": 5,
+        "revision_bytes": 2360,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/materialize_last": {
+        "latency_ms": {
+          "trials": [
+            221.5,
+            201.9514,
+            192.0014
+          ],
+          "median": 201.9514,
+          "min": 192.0014,
+          "max": 221.5
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 1,
+        "tar_plan_bytes": 16,
+        "revision_passes": 5,
+        "revision_bytes": 2360,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      },
+      "tarxz/test": {
+        "latency_ms": {
+          "trials": [
+            186.4918,
+            145.7786,
+            154.6683
+          ],
+          "median": 154.6683,
+          "min": 145.7786,
+          "max": 186.4918
+        },
+        "zip_local_checks": 0,
+        "zip_descriptor_checks": 0,
+        "zip_record_seeks": 0,
+        "zip_source_payload_decodes": 0,
+        "zip_addition_payload_decodes": 0,
+        "zip_candidate_payload_decodes": 0,
+        "outer_decodes": 1,
+        "outer_decoded_bytes": 133120,
+        "tar_record_scans": 1,
+        "tar_index_builds": 1,
+        "tar_header_seeks": 3,
+        "tar_payload_seeks": 2,
+        "tar_plan_bytes": 16,
+        "revision_passes": 4,
+        "revision_bytes": 1888,
+        "cleanup_complete": true,
+        "cleanup_ms": null
+      }
+    }
+  },
+  "native_owner": {
+    "sources": [
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt05-native-3bf47d6a-a512-45e6-a6a1-57b619ae1533\\measurements-before.json",
+      "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt05-native-3bf47d6a-a512-45e6-a6a1-57b619ae1533\\measurements-regression-037badee65f6428bb24280b5071cf94f.json"
+    ],
+    "before": {
+      "latency_ms": {
+        "trials": [
+          170.2125,
+          126.8095,
+          130.3768
+        ],
+        "median": 130.3768,
+        "min": 126.8095,
+        "max": 170.2125
+      },
+      "cleanup_ms": {
+        "trials": [
+          2.144,
+          0.4456,
+          0.4096
+        ],
+        "median": 0.4456,
+        "min": 0.4096,
+        "max": 2.144
+      },
+      "old_object_reads": [
+        14,
+        14,
+        14
+      ],
+      "old_object_bytes": [
+        117442220,
+        117442220,
+        117442220
+      ],
+      "output_reads": [
+        2,
+        2,
+        2
+      ],
+      "held_partial_bytes": [
+        8388728,
+        8388728,
+        8388728
+      ],
+      "phase_ms": {
+        "edit_open": {
+          "trials": [
+            30.4054,
+            13.8941,
+            13.4863
+          ],
+          "median": 13.8941,
+          "min": 13.4863,
+          "max": 30.4054
+        },
+        "target_admission": {
+          "trials": [
+            10.0781,
+            6.6854,
+            6.744399999999999
+          ],
+          "median": 6.744399999999999,
+          "min": 6.6854,
+          "max": 10.0781
+        },
+        "edit_verification": {
+          "trials": [
+            14.157600000000002,
+            12.341899999999999,
+            12.363799999999998
+          ],
+          "median": 12.363799999999998,
+          "min": 12.341899999999999,
+          "max": 14.157600000000002
+        },
+        "candidate_write_readback_verify": {
+          "trials": [
+            32.645999999999994,
+            23.338900000000002,
+            24.7541
+          ],
+          "median": 24.7541,
+          "min": 23.338900000000002,
+          "max": 32.645999999999994
+        },
+        "complete_edit_reads": {
+          "trials": [
+            15.970399999999998,
+            12.686599999999999,
+            12.923099999999998
+          ],
+          "median": 12.923099999999998,
+          "min": 12.686599999999999,
+          "max": 15.970399999999998
+        },
+        "verified_native_commit": {
+          "trials": [
+            66.95070000000001,
+            57.8613,
+            60.103300000000004
+          ],
+          "median": 60.103300000000004,
+          "min": 57.8613,
+          "max": 66.95070000000001
+        }
+      }
+    },
+    "after": {
+      "latency_ms": {
+        "trials": [
+          91.2668,
+          87.5449,
+          87.2523
+        ],
+        "median": 87.5449,
+        "min": 87.2523,
+        "max": 91.2668
+      },
+      "cleanup_ms": {
+        "trials": [
+          0.5595,
+          0.5379,
+          0.5881
+        ],
+        "median": 0.5595,
+        "min": 0.5379,
+        "max": 0.5881
+      },
+      "old_object_reads": [
+        7,
+        7,
+        7
+      ],
+      "old_object_bytes": [
+        58721110,
+        58721110,
+        58721110
+      ],
+      "output_reads": [
+        2,
+        2,
+        2
+      ],
+      "held_partial_bytes": [
+        8388728,
+        8388728,
+        8388728
+      ],
+      "phase_ms": {
+        "edit_open": {
+          "trials": [
+            8.3138,
+            7.1794,
+            7.185
+          ],
+          "median": 7.185,
+          "min": 7.1794,
+          "max": 8.3138
+        },
+        "target_admission": {
+          "trials": [
+            7.816399999999998,
+            6.9594,
+            7.1926
+          ],
+          "median": 7.1926,
+          "min": 6.9594,
+          "max": 7.816399999999998
+        },
+        "edit_verification": {
+          "trials": [
+            6.942500000000003,
+            6.588000000000001,
+            6.891399999999999
+          ],
+          "median": 6.891399999999999,
+          "min": 6.588000000000001,
+          "max": 6.942500000000003
+        },
+        "candidate_write_readback_verify": {
+          "trials": [
+            24.579800000000002,
+            24.184299999999997,
+            26.445500000000003
+          ],
+          "median": 24.579800000000002,
+          "min": 24.184299999999997,
+          "max": 26.445500000000003
+        },
+        "complete_edit_reads": {
+          "trials": [
+            7.110699999999994,
+            7.841799999999999,
+            6.7490999999999985
+          ],
+          "median": 7.110699999999994,
+          "min": 6.7490999999999985,
+          "max": 7.841799999999999
+        },
+        "verified_native_commit": {
+          "trials": [
+            36.49720000000001,
+            34.7907,
+            32.7876
+          ],
+          "median": 34.7907,
+          "min": 32.7876,
+          "max": 36.49720000000001
+        }
+      }
+    }
+  },
+  "selection": {
+    "before": {
+      "extraction_plan": {
+        "latency_ms": {
+          "trials": [
+            163061.09,
+            164915.449,
+            179398.011
+          ],
+          "median": 164915.449,
+          "min": 163061.09,
+          "max": 179398.011
+        },
+        "work": {
+          "catalog_visits": 268435456,
+          "directory_roots": 4096,
+          "normalization_allocations": 268505088,
+          "ordinal_probes": 65536,
+          "path_normalizations": 268435456,
+          "plan_visits": 65536,
+          "prefix_allocations": 4096,
+          "prefix_probes": 268435456,
+          "projection_normalizations": 65536,
+          "root_normalizations": 4096
+        }
+      },
+      "sevenz_edit_plan": {
+        "latency_ms": {
+          "trials": [
+            19519.247,
+            19431.353,
+            19461.484
+          ],
+          "median": 19461.484,
+          "min": 19431.353,
+          "max": 19519.247
+        },
+        "work": {
+          "catalog_visits": 268435456,
+          "directory_roots": 4096,
+          "normalization_allocations": 0,
+          "ordinal_probes": 4096,
+          "path_normalizations": 0,
+          "plan_visits": 65536,
+          "prefix_allocations": 4096,
+          "prefix_probes": 268435456,
+          "projection_normalizations": 0,
+          "root_normalizations": 0
+        }
+      },
+      "extract": {
+        "latency_ms": {
+          "trials": [
+            7240.986,
+            7088.868,
+            7069.453
+          ],
+          "median": 7088.868,
+          "min": 7069.453,
+          "max": 7240.986
+        },
+        "work": {
+          "catalog_visits": 268435456,
+          "path_normalizations": 268435456,
+          "root_normalizations": 0,
+          "projection_normalizations": 0,
+          "normalization_allocations": 0,
+          "directory_roots": 4096,
+          "prefix_probes": 268435456,
+          "prefix_allocations": 4096,
+          "ordinal_probes": 0,
+          "plan_visits": 0
+        }
+      },
+      "delete": {
+        "latency_ms": {
+          "trials": [
+            7907.17,
+            7660.492,
+            7573.246
+          ],
+          "median": 7660.492,
+          "min": 7573.246,
+          "max": 7907.17
+        },
+        "work": {
+          "catalog_visits": 268435456,
+          "path_normalizations": 268435456,
+          "root_normalizations": 0,
+          "projection_normalizations": 0,
+          "normalization_allocations": 0,
+          "directory_roots": 4096,
+          "prefix_probes": 268435456,
+          "prefix_allocations": 4096,
+          "ordinal_probes": 0,
+          "plan_visits": 0
+        }
+      },
+      "edit_admission": {
+        "latency_ms": {
+          "trials": [
+            2021.746,
+            1877.106,
+            1947.31
+          ],
+          "median": 1947.31,
+          "min": 1877.106,
+          "max": 2021.746
+        },
+        "work": {
+          "catalog_visits": 0,
+          "path_normalizations": 0,
+          "root_normalizations": 0,
+          "projection_normalizations": 0,
+          "normalization_allocations": 0,
+          "directory_roots": 0,
+          "prefix_probes": 0,
+          "prefix_allocations": 0,
+          "ordinal_probes": 260048896,
+          "plan_visits": 0
+        }
+      },
+      "browser_model_drag": {
+        "latency_ms": {
+          "trials": [
+            102124.124,
+            102603.683,
+            102370.244
+          ],
+          "median": 102370.244,
+          "min": 102124.124,
+          "max": 102603.683
+        },
+        "work": {
+          "catalog_visits": 65536,
+          "path_normalizations": 65536,
+          "root_normalizations": 4096,
+          "projection_normalizations": 0,
+          "normalization_allocations": 30720,
+          "directory_roots": 4096,
+          "prefix_probes": 268431360,
+          "prefix_allocations": 268431360,
+          "ordinal_probes": 133236736,
+          "plan_visits": 0
+        }
+      }
+    },
+    "after": {
+      "extraction_plan": {
+        "latency_ms": {
+          "trials": [
+            5874.848,
+            6094.364,
+            5919.188
+          ],
+          "median": 5919.188,
+          "min": 5874.848,
+          "max": 6094.364
+        },
+        "work": {
+          "catalog_visits": 65536,
+          "directory_roots": 128,
+          "metadata_visits": 65536,
+          "normalization_allocations": 30720,
+          "ordinal_probes": 69632,
+          "path_normalizations": 61440,
+          "plan_visits": 65536,
+          "prefix_allocations": 4096,
+          "prefix_probes": 557055,
+          "projection_normalizations": 0,
+          "root_normalizations": 4096
+        }
+      },
+      "sevenz_edit_plan": {
+        "latency_ms": {
+          "trials": [
+            73.323,
+            79.047,
+            74.969
+          ],
+          "median": 74.969,
+          "min": 73.323,
+          "max": 79.047
+        },
+        "work": {
+          "catalog_visits": 65536,
+          "directory_roots": 128,
+          "metadata_visits": 65536,
+          "normalization_allocations": 0,
+          "ordinal_probes": 4096,
+          "path_normalizations": 61440,
+          "plan_visits": 65536,
+          "prefix_allocations": 4096,
+          "prefix_probes": 557055,
+          "projection_normalizations": 0,
+          "root_normalizations": 4096
+        }
+      },
+      "extract": {
+        "latency_ms": {
+          "trials": [
+            76.941,
+            85.262,
+            80.663
+          ],
+          "median": 80.663,
+          "min": 76.941,
+          "max": 85.262
+        },
+        "work": {
+          "catalog_visits": 65536,
+          "path_normalizations": 61440,
+          "root_normalizations": 4096,
+          "projection_normalizations": 0,
+          "normalization_allocations": 0,
+          "directory_roots": 4096,
+          "prefix_probes": 864255,
+          "prefix_allocations": 4096,
+          "ordinal_probes": 69632,
+          "plan_visits": 0,
+          "metadata_visits": 135168
+        }
+      },
+      "delete": {
+        "latency_ms": {
+          "trials": [
+            96.079,
+            97.043,
+            88.097
+          ],
+          "median": 96.079,
+          "min": 88.097,
+          "max": 97.043
+        },
+        "work": {
+          "catalog_visits": 65536,
+          "path_normalizations": 61440,
+          "root_normalizations": 4096,
+          "projection_normalizations": 0,
+          "normalization_allocations": 0,
+          "directory_roots": 4096,
+          "prefix_probes": 864255,
+          "prefix_allocations": 4096,
+          "ordinal_probes": 69632,
+          "plan_visits": 0,
+          "metadata_visits": 135168
+        }
+      },
+      "edit_admission": {
+        "latency_ms": {
+          "trials": [
+            20.093,
+            18.687,
+            19.252
+          ],
+          "median": 19.252,
+          "min": 18.687,
+          "max": 20.093
+        },
+        "work": {
+          "catalog_visits": 0,
+          "path_normalizations": 0,
+          "root_normalizations": 0,
+          "projection_normalizations": 0,
+          "normalization_allocations": 0,
+          "directory_roots": 0,
+          "prefix_probes": 0,
+          "prefix_allocations": 0,
+          "ordinal_probes": 69632,
+          "plan_visits": 0,
+          "metadata_visits": 135168
+        }
+      },
+      "browser_model_drag": {
+        "latency_ms": {
+          "trials": [
+            39643.27,
+            37990.884,
+            35898.795
+          ],
+          "median": 37990.884,
+          "min": 35898.795,
+          "max": 39643.27
+        },
+        "work": {
+          "catalog_visits": 65536,
+          "path_normalizations": 61440,
+          "root_normalizations": 4096,
+          "projection_normalizations": 0,
+          "normalization_allocations": 30720,
+          "directory_roots": 128,
+          "prefix_probes": 557055,
+          "prefix_allocations": 4096,
+          "ordinal_probes": 69632,
+          "plan_visits": 0,
+          "metadata_visits": 69760
+        }
+      }
+    },
+    "sources": [
+      "opt05-selection-archive-before.log",
+      "opt05-selection-desktop-before.log",
+      "opt05-delivery-format-after.log",
+      "opt05-final-desktop-preservation-selected.log"
+    ]
+  }
+}

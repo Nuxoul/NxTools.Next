@@ -10,6 +10,10 @@ struct Fixture {
 }
 
 fn fixture(cx: &mut TestAppContext) -> Fixture {
+    fixture_with_persistence(cx, false)
+}
+
+fn fixture_with_persistence(cx: &mut TestAppContext, persistent: bool) -> Fixture {
     cx.update(gpui_kit::init);
     cx.update(crate::theme::apply_component_theme);
     let directory = tempfile::tempdir().expect("isolated settings/task rem fixture");
@@ -20,11 +24,16 @@ fn fixture(cx: &mut TestAppContext) -> Fixture {
         .save_to(&paths.join("config.json"))
         .expect("synthetic config");
     let (platform, endpoint) = nxtools_ipc::platform_bridge(32);
+    let engine = if persistent {
+        DownloadEngine::open(paths.join("downloads.sqlite3")).expect("isolated SQLite engine")
+    } else {
+        DownloadEngine::open_in_memory().expect("memory engine, no execution")
+    };
     let application = cx.update(|cx| {
         let notifications = cx.new(|_| NotificationCenter::default());
         cx.new(|cx| {
             DownloadApplication::new(
-                DownloadEngine::open_in_memory().expect("memory engine, no execution"),
+                engine,
                 Rc::new(platform),
                 notifications,
                 DownloadRuntimeContext {
@@ -177,54 +186,110 @@ fn audit06_aux_settings_ordinary_input_and_category_roles_follow_root(cx: &mut T
 }
 
 #[gpui_kit::test]
-fn audit06_aux_task_metrics_and_identity_follow_root_inside_fixed_client(cx: &mut TestAppContext) {
+fn download_layout_progress_filename_main_metrics_and_fixed_footer_do_not_require_body_scroll(
+    cx: &mut TestAppContext,
+) {
     let f = fixture(cx);
-    let (_, _, mut surface) = task(&f, cx);
-    let original = surface.read(|cx| ComponentTheme::global(cx).clone());
-    for base in [16.0, 14.0, 18.0] {
-        set_base(&mut surface, base);
-        let metric = surface
-            .debug_bounds("download-window-metric-速度-value")
-            .expect("production metric text");
-        let identity = surface
-            .debug_bounds("download-window-progress-identity")
-            .expect("identity");
-        let root = surface
-            .debug_bounds("download-task-window-shell")
-            .expect("root");
-        let footer = surface
-            .debug_bounds("download-task-window-footer")
-            .expect("footer");
-        assert!(
-            (metric.size.height - px(16.0 * base / 16.0)).abs() <= px(0.5),
-            "ordinary metric line base={base}: {metric:?}"
-        );
-        assert_eq!(identity.size.height, px(32.0 * base / 16.0));
-        assert_eq!(root.size, size(px(440.0), px(184.0)));
-        assert_eq!(footer.size.height, px(44.0));
-        let body = surface
-            .debug_bounds("download-task-window-body")
-            .expect("fixed content viewport");
-        let before = surface
+    let (_, view, mut surface) = task(&f, cx);
+    view.update(&mut surface, |view, cx| {
+        let task = view.snapshot.as_mut().expect("original task snapshot");
+        task.final_path = Some(PathBuf::from(format!(
+            "D:\\Synthetic\\{}\\下载文件.bin",
+            "非常长的文件名称不会挤掉展开操作".repeat(12)
+        )));
+        view.progress = Some(DownloadProgress {
+            task_id: view.task_id,
+            downloaded_bytes: 2048,
+            total_bytes: Some(4096),
+            bytes_per_second: 256,
+            active_connections: 2,
+            segments: Vec::new(),
+        });
+        cx.notify();
+    });
+    draw(&mut surface);
+    let body = surface
+        .debug_bounds("download-task-window-body")
+        .expect("fixed content viewport");
+    let footer = surface
+        .debug_bounds("download-task-window-footer")
+        .expect("fixed footer");
+    let filename = surface
+        .debug_bounds("download-window-progress-name")
+        .expect("single-line filename");
+    let toggle = surface
+        .debug_bounds("download-window-details-toggle")
+        .expect("details action");
+    let metric = surface
+        .debug_bounds("download-window-metric-速度-value")
+        .expect("body metric");
+    assert!(
+        filename.size.height > metric.size.height,
+        "filename must be one typography tier larger: {filename:?} {metric:?}"
+    );
+    assert!(filename.right() <= toggle.left());
+    assert!(toggle.right() <= body.right());
+    assert!(
+        surface
+            .debug_bounds("download-window-metric-状态-value")
+            .is_none(),
+        "window title already owns task status"
+    );
+    assert!(
+        surface
             .debug_bounds("download-window-progress-capabilities")
-            .expect("capability line");
-        wheel(&mut surface, body.center(), -5.0, 12);
-        let after = surface
-            .debug_bounds("download-window-progress-capabilities")
-            .expect("reachable capability line");
-        assert!(
-            after.bottom() <= footer.top() + px(0.5) && after.bottom() > body.top(),
-            "collapsed content end reachable base={base}: {after:?}"
-        );
-        if before.bottom() > footer.top() {
-            assert!(after.top() < before.top(), "overflow must actually scroll");
-        }
-        assert_eq!(
-            surface.debug_bounds("download-task-window-footer"),
-            Some(footer)
-        );
+            .is_none(),
+        "technical capability details belong to the existing expansion"
+    );
+    let selectors = [
+        "download-window-progress-name",
+        "download-window-server-value",
+        "download-window-progress-track",
+        "download-window-metric-已下载-value",
+        "download-window-metric-速度-value",
+        "download-window-metric-剩余-value",
+    ];
+    let before = selectors
+        .iter()
+        .map(|selector| {
+            surface
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("main progress item missing: {selector}"))
+        })
+        .collect::<Vec<_>>();
+    for bounds in &before {
+        assert!(bounds.top() >= body.top() && bounds.bottom() <= footer.top());
     }
-    surface.update(|_, cx| ComponentTheme::update(cx, |theme| *theme = original));
+    wheel(&mut surface, body.center(), -8.0, 12);
+    let after = selectors
+        .iter()
+        .map(|selector| surface.debug_bounds(selector).expect("stable main item"))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        before, after,
+        "collapsed 440x184 main progress must not require body scrolling"
+    );
+    assert_eq!(
+        surface
+            .debug_bounds("download-task-window-shell")
+            .expect("root")
+            .size,
+        size(px(440.0), px(184.0))
+    );
+    assert_eq!(footer.size.height, px(44.0));
+    let cancel = surface
+        .debug_bounds("download-window-cancel")
+        .expect("original cancel");
+    assert!(cancel.top() >= footer.top() && cancel.bottom() <= footer.bottom());
+    surface.simulate_mouse_move(filename.center(), None, Modifiers::default());
+    cx.executor().advance_clock(Duration::from_millis(700));
+    draw(&mut surface);
+    assert!(
+        surface
+            .debug_bounds("download-window-progress-name-tooltip")
+            .is_some(),
+        "full long filename remains available"
+    );
 }
 
 fn key(surface: &mut VisualTestContext, key: &str) {
@@ -318,6 +383,125 @@ fn reveal(
 }
 
 #[gpui_kit::test]
+fn download_layout_category_select_heading_help_and_add_share_row_with_narrow_wrap(
+    cx: &mut TestAppContext,
+) {
+    for dimensions in [(984.0, 650.0), (720.0, 480.0)] {
+        let f = fixture(cx);
+        let (_, mut surface) = settings(&f, cx);
+        surface.simulate_resize(size(px(dimensions.0), px(dimensions.1)));
+        draw(&mut surface);
+        let header = reveal(&mut surface, "download-settings-category-heading");
+        let snapshots = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        let select = snapshots
+            .iter()
+            .find(|node| {
+                node.role() == Some(gpui_kit::Role::ComboBox) && node.label() == Some("选择分类")
+            })
+            .expect("released Select keeps the existing selected-category owner")
+            .bounds();
+        let heading = surface
+            .debug_bounds("download-settings-category-heading-title")
+            .expect("category rules heading");
+        let help = surface
+            .debug_bounds("download-settings-category-heading-help")
+            .expect("category rules help");
+        let add = surface
+            .debug_bounds("download-settings-category-add-button")
+            .expect("official add action");
+        let form = surface
+            .debug_bounds("download-settings-category-form")
+            .expect("actual rules below header");
+        let content = surface
+            .debug_bounds("download-settings-shell-content")
+            .expect("settings viewport");
+        let footer = surface
+            .debug_bounds("download-settings-shell-footer")
+            .expect("fixed footer");
+        for bounds in [select, heading, help, add] {
+            assert!(bounds.left() >= header.left() && bounds.right() <= header.right());
+            assert!(bounds.top() >= header.top() && bounds.bottom() <= header.bottom());
+        }
+        assert!(header.bottom() <= form.top());
+        assert!(add.bottom() <= footer.top() && footer.bottom() <= px(dimensions.1));
+        assert!(content.bottom() <= footer.top());
+        if dimensions.0 >= 900.0 {
+            for bounds in [heading, help, add] {
+                assert!(
+                    (bounds.center().y - select.center().y).abs() <= px(1.0),
+                    "ordinary desktop header must stay on one row: {select:?} {bounds:?}"
+                );
+            }
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn download_layout_category_select_keeps_existing_draft_and_durable_apply_owner(
+    cx: &mut TestAppContext,
+) {
+    let f = fixture(cx);
+    let (view, mut surface) = settings(&f, cx);
+    let path = f.directory.path().join("config.json");
+    let before = std::fs::read(&path).expect("settings bytes before local selection");
+    let _ = reveal(&mut surface, "download-settings-category-select");
+    let select = surface
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| {
+            node.role() == Some(gpui_kit::Role::ComboBox) && node.label() == Some("选择分类")
+        })
+        .expect("actual category Select trigger")
+        .bounds();
+    surface.simulate_click(select.center(), Modifiers::default());
+    draw(&mut surface);
+    cx.executor().advance_clock(Duration::from_millis(180));
+    draw(&mut surface);
+    let select_nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    assert!(
+        select_nodes.iter().any(|node| {
+            node.role() == Some(gpui_kit::Role::ComboBox)
+                && node.label() == Some("选择分类")
+                && node.expanded() == Some(true)
+        }),
+        "the real category trigger must expand the released Select"
+    );
+    let second_label = view.read_with(&surface, |view, cx| {
+        view.categories[1].name.read(cx).value().to_string()
+    });
+    let option = surface
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| node.label() == Some(second_label.as_str()))
+        .expect("second category option")
+        .bounds();
+    surface.simulate_click(option.center(), Modifiers::default());
+    draw(&mut surface);
+    assert_eq!(
+        view.read_with(&surface, |view, _| view.selected_category),
+        Some(1)
+    );
+    assert_eq!(
+        std::fs::read(&path).expect("selection must remain draft-only"),
+        before
+    );
+    let name = reveal(&mut surface, "download-settings-category-name-field");
+    surface.simulate_click(name.center(), Modifiers::default());
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("同一草稿保存分类");
+    draw(&mut surface);
+    let apply = surface
+        .debug_bounds("download-settings-apply")
+        .expect("original Apply");
+    surface.simulate_click(apply.center(), Modifiers::default());
+    surface.run_until_parked();
+    let saved: AppConfig = serde_json::from_slice(
+        &std::fs::read(&path).expect("original durable section saver output"),
+    )
+    .expect("saved settings");
+    assert_eq!(saved.download.categories[1].name, "同一草稿保存分类");
+}
+#[gpui_kit::test]
 fn audit06_aux_settings_long_category_error_scroll_and_once_actions(cx: &mut TestAppContext) {
     for dimensions in [(984.0, 650.0), (720.0, 480.0)] {
         for base in [16.0, 14.0, 18.0] {
@@ -348,55 +532,114 @@ fn audit06_aux_settings_long_category_error_scroll_and_once_actions(cx: &mut Tes
                         })
                         .collect();
                     view.selected_category = Some(0);
+                    view.sync_category_select(window, cx);
                     cx.notify();
                 })
             });
-            let heading = reveal(&mut surface, "download-settings-category-heading");
-            assert!((heading.size.height - px(32.0 * base / 16.0)).abs() <= px(0.5));
-            let _ = reveal(&mut surface, "download-settings-category-add");
-            let outer = surface
-                .debug_bounds("download-settings-category-master")
-                .expect("fixed master budget");
-            let add = surface
-                .debug_bounds("download-settings-category-add")
-                .expect("original action rail");
+            let _ = reveal(&mut surface, "download-settings-category-heading");
+            let selector = surface
+                .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+                .into_iter()
+                .find(|node| {
+                    node.role() == Some(gpui_kit::Role::ComboBox)
+                        && node.label() == Some("选择分类")
+                })
+                .expect("official category Select")
+                .bounds();
             let content = surface
                 .debug_bounds("download-settings-shell-content")
-                .expect("bounded content");
-            let footer = surface
-                .debug_bounds("download-settings-shell-footer")
-                .expect("footer");
-            let master = gpui_kit::Bounds::from_corners(
-                gpui_kit::point(
-                    outer.left() + px(1.0),
-                    outer.top().max(content.top() + px(64.0)),
-                ),
-                gpui_kit::point(outer.right() - px(1.0), add.top().min(footer.top())),
-            );
-            wheel(&mut surface, master.center(), -8.0, 24);
-            let last = surface
-                .debug_bounds("download-settings-category-23")
-                .expect("last category");
+                .expect("content");
+            assert!(selector.top() >= content.top() && selector.bottom() <= content.bottom());
+            let heading = surface
+                .debug_bounds("download-settings-category-heading")
+                .expect("editor");
+            assert!(heading.size.height >= px(32.0 * base / 16.0) - px(0.5));
             assert!(
-                last.top() >= master.top() && last.bottom() <= master.bottom() + px(0.5),
-                "last original row reachable base={base} dimensions={dimensions:?}: {last:?} {master:?}"
+                surface
+                    .debug_bounds("download-settings-category-master-scroll")
+                    .is_none()
             );
-            let action_id = gpui_kit::ElementId::from(gpui_kit::SharedString::from(
-                "download-settings-category-23-action",
-            ));
-            let hit = surface.update(|window, _| {
-                gpui_kit::base::test_support::snapshots(window)
-                    .into_iter()
-                    .find(|node| node.path().last() == Some(&action_id))
-                    .expect("actual category Button")
-                    .bounds()
+            assert!(
+                surface
+                    .debug_bounds("download-settings-category-form-scroll")
+                    .is_none()
+            );
+            surface.simulate_click(selector.center(), Modifiers::default());
+            draw(&mut surface);
+            cx.executor().advance_clock(Duration::from_millis(180));
+            draw(&mut surface);
+            let last_name = view.read_with(&surface, |v, cx| {
+                v.categories[23].name.read(cx).value().to_string()
             });
-            surface.simulate_click(hit.center(), Modifiers::default());
+            let popup = surface
+                .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+                .into_iter()
+                .find(|node| {
+                    node.role() == Some(gpui_kit::Role::TextInput)
+                        && node.label() == Some("搜索分类")
+                })
+                .expect("official Select search field")
+                .bounds();
+            let menu_bottom = (popup.bottom() + px(220.0 * base / 16.0)).min(px(dimensions.1));
+            let mut clicked = false;
+            for _ in 0..32 {
+                let snapshots =
+                    surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+                let options = snapshots
+                    .iter()
+                    .filter(|node| {
+                        node.role() == Some(gpui_kit::Role::Label)
+                            && node.visible()
+                            && node
+                                .label()
+                                .is_some_and(|label| label.starts_with("合成分类"))
+                            && node.bounds().top() >= popup.bottom()
+                            && node.bounds().bottom() <= menu_bottom
+                    })
+                    .collect::<Vec<_>>();
+                assert!(options.len() < 24, "the official list must remain bounded");
+                if let Some(last) = options
+                    .iter()
+                    .find(|node| node.label() == Some(last_name.as_str()))
+                {
+                    surface.simulate_click(last.bounds().center(), Modifiers::default());
+                    clicked = true;
+                    break;
+                }
+                let scroll_anchor = options
+                    .iter()
+                    .min_by(|left, right| {
+                        left.bounds()
+                            .top()
+                            .partial_cmp(&right.bounds().top())
+                            .unwrap()
+                    })
+                    .expect("a visible official option for pointer scrolling")
+                    .bounds()
+                    .center();
+                wheel(&mut surface, scroll_anchor, -4.0, 1);
+            }
+            assert!(
+                clicked,
+                "last option must scroll into the official popup: {popup:?}, {dimensions:?}, rem={base}"
+            );
             draw(&mut surface);
             assert_eq!(
                 view.read_with(&surface, |v, _| v.selected_category),
                 Some(23),
-                "actual category Button hit={hit:?} viewport={master:?} row={last:?}"
+                "last category from official scrollable menu: {popup:?}"
+            );
+            let form = surface
+                .debug_bounds("download-settings-category-form")
+                .expect("original form");
+            assert!(form.size.height > px(0.0));
+            let url = reveal(&mut surface, "download-settings-category-url-field");
+            assert!(
+                url.bottom()
+                    <= surface
+                        .debug_bounds("download-settings-shell-footer")
+                        .expect("footer")
+                        .top()
             );
             let control = reveal(&mut surface, "download-settings-category-up-control");
             surface.simulate_click(control.center(), Modifiers::default());
@@ -566,12 +809,19 @@ fn audit06_aux_task_details_last_segment_and_real_toggle_cancel_keep_budget(
             cx.notify();
         });
         draw(&mut surface);
+        draw(&mut surface);
         let toggle = surface
             .debug_bounds("download-window-details-toggle")
             .expect("original disclosure");
         surface.simulate_click(toggle.center(), Modifiers::default());
         draw(&mut surface);
         assert!(view.read_with(&surface, |v, _| v.details_expanded));
+        assert!(
+            surface
+                .debug_bounds("download-window-progress-capabilities")
+                .is_some(),
+            "resume, limit, connection, and segment summary move into expansion"
+        );
         surface.simulate_resize(download_task_window_size_for_details(
             DownloadWindowPhase::Progress,
             true,
@@ -783,5 +1033,675 @@ fn audit06_aux_task_failed_completed_long_content_and_close_keep_fixed_policy(
             assert_eq!(f.application.read_with(cx, |app, _| app.tasks().len()), 1);
             cx.update(|cx| ComponentTheme::update(cx, |theme| *theme = original));
         }
+    }
+}
+
+#[gpui_kit::test]
+fn ref06_global_speed_typing_is_draft_and_enter_submits(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let (view, mut surface) = settings(&f, cx);
+    select_page(&mut surface, DownloadSettingsPage::Transfer);
+    view.update_in(&mut surface, |view, window, cx| {
+        view.speed_limit_kib
+            .update(cx, |input, cx| input.focus(window, cx));
+    });
+    surface.simulate_keystrokes("ctrl-a");
+    for digit in ["1", "0", "0"] {
+        surface.simulate_input(digit);
+        draw(&mut surface);
+        assert_eq!(
+            f.application
+                .read_with(cx, |app, _| app.engine.global_speed_limit()),
+            None,
+            "partial numeric input must not apply a rate"
+        );
+    }
+    surface.simulate_keystrokes("enter");
+    draw(&mut surface);
+    assert_eq!(
+        f.application
+            .read_with(cx, |app, _| app.engine.global_speed_limit()),
+        Some(100 * 1024),
+        "complete Enter submits the original global speed command"
+    );
+}
+
+#[gpui_kit::test]
+fn ref06_task_details_exposes_original_limit_editor(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let (_, view, mut surface) = task(&f, cx);
+    view.update(&mut surface, |view, cx| {
+        view.details_expanded = true;
+        cx.notify();
+    });
+    surface.simulate_resize(download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        true,
+    ));
+    draw(&mut surface);
+    assert!(
+        surface
+            .debug_bounds("download-task-speed-limit-input")
+            .is_some(),
+        "expanded original task details expose a deliberate numeric speed editor"
+    );
+}
+
+fn global_rate(f: &Fixture, cx: &TestAppContext) -> Option<u64> {
+    f.application
+        .read_with(cx, |app, _| app.engine.global_speed_limit())
+}
+
+fn edit_global(view: &Entity<DownloadSettingsView>, surface: &mut VisualTestContext, value: &str) {
+    view.update_in(surface, |view, window, cx| {
+        view.speed_limit_kib
+            .update(cx, |input, cx| input.focus(window, cx));
+    });
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input(value);
+    draw(surface);
+}
+
+#[gpui_kit::test]
+fn ref06_global_enter_blur_escape_invalid_and_disable(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let (view, mut surface) = settings(&f, cx);
+    select_page(&mut surface, DownloadSettingsPage::Transfer);
+    edit_global(&view, &mut surface, "100");
+    surface.simulate_keystrokes("enter");
+    surface.simulate_keystrokes("tab");
+    draw(&mut surface);
+    assert_eq!(global_rate(&f, cx), Some(100 * 1024));
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.submissions),
+        1
+    );
+    edit_global(&view, &mut surface, "999");
+    surface.simulate_keystrokes("escape");
+    draw(&mut surface);
+    assert_eq!(
+        view.read_with(cx, |view, cx| view
+            .speed_limit_kib
+            .read(cx)
+            .value()
+            .to_string()),
+        "100"
+    );
+    assert_eq!(global_rate(&f, cx), Some(100 * 1024));
+    for invalid in ["", "abc", "-1", "1.5", "18446744073709551615"] {
+        edit_global(&view, &mut surface, invalid);
+        surface.simulate_keystrokes("enter");
+        draw(&mut surface);
+        assert_eq!(global_rate(&f, cx), Some(100 * 1024));
+        assert!(view.read_with(cx, |view, _| view.speed_limit_edit.error.is_some()));
+        assert!(
+            surface
+                .debug_bounds("download-settings-speed-limit-error")
+                .is_some()
+        );
+    }
+    edit_global(&view, &mut surface, "64");
+    surface.simulate_keystrokes("tab");
+    draw(&mut surface);
+    assert_eq!(
+        global_rate(&f, cx),
+        Some(64 * 1024),
+        "focus loss commits once"
+    );
+    edit_global(&view, &mut surface, "0");
+    surface.simulate_keystrokes("enter");
+    draw(&mut surface);
+    assert_eq!(
+        global_rate(&f, cx),
+        None,
+        "zero uses original unlimited representation"
+    );
+}
+
+#[gpui_kit::test]
+fn ref06_global_storage_failure_retry_and_reopen(cx: &mut TestAppContext) {
+    let f = fixture_with_persistence(cx, true);
+    f.application.read_with(cx, |app, _| {
+        app.engine
+            .set_global_speed_limit(Some(64 * 1024))
+            .expect("initial intent")
+    });
+    let database = f.directory.path().join("downloads.sqlite3");
+    let connection = rusqlite::Connection::open(&database).expect("storage observer");
+    connection.execute_batch("CREATE TRIGGER reject_speed BEFORE UPDATE ON download_settings BEGIN SELECT RAISE(ABORT, 'synthetic'); END;").expect("failure injector");
+    let (view, mut surface) = settings(&f, cx);
+    select_page(&mut surface, DownloadSettingsPage::Transfer);
+    edit_global(&view, &mut surface, "100");
+    surface.simulate_keystrokes("enter");
+    draw(&mut surface);
+    assert_eq!(global_rate(&f, cx), Some(64 * 1024));
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        Some(64 * 1024)
+    );
+    assert!(view.read_with(cx, |view, _| view.speed_limit_edit.error.is_some()));
+    assert_eq!(
+        DownloadEngine::open(&database)
+            .expect("reopen failed save")
+            .global_speed_limit(),
+        Some(64 * 1024)
+    );
+    connection
+        .execute_batch("DROP TRIGGER reject_speed")
+        .expect("allow retry");
+    surface.simulate_keystrokes("enter");
+    draw(&mut surface);
+    assert_eq!(global_rate(&f, cx), Some(100 * 1024));
+    assert_eq!(
+        DownloadEngine::open(&database)
+            .expect("reopen saved intent")
+            .global_speed_limit(),
+        Some(100 * 1024)
+    );
+    tab_button(&mut surface, "download-settings-cancel-button");
+    key(&mut surface, "space");
+    cx.run_until_parked();
+    let (reopened, _) = settings(&f, cx);
+    assert_eq!(
+        reopened.read_with(cx, |view, cx| view
+            .speed_limit_kib
+            .read(cx)
+            .value()
+            .to_string()),
+        "100"
+    );
+}
+
+#[gpui_kit::test]
+fn ref06_task_keyboard_commits_once_preserves_ceilings_and_reopens(cx: &mut TestAppContext) {
+    let f = fixture_with_persistence(cx, true);
+    f.application.read_with(cx, |app, _| {
+        app.engine
+            .set_global_speed_limit(Some(64 * 1024))
+            .expect("global ceiling");
+        app.engine
+            .set_runtime_speed_cap(Some(32 * 1024), uuid::Uuid::new_v4())
+            .expect("runtime ceiling");
+    });
+    let (task_id, view, mut surface) = task(&f, cx);
+    let toggle = surface
+        .debug_bounds("download-window-details-toggle")
+        .expect("original details action");
+    surface.simulate_click(toggle.center(), Modifiers::default());
+    surface.simulate_resize(download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        true,
+    ));
+    draw(&mut surface);
+    let bounds = surface
+        .debug_bounds("download-task-speed-limit-input")
+        .expect("official input bounds");
+    let body = surface
+        .debug_bounds("download-window-details")
+        .expect("original details bounds");
+    assert!(
+        bounds.origin.x >= body.origin.x
+            && bounds.right() <= body.right()
+            && bounds.bottom() <= body.bottom(),
+        "input={bounds:?}, details={body:?}"
+    );
+    let input = view.read_with(cx, |view, _| {
+        view.speed_limit_kib.clone().expect("stable InputState")
+    });
+    input.update_in(&mut surface, |input, window, cx| input.focus(window, cx));
+    surface.simulate_keystrokes("ctrl-a");
+    for digit in ["1", "0", "0"] {
+        surface.simulate_input(digit);
+        draw(&mut surface);
+        assert_eq!(
+            f.application.read_with(cx, |app, _| app
+                .engine
+                .task(task_id)
+                .expect("query")
+                .expect("task")
+                .task
+                .request()
+                .speed_limit_bytes_per_second),
+            None
+        );
+    }
+    let events = f.application.read_with(cx, |app, _| {
+        app.engine.subscribe_events().expect("bounded observer")
+    });
+    surface.simulate_keystrokes("enter");
+    surface.simulate_keystrokes("tab");
+    draw(&mut surface);
+    let changed = std::iter::from_fn(|| events.try_recv().ok()).filter(|event| matches!(&event.event, DownloadEvent::TaskChanged { task } if task.id() == task_id)).count();
+    assert_eq!(
+        changed, 1,
+        "one durable TaskChanged for Enter followed by blur"
+    );
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.submissions),
+        1
+    );
+    assert_eq!(
+        f.application
+            .read_with(cx, |app, _| app.engine.effective_global_speed_limit()),
+        Some(32 * 1024)
+    );
+    let reopened =
+        DownloadEngine::open(f.directory.path().join("downloads.sqlite3")).expect("reopen task");
+    assert_eq!(
+        reopened
+            .task(task_id)
+            .expect("query")
+            .expect("task")
+            .task
+            .request()
+            .speed_limit_bytes_per_second,
+        Some(100 * 1024)
+    );
+    input.update_in(&mut surface, |input, window, cx| input.focus(window, cx));
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("999");
+    surface.simulate_keystrokes("escape");
+    draw(&mut surface);
+    assert_eq!(
+        input.read_with(cx, |input, _| input.value().to_string()),
+        "100"
+    );
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.submissions),
+        1
+    );
+    f.application
+        .update(cx, |app, cx| app.close_task_window(task_id, cx));
+    cx.run_until_parked();
+    f.application
+        .update(cx, |app, cx| app.request_task_window(task_id, cx));
+    cx.run_until_parked();
+    let restored = f.application.read_with(cx, |app, _| {
+        app.task_windows
+            .get(&task_id)
+            .expect("reopened window")
+            .view
+            .clone()
+    });
+    assert_eq!(
+        restored.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        Some(100 * 1024)
+    );
+}
+
+#[gpui_kit::test]
+fn ref06_task_invalid_storage_failure_retry_and_disable(cx: &mut TestAppContext) {
+    let f = fixture_with_persistence(cx, true);
+    let (task_id, view, mut surface) = task(&f, cx);
+    let toggle = surface
+        .debug_bounds("download-window-details-toggle")
+        .expect("details action");
+    surface.simulate_click(toggle.center(), Modifiers::default());
+    surface.simulate_resize(download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        true,
+    ));
+    draw(&mut surface);
+    let input = view.read_with(cx, |view, _| {
+        view.speed_limit_kib.clone().expect("original input")
+    });
+    let edit = |surface: &mut VisualTestContext, value: &str| {
+        input.update_in(surface, |input, window, cx| input.focus(window, cx));
+        surface.simulate_keystrokes("ctrl-a");
+        surface.simulate_input(value);
+        surface.simulate_keystrokes("enter");
+        draw(surface);
+    };
+    edit(&mut surface, "100");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        Some(100 * 1024)
+    );
+    for invalid in ["", "abc", "-1", "1.5", "18446744073709551615"] {
+        edit(&mut surface, invalid);
+        assert_eq!(
+            view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+            Some(100 * 1024)
+        );
+        assert!(view.read_with(cx, |view, _| view.speed_limit_edit.error.is_some()));
+        assert!(
+            surface
+                .debug_bounds("download-task-speed-limit-error")
+                .is_some()
+        );
+    }
+    let database = f.directory.path().join("downloads.sqlite3");
+    let connection = rusqlite::Connection::open(&database).expect("failure injector");
+    connection.execute_batch("CREATE TRIGGER reject_task_speed BEFORE UPDATE ON download_tasks BEGIN SELECT RAISE(ABORT, 'synthetic'); END;").expect("reject save");
+    edit(&mut surface, "64");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        Some(100 * 1024)
+    );
+    assert!(view.read_with(cx, |view, _| view.speed_limit_edit.error.is_some()));
+    assert_eq!(
+        f.application.read_with(cx, |app, _| app
+            .engine
+            .task(task_id)
+            .expect("query")
+            .expect("task")
+            .task
+            .request()
+            .speed_limit_bytes_per_second),
+        Some(100 * 1024)
+    );
+    connection
+        .execute_batch("DROP TRIGGER reject_task_speed")
+        .expect("allow retry");
+    edit(&mut surface, "64");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        Some(64 * 1024)
+    );
+    let reopened = DownloadEngine::open(&database).expect("reopen intent");
+    assert_eq!(
+        reopened
+            .task(task_id)
+            .expect("query")
+            .expect("task")
+            .task
+            .request()
+            .speed_limit_bytes_per_second,
+        Some(64 * 1024)
+    );
+    edit(&mut surface, "0");
+    assert_eq!(
+        view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        None
+    );
+    assert_eq!(
+        input.entity_id(),
+        view.read_with(cx, |view, _| view
+            .speed_limit_kib
+            .as_ref()
+            .expect("same input")
+            .entity_id())
+    );
+}
+
+#[gpui_kit::test]
+fn ref06_closed_task_window_retires_deferred_limit_submission(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let (task_id, view, mut surface) = task(&f, cx);
+    let toggle = surface
+        .debug_bounds("download-window-details-toggle")
+        .expect("original details action");
+    surface.simulate_click(toggle.center(), Modifiers::default());
+    surface.simulate_resize(download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        true,
+    ));
+    draw(&mut surface);
+    let input = view.read_with(cx, |view, _| {
+        view.speed_limit_kib.clone().expect("original input")
+    });
+    let application = f.application.clone();
+    let _close_subscription = view.update_in(&mut surface, |_, window, cx| {
+        cx.subscribe_in(&input, window, move |_, _, event: &InputEvent, _, cx| {
+            if matches!(event, InputEvent::PressEnter { .. }) {
+                let application = application.clone();
+                cx.defer(move |cx| {
+                    application.update(cx, |app, cx| app.close_task_window(task_id, cx))
+                });
+            }
+        })
+    });
+    input.update_in(&mut surface, |input, window, cx| input.focus(window, cx));
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("100");
+    surface.simulate_keystrokes("enter");
+    surface.run_until_parked();
+    assert_eq!(
+        f.application.read_with(cx, |app, _| app
+            .engine
+            .task(task_id)
+            .expect("query")
+            .expect("task")
+            .task
+            .request()
+            .speed_limit_bytes_per_second),
+        None
+    );
+    assert!(
+        f.application
+            .read_with(cx, |app, _| !app.task_windows.contains_key(&task_id))
+    );
+}
+
+fn assert_ref06_untouched_byte_rate(cx: &mut TestAppContext, bytes: u64) {
+    let f = fixture_with_persistence(cx, true);
+    f.application.read_with(cx, |app, _| {
+        app.engine
+            .set_global_speed_limit(Some(bytes))
+            .expect("positive byte rate");
+    });
+    let (view, mut surface) = settings(&f, cx);
+    select_page(&mut surface, DownloadSettingsPage::Transfer);
+    let displayed = view.read_with(cx, |view, cx| {
+        view.speed_limit_kib.read(cx).value().to_string()
+    });
+    view.update_in(&mut surface, |view, window, cx| {
+        view.connection_limit
+            .update(cx, |input, cx| input.focus(window, cx));
+    });
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("5");
+    draw(&mut surface);
+    let apply = surface
+        .debug_bounds("download-settings-apply")
+        .expect("original Apply");
+    surface.simulate_click(apply.center(), Modifiers::default());
+    surface.run_until_parked();
+    assert_eq!(
+        global_rate(&f, cx),
+        Some(bytes),
+        "unrelated Apply must preserve exact {bytes} B/s; initial display={displayed}"
+    );
+    let restored = DownloadEngine::open(f.directory.path().join("downloads.sqlite3"))
+        .expect("reopen settings storage");
+    assert_eq!(restored.global_speed_limit(), Some(bytes));
+    assert_eq!(
+        displayed,
+        bytes.div_ceil(1024).to_string(),
+        "positive rates never display unlimited"
+    );
+    let (reopened, _) = settings(&f, cx);
+    assert_eq!(
+        reopened.read_with(cx, |view, _| view.speed_limit_edit.applied),
+        Some(bytes)
+    );
+    assert_eq!(
+        reopened.read_with(cx, |view, cx| view
+            .speed_limit_kib
+            .read(cx)
+            .value()
+            .to_string()),
+        bytes.div_ceil(1024).to_string()
+    );
+}
+
+#[gpui_kit::test]
+fn ref06_acceptance_global_one_byte_survives_unrelated_apply(cx: &mut TestAppContext) {
+    assert_ref06_untouched_byte_rate(cx, 1);
+}
+
+#[gpui_kit::test]
+fn ref06_acceptance_global_sub_kib_survives_unrelated_apply(cx: &mut TestAppContext) {
+    assert_ref06_untouched_byte_rate(cx, 1023);
+}
+
+#[gpui_kit::test]
+fn ref06_acceptance_global_fractional_kib_survives_unrelated_apply(cx: &mut TestAppContext) {
+    assert_ref06_untouched_byte_rate(cx, 1537);
+}
+
+#[gpui_kit::test]
+fn ref06_acceptance_task_compact_refresh_tracks_authoritative_rate(cx: &mut TestAppContext) {
+    for global in [None, Some(128 * 1024)] {
+        let f = fixture_with_persistence(cx, true);
+        f.application.read_with(cx, |app, _| {
+            app.engine
+                .set_global_speed_limit(global)
+                .expect("global ceiling")
+        });
+        let (task_id, view, mut surface) = task(&f, cx);
+        view.update(&mut surface, |view, cx| {
+            view.details_expanded = true;
+            cx.notify();
+        });
+        surface.simulate_resize(download_task_window_size_for_details(
+            DownloadWindowPhase::Progress,
+            true,
+        ));
+        draw(&mut surface);
+        let input = view.read_with(cx, |view, _| {
+            view.speed_limit_kib.clone().expect("stable editor")
+        });
+        for limit in [Some(64 * 1024), Some(32 * 1024), None, Some(1537)] {
+            f.application.update(cx, |app, cx| {
+                let result = app.engine.handle_command(DownloadCommandEnvelope {
+                    protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+                    request_id: uuid::Uuid::new_v4(),
+                    origin: RequestOrigin::Internal,
+                    command: DownloadCommand::Task { task_id, action: DownloadTaskAction::SetSpeedLimit { bytes_per_second: limit } },
+                });
+                assert!(matches!(result.outcome, DownloadCommandOutcome::Accepted { task_id: Some(actual) } if actual == task_id));
+                app.refresh(cx);
+                assert_eq!(app.task(task_id).expect("compact task").task.request().speed_limit_bytes_per_second, None, "list projection remains compact");
+                app.refresh_open_task_window_for_progress(task_id, cx);
+            });
+            draw(&mut surface);
+            let effective = match (limit, global) {
+                (Some(task), Some(global)) => Some(task.min(global)),
+                (task, global) => task.or(global),
+            };
+            let expected = effective
+                .map(|bytes| format!("限速 {}/s", format_download_size(bytes)))
+                .unwrap_or_else(|| "不限速".into());
+            let label = surface
+                .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+                .into_iter()
+                .find(|node| {
+                    node.path().last()
+                        == Some(&gpui_kit::ElementId::from(
+                            "download-window-progress-capabilities",
+                        ))
+                })
+                .expect("actual capabilities node")
+                .label()
+                .expect("visible summary")
+                .to_owned();
+            assert!(
+                label.contains(&expected),
+                "summary={label:?}, expected={expected:?}"
+            );
+            assert_eq!(
+                view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+                limit
+            );
+            assert!(view.read_with(cx, |view, _| !view.speed_limit_edit.dirty
+                && view.speed_limit_edit.pending.is_none()
+                && view.speed_limit_edit.error.is_none()));
+            assert_eq!(
+                input.read_with(cx, |input, _| input.value().to_string()),
+                limit.map_or(0, |bytes| bytes.div_ceil(1024)).to_string()
+            );
+            assert_eq!(
+                view.read_with(cx, |view, _| view
+                    .speed_limit_kib
+                    .as_ref()
+                    .expect("same editor")
+                    .entity_id()),
+                input.entity_id()
+            );
+            assert_eq!(
+                f.application.read_with(cx, |app, _| app
+                    .engine
+                    .task(task_id)
+                    .expect("query")
+                    .expect("task")
+                    .task
+                    .request()
+                    .speed_limit_bytes_per_second),
+                limit
+            );
+        }
+        input.update_in(&mut surface, |input, window, cx| input.focus(window, cx));
+        surface.simulate_keystrokes("ctrl-a");
+        surface.simulate_input("abc");
+        surface.simulate_keystrokes("enter");
+        draw(&mut surface);
+        assert!(view.read_with(cx, |view, _| view.speed_limit_edit.error.is_some()));
+        f.application.update(cx, |app, cx| {
+            let result = app.engine.handle_command(DownloadCommandEnvelope {
+                protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+                request_id: uuid::Uuid::new_v4(),
+                origin: RequestOrigin::Internal,
+                command: DownloadCommand::Task {
+                    task_id,
+                    action: DownloadTaskAction::SetSpeedLimit {
+                        bytes_per_second: Some(2049),
+                    },
+                },
+            });
+            assert!(matches!(
+                result.outcome,
+                DownloadCommandOutcome::Accepted { .. }
+            ));
+            app.refresh(cx);
+            app.refresh_open_task_window_for_progress(task_id, cx);
+        });
+        draw(&mut surface);
+        assert_eq!(
+            input.read_with(cx, |input, _| input.value().to_string()),
+            "abc"
+        );
+        assert!(view.read_with(cx, |view, _| view.speed_limit_edit.dirty
+            && view.speed_limit_edit.error.is_some()));
+        assert_eq!(
+            view.read_with(cx, |view, _| view.speed_limit_edit.applied),
+            Some(2049)
+        );
+        surface.simulate_keystrokes("escape");
+        draw(&mut surface);
+        assert_eq!(
+            input.read_with(cx, |input, _| input.value().to_string()),
+            "3"
+        );
+        assert!(view.read_with(cx, |view, _| !view.speed_limit_edit.dirty
+            && view.speed_limit_edit.error.is_none()));
+        f.application
+            .update(cx, |app, cx| app.close_task_window(task_id, cx));
+        cx.run_until_parked();
+        f.application
+            .update(cx, |app, cx| app.request_task_window(task_id, cx));
+        cx.run_until_parked();
+        let restored = f.application.read_with(cx, |app, _| {
+            app.task_windows
+                .get(&task_id)
+                .expect("reopened window")
+                .view
+                .clone()
+        });
+        assert_eq!(
+            restored.read_with(cx, |view, _| view.speed_limit_edit.applied),
+            Some(2049)
+        );
+        assert_eq!(
+            DownloadEngine::open(f.directory.path().join("downloads.sqlite3"))
+                .expect("reopen engine")
+                .task(task_id)
+                .expect("query")
+                .expect("task")
+                .task
+                .request()
+                .speed_limit_bytes_per_second,
+            Some(2049)
+        );
     }
 }

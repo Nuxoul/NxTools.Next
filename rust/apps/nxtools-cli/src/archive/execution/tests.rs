@@ -44,9 +44,11 @@ fn terminal(request: &ArchiveJobCommand, cleanup: bool, code: Option<&str>) -> A
             elapsed_ms: 12,
             native_error_code: None,
             journal: vec![],
+            journal_summary: None,
             output_shortfall: None,
             result_location: None,
             output_published: None,
+            add_result: None,
         }),
         ..event(request, ArchiveJobEventKind::Terminal)
     }
@@ -191,6 +193,7 @@ fn cleanup_incomplete_is_never_success_and_destination_permission_is_narrow() {
         action: ArchiveJobAction::Start,
         request: None,
         reply: None,
+        batch_id: None,
     };
     let mut consumer = JobConsumer::new(request.clone(), true);
     let prompt = |error_code: &str| ArchiveJobEvent {

@@ -44,10 +44,10 @@ the entire logical output unknown. Never use a partial known sum as a complete d
 declaration or all-known Zstd FCS as size. Original structure/extent/metadata/count/dictionary/window
 checks still run to completion. Only early output-quota rejection is deferred to original complete
 plan/preflight; actual decode/entry/output limits stay original. Actual stream decoder still enforces
-payload end/size/checksums when supplied. False declarations/corruption cannot authorize publication.
+payload end/size/checksums when supplied. False declarations/corruption cannot authorize a successful close.
 Public list/read/TEST remain original unknown metadata and do not approve extraction Risk.
 
-**Risk:** XZ/Zstd extract calls original confirm_zip_entry before current partial/decode. With a
+**Risk:** XZ/Zstd extract calls original confirm_zip_entry before current final-name begin/decode. With a
 complete single logical stream declaration, its encoded stream length is a reliable denominator;
 TAR shared outer lengths are never used. Predicate stays strictly >64MiB AND >1000x positive packed,
 overflow-safe. Original current-operation/prompt/generation ticket approves exact admitted ceiling,
@@ -64,14 +64,14 @@ metadata), then tgz decode uses that as outer stream limit; inner extraction res
 limits. Spool overflow before inner complete declarations is terminal, never a guessed shortage.
 
 **Readmission:** original immutable plan/source verification and fully known max/sum are required.
-Original AttemptResult must match operation/current limits, ResourceLimit, zero commits/publication
-and actual cleanup. Cleanup-held owns slot/source/helper/output/Job, no prompt or retry. Only after
+Original AttemptResult must match operation/current limits,ResourceLimit,zero successfully closed files
+and actual cleanup. Cleanup-held owns slot/source/helper/output/Job,no prompt or retry. Only after
 exited/drain/active0/exclusive lease release may original coordinator request explicit OutputBudget
 under32GiB/file/2^50total hard ceilings. At most one new normal admission; fresh operation/control ID,
 same logical correlation/shared cancellation/source native identity/version+digest; preserve selection,
 codepage/password(if applicable)/conflict/MOTW/work/dictionary/metadata/Job. Only two output limits and
-necessary source bookkeeping change. Actual overflow/corrupt/sourcechange/commits/incompletecleanup
-never finance upgrades, merges, replaced-file rollback or third attempts.
+necessary source bookkeeping change. Actual overflow/corrupt/sourcechange/completed output/incomplete
+cleanup never finance upgrades,merges,completed-file rollback or third attempts.
 
 **Costs and diagnostics:** public source revision already hashes full encoded input. TAR header
 parser seeks over ordinary payload; extraction rereads payload and source. Existing compound open
@@ -92,12 +92,12 @@ proof unless a dedicated runtime check was actually executed. No product env/DTO
 | Opt-in encoded source exceeds low output but fits metadata reservation | Reach original format/plan preflight; no actual output or memory grant |
 | Known XZ / all-known Zstd exceeds output | Original source-bound declaration shortfall before output |
 | Gzip/BZip2/Zstd unknown or mixed frames | No guessed shortfall or ratio; actual original counters remain |
-| Invalid structure/window/dictionary/metadata/count | Original typed refusal, no shortfall/publication authorization |
-| Compound spool over finite reservation before known TAR | ResourceLimit, zero target effects, no retry |
-| Cleanup incomplete/held, wrong ID/limits, prior publication | No new approval/admission; native slot/leases remain owned |
-| Source change on new attempt | Original native/digest SourceChanged, no effects |
-| Actual overflow or second corruption/false declaration | Terminal, owned unpublished cleanup, no third attempt |
-| Publication then cancel | Retain actual files/Committed/journal; no rollback or rerun |
+| Invalid structure/window/dictionary/metadata/count | Original typed refusal,no shortfall/output authorization |
+| Compound spool over finite reservation before known TAR | ResourceLimit,zero target effects,no retry |
+| Cleanup incomplete/held,wrong ID/limits,prior completed output | No new approval/admission; native slot/leases remain owned |
+| Source change on new attempt | Original native/digest SourceChanged,no effects |
+| Actual overflow or second corruption/false declaration | Terminal,incomplete-owned-output cleanup,no third attempt |
+| Completed close then cancel | Retain actual files/completion journal; no rollback or rerun |
 
 ## 5. Good/Base/Bad Cases
 Good: tiny TAR total1 -> declared max4096/total6144 -> actual cleanup -> explicit finite approval ->
@@ -110,14 +110,14 @@ outer-TAR packed duplicated per member, spool overflow called a target declarati
   XZ/knownZstd/all-known multi-frame declarations, unknown actual failures/no shortfall.
 - `repo:rust/crates/nxtools-archive/tests/tar_stream_readmission_chain.rs`: original coordinator ->
   native cleanupheld/no prompt, real exited/drain/reopen, IDs/options/source/constant Job, representative
-  TAR/compound/known streams, actual unknown failures, second corruption and commit-bearing cancel.
+  TAR/compound/known streams,actual unknown failures,second corruption and completed-output cancel.
 - `repo:rust/crates/nxtools-archive/tests/tar_stream_readmission_guard.rs`: injected original
   coordinator second ResourceLimit facts/no third attempt; NOT native decoder overflow evidence.
 - `repo:csharp/NxTools.PlatformHost.Tests/TarStreamSafetyTests.cs`,
   `repo:csharp/NxTools.PlatformHost.Tests/TarStreamRiskTests.cs`,
   `repo:csharp/NxTools.PlatformHost.Tests/TarStreamReadmissionHost.cs`: original runner/Job/output,
   nine-format metadata and exact bytes, five TAR lowtotal declarations, unknown counters/spool/corrupt,
-  postcommit journal and known-stream original Risk tickets. Exact LIST/RUN/PASS/skip/fail/not_run/hash.
+  completed-output journal and known-stream original Risk tickets. Exact LIST/RUN/PASS/skip/fail/not_run/hash.
 - `repo:rust/crates/nxtools-archive/tests/xz_read_contract.rs`, `repo:rust/crates/nxtools-archive/tests/zstd_read_contract.rs`,
   `repo:rust/crates/nxtools-archive/tests/zstd_safety_contract.rs`: original public unknown semantics,
   structural/actual limits/source/cancel/corruption, not just new private snapshots.
@@ -130,5 +130,5 @@ Wrong: copy RAR100GiB fix, decode fully to obtain stream size, expose partial FC
 raise a second request, or label decoder CorruptArchive as actual ResourceLimit for test coverage.
 Correct: reuse original bounded scans and complete declarations only at private extraction admission
 -> original plan/source preflight -> actual zero-effect cleanup -> explicit finite original coordinator
--> one fresh normal admission. Report native actual counters, corrupt terminal and injected guards
-as distinct evidence levels; preserve all publication and historical failure facts.
+-> one fresh normal admission. Report native actual counters,corrupt terminal and injected guards
+as distinct evidence levels; preserve all completed-output and historical failure facts.

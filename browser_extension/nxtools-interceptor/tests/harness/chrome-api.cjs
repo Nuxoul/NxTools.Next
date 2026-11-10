@@ -59,6 +59,7 @@ function createChromeApi(options = {}) {
     return {
       async get(keys) {
         record(`storage.${areaName}.get`, [keys]);
+        if (areaName === "session" && options.sessionGetFails) throw new Error("synthetic session read failure");
         if (keys == null) return { ...values };
         if (typeof keys === "string") return keys in values ? { [keys]: values[keys] } : {};
         if (Array.isArray(keys)) {
@@ -95,6 +96,7 @@ function createChromeApi(options = {}) {
         return port;
       },
       onMessage: createEvent(),
+      onConnect: createEvent(),
       onInstalled: createEvent(),
       onStartup: createEvent()
     },
@@ -116,11 +118,13 @@ function createChromeApi(options = {}) {
     tabs: {
       onActivated: createEvent(),
       onRemoved: createEvent(),
-      async query(queryInfo) {
+      onReplaced: createEvent(),
+      query(queryInfo, callback) {
         record("tabs.query", [queryInfo]);
         const all = [...tabs.values()];
-        if (queryInfo?.active) return all.filter((tab) => tab.active);
-        return all;
+        const result = queryInfo?.active ? all.filter(tab => tab.active) : all;
+        if (callback) { callback(result); return undefined; }
+        return Promise.resolve(result);
       },
       async get(tabId) {
         const tab = tabs.get(tabId);
@@ -143,7 +147,11 @@ function createChromeApi(options = {}) {
     webNavigation: {
       onCommitted: createEvent(),
       onHistoryStateUpdated: createEvent(),
-      async getAllFrames() { return [{ frameId: 0 }]; }
+      getAllFrames(details, callback) {
+        const result = [{ frameId: 0 }];
+        if (callback) { callback(result); return undefined; }
+        return Promise.resolve(result);
+      }
     },
     webRequest: {
       onBeforeSendHeaders: createEvent(),
@@ -157,7 +165,12 @@ function createChromeApi(options = {}) {
     },
     cookies: { async getAll() { return []; } },
     scripting: {
-      async executeScript(details) { record("scripting.executeScript", [details]); return [{ result: true }]; }
+      executeScript(details, callback) {
+        record("scripting.executeScript", [details]);
+        const result = [{ result: true }];
+        if (callback) { callback(result); return undefined; }
+        return Promise.resolve(result);
+      }
     },
     declarativeNetRequest: {
       ResourceType: { MAIN_FRAME: "main_frame", XMLHTTPREQUEST: "xmlhttprequest" },

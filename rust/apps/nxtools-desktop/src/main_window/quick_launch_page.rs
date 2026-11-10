@@ -1,9 +1,13 @@
 use super::*;
 #[cfg(test)]
 use crate::ui::components::tooltip::bounded_text_tooltip;
+use crate::ui::components::volume_scope::VolumeScopeRowState;
 #[cfg(test)]
 use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY};
+use gpui_kit::WeakEntity;
 use gpui_kit::base::TestSupportExt;
+use gpui_kit::component::Size;
+use gpui_kit::component::alert::Alert;
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, SettingPage, Settings};
 
@@ -308,6 +312,43 @@ impl MainWindow {
     }
 }
 
+fn quick_launch_result_entrance_setting(
+    owner: WeakEntity<crate::quick_launch::QuickLaunchApplication>,
+    cx: &App,
+) -> SettingItem {
+    let current = owner
+        .upgrade()
+        .map(|owner| owner.read(cx).settings().result_entrance)
+        .unwrap_or_default();
+    SettingItem::new(
+        "结果入场动画",
+        gpui_kit::component::setting::SettingField::scrollable_dropdown(
+            nxtools_core::QuickLaunchResultEntrance::ALL
+                .into_iter()
+                .map(|mode| {
+                    (
+                        gpui_kit::SharedString::from(mode.label()),
+                        gpui_kit::SharedString::from(mode.label()),
+                    )
+                })
+                .collect(),
+            move |_| gpui_kit::SharedString::from(current.label()),
+            move |value: gpui_kit::SharedString, cx| {
+                if let Some(mode) = nxtools_core::QuickLaunchResultEntrance::ALL
+                    .into_iter()
+                    .find(|mode| mode.label() == value.as_ref())
+                {
+                    let owner = owner.clone();
+                    cx.defer(move |cx| {
+                        let _ = owner.update(cx, |owner, cx| owner.set_result_entrance(mode, cx));
+                    });
+                }
+            },
+        ),
+    )
+    .description("仅新出现的结果播放一次短动画；系统减少动态效果时立即显示，搜索窗口大小保持稳定。")
+}
+
 impl MainWindow {
     pub(crate) fn render_quick_find(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let owner = cx.entity().downgrade();
@@ -418,6 +459,7 @@ impl MainWindow {
             ),
         )
         .description("连续列表没有条目间隙；分隔列表保留 4 DIP 小间隙，不改变内容行高。");
+        let entrance_setting = quick_launch_result_entrance_setting(self.quick_launch.clone(), cx);
         let pages = vec![
             page(
                 QuickLaunchSettingsPage::General,
@@ -438,6 +480,7 @@ impl MainWindow {
                     ),
                     item(QuickLaunchSettingsPage::General, 2, "键盘动作", "", false),
                     row_setting,
+                    entrance_setting,
                 ]),
             ),
             page(
@@ -668,6 +711,57 @@ impl MainWindow {
                 cx.notify();
             }),
         );
+        let keyboard_warning = self
+            .quick_launch
+            .upgrade()
+            .and_then(|application| application.read(cx).keyboard_health_warning());
+        let hotkey_control = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(hotkey_control)
+            .when_some(keyboard_warning, |surface, (reason, pending)| {
+                surface.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_2()
+                        .child(
+                            div()
+                                .id("quick-launch-keyboard-health-alert-host")
+                                .debug_selector(|| "quick-launch-keyboard-health-alert-host".into())
+                                .test_support()
+                                .child(
+                                    Alert::warning("quick-launch-keyboard-health-alert", reason)
+                                        .title("双击 Ctrl 已失效")
+                                        .with_size(Size::Small),
+                                ),
+                        )
+                        .child(
+                            div()
+                                .id("quick-launch-keyboard-health-retry-host")
+                                .debug_selector(|| "quick-launch-keyboard-health-retry".into())
+                                .test_support()
+                                .child(
+                                    Button::new("quick-launch-keyboard-health-retry")
+                                        .label("重新启用")
+                                        .outline()
+                                        .with_size(Size::Medium)
+                                        .loading(pending)
+                                        .disabled(pending)
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            let application = this.quick_launch.clone();
+                                            cx.defer(move |cx| {
+                                                let _ = application.update(cx, |app, cx| {
+                                                    app.reenable_keyboard_hotkey(cx)
+                                                });
+                                            });
+                                        })),
+                                ),
+                        ),
+                )
+            })
+            .into_any_element();
         let auto_quick_switch = self.quick_launch.clone();
         let auto_quick_switch_enabled = settings.auto_quick_switch;
         let auto_quick_switch_control = compact_toggle(
@@ -777,7 +871,11 @@ impl MainWindow {
                 "quick-launch-index-volume-{}",
                 volume_scope_selector_key(&drive.mount_point)
             );
-            let metadata = if drive.indexed_items == 0 {
+            let metadata = if drive.indexed_items == 0
+                && matches!(
+                    drive.maintenance,
+                    None | Some(nxtools_protocol::IndexDriveMaintenance::InitialBuilding)
+                ) {
                 format!("{} · 尚未建立索引", drive.file_system)
             } else {
                 format!(
@@ -792,11 +890,15 @@ impl MainWindow {
             let quick_launch = self.quick_launch.clone();
             volume_scope_rows.push(volume_scope_row(
                 theme,
+                cx,
                 selector,
                 label,
                 metadata,
-                selected,
-                index + 1 < available_volumes.len(),
+                VolumeScopeRowState {
+                    maintenance: drive.maintenance,
+                    checked: selected,
+                    show_divider: index + 1 < available_volumes.len(),
+                },
                 move |_checked, _window, cx| {
                     let selected = toggle_indexed_volume_selection(
                         &configured_for_click,
@@ -857,11 +959,13 @@ impl MainWindow {
                     });
                 });
             },
-            move |_event, _window, cx| {
+            move |_event, window, cx| {
                 let quick_launch = add_quick_launch.clone();
+                let source_window_handle =
+                    crate::ui::native_window_handle(window).unwrap_or_default();
                 cx.defer(move |cx| {
                     let _ = quick_launch.update(cx, |application, cx| {
-                        application.request_index_exclusion_directory(cx);
+                        application.request_index_exclusion_directory(source_window_handle, cx);
                     });
                 });
             },
@@ -991,7 +1095,7 @@ impl MainWindow {
                         });
                     });
                 })),
-                pick_program: Rc::new(cx.listener(move |this, _, _window, cx| {
+                pick_program: Rc::new(cx.listener(move |this, _, window, cx| {
                     let Some(index) = this.selected_custom_command else {
                         return;
                     };
@@ -999,10 +1103,17 @@ impl MainWindow {
                     let current_path = this.custom_command_program.read(cx).value().to_string();
                     let quick_launch = this.quick_launch.clone();
                     let view = cx.entity().downgrade();
+                    let source_window_handle =
+                        crate::ui::native_window_handle(window).unwrap_or_default();
                     cx.defer(move |cx| {
                         let correlation_id = quick_launch
                             .update(cx, |application, cx| {
-                                application.request_custom_command_program(index, current_path, cx)
+                                application.request_custom_command_program(
+                                    index,
+                                    current_path,
+                                    source_window_handle,
+                                    cx,
+                                )
                             })
                             .ok()
                             .flatten();
@@ -1426,3 +1537,111 @@ mod component_adoption_tests {
 
 #[cfg(test)]
 mod settings_compatibility_tests;
+
+#[cfg(test)]
+mod result_entrance_tests {
+    use super::*;
+    use nxtools_core::AppConfig;
+
+    struct EntranceSettingsFixture {
+        owner: WeakEntity<crate::quick_launch::QuickLaunchApplication>,
+        _subscription: gpui_kit::Subscription,
+    }
+
+    impl Render for EntranceSettingsFixture {
+        fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            Settings::new("quick-launch-entrance-settings-fixture")
+                .with_size(Size::Medium)
+                .pages(vec![
+                    SettingPage::new("常规").resettable(false).group(
+                        SettingGroup::new()
+                            .item(quick_launch_result_entrance_setting(self.owner.clone(), cx)),
+                    ),
+                ])
+        }
+    }
+
+    #[gpui_kit::test]
+    fn quick_launch_result_tween_official_selector_saves_every_choice(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        let directory = tempfile::tempdir().expect("temporary settings fixture");
+        let path = directory.path().join("config.json");
+        AppConfig::default()
+            .save_to(&path)
+            .expect("seed configuration");
+        let catalog = nxtools_finder::FinderCatalog::open(directory.path().join("history.db"), &[])
+            .expect("fixture catalog");
+        let (application, endpoint) = cx.update(|cx| {
+            let notices = cx.new(|_| crate::notifications::NotificationCenter::default());
+            let (platform, endpoint) = nxtools_ipc::platform_bridge(8);
+            endpoint.set_connected_for_contract_test(true);
+            let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+            let application = cx.new(|_| {
+                crate::quick_launch::QuickLaunchApplication::new(
+                    catalog,
+                    Rc::new(platform),
+                    Rc::new(indexer),
+                    AppConfig::default(),
+                    path.clone(),
+                    directory.path().join("logs"),
+                    notices,
+                )
+            });
+            (application, endpoint)
+        });
+        let owner = application.clone();
+        let (_, window) = cx.add_window_view(move |window, cx| {
+            window.resize(gpui_kit::size(px(920.0), px(600.0)));
+            let view = cx.new(|cx| {
+                let subscription = cx.observe(&owner, |_, _, cx| cx.notify());
+                EntranceSettingsFixture {
+                    owner: owner.downgrade(),
+                    _subscription: subscription,
+                }
+            });
+            gpui_kit::base::Root::new(view, window, cx)
+        });
+        for mode in nxtools_core::QuickLaunchResultEntrance::ALL {
+            window.refresh().expect("paint actual official selector");
+            let current =
+                application.read_with(window, |owner, _| owner.settings().result_entrance);
+            let label = format!("结果入场动画: {}", current.label());
+            let button = window.update(|window, _| {
+                gpui_kit::base::test_support::snapshots(window)
+                    .into_iter()
+                    .find(|node| node.label() == Some(label.as_str()))
+                    .expect("released dropdown Button")
+            });
+            assert_eq!(button.bounds().size.height, px(32.0));
+            window.simulate_click(button.bounds().center(), gpui_kit::Modifiers::default());
+            window.run_until_parked();
+            window.refresh().expect("official effect choices");
+            let option = window.update(|window, _| {
+                gpui_kit::base::test_support::snapshots(window)
+                    .into_iter()
+                    .find(|node| node.label() == Some(mode.label()))
+                    .expect("released PopupMenuItem choice")
+            });
+            window.simulate_click(option.bounds().center(), gpui_kit::Modifiers::default());
+            window.run_until_parked();
+            assert_eq!(
+                AppConfig::load_from(&path)
+                    .expect("durable UI choice")
+                    .quick_launch
+                    .result_entrance,
+                mode
+            );
+            assert_eq!(
+                application.read_with(window, |owner, _| owner.settings().result_entrance),
+                mode
+            );
+            assert!(
+                endpoint.try_receive_command_for_contract_test().is_err(),
+                "presentation-only save"
+            );
+        }
+    }
+}

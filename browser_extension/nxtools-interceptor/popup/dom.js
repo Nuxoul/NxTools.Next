@@ -13,9 +13,18 @@ let refreshTimer = null;
 let refreshInFlight = null;
 let busyActionCount = 0;
 let mediaActionInFlight = false;
+let renderRevision = 0;
+const captureRuleKeys = ["captureFileTypes", "captureMinimumKiB", "captureExcludedSites", "captureExcludedAddresses"];
+const captureRuleDrafts = new Set();
 
 const elements = {
   interceptDownloads: document.getElementById("interceptDownloads"),
+  captureFileTypes: document.getElementById("captureFileTypes"),
+  captureMinimumKiB: document.getElementById("captureMinimumKiB"),
+  captureExcludedSites: document.getElementById("captureExcludedSites"),
+  captureExcludedAddresses: document.getElementById("captureExcludedAddresses"),
+  capturePauseButton: document.getElementById("capturePauseButton"),
+  capturePauseHint: document.getElementById("capturePauseHint"),
   openDialog: document.getElementById("openDialog"),
   captureResources: document.getElementById("captureResources"),
   mediaOverlayEnabled: document.getElementById("mediaOverlayEnabled"),
@@ -44,6 +53,7 @@ const elements = {
   siteEnabledToggle: document.getElementById("siteEnabledToggle"),
   siteToggleHint: document.getElementById("siteToggleHint"),
   siteToggleRow: document.getElementById("siteToggleRow"),
+  handoffStatus: document.getElementById("handoffStatus"),
   taskCountText: document.getElementById("taskCountText"),
   taskList: document.getElementById("taskList"),
   currentResourceList: document.getElementById("currentResourceList"),
@@ -127,8 +137,17 @@ function filterResourceList(resources) {
 }
 
 function collectSettings() {
+  const minimumText = elements.captureMinimumKiB.value.trim();
+  const minimumKiB = Number(minimumText);
+  if (!/^\d+$/.test(minimumText) || !Number.isSafeInteger(minimumKiB) || minimumKiB > Math.floor(Number.MAX_SAFE_INTEGER / 1024)) {
+    throw new Error("最小文件大小必须是非负整数 KiB；0 表示不限制，请更正后重试");
+  }
   return {
     interceptDownloads: elements.interceptDownloads.checked,
+    captureFileTypes: elements.captureFileTypes.value,
+    captureMinimumKiB: minimumKiB,
+    captureExcludedSites: elements.captureExcludedSites.value,
+    captureExcludedAddresses: elements.captureExcludedAddresses.value,
     openDialog: elements.openDialog.checked,
     captureResources: elements.captureResources.checked,
     mediaOverlayEnabled: elements.mediaOverlayEnabled.checked,

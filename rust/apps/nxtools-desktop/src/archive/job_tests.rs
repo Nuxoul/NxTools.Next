@@ -55,9 +55,11 @@ fn terminal(id: Uuid, cleanup: bool) -> ArchiveJobEvent {
                 published: None,
                 cleanup: None,
             }],
+            journal_summary: None,
             output_shortfall: None,
             result_location: None,
             output_published: None,
+            add_result: None,
         }),
     }
 }
@@ -263,6 +265,7 @@ fn phase_d_original_readmission_waits_cleanup_and_preserves_logical_once_termina
                 decision: None,
                 apply_to_all: false,
                 approved_limit: Some(3),
+                remember_batch_password: false,
             },
             cx,
         )
@@ -350,6 +353,11 @@ fn phase_d_test_after_create_failure_preserves_committed_output(cx: &mut gpui_ki
     let mut created = terminal(id, true);
     created.terminal.as_mut().expect("create").outcome = ArchiveJobOutcome::Succeeded;
     created.terminal.as_mut().expect("create").code = None;
+    created.terminal.as_mut().expect("create").output_published = Some(true);
+    created.terminal.as_mut().expect("create").result_location = Some(ArchiveJobResultLocation {
+        target: r"C:\owned\out\created.zip".into(),
+        action: nxtools_protocol::ShellOpenAction::SelectInExplorer,
+    });
     deliver(&owner, &endpoint, created, cx);
     assert!(
         owner.read_with(cx, |app, _| app.jobs.records[&id].terminal.is_none()),
@@ -1205,10 +1213,25 @@ fn audit04_create_pointer_then_missing_object_cancel_preserves_original_ticket(
         || label.contains("absent-target")));
     assert!(object_replies(&endpoint).is_empty());
     object_click(&mut surface, "取消任务");
-    let replies = object_replies(&endpoint);
-    assert_eq!(replies.len(), 1);
-    assert_eq!(replies[0].ticket, ticket);
-    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);
+    assert!(
+        object_replies(&endpoint).is_empty(),
+        "Stop cannot answer the conflict ticket"
+    );
+    assert_eq!(
+        owner.read_with(cx, |app, _| app.jobs.records[&id]
+            .prompt
+            .as_ref()
+            .map(|prompt| prompt.ticket.clone())),
+        Some(ticket)
+    );
+    object_click(&mut surface, "确认停止");
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Cancel]
+    );
 }
 #[gpui_kit::test]
 fn audit04_conflict_tab_space_keeps_original_button_and_deferred_reply(
@@ -1327,10 +1350,25 @@ fn audit05_create_keyboard_release_and_missing_object_cancel_are_once_only(
     );
     surface.simulate_keystrokes("escape");
     object_draw(&mut surface);
-    let replies = object_replies(&endpoint);
-    assert_eq!(replies.len(), 1);
-    assert_eq!(replies[0].ticket, ticket);
-    assert!(replies[0].decision.is_none() && !replies[0].apply_to_all);
+    assert!(
+        object_replies(&endpoint).is_empty(),
+        "Escape opens Stop without answering the ticket"
+    );
+    assert_eq!(
+        owner.read_with(cx, |app, _| app.jobs.records[&id]
+            .prompt
+            .as_ref()
+            .map(|prompt| prompt.ticket.clone())),
+        Some(ticket)
+    );
+    object_click(&mut surface, "确认停止");
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Cancel]
+    );
 }
 
 fn audit05_prompt_key(
@@ -1404,12 +1442,23 @@ fn audit05_create_enter_only_confirms_focused_button_on_release_and_cancel_keeps
     audit05_tab_prompt(&mut surface, "取消任务");
     audit05_prompt_key(&mut surface, "enter", true, false);
     audit05_prompt_key(&mut surface, "enter", false, false);
-    let replies = object_replies(&endpoint);
-    assert_eq!(replies.len(), 1);
-    assert_eq!(replies[0].ticket, next.ticket);
     assert!(
-        replies[0].decision.is_none(),
-        "focused Cancel must not approve"
+        object_replies(&endpoint).is_empty(),
+        "focused Stop cannot approve overwrite"
+    );
+    assert_eq!(
+        owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.clone()),
+        Some(next)
+    );
+    audit05_tab_prompt(&mut surface, "确认停止");
+    audit05_prompt_key(&mut surface, "enter", true, false);
+    audit05_prompt_key(&mut surface, "enter", false, false);
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Cancel]
     );
 }
 
@@ -1460,7 +1509,12 @@ fn audit05_prompt_character_held_and_conflict_enter_respect_current_decision(
     assert!(object_replies(&endpoint).is_empty());
     surface.simulate_keystrokes("escape");
     object_draw(&mut surface);
-    assert_eq!(object_replies(&endpoint).len(), 1);
+    assert!(object_replies(&endpoint).is_empty());
+    object_click(&mut surface, "继续任务");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "declining Stop preserves the current decision"
+    );
     let conflict = object_prompt(
         id,
         "conflict",
@@ -1588,9 +1642,12 @@ fn audit05_prompt_focus_transfer_escape_and_new_ticket_cancel_old_release(
     audit05_prompt_key(&mut surface, "space", true, false);
     surface.simulate_keystrokes("escape");
     object_draw(&mut surface);
-    let cancelled = object_replies(&endpoint);
-    assert_eq!(cancelled.len(), 1);
-    assert!(cancelled[0].decision.is_none());
+    assert!(
+        object_replies(&endpoint).is_empty(),
+        "Escape cannot submit the original ticket"
+    );
+    object_click(&mut surface, "继续任务");
+    assert!(fb_controls(&endpoint).is_empty());
     let next = object_prompt(id, "create_overwrite", None, r"C:\owned\next.zip");
     surface = show_object_prompt(&owner, &endpoint, id, next.clone(), cx);
     audit05_tab_prompt(&mut surface, "确认覆盖");
@@ -1857,6 +1914,7 @@ fn progress_terminal_primary_result_uses_native_commits_not_last_processed_snaps
         current_member: None,
         current_bytes_done: None,
         current_bytes_total: None,
+        sequence: None,
     });
     deliver(&owner, &endpoint, running, cx);
     let mut finished = terminal(id, true);
@@ -1942,6 +2000,7 @@ fn progress_decimal_units_and_unknown_totals_are_honest() {
         current_member: None,
         current_bytes_done: None,
         current_bytes_total: None,
+        sequence: None,
     };
     assert_eq!(progress_percent(&snapshot), None);
     snapshot.bytes_total = Some(1024);
@@ -2498,6 +2557,7 @@ fn fb_ac02_actual_queue_full_recovers_pause_and_keeps_cancel_reserved(
         1
     );
     object_click(&mut surface, "停止");
+    object_click(&mut surface, "确认停止");
     assert_eq!(
         fb_controls(&endpoint)
             .iter()
@@ -2637,6 +2697,7 @@ fn fb_ac02_old_attempt_disconnect_terminal_and_cancel_do_not_unlock_new_control(
     });
     object_click(&mut surface, "暂停");
     object_click(&mut surface, "停止");
+    object_click(&mut surface, "确认停止");
     let sent = fb_controls(&endpoint);
     assert_eq!(
         sent.iter()
@@ -2931,7 +2992,7 @@ fn step4_modify_conflict_dialog_identifies_internal_objects_and_scoped_decision(
     let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
     let labels = object_labels(&mut surface);
     assert!(
-        labels.iter().any(|label| label == "归档内已有成员"),
+        labels.iter().any(|label| label == "压缩包内已有成员"),
         "archive-relative object must never be described as a disk target"
     );
     assert!(labels.iter().any(|label| label == "目录/已有.txt"));
@@ -3088,6 +3149,18 @@ fn hz3_retry_uses_original_native_recheck_once_before_new_attempt(
                 None
             }
         })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        starts
+            .iter()
+            .map(|command| command.action)
+            .collect::<Vec<_>>(),
+        [ArchiveJobAction::RetireBatch, ArchiveJobAction::Start],
+        "retire old batch password before the sole new attempt"
+    );
+    let starts = starts
+        .into_iter()
+        .filter(|command| command.action == ArchiveJobAction::Start)
         .collect::<Vec<_>>();
     assert_eq!(
         starts.len(),
@@ -3279,7 +3352,7 @@ fn hz3_rendered_summary_pointer_keyboard_details_disabled_retry_and_minimum(
     object_click(&mut surface, "批次汇总");
     let labels = object_labels(&mut surface);
     assert!(
-        labels.iter().any(|s| s.contains("归档任务 2")),
+        labels.iter().any(|s| s.contains("压缩包任务 2")),
         "actual labels {labels:?}"
     );
     assert!(labels.iter().any(|s| s.contains("不汇总未知字节百分比")));
@@ -3323,6 +3396,30 @@ fn hz3_retry_refuses_changed_source_target_unknown_and_late_baseline(
         .expect("native fixture")
         .output_published = Some(false);
     deliver(&owner, &endpoint, failure, cx);
+    owner.update(cx, |app, _| {
+        let record = app.jobs.records.get_mut(&ids[0]).expect("record");
+        assert!(
+            batch_jobs::retry_facts(record),
+            "original zero-output retry"
+        );
+        record.terminal.as_mut().expect("terminal").journal_summary =
+            Some(ArchiveJobJournalSummary {
+                total_records: 1,
+                detail_complete: false,
+                outcomes: vec![ArchiveJobCommitOutcome {
+                    state: "CommitOutcomeUnknown".into(),
+                    published: None,
+                    cleanup: "retained_uncertain".into(),
+                    files: 1,
+                    bytes: 0,
+                }],
+            });
+        assert!(
+            !batch_jobs::retry_facts(record),
+            "bounded detail is not complete zero-output proof"
+        );
+        record.terminal.as_mut().expect("terminal").journal_summary = None;
+    });
     owner.update(cx, |app, cx| app.retry_job(ids[0], cx));
     let command = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
         .find_map(|wire| {
@@ -3506,6 +3603,18 @@ fn hz3_rendered_eligible_retry_click_rechecks_once_then_original_new_attempt(
                 None
             }
         })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        starts
+            .iter()
+            .map(|command| command.action)
+            .collect::<Vec<_>>(),
+        [ArchiveJobAction::RetireBatch, ArchiveJobAction::Start],
+        "retire old batch password before the sole new attempt"
+    );
+    let starts = starts
+        .into_iter()
+        .filter(|command| command.action == ArchiveJobAction::Start)
         .collect::<Vec<_>>();
     assert_eq!(starts.len(), 1);
     assert_ne!(starts[0].operation_id, ids[0]);
@@ -3803,14 +3912,15 @@ fn hz3_ac02_native_terminal_gap_refuses_late_first_baseline_and_replay(
         app.retry_job(id, cx);
     });
     assert!(
-        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(
-            |wire| matches!(
-                wire.message,
-                Message::PlatformCommand(
-                    PlatformCommand::ArchiveJob(_) | PlatformCommand::ArchiveSpace(_)
-                )
-            )
-        ),
+        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(|wire| {
+            match wire.message {
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) => {
+                    command.action != ArchiveJobAction::RetireBatch
+                }
+                Message::PlatformCommand(PlatformCommand::ArchiveSpace(_)) => true,
+                _ => false,
+            }
+        }),
         "late context cannot trigger recheck or new attempt"
     );
     owner.read_with(cx, |app, _| {
@@ -3886,6 +3996,7 @@ fn hz3_ac02_finite_attempt_transition_refuses_old_observation_and_reacquisition(
                 decision: None,
                 apply_to_all: false,
                 approved_limit: Some(3),
+                remember_batch_password: false,
             },
             cx,
         )
@@ -3928,14 +4039,15 @@ fn hz3_ac02_finite_attempt_transition_refuses_old_observation_and_reacquisition(
         app.retry_job(id, cx);
     });
     assert!(
-        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(
-            |wire| matches!(
-                wire.message,
-                Message::PlatformCommand(
-                    PlatformCommand::ArchiveJob(_) | PlatformCommand::ArchiveSpace(_)
-                )
-            )
-        )
+        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(|wire| {
+            match wire.message {
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) => {
+                    command.action != ArchiveJobAction::RetireBatch
+                }
+                Message::PlatformCommand(PlatformCommand::ArchiveSpace(_)) => true,
+                _ => false,
+            }
+        })
     );
     owner.read_with(cx, |app, _| {
         assert_eq!(app.batch_snapshot_for(id).expect("batch").members.len(), 1);
@@ -4280,14 +4392,15 @@ fn hz3_ac01_missing_native_publication_fact_is_not_zero_output(cx: &mut gpui_kit
         app.retry_job(id, cx);
     });
     assert!(
-        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(
-            |wire| matches!(
-                wire.message,
-                Message::PlatformCommand(
-                    PlatformCommand::ArchiveJob(_) | PlatformCommand::ArchiveSpace(_)
-                )
-            )
-        )
+        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(|wire| {
+            match wire.message {
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) => {
+                    command.action != ArchiveJobAction::RetireBatch
+                }
+                Message::PlatformCommand(PlatformCommand::ArchiveSpace(_)) => true,
+                _ => false,
+            }
+        })
     );
 }
 
@@ -4386,14 +4499,15 @@ fn hz5_continue_is_new_start_without_readmission_retry_or_live_browser_snapshot(
         app.retry_job(id, cx);
     });
     assert!(
-        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(
-            |wire| matches!(
-                wire.message,
-                Message::PlatformCommand(
-                    PlatformCommand::ArchiveJob(_) | PlatformCommand::ArchiveSpace(_)
-                )
-            )
-        ),
+        !std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok()).any(|wire| {
+            match wire.message {
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) => {
+                    command.action != ArchiveJobAction::RetireBatch
+                }
+                Message::PlatformCommand(PlatformCommand::ArchiveSpace(_)) => true,
+                _ => false,
+            }
+        }),
         "reclamation has no generic retry path"
     );
 }
@@ -4443,6 +4557,8 @@ fn picker_command_rejection_and_disconnect_settle_original_form(cx: &mut gpui_ki
                 generation,
                 operation,
                 started: Instant::now(),
+                connection: app.platform.connection_generation().expect("connected"),
+                target: None,
             },
         );
     });
@@ -4471,6 +4587,8 @@ fn picker_command_rejection_and_disconnect_settle_original_form(cx: &mut gpui_ki
                 generation,
                 operation: next,
                 started: Instant::now(),
+                connection: app.platform.connection_generation().expect("connected"),
+                target: None,
             },
         );
     });
@@ -4486,4 +4604,927 @@ fn picker_command_rejection_and_disconnect_settle_original_form(cx: &mut gpui_ki
     cx.run_until_parked();
     view.read_with(cx, |form, _| assert!(!form.busy()))
         .expect("form still open");
+}
+
+#[gpui_kit::test]
+fn opt01_serialized_edit_phases_reach_original_progress(cx: &mut gpui_kit::TestAppContext) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    use nxtools_protocol::archive_browser::{
+        ArchiveBrowserContext, ArchiveSourceBinding, SevenzEditEligibility,
+    };
+    let edit = ModifyDraft {
+        source: r"C:\owned\progress.7z".into(),
+        browser: ArchiveBrowserContext {
+            snapshot_id: Uuid::new_v4(),
+            format: "SevenZ".into(),
+            comment: String::new(),
+            source: ArchiveSourceBinding {
+                native: "v1:fixture".into(),
+                digest: [7; 32],
+                size: 7,
+                modified_unix_ns: 1,
+            },
+            sevenz_edit: Some(SevenzEditEligibility { refusal: None }),
+            tar_edit: None,
+        },
+        action: ArchiveJobModifyAction::Delete,
+        ordinals: vec![0],
+        value: None,
+        source_prefix: None,
+        added: vec![],
+        codepage: 0,
+    }
+    .request()
+    .expect("original admitted edit request");
+    let id = owner.update(cx, |app, cx| {
+        app.submit_job(edit, completion(), cx).expect("edit job")
+    });
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Running, cx);
+    let window = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .window
+            .as_ref()
+            .expect("original progress")
+            .0
+    });
+    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
+    let phases = [
+        "running",
+        "edit_planning",
+        "edit_reading",
+        "edit_reencoding",
+        "edit_verifying",
+        "edit_committing",
+    ];
+    let events: Vec<ArchiveJobEvent> = if let Some(path) =
+        std::env::var_os("NXTOOLS_ARCHIVE_EDIT_PROGRESS_WIRE")
+    {
+        serde_json::from_slice(&std::fs::read(path).expect("actual C# OnFrame export"))
+            .expect("C# serialized production progress events")
+    } else {
+        phases.iter().map(|phase| {
+            serde_json::from_value(serde_json::json!({
+                "version":1,"operation_id":id,"session_id":id,"generation":1,"kind":"progress",
+                "progress":{"phase":phase,"bytes_done":3,"bytes_total":10,"files_done":1,"files_total":2}
+            })).expect("public progress schema")
+        }).collect()
+    };
+    assert_eq!(events.len(), phases.len(), "six production phases required");
+    let mut seen = std::collections::HashSet::new();
+    for mut event in events {
+        event
+            .validate()
+            .expect("actual serialized progress contract");
+        let progress = event.progress.clone().expect("progress frame");
+        assert!(phases.contains(&progress.phase.as_str()));
+        assert!(seen.insert(progress.phase.clone()), "one frame per phase");
+        // Only identity is rebound to this live test record; C# progress stays unchanged.
+        event.operation_id = id;
+        event.session_id = id;
+        event.generation = 1;
+        deliver(&owner, &endpoint, event, cx);
+        object_draw(&mut surface);
+        assert_eq!(
+            owner.read_with(cx, |app, _| app.jobs.records[&id].progress.clone()),
+            Some(progress.clone())
+        );
+        assert!(
+            object_labels(&mut surface)
+                .iter()
+                .any(|label| label.contains("3 B")),
+            "accepted progress must reach production view"
+        );
+        let stage = match progress.phase.as_str() {
+            "edit_planning" => "准备 7z 编辑；容量需求未知",
+            "edit_reading" => "读取并检查原压缩包",
+            "edit_reencoding" => "完整解码并重编码为非固实 LZMA2；处理量不是保存进度",
+            "edit_verifying" => "校验完整候选；尚未保存",
+            "edit_committing" => "等待原生提交；尚未确认保存",
+            _ => "正在修改压缩包",
+        };
+        assert!(
+            object_labels(&mut surface)
+                .iter()
+                .any(|label| label == stage),
+            "phase must reach original stage label"
+        );
+    }
+    let last_phase = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .progress
+            .as_ref()
+            .expect("last progress")
+            .phase
+            .clone()
+    });
+    for phase in ["edit_unknown", "", "RUNNING"] {
+        let mut event = terminal(id, true);
+        event.kind = ArchiveJobEventKind::Progress;
+        event.terminal = None;
+        event.progress = Some(serde_json::from_value(serde_json::json!({"phase":phase,"bytes_done":99,"bytes_total":null,"files_done":0,"files_total":null})).expect("malformed phase fixture"));
+        deliver(&owner, &endpoint, event, cx);
+        assert_eq!(
+            owner.read_with(cx, |app, _| app.jobs.records[&id]
+                .progress
+                .as_ref()
+                .map(|p| p.phase.clone())),
+            Some(last_phase.clone())
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn opt01_background_prompt_recovers_once_after_notice_expiry(cx: &mut gpui_kit::TestAppContext) {
+    for (index, kind) in [
+        "password",
+        "conflict",
+        "risk",
+        "destination",
+        "create_overwrite",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let (owner, endpoint) = super::super::tests::setup(cx);
+        let id = owner.update(cx, |app, cx| {
+            app.submit_job(request(1100 + index), completion(), cx)
+                .expect("job")
+        });
+        cx.run_until_parked();
+        owner.update(cx, |app, cx| app.background_job(id, cx));
+        cx.run_until_parked();
+        cx.executor()
+            .advance_clock(std::time::Duration::from_secs(7));
+        owner.read_with(cx, |app, _| {
+            let record = &app.jobs.records[&id];
+            assert!(
+                record.terminal.is_none(),
+                "{kind}: original member still active: {}, terminal code: {:?}",
+                record.state,
+                record.terminal.as_ref().and_then(|t| t.code.as_deref())
+            );
+            assert!(
+                record.connection.is_some(),
+                "{kind}: current native connection retained"
+            );
+        });
+        let mut prompt = object_prompt(id, kind, Some("incoming.txt"), r"C:\owned\target");
+        if !matches!(
+            prompt.kind,
+            ArchiveJobPromptKind::Conflict | ArchiveJobPromptKind::CreateOverwrite
+        ) {
+            prompt.display = None;
+        }
+        if prompt.kind == ArchiveJobPromptKind::CreateOverwrite {
+            prompt.display.as_mut().expect("display").incoming_member = None;
+        }
+        let mut event = terminal(id, true);
+        event.kind = ArchiveJobEventKind::Prompt;
+        event.terminal = None;
+        event.prompt = Some(prompt.clone());
+        event.validate().expect("supported current prompt frame");
+        let decoded = serde_json::from_slice(&serde_json::to_vec(&event).expect("event encode"))
+            .expect("event decode");
+        deliver(&owner, &endpoint, decoded, cx);
+        cx.run_until_parked();
+        owner.read_with(cx, |app, _| {
+            let record = &app.jobs.records[&id];
+            assert_eq!(
+                record.prompt.as_ref(),
+                Some(&prompt),
+                "{kind}: original prompt installed before restoration"
+            );
+        });
+        let window = owner
+            .read_with(cx, |app, _| {
+                app.jobs.records[&id].window.as_ref().map(|slot| slot.0)
+            })
+            .expect("current background decision must restore original progress surface");
+        let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
+        object_draw(&mut surface);
+        assert!(
+            object_labels(&mut surface)
+                .iter()
+                .any(|label| label == "取消任务")
+        );
+        deliver(&owner, &endpoint, event.clone(), cx);
+        cx.run_until_parked();
+        assert_eq!(
+            owner.read_with(cx, |app, _| app.jobs.records[&id]
+                .window
+                .as_ref()
+                .map(|slot| slot.0)),
+            Some(window)
+        );
+        assert_eq!(
+            owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.clone()),
+            Some(prompt)
+        );
+        deliver(&owner, &endpoint, terminal(id, true), cx);
+        owner.update(cx, |app, cx| app.background_job(id, cx));
+        deliver(&owner, &endpoint, event, cx);
+        cx.run_until_parked();
+        assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].window.is_none()));
+    }
+}
+
+#[gpui_kit::test]
+fn opt01_queued_pause_is_disabled_and_stop_only_cancels_that_member(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let ids = owner.update(cx, |app, cx| {
+        (0..3)
+            .map(|i| {
+                app.submit_job(request(1200 + i), completion(), cx)
+                    .expect("job")
+            })
+            .collect::<Vec<_>>()
+    });
+    cx.run_until_parked();
+    let window = owner.read_with(cx, |app, _| {
+        app.jobs.records[&ids[2]]
+            .window
+            .as_ref()
+            .expect("queued window")
+            .0
+    });
+    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
+    assert_eq!(
+        object_node(&mut surface, "暂停").disabled(),
+        Some(true),
+        "queue has no worker to pause"
+    );
+    fb_controls(&endpoint);
+    object_click(&mut surface, "停止");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "queued stop must not send native controls"
+    );
+    owner.read_with(cx, |app, _| {
+        assert_eq!(app.jobs.records[&ids[2]].terminal.as_ref().expect("local terminal").outcome, ArchiveJobOutcome::Cancelled);
+        assert!(ids[..2].iter().all(|id| app.jobs.records[id].terminal.is_none() && app.jobs.queue.is_running(*id)));
+    });
+}
+
+#[gpui_kit::test]
+fn opt01_running_stop_requires_original_dialog_confirmation(cx: &mut gpui_kit::TestAppContext) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let controls = fb_controls(&endpoint);
+    assert!(
+        !controls
+            .iter()
+            .any(|(_, action)| *action == ArchiveJobAction::Cancel),
+        "Stop must ask before Cancel"
+    );
+    assert_eq!(
+        controls
+            .iter()
+            .filter(|(_, action)| *action == ArchiveJobAction::Pause)
+            .count(),
+        1,
+        "running confirmation requests one temporary pause"
+    );
+    assert!(
+        object_labels(&mut surface)
+            .iter()
+            .any(|label| label == "确认停止")
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.queue.is_running(id)));
+}
+
+fn opt01_state(
+    owner: &Entity<ArchiveApplication>,
+    endpoint: &nxtools_ipc::PlatformServerEndpoint,
+    id: Uuid,
+    state: ArchiveJobState,
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let mut event = terminal(id, true);
+    event.kind = ArchiveJobEventKind::State;
+    event.terminal = None;
+    event.state = Some(state);
+    let event = serde_json::from_slice(&serde_json::to_vec(&event).expect("state encode"))
+        .expect("state decode");
+    deliver(owner, endpoint, event, cx);
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn opt01_stop_waits_real_paused_and_decline_restores_only_acquired_pause(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let controls = fb_controls(&endpoint);
+    let receipt = controls
+        .iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("temporary pause")
+        .0;
+    assert_eq!(object_node(&mut surface, "确认停止").disabled(), Some(true));
+    fb_control_receipt(&owner, &endpoint, receipt, true, cx);
+    assert!(!owner.read_with(cx, |app, _| app.jobs.records[&id].paused));
+    assert_eq!(
+        object_node(&mut surface, "确认停止").disabled(),
+        Some(true),
+        "accepted receipt is not paused"
+    );
+    object_click(&mut surface, "确认停止");
+    assert!(fb_controls(&endpoint).is_empty());
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    assert_ne!(object_node(&mut surface, "确认停止").disabled(), Some(true));
+    object_click(&mut surface, "继续任务");
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Resume]
+    );
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Running, cx);
+    assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    fb_controls(&endpoint);
+    object_click(&mut surface, "停止");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "already paused needs no temporary pause"
+    );
+    object_click(&mut surface, "继续任务");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "prior pause must not be resumed"
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].paused));
+}
+
+#[gpui_kit::test]
+fn opt01_stop_escape_pending_pause_and_native_refusal_keep_honest_state(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("pause")
+        .0;
+    surface.simulate_keystrokes("escape");
+    object_draw(&mut surface);
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "decline before Paused must not guess Resume"
+    );
+    fb_control_receipt(&owner, &endpoint, receipt, true, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Resume]
+    );
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Running, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("pause retry")
+        .0;
+    fb_control_receipt(&owner, &endpoint, receipt, false, cx);
+    object_click(&mut surface, "继续任务");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "refused pause grants no restoration"
+    );
+    assert!(!owner.read_with(cx, |app, _| app.jobs.records[&id].paused));
+}
+
+#[gpui_kit::test]
+fn opt01_confirm_stop_sends_once_and_waits_original_cleanup(cx: &mut gpui_kit::TestAppContext) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    object_click(&mut surface, "停止");
+    let token = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .stop_confirmation
+            .as_ref()
+            .expect("question")
+            .token
+    });
+    object_click(&mut surface, "确认停止");
+    owner.update(cx, |app, cx| app.answer_job_stop(id, token, true, cx));
+    let controls = fb_controls(&endpoint);
+    assert_eq!(
+        controls
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Cancel]
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.queue.is_running(id)
+        && app.jobs.records[&id].terminal.is_none()));
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Cancelling, cx);
+    assert_eq!(object_node(&mut surface, "停止").disabled(), Some(true));
+    deliver(&owner, &endpoint, terminal(id, false), cx);
+    assert!(
+        owner.read_with(cx, |app, _| app.jobs.queue.is_running(id)),
+        "unknown cleanup keeps original reservation"
+    );
+}
+
+#[gpui_kit::test]
+fn opt01_verification_commit_terminal_and_old_attempt_retire_confirmation(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Verifying, cx);
+    assert_eq!(object_node(&mut surface, "暂停").disabled(), Some(true));
+    owner.update(cx, |app, cx| {
+        app.control_job(id, ArchiveJobAction::Pause, cx)
+    });
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "handler also rejects invalid pause"
+    );
+    object_click(&mut surface, "停止");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "verification cannot be temporarily paused"
+    );
+    let token = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .stop_confirmation
+            .as_ref()
+            .expect("question")
+            .token
+    });
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Committing, cx);
+    assert!(
+        !surface.update(|window, cx| window.has_active_dialog(cx)),
+        "commit transition retires old question"
+    );
+    owner.update(cx, |app, cx| app.answer_job_stop(id, token, true, cx));
+    assert!(fb_controls(&endpoint).is_empty());
+    object_click(&mut surface, "停止");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "commit question never pauses"
+    );
+    let token = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .stop_confirmation
+            .as_ref()
+            .expect("commit question")
+            .token
+    });
+    deliver(&owner, &endpoint, terminal(id, true), cx);
+    cx.run_until_parked();
+    owner.update(cx, |app, cx| app.answer_job_stop(id, token, true, cx));
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "terminal question cannot cancel or resume"
+    );
+}
+
+#[gpui_kit::test]
+fn opt01_prompt_stop_decline_preserves_original_ticket_and_password(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, _) = fb_control_surface(&owner, &endpoint, cx);
+    for kind in ["password", "conflict"] {
+        let mut prompt = object_prompt(id, kind, Some("owned.txt"), r"C:\owned\target");
+        if kind == "password" {
+            prompt.display = None;
+        }
+        let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
+        if kind == "password" {
+            let bounds = object_node(&mut surface, "当前任务密码").bounds();
+            surface.simulate_click(bounds.center(), gpui_kit::Modifiers::default());
+            surface.simulate_input("owned-private-password");
+        }
+        fb_controls(&endpoint);
+        object_click(&mut surface, "取消任务");
+        assert!(
+            fb_controls(&endpoint).is_empty(),
+            "prompt wait is not a temporary pause or a reply"
+        );
+        assert_eq!(
+            owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.clone()),
+            Some(prompt.clone())
+        );
+        object_click(&mut surface, "继续任务");
+        assert!(
+            object_replies(&endpoint).is_empty(),
+            "decline cannot answer original ticket"
+        );
+        assert!(surface.update(|window, cx| window.has_active_dialog(cx)));
+        object_click(
+            &mut surface,
+            if kind == "password" {
+                "继续"
+            } else {
+                "跳过"
+            },
+        );
+        let replies = object_replies(&endpoint);
+        assert_eq!(replies.len(), 1);
+        assert_eq!(replies[0].ticket, prompt.ticket);
+        if kind == "password" {
+            assert_eq!(
+                replies[0].password,
+                Some(nxtools_protocol::archive_password::PrivatePassword::new(
+                    "owned-private-password"
+                ))
+            );
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn opt01_background_recovery_rechecks_terminal_disconnect_and_generation(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    for (index, retire) in ["terminal", "disconnect", "generation"]
+        .into_iter()
+        .enumerate()
+    {
+        let id = owner.update(cx, |app, cx| {
+            app.submit_job(request(1300 + index), completion(), cx)
+                .expect("job")
+        });
+        cx.run_until_parked();
+        owner.update(cx, |app, cx| app.background_job(id, cx));
+        cx.run_until_parked();
+        let mut event = terminal(id, true);
+        event.kind = ArchiveJobEventKind::Prompt;
+        event.terminal = None;
+        event.prompt = Some(object_prompt(
+            id,
+            "conflict",
+            Some("owned.txt"),
+            r"C:\owned\target",
+        ));
+        owner.update(cx, |app, cx| {
+            app.job_notification(
+                &PlatformNotification::Event(PlatformEvent::ArchiveJob(Box::new(event.clone()))),
+                cx,
+            );
+            match retire {
+                "terminal" => {
+                    app.job_notification(
+                        &PlatformNotification::Event(PlatformEvent::ArchiveJob(Box::new(
+                            terminal(id, true),
+                        ))),
+                        cx,
+                    );
+                }
+                "disconnect" => {
+                    app.job_notification(
+                        &PlatformNotification::Disconnected {
+                            generation: app.platform.connection_generation().expect("connection"),
+                            pending_command_ids: vec![],
+                        },
+                        cx,
+                    );
+                }
+                _ => {
+                    app.jobs
+                        .records
+                        .get_mut(&id)
+                        .expect("job")
+                        .command
+                        .generation += 1;
+                }
+            }
+        });
+        cx.run_until_parked();
+        assert!(
+            owner.read_with(cx, |app, _| app.jobs.records[&id].window.is_none()),
+            "retired {retire} prompt reopened"
+        );
+        deliver(&owner, &endpoint, event, cx);
+        cx.run_until_parked();
+        assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].window.is_none()));
+        owner.update(cx, |app, cx| {
+            app.job_terminal(id, local_terminal("cancelled", true), cx)
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn opt01_stop_state_before_receipt_requires_ack_ownership(cx: &mut gpui_kit::TestAppContext) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("pause receipt")
+        .0;
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    assert_eq!(
+        object_node(&mut surface, "确认停止").disabled(),
+        Some(true),
+        "Paused without the matching accepted receipt cannot acquire the confirmation pause"
+    );
+    object_click(&mut surface, "继续任务");
+    assert!(fb_controls(&endpoint).is_empty());
+    fb_control_receipt(&owner, &endpoint, receipt, true, cx);
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Resume]
+    );
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Running, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("next pause")
+        .0;
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    fb_control_receipt(&owner, &endpoint, receipt, false, cx);
+    object_click(&mut surface, "继续任务");
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "a refused request never owns the observed pause"
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].paused));
+}
+
+#[gpui_kit::test]
+fn opt01_stop_keyboard_confirmation_uses_original_button_once(cx: &mut gpui_kit::TestAppContext) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    object_click(&mut surface, "停止");
+    fb_controls(&endpoint);
+    audit05_tab_prompt(&mut surface, "确认停止");
+    audit05_prompt_key(&mut surface, "enter", true, false);
+    assert!(fb_controls(&endpoint).is_empty(), "keydown cannot confirm");
+    audit05_prompt_key(&mut surface, "enter", false, false);
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Cancel]
+    );
+    audit05_prompt_key(&mut surface, "enter", false, false);
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "unarmed release cannot repeat Cancel"
+    );
+}
+
+#[gpui_kit::test]
+fn opt01_new_prompt_retires_stop_question_without_replacing_ticket(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("pause")
+        .0;
+    let token = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .stop_confirmation
+            .as_ref()
+            .expect("question")
+            .token
+    });
+    let mut prompt = object_prompt(id, "password", None, r"C:\owned\target");
+    prompt.display = None;
+    let mut surface = show_object_prompt(&owner, &endpoint, id, prompt.clone(), cx);
+    assert!(
+        !object_labels(&mut surface)
+            .iter()
+            .any(|label| label == "确认停止"),
+        "a newer worker decision owns the foreground Dialog"
+    );
+    owner.update(cx, |app, cx| app.answer_job_stop(id, token, true, cx));
+    assert!(
+        fb_controls(&endpoint).is_empty(),
+        "old stop token cannot cancel a new decision"
+    );
+    fb_control_receipt(&owner, &endpoint, receipt, true, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Resume]
+    );
+    assert_eq!(
+        owner.read_with(cx, |app, _| app.jobs.records[&id].prompt.clone()),
+        Some(prompt)
+    );
+    assert!(object_replies(&endpoint).is_empty());
+    assert!(
+        object_labels(&mut surface)
+            .iter()
+            .any(|label| label == "当前任务密码")
+    );
+}
+
+#[gpui_kit::test]
+fn opt01_old_attempt_stop_answer_and_pause_receipt_cannot_control_replacement(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("pause")
+        .0;
+    let token = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id]
+            .stop_confirmation
+            .as_ref()
+            .expect("question")
+            .token
+    });
+    owner.update(cx, |app, cx| {
+        let mut command = app.jobs.records[&id].command.clone();
+        command.operation_id = Uuid::new_v4();
+        app.send_job_attempt(id, command, cx);
+        app.refresh_job(id, cx);
+    });
+    object_draw(&mut surface);
+    assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Start]
+    );
+    fb_control_receipt(&owner, &endpoint, receipt, true, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    owner.update(cx, |app, cx| app.answer_job_stop(id, token, true, cx));
+    assert!(fb_controls(&endpoint).is_empty());
+    assert!(!owner.read_with(cx, |app, _| app.jobs.records[&id].paused));
+}
+
+#[gpui_kit::test]
+fn opt01_background_during_stop_declines_and_releases_only_acknowledged_pause(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
+    object_click(&mut surface, "停止");
+    let receipt = fb_controls(&endpoint)
+        .into_iter()
+        .find(|(_, action)| *action == ArchiveJobAction::Pause)
+        .expect("pause")
+        .0;
+    owner.update(cx, |app, cx| app.background_job(id, cx));
+    cx.run_until_parked();
+    fb_control_receipt(&owner, &endpoint, receipt, true, cx);
+    opt01_state(&owner, &endpoint, id, ArchiveJobState::Paused, cx);
+    assert_eq!(
+        fb_controls(&endpoint)
+            .iter()
+            .map(|(_, action)| *action)
+            .collect::<Vec<_>>(),
+        vec![ArchiveJobAction::Resume]
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].window.is_none()));
+}
+
+#[path = "ac_repair_tests.rs"]
+mod ac_repair_tests;
+
+#[gpui_kit::test]
+fn opt03_paste_button_uses_original_form_and_correlated_command(cx: &mut gpui_kit::TestAppContext) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    owner.update(cx, |app, cx| app.open_create_form(vec![], cx));
+    cx.run_until_parked();
+    let (id, window) = owner.read_with(cx, |app, _| {
+        let (id, slot) = app.jobs.forms.iter().next().expect("original Create form");
+        (*id, slot.window)
+    });
+    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
+    object_draw(&mut surface);
+    object_click(&mut surface, "粘贴文件");
+    surface.run_until_parked();
+    let mut reads = Vec::new();
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        let wire = serde_json::to_value(&envelope).expect("actual outgoing envelope");
+        if wire.to_string().contains("read_clipboard_file_drop") {
+            reads.push(wire);
+        }
+        assert!(!matches!(
+            envelope.message,
+            Message::PlatformCommand(PlatformCommand::ArchiveJob(_))
+        ));
+    }
+    assert_eq!(
+        reads.len(),
+        1,
+        "one explicit clipboard read, never job admission"
+    );
+    assert!(
+        reads[0].to_string().contains(&id.to_string()),
+        "original form session"
+    );
+}
+
+#[path = "intake_tests.rs"]
+mod intake_tests;
+
+#[path = "opt03_result_tests.rs"]
+mod opt03_result_tests;
+
+#[path = "create_output_plan_tests.rs"]
+mod create_output_plan_tests;
+
+#[path = "opt07_batch_tests.rs"]
+mod opt07_batch_tests;
+
+#[test]
+fn incoming_add_feedback_preserves_native_publication_facts() {
+    let mut request = request(0);
+    request.kind = ArchiveJobKind::Modify;
+    let mut facts: ArchiveJobTerminal = serde_json::from_value(serde_json::json!({
+        "outcome":"failed", "code":"unsafe_path", "files_committed":0, "bytes_committed":0,
+        "files_verified":0, "bytes_verified":0, "files_skipped":0, "cleanup_complete":true,
+        "commit_state":null, "elapsed_ms":1, "native_error_code":null, "journal":[]
+    }))
+    .expect("terminal");
+    assert!(
+        !job_failure_message(Some(&request), &facts).contains("未被替换"),
+        "zero count is not unpublished"
+    );
+    facts.output_published = Some(false);
+    assert!(job_failure_message(Some(&request), &facts).contains("原压缩包未被替换"));
+    facts.output_published = Some(true);
+    assert!(
+        job_failure_message(Some(&request), &facts).contains("已有输出发布"),
+        "publication despite zero committed files"
+    );
+    facts.commit_state = Some("CommitOutcomeUnknown".into());
+    assert!(job_failure_message(Some(&request), &facts).contains("写入结果尚未确认"));
+    facts.commit_state = None;
+    facts.output_published = None;
+    facts.code = Some("io_failure".into());
+    facts.native_error_code = Some(32);
+    assert!(job_failure_message(Some(&request), &facts).contains("占用"));
+    facts.native_error_code = None;
+    facts.code = Some("authentication_or_data_error".into());
+    assert!(job_failure_message(Some(&request), &facts).contains("密码验证或加密数据校验失败"));
+    assert!(!job_failure_message(Some(&request), &facts).contains("密码不正确"));
+}
+
+#[gpui_kit::test]
+fn ref17_create_remember_keeps_concurrent_untouched_create_leaves(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, _endpoint) = super::super::tests::setup(cx);
+    let temp = tempfile::tempdir().expect("isolated create preferences");
+    let path = temp.path().join("config.json");
+    nxtools_core::AppConfig::default()
+        .save_to(&path)
+        .expect("seed");
+    let baseline = nxtools_core::archive::ArchiveSettings::default();
+    nxtools_core::AppConfig::update_section(&path, |config| {
+        config.archive.test_after_create = false;
+        config.archive.exclude_patterns = vec!["concurrent.tmp".into()];
+        config.archive.show_tree = false;
+    })
+    .expect("concurrent preference save");
+    let mut desired = baseline.clone();
+    desired.keep_create_progress_open = true;
+    owner.update(cx, |app, cx| {
+        app.config_path = Some(path.clone());
+        app.remember_accepted(desired, ArchiveJobKind::Create, Some(baseline), cx);
+    });
+    cx.run_until_parked();
+    let saved = nxtools_core::AppConfig::load_from(&path)
+        .expect("durable reopen")
+        .archive;
+    assert!(
+        !saved.test_after_create,
+        "untouched stale Test preference must not overwrite disk latest"
+    );
+    assert_eq!(saved.exclude_patterns, ["concurrent.tmp"]);
+    assert!(!saved.show_tree && saved.keep_create_progress_open);
 }

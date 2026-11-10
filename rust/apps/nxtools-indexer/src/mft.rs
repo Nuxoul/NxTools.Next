@@ -1,17 +1,21 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use anyhow::{Context, Result, ensure};
 use nxtools_finder::search_char_mask;
-use tracing::warn;
 
+#[cfg(test)]
+pub(crate) mod allocation_probe;
 mod cache;
 mod time_metadata;
 #[cfg(windows)]
 pub(crate) use time_metadata::read_last_write_by_id;
 
-pub(crate) use cache::{load_system_snapshot, persist_system_delta, persist_system_snapshot};
+pub(crate) use cache::{
+    cleanup_published_snapshot, load_system_snapshot, persist_system_delta, persist_system_snapshot,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct MftEntry {
@@ -82,7 +86,7 @@ pub(crate) fn compact_snapshot(snapshot: &MftSnapshot) -> MftSnapshot {
             .replacements
             .iter()
             .filter(|(reference, _)| !snapshot.overlay.deleted.contains(reference))
-            .map(|(_, entry)| entry.clone()),
+            .map(|(_, entry)| entry.as_ref().clone()),
     );
     entries.sort_by(|left, right| left.path.cmp(&right.path));
     MftSnapshot::from_entries(
@@ -94,9 +98,16 @@ pub(crate) fn compact_snapshot(snapshot: &MftSnapshot) -> MftSnapshot {
 }
 
 pub(crate) fn compact_system_snapshot(snapshot: &MftSnapshot) -> Result<MftSnapshot> {
+    compact_system_snapshot_with(snapshot, persist_system_snapshot)
+}
+
+fn compact_system_snapshot_with(
+    snapshot: &MftSnapshot,
+    persist: impl Fn(&mut MftSnapshot) -> Result<()>,
+) -> Result<MftSnapshot> {
     let mut compacted = compact_snapshot(snapshot);
-    persist_system_snapshot(&mut compacted)?;
-    Ok(compacted)
+    persist(&mut compacted)?;
+    cache::reopen_persisted_snapshot(compacted)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -107,7 +118,8 @@ pub(crate) struct MftIdentity {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MftOverlay {
-    pub replacements: HashMap<u64, MftEntry>,
+    // Snapshot and durable-checkpoint clones share unchanged immutable row strings.
+    pub replacements: HashMap<u64, Arc<MftEntry>>,
     pub deleted: HashSet<u64>,
 }
 
@@ -270,7 +282,7 @@ impl MftSnapshot {
             return None;
         }
         if let Some(entry) = self.overlay.replacements.get(&file_reference) {
-            return Some(entry.clone());
+            return Some(entry.as_ref().clone());
         }
         match &self.base {
             MftBase::Owned(entries) => self
@@ -529,6 +541,37 @@ fn read_u64(buffer: &[u8], offset: usize) -> Result<u64> {
     ))
 }
 
+#[cfg(any(windows, test))]
+fn enumerate_initial_snapshot(
+    mount_point: &str,
+    journal_id: u64,
+    start_usn: i64,
+    enumerate: impl FnOnce(i64) -> Result<Vec<RawMftRecord>>,
+) -> Result<MftSnapshot> {
+    // Keep the pre-scan cursor for replay, but include rows whose latest USN changes
+    // during enumeration; metadata-only catch-up cannot create an omitted base row.
+    let started = Instant::now();
+    let records = enumerate(i64::MAX)
+        .with_context(|| format!("failed to enumerate MFT records for {mount_point}"))?;
+    let raw_rows = records.len();
+    tracing::info!(
+        event = "indexer.snapshot.enumeration",
+        rows = raw_rows,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "MFT enumeration completed"
+    );
+    let constructed = Instant::now();
+    let snapshot = snapshot_from_records(mount_point, Some(journal_id), Some(start_usn), records);
+    tracing::info!(
+        event = "indexer.snapshot.construction",
+        raw_rows,
+        rows = snapshot.visible_len(),
+        elapsed_ms = constructed.elapsed().as_millis() as u64,
+        "MFT snapshot constructed"
+    );
+    Ok(snapshot)
+}
+
 #[cfg(windows)]
 pub(crate) fn scan_volume(mount_point: &str) -> Result<MftSnapshot> {
     windows::scan_volume(mount_point)
@@ -540,15 +583,39 @@ pub(crate) fn scan_volume(_mount_point: &str) -> Result<MftSnapshot> {
 }
 
 pub(crate) fn scan_volume_and_persist(mount_point: &str) -> Result<MftSnapshot> {
-    let mut snapshot = scan_volume(mount_point)?;
-    if let Err(error) = persist_system_snapshot(&mut snapshot) {
-        warn!(
-            mount_point,
-            %error,
-            "MFT snapshot cache write failed; index remains usable for this session"
-        );
-    }
-    Ok(snapshot)
+    scan_volume_and_persist_with(mount_point, scan_volume, persist_system_snapshot)
+}
+
+fn scan_volume_and_persist_with(
+    mount_point: &str,
+    scan: impl Fn(&str) -> Result<MftSnapshot>,
+    persist: impl Fn(&mut MftSnapshot) -> Result<()>,
+) -> Result<MftSnapshot> {
+    let started = Instant::now();
+    let mut snapshot = scan(mount_point)?;
+    tracing::info!(
+        event = "indexer.snapshot.scan",
+        rows = snapshot.visible_len(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "volume scan completed"
+    );
+    let persisted = Instant::now();
+    persist(&mut snapshot).context("persist completed MFT snapshot")?;
+    tracing::info!(
+        event = "indexer.snapshot.persist",
+        rows = snapshot.visible_len(),
+        elapsed_ms = persisted.elapsed().as_millis() as u64,
+        "volume base persisted"
+    );
+    let reopened = Instant::now();
+    let mapped = cache::reopen_persisted_snapshot(snapshot)?;
+    tracing::info!(
+        event = "indexer.snapshot.reopen",
+        rows = mapped.visible_len(),
+        elapsed_ms = reopened.elapsed().as_millis() as u64,
+        "volume base mapped and reopened"
+    );
+    Ok(mapped)
 }
 
 #[cfg(windows)]
@@ -557,6 +624,7 @@ mod windows {
     use std::ffi::c_void;
     use std::mem::size_of;
     use std::ptr::{null, null_mut};
+    use std::time::Instant;
 
     use anyhow::{Context, Result, ensure};
     use windows_sys::Win32::Foundation::{
@@ -572,8 +640,8 @@ mod windows {
     };
 
     use super::{
-        MftSnapshot, RawMftRecord, hydrate_record_times_while, parse_enumeration_batch,
-        snapshot_from_records,
+        MftSnapshot, RawMftRecord, enumerate_initial_snapshot, hydrate_record_times_while,
+        parse_enumeration_batch,
     };
 
     const ENUMERATION_BUFFER_BYTES: usize = 1024 * 1024;
@@ -610,14 +678,12 @@ mod windows {
         }
         let handle = VolumeHandle(raw_handle);
         let journal = query_journal(handle.0)?;
-        let records = enumerate_mft(handle.0, journal.NextUsn)
-            .with_context(|| format!("failed to enumerate MFT records for {mount_point}"))?;
-        Ok(snapshot_from_records(
+        enumerate_initial_snapshot(
             mount_point,
-            Some(journal.UsnJournalID),
-            Some(journal.NextUsn),
-            records,
-        ))
+            journal.UsnJournalID,
+            journal.NextUsn,
+            |high_usn| enumerate_mft(handle.0, high_usn),
+        )
     }
 
     fn volume_device_path(mount_point: &str) -> Result<String> {
@@ -667,6 +733,9 @@ mod windows {
         };
         let mut buffer = vec![0_u8; ENUMERATION_BUFFER_BYTES];
         let mut records = Vec::new();
+        let mut metadata_elapsed = std::time::Duration::ZERO;
+        let mut metadata_rows = 0_usize;
+        let started = Instant::now();
         loop {
             let mut returned = 0_u32;
             let success = unsafe {
@@ -700,34 +769,187 @@ mod windows {
             );
             // Enumeration's USN timestamp is not last-write. Hydrate this bounded batch on
             // the snapshot worker, never in a search or an idle maintenance pass.
+            let metadata_started = Instant::now();
+            metadata_rows += batch.len();
             let _ = hydrate_record_times_while(
                 &mut batch,
                 |reference| super::read_last_write_by_id(handle, reference),
                 &|| true,
             );
+            metadata_elapsed += metadata_started.elapsed();
             records.append(&mut batch);
             if next_reference <= request.StartFileReferenceNumber {
                 break;
             }
             request.StartFileReferenceNumber = next_reference;
         }
+        tracing::info!(
+            event = "indexer.snapshot.native_enumeration",
+            rows = records.len(),
+            metadata_rows,
+            metadata_elapsed_ms = metadata_elapsed.as_millis() as u64,
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "native MFT enumeration and LastWriteTime hydration completed"
+        );
         Ok(records)
     }
 
-    fn win32_error(operation: &str, code: u32) -> anyhow::Error {
-        if code == ERROR_ACCESS_DENIED {
-            anyhow::anyhow!(
+    pub(super) fn win32_error(operation: &str, code: u32) -> anyhow::Error {
+        let context = if code == ERROR_ACCESS_DENIED {
+            format!(
                 "{operation} failed: Windows 拒绝原始卷访问；需要以管理员权限运行索引器 (Win32 {code})"
             )
         } else {
-            anyhow::anyhow!("{operation} failed with Win32 error {code}")
-        }
+            format!("{operation} failed with Win32 error {code}")
+        };
+        anyhow::Error::new(std::io::Error::from_raw_os_error(code as i32)).context(context)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn u4_snapshot_persistence_failure_keeps_last_good_and_ends_as_failure() {
+        let mut service =
+            crate::IndexerService::from_volume_descriptors([crate::VolumeDescriptor::new(
+                r"C:\", "NTFS",
+            )]);
+        service.rebuild_with(|mount| {
+            Ok(MftSnapshot::from_entries(
+                mount,
+                Some(17),
+                Some(100),
+                Vec::new(),
+            ))
+        });
+        service.rebuild_with(|mount| {
+            scan_volume_and_persist_with(
+                mount,
+                |mount| {
+                    Ok(MftSnapshot::from_entries(
+                        mount,
+                        Some(17),
+                        Some(200),
+                        Vec::new(),
+                    ))
+                },
+                |_| Err(std::io::Error::from_raw_os_error(112).into()),
+            )
+        });
+        assert!(
+            service.status().last_error.is_some(),
+            "failed durable snapshot publication must not report success"
+        );
+        assert_eq!(
+            service.snapshots[0].next_usn,
+            Some(100),
+            "failed persistence preserves last-good publication"
+        );
+        assert!(service.maintenance.is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn u4_native_scan_failure_retains_its_error_code() {
+        let failure = windows::win32_error("synthetic enumeration", 5);
+        assert_eq!(
+            crate::persistence_native_error(&failure),
+            Some(5),
+            "native scan diagnostics retain the owning boundary's error code"
+        );
+    }
+
+    fn changing_enumeration() -> MftSnapshot {
+        enumerate_initial_snapshot(r"C:\", 17, 100, |high_usn| {
+            Ok([
+                (110, 10, 5, "changing.txt", false),
+                (111, 20, 5, "ChangingDirectory", true),
+                (90, 21, 20, "child.txt", false),
+                (112, 30, 5, "created.txt", false),
+            ]
+            .into_iter()
+            .filter(|(latest_usn, ..)| *latest_usn <= high_usn)
+            .map(
+                |(_, file_reference, parent_reference, name, is_directory)| RawMftRecord {
+                    file_reference,
+                    parent_reference,
+                    name: name.into(),
+                    is_directory,
+                    modified_at_unix_ms: Some(1),
+                },
+            )
+            .collect())
+        })
+        .expect("synthetic production enumeration")
+    }
+
+    fn replay_scan_changes(snapshot: &MftSnapshot) -> MftSnapshot {
+        use crate::usn::{JournalBatch, UsnRecord, apply_journal_batch};
+        apply_journal_batch(
+            snapshot,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 120,
+                records: vec![
+                    UsnRecord::metadata(10, 2),
+                    UsnRecord::metadata(20, 3),
+                    UsnRecord::upsert(30, 5, "created.txt", false),
+                    UsnRecord::metadata(30, 4),
+                    UsnRecord::upsert(30, 5, "created.txt", false),
+                    UsnRecord::metadata(99, 5),
+                ],
+            },
+        )
+        .expect("catch up from the pre-enumeration cursor")
+    }
+
+    #[test]
+    fn h3_scan_modified_preexisting_file_survives_metadata_only_replay() {
+        let initial = changing_enumeration();
+        assert_eq!(initial.journal_id, Some(17));
+        assert_eq!(initial.next_usn, Some(100));
+        let updated = replay_scan_changes(&initial);
+        let file = updated
+            .visible_entry(10)
+            .expect("preexisting modified file must remain visible");
+        assert_eq!(file.path, r"C:\changing.txt");
+        assert_eq!(file.modified_at_unix_ms, Some(2));
+        assert_eq!(updated.next_usn, Some(120));
+    }
+
+    #[test]
+    fn h3_scan_modified_directory_preserves_itself_and_unchanged_descendant() {
+        let updated = replay_scan_changes(&changing_enumeration());
+        assert!(
+            updated
+                .visible_entry(20)
+                .expect("modified directory must be enumerated")
+                .is_directory
+        );
+        assert_eq!(
+            updated.visible_entry(21).expect("unchanged child").path,
+            r"C:\ChangingDirectory\child.txt"
+        );
+    }
+
+    #[test]
+    fn h3_scan_create_and_modify_replay_is_idempotent_without_unknown_metadata_resurrection() {
+        let first = replay_scan_changes(&changing_enumeration());
+        let second = replay_scan_changes(&first);
+        assert_eq!(second.visible_len(), first.visible_len());
+        assert_eq!(second.overlay, first.overlay);
+        assert_eq!(
+            second
+                .visible_entry(30)
+                .expect("created once")
+                .modified_at_unix_ms,
+            Some(4)
+        );
+        assert!(second.visible_entry(99).is_none());
+    }
 
     #[test]
     fn w4_mft_metadata_seam_publishes_true_time_and_keeps_failure_unknown() {
@@ -876,7 +1098,8 @@ mod tests {
                 is_directory: false,
                 size_bytes: None,
                 modified_at_unix_ms: None,
-            },
+            }
+            .into(),
         );
         snapshot.overlay.replacements.insert(
             12,
@@ -890,7 +1113,8 @@ mod tests {
                 is_directory: false,
                 size_bytes: None,
                 modified_at_unix_ms: None,
-            },
+            }
+            .into(),
         );
 
         let compacted = compact_snapshot(&snapshot);

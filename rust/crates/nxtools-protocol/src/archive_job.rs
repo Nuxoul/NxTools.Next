@@ -18,7 +18,8 @@ wire_enum!(ArchiveJobAction {
     Cancel,
     Pause,
     Resume,
-    Reply
+    Reply,
+    RetireBatch
 });
 wire_enum!(ArchiveJobKind {
     Extract,
@@ -70,12 +71,12 @@ impl ArchiveModificationRefusal {
             Self::BackendMissing => "此格式支持浏览和解压，暂不支持修改压缩包内容。",
             Self::SnapshotNotReady => "仅完整的就绪快照可编辑。",
             Self::SourceChanged => "源已变化或旧快照不能编辑；请刷新。",
-            Self::Volumes => "分卷归档只读，不能编辑。",
-            Self::SelfExtracting => "已确认的自解压归档不能编辑。",
+            Self::Volumes => "分卷压缩包只读，不能编辑。",
+            Self::SelfExtracting => "已确认的自解压压缩包不能编辑。",
             Self::ApplicationContainer => "应用容器不能编辑。",
             Self::UnsupportedEncryption => "此加密结构不支持修改。",
-            Self::UnsupportedStructure => "此归档结构不支持修改。",
-            Self::Corrupt => "归档结构已损坏，不能修改。",
+            Self::UnsupportedStructure => "此压缩包结构不支持修改。",
+            Self::Corrupt => "压缩包结构已损坏，不能修改。",
             Self::UnverifiedMetadata => "尚未确认源结构或元数据可安全保留，不能修改。",
             Self::SourceUnavailable => "源不可访问，请刷新后重试。",
         }
@@ -154,6 +155,9 @@ pub struct ArchiveJobCommand {
     pub request: Option<ArchiveJobRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply: Option<ArchiveJobReply>,
+    /// Original immutable batch association; no preview/drag authorization.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_id: Option<Uuid>,
 }
 impl ArchiveJobCommand {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
@@ -161,6 +165,14 @@ impl ArchiveJobCommand {
             return Err(ArchiveReadError::IncompatibleVersion);
         }
         if self.operation_id.is_nil() || self.session_id.is_nil() || self.generation == 0 {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
+        if self.batch_id.is_some_and(|id| id.is_nil())
+            || self
+                .reply
+                .as_ref()
+                .is_some_and(|r| r.remember_batch_password && self.batch_id.is_none())
+        {
             return Err(ArchiveReadError::InvalidRequest);
         }
         match self.action {
@@ -178,6 +190,14 @@ impl ArchiveJobCommand {
                     return Err(ArchiveReadError::InvalidRequest);
                 }
                 reply.validate()
+            }
+            ArchiveJobAction::RetireBatch
+                if self.request.is_none()
+                    && self.reply.is_none()
+                    && self.batch_id == Some(self.operation_id)
+                    && self.session_id == self.operation_id =>
+            {
+                Ok(())
             }
             ArchiveJobAction::Cancel | ArchiveJobAction::Pause | ArchiveJobAction::Resume
                 if self.request.is_none() && self.reply.is_none() =>
@@ -627,12 +647,19 @@ pub struct ArchiveJobReply {
     pub decision: Option<ArchiveJobConflictDecision>,
     pub apply_to_all: bool,
     pub approved_limit: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remember_batch_password: bool,
 }
 impl ArchiveJobReply {
     fn validate(&self) -> Result<(), ArchiveReadError> {
         if self.ticket.operation_id.is_nil()
             || self.ticket.prompt_id.is_nil()
             || self.ticket.generation == 0
+        {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
+        if self.remember_batch_password
+            && (self.kind != ArchiveJobPromptKind::Password || self.password.is_none())
         {
             return Err(ArchiveReadError::InvalidRequest);
         }
@@ -719,6 +746,9 @@ pub struct ArchiveJobProgress {
     pub current_bytes_done: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_bytes_total: Option<u64>,
+    /// Operation-local publication order across the lossless and coalesced channels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<u64>,
 }
 /// UI-only immutable decision context. Never use these strings for filesystem authority.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -775,6 +805,23 @@ pub struct ArchiveJobCommit {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cleanup: Option<String>,
 }
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveJobCommitOutcome {
+    pub state: String,
+    pub published: Option<bool>,
+    pub cleanup: String,
+    pub files: u64,
+    pub bytes: u64,
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveJobJournalSummary {
+    pub total_records: u64,
+    pub detail_complete: bool,
+    pub outcomes: Vec<ArchiveJobCommitOutcome>,
+}
+
 /// Native committed-output location. Display/Shell use only; never grants write authority.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -794,6 +841,59 @@ impl ArchiveJobResultLocation {
                 self.action,
                 crate::ShellOpenAction::Open | crate::ShellOpenAction::SelectInExplorer
             )
+    }
+}
+/// Display-only affected Add members. Never use these names as native output authority.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveJobAddMember {
+    pub path: String,
+    pub outcome: ArchiveJobAddOutcome,
+}
+impl std::fmt::Debug for ArchiveJobAddMember {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ArchiveJobAddMember([PRIVATE])")
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ArchiveJobAddOutcome {
+    Added,
+    Overwritten,
+    Renamed,
+}
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveJobAddResult {
+    pub total: u64,
+    pub members: Vec<ArchiveJobAddMember>,
+}
+impl std::fmt::Debug for ArchiveJobAddResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ArchiveJobAddResult")
+            .field("total", &self.total)
+            .field("members_count", &self.members.len())
+            .finish()
+    }
+}
+impl ArchiveJobAddResult {
+    pub fn valid(&self) -> bool {
+        self.total > 0
+            && self.total >= self.members.len() as u64
+            && self.members.len() <= 256
+            && self
+                .members
+                .iter()
+                .try_fold(0usize, |sum, member| {
+                    let path = member.path.as_str();
+                    let path = path.strip_suffix('/').unwrap_or(path);
+                    (member.path.len() <= 32767
+                        && !path.is_empty()
+                        && path.split('/').all(valid_job_name))
+                    .then(|| sum.checked_add(member.path.len()))
+                    .flatten()
+                })
+                .is_some_and(|bytes| bytes <= 65536)
     }
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -819,6 +919,10 @@ pub struct ArchiveJobTerminal {
     /// Does not grant execution, commit, cleanup or retry authority.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_published: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub add_result: Option<ArchiveJobAddResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub journal_summary: Option<ArchiveJobJournalSummary>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -858,7 +962,16 @@ impl ArchiveJobEvent {
             ArchiveJobEventKind::Progress => {
                 self.state.is_none()
                     && self.progress.as_ref().is_some_and(|p| {
-                        p.phase == "running"
+                        p.sequence != Some(0)
+                            && matches!(
+                                p.phase.as_str(),
+                                "running"
+                                    | "edit_planning"
+                                    | "edit_reading"
+                                    | "edit_reencoding"
+                                    | "edit_verifying"
+                                    | "edit_committing"
+                            )
                             && p.current_member.as_ref().is_none_or(|member| {
                                 !member.is_empty()
                                     && member.len() <= 32767
@@ -892,10 +1005,26 @@ impl ArchiveJobEvent {
                     && self.progress.is_none()
                     && self.prompt.is_none()
                     && self.terminal.as_ref().is_some_and(|t| {
-                        t.journal.len() <= 4096
+                        (if let Some(summary) = &t.journal_summary {
+                            valid_journal_summary(t, summary)
+                        } else {
+                            t.journal.len() <= 4096
+                        })
                             && t.result_location
                                 .as_ref()
                                 .is_none_or(ArchiveJobResultLocation::valid)
+                            && t.add_result.as_ref().is_none_or(ArchiveJobAddResult::valid)
+                            && (t.add_result.is_none()
+                                || t.cleanup_complete
+                                    && t.output_published == Some(true)
+                                    && t.commit_state.as_deref() == Some("Committed")
+                                    && t.files_committed == 1
+                                    && matches!(t.journal.as_slice(), [ArchiveJobCommit { state, published: Some(true), .. }] if state.as_str() == "Committed")
+                                    && matches!(
+                                        t.outcome,
+                                        ArchiveJobOutcome::Succeeded
+                                            | ArchiveJobOutcome::SucceededWithWarnings
+                                    ))
                             && t.code.as_ref().is_none_or(|code| {
                                 code.len() <= 64
                                     && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
@@ -937,6 +1066,105 @@ impl ArchiveJobEvent {
         }
     }
 }
+fn valid_journal_summary(t: &ArchiveJobTerminal, summary: &ArchiveJobJournalSummary) -> bool {
+    use std::collections::{HashMap, HashSet};
+    if summary.total_records > 1_000_000
+        || summary.outcomes.len() > 256
+        || summary.outcomes.is_empty() != (summary.total_records == 0)
+        || t.journal.len() > 256
+        || summary.detail_complete != (summary.total_records == t.journal.len() as u64)
+        || !summary.detail_complete && summary.total_records <= t.journal.len() as u64
+    {
+        return false;
+    }
+    let mut groups = HashMap::new();
+    let mut files = 0u64;
+    let mut bytes = 0u64;
+    let mut published_files = 0u64;
+    let mut published_bytes = 0u64;
+    for group in &summary.outcomes {
+        if !valid_commit_state(&group.state)
+            || !valid_cleanup(&group.cleanup)
+            || group.files == 0
+            || groups
+                .insert(
+                    (&group.state, group.published, &group.cleanup),
+                    (group.files, group.bytes),
+                )
+                .is_some()
+        {
+            return false;
+        }
+        let Some(next_files) = files.checked_add(group.files) else {
+            return false;
+        };
+        let Some(next_bytes) = bytes.checked_add(group.bytes) else {
+            return false;
+        };
+        bytes = next_bytes;
+        files = next_files;
+        if group.published == Some(true) {
+            let (Some(next_files), Some(next_bytes)) = (
+                published_files.checked_add(group.files),
+                published_bytes.checked_add(group.bytes),
+            ) else {
+                return false;
+            };
+            published_files = next_files;
+            published_bytes = next_bytes;
+        }
+    }
+    if files != summary.total_records
+        || published_files != t.files_committed
+        || published_bytes != t.bytes_committed
+    {
+        return false;
+    }
+    let mut ordinals = HashSet::new();
+    let mut details: HashMap<(&String, Option<bool>, &String), (u64, u64)> = HashMap::new();
+    for detail in &t.journal {
+        let Some(cleanup) = detail.cleanup.as_ref() else {
+            return false;
+        };
+        if detail.ordinal >= summary.total_records || !ordinals.insert(detail.ordinal) {
+            return false;
+        }
+        let key = (&detail.state, detail.published, cleanup);
+        let Some(&(limit_files, limit_bytes)) = groups.get(&key) else {
+            return false;
+        };
+        let entry = details.entry(key).or_default();
+        let (Some(next_files), Some(next_bytes)) =
+            (entry.0.checked_add(1), entry.1.checked_add(detail.bytes))
+        else {
+            return false;
+        };
+        *entry = (next_files, next_bytes);
+        if next_files > limit_files || next_bytes > limit_bytes {
+            return false;
+        }
+    }
+    !summary.detail_complete
+        || groups
+            .iter()
+            .all(|(key, counts)| details.get(key).copied() == Some(*counts))
+}
+
+fn valid_cleanup(value: &str) -> bool {
+    matches!(
+        value,
+        "not_requested"
+            | "retained"
+            | "retained_replacement"
+            | "retained_uncertain"
+            | "retained_published"
+            | "partial_removed"
+            | "new_output_removed"
+            | "changed_retained"
+            | "cleanup_failed"
+    )
+}
+
 fn valid_commit_state(state: &str) -> bool {
     matches!(
         state,
@@ -954,6 +1182,199 @@ fn valid_commit_state(state: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn large_count_terminal_wire_validates_partial_and_complete_native_outcomes() {
+        let wire = serde_json::json!({
+            "version": 1, "operation_id": Uuid::new_v4(), "session_id": Uuid::new_v4(),
+            "generation": 1, "kind": "terminal", "terminal": {
+                "outcome": "cancelled", "code": "cancelled_with_committed_output",
+                "files_committed": 1, "bytes_committed": 3, "files_verified": 0,
+                "bytes_verified": 0, "files_skipped": 0, "cleanup_complete": true,
+                "commit_state": "CommitOutcomeUnknown", "elapsed_ms": 10,
+                "native_error_code": null, "journal": [{"ordinal": 2, "state": "CommitOutcomeUnknown",
+                    "replaced": false, "bytes": 0, "published": null, "cleanup": "retained_uncertain"}],
+                "journal_summary": {"total_records": 3, "detail_complete": false, "outcomes": [
+                    {"state": "Committed", "published": true, "cleanup": "retained", "files": 1, "bytes": 3},
+                    {"state": "FailedBeforeCommit", "published": false, "cleanup": "partial_removed", "files": 1, "bytes": 0},
+                    {"state": "CommitOutcomeUnknown", "published": null, "cleanup": "retained_uncertain", "files": 1, "bytes": 0}
+                ]}
+            }
+        });
+        let parse = |value: serde_json::Value| {
+            serde_json::from_value::<ArchiveJobEvent>(value).expect("terminal wire")
+        };
+        let event = parse(wire.clone());
+        assert!(event.validate().is_ok());
+        let mut legacy = wire.clone();
+        legacy["terminal"]
+            .as_object_mut()
+            .expect("terminal")
+            .remove("journal_summary");
+        assert!(parse(legacy.clone()).validate().is_ok());
+        assert!(
+            serde_json::to_value(parse(legacy)).expect("legacy encode")["terminal"]
+                .get("journal_summary")
+                .is_none()
+        );
+        let mut full = wire.clone();
+        full["terminal"]["journal"] = serde_json::json!([
+            {"ordinal":0,"state":"Committed","replaced":false,"bytes":3,"published":true,"cleanup":"retained"},
+            {"ordinal":1,"state":"FailedBeforeCommit","replaced":false,"bytes":0,"published":false,"cleanup":"partial_removed"},
+            {"ordinal":2,"state":"CommitOutcomeUnknown","replaced":false,"bytes":0,"published":null,"cleanup":"retained_uncertain"}
+        ]);
+        full["terminal"]["journal_summary"]["detail_complete"] = serde_json::json!(true);
+        assert!(parse(full.clone()).validate().is_ok());
+        for (path, value) in [
+            ("total_records", serde_json::json!(2)),
+            ("detail_complete", serde_json::json!(true)),
+            ("outcomes", serde_json::json!([])),
+        ] {
+            let mut bad = wire.clone();
+            bad["terminal"]["journal_summary"][path] = value;
+            assert!(parse(bad).validate().is_err(), "invalid {path}");
+        }
+        for (path, value) in [
+            ("files", serde_json::json!(2)),
+            ("bytes", serde_json::json!(4)),
+            ("state", serde_json::json!("Unknown")),
+            ("cleanup", serde_json::json!("missing")),
+        ] {
+            let mut bad = wire.clone();
+            bad["terminal"]["journal_summary"]["outcomes"][0][path] = value;
+            assert!(parse(bad).validate().is_err(), "invalid bucket {path}");
+        }
+        let mut duplicate = wire.clone();
+        let copied = duplicate["terminal"]["journal_summary"]["outcomes"][0].clone();
+        duplicate["terminal"]["journal_summary"]["outcomes"][1] = copied;
+        assert!(parse(duplicate).validate().is_err());
+        full["terminal"]["journal"][1]["bytes"] = serde_json::json!(1);
+        assert!(
+            parse(full).validate().is_err(),
+            "complete bucket bytes must agree"
+        );
+        let mut oversized = wire;
+        oversized["terminal"]["journal"] = serde_json::json!(vec![
+            serde_json::json!({"ordinal":0,"state":"Committed","replaced":false,"bytes":0,"cleanup":"retained","published":true});
+            257
+        ]);
+        assert!(parse(oversized).validate().is_err(), "partial detail bound");
+        let mut ordinal = serde_json::to_value(&event).expect("detail wire");
+        ordinal["terminal"]["journal"][0]["ordinal"] = serde_json::json!(3);
+        assert!(
+            parse(ordinal).validate().is_err(),
+            "detail ordinal outside complete native history"
+        );
+        let mut huge = serde_json::to_value(&event).expect("summary wire");
+        huge["terminal"]["journal_summary"]["total_records"] = serde_json::json!(1_000_001);
+        assert!(parse(huge).validate().is_err(), "summary total bound");
+        let mut bounded = event.clone();
+        let terminal = bounded.terminal.as_mut().expect("terminal");
+        terminal.files_committed = 256;
+        terminal.bytes_committed = 256;
+        terminal.journal = (0..256)
+            .map(|ordinal| ArchiveJobCommit {
+                ordinal,
+                state: "Committed".into(),
+                replaced: false,
+                bytes: 1,
+                native_identity: Some(format!("v1:{}", "a".repeat(60))),
+                published: Some(true),
+                cleanup: Some("retained".into()),
+            })
+            .collect();
+        terminal.journal_summary = Some(ArchiveJobJournalSummary {
+            total_records: 256,
+            detail_complete: true,
+            outcomes: vec![ArchiveJobCommitOutcome {
+                state: "Committed".into(),
+                published: Some(true),
+                cleanup: "retained".into(),
+                files: 256,
+                bytes: 256,
+            }],
+        });
+        assert!(bounded.validate().is_ok());
+        assert!(
+            serde_json::to_vec(&bounded)
+                .expect("bounded full detail")
+                .len()
+                < crate::MAX_FRAME_BYTES
+        );
+        let encoded = serde_json::to_vec(&event).expect("bounded event");
+        assert!(encoded.len() < crate::MAX_FRAME_BYTES);
+    }
+
+    #[test]
+    fn opt01_progress_phase_wire_vocabulary_and_malformed_frames() {
+        for phase in [
+            "running",
+            "edit_planning",
+            "edit_reading",
+            "edit_reencoding",
+            "edit_verifying",
+            "edit_committing",
+        ] {
+            let value = serde_json::json!({"version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),"generation":1,"kind":"progress","progress":{"phase":phase,"bytes_done":3,"bytes_total":10,"files_done":0,"files_total":1}});
+            let encoded = serde_json::to_vec(&value).expect("serialize wire frame");
+            let event: ArchiveJobEvent =
+                serde_json::from_slice(&encoded).expect("deserialize wire frame");
+            assert!(event.validate().is_ok(), "supported phase {phase}");
+            assert_eq!(
+                event.progress.as_ref().expect("legacy progress").sequence,
+                None
+            );
+            assert!(
+                serde_json::to_value(&event).expect("legacy event encode")["progress"]
+                    .get("sequence")
+                    .is_none()
+            );
+            for sequence in [1, u64::MAX] {
+                let mut ordered = event.clone();
+                ordered
+                    .progress
+                    .as_mut()
+                    .expect("ordered progress")
+                    .sequence = Some(sequence);
+                assert!(ordered.validate().is_ok());
+                assert_eq!(
+                    serde_json::from_value::<ArchiveJobEvent>(
+                        serde_json::to_value(&ordered).expect("ordered event encode")
+                    )
+                    .expect("ordered event decode"),
+                    ordered
+                );
+            }
+            let mut zero = event.clone();
+            zero.progress
+                .as_mut()
+                .expect("zero sequence progress")
+                .sequence = Some(0);
+            assert!(zero.validate().is_err());
+            for malformed in [
+                serde_json::json!(-1),
+                serde_json::json!(1.5),
+                serde_json::json!("1"),
+            ] {
+                let mut invalid = value.clone();
+                invalid["progress"]["sequence"] = malformed;
+                assert!(serde_json::from_value::<ArchiveJobEvent>(invalid).is_err());
+            }
+            for invalid in ["", "edit_unknown", "RUNNING", "edit_reading\n"] {
+                let mut bad = event.clone();
+                bad.progress.as_mut().expect("progress").phase = invalid.into();
+                assert!(bad.validate().is_err(), "unknown phase {invalid:?}");
+            }
+            let mut bad = event.clone();
+            bad.state = Some(ArchiveJobState::Running);
+            assert!(bad.validate().is_err(), "progress cannot carry state");
+            let mut bad = event.clone();
+            let progress = bad.progress.as_mut().expect("progress");
+            progress.current_member = Some("owned.txt".into());
+            progress.current_bytes_done = Some(11);
+            progress.current_bytes_total = Some(10);
+            assert!(bad.validate().is_err(), "phase does not relax byte bounds");
+        }
+    }
     #[test]
     fn job_rejects_hidden_authority_and_inapplicable_create_options() {
         let mut value = serde_json::json!({"version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),"generation":1,"action":"start","request":{"kind":"create","paths":["C:\\fixture\\a"],"destination":"C:\\fixture\\out","create":{"format":"tar","level":null,"method":null,"password":null,"solid":null,"encrypt_header":null,"strip_single_root":false,"exclude_patterns":[],"test_after_create":false,"name":"out.tar"},"extract":null}});
@@ -990,6 +1411,7 @@ mod tests {
                 decision: Some(ArchiveJobConflictDecision::Overwrite),
                 apply_to_all: false,
                 approved_limit: None,
+                remember_batch_password: false,
             };
             assert!(reply.validate().is_ok());
             reply.decision = None;
@@ -1363,9 +1785,144 @@ mod hz3_publication_tests {
 
 #[cfg(test)]
 #[test]
+fn opt03_add_result_wire_is_optional_bounded_private_and_publication_gated() {
+    use serde_json::json;
+    let base = json!({"version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),
+        "generation":1,"kind":"terminal","terminal":{"outcome":"succeeded","code":null,
+        "files_committed":1,"bytes_committed":10,"files_verified":1,"bytes_verified":10,
+        "files_skipped":0,"cleanup_complete":true,"commit_state":"Committed","elapsed_ms":1,
+        "native_error_code":null,"journal":[{"ordinal":0,"state":"Committed","replaced":true,"bytes":10,"published":true}],"output_published":true}});
+    let legacy: ArchiveJobEvent = serde_json::from_value(base.clone()).expect("legacy event");
+    assert!(legacy.validate().is_ok());
+    assert!(
+        serde_json::to_value(&legacy).expect("serialize legacy")["terminal"]
+            .get("add_result")
+            .is_none()
+    );
+    let mut wire = base;
+    wire["terminal"]["add_result"] = json!({"total":300,"members":[
+        {"path":"folder/new (2).txt","outcome":"renamed"},
+        {"path":"folder/old.txt","outcome":"overwritten"}]});
+    let event: ArchiveJobEvent = serde_json::from_value(wire.clone()).expect("strict Add wire");
+    assert!(event.validate().is_ok());
+    assert!(
+        !format!("{event:?}").contains("folder/new"),
+        "private Debug"
+    );
+    assert_eq!(
+        serde_json::to_value(&event).expect("serialize")["terminal"]["add_result"],
+        wire["terminal"]["add_result"]
+    );
+    for bad in [
+        json!({"total":1,"members":[{"path":"ok.txt","outcome":"added"},{"path":"two.txt","outcome":"added"}]}),
+        json!({"total":1,"members":[{"path":"../escape","outcome":"added"}]}),
+        json!({"total":1,"members":[{"path":"ok.txt","outcome":"skip"}]}),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["terminal"]["add_result"] = bad;
+        let parsed = serde_json::from_value::<ArchiveJobEvent>(invalid);
+        assert!(parsed.is_err() || parsed.expect("typed shape").validate().is_err());
+    }
+    let mut overflow = wire.clone();
+    overflow["terminal"]["add_result"] =
+        json!({"total":257,"members":vec![json!({"path":"item.txt","outcome":"added"});257]});
+    assert!(
+        serde_json::from_value::<ArchiveJobEvent>(overflow)
+            .expect("typed overflow")
+            .validate()
+            .is_err()
+    );
+    for (field, value) in [
+        ("output_published", json!(false)),
+        ("cleanup_complete", json!(false)),
+        ("outcome", json!("failed")),
+        ("commit_state", json!("CommitOutcomeUnknown")),
+    ] {
+        let mut invalid = wire.clone();
+        invalid["terminal"][field] = value;
+        assert!(
+            serde_json::from_value::<ArchiveJobEvent>(invalid)
+                .expect("typed event")
+                .validate()
+                .is_err()
+        );
+    }
+    wire["terminal"]["add_result"]["other"] = serde_json::Value::Bool(true);
+    assert!(serde_json::from_value::<ArchiveJobEvent>(wire).is_err());
+}
+
+#[cfg(test)]
+#[test]
 fn windows_drive_root_is_a_valid_archive_destination() {
     assert!(valid_job_path(r"C:\"));
     assert!(valid_job_path(r"d:\"));
     assert!(!valid_job_path("C:"));
     assert!(!valid_job_path("C:/"));
+}
+
+#[cfg(test)]
+#[test]
+fn opt07_batch_password_fields_preserve_legacy_and_bind_explicit_consent() {
+    use serde_json::json;
+    let operation = Uuid::new_v4();
+    let batch = Uuid::new_v4();
+    let wire = json!({"version":1,"operation_id":operation,"session_id":operation,"generation":1,
+        "action":"reply","reply":{"ticket":{"operation_id":operation,"prompt_id":Uuid::new_v4(),"generation":1},
+        "kind":"password","password":null,"decision":null,"apply_to_all":false,"approved_limit":null}});
+    let legacy: ArchiveJobCommand = serde_json::from_value(wire).expect("legacy reply");
+    assert!(legacy.validate().is_ok());
+    assert_eq!(legacy.batch_id, None);
+    assert!(
+        !legacy
+            .reply
+            .as_ref()
+            .expect("reply")
+            .remember_batch_password
+    );
+    let encoded = serde_json::to_value(&legacy).expect("legacy encoding");
+    assert!(encoded.get("batch_id").is_none());
+    assert!(encoded["reply"].get("remember_batch_password").is_none());
+    let mut current = legacy;
+    current.reply.as_mut().expect("reply").password = Some(PrivatePassword::new("fixture-secret"));
+    current
+        .reply
+        .as_mut()
+        .expect("reply")
+        .remember_batch_password = true;
+    assert!(
+        current.validate().is_err(),
+        "consent requires original batch binding"
+    );
+    current.batch_id = Some(batch);
+    assert!(current.validate().is_ok());
+    let encoded = serde_json::to_value(&current).expect("explicit encoding");
+    assert_eq!(encoded["reply"]["remember_batch_password"], true);
+    assert_eq!(
+        serde_json::from_value::<ArchiveJobCommand>(encoded).expect("roundtrip"),
+        current
+    );
+    assert!(!format!("{current:?}").contains("fixture-secret"));
+    current.reply.as_mut().expect("reply").password = None;
+    assert!(
+        current.validate().is_err(),
+        "cancellation cannot remember a password"
+    );
+    current.reply.as_mut().expect("reply").kind = ArchiveJobPromptKind::Conflict;
+    assert!(current.validate().is_err(), "consent is password-only");
+    let mut retirement = ArchiveJobCommand {
+        version: 1,
+        operation_id: batch,
+        session_id: batch,
+        generation: 1,
+        action: ArchiveJobAction::RetireBatch,
+        request: None,
+        reply: None,
+        batch_id: Some(batch),
+    };
+    assert!(retirement.validate().is_ok());
+    retirement.session_id = operation;
+    assert!(retirement.validate().is_err());
+    retirement.session_id = batch;
+    retirement.batch_id = Some(operation);
+    assert!(retirement.validate().is_err());
 }

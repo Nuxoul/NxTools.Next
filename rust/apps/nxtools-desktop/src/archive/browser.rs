@@ -7,9 +7,12 @@
 //! read/window/consent/temp/Shell lifecycles and schedules independent state IO.
 #[path = "browser_drag.rs"]
 mod drag;
+pub(crate) use drag::LocatedDrop;
 #[cfg(test)]
 #[path = "browser_drag_tests.rs"]
 mod drag_tests;
+#[path = "browser_find.rs"]
+mod find;
 #[path = "browser_icons.rs"]
 mod icons;
 #[path = "browser_marquee.rs"]
@@ -50,6 +53,10 @@ use gpui_kit::{
     Focusable, IntoElement, KeyDownEvent, MouseButton, ParentElement, Pixels, Render, Role,
     ScrollHandle, ScrollStrategy, Subscription, UniformListScrollHandle, WeakEntity, Window, div,
     prelude::*, px, uniform_list,
+};
+use nxtools_archive::planning::{
+    CatalogSelection, SelectionEntry, SelectionWork, bind_ordinals, expand_selection,
+    matches_directory_prefixes, merge_directory_prefixes,
 };
 use nxtools_core::archive::ArchiveSettings;
 use nxtools_protocol::archive_job::ArchiveJobModifyAction;
@@ -154,6 +161,7 @@ enum Command {
     Up,
     Activate,
     Filter,
+    Find,
     ToggleTree,
     ToggleComment,
     ViewMode(bool),
@@ -162,6 +170,13 @@ enum Command {
     SelectAll,
     CopyPath,
     Edit(ArchiveJobModifyAction),
+}
+
+struct EditRefresh {
+    generation: u64,
+    folder: String,
+    selected: Vec<String>,
+    add_counts: Option<(u64, usize)>,
 }
 
 pub(crate) struct ArchiveBrowser {
@@ -189,6 +204,8 @@ pub(crate) struct ArchiveBrowser {
     show_tree: bool,
     show_comment: bool,
     filter_visible: bool,
+    find: Option<Entity<find::FindView>>,
+    find_epoch: u64,
     // Persisted state deliberately contains no archive/source path; `path` and `format` are runtime-only.
     format: String,
     comment: String,
@@ -206,10 +223,13 @@ pub(crate) struct ArchiveBrowser {
     pub(super) final_snapshot: Option<UiState>,
     retired: bool,
     pub(super) hosted: bool,
+    delete_ready: bool,
+    replace_ready: bool,
     edit_eligibility: Option<Result<(), nxtools_protocol::archive_job::ArchiveModificationRefusal>>,
     pub(super) edit_source: Option<nxtools_protocol::archive_browser::ArchiveSourceBinding>,
     projection_epoch: u64,
-    edit_refresh: Option<(u64, String, Vec<String>)>,
+    edit_refresh: Option<EditRefresh>,
+    pub(super) add_result_summary: Option<String>,
     _subscriptions: Vec<Subscription>,
     drag: drag::DragState,
     type_icons: icons::TypeIcons,
@@ -217,6 +237,10 @@ pub(crate) struct ArchiveBrowser {
     preview: preview_pane::PreviewPane,
     #[cfg(test)]
     open_dispatches: Vec<RowId>,
+    #[cfg(test)]
+    catalog_presentation_visits: std::cell::Cell<u64>,
+    #[cfg(test)]
+    rendered_rows: std::cell::Cell<u64>,
 }
 impl ArchiveBrowser {
     #[cfg(test)]
@@ -350,6 +374,8 @@ impl ArchiveBrowser {
             show_tree: true,
             show_comment: false,
             filter_visible: false,
+            find: None,
+            find_epoch: 0,
             format: String::new(),
             comment: String::new(),
             source_size: None,
@@ -370,6 +396,9 @@ impl ArchiveBrowser {
             edit_eligibility: None,
             edit_source: None,
             edit_refresh: None,
+            delete_ready: false,
+            replace_ready: false,
+            add_result_summary: None,
             _subscriptions: vec![
                 filter_sub,
                 tree_sub,
@@ -384,6 +413,10 @@ impl ArchiveBrowser {
             preview: preview_pane::PreviewPane::default(),
             #[cfg(test)]
             open_dispatches: vec![],
+            #[cfg(test)]
+            catalog_presentation_visits: std::cell::Cell::new(0),
+            #[cfg(test)]
+            rendered_rows: std::cell::Cell::new(0),
         }
     }
     /// Apply only changed preferences; preserve per-window layout, immutable selection and job owners.
@@ -424,6 +457,7 @@ impl ArchiveBrowser {
         )
     }
     pub(crate) fn suspend_tab(&mut self, cx: &mut Context<Self>) {
+        self.invalidate_find(cx);
         self.suspend_tab_gestures();
         self.suspend_preview(cx);
         self.cancel_marquee(true, cx);
@@ -434,36 +468,85 @@ impl ArchiveBrowser {
         intent: &nxtools_protocol::archive_job::ArchiveJobModify,
         next_generation: u64,
     ) {
+        self.prepare_edit_refresh_observed(intent, next_generation, &mut SelectionWork::default());
+    }
+    fn prepare_edit_refresh_observed(
+        &mut self,
+        intent: &nxtools_protocol::archive_job::ArchiveJobModify,
+        next_generation: u64,
+        work: &mut SelectionWork,
+    ) {
         let Some(model) = &self.model else {
             return;
         };
         if model.snapshot != intent.browser.snapshot_id {
             return;
         }
-        let old = intent.source_prefix.as_deref().or_else(|| {
-            intent.ordinals.first().and_then(|ordinal| {
-                model
-                    .entries
-                    .iter()
-                    .find(|entry| entry.ordinal == *ordinal)
-                    .map(|entry| entry.name.as_str())
-            })
-        });
-        let old = old.map(super::model::member_path);
-        let transform = |path: &str| -> Option<String> {
-            if intent.action == ArchiveJobModifyAction::Delete
-                && intent.ordinals.iter().any(|ordinal| {
-                    model.entries.iter().any(|entry| {
-                        let normalized = super::model::member_path(&entry.name);
-                        entry.ordinal == *ordinal
-                            && (path == normalized.trim_end_matches('/')
-                                || entry.kind == "Directory"
-                                    && path.starts_with(&format!(
-                                        "{}/",
-                                        normalized.trim_end_matches('/')
-                                    )))
-                    })
+        let Ok(credit) = model.selection_metadata_credit(work) else {
+            return;
+        };
+        let Ok(positions) = bind_ordinals(
+            &model.entries,
+            &intent.ordinals,
+            credit,
+            |entry| entry.ordinal,
+            || Ok(()),
+            work,
+        ) else {
+            return;
+        };
+        let mut deleted = std::collections::BTreeSet::new();
+        let mut prefixes = Vec::new();
+        let mut bytes = match (positions.len() as u64).checked_mul(256) {
+            Some(bytes) if bytes <= credit => bytes,
+            _ => return,
+        };
+        if intent.action == ArchiveJobModifyAction::Delete {
+            for &position in &positions {
+                work.ordinal_probes += 1;
+                let entry = &model.entries[position];
+                bytes = match bytes.checked_add(3 * entry.name.len() as u64 + 1) {
+                    Some(bytes) if bytes <= credit => bytes,
+                    _ => return,
+                };
+                work.root_normalizations += 1;
+                let path = super::model::member_path(&entry.name);
+                work.normalization_allocations +=
+                    u64::from(matches!(&path, std::borrow::Cow::Owned(_)));
+                let path = path.trim_end_matches('/');
+                deleted.insert(path.to_owned());
+                if entry.kind == "Directory" {
+                    work.prefix_allocations += 1;
+                    prefixes.push(format!("{path}/"));
+                }
+            }
+            if merge_directory_prefixes(&mut prefixes, || Ok(()), work).is_err() {
+                return;
+            }
+        }
+        let old = if intent.action == ArchiveJobModifyAction::Rename {
+            intent
+                .source_prefix
+                .as_deref()
+                .or_else(|| {
+                    positions
+                        .first()
+                        .map(|&position| model.entries[position].name.as_str())
                 })
+                .map(|path| {
+                    work.root_normalizations += 1;
+                    let path = super::model::member_path(path);
+                    work.normalization_allocations +=
+                        u64::from(matches!(&path, std::borrow::Cow::Owned(_)));
+                    path
+                })
+        } else {
+            None
+        };
+        let mut transform = |path: &str| -> Option<String> {
+            if intent.action == ArchiveJobModifyAction::Delete
+                && (deleted.contains(path)
+                    || matches_directory_prefixes(&prefixes, path, true, work))
             {
                 return None;
             }
@@ -499,7 +582,44 @@ impl ArchiveBrowser {
             .filter(|row| !row.parent && model.selected.contains(&row.id))
             .filter_map(|row| transform(&row.path))
             .collect();
-        self.edit_refresh = Some((next_generation, folder, selected));
+        self.edit_refresh = Some(EditRefresh {
+            generation: next_generation,
+            folder,
+            selected,
+            add_counts: None,
+        });
+    }
+    pub(super) fn prepare_add_refresh(
+        &mut self,
+        intent: &nxtools_protocol::archive_job::ArchiveJobModify,
+        result: Option<&nxtools_protocol::archive_job::ArchiveJobAddResult>,
+        next_generation: u64,
+    ) {
+        let folder = intent.value.as_deref().unwrap_or("").trim_end_matches('/');
+        if self.retired
+            || self.generation.wrapping_add(1).max(1) != next_generation
+            || self.model.as_ref().is_none_or(|model| {
+                model.snapshot != intent.browser.snapshot_id || model.folder != folder
+            })
+        {
+            return;
+        }
+        self.edit_refresh = Some(EditRefresh {
+            generation: next_generation,
+            folder: folder.to_owned(),
+            selected: result.map_or_else(Vec::new, |result| {
+                result
+                    .members
+                    .iter()
+                    .map(|member| {
+                        super::model::member_path(&member.path)
+                            .trim_end_matches('/')
+                            .to_owned()
+                    })
+                    .collect()
+            }),
+            add_counts: result.map(|result| (result.total, result.members.len())),
+        });
     }
     pub(crate) fn install(
         &mut self,
@@ -512,9 +632,11 @@ impl ArchiveBrowser {
         if self.retired {
             return;
         }
+        self.invalidate_find(cx);
         self.invalidate_drag();
         self.recovery = None;
         self.clear_pending_icons();
+        let previous_folder = self.model.as_ref().map(|model| model.folder.clone());
         let mut model = BrowserModel::new(snapshot, entries);
         model.show_parent_row = self.settings.show_parent_row;
         model.sort = self.sort;
@@ -522,10 +644,24 @@ impl ArchiveBrowser {
         let edit_refresh = self
             .edit_refresh
             .take()
-            .filter(|(generation, _, _)| *generation == self.generation);
-        if let Some((_, folder, _)) = &edit_refresh {
-            let folders = model.folders();
-            let mut folder = folder.as_str();
+            .filter(|refresh| refresh.generation == self.generation);
+        self.add_result_summary = edit_refresh
+            .as_ref()
+            .and_then(|refresh| refresh.add_counts)
+            .map(|(total, shown)| {
+                if total > shown as u64 {
+                    format!("已更新 {total} 个成员；展示其中 {shown} 个结果，完整压缩包未截断。")
+                } else {
+                    format!("已更新 {total} 个成员；已选中当前目录中的实际结果。")
+                }
+            });
+        let folders = model.folders().to_vec();
+        if let Some(folder) = edit_refresh
+            .as_ref()
+            .map(|refresh| refresh.folder.as_str())
+            .or(previous_folder.as_deref())
+        {
+            let mut folder = folder;
             while !folder.is_empty() && !folders.iter().any(|candidate| candidate == folder) {
                 folder = folder.rsplit_once('/').map_or("", |(parent, _)| parent);
             }
@@ -537,7 +673,6 @@ impl ArchiveBrowser {
             .iter()
             .filter(|e| e.kind != "Directory")
             .count();
-        let folders = model.folders();
         self.folder_count = folders.len();
         let encrypted_known = model.entries.iter().all(|e| e.encrypted.is_some());
         self.encrypted = if model.entries.iter().any(|e| e.encrypted == Some(true)) {
@@ -552,6 +687,7 @@ impl ArchiveBrowser {
         self.solid = None;
         // Approved default: auto-enter exactly one safe root directory, never a single file.
         if edit_refresh.is_none()
+            && previous_folder.is_none()
             && self.settings.auto_enter_single_root
             && model.visible().len() == 1
             && model.visible()[0].directory
@@ -560,11 +696,27 @@ impl ArchiveBrowser {
             let folder = model.visible()[0].path.clone();
             model.enter(&folder);
         }
-        if let Some((_, _, selected)) = edit_refresh {
+        if let Some(EditRefresh {
+            selected,
+            add_counts,
+            ..
+        }) = edit_refresh
+        {
             let rows = model
                 .visible()
                 .iter()
-                .filter(|row| !row.parent && !row.warning && selected.contains(&row.path))
+                .filter(|row| {
+                    !row.parent
+                        && !row.warning
+                        && selected.iter().any(|path| {
+                            *path == row.path
+                                || add_counts.is_some()
+                                    && row.directory
+                                    && path
+                                        .strip_prefix(&row.path)
+                                        .is_some_and(|rest| rest.starts_with('/'))
+                        })
+                })
                 .map(|row| row.id.clone())
                 .collect::<Vec<_>>();
             model.selected.extend(rows.iter().cloned());
@@ -586,17 +738,18 @@ impl ArchiveBrowser {
         self.format = format;
         let tree = self.tree.downgrade();
         let view = cx.entity().downgrade();
-        let folder = self
-            .model
-            .as_ref()
-            .map_or_else(String::new, |m| m.folder.clone());
         cx.defer(move |cx| {
-            let live = view
+            let folder = view
                 .read_with(cx, |v, _| {
-                    !v.retired && v.model.as_ref().is_some_and(|m| m.snapshot == snapshot)
+                    (!v.retired)
+                        .then_some(v.model.as_ref())
+                        .flatten()
+                        .filter(|m| m.snapshot == snapshot)
+                        .map(|m| m.folder.clone())
                 })
-                .unwrap_or(false);
-            if live {
+                .ok()
+                .flatten();
+            if let Some(folder) = folder {
                 let _ = tree.update(cx, |tree, cx| {
                     tree.set_items(items, cx);
                     tree.set_selected_item(Some(&TreeItem::new(folder.clone(), folder)), cx);
@@ -615,6 +768,7 @@ impl ArchiveBrowser {
         if self.retired {
             return;
         }
+        self.invalidate_find(cx);
         self.invalidate_drag();
         self.recovery = None;
         self.cancel_marquee(false, cx);
@@ -741,10 +895,12 @@ impl ArchiveBrowser {
             return;
         }
         self.invalidate_drag();
+        self.invalidate_find(cx);
         self.cancel_marquee(false, cx);
         self.clear_pending_icons();
         self.retired = true;
         self.edit_refresh = None;
+        self.add_result_summary = None;
         self.generation = self.generation.wrapping_add(1).max(1);
         self.projection_epoch = self.projection_epoch.wrapping_add(1);
         self.read_id = None;
@@ -807,38 +963,72 @@ impl ArchiveBrowser {
         value: Option<&str>,
         source_prefix: Option<&str>,
     ) -> bool {
+        self.edit_members_current_observed(
+            action,
+            ordinals,
+            value,
+            source_prefix,
+            &mut SelectionWork::default(),
+        )
+    }
+    fn edit_members_current_observed(
+        &self,
+        action: ArchiveJobModifyAction,
+        ordinals: &[u64],
+        value: Option<&str>,
+        source_prefix: Option<&str>,
+        work: &mut SelectionWork,
+    ) -> bool {
         let Some(model) = &self.model else {
             return false;
         };
-        let entries = ordinals
+        let Ok(credit) = model.selection_metadata_credit(work) else {
+            return false;
+        };
+        let Ok(positions) = bind_ordinals(
+            &model.entries,
+            ordinals,
+            credit,
+            |entry| entry.ordinal,
+            || Ok(()),
+            work,
+        ) else {
+            return false;
+        };
+        let entries = positions
             .iter()
-            .map(|ordinal| model.entries.iter().find(|entry| entry.ordinal == *ordinal));
-        if entries
-            .clone()
-            .any(|entry| entry.is_none_or(|entry| !entry.warning_codes.is_empty()))
-        {
+            .map(|&index| {
+                work.ordinal_probes += 1;
+                &model.entries[index]
+            })
+            .collect::<Vec<_>>();
+        if entries.iter().any(|entry| !entry.warning_codes.is_empty()) {
             return false;
         }
         match action {
             ArchiveJobModifyAction::Delete => !ordinals.is_empty(),
             ArchiveJobModifyAction::ReplaceContent => {
-                ordinals.len() == 1 && entries.flatten().all(|entry| entry.kind == "File")
+                ordinals.len() == 1 && entries.iter().all(|entry| entry.kind == "File")
             }
             ArchiveJobModifyAction::Rename => {
                 if ordinals.len() != 1 {
                     return false;
                 }
-                let Some(entry) = entries.flatten().next() else {
+                let Some(entry) = entries.first() else {
                     return false;
                 };
                 let directory = value.is_some_and(|name| name.ends_with('/'));
                 if let Some(prefix) = source_prefix {
+                    work.root_normalizations += 1;
                     let normalized = super::model::member_path(&entry.name);
-                    directory
-                        && prefix.ends_with('/')
-                        && (normalized.starts_with(prefix)
+                    work.normalization_allocations +=
+                        u64::from(matches!(&normalized, std::borrow::Cow::Owned(_)));
+                    directory && prefix.ends_with('/') && {
+                        work.prefix_probes += 1;
+                        normalized.starts_with(prefix)
                             || entry.kind == "Directory"
-                                && normalized.trim_end_matches('/') == prefix.trim_end_matches('/'))
+                                && normalized.trim_end_matches('/') == prefix.trim_end_matches('/')
+                    }
                 } else {
                     directory == (entry.kind == "Directory")
                 }
@@ -918,6 +1108,7 @@ impl ArchiveBrowser {
             _ => None,
         };
         self.inspect_edit_eligibility(cx);
+        self.refresh_action_readiness();
         cx.notify();
     }
     pub(super) fn inspect_edit_eligibility(&mut self, cx: &mut Context<Self>) {
@@ -947,6 +1138,7 @@ impl ArchiveBrowser {
                     && view.model.as_ref().map(|m| m.snapshot) == snapshot
                 {
                     view.edit_eligibility = Some(result);
+                    view.refresh_action_readiness();
                     cx.notify();
                 }
             });
@@ -957,6 +1149,19 @@ impl ArchiveBrowser {
         &self,
         action: ArchiveJobModifyAction,
     ) -> Option<(Uuid, Vec<u64>, Option<String>)> {
+        let mut work = SelectionWork::default();
+        let result = self.edit_selection_observed(action, &mut work);
+        #[cfg(test)]
+        self.catalog_presentation_visits.set(
+            self.catalog_presentation_visits.get() + work.catalog_visits + work.ordinal_probes,
+        );
+        result
+    }
+    fn edit_selection_observed(
+        &self,
+        action: ArchiveJobModifyAction,
+        work: &mut SelectionWork,
+    ) -> Option<(Uuid, Vec<u64>, Option<String>)> {
         if self
             .operation_refusal(self.edit_operation(action))
             .is_some()
@@ -964,6 +1169,20 @@ impl ArchiveBrowser {
             return None;
         }
         let model = self.model.as_ref()?;
+        if action == ArchiveJobModifyAction::Delete {
+            if model
+                .visible()
+                .iter()
+                .any(|row| model.selected.contains(&row.id) && !row.parent && row.warning)
+            {
+                return None;
+            }
+            let ordinals = self.selected_ordinals_observed(work)?;
+            if ordinals.len() > 4096 {
+                return None;
+            }
+            return Some((model.snapshot, ordinals, None));
+        }
         let mut ordinals = std::collections::BTreeSet::new();
         let mut selected = model
             .visible()
@@ -987,15 +1206,26 @@ impl ArchiveBrowser {
                 {
                     return None;
                 }
+                work.directory_roots += 1;
+                work.prefix_allocations += 1;
                 let prefix = format!("{}/", row.path.trim_end_matches('/'));
                 model
                     .entries
                     .iter()
-                    .find(|entry| super::model::member_path(&entry.name).starts_with(&prefix))
+                    .find(|entry| {
+                        work.catalog_visits += 1;
+                        work.path_normalizations += 1;
+                        let normalized = super::model::member_path(&entry.name);
+                        work.normalization_allocations +=
+                            u64::from(matches!(&normalized, std::borrow::Cow::Owned(_)));
+                        work.prefix_probes += 1;
+                        normalized.starts_with(&prefix)
+                    })
                     .map(|entry| entry.ordinal)
             })?;
             if action == ArchiveJobModifyAction::ReplaceContent
                 && !model.entries.iter().any(|entry| {
+                    work.ordinal_probes += 1;
                     entry.ordinal == ordinal
                         && entry.kind == "File"
                         && entry.warning_codes.is_empty()
@@ -1007,29 +1237,6 @@ impl ArchiveBrowser {
             (action == ArchiveJobModifyAction::Rename)
                 .then(|| row.path.clone() + if row.directory { "/" } else { "" })
         } else {
-            if action == ArchiveJobModifyAction::Delete {
-                for row in selected {
-                    if row.warning {
-                        return None;
-                    }
-                    if let Some(ordinal) = row.ordinal {
-                        ordinals.insert(ordinal);
-                    }
-                    if row.directory {
-                        let prefix = format!("{}/", row.path.trim_end_matches('/'));
-                        ordinals.extend(
-                            model
-                                .entries
-                                .iter()
-                                .filter(|e| super::model::member_path(&e.name).starts_with(&prefix))
-                                .map(|e| e.ordinal),
-                        );
-                    }
-                }
-                if ordinals.is_empty() || ordinals.len() > 4096 {
-                    return None;
-                }
-            }
             match action {
                 ArchiveJobModifyAction::Add => {
                     (!model.folder.is_empty()).then(|| format!("{}/", model.folder))
@@ -1047,6 +1254,56 @@ impl ArchiveBrowser {
             }
         };
         Some((model.snapshot, ordinals.into_iter().collect(), target))
+    }
+    fn selected_ordinals(&self) -> Option<Vec<u64>> {
+        self.selected_ordinals_observed(&mut SelectionWork::default())
+    }
+    fn selected_ordinals_observed(&self, work: &mut SelectionWork) -> Option<Vec<u64>> {
+        let model = self.model.as_ref()?;
+        let credit = model.selection_metadata_credit(work).ok()?;
+        let mut ordinals = Vec::new();
+        let mut directories = Vec::new();
+        for row in model
+            .visible()
+            .iter()
+            .filter(|row| model.selected.contains(&row.id) && !row.parent)
+        {
+            if let Some(ordinal) = row.ordinal {
+                ordinals.push(ordinal);
+            } else if row.directory {
+                directories.push(row.path.as_str());
+            }
+        }
+        if ordinals.is_empty() && directories.is_empty() {
+            return None;
+        }
+        let positions = bind_ordinals(
+            &model.entries,
+            &ordinals,
+            credit,
+            |entry| entry.ordinal,
+            || Ok(()),
+            work,
+        )
+        .ok()?;
+        let ordinals = expand_selection(
+            &model.entries,
+            CatalogSelection::Entries {
+                positions: &positions,
+                directories: &directories,
+            },
+            credit,
+            |_, entry| SelectionEntry {
+                ordinal: entry.ordinal,
+                path: &entry.name,
+                directory: entry.kind == "Directory",
+            },
+            |_, _, _, _| Ok(0),
+            || Ok(()),
+            work,
+        )
+        .ok()?;
+        (!ordinals.is_empty()).then_some(ordinals)
     }
     fn command(&mut self, command: Command, window: &mut Window, cx: &mut Context<Self>) {
         if self.retired {
@@ -1085,7 +1342,7 @@ impl ArchiveBrowser {
                     move |result, cx| {
                         if result.is_err() {
                             cx.defer(move |cx| { let _ = source.update(cx, |_, window, cx| {
-                            window.open_dialog(cx, |dialog, _, _| dialog.title("无法清除历史记录").child("原记录文件已保留，请检查存储后重试；当前归档不受影响。"));
+                            window.open_dialog(cx, |dialog, _, _| dialog.title("无法清除历史记录").child("原记录文件已保留，请检查存储后重试；当前压缩包不受影响。"));
                         }); });
                         }
                     },
@@ -1146,42 +1403,21 @@ impl ArchiveBrowser {
                 let Some(model) = self.model.as_ref() else {
                     return;
                 };
-                let mut ordinals = std::collections::BTreeSet::new();
-                if selected {
-                    for row in model
-                        .visible()
-                        .iter()
-                        .filter(|row| model.selected.contains(&row.id) && !row.parent)
-                    {
-                        if let Some(ordinal) = row.ordinal {
-                            ordinals.insert(ordinal);
-                        }
-                        if row.directory {
-                            let prefix = format!("{}/", row.path.trim_end_matches('/'));
-                            for entry in &model.entries {
-                                if super::model::member_path(&entry.name).starts_with(&prefix) {
-                                    ordinals.insert(entry.ordinal);
-                                }
-                            }
-                        }
-                    }
-                    if ordinals.is_empty() {
+                let ordinals = if selected {
+                    let Some(ordinals) = self.selected_ordinals() else {
                         return;
-                    }
-                }
+                    };
+                    Some(ordinals)
+                } else {
+                    None
+                };
                 let owner = self.owner.clone();
                 let id = self.window_id;
                 let generation = self.generation;
                 let snapshot = model.snapshot;
                 cx.defer(move |cx| {
                     let _ = owner.update(cx, |app, cx| {
-                        app.extract_browser(
-                            id,
-                            generation,
-                            snapshot,
-                            selected.then(|| ordinals.into_iter().collect()),
-                            cx,
-                        )
+                        app.extract_browser(id, generation, snapshot, ordinals, cx)
                     });
                 });
             }
@@ -1211,6 +1447,7 @@ impl ArchiveBrowser {
                 if let Command::Encoding(value) = command {
                     self.codepage = value;
                 }
+                self.invalidate_find(cx);
                 self.invalidate_drag();
                 self.cancel_marquee(false, cx);
                 self.status = BrowserStatus::Loading;
@@ -1246,13 +1483,15 @@ impl ArchiveBrowser {
                 });
             }
             Command::Up => {
-                if let Some(m) = &mut self.model {
-                    m.up();
+                if let Some(m) = &mut self.model
+                    && m.up()
+                {
                     self.sync_filter(window, cx);
                     self.projection_changed(window, cx);
                 }
             }
             Command::Activate => self.activate(window, cx),
+            Command::Find => self.start_find(window, cx),
             Command::Filter => {
                 self.filter_visible = true;
                 let input = self.filter_input.clone();
@@ -1405,22 +1644,37 @@ impl ArchiveBrowser {
         self.projection_epoch = self.projection_epoch.wrapping_add(1);
         self.update_summary();
         let epoch = self.projection_epoch;
-        let folder = self
-            .model
-            .as_ref()
-            .map_or_else(String::new, |m| m.folder.clone());
+        let snapshot = self.model.as_ref().map(|model| model.snapshot);
         let tree = self.tree.downgrade();
         let reveal = self.settings.auto_expand_tree;
         let scroll = self.scroll.clone();
         let view = cx.entity().downgrade();
         window.defer(cx, move |_, cx| {
-            let live = view
-                .read_with(cx, |v, _| !v.retired && v.projection_epoch == epoch)
-                .unwrap_or(false);
-            if !live {
+            let current = view
+                .read_with(cx, |v, _| {
+                    if v.retired || v.projection_epoch != epoch {
+                        return None;
+                    }
+                    let model = v.model.as_ref().filter(|m| Some(m.snapshot) == snapshot)?;
+                    let reveal_index = model
+                        .focused
+                        .as_ref()
+                        .and_then(|id| model.visible().iter().position(|row| &row.id == id));
+                    Some((model.folder.clone(), reveal_index))
+                })
+                .ok()
+                .flatten();
+            let Some((folder, reveal_index)) = current else {
                 return;
-            }
-            scroll.scroll_to_item(0, ScrollStrategy::Top);
+            };
+            scroll.scroll_to_item(
+                reveal_index.unwrap_or(0),
+                if reveal_index.is_some() {
+                    ScrollStrategy::Nearest
+                } else {
+                    ScrollStrategy::Top
+                },
+            );
             let _ = tree.update(cx, |tree, cx| {
                 if reveal {
                     tree.reveal_item(&folder.clone().into(), ScrollStrategy::Nearest, cx);
@@ -1450,8 +1704,17 @@ impl ArchiveBrowser {
             self.projection_changed(window, cx);
         }
     }
+    fn refresh_action_readiness(&mut self) {
+        self.delete_ready = self
+            .edit_selection(ArchiveJobModifyAction::Delete)
+            .is_some();
+        self.replace_ready = self
+            .edit_selection(ArchiveJobModifyAction::ReplaceContent)
+            .is_some();
+    }
     fn update_summary(&mut self) {
         self.observe_preview_selection();
+        self.refresh_action_readiness();
         if let Some(m) = &self.model {
             self.summary = if m.selected.is_empty() {
                 format!(
@@ -1493,6 +1756,18 @@ impl ArchiveBrowser {
         }
         let key = event.keystroke.key.to_ascii_lowercase();
         let modifiers = event.keystroke.modifiers;
+        if modifiers.control
+            && modifiers.shift
+            && !modifiers.alt
+            && !modifiers.platform
+            && key == "f"
+        {
+            if !event.is_held {
+                self.command(Command::Find, window, cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
         if key == "escape" && self.cancel_marquee(true, cx) {
             self.invalidate_drag();
             cx.stop_propagation();
@@ -1799,6 +2074,12 @@ impl ArchiveBrowser {
                 Command::Filter,
                 self.model.is_none(),
             ))
+            .item(Self::menu_item(
+                weak.clone(),
+                "查找整个压缩包  Ctrl+Shift+F",
+                Command::Find,
+                !matches!(self.status, BrowserStatus::Ready),
+            ))
             .separator()
             .label("详细信息列");
         for kind in ColumnKind::ALL {
@@ -1919,13 +2200,15 @@ impl ArchiveBrowser {
         ))
         .item(Self::menu_item(
             weak,
-            "归档注释",
+            "压缩包注释",
             Command::Edit(ArchiveJobModifyAction::Comment),
             self.operation_refusal(self.edit_operation(ArchiveJobModifyAction::Comment))
                 .is_some(),
         ))
     }
     fn render_row(&self, row: &Row, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        #[cfg(test)]
+        self.rendered_rows.set(self.rendered_rows.get() + 1);
         let id = row.id.clone();
         let right_id = id.clone();
         let drag_id = id.clone();
@@ -2845,28 +3128,22 @@ impl Render for ArchiveBrowser {
                     .when(
                         matches!(self.format.as_str(), "SevenZ" | "Tar" | "TarGz" | "TarXz"),
                         |bar| {
-                            bar.child(
-                                self.action(
-                                    "archive-replace-content",
-                                    "替换内容",
-                                    Command::Edit(ArchiveJobModifyAction::ReplaceContent),
-                                    self.edit_selection(ArchiveJobModifyAction::ReplaceContent)
-                                        .is_none(),
-                                    cx,
-                                ),
-                            )
+                            bar.child(self.action(
+                                "archive-replace-content",
+                                "替换内容",
+                                Command::Edit(ArchiveJobModifyAction::ReplaceContent),
+                                !self.replace_ready,
+                                cx,
+                            ))
                         },
                     )
-                    .child(
-                        self.action(
-                            "archive-delete",
-                            "删除",
-                            Command::Edit(ArchiveJobModifyAction::Delete),
-                            self.edit_selection(ArchiveJobModifyAction::Delete)
-                                .is_none(),
-                            cx,
-                        ),
-                    )
+                    .child(self.action(
+                        "archive-delete",
+                        "删除",
+                        Command::Edit(ArchiveJobModifyAction::Delete),
+                        !self.delete_ready,
+                        cx,
+                    ))
                     .child(self.action("archive-test", "测试", Command::Test, !ready, cx))
                     .child(gpui_kit::component::separator::Separator::vertical().h(px(48.)))
                     .when(self.encrypted == Some(true), |bar| {
@@ -3114,12 +3391,25 @@ impl Render for ArchiveBrowser {
             BrowserStatus::Failed(_) => "读取失败",
             BrowserStatus::Stale(_) => "文件已变化 · 只读",
         };
+        let format_label = match self.format.as_str() {
+            "Cab" => "CAB",
+            "Iso" => "ISO 9660",
+            "Udf" => "UDF",
+            "Wim" => "WIM",
+            "Ar" => "AR",
+            "Cpio" => "CPIO",
+            "Lzma" => "LZMA",
+            "Lz4" => "LZ4",
+            "Lz4Block" => "LZ4 Block",
+            "Brotli" => "Brotli",
+            other => other,
+        };
         let details_status = format!(
             "{}  固实: {}  加密: {}  注释: {}",
-            if self.format.is_empty() {
+            if format_label.is_empty() {
                 "—"
             } else {
-                &self.format
+                format_label
             },
             known(self.solid),
             known(self.encrypted),
@@ -3132,10 +3422,10 @@ impl Render for ArchiveBrowser {
         let status_text = if f32::from(window.viewport_size().width) < 800. {
             format!(
                 "{} 固:{} 密:{} 注:{}",
-                if self.format.is_empty() {
+                if format_label.is_empty() {
                     "—"
                 } else {
-                    &self.format
+                    format_label
                 },
                 known(self.solid),
                 known(self.encrypted),
@@ -3245,6 +3535,12 @@ impl Render for ArchiveBrowser {
                     )
                 },
             )
+            .when_some(self.add_result_summary.as_ref().filter(|_| matches!(self.status, BrowserStatus::Ready)), |view, message| {
+                view.child(div().flex_none().px_3().py_2()
+                    .id("archive-add-result-summary")
+                    .role(gpui_kit::Role::Note).aria_label(message.clone()).test_support()
+                    .child(Alert::info("archive-add-result", message.clone()).with_size(Size::Small)))
+            })
             .when_some(self.recovery.as_ref(), |view, recovery| {
                 view.child(div().flex_none().p_3().flex().flex_col().gap_2()
                     .debug_selector(|| "archive-browser-recovery".into())

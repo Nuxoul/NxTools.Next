@@ -45,6 +45,7 @@ fn single_stream_probe(request: &DownloadRequest) -> DownloadProbe {
         validator: ResourceValidator::default(),
         media: None,
         resolution: None,
+        server_observation: None,
     }
 }
 
@@ -490,6 +491,7 @@ async fn malformed_or_ignored_ranges_are_rejected_before_the_artifact_is_changed
             },
             media: None,
             resolution: None,
+            server_observation: None,
         };
 
         let error = client

@@ -22,17 +22,26 @@ let desktopConnectPromise = null;
 let desktopConnectStartedAt = 0;
 let desktopIdleTimer = 0;
 let desktopPortOwners = 0;
+let popupPortOwners = 0;
 const DESKTOP_IDLE_RELEASE_MS = 1000;
 let connectionState = "disconnected";
 let connectionMessage = "未连接 NxTools";
 const DESKTOP_CONNECT_TIMEOUT_MS = 1800;
 let lastSnapshot = null;
+let lastHandoff = null;
 const pendingDesktopRequests = new Map();
 const mobileUserAgentTabs = new Set();
 const extensionLogTimes = new Map();
 const selectedMediaIndexByTab = new Map();
 const lastFrameScanByTab = new Map();
+// Page poster/og:image reported by the last scan, used as the popup thumbnail
+// for resources without a frame of their own. Cleared with the tab resources.
+const pageThumbnailByTab = new Map();
 const disabledSites = new Set();
 let cachedSettings = { ...DEFAULT_SETTINGS };
 let settingsLoaded = false;
 let settingsLoadPromise = null;
+let capturePaused = false;
+let capturePauseLoaded = false;
+let capturePauseAvailable = true;
+let capturePauseLoadPromise = null;

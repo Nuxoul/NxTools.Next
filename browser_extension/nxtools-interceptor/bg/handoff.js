@@ -94,8 +94,12 @@ async function sendBlobResourceViaContentScript(resource) {
           openDialog: settings.openDialog
         }
       }, 20000, correlationId);
+      const outcome = NxToolsHandoffPolicy.handoffOutcome(committed, handoffId);
+      if (outcome.state === "awaiting_confirmation") {
+        return { ...committed, message: "确认窗口已打开，尚未创建任务" };
+      }
       return NxToolsBlobTransferPolicy.browserFallback(
-        committed,
+        outcome.state === "persisted" ? committed : { ...committed, ok: false },
         handoffId,
         "NxTools 拒绝接管 Blob 下载"
       );
@@ -129,7 +133,8 @@ async function addDownloadToNxTools(payload, correlationId) {
   }, 15000, correlationId);
 }
 
-async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}, size = 0, supportsRange = false, contextUrl = "" }) {
+async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}, size = 0, supportsRange = false, contextUrl = "", cookieSource = {} }) {
+  const startedAt = Date.now();
   const effectiveHandoffId = handoffId || nextRequestId();
   const invalidGoogleVideoReason = googleVideoInvalidReason(url);
   if (invalidGoogleVideoReason) {
@@ -153,17 +158,17 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
   const resolvedSize = Number(size || 0) > 0
     ? Number(size || 0)
     : Number.parseInt(googleVideoIdentityInfo?.clen || "", 10) || 0;
-  const enrichedHeaders = await enrichHeadersForDownload(url, headers, settings, contextUrl);
+  const enrichedHeaders = await enrichHeadersForDownload(url, headers, settings, contextUrl, cookieSource);
   const headerPayload = headerObjectToPayload(enrichedHeaders, settings);
-  const headerNames = Object.keys(enrichedHeaders || {}).filter((name) => name.toLowerCase() !== "cookie");
+  const headerNames = Object.keys(headerPayload.headers);
   sendExtensionLog("info", "handoff_prepare", "准备发送资源到 NxTools", {
     url,
     fileName: resolvedFileName,
     size: resolvedSize,
     supportsRange: Boolean(supportsRange),
-    headerCount: headerNames.length + (enrichedHeaders?.cookie ? 1 : 0),
+    headerCount: headerNames.length + (headerPayload.cookie ? 1 : 0),
     headerNames: headerNames.slice(0, 16).join(","),
-    cookieIncluded: Boolean(enrichedHeaders?.cookie)
+    cookieIncluded: Boolean(headerPayload.cookie)
   }, 15000, effectiveHandoffId);
 
   try {
@@ -171,13 +176,11 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
       handoffId: effectiveHandoffId,
       url,
       fileName: resolvedFileName,
-      headers: enrichedHeaders,
-      headerText: headerPayload.headerText,
-      cookie: headerPayload.cookie,
+      ...headerPayload,
       size: resolvedSize,
       supportsRange
     }, effectiveHandoffId);
-    const accepted = NxToolsHandoffPolicy.acceptedHandoffResponse(result, effectiveHandoffId);
+    const outcome = NxToolsHandoffPolicy.handoffOutcome(result, effectiveHandoffId);
     const queued = Boolean(result?.data?.queued);
     sendExtensionLog(result?.ok === false || queued ? "warn" : "info", "handoff_result", result?.ok === false
       ? "资源发送到 NxTools 失败"
@@ -189,11 +192,16 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
       queued,
       size: resolvedSize
     }, result?.ok === false ? 0 : 15000, effectiveHandoffId);
-    if (!accepted) {
+    if (outcome.state === "awaiting_confirmation") {
+      recordBrowserHandoff({ correlationId: effectiveHandoffId, startedAt }, outcome, false);
+      return { ...result, message: "确认窗口已打开，尚未创建任务" };
+    }
+    if (outcome.state !== "persisted") {
       return {
         ...result,
         ok: false,
         accepted: false,
+        data: { ...result?.data, handoffState: outcome.state, reason: outcome.reason },
         message: result?.message || result?.error || "NxTools 未确认接收下载任务"
       };
     }
@@ -207,14 +215,18 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
   }
 }
 
-async function sendDownloadItem(downloadItem) {
+async function sendDownloadItem(downloadItem, existingHandoffId = "") {
   const url = downloadItem.finalUrl || downloadItem.url;
   if (!isHttpUrl(url)) {
     return { ok: false, skipped: true, message: "不是 HTTP 下载链接" };
   }
 
-  const headerSnapshot = resolveHeaderSnapshot(url) || resolveHeaderSnapshot(downloadItem.url);
+  let headerSnapshot = resolveHeaderSnapshot(url, downloadItem) || resolveHeaderSnapshot(downloadItem.url, downloadItem);
   const downloadTabId = await resolveTabIdForDownload(downloadItem, headerSnapshot);
+  if (downloadTabId > 0) {
+    const source = { ...downloadItem, tabId: downloadTabId };
+    headerSnapshot = resolveHeaderSnapshot(url, source) || resolveHeaderSnapshot(downloadItem.url, source);
+  }
   const resource = downloadTabId > 0
     ? resourcesById.get(`${downloadTabId}:${normalizeResourceUrlKey(url)}`) || null
     : null;
@@ -223,7 +235,7 @@ async function sendDownloadItem(downloadItem) {
     headers.referer = downloadItem.referrer;
   }
 
-  const handoffId = await browserDownloadHandoffId(downloadItem);
+  const handoffId = existingHandoffId || await browserDownloadHandoffId(downloadItem);
   const response = await sendDownloadPayload({
     handoffId,
     url,
@@ -231,7 +243,9 @@ async function sendDownloadItem(downloadItem) {
     headers,
     size: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : resource?.size || 0,
     supportsRange: Boolean(downloadItem.canResume || headerSnapshot?.supportsRange || resource?.supportsRange),
-    contextUrl: downloadItem.referrer || resource?.pageUrl || ""
+    contextUrl: downloadItem.referrer || resource?.pageUrl || "",
+    cookieSource: { ...cookieSourceDetails(headerSnapshot), ...cookieSourceDetails(downloadItem),
+      tabId: downloadTabId > 0 ? downloadTabId : undefined }
   });
   return { response, handoffId };
 }
@@ -252,8 +266,10 @@ async function resolveTabIdForDownload(downloadItem, headerSnapshot) {
   }
   try {
     const tabs = await chrome.tabs.query({});
-    const match = tabs.find((tab) => tab.id && tab.url && urlsLikelySamePage(tab.url, referrer));
-    return match?.id || 0;
+    const matches = tabs.filter(tab => tab.id && tab.url && urlsLikelySamePage(tab.url, referrer) &&
+      (!downloadItem.cookieStoreId || tab.cookieStoreId === downloadItem.cookieStoreId) &&
+      (typeof downloadItem.incognito !== "boolean" || tab.incognito === downloadItem.incognito));
+    return matches.length === 1 ? matches[0].id : 0;
   } catch {
     return 0;
   }
@@ -264,7 +280,7 @@ async function sendUrl(url, options = {}) {
     throw new Error("只能发送 HTTP/HTTPS 链接");
   }
 
-  const headerSnapshot = resolveHeaderSnapshot(url);
+  const headerSnapshot = resolveHeaderSnapshot(url, options.cookieSource || {});
   const headers = { ...(headerSnapshot?.headers || {}) };
   if (options.referrer && !headers.referer) {
     headers.referer = options.referrer;
@@ -277,7 +293,8 @@ async function sendUrl(url, options = {}) {
     headers,
     size: options.size || 0,
     supportsRange: Boolean(options.supportsRange || headerSnapshot?.supportsRange),
-    contextUrl: options.referrer || ""
+    contextUrl: options.referrer || "",
+    cookieSource: options.cookieSource || { ...cookieSourceDetails(headerSnapshot), tabId: headerSnapshot?.tabIdObserved ? headerSnapshot.tabId : undefined }
   });
 }
 
@@ -328,7 +345,8 @@ async function sendResource(resourceId, overrides = {}) {
       headers: outboundResource.requestHeaders,
       size: outboundResource.size,
       supportsRange: outboundResource.supportsRange,
-      contextUrl: outboundResource.pageUrl || outboundResource.referer || ""
+      contextUrl: outboundResource.pageUrl || outboundResource.referer || "",
+      cookieSource: { cookieContext: outboundResource.cookieContext ?? null }
     }),
     resolveCurrentResource: (resourceId) => resourcesById.get(resourceId)
   });
@@ -371,16 +389,16 @@ async function sendResourcesBatch(resourceIds) {
       resource.url,
       resource.requestHeaders,
       settings,
-      resource.pageUrl || resource.referer || ""
+      resource.pageUrl || resource.referer || "",
+      { cookieContext: resource.cookieContext ?? null }
     );
     const headerPayload = headerObjectToPayload(headers, settings);
     items.push({
       handoffId,
       url: resource.url,
       fileName,
-      headers,
-      cookie: headerPayload.cookie,
-      referrer: resource.referer || resource.pageUrl || "",
+      ...headerPayload,
+      ...(settings.includeRequestHeaders ? { referrer: resource.referer || resource.pageUrl || "" } : {}),
       size: Number(resource.size || 0),
       startImmediately: false,
       openDialog: false
@@ -454,6 +472,25 @@ async function mergeResources(resourceIds) {
   };
 }
 
+function emitBrowserHandoffState(status) {
+  sendExtensionLog(["failed", "rejected"].includes(status.state) ? "warn" : "info",
+    "handoff_state", "browser download handoff state", status, 0, status.correlationId);
+}
+
+function recordBrowserHandoff(context, outcome, emit = true) {
+  lastHandoff = {
+    correlationId: context.correlationId,
+    state: outcome.state,
+    reason: outcome.reason,
+    owner: outcome.state === "transferred" ? "desktop" : "browser",
+    elapsedMs: Math.max(0, Date.now() - context.startedAt),
+    queued: outcome.queued === true,
+    ...(outcome.boundaryCode ? { boundaryCode: outcome.boundaryCode } : {}),
+    ...(outcome.compensation ? { compensation: outcome.compensation } : {})
+  };
+  if (emit) emitBrowserHandoffState(lastHandoff);
+}
+
 async function interceptBrowserDownload(downloadItem, options = {}) {
   // The onDeterminingFilename listener returns true and resolves the filename
   // exactly once here. While the desktop handoff is in flight we deliberately
@@ -470,21 +507,23 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
       // Chrome may already have resolved this one-shot suggestion callback.
     }
   };
+  const context = { correlationId: "", startedAt: Date.now() };
   try {
     const settings = await getSettings();
     const url = downloadItem.finalUrl || downloadItem.url;
-    if (!settings.interceptDownloads || !isHttpUrl(url)) {
-      return;
-    }
-    if (!isSiteEnabled(downloadItem.referrer, url)) {
-      sendExtensionLog("info", "browser_download_site_disabled", "下载发起站点已被用户停用，交还浏览器原生下载", {
-        url,
-        pageUrl: downloadItem.referrer || ""
-      }, 15000);
+    if (!isHttpUrl(url)) return;
+    context.correlationId = await browserDownloadHandoffId(downloadItem);
+    const excluded = await automaticCaptureDecision(downloadItem, settings);
+    if (excluded) {
+      recordBrowserHandoff(context, excluded);
       return;
     }
 
-    const { response, handoffId } = await sendDownloadItem(downloadItem);
+    recordBrowserHandoff(context, { state: "submitting", reason: "handoff_started" }, false);
+    const { response, handoffId } = await sendDownloadItem(downloadItem, context.correlationId);
+    const outcome = NxToolsHandoffPolicy.handoffOutcome(response, handoffId);
+    recordBrowserHandoff(context, outcome);
+    if (outcome.state !== "persisted") return;
     const handoff = await NxToolsHandoffPolicy.completeAcceptedHandoff({
       response,
       expectedHandoffId: handoffId,
@@ -492,7 +531,7 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
       rollbackDesktopTask: (taskId) => sendDesktopRequest("task_action", {
         taskId,
         action: "cancel"
-      }),
+      }, 12000, context.correlationId),
       eraseBrowserDownload: () => {
         if (settings.eraseBrowserHistory || options.eraseBrowserHistory) {
           return chrome.downloads.erase({ id: downloadItem.id });
@@ -500,13 +539,17 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
         return Promise.resolve();
       }
     });
-    if (!handoff.transferred) {
-      throw new Error(handoff.error || "NxTools 未接受下载任务");
-    }
+    if (!handoff.transferred) return;
+    recordBrowserHandoff(context, { state: "transferred", reason: "browser_transferred", queued: outcome.queued });
     setBadge("OK", "#138a72");
     setTimeout(() => setBadge("", "#138a72"), 1600);
   } catch (error) {
-    console.warn("NxTools handoff failed.", error);
+    const reason = ["desktop_unavailable", "desktop_refused", "handoff_timeout", "handoff_disconnected", "browser_cancel_failed", "identity_mismatch"]
+      .includes(error?.handoffReason) ? error.handoffReason : "desktop_refused";
+    recordBrowserHandoff(context, {
+      state: ["desktop_refused", "identity_mismatch"].includes(reason) ? "rejected" : "failed", reason, boundaryCode: error?.boundaryCode,
+      compensation: error?.compensation
+    });
     setBadge("!", "#9a3412");
   } finally {
     yieldToBrowser();

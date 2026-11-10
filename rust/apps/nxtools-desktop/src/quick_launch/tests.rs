@@ -130,7 +130,7 @@ fn production_result_row_keeps_height_through_animated_surface(cx: &mut TestAppC
     let row = window
         .debug_bounds("quick-launch-result-row-0")
         .expect("production quick-launch result row");
-    assert_eq!(row.size.height, px(40.0));
+    assert_eq!(row.size.height, px(LAUNCHER_RESULT_ROW_HEIGHT));
 }
 
 #[gpui_kit::test]
@@ -355,9 +355,9 @@ fn production_heterogeneous_result_rows_keep_one_three_rail_geometry(cx: &mut Te
             .debug_bounds(shortcut_selector)
             .expect("fixed shortcut rail");
 
-        assert_eq!(icon.size.width, px(26.0));
-        assert_eq!(title.size.height, px(LINE_HEIGHT_BODY));
-        assert_eq!(subtitle.size.height, px(LINE_HEIGHT_LABEL));
+        assert_eq!(icon.size.width, px(LAUNCHER_RESULT_ICON_SIZE));
+        assert_eq!(title.size.height, px(LAUNCHER_TITLE_LINE_HEIGHT));
+        assert_eq!(subtitle.size.height, px(LAUNCHER_SUBTITLE_LINE_HEIGHT));
         assert_eq!(shortcut.size.width, px(48.0));
         let icon_rail = (icon.origin.x, icon.size.width);
         let copy_rail = (copy.origin.x, copy.size.width);
@@ -471,7 +471,7 @@ fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
     );
 
     panel.update_in(window, |panel, window, cx| {
-        panel.sync_window_content_size("zed", window);
+        panel.sync_window_content_size("zed", window, cx);
         cx.notify();
     });
     window
@@ -493,25 +493,12 @@ fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
         );
     });
     assert_eq!(expanded_header, collapsed_header);
-    let entrance_offset = window.read(|cx| {
-        if crate::ui::motion::motion_allowed(cx) {
-            1.0
-        } else {
-            0.0
-        }
-    });
-    assert_eq!(
-        results_surface.top(),
-        expanded_header.bottom() + px(entrance_offset)
-    );
-    assert_eq!(
-        results_surface.bottom(),
-        expanded_root.bottom() - px(1.0 - entrance_offset)
-    );
+    assert_eq!(results_surface.top(), expanded_header.bottom());
+    assert_eq!(results_surface.bottom(), expanded_root.bottom() - px(1.0));
 
     panel.update_in(window, |panel, window, cx| {
         let expanded_generation = panel.results_appearance_generation;
-        panel.sync_window_content_size("zed editor", window);
+        panel.sync_window_content_size("zed editor", window, cx);
         assert_eq!(panel.results_appearance_generation, expanded_generation);
 
         let mode = QuickLaunchActionMode::enter(
@@ -529,9 +516,9 @@ fn production_popup_keeps_search_only_collapsed_and_expands_one_stable_surface(
 }
 
 #[test]
-fn main_popup_search_uses_the_shared_body_type_role() {
-    assert_eq!(TEXT_BODY, 12.0);
-    assert_eq!(LINE_HEIGHT_BODY, 18.0);
+fn main_popup_search_uses_reference_sized_input_roles() {
+    assert_eq!(SEARCH_INPUT_TEXT_SIZE, 26.0);
+    assert_eq!(SEARCH_INPUT_LINE_HEIGHT, 34.0);
 }
 
 #[gpui_kit::test]
@@ -659,6 +646,479 @@ pub(super) fn quick_launch_application_fixture(
         (application, endpoint)
     });
     (temp, application, endpoint)
+}
+
+#[gpui_kit::test]
+fn u3_followup_recording_fault_notifies_once_when_double_control_resumes(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    application.update(cx, |app, _| app.set_hotkey_recording(true));
+    let start = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("pause hotkey for recording");
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: start.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    let fault = || {
+        PlatformNotification::Event(PlatformEvent::QuickLaunchKeyboardHealthChanged(
+            QuickLaunchKeyboardHealthChanged {
+                correlation_id: uuid::Uuid::new_v4(),
+                state: QuickLaunchKeyboardHealthState::ThreadExited,
+                native_error_code: 17,
+            },
+        ))
+    };
+    application.update(cx, |app, cx| app.handle_platform_notification(fault(), cx));
+    cx.run_until_parked();
+    assert!(cx.read(|cx| application.read(cx).keyboard_health_warning().is_none()));
+    assert!(cx.read(|cx| {
+        application
+            .read(cx)
+            .notifications
+            .read(cx)
+            .items()
+            .is_empty()
+    }));
+    application.update(cx, |app, _| app.set_hotkey_recording(false));
+    let stop = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("resume hotkey after recording");
+    cx.run_until_parked();
+    assert!(
+        cx.read(|cx| application
+            .read(cx)
+            .notifications
+            .read(cx)
+            .items()
+            .is_empty()),
+        "recording remains active until its native ACK"
+    );
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: stop.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    cx.run_until_parked();
+    let generation = cx.read(|cx| {
+        let app = application.read(cx);
+        assert!(
+            app.keyboard_health_warning()
+                .expect("Alert becomes eligible")
+                .0
+                .contains("17")
+        );
+        let notices = app.notifications.read(cx);
+        assert_eq!(
+            notices.items().len(),
+            1,
+            "one deferred notice after recording ends"
+        );
+        assert_eq!(notices.items()[0].title, "双击 Ctrl 已失效");
+        notices.items()[0].generation()
+    });
+    application.update(cx, |app, cx| app.handle_platform_notification(fault(), cx));
+    cx.run_until_parked();
+    assert_eq!(
+        cx.read(|cx| application.read(cx).notifications.read(cx).items()[0].generation()),
+        generation,
+        "repeated unavailable events do not restart the notification"
+    );
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::Event(PlatformEvent::QuickLaunchKeyboardHealthChanged(
+                QuickLaunchKeyboardHealthChanged {
+                    correlation_id: uuid::Uuid::new_v4(),
+                    state: QuickLaunchKeyboardHealthState::Reinstalled,
+                    native_error_code: 0,
+                },
+            )),
+            cx,
+        )
+    });
+    application.update(cx, |app, cx| app.handle_platform_notification(fault(), cx));
+    cx.run_until_parked();
+    assert!(
+        cx.read(|cx| application.read(cx).notifications.read(cx).items()[0].generation())
+            > generation,
+        "recovery starts a new notification episode"
+    );
+}
+
+type KeyboardHealthCapturedEvents = std::sync::Arc<std::sync::Mutex<Vec<Vec<(String, String)>>>>;
+
+#[derive(Clone)]
+struct KeyboardHealthDiagnostics(KeyboardHealthCapturedEvents);
+
+#[derive(Default)]
+struct KeyboardHealthFields(Vec<(String, String)>);
+
+impl tracing::field::Visit for KeyboardHealthFields {
+    fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+        self.0.push((field.name().to_owned(), value.to_owned()));
+    }
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        self.0.push((field.name().to_owned(), value.to_string()));
+    }
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.0.push((field.name().to_owned(), value.to_string()));
+    }
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        self.0.push((field.name().to_owned(), format!("{value:?}")));
+    }
+}
+
+impl tracing::Subscriber for KeyboardHealthDiagnostics {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut fields = KeyboardHealthFields::default();
+        event.record(&mut fields);
+        if fields.0.iter().any(|(name, value)| {
+            name == "event" && value == "quick_launch.keyboard_reenable.completed"
+        }) {
+            self.0.lock().expect("diagnostic records").push(fields.0);
+        }
+    }
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+#[gpui_kit::test]
+fn u3_followup_disconnect_closes_only_pending_keyboard_reenable_diagnostic(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let records = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    tracing::subscriber::with_default(KeyboardHealthDiagnostics(records.clone()), || {
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::Event(PlatformEvent::QuickLaunchKeyboardHealthChanged(
+                    QuickLaunchKeyboardHealthChanged {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        state: QuickLaunchKeyboardHealthState::InstallFailed,
+                        native_error_code: 5,
+                    },
+                )),
+                cx,
+            )
+        });
+        application.update(cx, |app, cx| app.reenable_keyboard_hotkey(cx));
+        let command = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("accepted ConfigureQuickLaunch");
+        let pending_id = command.id;
+        assert!(cx.read(|cx| application.read(cx).pending_keyboard_reenable.is_some()));
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::Disconnected {
+                    generation: 1,
+                    pending_command_ids: vec![pending_id],
+                },
+                cx,
+            )
+        });
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: pending_id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            )
+        });
+        assert!(cx.read(|cx| application.read(cx).pending_keyboard_reenable.is_none()));
+        let events = records.lock().expect("captured terminal events");
+        let matching = events
+            .iter()
+            .filter(|fields| {
+                fields.iter().any(|(key, value)| {
+                    key == "correlation_id" && value.contains(&pending_id.to_string())
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matching.len(),
+            1,
+            "accepted retry has one correlated terminal on disconnect"
+        );
+        let terminal = matching[0];
+        assert!(
+            terminal
+                .iter()
+                .any(|(key, value)| key == "success" && value == "false")
+        );
+        assert!(
+            terminal
+                .iter()
+                .any(|(key, value)| key == "failure_kind" && value == "disconnected")
+        );
+        assert!(
+            terminal
+                .iter()
+                .any(|(key, value)| key == "elapsed_ms" && value.parse::<u64>().is_ok())
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn u3_followup_completed_keyboard_retry_has_no_second_disconnect_terminal(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let records = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    tracing::subscriber::with_default(KeyboardHealthDiagnostics(records.clone()), || {
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::Event(PlatformEvent::QuickLaunchKeyboardHealthChanged(
+                    QuickLaunchKeyboardHealthChanged {
+                        correlation_id: uuid::Uuid::new_v4(),
+                        state: QuickLaunchKeyboardHealthState::InstallFailed,
+                        native_error_code: 5,
+                    },
+                )),
+                cx,
+            )
+        });
+        application.update(cx, |app, cx| app.reenable_keyboard_hotkey(cx));
+        let command = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("accepted retry");
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: command.id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            )
+        });
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::Disconnected {
+                    generation: 1,
+                    pending_command_ids: Vec::new(),
+                },
+                cx,
+            )
+        });
+        let events = records.lock().expect("captured terminal events");
+        let matching = events
+            .iter()
+            .filter(|fields| {
+                fields.iter().any(|(key, value)| {
+                    key == "correlation_id" && value.contains(&command.id.to_string())
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            matching.len(),
+            1,
+            "matching result terminates retry once before disconnect"
+        );
+        assert!(
+            matching[0]
+                .iter()
+                .any(|(key, value)| key == "success" && value == "true")
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn keyboard_health_new_thread_exit_outlives_earlier_successful_retry(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let health = |state, code| {
+        PlatformNotification::Event(PlatformEvent::QuickLaunchKeyboardHealthChanged(
+            QuickLaunchKeyboardHealthChanged {
+                correlation_id: uuid::Uuid::new_v4(),
+                state,
+                native_error_code: code,
+            },
+        ))
+    };
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(PlatformNotification::Connected, cx)
+    });
+    let initial = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("initial configuration");
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: initial.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            health(QuickLaunchKeyboardHealthState::InstallFailed, 5),
+            cx,
+        );
+        app.reenable_keyboard_hotkey(cx);
+    });
+    let retry = (0..8)
+        .filter_map(|_| endpoint.try_receive_command_for_contract_test().ok())
+        .find(|envelope| {
+            matches!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(
+                    _
+                ))
+            )
+        })
+        .expect("original configuration retry");
+    assert!(matches!(
+        retry.message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(_))
+    ));
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            health(QuickLaunchKeyboardHealthState::Reinstalled, 0),
+            cx,
+        );
+        app.handle_platform_notification(
+            health(QuickLaunchKeyboardHealthState::ThreadExited, 11),
+            cx,
+        );
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: retry.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        );
+    });
+    let (reason, pending) = cx
+        .read(|cx| application.read(cx).keyboard_health_warning())
+        .expect("new thread exit must survive old successful result");
+    assert!(reason.contains("线程已退出") && reason.contains("11"));
+    assert!(!pending);
+}
+
+#[gpui_kit::test]
+fn keyboard_health_hello_unavailable_clears_on_ordinary_configuration_success(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    endpoint.set_quick_launch_panel_hotkey_available_for_contract_test(false);
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(PlatformNotification::Connected, cx)
+    });
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("automatic configuration");
+    assert!(cx.read(|cx| application.read(cx).keyboard_health_warning().is_some()));
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: command.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    assert!(
+        cx.read(|cx| application.read(cx).keyboard_health_warning().is_none()),
+        "successful ordinary configuration clears the old Hello capability snapshot warning"
+    );
+}
+
+#[gpui_kit::test]
+fn keyboard_health_ordinary_configuration_success_keeps_new_native_failure(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    endpoint.set_quick_launch_panel_hotkey_available_for_contract_test(false);
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(PlatformNotification::Connected, cx)
+    });
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("automatic configuration");
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::Event(PlatformEvent::QuickLaunchKeyboardHealthChanged(
+                QuickLaunchKeyboardHealthChanged {
+                    correlation_id: uuid::Uuid::new_v4(),
+                    state: QuickLaunchKeyboardHealthState::ThreadExited,
+                    native_error_code: 17,
+                },
+            )),
+            cx,
+        );
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: command.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        );
+    });
+    let (reason, _) = cx
+        .read(|cx| application.read(cx).keyboard_health_warning())
+        .expect("new native failure must survive old ordinary configuration result");
+    assert!(reason.contains("线程已退出") && reason.contains("17"));
 }
 
 #[gpui_kit::test]
@@ -2519,8 +2979,8 @@ fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestA
     panel.update_in(cx, |panel, _window, cx| {
         panel.run_search("alp".into(), cx);
     });
-    panel.update_in(cx, |_panel, window, _cx| {
-        assert_eq!(window.bounds().size.height, px(PANEL_HEIGHT));
+    panel.update_in(cx, |panel, window, _cx| {
+        assert_eq!(window.bounds().size.height, px(panel.content_height()));
     });
     panel.read_with(cx, |panel, cx| {
         assert_eq!(panel.search_input.read(cx).value().as_ref(), "alp");
@@ -2540,8 +3000,12 @@ fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestA
         assert_eq!(panel.results[panel.selected].entry.name, "alpha");
     });
 
+    cx.refresh().expect("render restored results");
+    let result_bounds = cx
+        .debug_bounds("quick-launch-result-row-0")
+        .expect("restored result row");
     cx.simulate_mouse_down(
-        point(px(20.0), px(60.0)),
+        result_bounds.center(),
         gpui_kit::MouseButton::Right,
         gpui_kit::Modifiers::none(),
     );
@@ -2801,11 +3265,17 @@ fn action_mode_reuses_the_result_row_rails_and_only_adds_a_lightweight_context(
         .expect("action trailing rail");
 
     assert_eq!(context.size.height, px(QUICK_LAUNCH_ACTION_CONTEXT_HEIGHT));
-    assert_eq!(action_row.size.height, result_row.size.height);
+    assert_eq!(result_row.size.height, px(LAUNCHER_RESULT_ROW_HEIGHT));
+    assert_eq!(action_row.size.height, px(COMPACT_RESULT_ROW_HEIGHT));
     assert_eq!(action_icon.origin.x, result_icon.origin.x);
-    assert_eq!(action_icon.size.width, result_icon.size.width);
-    assert_eq!(action_copy.origin.x, result_copy.origin.x);
-    assert_eq!(action_title.size.height, result_title.size.height);
+    assert_eq!(action_icon.size.width, px(COMPACT_RESULT_ICON_RAIL_WIDTH));
+    assert_eq!(result_icon.size.width, px(LAUNCHER_RESULT_ICON_SIZE));
+    assert_eq!(
+        result_copy.origin.x - action_copy.origin.x,
+        px(LAUNCHER_RESULT_ICON_SIZE - COMPACT_RESULT_ICON_RAIL_WIDTH)
+    );
+    assert_eq!(action_title.size.height, px(LINE_HEIGHT_BODY));
+    assert_eq!(result_title.size.height, px(LAUNCHER_TITLE_LINE_HEIGHT));
     assert_eq!(action_trailing.origin.x, result_trailing.origin.x);
     assert_eq!(action_trailing.size.width, result_trailing.size.width);
 }
@@ -3307,8 +3777,9 @@ fn quick_launch_preview_lifecycle_discards_stale_hover_and_honors_pointer_grace(
 #[test]
 fn popup_dimensions_are_compact_and_do_not_depend_on_the_main_window() {
     assert_eq!(PANEL_WIDTH, 620.0);
-    assert_eq!(PANEL_HEIGHT, 410.0);
-    assert_eq!(SEARCH_HEADER_HEIGHT, 42.0);
+    assert_eq!(PANEL_HEIGHT, 530.0);
+    assert_eq!(LAUNCHER_LIST_MAX_HEIGHT, 470.0);
+    assert_eq!(SEARCH_HEADER_HEIGHT, 58.0);
     assert_eq!(RESULT_LIMIT, 200);
     assert_eq!(INDEX_CANDIDATE_LIMIT, 200);
 }
@@ -3519,10 +3990,13 @@ fn empty_query_keeps_the_launcher_collapsed_until_the_user_types() {
     assert!(quick_launch_results_visible("", true, false));
     assert!(quick_launch_results_visible("", false, true));
     assert_eq!(
-        quick_launch_panel_height("", false, false),
+        quick_launch_panel_height(0.0, false),
         COLLAPSED_PANEL_HEIGHT
     );
-    assert_eq!(quick_launch_panel_height("zed", false, false), PANEL_HEIGHT);
+    assert_eq!(
+        quick_launch_panel_height(LAUNCHER_LIST_MAX_HEIGHT, false),
+        PANEL_HEIGHT
+    );
 }
 
 #[test]
@@ -3635,6 +4109,7 @@ fn a_cursor_only_index_status_update_does_not_repaint_the_launcher() {
         phase: nxtools_protocol::IndexPhase::Ready,
         indexed_items: 42,
         drives: vec![nxtools_protocol::IndexDriveStatus {
+            maintenance: None,
             mount_point: r"C:\".into(),
             file_system: "NTFS".into(),
             indexed_items: 42,
@@ -4077,6 +4552,7 @@ fn count_only_status_changes_coalesce_into_rate_limited_logs() {
         phase: nxtools_protocol::IndexPhase::Ready,
         indexed_items: 100,
         drives: vec![nxtools_protocol::IndexDriveStatus {
+            maintenance: None,
             mount_point: r"C:\".into(),
             file_system: "NTFS".into(),
             indexed_items: 100,
@@ -4088,6 +4564,7 @@ fn count_only_status_changes_coalesce_into_rate_limited_logs() {
     let count_change = IndexStatus {
         indexed_items: 101,
         drives: vec![nxtools_protocol::IndexDriveStatus {
+            maintenance: None,
             indexed_items: 101,
             ..base.drives[0].clone()
         }],
@@ -5061,7 +5538,7 @@ fn row_spacing_external_gap_is_four_or_zero_and_never_selects_or_executes(cx: &m
         let second = surface
             .debug_bounds("quick-launch-result-row-1")
             .expect("second");
-        assert_eq!(first.size.height, px(40.));
+        assert_eq!(first.size.height, px(LAUNCHER_RESULT_ROW_HEIGHT));
         assert_eq!(second.top() - first.bottom(), px(style.gap()));
         if style == nxtools_core::QuickLaunchRowStyle::Separated {
             let gap = point(first.center().x, first.bottom() + px(2.));
@@ -5595,8 +6072,8 @@ fn result_ux_refresh_preserves_identity_scroll_and_original_action_entry(cx: &mu
     chosen.entry.target = format!(r"C:\another parent\{}\same.txt", "nested\\".repeat(30));
     let chosen_target = chosen.entry.target.clone();
     let (panel, window) = quick_launch_panel_fixture(cx, vec![first.clone(), chosen.clone()]);
-    panel.update_in(window, |panel, _, _| {
-        panel.selected = 1;
+    panel.update_in(window, |panel, _, cx| {
+        panel.select_result(1, cx);
         panel
             .result_scroll
             .0
@@ -5625,7 +6102,13 @@ fn result_ux_refresh_preserves_identity_scroll_and_original_action_entry(cx: &mu
         "removed action must not remain in keyboard/accessibility controls"
     );
     panel.read_with(window, |panel, _| {
-        assert_eq!(panel.results.display(1).subtitle.as_ref(), chosen_target)
+        assert_eq!(
+            panel.results.display(1).subtitle.as_ref(),
+            Path::new(&chosen_target)
+                .parent()
+                .expect("parent directory")
+                .to_string_lossy()
+        );
     });
     let hint = window
         .debug_bounds("quick-launch-result-shortcut-1")
@@ -5760,5 +6243,176 @@ fn result_ux_failed_query_does_not_reenable_retained_rows(cx: &mut TestAppContex
         window
             .debug_bounds("quick-launch-result-actions-0")
             .is_none()
+    );
+}
+
+#[path = "refresh_tests.rs"]
+mod refresh_tests;
+
+enum RetirementGesture {
+    Clear,
+    Hide,
+    Reopen,
+    SaturatedHide,
+}
+
+#[gpui_kit::test]
+fn search_retirement_clear_sends_matching_cancel_frame(cx: &mut TestAppContext) {
+    assert_search_retirement_frame(cx, RetirementGesture::Clear);
+}
+
+#[gpui_kit::test]
+fn search_retirement_hide_sends_matching_cancel_frame(cx: &mut TestAppContext) {
+    assert_search_retirement_frame(cx, RetirementGesture::Hide);
+}
+
+#[gpui_kit::test]
+fn search_retirement_old_deferred_close_does_not_cancel_reopened_query(cx: &mut TestAppContext) {
+    assert_search_retirement_frame(cx, RetirementGesture::Reopen);
+}
+
+#[gpui_kit::test]
+fn search_retirement_full_command_queue_does_not_lose_hide_cancel(cx: &mut TestAppContext) {
+    assert_search_retirement_frame(cx, RetirementGesture::SaturatedHide);
+}
+
+fn assert_search_retirement_frame(cx: &mut TestAppContext, gesture: RetirementGesture) {
+    cx.update(gpui_kit::init);
+    let (_temporary, application, _platform) = quick_launch_application_fixture(cx);
+    let (indexer, endpoint) = crate::runtime::indexer_bridge(8);
+    endpoint.connect_for_test();
+    application.update(cx, |application, _| {
+        application.indexer = Rc::new(indexer);
+        application.index_status = Some(IndexStatus {
+            phase: nxtools_protocol::IndexPhase::Ready,
+            indexed_items: 1,
+            drives: Vec::new(),
+            last_error: None,
+        });
+    });
+    let (panel, window) = quick_launch_panel_fixture(cx, Vec::new());
+    window.update(|window, cx| {
+        application.update(cx, |application, _| {
+            application.popup = Some(QuickLaunchWindow {
+                window: window.window_handle(),
+                panel: panel.downgrade(),
+                native_window_handle: 1,
+            });
+        });
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        panel.focus_search(window, cx);
+    });
+    window.refresh().expect("focused production input");
+    window.simulate_input("retirement-fixture");
+    window.run_until_parked();
+    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
+    window.run_until_parked();
+    let search = endpoint
+        .try_recv_command_for_test()
+        .expect("indexed search");
+    let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+        &search.message
+    else {
+        panic!("expected original search");
+    };
+    if matches!(gesture, RetirementGesture::Reopen) {
+        panel.update_in(window, |panel, _, cx| {
+            panel.close(cx);
+            panel.is_open = true;
+            panel.query_dispatch_generation =
+                panel.query_dispatch_generation.wrapping_add(1).max(1);
+        });
+        application.update(window, |application, cx| {
+            application.popup_session_id = uuid::Uuid::new_v4();
+            application.search_and_request_icons("replacement-fixture", cx);
+        });
+        window.run_until_parked();
+        panel.read_with(window, |panel, _| {
+            assert!(
+                panel.is_open,
+                "old deferred close cannot hide the reopened panel"
+            )
+        });
+        let commands =
+            std::iter::from_fn(|| endpoint.try_recv_command_for_test()).collect::<Vec<_>>();
+        let newer = commands
+            .iter()
+            .find(|envelope| {
+                matches!(
+                    envelope.message,
+                    nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(_))
+                )
+            })
+            .expect("new search");
+        application.read_with(window, |application, _| {
+            assert_eq!(
+                application
+                    .pending_index_search
+                    .as_ref()
+                    .map(|pending| pending.request_id),
+                Some(newer.id)
+            )
+        });
+        assert_eq!(
+            commands.len(),
+            1,
+            "new Search alone replaces the old query; no cancellation of the new session"
+        );
+        return;
+    }
+    if matches!(gesture, RetirementGesture::SaturatedHide) {
+        application.update(window, |application, _| {
+            for _ in 0..8 {
+                application
+                    .indexer
+                    .send_command(IndexerCommand::RefreshVolumes)
+                    .expect("fill existing command queue");
+            }
+        });
+    }
+    if matches!(
+        gesture,
+        RetirementGesture::Hide | RetirementGesture::SaturatedHide
+    ) {
+        application.update(window, |application, cx| application.hide_popup(cx));
+    } else {
+        window.simulate_keystrokes("ctrl-a backspace");
+    }
+    window.run_until_parked();
+    if matches!(gesture, RetirementGesture::SaturatedHide) {
+        for _ in 0..8 {
+            assert!(matches!(
+                endpoint
+                    .try_recv_command_for_test()
+                    .expect("queued filler")
+                    .message,
+                nxtools_protocol::Message::IndexerCommand(IndexerCommand::RefreshVolumes)
+            ));
+        }
+        window.run_until_parked();
+    }
+    let cancel = endpoint
+        .try_recv_command_for_test()
+        .expect("clear/hide must send server cancellation, not only discard UI results");
+    let wire = cancel.encode_line().expect("cancel wire frame");
+    let decoded = nxtools_protocol::Envelope::decode_line(&wire).expect("cancel frame roundtrip");
+    let value = serde_json::to_value(&decoded).expect("cancel JSON shape");
+    assert_eq!(value["payload"]["command"], "cancel_search");
+    assert_eq!(
+        value["payload"]["data"]["request_id"],
+        search.id.to_string()
+    );
+    assert_eq!(value["payload"]["data"]["generation"], request.generation);
+    application.read_with(window, |application, _| {
+        assert_ne!(application.index_search.generation, request.generation);
+        assert!(application.index_search.items.is_empty());
+    });
+    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
+    window.run_until_parked();
+    assert!(
+        endpoint.try_recv_command_for_test().is_none(),
+        "retired debounce must not send another query"
     );
 }

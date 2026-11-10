@@ -29,6 +29,8 @@ pub enum ArchiveError {
     OutputCollision,
     #[error("finite resource budget exceeded")]
     ResourceLimit,
+    #[error("selected member output exceeds its request limit")]
+    SelectedOutputLimit,
     #[error("source changed since listing")]
     SourceChanged,
     #[error("archive operation is busy")]

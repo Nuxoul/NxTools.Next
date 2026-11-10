@@ -1,0 +1,8 @@
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Detached reader, native ownership and lifecycle"}
+{"file":".trellis/spec/platformhost/diagnostics.md","reason":"Bounded correlated native diagnostics"}
+{"file":".trellis/spec/nxtools-protocol/backend/directory-structure.md","reason":"Paired typed events and compatibility"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Content/page/background trust and hand-back ownership"}
+{"file":".trellis/spec/browser-extension/ui-guidelines.md","reason":"No interface redesign; isolated DOM acceptance"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Migrated summon/settings behavior and native boundaries"}
+{"file":"docs/reference-code/download.md","reason":"Download interception and browser reference"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official compounds and deferred callbacks"}

@@ -31,6 +31,20 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
     private string EnrollmentPath => Path.Combine(Root, "enrollment.json");
     private string StatePath => Path.Combine(Root, "Releases", "state.json");
 
+    internal static void RecordRepairedEnrollment(string root, VerifiedRelease release)
+    {
+        if (!new TrustedUpdateEnrollment(root).IsComplete())
+            throw new InvalidDataException("Completed enrollment required before protocol state.");
+        var bootstrap = release.Files.Single(file => file.Path == "NxTools.PlatformHost.exe");
+        using var binary = IndexerServiceInstaller.TrustedBinary.Open(
+            Path.Combine(root, "Bootstrap", "NxTools.PlatformHost.exe"), bootstrap.Sha256);
+        using var output = new FileStream(Path.Combine(root, "bootstrap-maintenance-state.json"),
+            FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        JsonSerializer.Serialize(output, new Version(release.Manifest.ReleaseSequence,
+            release.Manifest.ReleaseId, release.ManifestSha256, bootstrap.Sha256));
+        output.Flush(true);
+    }
+
     internal void Apply(string package, Guid correlationId)
     {
         var clock = Stopwatch.StartNew();
@@ -62,7 +76,7 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
             var previous = File.Exists(VersionPath) ? Read<Version>(VersionPath) : null;
             if (previous == next && Same(oldHash, next.BootstrapSha256))
             {
-                service.ConfirmReady(); Event("already_current", correlationId, clock); return;
+                service.Start(); service.ConfirmReady(); Event("already_current", correlationId, clock); return;
             }
             if (next.Sequence <= Math.Max(state.Sequence, previous?.Sequence ?? 0))
                 throw new InvalidDataException("Bootstrap maintenance downgrade/replay rejected.");
@@ -118,7 +132,7 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
                     // An old broker may have completed an update before it stopped. No bootstrap
                     // mutation occurred: abort only our preparation, never restore its release state.
                     if (File.Exists(Candidate)) { RequireHash(Candidate, journal.NewHash); File.Delete(Candidate); }
-                    service.Start(); service.Validate(journal.OldHash, keyHash);
+                    service.Validate(journal.OldHash, keyHash);
                     File.Delete(JournalPath);
                     throw;
                 }
@@ -141,7 +155,7 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
         if (File.Exists(VersionPath) && Read<Version>(VersionPath) == journal.Next)
         {
             service.Validate(journal.NewHash, keyHash);
-            service.ConfirmReady(); CleanupCommitted(journal);
+            service.Start(); service.ConfirmReady(); CleanupCommitted(journal);
             Event("recovered_committed", correlation, clock); return;
         }
         Event("rollback_started", correlation, clock);
@@ -160,7 +174,6 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
         var oldEnrollment = Convert.FromBase64String(journal.EnrollmentBase64);
         WriteBytes(EnrollmentPath, oldEnrollment);
         service.SetBootstrapHash(journal.OldHash);
-        service.Start();
         service.Validate(journal.OldHash, keyHash);
         File.Delete(JournalPath);
         Event("rolled_back", correlation, clock);

@@ -154,3 +154,133 @@ Run Python unittest/AST and doc/selector checks only; this correction authorizes
 repeat. [Repair contract](../../../.trellis/tasks/10-16-archive-manager/status-read-p2-contract.md)
 and [repair evidence](../../../.trellis/tasks/10-16-archive-manager/status-read-p2-evidence.md)
 are separate from immutable product-100k-acceptance.md and old attempts/results.
+
+## OPT-00 completed format baseline
+
+`prepare-opt-formats.py` creates a new marked root below `PI_SCRATCH_DIR`. It copies the
+attributed solid7z fixture, downloads the already-indexed solidRAR5 data from pinned libarchive
+commit `79c571f845dbdd250d69bff9d93ae034f674135e`, retains attribution/license, and creates two
+deterministic USTAR members in TAR.GZ/TAR.XZ. System `tar.exe` independently decodes expected
+payloads before measurement. It never executes archive payloads or changes existing inputs.
+
+Use a previously built Debug `isolated-codecs` worker and the original compiled C# test host:
+
+```powershell
+$env:TEMP=$env:PI_SCRATCH_DIR
+$env:TMP=$env:PI_SCRATCH_DIR
+python tests/performance/archive-resources/prepare-opt-formats.py
+$env:NXTOOLS_ARCHIVE_OPT_FORMAT_ROOT=(Get-Content (Join-Path $env:PI_SCRATCH_DIR 'opt-format-root.txt') -Raw).Trim()
+$env:NXTOOLS_ARCHIVE_WORKER_FIXTURE='<absolute frozen worker path>'
+dotnet run --project csharp/NxTools.PlatformHost.Tests --no-build --no-restore -- --fixtures --list 'archive OPT00 completed format baseline'
+dotnet run --project csharp/NxTools.PlatformHost.Tests --no-build --no-restore -- --fixtures 'archive OPT00 completed format baseline'
+```
+
+The identical selection must LIST1/RUN1/PASS1/SKIP0. Each side completes three open/Test/
+last-member-materialize/all-extract/last-member-extract trials for four formats. Reuse the same
+root and host for both frozen worker versions; do not regenerate between comparison sides.
+Outputs are compared with independent bytes, original ordinals are retained, source leases
+must be released, and native outputs/helper/cache leases are cleaned through their original owners.
+Inputs, independent expectations and provenance remain explicitly retained for comparison.
+
+The existing Samples collector uses the runner's native process handle, not process-name lookup.
+Requested20ms samples may miss peaks. JSON pipe bytes are not source reads; runner notification
+intervals are not exclusive codec phase costs. Missing source/block counters remain unavailable,
+not zero. The task's `opt00-opt01-results.md` and native JSONL record the acceptance boundary.
+
+## OPT-04 retained drag fixtures
+
+The separately authorized Phase E/OPT-04 controlled-COM measurements use the original read/entry/
+runner/output/cache path, not the resource sampler or a real Explorer target. `Opt04DragTests` has
+exact fixture registrations for same-path lifecycle, formats, split ZIP, full-block integrity,
+receiver/work/Seal lifetime, ordinary preview adoption and solid encrypted RAR4 authorization.
+Effects are in the original Program/TestEffects catalog; LIST the exact selection before RUN.
+
+Required test inputs: explicit freshly built `NXTOOLS_ARCHIVE_WORKER_FIXTURE`, marked independent
+format root `NXTOOLS_ARCHIVE_OPT_FORMAT_ROOT`, and session-owned `PI_SCRATCH_DIR`. Set TEMP/TMP to
+that scratch root for the existing owned-root guard. The comparison lifecycle additionally needs
+`NXTOOLS_ARCHIVE_OPT04_ROOT` pointing at its completed immutable before input/report; do not set it
+for fixtures that create fresh roots. Keep the stable worker/host/test execution paths and Debug/
+Release mode identical across before/after. First ZIP-green and final all-format evidence remain
+separate. Never overwrite an existing measurements-before.json or measurements-retained.json.
+
+`prepare-opt-formats.py` supplies solid7z/RAR5/TGZ/TXZ and independent expected bytes. For the added
+solid RAR4 case, set the existing `NXTOOLS_ARCHIVE_7ZIP_ORACLE` to the explicitly approved decoder,
+then run `python tests/performance/archive-resources/prepare-opt04-rar4.py`. It downloads one pinned
+public libarchive fixture and attribution/test source, verifies RAR4/solid and independently decodes
+four fixed payloads into a new marked GUID root. Set `NXTOOLS_ARCHIVE_OPT04_RAR4_ROOT` to the printed
+root; no historical input is modified. Fixture password is public test data and never enters argv
+of the product worker, logs or diagnostics.
+
+Report worker/source/catalog counts, actual format invocations/replays, independent cache reads,
+member publication/Seal-ready and actual receiver/Run cleanup separately. Missing internal native
+reads/blocks/codec time and physical gesture/DragOver/target-disk clocks stay unavailable. One7z
+public consuming block pass per distinct demand and RAR backward reopen/replay are real work.
+Split ZIP has two admission directory passes and retains the normalized source thereafter.
+Results, three-trial ranges and the scoped stop point:
+[OPT-04 evidence](../../../.trellis/tasks/11-02-archive-workflow-optimization/opt04-retained-materialization.md).
+
+## OPT-05 operation-local format and update plans
+
+The original owner counters measure ZIP local/descriptor admission/record seeks and source/addition/
+candidate payload decodes, TAR outer bytes/scans/ordinal locators, shared selection visits and native
+source/target observations. They are not total source I/O, all seeks, exclusive codec time or peak
+memory. Aggregate at the original operation terminal, including failures, without member/path/chunk
+logging. Exact contracts: [format plans](../../../.trellis/spec/nxtools-archive/backend/reusable-plans.md)
+and [native observations](../../../.trellis/spec/platformhost/archive-read-observation.md).
+
+Kernel tests: `opt05_zip_plan_contract`, `opt05_tar_plan_contract` and library `opt05` selection tests.
+Set the required memory environment in the same invocation, TEMP/TMP to PI_SCRATCH_DIR and keep one
+Cargo lane. ZIP comparison uses original marked `NXTOOLS_OPT05_ZIP_ROOT` and create-new
+`NXTOOLS_OPT05_ZIP_REPORT`. TAR uses original `NXTOOLS_OPT05_TAR_FIXTURES` and a fresh
+`NXTOOLS_OPT05_TAR_REPORT_LABEL`; explicitly execute `opt05_tar_baseline_three_completed_trials`
+with `--ignored --exact --nocapture`, not an ignored acceptance count. Preserve every prior label.
+
+Native exact fixtures: `archive OPT05 completed compound format baseline`, `archive OPT05 compound
+format plan reuse`, `archive OPT05 native equivalent observations`, `archive OPT05 native identity
+version and cancellation`. Review original effects, call the actual freshly built apphost with
+`--fixtures --list` plus exact names, then the identical selection without `--list`; no dotnet run,
+blanket native suite, zero selection or skip acceptance. Supply matching frozen
+`NXTOOLS_ARCHIVE_WORKER_FIXTURE`, marked two-format `NXTOOLS_ARCHIVE_OPT_FORMAT_ROOT` and create-new
+`NXTOOLS_OPT05_FORMAT_REPORT`; retained four-format preservation uses its original four-format root,
+not the two-format comparison root. Direct native observation uses the retained
+`NXTOOLS_OPT05_NATIVE_ROOT`; baseline-only `NXTOOLS_OPT05_NATIVE_BASELINE=1` is test tooling, never
+product policy. Remove it for actual equivalence assertions. Preserve the resulting unique reports.
+
+Use the same input/build mode/disk/route/stable execution paths, three completed principal trials,
+no system-cache flush and no best-run selection. Report work, encoded readback, decode, publication
+and actual cleanup separately. Reduced counts with overlapping timings are work reduction, not a
+general speedup. [OPT-05 result](../../../.trellis/tasks/11-02-archive-workflow-optimization/opt05-reusable-plans.md)
+and [all comparable measurements](../../../.trellis/tasks/11-02-archive-workflow-optimization/opt05-measurements.md)
+retain raw three-trial data and open G-00/overall/physical/Release gates.
+
+## OPT-06 private bulk comparison
+
+`Opt06BulkTransferTests.Measurements` measures the original browser/Job/Run/native routes for ZIP
+Store creation, ZIP extraction and ZIP Add. Each side has three completed trials, deterministic
+1MiB source/addition inputs, independently produced ZIP, fixed per-route/trial source/output paths
+and the same owned worker execution path. Independent decode and fixture verification are outside
+the operation timer; actual Run drain is inside it. No cache flush or best-run selection.
+
+Freeze the observed before source/worker/Host/tests before changing transport. The exact fixture
+selection is `archive OPT06 binary transfer measurements`; inspect `--fixtures --list` then use the
+identical filter without `--list`. Set explicit `NXTOOLS_ARCHIVE_WORKER_FIXTURE` and the existing
+`NXTOOLS_EDIT_INTERACTION_WORKER_SHA256` approval marker to the matching frozen Debug worker.
+`PI_SCRATCH_DIR` and `NXTOOLS_OPT06_ROOT` must be absolute; the root is a direct GUID-owned
+`archive-product-opt06-<GUID>` child. Baseline-only `NXTOOLS_OPT06_BASELINE=1` creates marked inputs
+once. Clear it for after; inputs are byte-verified, never regenerated. `NXTOOLS_OPT06_REPORT` names
+a new file directly inside the same root's `reports` directory; never overwrite before or earlier
+attempts. Do not run under Cargo/dotnet/native fixture build load.
+
+The fixture requires actual source/output/held-partial payload counters, one publication and
+Committed journal, source preservation, exact independently decoded bytes, zero active Runs,
+exclusive reopen and no owned partial. Current binary assertions require wire bytes equal payload
+plus80bytes per frame, source/partial EOF included in frame counts, zero modern conversion input,
+one source/partial envelope copy, <=2 host payload buffers and <=131072payload bytes high-water,
+with a1MiB reservation inside existing64MiB overhead. JSON bytes/frames remain separate.
+
+Sampled owner/worker memory and worker process CPU interval are not exact peaks or exclusive codec
+time. Operation wall includes real cleanup; separately timed cleanup, complete/internal source I/O,
+and unobserved before conversion/copy/buffer metrics remain null/unavailable. Compare native role
+and actual payload work separately from wire reduction. The [frame contract and results](../../../.trellis/tasks/11-02-archive-workflow-optimization/opt06-binary-transfer.md)
+retain source attribution, all samples and scoped handoff; no uniform speedup/reference equivalence
+or independent acceptance follows from these measurements.

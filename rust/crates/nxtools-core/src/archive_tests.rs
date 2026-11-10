@@ -46,6 +46,7 @@ fn changed_settings() -> ArchiveSettings {
         remember_recent: true,
         recent_limit: 10,
         temp: ArchiveTempSettings::default(),
+        preview: Default::default(),
         auto_enter_single_root: false,
         show_parent_row: false,
         show_grid_lines: true,
@@ -65,6 +66,7 @@ fn changed_settings() -> ArchiveSettings {
         filename_encoding: ArchiveFilenameEncoding::ShiftJis,
         create_format: ArchiveCreateFormat::SevenZ,
         compression_level: ArchiveCompressionLevel::Maximum,
+        create_volume_size: None,
         test_after_create: false,
         strip_single_root: true,
         exclude_patterns: vec!["*.tmp".into(), " keep-spaces.txt ".into()],
@@ -104,6 +106,7 @@ fn absent_archive_section_loads_exact_defaults_without_rewriting_legacy_bytes() 
         remember_recent: true,
         recent_limit: 10,
         temp: ArchiveTempSettings::default(),
+        preview: Default::default(),
         auto_enter_single_root: true,
         show_parent_row: true,
         show_grid_lines: false,
@@ -123,6 +126,7 @@ fn absent_archive_section_loads_exact_defaults_without_rewriting_legacy_bytes() 
         filename_encoding: ArchiveFilenameEncoding::Auto,
         create_format: ArchiveCreateFormat::Zip,
         compression_level: ArchiveCompressionLevel::Normal,
+        create_volume_size: None,
         test_after_create: true,
         strip_single_root: false,
         exclude_patterns: vec!["Thumbs.db".into(), "desktop.ini".into()],
@@ -218,6 +222,7 @@ fn present_invalid_archive_sections_and_missing_required_fields_are_rejected() {
             "extract_custom_destination",
             "remember_recent",
             "recent_limit",
+            "preview",
             "temp",
         ]
         .contains(&field.as_str())
@@ -553,7 +558,10 @@ fn shell_settings_legacy_defaults_and_strict_choices_are_persisted() {
             "extract_smart",
             "extract_here",
             "extract_name",
-            "test"
+            "test",
+            "create_zip",
+            "create_7z",
+            "create"
         ])
     );
     let fixture = ConfigFixture::new();
@@ -719,4 +727,168 @@ fn remembered_extract_custom_destination_is_additive_validated_and_field_merged(
     let mut invalid = serde_json::to_value(AppConfig::default()).expect("config");
     invalid["archive"]["extract_custom_destination"] = json!("relative/path");
     assert_rejected_without_rewrite(&path, &serde_json::to_vec(&invalid).expect("invalid"));
+}
+
+#[test]
+fn preview_defaults_are_additive_without_opening_write_and_bounds_are_validated() {
+    let fixture = ConfigFixture::new();
+    let path = fixture.path();
+    let mut legacy = serde_json::to_value(AppConfig::default()).expect("config");
+    legacy["archive"]
+        .as_object_mut()
+        .expect("archive")
+        .remove("preview");
+    let bytes = serde_json::to_vec(&legacy).expect("legacy JSON");
+    fs::write(&path, &bytes).expect("legacy config");
+    let loaded = AppConfig::load_from(&path).expect("legacy preview defaults");
+    assert_eq!(fs::read(&path).expect("unchanged bytes"), bytes);
+    let expected = json!({
+        "text_limit_kib": 1024, "text_max_lines": 20000,
+        "image_limit_mib": 32, "image_max_megapixels": 16,
+        "image_decode_mib": 512, "timeout_seconds": 120
+    });
+    let mut value = serde_json::to_value(loaded).expect("loaded config");
+    assert_eq!(value["archive"]["preview"], expected);
+    for (field, minimum, maximum) in [
+        ("text_limit_kib", 1, 8192),
+        ("text_max_lines", 1, 100000),
+        ("image_limit_mib", 1, 128),
+        ("image_max_megapixels", 1, 64),
+        ("image_decode_mib", 32, 1024),
+        ("timeout_seconds", 5, 120),
+    ] {
+        for valid in [minimum, maximum] {
+            value["archive"]["preview"] = expected.clone();
+            value["archive"]["preview"][field] = json!(valid);
+            let config: AppConfig = serde_json::from_value(value.clone()).expect("typed bound");
+            assert!(config.archive.validate().is_ok(), "{field}={valid}");
+        }
+        for invalid in [minimum - 1, maximum + 1] {
+            value["archive"]["preview"] = expected.clone();
+            value["archive"]["preview"][field] = json!(invalid);
+            assert_rejected_without_rewrite(&path, &serde_json::to_vec(&value).expect("invalid"));
+        }
+    }
+    for invalid in [
+        Value::Null,
+        json!({"unknown": 1}),
+        json!([]),
+        json!("invalid"),
+    ] {
+        value["archive"]["preview"] = invalid;
+        assert_rejected_without_rewrite(&path, &serde_json::to_vec(&value).expect("invalid shape"));
+    }
+}
+
+#[test]
+fn preview_changed_leaf_merge_preserves_latest_fields_and_other_sections() {
+    let fixture = ConfigFixture::new();
+    let path = fixture.path();
+    AppConfig::default().save_to(&path).expect("seed");
+    let baseline = AppConfig::load_from(&path)
+        .expect("baseline")
+        .archive
+        .preview;
+    let mut desired = baseline;
+    desired.text_limit_kib = 2048;
+    desired.timeout_seconds = 60;
+    AppConfig::update_section(&path, |config| {
+        config.archive.preview.image_limit_mib = 64;
+        config.archive.preview.text_max_lines = 40_000;
+        config.system.close_to_tray = false;
+    })
+    .expect("concurrent owner");
+    let merged = AppConfig::update_section(&path, |config| {
+        config.archive.preview.merge_changed(&baseline, &desired);
+    })
+    .expect("original locked section update");
+    assert_eq!(merged.archive.preview.text_limit_kib, 2048);
+    assert_eq!(merged.archive.preview.timeout_seconds, 60);
+    assert_eq!(merged.archive.preview.image_limit_mib, 64);
+    assert_eq!(merged.archive.preview.text_max_lines, 40_000);
+    assert!(!merged.system.close_to_tray);
+    assert_eq!(AppConfig::load_from(&path).expect("reload"), merged);
+}
+
+#[test]
+fn ref17_size_units_legacy_mib_and_load_are_lossless_without_writes() {
+    use crate::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
+    let fixture = ConfigFixture::new();
+    let path = fixture.path();
+    let mut json = serde_json::to_value(AppConfig::default()).expect("configuration");
+    assert!(json["archive"].get("create_volume_size").is_none());
+    json["archive"]["create_volume_size"] = json!({"value":128});
+    let encoded = serde_json::to_vec(&json).expect("legacy integer MiB");
+    fs::write(&path, &encoded).expect("legacy fixture");
+    let loaded = AppConfig::load_from(&path).expect("absent unit is MiB");
+    assert_eq!(
+        loaded
+            .archive
+            .create_volume_size
+            .expect("saved size")
+            .bytes()
+            .expect("bytes"),
+        134_217_728
+    );
+    assert_eq!(fs::read(&path).expect("untouched bytes"), encoded);
+    for (value, unit, bytes) in [
+        (64, ArchiveVolumeUnit::KiB, 65_536),
+        (1536, ArchiveVolumeUnit::KiB, 1_572_864),
+        (2, ArchiveVolumeUnit::GiB, 2_147_483_648),
+    ] {
+        let desired = ArchiveVolumeSize { value, unit };
+        let saved = AppConfig::update_section(&path, |config| {
+            config.archive.create_volume_size = Some(desired)
+        })
+        .expect("original section transaction");
+        assert_eq!(saved.archive.create_volume_size, Some(desired));
+        let reopened = AppConfig::load_from(&path).expect("reopen");
+        assert_eq!(
+            reopened
+                .archive
+                .create_volume_size
+                .expect("size")
+                .bytes()
+                .expect("checked bytes"),
+            bytes
+        );
+    }
+    for unit in ArchiveVolumeUnit::ALL {
+        assert!(
+            ArchiveVolumeSize {
+                value: u64::MAX,
+                unit
+            }
+            .bytes()
+            .is_err()
+        );
+        assert!(ArchiveVolumeSize { value: 0, unit }.bytes().is_err());
+    }
+}
+
+#[test]
+fn ref17_size_is_one_changed_leaf_in_original_section_transaction() {
+    use crate::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
+    let fixture = ConfigFixture::new();
+    let path = fixture.path();
+    AppConfig::default().save_to(&path).expect("seed");
+    let baseline = ArchiveSettings::default();
+    let mut desired = baseline.clone();
+    desired.keep_create_progress_open = true;
+    let exact = Some(ArchiveVolumeSize {
+        value: 1536,
+        unit: ArchiveVolumeUnit::KiB,
+    });
+    AppConfig::update_section(&path, |config| {
+        config.archive.create_volume_size = exact;
+        config.archive.test_after_create = false;
+    })
+    .expect("concurrent save");
+    AppConfig::update_section(&path, |config| {
+        config.archive.merge_create_preferences(&baseline, &desired)
+    })
+    .expect("changed leaves");
+    let reopened = AppConfig::load_from(&path).expect("merged reopen");
+    assert_eq!(reopened.archive.create_volume_size, exact);
+    assert!(!reopened.archive.test_after_create && reopened.archive.keep_create_progress_open);
 }

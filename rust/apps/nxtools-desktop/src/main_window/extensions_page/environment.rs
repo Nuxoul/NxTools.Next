@@ -410,6 +410,8 @@ impl ExtensionManagerView {
             PlatformCommand::PickExtensionRuntime(PickExtensionRuntimeCommand {
                 program: key.clone(),
                 current_path: original.clone(),
+                source_window_handle: crate::ui::native_window_handle(window).unwrap_or_default(),
+                source_process_id: std::process::id(),
             })
         } else {
             PlatformCommand::InspectExtensionRuntime(InspectExtensionRuntimeCommand {

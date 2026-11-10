@@ -40,15 +40,17 @@ internal sealed record ArchiveIntegrationIntent(
 {
     internal string DoubleClickAction { get; init; } = "open";
     internal string MenuLayout { get; init; } = "cascade";
-    internal IReadOnlyList<string> MenuCommands { get; init; } = DefaultMenuCommands;
+    internal IReadOnlyList<string> MenuCommands { get; init; } = RecommendedMenuCommands;
+    internal static string[] RecommendedMenuCommands => [.. DefaultMenuCommands, "create_zip", "create_7z", "create"];
+    // Historical explicit five-command plans keep their exact selection.
     internal static string[] DefaultMenuCommands => ["open", "extract_smart", "extract_here", "extract_name", "test"];
 
     internal void Validate()
     {
         if (DoubleClickAction is not ("open" or "smart" or "name") || MenuLayout is not ("cascade" or "flat") ||
-            MenuCommands is null || MenuCommands.Count > 7 ||
+            MenuCommands is null || MenuCommands.Count > 9 ||
             MenuCommands.Distinct(StringComparer.Ordinal).Count() != MenuCommands.Count ||
-            MenuCommands.Any(command => command is not ("open" or "test" or "extract_smart" or "extract_here" or "extract_name" or "extract_dialog" or "create")))
+            MenuCommands.Any(command => command is not ("open" or "test" or "extract_smart" or "extract_here" or "extract_name" or "extract_dialog" or "create" or "create_zip" or "create_7z")))
             throw new ArgumentException("Invalid archive association configuration.");
     }
     internal static ArchiveIntegrationIntent Disabled { get; } = new(false, false, []);
@@ -124,10 +126,10 @@ internal sealed record ArchiveIntegrationPlan(
             {
                 AddClassicCascade(changes, executablePath, extensions, normalized);
                 // Creation always needs the grouped selection helper, never a per-file %1 claim.
-                if (normalized.MenuCommands.Contains("create"))
+                if (normalized.MenuCommands.Any(ArchiveSelectionHandlerPlan.IsCreation))
                     changes.AddRange(ArchiveSelectionHandlerPlan.Create(
                         Path.Combine(Path.GetDirectoryName(executablePath)!, ArchiveSelectionHandlerPlan.HelperExecutableName),
-                        desiredRevision, normalized with { MenuCommands = ["create"] }).Changes);
+                        desiredRevision, normalized with { MenuCommands = normalized.MenuCommands.Where(ArchiveSelectionHandlerPlan.IsCreation).ToArray() }).Changes);
             }
         }
 
@@ -172,7 +174,7 @@ internal sealed record ArchiveIntegrationPlan(
         ArchiveIntegrationIntent intent)
     {
         var selected = ArchiveSelectionHandlerPlan.Commands
-            .Where(command => command.Command != "create" && intent.MenuCommands.Contains(command.Command)).ToArray();
+            .Where(command => !ArchiveSelectionHandlerPlan.IsCreation(command.Command) && intent.MenuCommands.Contains(command.Command)).ToArray();
         if (selected.Length == 0) return;
         foreach (var extension in extensions)
         {
@@ -199,7 +201,7 @@ internal sealed record ArchiveIntegrationPlan(
         ArgumentNullException.ThrowIfNull(intent);
         intent.Validate();
         var extensions = NormalizeExtensions(intent.Extensions);
-        if ((intent.OpenWithEnabled || (intent.ClassicCascadeEnabled && intent.MenuCommands.Any(command => command != "create"))) && extensions.Count == 0)
+        if ((intent.OpenWithEnabled || (intent.ClassicCascadeEnabled && intent.MenuCommands.Any(command => !ArchiveSelectionHandlerPlan.IsCreation(command)))) && extensions.Count == 0)
             throw new ArgumentException("At least one archive extension is required for enabled integration.", nameof(intent));
         return intent with { Extensions = extensions, MenuCommands = intent.MenuCommands.ToArray() };
     }

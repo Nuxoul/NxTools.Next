@@ -17,6 +17,12 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
     private readonly Func<bool> pressed;
     private readonly Func<bool> escape;
     private readonly ArchiveOleLoop loop;
+    // Destination location owner; tests supply an owned temp root and watch roots.
+    internal Func<Guid,string,ArchiveDropLocator> CreateLocator { get; init; }=(operation,wrapper)=>ArchiveDropLocator.Create(operation,wrapper);
+    internal Func<IReadOnlyList<string>> LocateProbeFolders { get; init; }=()=>ArchiveDropLocator.ProbeFolders(ArchiveDropLocator.ExplorerFolders());
+    // A receiver's own merge/overwrite confirmation can hold the copy; an unaccepted drop gets a short window.
+    internal TimeSpan LocateWindow { get; init; }=TimeSpan.FromSeconds(60);
+    internal TimeSpan UnconfirmedLocateWindow { get; init; }=TimeSpan.FromSeconds(3);
     internal Action<ProtocolEnvelope>? Progress { get; set; }
     private Run? active;
     private bool stopped;
@@ -24,6 +30,7 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
     private sealed class Run(ArchiveVirtualDragCommand command)
     {
         internal readonly ArchiveVirtualDragCommand Command=command;
+        internal readonly ArchiveVirtualPlan Plan=command.Plan??throw new InvalidDataException();
         internal readonly ulong FilesTotal=(ulong)command.Items!.Count(item=>!item.Directory);
         internal readonly ulong? BytesTotal=KnownTotal(command.Items!);
         private static ulong? KnownTotal(ArchiveVirtualDragItem[] items)
@@ -41,12 +48,18 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
         internal ArchiveSourceActivity.Reservation? SourceActivity;
         internal CancellationTokenRegistration AuthorizationStop;
         internal readonly object ProgressGate=new();
-        internal ulong BytesDone,FilesDone;
+        internal ulong BytesDone,FilesDone,NextSequence;
         internal int? CurrentIndex;
+        internal Guid? CurrentRequestId;
+        internal ulong? CurrentBytesDone,CurrentBytesTotal;
+        internal bool CurrentSealed;
         internal bool Demanded;
         internal string Phase="";
         internal ulong LastBytes,LastFiles;
         internal int? LastIndex;
+        internal Guid? LastRequestId;
+        internal ulong? LastCurrentBytes,LastCurrentTotal;
+        internal bool LastSealed;
         internal long LastPublished=-100;
         internal ProtocolEnvelope? Latest;
         internal System.Threading.Timer? ProgressTimer;
@@ -70,6 +83,13 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
             }
             if(stopped||active is not null||retired.Contains(command.OperationId)||retired.Count>=4096)return Task.FromResult(new WindowsCommandResult(false,"virtual_drag_busy"));
             if(!validSource(command.SourceWindowHandle,peer))return Task.FromResult(new WindowsCommandResult(false,"invalid_source_window"));
+            if(command.Action=="locate") {
+                // No archive read happens during the gesture; the ordinary extraction job owns the source.
+                var located=new Run(command);active=located;Diagnostic("accepted",located);
+                var worker=new Thread(()=>Locate(located,peer)){IsBackground=true,Name="NxTools.ArchiveDropLocate"};worker.SetApartmentState(ApartmentState.STA);
+                try{worker.Start();}catch{active=null;located.Stop.Dispose();located.Done.SetResult(new(false,"virtual_sta_start_failed"));}
+                return located.Done.Task;
+            }
             if(!entries.TryCaptureVirtualAuthorization(command.AuthorizationId,command.Items!,out var authorizationStop))return Task.FromResult(new WindowsCommandResult(false,"authorization_invalid"));
             ArchiveSourceActivity.Reservation sourceActivity;
             try { sourceActivity = ArchiveSourceLease.ReserveActivity(command.Items![0].Entry.Path!, false, command.OperationId); }
@@ -87,22 +107,40 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
         ArchiveVirtualContent? content=null;ArchiveVirtualFileDataObject? data=null;IntPtr reference=IntPtr.Zero;
         var requested=new HashSet<int>();var ready=new HashSet<int>();
         var outcome="no_target_completion";var phase="failed";int? targetError=null;
+        CancellationTokenRegistration contentStop=default;
         try {
-            content=new ArchiveVirtualContent(entries,run.Command.Items!,authorizationId:run.Command.AuthorizationId,
+            content=new ArchiveVirtualContent(entries,run.Plan,authorizationId:run.Command.AuthorizationId,operation:run.Command.OperationId,
                 progress:(index,sealedData,bytes)=>{
-                    lock(run.ProgressGate){run.Demanded=true;run.CurrentIndex=index;if(sealedData){run.BytesDone+=bytes;run.FilesDone++;}}
-                    Publish(run,sealedData?"content_ready":"materializing");
+                    lock(run.ProgressGate) {
+                        var request=run.Command.Items![index].Entry.OperationId;
+                        if(!sealedData) {
+                            run.Demanded=true;run.CurrentIndex=index;run.CurrentRequestId=request;
+                            run.CurrentBytesDone=0;run.CurrentBytesTotal=run.Command.Items[index].Size;run.CurrentSealed=false;
+                        } else if(run.CurrentIndex==index&&run.CurrentRequestId==request&&!run.CurrentSealed) {
+                            run.BytesDone+=bytes;run.FilesDone++;run.CurrentBytesDone=bytes;run.CurrentBytesTotal=bytes;run.CurrentSealed=true;
+                        } else return;
+                        Publish(run,sealedData?"content_ready":"materializing");
+                    }
+                },
+                memberProgress:snapshot=>{
+                    lock(run.ProgressGate) {
+                        if(run.ProgressEnded||run.CurrentSealed||run.CurrentIndex!=snapshot.Index||
+                           run.CurrentRequestId!=snapshot.RequestId||run.Command.Items![snapshot.Index].Entry.Ordinal!=snapshot.Ordinal||
+                           snapshot.BytesDone<run.CurrentBytesDone||snapshot.BytesTotal is {} total&&snapshot.BytesDone>total)return;
+                        run.CurrentBytesDone=snapshot.BytesDone;run.CurrentBytesTotal=snapshot.BytesTotal;
+                        Publish(run,"materializing");
+                    }
                 });
-            using var contentStop=run.Stop.Token.Register(content.Cancel);
+            contentStop=run.Stop.Token.Register(content.Cancel);
             var hr=OleInitialize(IntPtr.Zero);if(hr<0)throw new COMException("ole_initialize",hr);initialized=true;
             Diagnostic("started",run);
             using var monitor=new System.Threading.Timer(_=>{try{if(escape()||!validSource(run.Command.SourceWindowHandle,peer))run.Stop.Cancel();}catch(ObjectDisposedException){}},null,50,50);
-            data=new ArchiveVirtualFileDataObject(run.Command.Items!.Select(item=>new ArchiveVirtualFile(item.Name,(long?)item.Size,item.Directory)).ToArray(),index=>{
+            data=new ArchiveVirtualFileDataObject(run.Plan,index=>{
                 run.Stop.Token.ThrowIfCancellationRequested();lock(requested){if(requested.Add(index))Diagnostic("content_requested",run,index);}
-                try{var stream=content.Open(index,run.Stop.Token);lock(ready){if(ready.Add(index)){Diagnostic("content_ready",run,index);Publish(run,"target_copying");}}return stream;}
+                try{var stream=content.Open(index,run.Stop.Token);lock(ready){if(ready.Add(index)){Diagnostic("content_ready",run,index);lock(run.ProgressGate)if(run.CurrentIndex==index&&run.CurrentSealed)Publish(run,"target_copying");}}return stream;}
                 catch(OperationCanceledException){throw new COMException("virtual_cancelled",unchecked((int)0x800704C7));}
                 catch(ArchiveOutputException failure){throw new COMException(failure.Stage,unchecked((int)0x8003001E));}
-            },run.Stop.Token);
+            },run.Stop.Token,stage=>Diagnostic(stage,run));
             // An explicit source reference is held across loop return, EndOperation and cleanup.
             reference=Marshal.GetComInterfaceForObject(data,typeof(System.Runtime.InteropServices.ComTypes.IDataObject));
             data.SetAsyncMode(true);
@@ -112,7 +150,7 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
                 if(!validSource(run.Command.SourceWindowHandle,peer)||!pressed()||run.Stop.IsCancellationRequested)throw new OperationCanceledException();
                 var source=new DropSource(run.Stop.Token,()=>validSource(run.Command.SourceWindowHandle,peer));
                 terminal=loop(data,source); // Exactly one native loop. Never restart after cancellation.
-            }finally{data.LoopEnded();} // Detach input queues immediately, not during receiver work.
+            }finally{data.LoopEnded();Diagnostic("ole_return",run);} // Input queues detach before receiver work.
             if(data.AsyncStarted) {
                 Diagnostic("receiver_pending",run);
                 // Cancellation rejects new requests/cancels original worker, but is NOT EndOperation.
@@ -138,16 +176,63 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
         finally {
             // Even an exceptional loop must not strand a receiver's valid StartOperation lease.
             if(data is not null){data.LoopEnded();if(data.AsyncStarted&&!data.AsyncCompletion.IsCompleted){run.Stop.Cancel();PumpUntil(data.AsyncCompletion);}data.Dispose();}
-            content?.Cancel();
+            if(run.Stop.IsCancellationRequested||!result.Success)content?.Cancel();
             try{if(content is not null){var cleanup=content.DisposeAsync().AsTask();if(initialized)PumpUntil(cleanup);cleanup.GetAwaiter().GetResult();}cleaned=true;}catch{Diagnostic("cleanup_failed",run);}
+            contentStop.Unregister();
             if(reference!=IntPtr.Zero)Marshal.Release(reference);
             if(initialized)OleUninitialize();
         }
         if(!cleaned){phase="failed";result=new(false,"virtual_cleanup_incomplete",Data:"{\"cleanup_complete\":false}");}
+        if(cleaned&&phase=="finished"&&content?.TerminalFailure is {} materializationFailure){phase="failed";result=new(false,materializationFailure);}
         if (cleaned) run.SourceActivity?.Dispose();
         lock(gate){if(cleaned&&ReferenceEquals(active,run))active=null;retired.Add(run.Command.OperationId);}
         Publish(run,phase,cleaned,phase=="finished"?outcome:result.Error??outcome,result.NativeErrorCode??targetError);
         Diagnostic("terminal",run,native:result.NativeErrorCode,success:result.Success,cleanup:cleaned);run.AuthorizationStop.Unregister();if(cleaned)run.Stop.Dispose();run.Done.TrySetResult(result);
+    }
+    // Destination drag: the receiver copies one real wrapper folder holding a unique marker; the folder
+    // where that marker lands is reported to Desktop, which runs an ordinary extraction into it.
+    // Same held-gesture admission, capture release and single OLE loop as the virtual drag.
+    private void Locate(Run run,uint peer)
+    {
+        WindowsCommandResult result=new(false,"drop_locate_failed");var initialized=false;ArchiveDropLocator? locator=null;
+        try {
+            locator=CreateLocator(run.Command.OperationId,run.Command.Items![0].Name);
+            var hr=OleInitialize(IntPtr.Zero);if(hr<0)throw new COMException("ole_initialize",hr);initialized=true;
+            Diagnostic("locate_started",run);
+            using var monitor=new System.Threading.Timer(_=>{try{if(escape()||!validSource(run.Command.SourceWindowHandle,peer))run.Stop.Cancel();}catch(ObjectDisposedException){}},null,50,50);
+            var data=NativeFileDragService.CreateFileDropDataObject([locator.Folder]);
+            (int HResult,int Effect) terminal;
+            try {
+                using var input=prepare(run.Command.SourceWindowHandle);
+                if(!validSource(run.Command.SourceWindowHandle,peer)||!pressed()||run.Stop.IsCancellationRequested)throw new OperationCanceledException();
+                terminal=loop(data,new DropSource(run.Stop.Token,()=>validSource(run.Command.SourceWindowHandle,peer)));
+            }finally{Diagnostic("ole_return",run);}
+            if(terminal.HResult==0x00040101)throw new OperationCanceledException();
+            if(terminal.HResult!=0x00040100)
+                result=terminal.HResult>=0?new(false,"virtual_target_not_accepted",Data:"{\"status\":\"not_dropped\",\"drop_effect\":0}"):new(false,"virtual_ole_failed",NativeErrorCode:terminal.HResult);
+            else {
+                var window=terminal.Effect==0?UnconfirmedLocateWindow:LocateWindow;
+                var probes=LocateProbeFolders;
+                var wait=Task.Run(()=>locator.Wait(window,run.Stop.Token,probes));
+                PumpUntil(wait);
+                var destination=wait.GetAwaiter().GetResult();
+                if(destination is null)
+                    result=run.Stop.IsCancellationRequested?new(true,Data:"{\"status\":\"cancelled\",\"drop_effect\":0}"):new(false,"drop_location_unknown");
+                else if(!ArchiveDropLocator.RemoveMarker(destination,locator.MarkerName,run.Stop.Token))
+                    result=new(false,"drop_marker_retained");
+                else {
+                    Diagnostic("located",run);
+                    result=new(true,Data:System.Text.Json.JsonSerializer.Serialize(new{status="located",drop_effect=terminal.Effect,destination}));
+                }
+            }
+        }
+        catch(OperationCanceledException){result=new(true,Data:"{\"status\":\"cancelled\",\"drop_effect\":0}");}
+        catch(COMException failure){result=new(false,"virtual_ole_failed",NativeErrorCode:failure.HResult);}
+        catch(Exception){result=new(false,"drop_locate_failed");}
+        finally{locator?.Dispose();if(initialized)OleUninitialize();}
+        lock(gate){if(ReferenceEquals(active,run))active=null;retired.Add(run.Command.OperationId);}
+        Diagnostic("terminal",run,native:result.NativeErrorCode,success:result.Success,cleanup:true);
+        run.Stop.Dispose();run.Done.TrySetResult(result);
     }
     // Pump standard COM calls and window messages on the ORIGINAL OLE apartment after Drop.
     // This is not another OLE loop; timeout only lets us observe task completion, never retires it.
@@ -162,13 +247,19 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
     private void Publish(Run run,string phase,bool? cleanup=null,string? code=null,int? native=null)
     {
         lock(run.ProgressGate){
-            if(!run.Demanded&&cleanup is null)return; // No progress surface before actual content demand.
-            if(cleanup is null&&run.Phase==phase&&run.LastBytes==run.BytesDone&&run.LastFiles==run.FilesDone&&run.LastIndex==run.CurrentIndex)return;
+            if(run.ProgressEnded||!run.Demanded&&cleanup is null)return; // No progress before actual demand or after terminal.
+            if(cleanup is null&&run.Phase==phase&&run.LastBytes==run.BytesDone&&run.LastFiles==run.FilesDone&&
+                run.LastIndex==run.CurrentIndex&&run.LastRequestId==run.CurrentRequestId&&
+                run.LastCurrentBytes==run.CurrentBytesDone&&run.LastCurrentTotal==run.CurrentBytesTotal&&run.LastSealed==run.CurrentSealed)return;
             run.LastBytes=run.BytesDone;run.LastFiles=run.FilesDone;run.LastIndex=run.CurrentIndex;
+            run.LastRequestId=run.CurrentRequestId;run.LastCurrentBytes=run.CurrentBytesDone;
+            run.LastCurrentTotal=run.CurrentBytesTotal;run.LastSealed=run.CurrentSealed;
             run.Phase=phase;
             var member=run.CurrentIndex is {} index?run.Command.Items![index].Name:null;
+            var processed=run.BytesDone+(run.CurrentSealed?0:run.CurrentBytesDone??0);
             var envelope=new ArchiveVirtualDragProgress(1,run.Command.OperationId,run.Command.SessionId,run.Command.Generation,
-                phase,run.BytesDone,run.BytesTotal,run.FilesDone,run.FilesTotal,run.CurrentIndex,member,cleanup,code,native).Envelope();
+                phase,run.BytesDone,run.BytesTotal,run.FilesDone,run.FilesTotal,run.CurrentIndex,member,cleanup,code,native,
+                run.CurrentRequestId,run.CurrentBytesDone,run.CurrentBytesTotal,run.Demanded?processed:null,++run.NextSequence).Envelope();
             if(cleanup is not null){
                 run.ProgressEnded=true;run.ProgressTimer?.Dispose();run.ProgressTimer=null;
                 if(run.Latest is {} latest){run.Latest=null;Emit(latest);}Emit(envelope);return;

@@ -11,11 +11,20 @@ use std::{
     path::Path,
 };
 
+/// Live format facts belong to one opened worker attempt, never to ArchiveSnapshot.
+#[derive(Default)]
+pub(crate) struct RetainedCatalog {
+    pub(crate) input: Option<File>,
+    pub(crate) tar_plan: Option<tar::ValidatedPlan>,
+    gzip_members: Option<u64>,
+}
+
 #[derive(Default)]
 pub struct ArchiveEngine<'password> {
     limits: ResourceLimits,
     password: Option<&'password str>,
     zip_volumes: bool,
+    held_zip_paths: Option<&'password [String]>,
 }
 impl<'password> ArchiveEngine<'password> {
     pub fn with_limits(limits: ResourceLimits) -> Self {
@@ -23,6 +32,7 @@ impl<'password> ArchiveEngine<'password> {
             limits,
             password: None,
             zip_volumes: false,
+            held_zip_paths: None,
         }
     }
     /// Generate a complete unpublished ZIP edit candidate against immutable source/entry identity.
@@ -58,6 +68,11 @@ impl<'password> ArchiveEngine<'password> {
         self.zip_volumes = true;
         self
     }
+    pub(crate) fn with_held_zip_volumes(mut self, paths: &'password [String]) -> Self {
+        self.zip_volumes = true;
+        self.held_zip_paths = Some(paths);
+        self
+    }
     /// Borrow a private operation-scoped secret; never retain it in archive metadata.
     pub fn with_password(mut self, password: &'password str) -> Self {
         self.password = Some(password);
@@ -68,11 +83,18 @@ impl<'password> ArchiveEngine<'password> {
         request: OpenRequest,
         control: &OperationControl,
     ) -> Result<ArchiveSnapshot> {
-        let mut snapshot = self.open_impl(request, control, false)?;
+        let mut retained = RetainedCatalog::default();
+        let mut snapshot = self.open_impl(request, control, false, true, Some(&mut retained))?;
+        if snapshot.format == ArchiveFormat::Zip && snapshot.revision.volumes.is_empty() {
+            return Ok(snapshot);
+        }
         let refusal = if matches!(
             snapshot.format,
-            ArchiveFormat::Zip | ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::TarXz
+            ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::TarXz
         ) {
+            self.tar_eligibility_from_open(&snapshot, &mut retained, control)
+                .err()
+        } else if snapshot.format == ArchiveFormat::Zip {
             self.modification_eligibility(&snapshot, control).err()
         } else {
             Some(crate::ArchiveModificationRefusal::BackendMissing)
@@ -91,6 +113,7 @@ impl<'password> ArchiveEngine<'password> {
         control: &OperationControl,
     ) -> std::result::Result<(), crate::ArchiveModificationRefusal> {
         use crate::ArchiveModificationRefusal as Refusal;
+        control.record_work(|work| work.eligibility_checks += 1);
         if snapshot.format == ArchiveFormat::Zip {
             return crate::zip_edit::eligibility(snapshot, &self.limits, control);
         }
@@ -106,13 +129,14 @@ impl<'password> ArchiveEngine<'password> {
         let inspect = || -> Result<()> {
             let mut source = File::open(&snapshot.revision.path)?;
             ensure_revision(&mut source, &snapshot.revision, control)?;
+            let strict_limits = self.strict_tar_limits(snapshot, None)?;
             let (_, mut plain) = crate::tar_edit_outer::Outer::open(
                 source.try_clone()?,
                 format,
-                &self.limits,
+                &strict_limits,
                 control,
             )?;
-            let members = crate::tar_edit::inspect(&mut plain, &self.limits, control)?;
+            let members = crate::tar_edit::inspect(&mut plain, &strict_limits, control)?;
             if members.len() != snapshot.entries.len()
                 || members.iter().zip(snapshot.entries.iter()).any(|(a, b)| {
                     a.name != b.display_path
@@ -132,6 +156,76 @@ impl<'password> ArchiveEngine<'password> {
             _ => Refusal::UnsupportedStructure,
         })
     }
+    fn strict_tar_limits(
+        &self,
+        snapshot: &ArchiveSnapshot,
+        plan: Option<&tar::ValidatedPlan>,
+    ) -> Result<ResourceLimits> {
+        let metadata = plan.map_or_else(
+            || tar::metadata_bytes(snapshot),
+            |plan| Ok(plan.metadata_bytes()),
+        )?;
+        let locators = plan.map_or(0, tar::ValidatedPlan::locator_bytes);
+        Ok(ResourceLimits {
+            max_metadata_bytes: self
+                .limits
+                .max_metadata_bytes
+                .checked_sub(metadata)
+                .ok_or(ArchiveError::ResourceLimit)?,
+            max_working_bytes: self
+                .limits
+                .max_working_bytes
+                .checked_sub(locators)
+                .ok_or(ArchiveError::ResourceLimit)?,
+            ..self.limits
+        })
+    }
+    fn tar_eligibility_from_open(
+        &self,
+        snapshot: &ArchiveSnapshot,
+        retained: &mut RetainedCatalog,
+        control: &OperationControl,
+    ) -> std::result::Result<(), crate::ArchiveModificationRefusal> {
+        use crate::ArchiveModificationRefusal as Refusal;
+        control.record_work(|work| work.eligibility_checks += 1);
+        let inspect = || -> Result<()> {
+            let plan = retained
+                .tar_plan
+                .as_ref()
+                .ok_or(ArchiveError::ResourceLimit)?;
+            let strict_limits = self.strict_tar_limits(snapshot, Some(plan))?;
+            let mut source = File::open(&snapshot.revision.path)?;
+            ensure_revision(&mut source, &snapshot.revision, control)?;
+            crate::tar_edit_outer::Outer::qualify_verified(
+                &mut source,
+                &format!("{:?}", snapshot.format),
+                retained.gzip_members,
+                &strict_limits,
+                control,
+            )?;
+            let plain = retained.input.as_mut().ok_or(ArchiveError::SourceChanged)?;
+            let members = crate::tar_edit::inspect(plain, &strict_limits, control)?;
+            if members.len() != snapshot.entries.len()
+                || members.iter().zip(snapshot.entries.iter()).any(|(a, b)| {
+                    a.name != b.display_path
+                        || a.directory != (b.kind == crate::EntryKind::Directory)
+                        || Some(a.size) != b.size
+                })
+            {
+                return Err(ArchiveError::UnsupportedOperation);
+            }
+            ensure_revision(&mut source, &snapshot.revision, control)
+        };
+        let mut inspect = inspect;
+        inspect().map_err(|error| match error {
+            ArchiveError::SourceChanged => Refusal::SourceChanged,
+            ArchiveError::CorruptArchive => Refusal::Corrupt,
+            ArchiveError::IoFailure => Refusal::SourceUnavailable,
+            ArchiveError::ResourceLimit | ArchiveError::Cancelled => Refusal::UnverifiedMetadata,
+            _ => Refusal::UnsupportedStructure,
+        })
+    }
+
     /// Browser read-only projection bound to the original opened source version. Native
     /// object identity remains C# final admission authority, never inferred from a filename.
     pub fn inspect_modification_source(
@@ -163,25 +257,60 @@ impl<'password> ArchiveEngine<'password> {
         }
         snapshot.capabilities.admit(crate::ArchiveOperation::Add)
     }
-    /// Private extraction admission only. Public open/TEST keep unknown stream metadata.
-    pub(crate) fn open_for_output_readmission(
+    /// Internal read paths do not discover editing capabilities they never consume.
+    pub(crate) fn open_catalog(
         &self,
         request: OpenRequest,
         control: &OperationControl,
     ) -> Result<ArchiveSnapshot> {
-        self.open_impl(request, control, true)
+        self.open_impl(request, control, false, false, None)
+    }
+    /// Retain the normalized ZIP source or verified outer TAR spool for one worker operation.
+    pub(crate) fn open_retained_catalog(
+        &self,
+        request: OpenRequest,
+        control: &OperationControl,
+    ) -> Result<(ArchiveSnapshot, RetainedCatalog)> {
+        let opened = self.open_attempt_catalog(request, control, false)?;
+        if opened.0.format() != ArchiveFormat::Zip {
+            control.record_work(|work| work.catalog_loads += 1);
+        }
+        Ok(opened)
+    }
+    /// Private extraction admission only. Public open/TEST keep unknown stream metadata.
+    pub(crate) fn open_attempt_catalog(
+        &self,
+        request: OpenRequest,
+        control: &OperationControl,
+        stream_declarations: bool,
+    ) -> Result<(ArchiveSnapshot, RetainedCatalog)> {
+        let mut retained = RetainedCatalog::default();
+        let snapshot = self.open_impl(
+            request,
+            control,
+            stream_declarations,
+            false,
+            Some(&mut retained),
+        )?;
+        Ok((snapshot, retained))
     }
     fn open_impl(
         &self,
         request: OpenRequest,
         control: &OperationControl,
         stream_declarations: bool,
+        qualify_zip: bool,
+        mut retained_input: Option<&mut RetainedCatalog>,
     ) -> Result<ArchiveSnapshot> {
         control.source_delete_begin();
         control.checkpoint()?;
         if self.zip_volumes
-            && let Some(mut set) =
-                crate::zip_container::discover(&request.path, &self.limits, control)?
+            && let Some(mut set) = crate::zip_container::discover(
+                &request.path,
+                &self.limits,
+                control,
+                self.held_zip_paths,
+            )?
         {
             let mut revision = volume_revision(&mut set, control)?;
             let mut file = crate::zip_container::normalize(&mut set, &self.limits, control)?;
@@ -196,6 +325,10 @@ impl<'password> ArchiveEngine<'password> {
                 .last()
                 .cloned()
                 .ok_or(ArchiveError::MissingVolume)?;
+            // The revision binds the external volumes, not the normalized anonymous file.
+            if let Some(retained) = retained_input.as_mut() {
+                retained.input = Some(file);
+            }
             return Ok(ArchiveSnapshot {
                 revision,
                 session,
@@ -215,15 +348,27 @@ impl<'password> ArchiveEngine<'password> {
         let mut signature = [0u8; 8];
         let size = file.read(&mut signature)?;
         file.rewind()?;
-        if size >= 4 && matches!(&signature[..4], b"PK\x03\x04" | b"PK\x05\x06") {
+        let opened = if size >= 4 && matches!(&signature[..4], b"PK\x03\x04" | b"PK\x05\x06") {
             let revision = revision(&mut file, &request.path, control)?;
-            let (entries, comment, backend_safe) =
-                zip::list(&mut file, request.encoding, &self.limits, control)?;
+            let mut directory = None;
+            let listed = zip::list_with_directory(
+                &mut file,
+                request.encoding,
+                &self.limits,
+                control,
+                qualify_zip.then_some(&mut directory),
+            );
+            let (entries, comment, backend_safe) = match listed {
+                Err(ArchiveError::ResourceLimit) if qualify_zip => {
+                    // Editing metadata is optional; retain the original catalog budget.
+                    zip::list(&mut file, request.encoding, &self.limits, control)?
+                }
+                result => result?,
+            };
             let session = entries
                 .first()
                 .map_or_else(uuid::Uuid::new_v4, |entry| entry.id.session);
-            ensure_revision(&mut file, &revision, control)?;
-            Ok(ArchiveSnapshot {
+            let mut snapshot = ArchiveSnapshot {
                 revision,
                 session,
                 format: ArchiveFormat::Zip,
@@ -234,13 +379,39 @@ impl<'password> ArchiveEngine<'password> {
                 entries: entries.into(),
                 comment,
                 backend_safe,
-            })
+            };
+            if let Some(directory) = directory {
+                control.record_work(|work| work.eligibility_checks += 1);
+                let refusal = crate::zip_edit::eligibility_from_open(
+                    &mut file,
+                    &snapshot,
+                    &directory,
+                    &self.limits,
+                    control,
+                )
+                .err();
+                snapshot.capabilities = ArchiveCapabilities::opened(ArchiveFormat::Zip, refusal);
+            } else if qualify_zip {
+                snapshot.capabilities = ArchiveCapabilities::opened(
+                    ArchiveFormat::Zip,
+                    Some(crate::ArchiveModificationRefusal::UnverifiedMetadata),
+                );
+            }
+            ensure_revision(&mut file, &snapshot.revision, control)?;
+            Ok(snapshot)
         } else if size >= 3 && signature[..3] == [0x1f, 0x8b, 8] {
             let revision = revision(&mut file, &request.path, control)?;
             let compound = tgz::matches(&request.path);
             let entries = if compound {
-                let mut spool = tgz::decode(&mut file, &self.limits, control)?;
-                tar::list(&mut spool, request.encoding, &self.limits, control)?
+                let (mut spool, members) = tgz::decode_members(&mut file, &self.limits, control)?;
+                let (entries, plan) =
+                    tar::list_planned(&mut spool, request.encoding, &self.limits, control)?;
+                if let Some(retained) = retained_input.as_mut() {
+                    retained.input = Some(spool);
+                    retained.tar_plan = Some(plan);
+                    retained.gzip_members = Some(members);
+                }
+                entries
             } else {
                 gzip::list(&mut file, &request.path, &self.limits, control)?
             };
@@ -270,7 +441,13 @@ impl<'password> ArchiveEngine<'password> {
             let compound = tgz::matches_bzip(&request.path);
             let entries = if compound {
                 let mut spool = tgz::decode_bzip(&mut file, &self.limits, control)?;
-                tar::list(&mut spool, request.encoding, &self.limits, control)?
+                let (entries, plan) =
+                    tar::list_planned(&mut spool, request.encoding, &self.limits, control)?;
+                if let Some(retained) = retained_input.as_mut() {
+                    retained.input = Some(spool);
+                    retained.tar_plan = Some(plan);
+                }
+                entries
             } else {
                 bzip::list(&mut file, &request.path, &self.limits, control)?
             };
@@ -300,7 +477,13 @@ impl<'password> ArchiveEngine<'password> {
             let compound = tgz::matches_xz(&request.path);
             let entries = if compound {
                 let mut spool = tgz::decode_xz(&mut file, &self.limits, control)?;
-                tar::list(&mut spool, request.encoding, &self.limits, control)?
+                let (entries, plan) =
+                    tar::list_planned(&mut spool, request.encoding, &self.limits, control)?;
+                if let Some(retained) = retained_input.as_mut() {
+                    retained.input = Some(spool);
+                    retained.tar_plan = Some(plan);
+                }
+                entries
             } else {
                 if stream_declarations {
                     xz::list_for_output_preflight(
@@ -345,7 +528,13 @@ impl<'password> ArchiveEngine<'password> {
             let compound = tgz::matches_zstd(&request.path);
             let entries = if compound {
                 let mut spool = tgz::decode_zstd(&mut file, &self.limits, control)?;
-                tar::list(&mut spool, request.encoding, &self.limits, control)?
+                let (entries, plan) =
+                    tar::list_planned(&mut spool, request.encoding, &self.limits, control)?;
+                if let Some(retained) = retained_input.as_mut() {
+                    retained.input = Some(spool);
+                    retained.tar_plan = Some(plan);
+                }
+                entries
             } else {
                 if stream_declarations {
                     zstd::list_for_output_preflight(
@@ -382,7 +571,12 @@ impl<'password> ArchiveEngine<'password> {
             })
         } else if is_tar(&mut file, &request.path)? {
             let revision = revision(&mut file, &request.path, control)?;
-            let entries = tar::list(&mut file, request.encoding, &self.limits, control)?;
+            let (entries, plan) =
+                tar::list_planned(&mut file, request.encoding, &self.limits, control)?;
+            if let Some(retained) = retained_input.as_mut() {
+                retained.input = Some(file.try_clone()?);
+                retained.tar_plan = Some(plan);
+            }
             let session = entries
                 .first()
                 .map_or_else(uuid::Uuid::new_v4, |entry| entry.id.session);
@@ -402,7 +596,16 @@ impl<'password> ArchiveEngine<'password> {
             })
         } else {
             Err(ArchiveError::UnsupportedFormat)
+        };
+        let mut snapshot = opened?;
+        if let Some(plan) = retained_input
+            .as_ref()
+            .and_then(|retained| retained.tar_plan.as_ref())
+        {
+            // Empty TAR has no first entry from which to recover its parser session.
+            snapshot.session = plan.session_id();
         }
+        Ok(snapshot)
     }
     /// Re-read ZIP names under the original revision; call off the UI thread, like open.
     /// Entry identity survives code-page changes, but output plans must be rebuilt.
@@ -447,6 +650,22 @@ impl<'password> ArchiveEngine<'password> {
         request: ArchiveRequest,
         control: &OperationControl,
     ) -> Result<ArchiveOutcome> {
+        self.execute_impl(request, control, None)
+    }
+    pub(crate) fn execute_retained(
+        &self,
+        request: ArchiveRequest,
+        control: &OperationControl,
+        retained: &RetainedCatalog,
+    ) -> Result<ArchiveOutcome> {
+        self.execute_impl(request, control, Some(retained))
+    }
+    fn execute_impl(
+        &self,
+        request: ArchiveRequest,
+        control: &OperationControl,
+        retained: Option<&RetainedCatalog>,
+    ) -> Result<ArchiveOutcome> {
         control.source_delete_begin();
         control.checkpoint()?;
         let snapshot = request.snapshot;
@@ -488,6 +707,13 @@ impl<'password> ArchiveEngine<'password> {
         }
         let operation_memory = (snapshot.entries.len() as u64)
             .checked_mul(128)
+            .and_then(|bytes| {
+                bytes.checked_add(
+                    retained
+                        .and_then(|state| state.tar_plan.as_ref())
+                        .map_or(0, tar::ValidatedPlan::locator_bytes),
+                )
+            })
             .and_then(|bytes| bytes.checked_add(256 * 1024))
             .ok_or(ArchiveError::ResourceLimit)?;
         if operation_memory > self.limits.max_working_bytes {
@@ -501,6 +727,23 @@ impl<'password> ArchiveEngine<'password> {
                 control,
                 self.password,
             )?,
+            _ if retained.is_some_and(|retained| retained.tar_plan.is_some()) => {
+                let retained = retained.ok_or(ArchiveError::SourceChanged)?;
+                tar::test_validated(
+                    retained
+                        .input
+                        .as_ref()
+                        .ok_or(ArchiveError::SourceChanged)?
+                        .try_clone()?,
+                    &snapshot,
+                    retained
+                        .tar_plan
+                        .as_ref()
+                        .ok_or(ArchiveError::SourceChanged)?,
+                    &self.limits,
+                    control,
+                )?
+            }
             ArchiveFormat::Tar => tar::test(file.try_clone()?, &snapshot, &self.limits, control)?,
             ArchiveFormat::TarGz => {
                 let spool = tgz::decode(&mut file, &self.limits, control)?;
@@ -534,6 +777,85 @@ impl<'password> ArchiveEngine<'password> {
         control: &OperationControl,
         output: &mut dyn crate::output::ArchiveOutput,
     ) -> Result<crate::output::ExtractOutcome> {
+        self.extract_with_source_lease(request, control, output, None)
+    }
+
+    pub(crate) fn extract_with_source_lease(
+        &self,
+        request: crate::output::ExtractRequest,
+        control: &OperationControl,
+        output: &mut dyn crate::output::ArchiveOutput,
+        source_lease: Option<&crate::worker::NativeReadLease>,
+    ) -> Result<crate::output::ExtractOutcome> {
+        self.extract_impl(request, control, output, source_lease, None, None, None)
+    }
+    pub(crate) fn extract_with_zip_plan(
+        &self,
+        request: crate::output::ExtractRequest,
+        control: &OperationControl,
+        output: &mut dyn crate::output::ArchiveOutput,
+        source_lease: Option<&crate::worker::NativeReadLease>,
+        records: &mut zip::ValidatedZip<'_>,
+    ) -> Result<crate::output::ExtractOutcome> {
+        self.extract_impl(
+            request,
+            control,
+            output,
+            source_lease,
+            None,
+            Some(records),
+            None,
+        )
+    }
+    pub(crate) fn extract_with_zip_parallel(
+        &self,
+        request: crate::output::ExtractRequest,
+        control: &OperationControl,
+        source_lease: Option<&crate::worker::NativeReadLease>,
+        records: &mut zip::ValidatedZip<'_>,
+        factory: &dyn zip::parallel::OutputFactory,
+    ) -> Result<crate::output::ExtractOutcome> {
+        let mut output = factory.output();
+        control.enable_parallel_progress(self.limits.max_output_bytes);
+        self.extract_impl(
+            request,
+            control,
+            &mut *output,
+            source_lease,
+            None,
+            Some(records),
+            Some(factory),
+        )
+    }
+    pub(crate) fn extract_retained(
+        &self,
+        request: crate::output::ExtractRequest,
+        control: &OperationControl,
+        output: &mut dyn crate::output::ArchiveOutput,
+        source_lease: Option<&crate::worker::NativeReadLease>,
+        retained: &RetainedCatalog,
+    ) -> Result<crate::output::ExtractOutcome> {
+        self.extract_impl(
+            request,
+            control,
+            output,
+            source_lease,
+            Some(retained),
+            None,
+            None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn extract_impl(
+        &self,
+        request: crate::output::ExtractRequest,
+        control: &OperationControl,
+        output: &mut dyn crate::output::ArchiveOutput,
+        source_lease: Option<&crate::worker::NativeReadLease>,
+        retained: Option<&RetainedCatalog>,
+        zip_plan: Option<&mut zip::ValidatedZip<'_>>,
+        parallel: Option<&dyn zip::parallel::OutputFactory>,
+    ) -> Result<crate::output::ExtractOutcome> {
         let lifecycle = control.source_delete_begin();
         control.checkpoint()?;
         let snapshot = request.snapshot;
@@ -542,7 +864,16 @@ impl<'password> ArchiveEngine<'password> {
         {
             return Err(ArchiveError::SourceChanged);
         }
-        let mut file = open_snapshot(&snapshot, &self.limits, control)?;
+        let source_limits =
+            if request.plan.isolated_browser_entry && !snapshot.revision.volumes.is_empty() {
+                ResourceLimits {
+                    max_output_bytes: ResourceLimits::default().max_output_bytes,
+                    ..self.limits
+                }
+            } else {
+                self.limits
+            };
+        let mut file = open_snapshot(&snapshot, &source_limits, control)?;
         ensure_revision(&mut file, &snapshot.revision, control)?;
         if !snapshot.backend_safe && !request.plan.isolated_browser_entry {
             return Err(ArchiveError::OutputCollision);
@@ -567,21 +898,64 @@ impl<'password> ArchiveEngine<'password> {
         }
         let working = (snapshot.entries.len() as u64)
             .checked_mul(128)
+            .and_then(|bytes| {
+                bytes.checked_add(
+                    retained
+                        .and_then(|state| state.tar_plan.as_ref())
+                        .map_or(0, tar::ValidatedPlan::locator_bytes),
+                )
+            })
             .and_then(|value| value.checked_add(256 * 1024))
             .ok_or(ArchiveError::ResourceLimit)?;
         if working > self.limits.max_working_bytes {
             return Err(ArchiveError::ResourceLimit);
         }
         let outcome = match snapshot.format {
-            ArchiveFormat::Zip => zip::extract(
-                file.try_clone()?,
-                &snapshot,
-                &request.plan,
-                &self.limits,
-                control,
-                self.password,
-                output,
-            )?,
+            ArchiveFormat::Zip => {
+                let context = zip::ReadContext {
+                    password: self.password,
+                    source_lease,
+                };
+                if let Some(records) = zip_plan {
+                    let parallel_outcome = if let Some(factory) = parallel {
+                        zip::parallel::extract(
+                            records,
+                            &snapshot,
+                            &request.plan,
+                            &self.limits,
+                            control,
+                            context,
+                            output,
+                            factory,
+                        )?
+                    } else {
+                        None
+                    };
+                    if let Some(outcome) = parallel_outcome {
+                        outcome
+                    } else {
+                        zip::extract_validated(
+                            records,
+                            &snapshot,
+                            &request.plan,
+                            &self.limits,
+                            control,
+                            context,
+                            output,
+                        )?
+                    }
+                } else {
+                    zip::extract(
+                        file.try_clone()?,
+                        &snapshot,
+                        &request.plan,
+                        &self.limits,
+                        control,
+                        context,
+                        output,
+                    )?
+                }
+            }
             ArchiveFormat::Gzip => gzip::extract(
                 file.try_clone()?,
                 &snapshot,
@@ -614,6 +988,28 @@ impl<'password> ArchiveEngine<'password> {
                 control,
                 output,
             )?,
+            _ if retained.is_some_and(|retained| retained.tar_plan.is_some()) => {
+                let retained = retained.ok_or(ArchiveError::SourceChanged)?;
+                tar::extract_validated(
+                    (
+                        retained
+                            .input
+                            .as_ref()
+                            .ok_or(ArchiveError::SourceChanged)?
+                            .try_clone()?,
+                        retained
+                            .tar_plan
+                            .as_ref()
+                            .ok_or(ArchiveError::SourceChanged)?,
+                    ),
+                    &snapshot,
+                    &request.plan,
+                    &self.limits,
+                    control,
+                    &mut file,
+                    output,
+                )?
+            }
             ArchiveFormat::Tar => tar::extract(
                 file.try_clone()?,
                 &snapshot,
@@ -723,6 +1119,7 @@ impl<'password> ArchiveEngine<'password> {
 }
 
 fn revision(file: &mut File, path: &Path, control: &OperationControl) -> Result<SourceRevision> {
+    let mut observation = control.observe_revision();
     let before = file.metadata()?;
     if !before.is_file() {
         return Err(ArchiveError::UnsupportedFormat);
@@ -733,6 +1130,7 @@ fn revision(file: &mut File, path: &Path, control: &OperationControl) -> Result<
     loop {
         control.checkpoint()?;
         let count = file.read(&mut buffer)?;
+        observation.bytes += count as u64;
         if count == 0 {
             break;
         }
@@ -756,6 +1154,19 @@ pub(crate) fn ensure_revision(
     expected: &SourceRevision,
     control: &OperationControl,
 ) -> Result<()> {
+    // The protected source cannot be written while this worker runs, so the digest taken when it
+    // was opened still describes it; confirm the handle is that source without re-reading it.
+    if expected.volumes.is_empty() && control.source_protected(&expected.path) {
+        let metadata = file.metadata()?;
+        if !metadata.is_file()
+            || metadata.len() != expected.size
+            || metadata.modified()? != expected.modified
+        {
+            return Err(ArchiveError::SourceChanged);
+        }
+        file.seek(SeekFrom::Start(0))?;
+        return Ok(());
+    }
     if !expected.volumes.is_empty() {
         for volume in &expected.volumes {
             let mut source = File::open(&volume.path).map_err(|_| ArchiveError::SourceChanged)?;
@@ -805,8 +1216,15 @@ pub(crate) fn open_snapshot(
     }
     let mut scratch = tempfile::tempfile()?;
     ensure_revision(&mut scratch, &snapshot.revision, control)?;
-    let mut set = crate::zip_container::discover(&snapshot.revision.path, limits, control)?
-        .ok_or(ArchiveError::SourceChanged)?;
+    let paths: Vec<String> = snapshot
+        .revision
+        .volumes
+        .iter()
+        .map(|volume| volume.path.to_string_lossy().into_owned())
+        .collect();
+    let mut set =
+        crate::zip_container::discover(&snapshot.revision.path, limits, control, Some(&paths))?
+            .ok_or(ArchiveError::SourceChanged)?;
     if volume_revision(&mut set, control)? != snapshot.revision {
         return Err(ArchiveError::SourceChanged);
     }
@@ -824,4 +1242,76 @@ fn is_tar(file: &mut File, path: &Path) -> Result<bool> {
                 .extension()
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("tar")),
     )
+}
+
+#[cfg(test)]
+mod protected_revision_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn fixture(path: &Path) {
+        let mut zip = ::zip::ZipWriter::new(File::create(path).expect("owned fixture"));
+        for index in 0..4 {
+            zip.start_file(
+                format!("member-{index}.bin"),
+                ::zip::write::SimpleFileOptions::default(),
+            )
+            .expect("member");
+            zip.write_all(&vec![index as u8; 65536]).expect("payload");
+        }
+        zip.finish().expect("complete fixture");
+    }
+
+    #[test]
+    fn protected_source_is_hashed_once_per_worker() {
+        let root = tempfile::tempdir().expect("owned root");
+        let path = root.path().join("held.zip");
+        fixture(&path);
+        let control = OperationControl::default();
+        control.protect_source(path.clone());
+        let snapshot = ArchiveEngine::default()
+            .open(OpenRequest::new(&path), &control)
+            .expect("protected open");
+        let mut file = File::open(&path).expect("reopen");
+        ensure_revision(&mut file, &snapshot.revision, &control).expect("held source unchanged");
+        let work = control.work_observation();
+        assert_eq!(
+            work.revision_passes, 1,
+            "only the opening digest reads the held source"
+        );
+        assert_eq!(work.revision_bytes, path.metadata().expect("size").len());
+    }
+
+    #[test]
+    fn protected_revision_still_rejects_a_different_file_identity() {
+        let root = tempfile::tempdir().expect("owned root");
+        let path = root.path().join("held.zip");
+        fixture(&path);
+        let control = OperationControl::default();
+        control.protect_source(path.clone());
+        let snapshot = ArchiveEngine::default()
+            .open(OpenRequest::new(&path), &control)
+            .expect("protected open");
+        let mut grown = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("writer");
+        grown.write_all(b"tail").expect("grow");
+        drop(grown);
+        let mut file = File::open(&path).expect("reopen");
+        assert!(matches!(
+            ensure_revision(&mut file, &snapshot.revision, &control),
+            Err(ArchiveError::SourceChanged)
+        ));
+        let unprotected = OperationControl::default();
+        assert!(matches!(
+            ensure_revision(&mut file, &snapshot.revision, &unprotected),
+            Err(ArchiveError::SourceChanged)
+        ));
+        assert_eq!(
+            unprotected.work_observation().revision_passes,
+            1,
+            "unprotected path rereads"
+        );
+    }
 }

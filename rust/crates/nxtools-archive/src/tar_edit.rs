@@ -515,7 +515,42 @@ pub(crate) fn plan(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Vec<Member>> {
+    let mut work = crate::planning::SelectionWork::default();
+    let result = plan_observed(old, intent, limits, control, &mut work);
+    control.record_work(|current| current.selection += work);
+    result
+}
+fn retained_member_bytes(item: &Member) -> u64 {
+    (std::mem::size_of::<Member>()
+        + item.name.capacity()
+        + item.extensions.capacity() * std::mem::size_of::<Extension>()) as u64
+        + item
+            .extensions
+            .iter()
+            .map(|extension| extension.data.capacity() as u64)
+            .sum::<u64>()
+}
+fn plan_observed(
+    old: &[Member],
+    intent: &ArchiveJobModify,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    work: &mut crate::planning::SelectionWork,
+) -> Result<Vec<Member>> {
     control.checkpoint()?;
+    let original_bytes = old.iter().try_fold(0u64, |bytes, item| {
+        work.metadata_visits += 1;
+        bytes
+            .checked_add(retained_member_bytes(item))
+            .ok_or(ArchiveError::ResourceLimit)
+    })?;
+    let selected_bytes = (intent.ordinals.len() as u64).saturating_mul(96);
+    let credit = limits
+        .max_metadata_bytes
+        .checked_sub(original_bytes)
+        .and_then(|bytes| bytes.checked_sub(selected_bytes))
+        .ok_or(ArchiveError::ResourceLimit)?
+        .min(limits.max_working_bytes);
     let selected = intent
         .ordinals
         .iter()
@@ -524,23 +559,27 @@ pub(crate) fn plan(
     if selected.len() != intent.ordinals.len() || selected.iter().any(|n| *n >= old.len()) {
         return Err(ArchiveError::SourceChanged);
     }
-    let mut removed = HashSet::new();
+    let mut removed = Vec::<u64>::new();
     let mut rename = None;
     match intent.action {
         Action::Delete => {
-            for &n in &selected {
-                control.checkpoint()?;
-                removed.insert(n);
-                if old[n].directory {
-                    let prefix = format!("{}/", old[n].name.trim_end_matches('/'));
-                    for (i, item) in old.iter().enumerate() {
-                        control.checkpoint()?;
-                        if item.name.starts_with(&prefix) {
-                            removed.insert(i);
-                        }
-                    }
-                }
-            }
+            let positions = selected.iter().copied().collect::<Vec<_>>();
+            removed = crate::planning::expand_selection(
+                old,
+                crate::planning::CatalogSelection::Entries {
+                    positions: &positions,
+                    directories: &[],
+                },
+                credit,
+                |index, item| crate::planning::SelectionEntry {
+                    ordinal: index as u64,
+                    path: &item.name,
+                    directory: item.directory,
+                },
+                |_, _, _, _| Ok(0),
+                || control.checkpoint(),
+                work,
+            )?;
         }
         Action::Rename => {
             if selected.len() != 1 {
@@ -596,10 +635,20 @@ pub(crate) fn plan(
         Action::Comment => return Err(ArchiveError::UnsupportedOperation),
     }
     let mut out = Vec::new();
+    let mut output_bytes = original_bytes
+        .saturating_add(selected_bytes)
+        .saturating_add(removed.capacity() as u64 * 8);
     for (i, item) in old.iter().enumerate() {
         control.checkpoint()?;
-        if removed.contains(&i) {
+        work.plan_visits += 1;
+        if removed.binary_search(&(i as u64)).is_ok() {
             continue;
+        }
+        output_bytes = output_bytes
+            .checked_add(retained_member_bytes(item).saturating_mul(2))
+            .ok_or(ArchiveError::ResourceLimit)?;
+        if output_bytes > limits.max_metadata_bytes {
+            return Err(ArchiveError::ResourceLimit);
         }
         let mut item = item.clone();
         if let Some((old, new, directory)) = &rename {

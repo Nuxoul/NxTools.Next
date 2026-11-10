@@ -26,11 +26,13 @@ internal static class ArchiveSelectionHandlerPlan
         new("extract_name", "04extract-name", Verbs[3].Clsid, Verbs[3].Label, "--archive-extract name"),
         new("test", "05test", Verbs[4].Clsid, Verbs[4].Label, "--archive-test"),
         new("extract_dialog", "06extract-dialog", new("306F1051-91FA-4D1B-87BC-E02E9D68FB46"), "解压到…", "--archive-extract dialog"),
-        new("create", "07create", new("BC9707AF-8361-431D-82CC-36554BDDA04C"), "创建压缩包…", "--archive-compress"),
+        new("create", "07create", new("BC9707AF-8361-431D-82CC-36554BDDA04C"), "新建压缩包…", "--archive-compress"),
+        new("create_zip", "08create-zip", new("0E30B5E0-6767-4FFB-8198-D748035B3E6D"), "", "--archive-compress-zip"),
+        new("create_7z", "09create-7z", new("55CCFF86-9D14-4750-9497-7A8D586A6402"), "", "--archive-compress-7z"),
     ];
 
     internal static ArchiveIntegrationPlan Create(string helperPath, long desiredRevision, IReadOnlyList<string> extensions) =>
-        Create(helperPath, desiredRevision, new ArchiveIntegrationIntent(true, false, extensions));
+        Create(helperPath, desiredRevision, new ArchiveIntegrationIntent(true, false, extensions) { MenuCommands = ArchiveIntegrationIntent.DefaultMenuCommands });
 
     internal static ArchiveIntegrationPlan Create(string helperPath, long desiredRevision, ArchiveIntegrationIntent intent)
     {
@@ -48,10 +50,10 @@ internal static class ArchiveSelectionHandlerPlan
             Add(changes, root, "", "NxTools Archive Selection (" + command.Command + ")", root);
             Add(changes, root + @"\LocalServer32", "", "\"" + helperPath + "\"", root);
         }
-        var archiveCommands = selected.Where(command => command.Command != "create").ToArray();
+        var archiveCommands = selected.Where(command => !IsCreation(command.Command)).ToArray();
         foreach (var extension in normalized.Extensions!)
             AddMenu(changes, Classes + @"\SystemFileAssociations\" + extension, archiveCommands, normalized.MenuLayout);
-        var create = selected.Where(command => command.Command == "create").ToArray();
+        var create = selected.Where(command => IsCreation(command.Command)).ToArray();
         AddMenu(changes, Classes + @"\*", create, normalized.MenuLayout);
         AddMenu(changes, Classes + @"\Directory", create, normalized.MenuLayout);
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -77,10 +79,17 @@ internal static class ArchiveSelectionHandlerPlan
         {
             var key = layout == "cascade" ? root + @"\shell\" + command.KeyId : root + "." + command.KeyId;
             var owned = layout == "cascade" ? root : key;
-            Add(changes, key, "MUIVerb", command.Label, owned);
-            Add(changes, key + @"\command", "DelegateExecute", command.Clsid.ToString("B").ToUpperInvariant(), owned);
+            if (command.Command is "create_zip" or "create_7z")
+                Add(changes, key, "ExplorerCommandHandler", command.Clsid.ToString("B").ToUpperInvariant(), owned);
+            else
+            {
+                Add(changes, key, "MUIVerb", command.Label, owned);
+                Add(changes, key + @"\command", "DelegateExecute", command.Clsid.ToString("B").ToUpperInvariant(), owned);
+            }
         }
     }
+
+    internal static bool IsCreation(string command) => command is "create" or "create_zip" or "create_7z";
 
     private static void Add(List<ArchiveRegistryValueChange> changes, string key, string name, string value, string root) =>
         changes.Add(new(new(key, name, root), ArchiveRegistryValue.String(value)));

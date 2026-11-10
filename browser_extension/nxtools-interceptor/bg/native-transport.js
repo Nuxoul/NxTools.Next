@@ -33,10 +33,17 @@ async function browserDownloadHandoffId(downloadItem) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+function desktopHandoffError(message, reason, boundaryCode) {
+  const error = new Error(message);
+  error.handoffReason = reason;
+  error.boundaryCode = boundaryCode;
+  return error;
+}
+
 function rejectPendingDesktopRequests(message) {
   for (const [requestId, pending] of pendingDesktopRequests) {
     clearTimeout(pending.timeoutId);
-    pending.reject(new Error(message));
+    pending.reject(desktopHandoffError(message, "handoff_disconnected", "port_disconnected"));
     pendingDesktopRequests.delete(requestId);
   }
 }
@@ -105,28 +112,25 @@ function sendExtensionLog(
   }
   extensionLogTimes.set(key, now);
 
-  const payload = {
-    level,
-    area: "BrowserExtension",
-    event,
-    message,
-    ...details
-  };
-
-  for (const name of ["url", "pageUrl", "resourceUrl"]) {
-    if (payload[name]) {
-      payload[name] = trimLogText(payload[name], 1200);
-    }
-  }
+  // Only fixed handoff metadata crosses the diagnostics boundary; resource payloads do not.
 
   // Diagnostics never launch or retain an otherwise idle native host.
   if (!desktopPort || connectionState !== "connected") return;
   try {
     desktopPort.postMessage(NxToolsHandoffPolicy.buildExtensionLogRequest({
       protocolVersion: BROWSER_PROTOCOL_VERSION,
-      level: payload.level,
-      event: payload.event,
-      message: trimLogText(payload.message, 240),
+      level,
+      event,
+      message: trimLogText(message, 240),
+      ...(event === "handoff_state" ? {
+        handoffState: details.state,
+        reason: details.reason,
+        elapsedMs: details.elapsedMs,
+        boundaryCode: details.boundaryCode,
+        compensation: details.compensation
+      } : {}),
+      ...(["capture_pause_started", "capture_pause_applied", "capture_pause_failed"].includes(event)
+        ? { reason: details.reason, elapsedMs: details.elapsedMs } : {}),
       correlationId,
       allocateRequestId: nextRequestId,
       isRequestIdPending: (requestId) => pendingDesktopRequests.has(requestId)
@@ -179,7 +183,9 @@ function handleDesktopMessage(message) {
   pendingDesktopRequests.delete(requestId);
 
   if (message.ok === false) {
-    const error = new Error(message.message || "NxTools 返回失败");
+    const reason = ["desktop_unavailable", "handoff_timeout", "handoff_disconnected", "identity_mismatch"]
+      .includes(message.data?.reason) ? message.data.reason : "desktop_refused";
+    const error = desktopHandoffError(message.message || "NxTools 返回失败", reason, "native_rejected");
     error.nativeRejected = true;
     pending.reject(error);
     return;
@@ -211,33 +217,31 @@ async function ensureDesktopConnection(force = false) {
   desktopConnectStartedAt = Date.now();
 
   desktopConnectPromise = new Promise((resolve, reject) => {
-    const port = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+    let port;
+    try { port = chrome.runtime.connectNative(NATIVE_HOST_NAME); } catch {
+      connectionState = "disconnected";
+      reject(desktopHandoffError("无法连接 NxTools Native Messaging", "desktop_unavailable", "connect_failed"));
+      return;
+    }
     desktopPort = port;
     let settled = false;
 
-    const fail = (message) => {
+    const fail = (message, reason = "desktop_unavailable", boundaryCode = "connect_failed") => {
       if (desktopPort !== port) return;
       clearTimeout(openTimeout);
-      try { port.disconnect(); } catch { /* Already disconnected. */ }
-      if (desktopPort === port) {
-        desktopPort = null;
-      }
+      desktopPort = null;
       connectionState = "disconnected";
       connectionMessage = message;
       desktopConnectPromise = null;
       if (!settled) {
         settled = true;
-        reject(new Error(message));
+        reject(desktopHandoffError(message, reason, boundaryCode));
       }
+      try { port.disconnect(); } catch { /* Already disconnected. */ }
     };
 
     const openTimeout = setTimeout(() => {
-      try {
-        port.disconnect();
-      } catch {
-        // Ignore close failures.
-      }
-      fail("连接 NxTools Native Messaging 超时");
+      fail("连接 NxTools Native Messaging 超时", "handoff_timeout", "connect_timeout");
     }, DESKTOP_CONNECT_TIMEOUT_MS);
 
     port.onMessage.addListener((message) => {
@@ -268,7 +272,7 @@ async function ensureDesktopConnection(force = false) {
       rejectPendingDesktopRequests("与 NxTools 的 Native Messaging 连接已断开");
       if (!settled) {
         settled = true;
-        reject(new Error(connectionMessage));
+        reject(desktopHandoffError(connectionMessage, "desktop_unavailable", "connect_failed"));
       }
       // A future user request may reconnect; idle disconnect never restarts a host.
     });
@@ -287,7 +291,11 @@ async function ensureDesktopConnection(force = false) {
     }
   });
 
-  return desktopConnectPromise;
+  const connecting = desktopConnectPromise;
+  try { return await connecting; } catch (error) {
+    if (desktopConnectPromise === connecting) desktopConnectPromise = null;
+    throw error;
+  }
 }
 
 async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000, requestId = nextRequestId()) {
@@ -295,7 +303,7 @@ async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000, request
   try {
   const port = await ensureDesktopConnection();
   if (!port) {
-    throw new Error("NxTools Native Messaging 未连接");
+    throw desktopHandoffError("NxTools Native Messaging 未连接", "desktop_unavailable", "connect_failed");
   }
 
   const message = {
@@ -305,20 +313,23 @@ async function sendDesktopRequest(type, payload = {}, timeoutMs = 12000, request
     ...payload
   };
   if (new TextEncoder().encode(JSON.stringify(message)).byteLength > MAX_NATIVE_REQUEST_BYTES) {
-    throw new Error("发送到 NxTools 的消息超过 256 KiB 上限");
+    throw desktopHandoffError("发送到 NxTools 的消息超过 256 KiB 上限", "desktop_refused", "request_too_large");
+  }
+  if (type === "create_task" && lastHandoff?.correlationId === requestId && lastHandoff.state === "submitting") {
+    emitBrowserHandoffState(lastHandoff);
   }
 
   return await new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       pendingDesktopRequests.delete(requestId);
-      reject(new Error("等待 NxTools Native Messaging 响应超时"));
+      reject(desktopHandoffError("等待 NxTools Native Messaging 响应超时", "handoff_timeout", "request_timeout"));
     }, timeoutMs);
 
     pendingDesktopRequests.set(requestId, { resolve, reject, timeoutId });
     try { port.postMessage(message); } catch {
       clearTimeout(timeoutId);
       pendingDesktopRequests.delete(requestId);
-      reject(new Error("NxTools Native Messaging 发送失败"));
+      reject(desktopHandoffError("NxTools Native Messaging 发送失败", "handoff_disconnected", "send_failed"));
     }
   });
   } finally {

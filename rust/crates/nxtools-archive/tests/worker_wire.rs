@@ -152,6 +152,7 @@ fn creation_fields_are_opt_in_schema2_and_roundtrip_without_changing_legacy_requ
         "schema1 cannot use new capability"
     );
     request.version = 2;
+    request.bulk_transfer = Some(1);
     let decoded: WorkerRequest =
         serde_json::from_value(serde_json::to_value(&request).expect("new wire"))
             .expect("new decode");
@@ -172,6 +173,7 @@ fn creation_fields_are_opt_in_schema2_and_roundtrip_without_changing_legacy_requ
             .expect("XZ decode");
     assert_eq!(decoded.operation, "create_xz");
     request.version = 1;
+    request.bulk_transfer = None;
     assert!(request.validate().is_err());
 }
 
@@ -185,7 +187,7 @@ fn zip_create_options_are_explicit_bounded_and_do_not_expand_legacy_requests() {
             .get("zip_options")
             .is_none()
     );
-    let valid = json!({"schema":2,"operation_id":Uuid::new_v4(),"op":"start","operation":"create_zip","path":"authorized","create_name":"out.zip","compression_level":"normal","zip_options":{"method":"deflate","encryption":"none","strip_single_root":false,"exclude_patterns":[]}});
+    let valid = json!({"schema":2,"bulk_transfer":1,"operation_id":Uuid::new_v4(),"op":"start","operation":"create_zip","path":"authorized","create_name":"out.zip","compression_level":"normal","zip_options":{"method":"deflate","encryption":"none","strip_single_root":false,"exclude_patterns":[]}});
     let decoded: WorkerRequest = serde_json::from_value(valid.clone()).expect("ZIP request");
     assert!(decoded.validate().is_ok());
     for (field, value) in [
@@ -196,6 +198,11 @@ fn zip_create_options_are_explicit_bounded_and_do_not_expand_legacy_requests() {
     ] {
         let mut bad = valid.clone();
         bad[field] = value;
+        if matches!(field, "schema" | "operation") {
+            bad.as_object_mut()
+                .expect("request object")
+                .remove("bulk_transfer");
+        }
         assert!(
             serde_json::from_value::<WorkerRequest>(bad)
                 .expect("typed fields")
@@ -238,7 +245,7 @@ fn sevenz_creation_is_explicit_and_legacy_wire_omits_tree_options() {
     let legacy =
         serde_json::to_value(WorkerRequest::open(Uuid::new_v4(), "source".into())).expect("legacy");
     assert!(legacy.get("tree_options").is_none() && legacy.get("sevenz_options").is_none());
-    let valid = json!({"schema":2,"operation_id":Uuid::new_v4(),"op":"start","operation":"create_7z","path":"authorized","create_name":"out.7z","compression_level":"normal","tree_options":{"strip_single_root":false,"exclude_patterns":[]},"sevenz_options":{"solid":false,"encryption":"none","encrypt_header":false}});
+    let valid = json!({"schema":2,"bulk_transfer":1,"operation_id":Uuid::new_v4(),"op":"start","operation":"create_7z","path":"authorized","create_name":"out.7z","compression_level":"normal","tree_options":{"strip_single_root":false,"exclude_patterns":[]},"sevenz_options":{"solid":false,"encryption":"none","encrypt_header":false}});
     assert!(
         serde_json::from_value::<WorkerRequest>(valid.clone())
             .expect("new request")
@@ -253,6 +260,11 @@ fn sevenz_creation_is_explicit_and_legacy_wire_omits_tree_options() {
     ] {
         let mut bad = valid.clone();
         bad[field] = value;
+        if matches!(field, "schema" | "operation") {
+            bad.as_object_mut()
+                .expect("request object")
+                .remove("bulk_transfer");
+        }
         assert!(
             serde_json::from_value::<WorkerRequest>(bad)
                 .expect("typed request")
@@ -280,7 +292,7 @@ fn sevenz_creation_is_explicit_and_legacy_wire_omits_tree_options() {
 fn tar_creation_options_reject_unrequested_levels_passwords_and_codec_options() {
     use serde_json::json;
     for format in ["tar", "tgz", "txz"] {
-        let mut valid = json!({"schema":2,"operation_id":Uuid::new_v4(),"op":"start","operation":format!("create_{format}"),"path":"authorized","create_name":format!("out.{format}"),"tree_options":{"strip_single_root":true,"exclude_patterns":[]}});
+        let mut valid = json!({"schema":2,"bulk_transfer":1,"operation_id":Uuid::new_v4(),"op":"start","operation":format!("create_{format}"),"path":"authorized","create_name":format!("out.{format}"),"tree_options":{"strip_single_root":true,"exclude_patterns":[]}});
         if format != "tar" {
             valid["compression_level"] = json!("normal");
         }
@@ -301,6 +313,11 @@ fn tar_creation_options_reject_unrequested_levels_passwords_and_codec_options() 
         ] {
             let mut bad = valid.clone();
             bad[field] = value;
+            if field == "schema" {
+                bad.as_object_mut()
+                    .expect("request object")
+                    .remove("bulk_transfer");
+            }
             assert!(
                 serde_json::from_value::<WorkerRequest>(bad)
                     .expect("typed request")
@@ -322,7 +339,7 @@ fn tar_creation_options_reject_unrequested_levels_passwords_and_codec_options() 
 
 #[test]
 fn extraction_metadata_options_are_schema2_extract_only_and_legacy_omits_them() {
-    let base = serde_json::json!({"schema":2,"operation_id":Uuid::new_v4(),"op":"start","operation":"extract","path":"synthetic.zip"});
+    let base = serde_json::json!({"schema":2,"bulk_transfer":1,"operation_id":Uuid::new_v4(),"op":"start","operation":"extract","path":"synthetic.zip"});
     let legacy: WorkerRequest = serde_json::from_value(base.clone()).expect("old private request");
     assert!(legacy.validate().is_ok());
     assert!(
@@ -348,6 +365,10 @@ fn extraction_metadata_options_are_schema2_extract_only_and_legacy_omits_them() 
         ] {
             let mut invalid = json.clone();
             invalid[field] = value;
+            invalid
+                .as_object_mut()
+                .expect("request object")
+                .remove("bulk_transfer");
             assert!(
                 serde_json::from_value::<WorkerRequest>(invalid)
                     .expect("typed invalid combination")
@@ -376,13 +397,18 @@ fn legacy_or_unnegotiated_extraction_cannot_request_source_deletion() {
         "schema1 has no deletion authority"
     );
     request.version = 2;
+    request.bulk_transfer = Some(1);
     assert!(
         request.validate().is_err(),
         "old raw host lacks extraction metadata/MOTW negotiation"
     );
-    request.extract_options = Some(nxtools_archive::worker::ExtractOptions { copy_motw: true, reclamation: None });
+    request.extract_options = Some(nxtools_archive::worker::ExtractOptions {
+        copy_motw: true,
+        reclamation: None,
+    });
     assert!(request.validate().is_ok());
     request.operation = "test".into();
+    request.bulk_transfer = None;
     assert!(request.validate().is_err(), "test-only never delete source");
 }
 
@@ -407,9 +433,11 @@ fn read_v2_requires_exact_transport_contract_and_never_grants_write_authority() 
     assert!(request.validate().is_ok());
     for operation in ["extract", "create_zip", "create_7z"] {
         request.operation = operation.into();
+        request.bulk_transfer = Some(1);
         assert!(request.validate().is_err());
     }
     request.operation = "test".into();
+    request.bulk_transfer = None;
     assert!(request.validate().is_ok());
     request.read_contract = Some(1);
     assert!(request.validate().is_err());
@@ -442,6 +470,7 @@ fn password_interaction_is_private_opt_in_open_test_extract_and_legacy_wire_stay
     request.version = 2;
     for operation in ["open", "test", "extract"] {
         request.operation = operation.into();
+        request.bulk_transfer = (operation == "extract").then_some(1);
         assert!(request.validate().is_ok());
     }
     request.read_contract = Some(1);
@@ -477,6 +506,11 @@ fn zip_conflict_policy_is_opt_in_extract_only_and_old_terminal_omits_new_fields(
     ] {
         value["schema"] = serde_json::json!(schema);
         value["operation"] = serde_json::json!(operation);
+        value["bulk_transfer"] = if schema == 2 && operation == "extract" {
+            serde_json::json!(1)
+        } else {
+            serde_json::Value::Null
+        };
         let decoded: WorkerRequest =
             serde_json::from_value(value.clone()).expect("typed private conflict request");
         assert_eq!(decoded.validate().is_ok(), valid);
@@ -507,6 +541,7 @@ fn risk_test_seam_cannot_disable_raise_thresholds_or_mutate_read_contracts() {
     let mut wire = legacy;
     wire["schema"] = serde_json::json!(2);
     wire["operation"] = serde_json::json!("extract");
+    wire["bulk_transfer"] = serde_json::json!(1);
     for (bytes, ratio, valid) in [
         (1024u64, 2u64, true),
         (0, 2, false),
@@ -531,6 +566,9 @@ fn risk_test_seam_cannot_disable_raise_thresholds_or_mutate_read_contracts() {
     }
     wire["zip_risk_fixture"] = serde_json::json!({"bytes":1024,"ratio":2});
     wire["operation"] = serde_json::json!("open");
+    wire.as_object_mut()
+        .expect("request object")
+        .remove("bulk_transfer");
     #[cfg(debug_assertions)]
     assert!(
         serde_json::from_value::<WorkerRequest>(wire.clone())
@@ -556,6 +594,7 @@ fn output_readmission_is_strict_private_extract_only_and_absent_from_legacy_wire
     assert!(value.get("output_readmission").is_none());
     value["schema"] = json!(2);
     value["operation"] = json!("extract");
+    value["bulk_transfer"] = json!(1);
     value["output_readmission"] = json!({"logical_id": Uuid::new_v4(), "expected_source": null});
     assert!(
         serde_json::from_value::<WorkerRequest>(value.clone())
@@ -572,6 +611,12 @@ fn output_readmission_is_strict_private_extract_only_and_absent_from_legacy_wire
     ] {
         let mut invalid = value.clone();
         invalid[field] = bad;
+        if matches!(field, "schema" | "operation") {
+            invalid
+                .as_object_mut()
+                .expect("request object")
+                .remove("bulk_transfer");
+        }
         assert!(
             serde_json::from_value::<WorkerRequest>(invalid)
                 .expect("typed")
@@ -641,6 +686,7 @@ fn shared_conflict_capability_preserves_zip_marker_and_admits_standalone_streams
         );
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.conflict_policy =
             policy.map(|value| serde_json::from_value(json!(value)).expect("typed policy"));
         let mut child = Command::new(env!("CARGO_BIN_EXE_nxtools-archive-worker"))
@@ -666,11 +712,14 @@ fn shared_conflict_capability_preserves_zip_marker_and_admits_standalone_streams
         assert_eq!(acquire["native"]["action"], "source_acquire");
         if policy.is_some() {
             write_frame(child.stdin.as_mut().expect("stdin"), &json!({"version":1,"operation_id":request.operation_id,"op":"native_result","call_id":acquire["native"]["call_id"],"success":true})).expect("trusted fixture lease");
-            let observe: Value = read_frame(child.stdout.as_mut().expect("stdout"))
-                .expect("target observation")
+            let begin: Value = read_frame(child.stdout.as_mut().expect("stdout"))
+                .expect("exclusive target create")
                 .expect("original native call");
-            assert_eq!(observe["native"]["action"], "observe_target");
-            write_frame(child.stdin.as_mut().expect("stdin"), &json!({"version":1,"operation_id":request.operation_id,"op":"native_result","call_id":observe["native"]["call_id"],"success":true,"token":Uuid::new_v4(),"existing_bytes":10})).expect("ordinary target");
+            assert_eq!(
+                begin["native"]["action"], "begin",
+                "conflict detection is CREATE_NEW, not a preliminary observation"
+            );
+            write_frame(child.stdin.as_mut().expect("stdin"), &json!({"version":1,"operation_id":request.operation_id,"op":"native_result","call_id":begin["native"]["call_id"],"success":false,"error_code":"target_exists","existing_bytes":10})).expect("existing ordinary target");
             let summary: Value = read_frame(child.stdout.as_mut().expect("stdout"))
                 .expect("summary frame")
                 .expect("Skip summary");
@@ -714,13 +763,16 @@ fn browser_password_private_authorization_has_no_read_output_or_prompt_authority
     prepare.limits.max_output_bytes = 512 << 20;
     assert!(prepare.validate().is_ok());
     prepare.operation = "extract".into();
+    prepare.bulk_transfer = Some(1);
     assert!(prepare.validate().is_err());
     prepare.operation = "test".into();
+    prepare.bulk_transfer = None;
     prepare.read_contract = Some(1);
     assert!(prepare.validate().is_err());
     let mut materialize = WorkerRequest::open(Uuid::new_v4(), r"C:\owned\source.zip".into());
     materialize.version = 2;
     materialize.operation = "extract".into();
+    materialize.bulk_transfer = Some(1);
     materialize.browser_entry = Some(nxtools_archive::worker_browser::BrowserEntry {
         ordinal: 0,
         expected: context,
@@ -730,8 +782,10 @@ fn browser_password_private_authorization_has_no_read_output_or_prompt_authority
     materialize.limits.max_output_bytes = 512 << 20;
     materialize.limits.max_entries = 100_000;
     materialize.limits.max_metadata_bytes = 128 << 20;
-    materialize.extract_options =
-        Some(nxtools_archive::worker::ExtractOptions { copy_motw: false, reclamation: None });
+    materialize.extract_options = Some(nxtools_archive::worker::ExtractOptions {
+        copy_motw: false,
+        reclamation: None,
+    });
     assert!(materialize.validate().is_ok());
     materialize.password_interaction = Some(true);
     assert!(materialize.validate().is_err());
@@ -759,7 +813,7 @@ fn capability_foundation_unsupported_source_rejects_at_worker_dispatch_without_w
         .expect("original worker");
     let id = Uuid::new_v4();
     write_frame(child.stdin.as_mut().expect("stdin"), &json!({
-        "schema":2,"operation_id":id,"op":"start","operation":"modify_zip",
+        "schema":2,"bulk_transfer":1,"operation_id":id,"op":"start","operation":"modify_zip",
         "path":path,"job_execution":true,"job_modify":{
             "browser":{"snapshot_id":Uuid::new_v4(),"format":"Zip","comment":"",
                 "source":{"native":"v1:fixture","digest":vec![0u8;32],"size":1024,"modified_unix_ns":1}},

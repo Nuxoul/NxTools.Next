@@ -51,7 +51,7 @@
     const handoffId = String(resource?.pendingBatchHandoffId || "");
     await persistHandoff();
     const result = await sendHandoff(handoffId);
-    if (result?.ok === true) {
+    if (result?.ok === true && result.accepted === true && result.handoffId === handoffId) {
       applyAcceptedHandoff({
         resourceId,
         handoffId,

@@ -111,6 +111,7 @@ function buildContentResourceChoices(tabId, payload = {}) {
   const resources = [...(resourcesByTab.get(tabId)?.values() || [])]
     .filter((resource) =>
       resource &&
+      !NxToolsCapturePolicy.discoveryCandidateReason(resource) &&
       Number(resource.capturedAt || 0) >= cutoff &&
       isUsableGoogleVideoUrl(resource.url) &&
       canSendOneClickResource(resource) &&
@@ -145,6 +146,19 @@ function buildContentResourceChoices(tabId, payload = {}) {
   }
 
   return choices;
+}
+
+function excludedLocalResourceUrls(tabId, candidates) {
+  const bucket = resourcesByTab.get(tabId);
+  return (Array.isArray(candidates) ? candidates : []).slice(0, 80).filter(candidate => {
+    const url = boundedCapturedUrl(candidate?.url);
+    if (!url) return false;
+    const cached = bucket?.get(`${tabId}:${normalizeResourceUrlKey(url)}`);
+    return Boolean(NxToolsCapturePolicy.discoveryCandidateReason(NxToolsCapturePolicy.mergeCapturedResource(cached, {
+      url, mime: boundedCapturedText(candidate.mime, 256), mediaElement: NxToolsCapturePolicy.normalizeMediaElement(candidate.mediaElement),
+      discovery: NxToolsCapturePolicy.normalizeDiscovery(null, candidate.mime),
+    })));
+  }).map(candidate => candidate.url);
 }
 
 function isBlobResource(resource) {

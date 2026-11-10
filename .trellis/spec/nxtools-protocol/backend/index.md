@@ -26,3 +26,7 @@ commit or cleanup authority and do not change native terminal precedence. See
 [native publication contract](../../platformhost/archive-creation.md) and original batch contract.
 
 HZ5 adds optional `ArchiveJobExtract.reclamation {mode:start|continue,recovery_id:UUID}` with symmetric Rust/C# full/Here/Ask/nonnil/no-readmission validation. Absence preserves ordinary extraction; Continue is a new Start, not live Resume. See [reclamation contract](../../nxtools-archive/backend/reclamation.md).
+
+ArchiveEntry v1 optional preview_options follows [the frozen preview budget contract](../../nxtools-desktop/backend/archive-preview.md):
+missing/null keeps legacy behavior, strict non-null options are preview-only and omitted from private
+worker materialize payloads. Ordinary materialize/drag/authorize authority is unchanged.

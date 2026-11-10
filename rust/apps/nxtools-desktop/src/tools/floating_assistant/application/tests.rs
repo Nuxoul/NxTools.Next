@@ -833,3 +833,206 @@ fn runtime_feedback_picker_disconnected_reply_cannot_change_new_selection(cx: &m
         assert!(owner.error.is_none());
     });
 }
+
+fn fill_floating_queue(owner: &Entity<FloatingAssistantApplication>, cx: &mut TestAppContext) {
+    owner.read_with(cx, |owner, _| {
+        for _ in 0..64 {
+            owner
+                .platform
+                .send_command(PlatformCommand::FloatingAssistant(
+                    owner.command(FloatingAssistantOperation::Update, None),
+                ))
+                .expect("fill original bounded queue");
+        }
+    });
+}
+
+#[gpui_kit::test]
+fn floating_drop_release_full_queue_recovers_after_cancel(cx: &mut TestAppContext) {
+    for cancel in [false, true] {
+        let (owner, endpoint, _directory) = fixture(cx);
+        owner.update(cx, |owner, cx| owner.start(cx));
+        let prepare = next(&endpoint);
+        reply(&owner, prepare.id, true, cx);
+        let show = next(&endpoint);
+        reply(&owner, show.id, true, cx);
+        let id = Uuid::new_v4();
+        let mut event = drop_event(&owner, cx, None, 1, id);
+        event.image_format = None;
+        event.text = Some("完整 搜索 文本".into());
+        fill_floating_queue(&owner, cx);
+        owner.update(cx, |owner, cx| {
+            if cancel {
+                owner.dispatch_event(event.clone(), cx);
+                owner.cancel_actions(false);
+            } else {
+                owner.settings.enabled = false;
+                owner.native_event(event.clone(), cx);
+            }
+        });
+        cx.run_until_parked();
+        let mut releases = Vec::new();
+        while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+            if let Message::PlatformCommand(PlatformCommand::FloatingAssistant(command)) =
+                envelope.message
+                && command.operation == FloatingAssistantOperation::ReleaseDrop
+            {
+                releases.push(command);
+            }
+        }
+        assert_eq!(
+            releases.len(),
+            1,
+            "full queue must retain exact release through cancellation"
+        );
+        assert_eq!(releases[0].session_id, event.session_id);
+        assert_eq!(releases[0].generation, event.generation);
+        assert_eq!(releases[0].drop_id, Some(id));
+    }
+}
+
+#[gpui_kit::test]
+fn floating_drop_retire_full_queue_survives_owner_drop(cx: &mut TestAppContext) {
+    for destroy in [false, true] {
+        let (owner, endpoint, _directory) = fixture(cx);
+        owner.update(cx, |owner, cx| owner.start(cx));
+        let prepare = next(&endpoint);
+        reply(&owner, prepare.id, true, cx);
+        let show = next(&endpoint);
+        reply(&owner, show.id, true, cx);
+        fill_floating_queue(&owner, cx);
+        if destroy {
+            let weak = owner.downgrade();
+            drop(owner);
+            cx.update(|_| {});
+            cx.run_until_parked();
+            assert!(
+                weak.upgrade().is_none(),
+                "fixture must actually destroy the controller"
+            );
+        } else {
+            owner.update(cx, |owner, cx| owner.retry(cx));
+        }
+        let mut retires = 0;
+        while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+            if operation(&envelope) == FloatingAssistantOperation::Retire {
+                retires += 1;
+            }
+        }
+        assert_eq!(
+            retires, 1,
+            "original connection must retain retirement without a live controller"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn floating_drop_release_disconnect_and_stale_generation_never_replay(cx: &mut TestAppContext) {
+    let (owner, endpoint, _directory) = fixture(cx);
+    owner.update(cx, |owner, cx| owner.start(cx));
+    let prepare = next(&endpoint);
+    reply(&owner, prepare.id, true, cx);
+    let show = next(&endpoint);
+    reply(&owner, show.id, true, cx);
+    let old_event = drop_event(&owner, cx, None, 1, Uuid::new_v4());
+    fill_floating_queue(&owner, cx);
+    owner.update(cx, |owner, _| owner.release_drop(old_event.drop_id));
+    endpoint.set_connected_for_contract_test(false);
+    endpoint.set_connected_for_contract_test(true);
+    // Before the UI dispatcher observes EOF, the original connection still cannot
+    // authorize an old controller's release or destructor on the replacement pipe.
+    owner.update(cx, |owner, _| owner.release_drop(old_event.drop_id));
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "old connection release cannot enter replacement queue"
+    );
+    owner.update(cx, |owner, cx| {
+        owner.handle(
+            PlatformNotification::Disconnected {
+                generation: 1,
+                pending_command_ids: vec![],
+            },
+            cx,
+        );
+        owner.native_event(old_event, cx);
+    });
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+}
+
+#[gpui_kit::test]
+fn floating_drop_late_action_result_cannot_rebind_release_generation(cx: &mut TestAppContext) {
+    let (owner, endpoint, _directory) = fixture(cx);
+    owner.update(cx, |owner, cx| owner.start(cx));
+    let prepare = next(&endpoint);
+    reply(&owner, prepare.id, true, cx);
+    let show = next(&endpoint);
+    reply(&owner, show.id, true, cx);
+    let id = Uuid::new_v4();
+    let mut event = drop_event(&owner, cx, None, 1, id);
+    event.image_format = None;
+    event.text = Some("完整 搜索 文本".into());
+    owner.update(cx, |owner, cx| {
+        owner.dispatch_event(event, cx);
+        owner.generation += 1;
+        owner.complete_action(
+            id,
+            &PlatformCommandResult {
+                success: true,
+                error: None,
+                native_error_code: None,
+                data: None,
+            },
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "old completion must not release using the new generation"
+    );
+}
+
+#[gpui_kit::test]
+fn floating_drop_retire_recovers_after_original_deadlines(cx: &mut TestAppContext) {
+    let (owner, endpoint, _directory) = fixture(cx);
+    owner.update(cx, |owner, cx| owner.start(cx));
+    let prepare = next(&endpoint);
+    reply(&owner, prepare.id, true, cx);
+    let show = next(&endpoint);
+    reply(&owner, show.id, true, cx);
+    let generation = owner.read_with(cx, |owner, _| owner.generation);
+    fill_floating_queue(&owner, cx);
+    owner.update(cx, |owner, cx| owner.retry(cx));
+    cx.run_until_parked();
+    cx.executor().advance_clock(Duration::from_secs(60));
+    cx.run_until_parked();
+    assert!(
+        owner.read_with(cx, |owner, _| owner
+            .lifecycle
+            .pending
+            .is_some_and(|(_, phase)| phase == Phase::Retire)),
+        "retained retirement cannot lose its owner to a generic timeout"
+    );
+    let pending = owner.read_with(cx, |owner, _| owner.lifecycle.pending);
+    owner.update(cx, |owner, cx| owner.retry(cx));
+    assert_eq!(
+        owner.read_with(cx, |owner, _| owner.lifecycle.pending),
+        pending,
+        "retry cannot replace the still-owned original retirement"
+    );
+    let mut retirement = None;
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        if operation(&envelope) == FloatingAssistantOperation::Retire {
+            retirement = Some(envelope.id);
+        }
+    }
+    reply(&owner, retirement.expect("late retained retire"), true, cx);
+    assert_eq!(
+        owner.read_with(cx, |owner, _| owner.generation),
+        generation + 1
+    );
+    assert_eq!(
+        operation(&next(&endpoint)),
+        FloatingAssistantOperation::Prepare
+    );
+}

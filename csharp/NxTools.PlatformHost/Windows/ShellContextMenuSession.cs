@@ -586,10 +586,23 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         }
         finally
         {
-            _session?.Dispose();
-            if (initialized)
+            try
             {
-                ShellContextMenuNativeMethods.OleUninitialize();
+                _session?.Dispose();
+            }
+            finally
+            {
+                if (!BoundedStaOperationRunner.TryShutdownCurrentThreadDispatcher(
+                        out var dispatcherError) &&
+                    _startupError is null)
+                {
+                    _startupError = new InvalidOperationException(
+                        $"Shell action Dispatcher cleanup failed: {dispatcherError}");
+                }
+                if (initialized)
+                {
+                    ShellContextMenuNativeMethods.OleUninitialize();
+                }
             }
         }
     }

@@ -4,7 +4,7 @@ const fs = require('node:fs'), path = require('node:path'), os = require('node:o
 const { spawn } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 const scratch = process.env.PI_SCRATCH_DIR || os.tmpdir();
-const output = path.resolve(root, '../../artifacts/ui-extension-redesign');
+const output = path.join(scratch, 'nxtools-extension-redesign');
 const profile = fs.mkdtempSync(path.join(scratch, 'nxtools-redesign-'));
 const chrome = process.env.PROTOTYPE_CHROME || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const child = spawn(chrome, ['--headless=new', '--remote-debugging-pipe', '--no-first-run', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-extensions', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore','ignore','pipe','pipe','pipe'] });
@@ -26,6 +26,9 @@ async function run() {
  const results = await evaluate(`(async()=>{
   const rows=[]; const check=(pass,label,detail)=>rows.push({pass:Boolean(pass),label,detail}); const settle=()=>new Promise(r=>setTimeout(r,30));
   check(__fixture.messages.length===1&&__fixture.messages[0].type==='popup_get_state','initialization-passive-snapshot-only');
+  check(__fixture.ports.length===1&&__fixture.ports[0].name==='nxtools-popup'&&!__fixture.ports[0].closed,'popup-entry-retains-one-port');
+  check(statusText.textContent==='已连接','stable-connected-label');
+  renderConnection({ok:false,message:'合成传输状态变化'});check(statusText.textContent==='NxTools 未运行','stable-not-running-label');renderConnection(__fixture.state.status);
   const taskProgress=document.querySelector('progress.bar');check(taskProgress&&Math.abs(taskProgress.value-43.75)<.01&&!taskProgress.hasAttribute('style'),'csp-safe-task-progress-real-value');
   tasksTab.focus();tasksTab.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));await settle();
   check(resourcesTab.getAttribute('aria-selected')==='true'&&document.activeElement===resourcesTab,'actual-tab-arrow-focus');
@@ -52,6 +55,7 @@ async function run() {
   for(const page of ['tasks','resources','advanced','settings']){setView(page);document.querySelector('.workspace').scrollTop=0;const work=document.querySelector('.workspace');check(work.clientHeight>=420&&work.clientHeight<=445,page+'-bounded-workspace');const bad=[...document.querySelectorAll('.view.active *')].filter(e=>{const s=getComputedStyle(e);return e.getClientRects().length&&s.display!=='inline'&&e.scrollWidth>e.clientWidth+1&&!['INPUT','SELECT'].includes(e.tagName)&&!['hidden','auto','scroll'].includes(s.overflowX)}).map(e=>e.className);check(!bad.length,page+'-no-horizontal-overflow',bad);}
   setView('advanced');document.querySelector('.workspace').scrollTop=0;const mediaViewport=document.querySelector('.workspace').getBoundingClientRect();check(featureMobileUaButton.getBoundingClientRect().bottom<=mediaViewport.bottom-4,'all-media-tools-default-visible',{last:featureMobileUaButton.getBoundingClientRect().toJSON(),viewport:mediaViewport.toJSON()});
   setView('settings');const work=document.querySelector('.workspace');work.scrollTop=work.scrollHeight;const s=saveButton.getBoundingClientRect(),w=work.getBoundingClientRect();check(s.top>=w.top&&s.bottom<=w.bottom+1,'settings-save-reachable');
+  window.dispatchEvent(new Event('pagehide'));check(__fixture.ports[0].closed,'popup-pagehide-releases-port');
   return rows;
  })()`);
  fs.mkdirSync(output,{recursive:true});

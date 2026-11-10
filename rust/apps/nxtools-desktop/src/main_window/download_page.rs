@@ -5,6 +5,7 @@ use crate::ui::typography::{
     LINE_HEIGHT_WORKBENCH_BODY, LINE_HEIGHT_WORKBENCH_SUPPORT, TEXT_WORKBENCH_BODY,
     TEXT_WORKBENCH_SUPPORT,
 };
+use gpui_kit::component::IconName;
 use gpui_kit::component::description_list::{DescriptionItem, DescriptionList};
 use gpui_kit::component::input::{
     InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputGroupButton,
@@ -271,6 +272,7 @@ pub(crate) fn download_failure_summary(error: &DownloadFault) -> &'static str {
         DownloadFaultCode::NotFound => "下载任务或文件不存在",
         DownloadFaultCode::InvalidState => "当前状态无法执行此操作",
         DownloadFaultCode::Storage => "无法写入下载文件，请检查保存位置",
+        DownloadFaultCode::DestinationExists => "目标位置已有同名文件",
         DownloadFaultCode::Network => "网络连接失败，请检查网络后重试",
         DownloadFaultCode::Protocol => "服务器响应异常，请重试",
         DownloadFaultCode::Permission => "没有权限写入保存位置",
@@ -932,6 +934,7 @@ impl MainWindow {
                 main_window.clone(),
                 selected_task_ids.clone(),
                 capabilities,
+                cx,
             )
         });
         if let Some(task_id) = detail_task_id {
@@ -1603,12 +1606,12 @@ pub(crate) fn download_task_row(
                                 div()
                                     .when(selected, |icon| {
                                         icon.debug_selector(|| {
-                                            "download-task-icon-fallback-selected".into()
+                                            "download-task-file-fallback-selected".into()
                                         })
                                     })
                                     .size(ordinary_rem(30.0))
                                     .child(
-                                        Icon::new(MaterialIcon::Download)
+                                        Icon::new(IconName::File)
                                             .size_full()
                                             .text_color(theme.icon_muted),
                                     ),
@@ -1891,10 +1894,13 @@ pub(crate) fn download_task_context_menu(
 ) -> PopupMenu {
     let plan = download_context_menu_plan(&capabilities, task_ids.len());
     let artifact_task = capabilities.single_artifact;
-    let delete_file_label = if application
+    let batch_busy = application
+        .read_with(cx, |application, _| application.batch_busy())
+        .unwrap_or(true);
+    let deletes_files = application
         .read_with(cx, |application, _| application.task_removal_deletes_file())
-        .unwrap_or(false)
-    {
+        .unwrap_or(false);
+    let delete_file_label = if deletes_files {
         "删除文件…"
     } else {
         "从列表移除"
@@ -1905,8 +1911,9 @@ pub(crate) fn download_task_context_menu(
                       icon: MaterialIcon,
                       targets: Vec<DownloadTaskId>| {
         let application = application.clone();
-        download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click(
-            move |_event, _window, cx| {
+        download_popup_item(theme, selector, label, icon, MenuTone::Normal)
+            .disabled(batch_busy)
+            .on_click(move |_event, _window, cx| {
                 let application = application.clone();
                 let targets = targets.clone();
                 cx.defer(move |cx| {
@@ -1914,8 +1921,7 @@ pub(crate) fn download_task_context_menu(
                         application.batch_action(targets, action, cx);
                     });
                 });
-            },
-        )
+            })
     };
     let queue_item = |selector: &'static str,
                       label: &'static str,
@@ -1923,8 +1929,9 @@ pub(crate) fn download_task_context_menu(
                       icon: MaterialIcon| {
         let application = application.clone();
         let task_ids = task_ids.clone();
-        download_popup_item(theme, selector, label, icon, MenuTone::Normal).on_click(
-            move |_event, _window, cx| {
+        download_popup_item(theme, selector, label, icon, MenuTone::Normal)
+            .disabled(batch_busy)
+            .on_click(move |_event, _window, cx| {
                 let application = application.clone();
                 let task_ids = task_ids.clone();
                 cx.defer(move |cx| {
@@ -1932,8 +1939,7 @@ pub(crate) fn download_task_context_menu(
                         application.move_queue_tasks(task_ids, placement, cx);
                     });
                 });
-            },
-        )
+            })
     };
     let artifact_item = |task_id: DownloadTaskId,
                          selector: &'static str,
@@ -2169,11 +2175,40 @@ pub(crate) fn download_task_context_menu(
                 MaterialIcon::Delete,
                 MenuTone::Danger,
             )
+            .disabled(batch_busy)
             .on_click(move |_event, _window, cx| {
                 let application = delete_application.clone();
                 cx.defer(move |cx| {
                     let _ = application.update(cx, |application, cx| {
                         application.request_delete_confirmation(task_id, cx);
+                    });
+                });
+            }),
+        );
+        has_visible_items = true;
+    }
+    if plan.remove && task_ids.len() > 1 && deletes_files {
+        let application = application.clone();
+        let targets = task_ids.clone();
+        menu = menu.item(
+            download_popup_item(
+                theme,
+                "download-menu-remove-with-artifact",
+                "删除文件并移除…",
+                MaterialIcon::Delete,
+                MenuTone::Danger,
+            )
+            .disabled(batch_busy)
+            .on_click(move |_, _, cx| {
+                let application = application.clone();
+                let targets = targets.clone();
+                cx.defer(move |cx| {
+                    let _ = application.update(cx, |application, cx| {
+                        application.batch_action(
+                            targets,
+                            DownloadBatchAction::RemoveWithArtifact,
+                            cx,
+                        );
                     });
                 });
             }),
@@ -2190,6 +2225,7 @@ pub(crate) fn download_task_context_menu(
                 MaterialIcon::Close,
                 MenuTone::Danger,
             )
+            .disabled(batch_busy)
             .on_click(move |_event, _window, cx| {
                 let application = application.clone();
                 let task_ids = task_ids.clone();
@@ -2226,8 +2262,15 @@ pub(crate) fn download_batch_toolbar(
     main_window: Entity<MainWindow>,
     task_ids: Vec<DownloadTaskId>,
     capabilities: DownloadContextCapabilities,
+    cx: &App,
 ) -> AnyElement {
     let plan = download_context_menu_plan(&capabilities, task_ids.len());
+    let batch_busy = application
+        .read_with(cx, |application, _| application.batch_busy())
+        .unwrap_or(true);
+    let deletes_files = application
+        .read_with(cx, |application, _| application.task_removal_deletes_file())
+        .unwrap_or(false);
     let batch_action = |id: &'static str,
                         icon: MaterialIcon,
                         tooltip: &'static str,
@@ -2237,6 +2280,12 @@ pub(crate) fn download_batch_toolbar(
         let application = application.clone();
         let button = icon_action(id, icon, tooltip)
             .ghost()
+            .disabled(batch_busy)
+            .loading(
+                application
+                    .read_with(cx, |application, _| application.batch_loading(action))
+                    .unwrap_or(false),
+            )
             .when(danger, |button| button.danger())
             .on_click(move |_, _, cx| {
                 let application = application.clone();
@@ -2261,6 +2310,7 @@ pub(crate) fn download_batch_toolbar(
         let task_ids = task_ids.clone();
         let button = icon_action(id, icon, tooltip)
             .ghost()
+            .disabled(batch_busy)
             .on_click(move |_, _, cx| {
                 let application = application.clone();
                 let task_ids = task_ids.clone();
@@ -2388,10 +2438,20 @@ pub(crate) fn download_batch_toolbar(
                 DownloadQueuePlacement::Bottom,
             ))
         })
+        .when(plan.remove && deletes_files, |toolbar| {
+            toolbar.content(batch_action(
+                "download-batch-remove-with-artifact",
+                MaterialIcon::Delete,
+                "删除文件并移除",
+                DownloadBatchAction::RemoveWithArtifact,
+                task_ids.clone(),
+                true,
+            ))
+        })
         .when(plan.remove, |toolbar| {
             toolbar.content(batch_action(
                 "download-batch-remove",
-                MaterialIcon::Delete,
+                MaterialIcon::Close,
                 "从列表移除",
                 DownloadBatchAction::Remove,
                 task_ids.clone(),
@@ -2401,6 +2461,7 @@ pub(crate) fn download_batch_toolbar(
     let clear = {
         let button = icon_action("download-batch-clear", MaterialIcon::Close, "清除多选")
             .ghost()
+            .disabled(batch_busy)
             .on_click(move |_, _, cx| {
                 clear_selection.update(cx, |window, cx| {
                     window.selected_download_tasks.clear();

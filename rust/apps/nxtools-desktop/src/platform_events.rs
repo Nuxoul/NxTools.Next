@@ -124,6 +124,7 @@ impl PlatformEventDispatcher {
         crate::notifications::screen::handle(notification.clone(), cx);
         crate::notifications::copy::handle(notification.clone(), cx);
         crate::tools::floating_assistant::handle(notification.clone(), cx);
+        crate::tools::raw_join::handle(notification.clone(), cx);
         match &notification {
             PlatformNotification::Connected => {
                 if let Some(wait) = self.silent_startup_wait.take() {

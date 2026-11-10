@@ -6,11 +6,17 @@ namespace NxTools.PlatformHost.Windows;
 internal sealed class ClipboardCapturePause
 {
     private uint? _resumeSequence;
+    private long _publicationEpoch;
+    internal long PublicationEpoch => Volatile.Read(ref _publicationEpoch);
     public bool IsPaused { get; private set; }
     public bool MayRead => !IsPaused;
 
     // Close before clearing retries/sampling a resume baseline: an application failure stays closed.
-    public void Close() => IsPaused = true;
+    public void Close()
+    {
+        IsPaused = true;
+        Interlocked.Increment(ref _publicationEpoch);
+    }
 
     public WindowsCommandResult Apply(bool paused, uint? resumeSequence)
     {

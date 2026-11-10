@@ -45,15 +45,23 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   }
 
   const correlationId = nextRequestId();
+  const startedAt = Date.now();
   void sendUrl(url, {
+    cookieSource: { ...cookieSourceDetails(tab), tabId: tab?.id },
     handoffId: correlationId,
     referrer: info.pageUrl || tab?.url || ""
   }).then((result) => {
-    if (result?.ok !== true || result?.accepted !== true) {
+    if (result?.ok !== true) {
       throw new Error(result?.message || "NxTools 未接受右键下载请求");
     }
-    sendExtensionLog("info", "context_menu_handoff_completed", "右键下载已由 NxTools 接受", {}, 0, correlationId);
-    setBadge("OK", "#138a72");
+    const outcome = NxToolsHandoffPolicy.handoffOutcome(result, correlationId);
+    const pending = outcome.state === "awaiting_confirmation";
+    if (pending) {
+      recordBrowserHandoff({ correlationId, startedAt }, outcome);
+    } else {
+      sendExtensionLog("info", "context_menu_handoff_completed", "右键下载已由 NxTools 接受", {}, 0, correlationId);
+    }
+    setBadge(pending ? "…" : "OK", "#138a72");
     setTimeout(() => setBadge("", "#138a72"), 1600);
   }).catch((error) => {
     sendExtensionLog("warn", "context_menu_handoff_failed", "右键下载未交接", {}, 0, correlationId);

@@ -295,3 +295,145 @@ Explorer, foreign-target or installed-product acceptance.
 Wrong: `metadata_by_name[entry.name]`, whole-archive collision policy for a fresh single-member
 lease, or one output budget applied to source/spool/member/decode. Correct: source-bound ordinal
 -> isolated validated plan -> stage-owned finite budgets -> full integrity -> actual cleanup.
+
+## Scenario: Drag-scoped retained materialization
+
+### 1. Scope / Trigger
+Indexed FileContents demands in one admitted archive drag. Original DragSession/EntrySession/runner,
+native output/cache and Rust format kernels remain the owners; ordinary one-shot entries are unchanged.
+Evidence: `repo:csharp/NxTools.PlatformHost/Protocol/ArchiveEntrySession.Virtual.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerRunner.Virtual.cs`,
+`repo:rust/crates/nxtools-archive/src/worker_drag.rs`.
+
+### 2. Signatures
+`ArchiveVirtualPlan.Admit(items)` freezes the once-validated descriptor-index/original-ordinal map.
+`CreateVirtualMaterialization(plan,authorization,operation)`, `DemandVirtual(context,index,limit)` and
+`CloseVirtual(context)` live in the original EntrySession. Private `VirtualMember` means sealed member
+readiness; it is not public `ArchiveEntryResult.CleanupComplete`. Runner `DemandVirtual/EndVirtual`
+operate only on the existing Run. Rust `DragPort` serializes demands on the original control pipe.
+`ConfirmVirtualMember(operation,request,publish)` validates the post-Seal pending request and unexpired
+Run under the same original gate as work-timeout checks, then publishes readiness/stops its work domain.
+Seal hashing is outside that gate; a late successful hash cannot grant a timed-out member.
+
+### 3. Contracts
+Schema2 extract optionally carries `drag_materialization:{version:1,members:[{index,ordinal}]}` and
+requires actual `drag_materialization_v1`, browser/source binding and no Job/edit/read/recycle authority.
+Version1 controls retain the Run operation ID: `drag_demand` carries `{request_id,index,ordinal,output_limit}`;
+`drag_end` closes demand admission. Native `member_acquire` binds token=request_id to the matching
+original cache/output owner; output paths never cross to Rust. `drag_member_ready` carries the same
+request/index/ordinal and actual bytes only after complete required format integrity and native commit.
+EntrySession Seal verifies that size before a cursor opens. Each cursor independently verifies content.
+Descriptor/query-only work creates no worker/cache member. First uncached demand starts one Run/source/
+catalog; duplicate indices reuse readiness. Only demanded files acquire outputs. One top-level source
+activity hold does not substitute for actual worker source acquisition. Member readiness retains native
+Run/global reservations until process, pipes, Job, source and outputs actually drain. Transferred streams
+remain target-owned. Original30s work domains cover first startup/catalog, each member and Seal; receiver
+idle is excluded. Normal end is bounded and original120s drag cancellation stays registered through drain.
+ZIP reuses protected source/catalog/preflight and independent member decoders. Split ZIP admission
+retains the original adapter's normalized anonymous source for preflight and all demands, with
+external-volume revision/source binding unchanged. Its measured directory work is two admission
+passes (original volumes plus normalized catalog), not another pass for each member. 7z reuses its
+catalog; public consuming BlockDecoder completes the whole demanded block again for later demands.
+RAR retains ordered TEST state, decodes predecessors without output and reopens/replays on backward demand.
+Compound TAR retains its first fully verified anonymous spool and validated ordinal records locally.
+Actual work events expose ZIP/TAR member invocations, 7z block invocations and RAR opens/replayed predecessors;
+internal native source/block work remains unavailable. Test-only envs: explicit matching
+`NXTOOLS_ARCHIVE_WORKER_FIXTURE`, prepared `NXTOOLS_ARCHIVE_OPT_FORMAT_ROOT`, immutable completed
+`NXTOOLS_ARCHIVE_OPT04_ROOT` for same-path before/after, and `PI_SCRATCH_DIR` owned temporary roots.
+`NXTOOLS_ARCHIVE_OPT04_RAR4_ROOT` supplies the marked pinned solid encrypted RAR4 source and independent
+expectations prepared by `repo:tests/performance/archive-resources/prepare-opt04-rar4.py`.
+
+### 4. Validation & Error Matrix
+| Condition | Required boundary result |
+| --- | --- |
+| Duplicate/mismatched request/index/ordinal, multiple outstanding demand, late/end-again | Reject original Run; no replacement worker |
+| Actual output exceeds positive remaining allowance or descriptor mismatches sealed size | resource_limit/source_changed; no returned medium |
+| Required codec/block/CRC/MAC/size verification fails | Original typed failure; no member-ready/committed output |
+| Cancel, pipe EOF, timeout or crash | Original drain and truthful terminal; transferred stream remains readable |
+| Seal completes after original work deadline | ConfirmVirtualMember refuses medium; timeout cause and actual-drain reservation remain |
+| Cleanup unconfirmed | cleanup_incomplete; retain reservation/evidence, never infer cleanup from member-ready |
+| Retired/mismatched preview or missing independent encrypted grant | No adoption; no password UI in GetData |
+
+### 5. Good/Base/Bad Cases
+Good: first miss -> one retained worker -> verified member/Seal -> independent cursors -> receiver end ->
+actual drain. Exact current preview may supply all demands with zero workers and a separate cache consumer.
+Base: absent drag field preserves ordinary entry behavior. Bad: one new worker per index, early ready before
+full block verification, end of OLE treated as async receiver end, or cache-hit bytes exempt from accounting.
+
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/Opt04DragTests.cs`: descriptor-only,1/2/16 demands, three completed
+same-path trials, actual starts/source/catalog/occupied first-ready slot, exact outputs/cursors and drain.
+`repo:csharp/NxTools.PlatformHost.Tests/Opt04DragTests.Formats.cs`: original ordinal/repeated/nonmonotonic
+demands, full-block refusal, counted7z resets/RAR replays/one compound outer decode, no predecessor outputs.
+`repo:csharp/NxTools.PlatformHost.Tests/Opt04DragTests.Lifetime.cs`:31s receiver idle, original work timeout,
+Seal cancellation, handle-verified owned worker exit/stdin EOF, no hidden restart and actual cleanup.
+`repo:csharp/NxTools.PlatformHost.Tests/Opt04DragTests.Encrypted.cs`: genuine solid RAR4 ordinary preview,
+separate whole-TEST grant, unauthorized/revoked cached/new demand refusal, counted backward replay,
+no GetData prompt, target-stream survival and cache cleanup after actual consumer release.
+`repo:csharp/NxTools.PlatformHost.Tests/Opt04DragTests.Preview.cs`: current/mismatched/retired and mixed
+preview hit/miss, consumer share survives preview retirement and cache sweep, every cursor still checked.
+Keep original async/synchronous/slow/abort/password/budget/full-subtree and OPT-01 tamper/accounting gates.
+
+### 7. Wrong vs Correct
+Wrong: private member-ready -> release Run/global slot or publish cleanup=true.
+Correct: full codec verification -> native writer close/commit -> Seal-ready -> actual receiver/Run drain.
+Wrong: retire preview -> delete borrowed drag output during the next Create/Sweep.
+Correct: original cache Release, Dispose and Sweep all honor the distinct drag-consumer share.
+
+## Scenario: Demand-bound drag byte progress
+
+### 1. Scope / Trigger
+Original retained worker progress through native materialization and the existing Desktop progress window. Owners: `repo:rust/crates/nxtools-archive/src/worker_job.rs`, `repo:csharp/NxTools.PlatformHost/Protocol/ArchiveEntrySession.Virtual.cs`, `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualDragSession.cs`, `repo:rust/apps/nxtools-desktop/src/archive/drag_progress.rs`.
+
+### 2. Signatures
+`ProgressWriter::with_drag(DragPort)` enables the existing record-boundary/100ms writer. `DragPort::progress_demand` exposes only the initialized active demand. Worker `progress.drag_demand` carries `{request_id,index,ordinal}`. Native `VirtualMemberProgress` forwards through the original Content/Session callback; public `ArchiveVirtualDragProgress` adds optional `current_request_id`, `current_bytes_done`, `current_bytes_total`, `bytes_processed`, `sequence`.
+
+### 3. Contracts
+Worker operation plus demand request/index/original ordinal must match the live pending member. Native session/generation and Desktop's frozen descriptor/request mapping remain authoritative. Publication sequences increase under the original progress gate. `bytes_done` remains sealed-cache bytes; `bytes_processed` adds only the active unsealed member's real bytes. Seal charges once. A new demand resets current bytes; unknown member/overall totals stay null. Cache100% is receiver-pending, not destination-write completion. Original window identity uses `new_drag` and title `拖出解压`; ordinary Test retains its default. Official current/overall Progress controls consume separate facts. Background/close retires presentation only; cross-entity updates remain deferred.
+
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Stale operation/session/generation/request/index/ordinal or preinitialized/post-Seal snapshot | Ignore presentation snapshot; preserve execution authority |
+| Older sequence or decreasing same-member/aggregate bytes | Ignore; no visible rollback |
+| Missing total | Indeterminate progress; no invented percentage/ETA |
+| Cache sealed, receiver active | Waiting state; no receiver success |
+| Native receiver error/cancel or incomplete cleanup | Original terminal/failure state and cleanup ownership |
+
+### 5. Good/Base/Bad Cases
+Good: member A1/3, total1/10; member B1/7 after A seals, total4/10. Base: an unknown member retains unknown current/overall totals. Bad: count A again at Seal, accept A's late progress as B, or label sealed bytes as target completion.
+
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/ArchiveVirtualAsyncLifecycleTests.cs` requires actual worker nonzero current bytes before Seal, injected wrong demand refusal, reset/unknown totals and both End/OLE return orders. `repo:rust/apps/nxtools-desktop/src/archive/application_tests.rs` drives original serialized ingress and actual rendered dual bars, title, concise text, stale sequence/identity, terminal/background behavior. Preserve ordinary Test/Extract, preview lease and async cancel/target-held-stream tests.
+
+### 7. Wrong vs Correct
+Wrong: copy sealed totals into both bars or infer completion from cache100%. Correct: initialized worker demand -> original bound native callback -> ordered public snapshot -> deferred original view; receiver completion stays independent.
+
+## Scenario: Cache retirement without an intermediate durable deletion flag
+
+### 1. Scope / Trigger
+Original preview/entry/drag cache lease release and restart cleanup. Owners: `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveEntryCache.cs#Release`, `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveEntryCache.cs#RetireEmpty` and `repo:csharp/NxTools.PlatformHost.Tests/ArchiveCacheRetirementTests.cs`.
+
+### 2. Signatures
+`Lease.Release() -> bool`, private `RetireEmpty() -> bool`, existing version2 `ManifestRecord { Retired, OutputRemoved, RootIdentity, Output, Directories, ... }`. The original fixed-parent `<lease>.retire.json` name and held-relative native operations remain unchanged.
+
+### 3. Contracts
+Persist/Flush the original `Retired=true` before output deletion. Verify full original output identity, size/mtime, attributes, MOTW and content before deleting it. After deletion or confirmed absence, set `OutputRemoved=true` only in memory and proceed to original directory/manifest retirement; do not persist a state immediately before destroying its manifest. A restarted fixed-parent record may therefore contain `Retired=true, OutputRemoved=false`: reopen through the same validated manifest/root identities, verify or observe the original output absent, then retire. If the original root is already absent, the validated retired record can finish its own deletion without opening a nonexistent output. Root/ancestor replacement, unknown children and edited/locked output remain preserved. Live consumer shares and transferred native streams keep their original ownership; no cursor/Seal/publication/content checks are removed.
+
+### 4. Validation & Error Matrix
+| Condition | Required result |
+| --- | --- |
+| Output deleted, unknown child blocks retirement | Return false; durable retired record survives with OutputRemoved still false |
+| Restart with original root and pending flag | Original output check/absence detection, verified empty-directory cleanup |
+| Restart after original root deletion | Retire only the validated fixed-parent record |
+| Changed root/ancestor/output or malformed record | Preserve foreign/edited data and recovery evidence |
+| Active consumer or native stream | Original retention/sharing rules; no premature deletion |
+
+### 5. Good/Base/Bad Cases
+Good: one durable retired stamp supports deletion and restart recovery, with no redundant post-delete Flush. Base: previously persisted OutputRemoved=true records remain readable. Bad: omit the retired stamp or accept pending retired records while assuming their output has already been deleted.
+
+### 6. Tests Required
+`ArchiveCacheRetirementTests.AncestryAndMalformedRecovery` asserts the actual pending persisted flags, obstructed nested output and restart with both existing and removed roots. Keep obstructed retirement/restart, expiry/edited/locked/live owner, replacement ancestor/root, malformed records and fair local rotation. Original first/repeated cursor tamper, borrowed preview, target-held stream and real drag worker/receiver cleanup tests remain mandatory.
+
+### 7. Wrong vs Correct
+Wrong: delete output, Flush OutputRemoved, immediately delete the manifest; or remove that Flush without accepting its restart state. Correct: durable retirement -> verified owned-output deletion -> in-memory deletion flag -> original retirement; restart repeats the original validation/absence decision from the durable retired record.

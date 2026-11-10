@@ -15,3 +15,43 @@ Readv2 requires explicit limits; v1defaults4096/4MiB and omitted default transpo
 compatible. Version precedes budget rejection. Batch bytes/count are independent, v2terminal
 stats are optional/omitted for oldv1, required for v2success. Exact budget/negotiation matrix:
 `repo:.trellis/tasks/10-16-archive-manager/product-100k-contract.md`.
+
+Quick Launch keyboard health retains outer PlatformHost protocol version 1. The typed
+`quick_launch_keyboard_health_changed` event carries one UUID in both its envelope and payload,
+`install_failed | thread_exited | reinstalled`, and a native i32 error code. It reports only
+observed install/owned-thread transitions; no heartbeat or silent-removal inference. Rust rejects
+unknown event variants during envelope decode and closes that pipe session; PlatformHost must emit
+the additive event only when HelloAck accepts `quick_launch_keyboard_health_v1`. The existing
+`quick_launch_panel_hotkey` Hello availability remains authoritative on reconnect. Evidence:
+`repo:rust/crates/nxtools-protocol/src/lib.rs#QuickLaunchKeyboardHealthChanged`,
+`repo:rust/crates/nxtools-ipc/src/lib.rs#handle_connection`.
+
+## Scenario: Optional per-volume index maintenance
+### 1. Scope / Trigger
+Indexer-to-Desktop per-volume initial-build/rebuild/ready feedback under outer protocol1.
+### 2. Signatures
+`IndexDriveStatus.maintenance: Option<IndexDriveMaintenance>` has serde default and skips None. Internally tagged snake_case states: InitialBuilding, Rebuilding { reason: IndexRebuildReason }, Ready. Reasons: JournalWrapped/BulkChanges/CursorInvalid/Requested, serialized journal_wrapped/bulk_changes/cursor_invalid/requested.
+### 3. Contracts
+Omitted legacy fields decode to None and remain omitted on serialization. Old DTOs ignore this added field; no new outer event variant or protocol bump. Maintenance grants no service/search authority and never substitutes for last_error. C# DTOs are unchanged.
+### 4. Validation & Error Matrix
+Missing field -> legacy projection; known state/reason -> exact typed roundtrip; malformed state/reason -> ordinary decode failure. Maintenance is not a ProtocolFault.
+### 5. Good / Base / Bad Cases
+Good: empty successfully indexed volume reports Ready. Base: old status without maintenance retains count/availability copy. Bad: infer Ready from nonzero count or place a recoverable rebuild reason in last_error.
+### 6. Tests Required
+`index_maintenance_tests::u4_drive_maintenance_roundtrip_and_legacy_default` asserts all states, omitted-field behavior and an old DTO ignoring the added field. Service and production Settings tests validate consumers.
+### 7. Wrong vs Correct
+Wrong: add a mandatory field or unnegotiated outer event. Correct: defaulted optional field on the existing drive DTO with unchanged outer protocol1.
+
+## Request-specific Indexer cancellation
+
+`repo:rust/crates/nxtools-protocol/src/lib.rs#IndexSearchCancel` adds the typed
+`IndexerCommand::CancelSearch` payload with required request_id:UUID and generation:u64 under
+the unchanged outer protocol1. request_id is the original Search envelope ID, not the cancellation
+envelope's own ID; cancellation correlation carries that original ID. No query, path, result or
+native payload is transmitted. `search_cancel_tests` asserts the exact cancel_search/data shape
+and complete envelope roundtrip. Existing Search/context/default/frame/version contracts remain;
+C# native DTOs and generic IPC routing are unchanged. Only the Indexer coordinator's service lease
+plus exact request/generation match authorizes retirement; decoding alone is not cancellation.
+See the owning [Indexer lifecycle contract](../../nxtools-indexer/backend/quality-guidelines.md).
+
+Ordinary numbered-file joining follows [the cross-layer contract](../../platformhost/raw-numbered-join.md): strict action-specific fields and reply identities, bounded numeric preview, native-private source versions and unchanged outer protocol1. Actual owner/reader/stream/UI tests accompany the wire test.

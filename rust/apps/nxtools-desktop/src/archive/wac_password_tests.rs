@@ -71,7 +71,7 @@ fn password_nodes(surface: &mut VisualTestContext) -> usize {
     surface.update(|window, _| {
         gpui_kit::base::test_support::snapshots(window)
             .iter()
-            .filter(|node| node.label() == Some("归档密码"))
+            .filter(|node| node.label() == Some("压缩包密码"))
             .count()
     })
 }

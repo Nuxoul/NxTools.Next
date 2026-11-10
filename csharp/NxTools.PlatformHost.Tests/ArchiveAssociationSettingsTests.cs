@@ -32,7 +32,7 @@ internal static class ArchiveAssociationSettingsTests
         }) RejectArchive(invalid);
         var legacy = ParseArchive();
         Check(legacy.DoubleClickAction == "open" && legacy.MenuLayout == "cascade" &&
-            legacy.MenuCommands.SequenceEqual(ArchiveIntegrationIntent.DefaultMenuCommands), "missing new fields preserve old five defaults");
+            legacy.MenuCommands.SequenceEqual(ArchiveIntegrationIntent.RecommendedMenuCommands), "missing menu choices include creation recommendations");
         Check(ParseArchive("\"menu_commands\":[]").MenuCommands.Length == 0, "explicit empty remains empty");
         var all = ParseArchive("\"double_click_action\":\"name\",\"menu_layout\":\"flat\",\"menu_commands\":[\"open\",\"test\",\"extract_smart\",\"extract_here\",\"extract_name\",\"extract_dialog\",\"create\"]");
         Check(all.MenuCommands.Length == 7 && all.DoubleClickAction == "name" && all.MenuLayout == "flat", "all seven exact fields parsed");
@@ -78,14 +78,16 @@ internal static class ArchiveAssociationSettingsTests
         var seven = new ArchiveIntegrationIntent(true, false, [".zip"]) { MenuCommands = ArchiveSelectionHandlerPlan.Commands.Select(command => command.Command).ToArray() };
         var allPlan = ArchiveSelectionHandlerPlan.Create(Helper, 1, seven);
         Check(allPlan.Changes.Count(change => change.Target.ValueName == "DelegateExecute") == 8 &&
-            allPlan.Changes.Count(change => change.Target.KeyPath.EndsWith(@"\LocalServer32")) == 7, "all seven finite identities / six archive plus two source verbs");
+            allPlan.Changes.Count(change => change.Target.KeyPath.EndsWith(@"\LocalServer32")) == 9 &&
+            allPlan.Changes.Count(change => change.Target.ValueName == "ExplorerCommandHandler") == 4, "nine finite identities / six archive and three source commands");
         foreach (var command in ArchiveSelectionHandlerPlan.Commands)
         {
             var verb = command.Command switch
             {
                 "open" => ShellVerb.Open, "test" => ShellVerb.Test, "extract_smart" => ShellVerb.ExtractSmart,
                 "extract_here" => ShellVerb.ExtractHere, "extract_name" => ShellVerb.ExtractName,
-                "extract_dialog" => ShellVerb.ExtractDialog, _ => ShellVerb.Compress,
+                "extract_dialog" => ShellVerb.ExtractDialog, "create_zip" => ShellVerb.CompressZip,
+                "create_7z" => ShellVerb.CompressSevenZ, _ => ShellVerb.Compress,
             };
             Check(HelperIdentity.VerbClasses[verb] == command.Clsid, "stable helper identity " + command.Command);
         }
@@ -160,8 +162,16 @@ internal static class ArchiveAssociationSettingsTests
             command.SetSelection(new ManagedArray(paths));
             Check(command.Execute() == 0 && launcher.Calls == 1 && launcher.Arguments.SequenceEqual(new[] { "--archive-compress" }.Concat(paths)), "original helper forwards complete ordered group once into original create ingress");
             Check(command.Execute() < 0 && launcher.Calls == 1 && retired == 1, "one invocation / one retire, no timer or union");
+            foreach (var single in new[] { @"C:\ordinary.txt", @"C:\folder" })
+            {
+                var before = launcher.Calls;
+                var selection = new ArchiveSelectionCommand(ShellVerb.Compress, forwarder, new HelperLog(), CancellationToken.None, () => { });
+                selection.SetSelection(new ManagedArray([single]));
+                Check(selection.Execute() == 0 && launcher.Calls == before + 1
+                    && launcher.Arguments.SequenceEqual(["--archive-compress", single]), "single ordinary file/folder enters the original create route");
+            }
             var rejected = new DesktopIntentForwarder(new DesktopIdentity(root, ""), launcher).Forward(Guid.NewGuid(), ShellVerb.Compress, paths, CancellationToken.None);
-            Check(rejected.Status == ForwardStatus.IdentityRejected && launcher.Calls == 1, "source-build empty identity remains fail-closed");
+            Check(rejected.Status == ForwardStatus.IdentityRejected && launcher.Calls == 3, "source-build empty identity remains fail-closed");
             foreach (var count in new[] { ShellSelectionReader.MaxPaths, ShellSelectionReader.MaxPaths + 1 })
             {
                 var beforeCalls = launcher.Calls;

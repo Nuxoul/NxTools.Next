@@ -16,19 +16,21 @@ internal sealed class ArchiveVolumeSources : IDisposable
     internal string PrimaryPath => paths[0];
     internal IReadOnlyList<string> Paths => paths.AsReadOnly();
     internal ArchiveSourceLease Primary => leases[0];
+    internal ArchiveSourceLease Requested { get; }
 
     private ArchiveVolumeSources(string first, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight, bool rarOutputPreflight, bool tarStreamOutputPreflight, bool zipOutputPreflight)
     {
         try
         {
             if (maxMetadata < 32 || maxEncoded == 0) throw new ArchiveOutputException("resource_limit");
+            var requested = Path.GetFullPath(first);
             // The single-source fallback is deliberately format-neutral. Never classify a RAR
             // or ZIP as split from its suffix without inspecting its actual structural flags.
             var suffix = Path.GetExtension(first);
-            var numbered7z = TrySevenOrdinal(first, out var sevenStem, out var sevenOrdinal);
+            var continuous = TryContinuousOrdinal(first, out var continuousStem, out var continuousOrdinal);
             var zipPart = TryZipOrdinal(first, out var zipStem, out var zipOrdinal);
             var rarPart = TryRarPart(first, out var rarStem, out var rarOrdinal);
-            if (numbered7z && sevenOrdinal != 1 || zipPart && zipOrdinal != 1 || rarPart && rarOrdinal != 1)
+            if (continuous && continuousOrdinal != 1 || zipPart && zipOrdinal != 1 || rarPart && rarOrdinal != 1)
                 throw new ArchiveOutputException("missing_volume");
             if (!zipPart && (suffix.Equals(".r00", StringComparison.OrdinalIgnoreCase) ||
                 TryOldRarOrdinal(first, out _, out _) || TryOldRarLater(first, out _)))
@@ -36,25 +38,30 @@ internal sealed class ArchiveVolumeSources : IDisposable
             if (zipPart) first = ResolveSibling(zipStem + ".zip");
             var rarWidth=rarPart?Path.GetFileName(first)[(Path.GetFileName(first).LastIndexOf(".part",StringComparison.OrdinalIgnoreCase)+5)..^4].Length:1;
             if (rarPart) first = ResolveSibling(rarStem + ".part" + 1.ToString("D"+rarWidth) + ".rar");
-            if (numbered7z) first = ResolveSibling(first);
+            if (continuous) first = ResolveSibling(first);
             maxEncoded = Add(first, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight ? maxMetadata : 0, zipOutputPreflight ? maxMetadata : 0);
-            if (numbered7z)
+            if (continuous)
             {
                 using var stream = File.OpenRead(PrimaryPath);
                 Span<byte> signature = stackalloc byte[32];
-                if (stream.Read(signature) != 32 || !signature[..6].SequenceEqual(new byte[]{0x37,0x7a,0xbc,0xaf,0x27,0x1c}))
-                    throw new ArchiveOutputException("invalid_source");
-                var candidates = EnumerateFamily(first, name => TrySevenOrdinal(name, out var stem, out _) &&
-                    string.Equals(stem, sevenStem, StringComparison.OrdinalIgnoreCase));
+                var signatureSize = stream.Read(signature);
+                var sevenz = signatureSize >= 6 && signature[..6].SequenceEqual(new byte[]{0x37,0x7a,0xbc,0xaf,0x27,0x1c});
+                var zip = signatureSize >= 4 && (signature[..4].SequenceEqual("PK\x03\x04"u8) || signature[..4].SequenceEqual("PK\x05\x06"u8));
+                if (!sevenz && !zip) throw new ArchiveOutputException("invalid_source");
+                var candidates = EnumerateFamily(first, name => TryContinuousOrdinal(name, out var stem, out _) &&
+                    string.Equals(stem, continuousStem, StringComparison.OrdinalIgnoreCase));
                 if (candidates.Count == 0) throw new ArchiveOutputException("missing_volume");
-                var max = candidates.Select(name => { TrySevenOrdinal(name, out _, out var index); return index; }).Max();
-                if (max < 1 || max > MaxVolumes) throw new ArchiveOutputException("missing_volume");
-                for (var index = 2; index <= max; index++) Add(ResolveSibling(sevenStem + "." + index.ToString("D3")), maxEncoded);
+                var max = candidates.Select(name => { TryContinuousOrdinal(name, out _, out var index); return index; }).Max();
+                if (max < 1 || max > MaxVolumes) throw new ArchiveOutputException("resource_limit");
+                for (var index = 2; index <= max; index++) Add(ResolveSibling(continuousStem + "." + index.ToString("D3")), maxEncoded);
                 if (paths.Count != candidates.Count) throw new ArchiveOutputException("invalid_source");
-                var expectedLength=checked(32UL+BinaryPrimitives.ReadUInt64LittleEndian(signature[12..20])+BinaryPrimitives.ReadUInt64LittleEndian(signature[20..28]));
-                var actualLength=paths.Aggregate(0UL,(total,path)=>checked(total+(ulong)new FileInfo(path).Length));
-                if(actualLength<expectedLength)throw new ArchiveOutputException("missing_volume");
-                if(actualLength!=expectedLength)throw new ArchiveOutputException("invalid_source");
+                var actualLength = paths.Aggregate(0UL, (total, path) => checked(total + (ulong)new FileInfo(path).Length));
+                if (sevenz) {
+                    if (signatureSize != 32) throw new ArchiveOutputException("invalid_source");
+                    var expectedLength = checked(32UL + BinaryPrimitives.ReadUInt64LittleEndian(signature[12..20]) + BinaryPrimitives.ReadUInt64LittleEndian(signature[20..28]));
+                    if (actualLength < expectedLength) throw new ArchiveOutputException("missing_volume");
+                    if (actualLength != expectedLength) throw new ArchiveOutputException("invalid_source");
+                } else ValidateContinuousZip(actualLength, maxMetadata);
             }
             else if (suffix.Equals(".zip", StringComparison.OrdinalIgnoreCase) || zipPart)
             {
@@ -104,6 +111,10 @@ internal sealed class ArchiveVolumeSources : IDisposable
                     if (candidates.Count != paths.Count - (modern ? 0 : 1)) throw new ArchiveOutputException("invalid_source");
                 }
             }
+            var requestedIndex = paths.FindIndex(path => string.Equals(
+                Path.GetFullPath(path), requested, StringComparison.OrdinalIgnoreCase));
+            if (requestedIndex < 0) throw new ArchiveOutputException("source_changed");
+            Requested = leases[requestedIndex];
             Verify();
             admissionIdentity = IdentityNow();
         }
@@ -228,13 +239,39 @@ internal sealed class ArchiveVolumeSources : IDisposable
             !ext[prefix.Length..].All(char.IsAsciiDigit) || !int.TryParse(ext[prefix.Length..], out ordinal)) return false;
         stem = path[..^(ext.Length + 1)]; return true;
     }
-    private static bool TrySevenOrdinal(string path, out string stem, out int ordinal)
+    private static bool TryContinuousOrdinal(string path, out string stem, out int ordinal)
     {
-        stem = path; ordinal = 0;
-        var marker = path.LastIndexOf(".7z.", StringComparison.OrdinalIgnoreCase);
-        if (marker < 0 || path.Length - marker < 7 || !int.TryParse(path[(marker + 4)..], out ordinal) ||
-            !path[(marker + 4)..].All(char.IsAsciiDigit)) return false;
-        stem = path[..(marker + 3)]; return true;
+        if (!Numbered(path, "", 3, out stem, out ordinal)) return false;
+        return ordinal >= 1 && Path.GetExtension(path)[1..] == ordinal.ToString("D3");
+    }
+    private void ValidateContinuousZip(ulong total, ulong metadata)
+    {
+        var count = (int)Math.Min(total, 65557UL);
+        if ((ulong)count > metadata) throw new ArchiveOutputException("resource_limit");
+        if (count < 22) throw new ArchiveOutputException("missing_volume");
+        var tail = new byte[count];
+        var skip = total - (ulong)count;
+        var written = 0;
+        foreach (var path in paths) {
+            using var source = File.OpenRead(path);
+            var length = (ulong)source.Length;
+            if (skip >= length) { skip -= length; continue; }
+            source.Position = (long)skip;
+            var take = checked((int)(length - skip));
+            source.ReadExactly(tail.AsSpan(written, take));
+            written += take; skip = 0;
+        }
+        for (var at = count - 22; at >= 0; at--) {
+            if (!tail.AsSpan(at, 4).SequenceEqual("PK\x05\x06"u8) || at + 22 + BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(at + 20)) != count) continue;
+            if (BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(at + 4)) != 0 || BinaryPrimitives.ReadUInt16LittleEndian(tail.AsSpan(at + 6)) != 0)
+                throw new ArchiveOutputException("invalid_source");
+            var size = BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(at + 12));
+            var offset = BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(at + 16));
+            if (size != uint.MaxValue && offset != uint.MaxValue && (ulong)offset + size != total - (ulong)count + (ulong)at)
+                throw new ArchiveOutputException("missing_volume");
+            return;
+        }
+        throw new ArchiveOutputException("missing_volume");
     }
     private static bool TryZipOrdinal(string path, out string stem, out int ordinal) => Numbered(path, "z", 2, out stem, out ordinal);
     private static bool TryOldRarOrdinal(string path, out string stem, out int ordinal) => Numbered(path, "r", 2, out stem, out ordinal);

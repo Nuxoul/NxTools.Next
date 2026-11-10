@@ -1,12 +1,15 @@
 //! TAR edits retain the original source/output/native-publication rendezvous.
 use crate::{
     ArchiveError, ArchiveProgress, OperationControl, ResourceLimits, Result,
-    creation::{CreationOptions, CreationPlan, CreationSource},
-    interaction::{ConflictDecision, InteractionPort, Prompt, PromptResponse},
+    creation::{CreationOptions, CreationPlan, CreationSource, IncomingPlan},
+    interaction::InteractionPort,
     output::ArchiveOutput,
     tar_edit::{self, Member},
     worker::WorkerRequest,
-    worker_conflict::{ConflictPolicy, ConflictPrompt},
+    worker_conflict::{
+        ConflictPolicy,
+        add::{self, ExistingMember},
+    },
     worker_output::{PrivateOutput, ReplyPort},
     worker_sources::{Reader, Sources},
     worker_tree_io::{Spool, io_error, stage_and_readback},
@@ -161,131 +164,74 @@ pub(crate) fn execute<W: Write + Send>(
     let mut plan = tar_edit::plan(&old, intent, &limits, control)?;
     let shared = RefCell::new(&mut native);
     let mut sources = Sources::new(&shared);
-    let additions = if matches!(intent.action, Action::Add | Action::ReplaceContent) {
-        Some(CreationPlan::build(
-            &mut sources,
-            &CreationOptions {
-                strip_single_root: false,
-                exclude_patterns: vec![],
-            },
-            &limits,
-            control,
-        )?)
+    let additions = if intent.action == Action::Add {
+        Some(IncomingPlan::build(&mut sources, &limits, control)?.entries)
+    } else if intent.action == Action::ReplaceContent {
+        Some(
+            CreationPlan::build(
+                &mut sources,
+                &CreationOptions {
+                    strip_single_root: false,
+                    exclude_patterns: vec![],
+                },
+                &limits,
+                control,
+            )?
+            .entries,
+        )
     } else {
         None
     };
     let mut skipped = 0;
-    let mut remembered = None;
+    let mut add_result = None;
     if let Some(additions) = &additions {
         if intent.action == Action::ReplaceContent {
-            if additions.entries().len() != 1 || additions.entries()[0].is_directory() {
+            if additions.len() != 1 || additions[0].is_directory() {
                 return Err(ArchiveError::UnsupportedOperation);
             }
             for item in &mut plan {
                 if item.added == Some(0) {
-                    item.change(&item.name.clone(), additions.entries()[0].size())?;
+                    item.change(&item.name.clone(), additions[0].size())?;
                 }
             }
         } else {
-            for (index, item) in additions.entries().iter().enumerate() {
-                control.checkpoint()?;
-                let name = format!(
-                    "{}{}{}",
+            let (selected, skipped_files) = add::resolve(
+                additions,
+                plan.iter().map(|item| ExistingMember {
+                    name: &item.name,
+                    directory: item.directory,
+                    size: Some(item.size),
+                }),
+                intent.value.as_deref().unwrap_or(""),
+                Some(request.conflict_policy.unwrap_or(ConflictPolicy::Ask)),
+                &mut shared.borrow_mut(),
+                interaction,
+                &limits,
+            )?;
+            if !selected.is_empty() {
+                add_result = Some(add::display_result(
+                    additions,
                     intent.value.as_deref().unwrap_or(""),
-                    item.relative_path().trim_end_matches('/'),
-                    if item.is_directory() { "/" } else { "" }
-                );
-                let mut added = Member::new(name, item.is_directory(), item.size())?;
-                added.added = Some(index);
-                if let Some(at) = plan.iter().position(|e| {
-                    e.name.trim_end_matches('/').to_uppercase()
-                        == added.name.trim_end_matches('/').to_uppercase()
-                }) {
-                    if plan[at].directory && added.directory {
-                        continue;
-                    }
-                    if plan[at].directory != added.directory {
-                        return Err(ArchiveError::OutputCollision);
-                    }
-                    let decision = if let Some(value) = remembered {
-                        value
-                    } else {
-                        match request.conflict_policy.unwrap_or(ConflictPolicy::Ask) {
-                            ConflictPolicy::Overwrite => ConflictDecision::Overwrite,
-                            ConflictPolicy::Skip => ConflictDecision::Skip,
-                            ConflictPolicy::AutoRename => ConflictDecision::AutoRename,
-                            ConflictPolicy::Ask => {
-                                let response = interaction.request_notified(
-                                    Prompt::Conflict {
-                                        existing_bytes: Some(plan[at].size),
-                                        incoming_bytes: Some(added.size),
-                                    },
-                                    control,
-                                    |pending| {
-                                        shared.borrow_mut().conflict_prompt(&ConflictPrompt {
-                                            ticket: pending.ticket,
-                                            existing_bytes: Some(plan[at].size),
-                                            incoming_bytes: Some(added.size),
-                                            display: crate::worker_conflict::edit_display(
-                                                &added.name,
-                                                &plan[at].name,
-                                            ),
-                                        })
-                                    },
-                                )?;
-                                let PromptResponse::Conflict {
-                                    decision,
-                                    apply_to_all,
-                                } = response
-                                else {
-                                    return Err(ArchiveError::Cancelled);
-                                };
-                                if apply_to_all {
-                                    remembered = Some(decision);
-                                }
-                                decision
-                            }
-                        }
-                    };
-                    match decision {
-                        ConflictDecision::Overwrite => {
-                            let name = plan[at].name.clone();
-                            plan[at].change(&name, added.size)?;
-                            plan[at].added = Some(index);
-                            continue;
-                        }
-                        ConflictDecision::Skip => {
-                            skipped += 1;
-                            continue;
-                        }
-                        ConflictDecision::AutoRename => {
-                            let base = added.name.clone();
-                            let mut found = false;
-                            for n in 2..=4097 {
-                                control.checkpoint()?;
-                                let name = crate::worker_conflict::numbered(&base, n)?;
-                                let key = name.trim_end_matches('/').to_uppercase();
-                                if !plan.iter().any(|e| {
-                                    let existing = e.name.trim_end_matches('/').to_uppercase();
-                                    existing == key || existing.starts_with(&format!("{key}/"))
-                                }) {
-                                    added.change(&name, added.size)?;
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if !found {
-                                return Err(ArchiveError::OutputCollision);
-                            }
-                        }
-                    }
+                    &selected,
+                ));
+            }
+            skipped = skipped_files;
+            for selected in selected {
+                let item = &additions[selected.input];
+                if let Some(old) = selected.replaces {
+                    let name = plan[old].name.clone();
+                    plan[old].change(&name, item.size())?;
+                    plan[old].added = Some(selected.input);
+                } else {
+                    let mut added = Member::new(selected.name, item.is_directory(), item.size())?;
+                    added.added = Some(selected.input);
+                    plan.push(added);
                 }
-                plan.push(added);
             }
         }
     }
     tar_edit::validate(&plan, &limits, control)?;
-    if skipped > 0 && plan.iter().all(|e| e.added.is_none()) {
+    if intent.action == Action::Add && plan.iter().all(|e| e.added.is_none()) {
         sources.revalidate()?;
         if stamp(&request.path, control)? != original {
             return Err(ArchiveError::SourceChanged);
@@ -295,10 +241,7 @@ pub(crate) fn execute<W: Write + Send>(
     }
     let failure = Cell::new(None);
     let sources = RefCell::new(sources);
-    let digests = RefCell::new(vec![
-        None;
-        additions.as_ref().map_or(0, |p| p.entries().len())
-    ]);
+    let digests = RefCell::new(vec![None; additions.as_ref().map_or(0, Vec::len)]);
     shared.borrow_mut().source_checkpoint("edit_reencoding")?;
     shared.borrow_mut().edit_stage("edit_reencoding")?;
     let mut encoded = Spool::new(limits.max_output_bytes, control, &failure)?;
@@ -355,7 +298,7 @@ pub(crate) fn execute<W: Write + Send>(
                 let additions = additions.as_ref().ok_or(ArchiveError::SourceChanged)?;
                 let mut reader = Reader::new(
                     &sources,
-                    &additions.entries()[index],
+                    &additions[index],
                     control,
                     &failure,
                     &digests,
@@ -444,6 +387,9 @@ pub(crate) fn execute<W: Write + Send>(
         shared.borrow_mut().abort_file(token);
     } else {
         shared.borrow_mut().member_summary(skipped, skipped == 0)?;
+        if let Some(add_result) = add_result {
+            shared.borrow_mut().add_result(add_result)?;
+        }
     }
     result
 }

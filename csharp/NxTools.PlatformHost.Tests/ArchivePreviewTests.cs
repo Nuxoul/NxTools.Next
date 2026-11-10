@@ -1,7 +1,10 @@
+using System.Collections.Concurrent;
 using System.Formats.Tar;
 using System.Text;
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 using NxTools.PlatformHost.Windows.Archive;
 
@@ -12,6 +15,26 @@ internal static class ArchivePreviewTests
 {
     private static void Check(bool value, string detail) { if (!value) throw new InvalidOperationException(detail); }
     private static ProtocolEnvelope Wire(ArchiveEntryCommand value) => ProtocolEnvelope.Create("platform_command", new { command = "archive_entry", data = value }, value.OperationId);
+    private static ProtocolEnvelope WireOptions(ArchiveEntryCommand value, JsonNode? options)
+    {
+        var data = JsonSerializer.SerializeToNode(value, JsonDefaults.Options)!.AsObject();
+        data["preview_options"] = options;
+        return ProtocolEnvelope.Create("platform_command", new { command = "archive_entry", data }, value.OperationId);
+    }
+    private static ProtocolEnvelope RawOptions(ArchiveEntryCommand value, string options)
+    {
+        var data = JsonSerializer.SerializeToNode(value, JsonDefaults.Options)!.AsObject();
+        var json = data.ToJsonString();
+        using var document = JsonDocument.Parse(json[..^1] + ",\"preview_options\":" + options + "}");
+        return ProtocolEnvelope.Create("platform_command", new { command = "archive_entry", data = document.RootElement.Clone() }, value.OperationId);
+    }
+    private static JsonNode Options(ulong maxBytes, uint timeoutMs) => JsonSerializer.SerializeToNode(new { max_bytes = maxBytes, timeout_ms = timeoutMs })!;
+    private static void Reject(ProtocolEnvelope envelope, string detail)
+    {
+        try { ArchiveEntryWire.Parse(envelope); }
+        catch (Exception failure) when (failure is InvalidDataException or JsonException) { return; }
+        throw new InvalidOperationException(detail);
+    }
     public static Task PurposeWire()
     {
         foreach (var action in new[] { "preview", "preview_text" }) {
@@ -19,11 +42,51 @@ internal static class ArchivePreviewTests
                 Action = action, Path = @"C:\owned\source.zip", Ordinal = 0, TempPolicy = ArchiveTempPolicy.Default,
                 Browser = new(Guid.NewGuid(), "Zip", "", new("v1:fixture", new uint[32], 0, 0)) };
             Check(ArchiveEntryWire.Parse(Wire(command)).Action == action, "strict preview purpose");
-            foreach (var invalid in new[] { command with { Ordinal = null }, command with { LeaseId = Guid.NewGuid() }, command with { Action = "open" } }) {
-                var rejected = false;
-                try { ArchiveEntryWire.Parse(Wire(invalid)); } catch (InvalidDataException) { rejected = true; }
-                Check(rejected, "preview cannot grant cache/Shell authority");
+            var maximum = action == "preview_text" ? 8ul << 20 : 128ul << 20;
+            foreach (var boundary in new[] { (1ul, 200u), (maximum, 120000u) }) {
+                var parsed = ArchiveEntryWire.Parse(WireOptions(command, Options(boundary.Item1, boundary.Item2)));
+                Check(parsed.Action == action && parsed.PreviewOptions == new ArchivePreviewOptions(boundary.Item1, boundary.Item2), "configured preview boundary");
             }
+            Check(ArchiveEntryWire.Parse(WireOptions(command, null)).PreviewOptions is null, "explicit null keeps legacy preview");
+            var typed = command with { PreviewOptions = new(4096, 5000) };
+            var typedJson = JsonSerializer.SerializeToElement(typed, JsonDefaults.Options);
+            Check(typedJson.GetProperty("preview_options").GetProperty("max_bytes").GetUInt64() == 4096 &&
+                ArchiveEntryWire.Parse(Wire(typed)).PreviewOptions == typed.PreviewOptions, "typed symmetric preview options");
+            var workerCommand = typed with { Action = "materialize", PreviewOptions = null };
+            Check(!JsonSerializer.SerializeToElement(workerCommand, JsonDefaults.Options).TryGetProperty("preview_options", out _),
+                "private materialize command omits preview options");
+            foreach (var invalid in new[] { command with { Ordinal = null }, command with { LeaseId = Guid.NewGuid() }, command with { Action = "open" } })
+                Reject(Wire(invalid), "preview cannot grant cache/Shell authority");
+            foreach (var invalid in new[] {
+                "{}", "{\"max_bytes\":1}", "{\"timeout_ms\":200}",
+                "{\"max_bytes\":1,\"timeout_ms\":200,\"extra\":1}",
+                "{\"max_bytes\":1,\"max_bytes\":2,\"timeout_ms\":200}",
+                "{\"max_bytes\":\"1\",\"timeout_ms\":200}",
+                "{\"max_bytes\":1,\"timeout_ms\":200.0}",
+                "{\"max_bytes\":0,\"timeout_ms\":200}",
+                "{\"max_bytes\":" + (maximum + 1) + ",\"timeout_ms\":200}",
+                "{\"max_bytes\":1,\"timeout_ms\":199}",
+                "{\"max_bytes\":1,\"timeout_ms\":120001}" })
+                Reject(RawOptions(command, invalid), "malformed preview options accepted: " + invalid);
+        }
+        var browser = new ArchiveBrowserContext(Guid.NewGuid(), "Zip", "", new("v1:fixture", new uint[32], 0, 0));
+        var session = Guid.NewGuid();
+        var revokeId = Guid.NewGuid();
+        var nonPreview = new[] {
+            new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = session, Generation = 1,
+                Action = "materialize", Path = @"C:\owned\source.zip", Ordinal = 0, Browser = browser },
+            new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = session, Generation = 1,
+                Action = "authorize", Path = @"C:\owned\source.zip", Browser = browser, PasswordInteraction = true },
+            new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = session, Generation = 1, Action = "cancel" },
+            new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = session, Generation = 1, Action = "release", LeaseId = Guid.NewGuid() },
+            new ArchiveEntryCommand { Version = 1, OperationId = revokeId, SessionId = session, Generation = 1, Action = "revoke", LeaseId = revokeId },
+            new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = session, Generation = 1, Action = "open", LeaseId = Guid.NewGuid() }
+        };
+        foreach (var command in nonPreview) {
+            Check(ArchiveEntryWire.Parse(WireOptions(command, null)).Action == command.Action &&
+                ArchiveEntryWire.Parse(WireOptions(command, null)).PreviewOptions is null,
+                "explicit null must equal absent for " + command.Action);
+            Reject(WireOptions(command, Options(1, 200)), "non-preview options accepted for " + command.Action);
         }
         return Task.CompletedTask;
     }
@@ -71,7 +134,51 @@ internal static class ArchivePreviewTests
                 Check(sourceTerminal.Status == "failed" && sourceTerminal.Code == "resource_limit" && sourceTerminal.CleanupComplete,
                     "source admission limit is not source-unavailable or selected-member size: " + sourceTerminal.Code);
             }
-            await using var entries = ArchiveEntrySession.ForOwnedTestPackage(root);
+            var gzipPath = Path.Combine(root, "large.txt.gz");
+            var gzipPayload = Enumerable.Range(0, 65537).Select(index => (byte)(index * 31)).ToArray();
+            using (var archive = File.Create(gzipPath))
+            using (var gzip = new GZipStream(archive, CompressionLevel.Fastest)) gzip.Write(gzipPayload);
+            await using var gzipReads = ArchiveReadSession.ForOwnedTestPackage(root);
+            var gzipOpen = ArchiveProductReadTests.Command(path: gzipPath, version: 2, limits: new() { BrowserContext = true });
+            var gzipIdentity = ArchiveReadWire.Parse(gzipOpen);
+            Check(gzipReads.Dispatch(gzipOpen).Success, "unknown-size Gzip source accepted");
+            ArchiveReadTerminal? gzipTerminal = null;
+            ArchiveReadEntry? gzipEntry = null;
+            while (gzipTerminal is null) {
+                var frame = await gzipReads.Events.ReadAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(40));
+                var item = frame.Payload.GetProperty("data").Deserialize<ArchiveReadEvent>(JsonDefaults.Options)!;
+                if (item.Batch is { } batch) {
+                    gzipEntry ??= batch.Entries.SingleOrDefault();
+                    Check(gzipReads.Dispatch(ArchiveProductReadTests.Command("ack", gzipIdentity.OperationId, gzipIdentity.SessionId,
+                        gzipIdentity.Generation, sequence: batch.Sequence, version: 2)).Success, "Gzip metadata credit");
+                }
+                gzipTerminal = item.Terminal;
+            }
+            Check(gzipEntry is { Size: null } && gzipTerminal.Status == "succeeded" && gzipTerminal.Browser is not null && gzipTerminal.CleanupComplete,
+                "standalone Gzip selected member remains unknown-size until actual decode");
+            var previewLog = new CaptureLog();
+            await using var entries = ArchiveEntrySession.ForOwnedTestPackage(root, previewLog);
+            var gzipCommand = new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = gzipIdentity.SessionId, Generation = 1,
+                Action = "preview_text", Path = gzipPath, Ordinal = gzipEntry!.Ordinal, Browser = gzipTerminal!.Browser, CopyMotw = false };
+            var gzipOuter = await entries.Dispatch(WireOptions(gzipCommand, Options(65536, 30000))).WaitAsync(TimeSpan.FromSeconds(40));
+            var gzipResult = JsonSerializer.Deserialize<ArchiveEntryResult>(gzipOuter.Data!, JsonDefaults.Options)!;
+            var gzipWorker = previewLog.Rows.Single(row => row.Event == "archive.worker.failed" && row.Id == gzipCommand.OperationId);
+            Check(!gzipOuter.Success && !gzipResult.Success && gzipResult.Code == "selected_output_limit" && gzipResult.Path is null &&
+                gzipResult.CleanupComplete && Equals(gzipWorker.Fields["category"], "selected_output_limit") && entries.ActiveWorkerCountForFixture == 0,
+                "unknown-size Gzip selected output limit must stay distinct: " + gzipResult.Code);
+            Check(!Directory.GetFiles(root, "manifest.json", SearchOption.AllDirectories).Any(), "failed Gzip preview output/lease cleanup");
+            var gzipRetry = gzipCommand with { OperationId = Guid.NewGuid() };
+            var gzipRetryOuter = await entries.Dispatch(WireOptions(gzipRetry, Options(131072, 30000))).WaitAsync(TimeSpan.FromSeconds(40));
+            var gzipRetryResult = JsonSerializer.Deserialize<ArchiveEntryResult>(gzipRetryOuter.Data!, JsonDefaults.Options)!;
+            Check(gzipRetryOuter.Success && gzipRetryResult.Success && gzipRetryResult.Path is not null &&
+                File.ReadAllBytes(gzipRetryResult.Path!).SequenceEqual(gzipPayload), "Gzip preview readmits after failed selected quota");
+            var gzipRelease = gzipRetry with { Action = "release", Path = null, Ordinal = null, Browser = null, CopyMotw = null, LeaseId = gzipRetryResult.LeaseId };
+            Check((await entries.Dispatch(Wire(gzipRelease))).Success && !File.Exists(gzipRetryResult.Path), "Gzip preview retry lease cleanup");
+            var forbidden = new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = identity.SessionId, Generation = 1,
+                Action = "materialize", Path = path, Ordinal = 4, Browser = terminal.Browser, CopyMotw = false };
+            var forbiddenResult = await entries.Dispatch(WireOptions(forbidden, Options(80, 200)));
+            Check(!forbiddenResult.Success && forbiddenResult.Error == "invalid_request" && entries.ActiveWorkerCountForFixture == 0 &&
+                !Directory.GetFiles(root, "manifest.json", SearchOption.AllDirectories).Any(), "non-preview options must reject before native/cache effects");
             foreach (var pair in new[] { ("preview_text", 4ul, true), ("preview_text", 0ul, true), ("preview_text", 1ul, false), ("preview", 2ul, true), ("preview", 3ul, false), ("materialize", 3ul, true) }) {
                 var command = new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = identity.SessionId, Generation = 1,
                     Action = pair.Item1, Path = path, Ordinal = pair.Item2, Browser = terminal.Browser, CopyMotw = false, PasswordInteraction = pair.Item2 == 4 };
@@ -88,8 +195,37 @@ internal static class ArchivePreviewTests
                     }
                     var release = command with { Action = "release", Path = null, Ordinal = null, Browser = null, CopyMotw = null, LeaseId = result.LeaseId, PasswordInteraction = false };
                     Check((await entries.Dispatch(Wire(release))).Success && !File.Exists(result.Path), "original lease release");
-                } else Check(result.Path is null && result.Code == "resource_limit", "typed resource failure");
+                } else Check(result.Path is null && result.Code == "selected_output_limit", "typed selected output failure");
             }
+            var customText = new ArchiveEntryCommand { Version = 1, OperationId = Guid.NewGuid(), SessionId = identity.SessionId, Generation = 1,
+                Action = "preview_text", Path = path, Ordinal = 1, Browser = terminal.Browser, CopyMotw = false };
+            var customTextOuter = await entries.Dispatch(WireOptions(customText, Options(65537, 30000))).WaitAsync(TimeSpan.FromSeconds(40));
+            var customTextResult = JsonSerializer.Deserialize<ArchiveEntryResult>(customTextOuter.Data!, JsonDefaults.Options)!;
+            Check(customTextOuter.Success && customTextResult.Success && customTextResult.CleanupComplete && customTextResult.Path is not null &&
+                new FileInfo(customTextResult.Path!).Length == 65537, "configured text preview above legacy limit: " + customTextResult.Code);
+            var customTextRelease = customText with { Action = "release", Path = null, Ordinal = null, Browser = null, CopyMotw = null, LeaseId = customTextResult.LeaseId };
+            Check((await entries.Dispatch(Wire(customTextRelease))).Success && !File.Exists(customTextResult.Path), "configured text preview cleanup");
+
+            foreach (var narrow in new[] { (Max: 65536ul, Internal: ArchiveEntrySession.MaterializeOutputLimit), (Max: 65537ul, Internal: 65536ul) }) {
+                var command = customText with { OperationId = Guid.NewGuid() };
+                var outer = await entries.Dispatch(WireOptions(command, Options(narrow.Max, 30000)), narrow.Internal).WaitAsync(TimeSpan.FromSeconds(40));
+                var result = JsonSerializer.Deserialize<ArchiveEntryResult>(outer.Data!, JsonDefaults.Options)!;
+                Check(!outer.Success && result.Code == "selected_output_limit" && result.Path is null && result.CleanupComplete,
+                    "configured/internal selected output limits remain minimum: " + narrow);
+            }
+
+            var customImage = customText with { OperationId = Guid.NewGuid(), Action = "preview", Ordinal = 3 };
+            var customImageOuter = await entries.Dispatch(WireOptions(customImage, Options(8388609, 30000))).WaitAsync(TimeSpan.FromSeconds(40));
+            var customImageResult = JsonSerializer.Deserialize<ArchiveEntryResult>(customImageOuter.Data!, JsonDefaults.Options)!;
+            Check(customImageOuter.Success && customImageResult.Success && customImageResult.Path is not null && new FileInfo(customImageResult.Path!).Length == 8388609,
+                "configured image preview above legacy limit: " + customImageResult.Code);
+            var customImageRelease = customImage with { Action = "release", Path = null, Ordinal = null, Browser = null, CopyMotw = null, LeaseId = customImageResult.LeaseId };
+            Check((await entries.Dispatch(Wire(customImageRelease))).Success && !File.Exists(customImageResult.Path), "configured image preview cleanup");
+            var tinyImage = customText with { OperationId = Guid.NewGuid(), Action = "preview", Ordinal = 4 };
+            var tinyImageOuter = await entries.Dispatch(WireOptions(tinyImage, Options(1, 30000))).WaitAsync(TimeSpan.FromSeconds(40));
+            var tinyImageResult = JsonSerializer.Deserialize<ArchiveEntryResult>(tinyImageOuter.Data!, JsonDefaults.Options)!;
+            Check(!tinyImageOuter.Success && tinyImageResult.Code == "selected_output_limit" && tinyImageResult.CleanupComplete,
+                "configured image selected output limit can narrow legacy authority");
             var tarPath = Path.Combine(root, "nested.tar.gz");
             using (var archive = File.Create(tarPath))
             using (var gzip = new GZipStream(archive, CompressionLevel.Fastest))
@@ -126,9 +262,28 @@ internal static class ArchivePreviewTests
             var largeCommand = tarCommand with { OperationId = Guid.NewGuid(), Ordinal = 1 };
             var largeOuter = await entries.Dispatch(Wire(largeCommand)).WaitAsync(TimeSpan.FromSeconds(40));
             var largeResult = JsonSerializer.Deserialize<ArchiveEntryResult>(largeOuter.Data!, JsonDefaults.Options)!;
-            Check(!largeOuter.Success && !largeResult.Success && largeResult.Code == "resource_limit" && largeResult.Path is null && largeResult.CleanupComplete,
-                "actual oversized compound member keeps output limit");
+            Check(!largeOuter.Success && !largeResult.Success && largeResult.Code == "selected_output_limit" && largeResult.Path is null && largeResult.CleanupComplete,
+                "actual oversized compound selected member keeps output limit");
             Check((await entries.Dispatch(Wire(tarRelease))).Success, "compound lease release");
+            var timeoutLog = new CaptureLog();
+            await using (var timed = ArchiveEntrySession.ForOwnedTestPackage(root, timeoutLog)) {
+                timed.ProbeWriteForFixture(_ => Thread.Sleep(700));
+                var timeoutCommand = customText with { OperationId = Guid.NewGuid() };
+                var elapsed = System.Diagnostics.Stopwatch.StartNew();
+                var timeoutOuter = await timed.Dispatch(WireOptions(timeoutCommand, Options(65537, 200))).WaitAsync(TimeSpan.FromSeconds(10));
+                var timeoutResult = JsonSerializer.Deserialize<ArchiveEntryResult>(timeoutOuter.Data!, JsonDefaults.Options)!;
+                var workerTerminal = timeoutLog.Rows.Single(row => row.Event == "archive.worker.failed" && row.Id == timeoutCommand.OperationId);
+                Check(!timeoutOuter.Success && !timeoutResult.Success && timeoutResult.Path is null && timeoutResult.CleanupComplete &&
+                    Equals(workerTerminal.Fields["category"], "timeout") && elapsed.ElapsedMilliseconds is >= 200 and < 5000 && timed.ActiveWorkerCountForFixture == 0,
+                    "configured 200ms timeout must reach original runner and actual cleanup: " + timeoutResult.Code);
+            }
+            Check(!Directory.GetFiles(root, "manifest.json", SearchOption.AllDirectories).Any(), "all preview leases and failed outputs cleaned");
         } finally { Directory.Delete(root, true); }
+    }
+    private sealed class CaptureLog : IPlatformLog
+    {
+        internal readonly ConcurrentQueue<(string Event, Guid? Id, IReadOnlyDictionary<string, object?> Fields)> Rows = new();
+        public void Write(string level, string eventName, Guid? correlationId = null, IReadOnlyDictionary<string, object?>? fields = null) =>
+            Rows.Enqueue((eventName, correlationId, new Dictionary<string, object?>(fields ?? new Dictionary<string, object?>())));
     }
 }

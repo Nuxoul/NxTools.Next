@@ -37,7 +37,8 @@ function fixture(limit = 2) {
   vm.runInContext(`
     const resourcesByTab = new Map(), resourcesById = new Map();
     let lastActiveTabId = 0, persistTimer = 0;
-    const mobileUserAgentTabs = new Set();
+    const mobileUserAgentTabs = new Set(), pageThumbnailByTab = new Map();
+    const lastFrameScanByTab = new Map(), selectedMediaIndexByTab = new Map();
     const RESOURCE_LIMIT_PER_TAB = ${limit}, RESOURCE_TTL_MS = 1000;
     const STORAGE_RESOURCE_KEY = 'resources', STORAGE_LAST_TAB_KEY = 'lastTab';
     const STORAGE_MOBILE_UA_TABS_KEY = 'mobile', STORAGE_DISABLED_SITES_KEY = 'sites';
@@ -206,11 +207,11 @@ test("recapture keeps the live object and late acceptance cannot clear a newer h
   assert.equal(f.api.resourcesById.get("first"), observed);
   assert.equal(observed.pendingBatchHandoffId, payload.handoffId);
   observed.pendingBatchHandoffId = newer;
-  accept({ ok: true });
+  accept({ ok: true, accepted: true, handoffId: payload.handoffId, taskId: "persisted-task" });
   await pending;
   assert.equal(observed.pendingBatchHandoffId, newer);
   assert.equal(observed.sentToDesktopAt, undefined);
-  f.send(async () => ({ ok: true }));
+  f.send(async (value) => ({ ok: true, accepted: true, handoffId: value.handoffId, taskId: "persisted-task" }));
   await f.api.sendResource("first");
   assert.equal(observed.pendingBatchHandoffId, undefined);
   assert(observed.sentToDesktopAt > 0);
@@ -295,7 +296,7 @@ test("acceptance after capacity eviction settles the observed handoff without re
   await sent;
   f.api.cacheResource(resource("second", "https://synthetic.invalid/second.bin", 10001));
   assertRemoved(f, observed);
-  accept({ ok: true });
+  accept({ ok: true, accepted: true, handoffId: observed.pendingBatchHandoffId, taskId: "persisted-task" });
   await pending;
   assertRemoved(f, observed);
   assert.equal(observed.pendingBatchHandoffId, undefined);

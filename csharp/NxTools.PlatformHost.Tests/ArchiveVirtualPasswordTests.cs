@@ -287,12 +287,16 @@ internal static class ArchiveVirtualPasswordTests
         Check(!(await entries.Dispatch(Wire(Revoke(command)))).Success && entries.TryCaptureVirtualAuthorization(next.OperationId, Items(next, browse.Entries), out _), "late old revoke does not cancel new grant");
         var protectedBytes = ProtectedBytes(entries, next.OperationId);
         cleanupEntered.Reset(); releaseCleanup.Reset();
+        using var materializing = new ManualResetEventSlim(); using var releaseMember = new ManualResetEventSlim();
+        entries.ProbeWriteForFixture(_ => { materializing.Set(); Check(releaseMember.Wait(TimeSpan.FromSeconds(20)), "bounded original member write release"); });
         var activeContent = new ArchiveVirtualContent(entries, Items(next, browse.Entries), authorizationId: next.OperationId);
         var opening = Task.Run(() => { var stream = activeContent.Open(0, CancellationToken.None); Marshal.Release(stream); });
         try {
-            await Until(() => cleanupEntered.IsSet); Check(entries.ActiveWorkerCountForFixture == 1, "materialization original worker retains actual cleanup slot");
+            await Until(() => materializing.IsSet); Check(entries.ActiveWorkerCountForFixture == 1, "materialization original worker retains active source/output slot");
             Check((await entries.Dispatch(Wire(Revoke(next)))).Success && protectedBytes.All(value => value == 0), "revoke erases secret and signals original active content");
-        } finally { releaseCleanup.Set(); }
+            releaseMember.Set();
+            await Until(() => cleanupEntered.IsSet); Check(entries.ActiveWorkerCountForFixture == 1, "revoked materialization keeps slot until actual cleanup releases");
+        } finally { releaseMember.Set(); releaseCleanup.Set(); }
         try { await opening.WaitAsync(TimeSpan.FromSeconds(30)); throw new InvalidOperationException("revoked pending content returned late medium"); } catch (OperationCanceledException) { } catch (ArchiveOutputException) { }
         await activeContent.DisposeAsync();
         Check(entries.ActiveWorkerCountForFixture == 0 && entries.AuthorizationCountForFixture == 0, "active revoke keeps original cleanup, no late output authority");

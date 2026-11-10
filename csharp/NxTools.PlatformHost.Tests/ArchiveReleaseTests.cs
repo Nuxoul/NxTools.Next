@@ -63,11 +63,12 @@ internal static class ArchiveReleaseTests
         var root = Environment.GetEnvironmentVariable("NXTOOLS_TEST_ARCHIVE_RELEASE_STAGE");
         if (root is null) throw new TestSkippedException("Explicit isolated staging input is required.");
         var full = Path.GetFullPath(root);
-        var scratch = Path.GetFullPath(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")!).TrimEnd('\\') + "\\";
+        var scratchRoot = Environment.GetEnvironmentVariable("PI_SCRATCH_DIR");
+        var scratch = Path.GetFullPath(string.IsNullOrEmpty(scratchRoot) ? Path.GetTempPath() : scratchRoot).TrimEnd('\\') + "\\";
         Check(full.StartsWith(scratch, StringComparison.OrdinalIgnoreCase) &&
             File.ReadAllText(full + ".STAGING-NOT-INSTALLABLE.txt").Contains("TEST-KEY"), "only explicit test-key scratch stage");
         using var inputs = JsonDocument.Parse(File.ReadAllText(full + ".build-inputs.json"));
-        var build = inputs.RootElement.GetProperty("build_directory").GetString()!;
+        var hostDll = Path.GetFullPath(inputs.RootElement.GetProperty("host_assembly").GetString()!);
         var context = new AssemblyLoadContext("archive-stage-" + Guid.NewGuid(), isCollectible: true);
         try {
             // Load managed metadata only; Program.Main and COM activation are never invoked.
@@ -78,7 +79,6 @@ internal static class ArchiveReleaseTests
             Check(new DesktopIdentity(full, expected).Verify().Approved, "actual sibling Desktop passes original helper identity boundary");
             Check(!new DesktopIdentity(full, "").Verify().Approved &&
                 !new DesktopIdentity(full, new string('0', 64)).Verify().Approved, "empty and wrong Desktop hashes refuse");
-            var hostDll = Path.Combine(build, "host-build", "bin", "NxTools.PlatformHost", "release_win-x64", "NxTools.PlatformHost.dll");
             var platform = context.LoadFromAssemblyPath(hostDll);
             var runnerType = platform.GetType("NxTools.PlatformHost.Windows.Archive.ArchiveWorkerRunner", true)!;
             using (var runner = (IDisposable)runnerType.GetMethod("ForPackage", BindingFlags.NonPublic | BindingFlags.Static)!

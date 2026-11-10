@@ -1,0 +1,10 @@
+{"file":".trellis/spec/shared/verification.md","reason":"One Cargo lane, memory policy, precise effects and evidence levels"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Current correlation/generation/configuration/privacy assertions"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Actual official controls, bounds and separate human acceptance"}
+{"file":".trellis/spec/nxtools-core/backend/quality-guidelines.md","reason":"Legacy/default/config stale and durable roundtrip regressions"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Strict symmetric wire and original owner execution"}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"Pending-before-send, cancellation/disconnect and responsiveness"}
+{"file":".trellis/spec/nxtools-archive/backend/zip-volumes.md","reason":"Independent split interoperability and publication truth"}
+{"file":".trellis/spec/platformhost/archive-creation.md","reason":"Native source/output and cleanup preservation"}
+{"file":".trellis/tasks/11-10-reference-b3-split-file-usability/implement.md","reason":"Exact RED/GREEN and fixture selection plan"}
+{"file":".trellis/spec/platformhost/raw-numbered-join.md","reason":"Exact production UI/native/reader assertions and physical-completion acceptance boundary"}

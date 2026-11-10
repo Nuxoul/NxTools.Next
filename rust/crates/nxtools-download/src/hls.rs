@@ -509,6 +509,7 @@ high/index.m3u8
                 variants: Vec::new(),
             })),
             resolution: None,
+            server_observation: None,
         };
 
         assert_eq!(

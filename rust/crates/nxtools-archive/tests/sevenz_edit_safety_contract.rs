@@ -1,7 +1,9 @@
 //! Actual isolated-worker faults; native handle/publication semantics have separate C# fixtures.
 #![cfg(feature = "isolated-codecs")]
 use base64::Engine as _;
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -66,7 +68,7 @@ fn run(mode: &str) -> Outcome {
     let source_ids = [Uuid::new_v4(), Uuid::new_v4()];
     let replacement = mode == "empty_replace";
     let data: &[u8] = if replacement { b"" } else { b"new-content" };
-    let mut request = json!({"schema":2,"operation_id":operation,"op":"start","operation":"modify_7z","path":path.to_str().expect("path"),"job_execution":true,"conflict_policy":"ask","job_modify":{"browser":{"snapshot_id":Uuid::new_v4(),"format":"SevenZ","comment":"","source":{"native":"v1:fixture","digest":digest,"size":metadata.len(),"modified_unix_ns":modified}},"action":if replacement {"replace_content"} else {"add"},"ordinals":if replacement {vec![0]} else {vec![]},"value":null}});
+    let mut request = json!({"schema":2,"bulk_transfer":1,"operation_id":operation,"op":"start","operation":"modify_7z","path":path.to_str().expect("path"),"job_execution":true,"conflict_policy":"ask","job_modify":{"browser":{"snapshot_id":Uuid::new_v4(),"format":"SevenZ","comment":"","source":{"native":"v1:fixture","digest":digest,"size":metadata.len(),"modified_unix_ns":modified}},"action":if replacement {"replace_content"} else {"add"},"ordinals":if replacement {vec![0]} else {vec![]},"value":null}});
     if mode == "budget" {
         request["limits"] = json!({"max_entries":100,"max_metadata_bytes":33554432u64,"max_working_bytes":536870912u64,"max_entry_bytes":1048576u64,"max_output_bytes":40});
     }

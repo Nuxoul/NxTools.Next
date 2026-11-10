@@ -48,7 +48,10 @@ fn reopen(base: &Path) -> MftSnapshot {
 #[test]
 fn idle_io_reopen_resumes_append_and_replays_delete_restore_and_cursor_only() {
     let (_directory, base, mut snapshot) = fixture();
-    snapshot.overlay.replacements.insert(11, entry(11, 2));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 2).into());
     persist_system_delta(&snapshot).expect("checkpoint");
     let initial_len = fs::metadata(delta_path(&base)).expect("journal").len();
     let initial_bytes = fs::read(delta_path(&base)).expect("checkpoint bytes");
@@ -98,7 +101,10 @@ fn idle_io_reopen_resumes_append_and_replays_delete_restore_and_cursor_only() {
 fn idle_io_legacy_delta_migrates_once_without_rebuilding_base() {
     let (_directory, base, mut snapshot) = fixture();
     snapshot.next_usn = Some(110);
-    snapshot.overlay.replacements.insert(11, entry(11, 2));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 2).into());
     super::super::persist_delta(&snapshot, &delta_path(&base)).expect("version3legacy delta");
     let base_bytes = fs::read(&base).expect("base unchanged");
     let legacy = reopen(&base);
@@ -117,7 +123,10 @@ fn idle_io_legacy_delta_migrates_once_without_rebuilding_base() {
     let checkpoint_bytes = fs::read(delta_path(&base)).expect("migrated checkpoint");
     let mut continued = reopen(&base);
     continued.next_usn = Some(120);
-    continued.overlay.replacements.insert(11, entry(11, 3));
+    continued
+        .overlay
+        .replacements
+        .insert(11, entry(11, 3).into());
     persist_system_delta(&continued).expect("append after one-time migration");
     let appended = fs::read(delta_path(&base)).expect("appended migration journal");
     assert_eq!(
@@ -133,7 +142,10 @@ fn idle_io_every_truncated_append_restores_only_complete_commit_then_retries() {
     persist_system_delta(&snapshot).expect("initial checkpoint");
     let committed = fs::read(delta_path(&base)).expect("committed base frame");
     snapshot.next_usn = Some(110);
-    snapshot.overlay.replacements.insert(11, entry(11, 2));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 2).into());
     let frame = encode_frame(&snapshot, Some(&MftOverlay::default())).expect("append frame");
     for truncated in 0..frame.len() {
         let mut bytes = committed.clone();
@@ -151,7 +163,10 @@ fn idle_io_every_truncated_append_restores_only_complete_commit_then_retries() {
     }
     let mut recovered = reopen(&base);
     recovered.next_usn = Some(120);
-    recovered.overlay.replacements.insert(11, entry(11, 3));
+    recovered
+        .overlay
+        .replacements
+        .insert(11, entry(11, 3).into());
     persist_system_delta(&recovered).expect("discard torn tail then append current state");
     assert_eq!(reopen(&base).next_usn, Some(120));
     assert_eq!(
@@ -189,7 +204,10 @@ fn idle_io_failed_append_keeps_checkpoint_and_retry_commits_latest_state() {
     fs::rename(&delta, &retained).expect("retain old good delta");
     fs::create_dir(&delta).expect("block append target");
     snapshot.next_usn = Some(110);
-    snapshot.overlay.replacements.insert(11, entry(11, 2));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 2).into());
     assert!(persist_system_delta(&snapshot).is_err());
     assert_eq!(
         snapshot
@@ -204,7 +222,10 @@ fn idle_io_failed_append_keeps_checkpoint_and_retry_commits_latest_state() {
     fs::remove_dir(&delta).expect("remove obstruction");
     fs::rename(&retained, &delta).expect("restore target");
     snapshot.next_usn = Some(120);
-    snapshot.overlay.replacements.insert(11, entry(11, 3));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 3).into());
     persist_system_delta(&snapshot).expect("retry newest state");
     assert_eq!(reopen(&base).next_usn, Some(120));
     assert_eq!(
@@ -221,7 +242,7 @@ fn idle_io_repeated_updates_checkpoint_only_after_bounded_growth() {
     let (_directory, base, mut snapshot) = fixture();
     let mut value = entry(11, 1);
     value.path = format!("C:\\{}", "x".repeat(32_768));
-    snapshot.overlay.replacements.insert(11, value);
+    snapshot.overlay.replacements.insert(11, value.into());
     persist_system_delta(&snapshot).expect("checkpoint");
     let initial = fs::metadata(delta_path(&base))
         .expect("initial bytes")
@@ -230,11 +251,7 @@ fn idle_io_repeated_updates_checkpoint_only_after_bounded_growth() {
     let mut checkpoints = 0;
     for tick in 1..=70 {
         snapshot.next_usn = Some(100 + tick);
-        snapshot
-            .overlay
-            .replacements
-            .get_mut(&11)
-            .expect("row")
+        std::sync::Arc::make_mut(snapshot.overlay.replacements.get_mut(&11).expect("row"))
             .modified_at_unix_ms = Some(tick);
         persist_system_delta(&snapshot).expect("bounded update");
         let length = fs::metadata(delta_path(&base)).expect("journal size").len();
@@ -257,7 +274,10 @@ fn idle_io_stale_snapshot_cannot_overwrite_newer_committed_cursor() {
     persist_system_delta(&snapshot).expect("initial commit");
     let stale = snapshot.clone();
     snapshot.next_usn = Some(110);
-    snapshot.overlay.replacements.insert(11, entry(11, 2));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 2).into());
     persist_system_delta(&snapshot).expect("new current commit");
     assert!(
         persist_system_delta(&stale).is_err(),
@@ -297,7 +317,10 @@ fn idle_io_review_missing_or_short_delta_recreates_from_current_memory() {
             fs::remove_file(delta_path(&base)).expect("remove backing delta");
         }
         snapshot.next_usn = Some(110);
-        snapshot.overlay.replacements.insert(11, entry(11, 2));
+        snapshot
+            .overlay
+            .replacements
+            .insert(11, entry(11, 2).into());
         persist_system_delta(&snapshot)
             .expect("recover missing/short backing file from current view");
         assert_eq!(reopen(&base).next_usn, Some(110));
@@ -332,7 +355,10 @@ fn idle_io_review_newer_base_mtime_cannot_discard_newer_committed_delta() {
     persist_snapshot(&authoritative, &older).expect("older base cursor100");
     authoritative.set_cache_path(older.clone());
     authoritative.next_usn = Some(130);
-    authoritative.overlay.replacements.insert(11, entry(11, 3));
+    authoritative
+        .overlay
+        .replacements
+        .insert(11, entry(11, 3).into());
     persist_system_delta(&authoritative).expect("latest committed delta cursor130");
     std::thread::sleep(std::time::Duration::from_millis(30));
     let newer = directory.path().join("volume-test-newer.idx");
@@ -358,7 +384,7 @@ fn idle_io_review_unsynced_complete_frame_residue_is_replaced_before_latest_retr
     persist_system_delta(&snapshot).expect("initial synced checkpoint");
     let mut failed = snapshot.clone();
     failed.next_usn = Some(110);
-    failed.overlay.replacements.insert(11, entry(11, 2));
+    failed.overlay.replacements.insert(11, entry(11, 2).into());
     let frame = encode_frame(&failed, Some(&snapshot.overlay)).expect("failed sync residue frame");
     OpenOptions::new()
         .append(true)
@@ -377,7 +403,10 @@ fn idle_io_review_unsynced_complete_frame_residue_is_replaced_before_latest_retr
         Some(100)
     );
     snapshot.next_usn = Some(120);
-    snapshot.overlay.replacements.insert(11, entry(11, 3));
+    snapshot
+        .overlay
+        .replacements
+        .insert(11, entry(11, 3).into());
     persist_system_delta(&snapshot).expect("truncate failed transaction and commit latest");
     assert_eq!(reopen(&base).next_usn, Some(120));
     assert_eq!(

@@ -10,6 +10,7 @@ fn request(control: &OperationControl) -> WorkerRequest {
     let mut request = WorkerRequest::open(control.operation_id(), "synthetic.zip".into());
     request.version = 2;
     request.operation = "extract".into();
+    request.bulk_transfer = Some(1);
     request.limits.max_entry_bytes = 1024;
     request.limits.max_output_bytes = 8192;
     request

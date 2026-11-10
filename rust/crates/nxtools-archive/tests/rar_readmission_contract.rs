@@ -1,8 +1,8 @@
 #![cfg(all(windows, feature = "isolated-codecs"))]
-use nxtools_archive::{
-    output_readmission::ReadmissionOptions,
-    worker::{WorkerRequest, read_frame, write_frame},
-};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
+use nxtools_archive::{output_readmission::ReadmissionOptions, worker::WorkerRequest};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
@@ -21,6 +21,7 @@ fn rar4_rar5_tiny_total_reaches_original_declaration_before_output() {
         let mut request = WorkerRequest::open(id, source.to_string_lossy().into_owned());
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.limits.max_entry_bytes = 1024;
         request.limits.max_output_bytes = 1;
         request.output_readmission = Some(ReadmissionOptions {

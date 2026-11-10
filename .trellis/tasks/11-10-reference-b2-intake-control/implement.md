@@ -1,0 +1,9 @@
+# Execution
+
+1. REF-04: add an actual production link-panel download-button regression; observe RED. Bind the existing applications, add URL-only intake and guarded original-window reuse; verify pointer/keyboard, draft/clipboard/focus/close lifecycle and no probe/task/network. Preserve B1 row and explicit Copy/Open.
+2. REF-05: trace current automatic Chromium/Firefox admission, settings and session persistence; update the source-backed reference index. Add production-event RED tests, then minimal settings/session rules and popup controls. Verify reason precedence, unknown length, redirects, reload/recreation, failure, idempotency and B1 Cookie/pending/ownership.
+3. REF-06: retain original task/global editors, exact-byte state, persistence and limiter. GPUI regressions cover deliberate once-only submission, invalid/Escape/failure, precise untouched1/1023/1537B/s Settings Apply and current task intent across compact/progress refreshes, external typed commands and reopen. Preserve real HTTP/HLS/DASH waiter wakeup.
+4. REF-12: retain one evidence-driven selection mechanism and original timers. Deliver a bounded, staged supplied-Page Popup/AB-BA-AB helper with exact held-request IDs, per-round partial raw checkpoints and failure-page preservation. Coordinator owns actual rerun and measured adoption/retain-current decision. [Candidate delivery](ref12-outcomes.md).
+5. Run affected suites and scoped lint/format, spec/component/release/editor gates. Record raw timing, test results, diagnostic/privacy/lifecycle facts, known independent baselines and unperformed acceptance levels. Release owned test resources/Cargo lane and hand off B2 for coordinator acceptance with task in_progress.
+
+One global Cargo lane. Every Rust command sets CARGO_BUILD_JOBS=1, CARGO_INCREMENTAL=0 and RUSTFLAGS=-C codegen-units=256 in its own process, with TEMP/TMP in session scratch. Inspect live build processes before starting; never duplicate or kill unrelated work.

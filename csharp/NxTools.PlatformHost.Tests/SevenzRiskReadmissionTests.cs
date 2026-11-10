@@ -322,7 +322,7 @@ internal sealed class SevenzFixtureAudit : IPlatformLog
             Interlocked.Add(ref writeBytes, count); Interlocked.Increment(ref writes);
         };
         runner.OutputCommitCheckpointProbe = stage => {
-            if (stage != "native_published") return;
+            if (stage != "native_closed") return;
             var count = Interlocked.Increment(ref published);
             if (CancelAfterCommit && count == 1) CancelAccepted = runner.Cancel(id);
         };

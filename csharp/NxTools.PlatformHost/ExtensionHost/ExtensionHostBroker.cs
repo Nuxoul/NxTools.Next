@@ -25,6 +25,8 @@ internal static class ExtensionHostBroker
         return args.Count == 3 && args[0] == "--extension-host" && args[1] == "--extension-parent-pid" &&
             uint.TryParse(args[2], out pid) && pid != 0 && pid != Environment.ProcessId;
     }
+    internal static ExtensionLineReader CreateControlReader(Stream input) => ExtensionLineReader.Unlimited(input, "control");
+
     internal static async Task<int> RunAsync(uint parentPid, Stream input, Stream output,
         IPlatformLog? log = null, ExtensionParentPolicy? policy = null, ICredentialStore? credentialStore = null)
     {
@@ -91,7 +93,7 @@ internal static class ExtensionHostBroker
             // ReadAsync on cancellation. Parent/output failure still stops trees independently.
             var controls = Task.Run(async () =>
             {
-                var reader = new ExtensionLineReader(input, int.MaxValue, "control");
+                var reader = CreateControlReader(input);
                 while (!stop.IsCancellationRequested && await reader.ReadAsync(stop.Token) is { } frame)
                 {
                     DispatchControl(frame, runner, credentials, Publish, PublishCredential);

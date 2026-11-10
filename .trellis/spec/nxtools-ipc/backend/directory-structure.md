@@ -48,3 +48,19 @@ one-shot reads retain their ordinary wrapper. The read reservation matches archi
 well as operation/session/generation, including actual cleanup release. Regression
 `repo:rust/crates/nxtools-ipc/src/lib.rs#interrupted_large_frame_read_retains_consumed_prefix`
 interrupts after8192consumed bytes, resumes exact frame and preserves following frame.
+
+## Scenario: Connection-scoped multi-folder capability
+### 1. Scope / Trigger
+OPT-07 New/Add source-folder availability on original PlatformHost connection. Evidence: `repo:rust/crates/nxtools-ipc/src/lib.rs`, `repo:rust/apps/nxtools-desktop/src/archive/jobs.rs` and `repo:rust/apps/nxtools-desktop/src/archive/forms.rs`.
+### 2. Signatures
+`PlatformBridge::archive_multi_folder_picker_available()->Option<bool>` reads original active connection fact. `record_archive_multi_folder_picker(generation,available)` records only that current generation. Hello capability is exact `archive_multi_folder_picker_v1`.
+### 3. Contracts
+Admit the additive capability in the original Hello whitelist and record presence/absence before Connected publication. Real negotiated absence is Some(false); unnegotiated synthetic contract connections may remain None. Replacement/disconnect retires the fact; stale old-generation recording cannot restore it. Known absence refuses source-folder picking locally before pending/send, not repeated single-folder emulation. Original destination/files/save routes remain. Reuse original bounded router/pending-before-send/form operation/session/generation/connection and detached native STA; no parallel picker router, replay or raised queue/timeouts.
+### 4. Validation & Error Matrix
+Exact announced capability -> Some(true); negotiated absent -> Some(false). Replacement/retirement -> None; late old-generation record -> ignored. Unknown capability/invalid Hello -> original protocol rejection, not silent feature acceptance.
+### 5. Good/Base/Bad Cases
+Good: reconnect to host without feature refuses next multi-folder request. Base: ordinary legacy optional facts retain original test convention. Bad: global cached true from a prior pipe or pending registered before known-capability refusal.
+### 6. Tests Required
+Original Hello acceptance/required-capability tests and `opt07_folder_capability_retires_with_original_connection` assert current/absent/replacement/disconnect/stale records. Desktop intake asserts zero pending/command/Job on known absence. Native adapter/effects scope belongs to [PlatformHost workflows](../../platformhost/archive-workflows.md), not IPC tests.
+### 7. Wrong vs Correct
+Wrong: once advertised, always available. Correct: original handshake -> exact active generation fact -> pre-send local availability -> original pending/context checks.

@@ -91,7 +91,20 @@ pub(crate) fn eligibility(
         return Err(Refusal::ApplicationContainer);
     }
     let mut file = File::open(&snapshot.revision.path).map_err(|_| Refusal::SourceUnavailable)?;
-    let classify = |error| match error {
+    let classify = classify_eligibility;
+    crate::engine::ensure_revision(&mut file, &snapshot.revision, control).map_err(classify)?;
+    if !snapshot.backend_safe {
+        return Err(Refusal::UnsupportedStructure);
+    }
+    let directory =
+        zip_container::single_directory(&mut file, limits, control).map_err(classify)?;
+    eligibility_from_open(&mut file, snapshot, &directory, limits, control)?;
+    crate::engine::ensure_revision(&mut file, &snapshot.revision, control).map_err(classify)
+}
+
+fn classify_eligibility(error: ArchiveError) -> crate::ArchiveModificationRefusal {
+    use crate::ArchiveModificationRefusal as Refusal;
+    match error {
         ArchiveError::SourceChanged => Refusal::SourceChanged,
         ArchiveError::CorruptArchive => Refusal::Corrupt,
         ArchiveError::UnsupportedEncryption => Refusal::UnsupportedEncryption,
@@ -99,16 +112,28 @@ pub(crate) fn eligibility(
         | ArchiveError::UnsupportedMethod
         | ArchiveError::OutputCollision => Refusal::UnsupportedStructure,
         _ => Refusal::UnverifiedMetadata,
-    };
-    crate::engine::ensure_revision(&mut file, &snapshot.revision, control).map_err(classify)?;
+    }
+}
+
+/// The caller encloses catalog and qualification in the same before/final revision checks.
+pub(crate) fn eligibility_from_open(
+    file: &mut File,
+    snapshot: &ArchiveSnapshot,
+    directory: &zip_container::Directory,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+) -> std::result::Result<(), crate::ArchiveModificationRefusal> {
+    use crate::ArchiveModificationRefusal as Refusal;
+    if blocked_container(snapshot) {
+        return Err(Refusal::ApplicationContainer);
+    }
     if !snapshot.backend_safe {
         return Err(Refusal::UnsupportedStructure);
     }
-    let directory =
-        zip_container::single_directory(&mut file, limits, control).map_err(classify)?;
+    let classify = classify_eligibility;
     let locals =
-        structure(&mut file, &snapshot.entries, &directory, limits, control).map_err(classify)?;
-    for (row, local) in directory.records.iter().zip(&locals) {
+        structure(file, &snapshot.entries, directory, limits, control).map_err(classify)?;
+    for (row, local) in directory.records.iter().zip(locals.records()) {
         // No normalization or speculative metadata support. Candidate planning still owns
         // the original per-kept-record rule (including deletion of unsupported records).
         renamed_record(row, local, None).map_err(|error| match error {
@@ -116,7 +141,7 @@ pub(crate) fn eligibility(
             other => classify(other),
         })?;
     }
-    crate::engine::ensure_revision(&mut file, &snapshot.revision, control).map_err(classify)
+    Ok(())
 }
 /// Per-operation allowlist. These known fields contain no absolute offsets/alignment outside ZIP64.
 /// Unknown records fail before copying kept entries; deleting an unsupported entry is permitted.
@@ -166,7 +191,24 @@ struct Intent {
     directories: Vec<String>,
     comment: Option<Vec<u8>>,
 }
-fn intent(snapshot: &ArchiveSnapshot, edits: &[ZipEdit]) -> Result<Intent> {
+fn intent(
+    snapshot: &ArchiveSnapshot,
+    edits: &[ZipEdit],
+    limits: &ResourceLimits,
+    control: &OperationControl,
+) -> Result<Intent> {
+    let mut work = crate::planning::SelectionWork::default();
+    let result = intent_observed(snapshot, edits, limits, control, &mut work);
+    control.record_work(|current| current.selection += work);
+    result
+}
+fn intent_observed(
+    snapshot: &ArchiveSnapshot,
+    edits: &[ZipEdit],
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    work: &mut crate::planning::SelectionWork,
+) -> Result<Intent> {
     if edits.len() > 4096 {
         return Err(ArchiveError::ResourceLimit);
     }
@@ -176,6 +218,9 @@ fn intent(snapshot: &ArchiveSnapshot, edits: &[ZipEdit]) -> Result<Intent> {
         directories: Vec::new(),
         comment: None,
     };
+    let original_bytes = retained_snapshot_bytes(snapshot)?;
+    work.metadata_visits += snapshot.entries.len() as u64;
+    let mut delete_positions = HashSet::new();
     let find = |id: &EntryId| {
         snapshot
             .entries
@@ -190,37 +235,48 @@ fn intent(snapshot: &ArchiveSnapshot, edits: &[ZipEdit]) -> Result<Intent> {
                     return Err(ArchiveError::ResourceLimit);
                 }
                 for id in entries {
-                    let parent = find(id)?;
-                    for entry in snapshot.entries.iter() {
-                        if entry.id == *id
-                            || parent.kind == EntryKind::Directory
-                                && entry.display_path.starts_with(&parent.display_path)
-                        {
-                            result.deleted.insert(entry.id.ordinal);
-                        }
+                    control.checkpoint()?;
+                    work.ordinal_probes += 1;
+                    find(id)?;
+                    let count = delete_positions.len() as u64 + 1;
+                    if original_bytes
+                        .checked_add(count.saturating_mul(96))
+                        .is_none_or(|bytes| bytes > limits.max_metadata_bytes)
+                    {
+                        return Err(ArchiveError::ResourceLimit);
                     }
+                    delete_positions.insert(id.ordinal as usize);
                 }
             }
             ZipEdit::Rename { entry: id, name } => {
                 let selected = find(id)?;
                 let directory = selected.kind == EntryKind::Directory;
                 valid_name(name, directory)?;
+                let source = selected.display_path.replace('\\', "/");
+                let prefix = format!("{}/", source.trim_end_matches('/'));
                 for entry in snapshot.entries.iter() {
-                    if entry.id == *id
-                        || directory && entry.display_path.starts_with(&selected.display_path)
-                    {
-                        let target = if entry.id == *id {
-                            name.clone()
+                    control.checkpoint()?;
+                    let mut target = if entry.id == *id {
+                        name.clone()
+                    } else if directory {
+                        let path = if entry.display_path.contains('\\') {
+                            std::borrow::Cow::Owned(entry.display_path.replace('\\', "/"))
                         } else {
-                            format!(
-                                "{name}{}",
-                                &entry.display_path[selected.display_path.len()..]
-                            )
+                            std::borrow::Cow::Borrowed(entry.display_path.as_str())
                         };
-                        valid_name(&target, entry.kind == EntryKind::Directory)?;
-                        if result.renamed.insert(entry.id.ordinal, target).is_some() {
-                            return Err(ArchiveError::OutputCollision);
-                        }
+                        let Some(suffix) = path.strip_prefix(&prefix) else {
+                            continue;
+                        };
+                        format!("{name}{suffix}")
+                    } else {
+                        continue;
+                    };
+                    if entry.kind == EntryKind::Directory && !target.ends_with('/') {
+                        target.push('/');
+                    }
+                    valid_name(&target, entry.kind == EntryKind::Directory)?;
+                    if result.renamed.insert(entry.id.ordinal, target).is_some() {
+                        return Err(ArchiveError::OutputCollision);
                     }
                 }
             }
@@ -238,26 +294,112 @@ fn intent(snapshot: &ArchiveSnapshot, edits: &[ZipEdit]) -> Result<Intent> {
             }
         }
     }
+    if !delete_positions.is_empty() {
+        let positions = delete_positions.into_iter().collect::<Vec<_>>();
+        let credit = limits
+            .max_metadata_bytes
+            .checked_sub(original_bytes)
+            .and_then(|bytes| bytes.checked_sub(intent_metadata(&result)))
+            .ok_or(ArchiveError::ResourceLimit)?
+            .min(limits.max_working_bytes);
+        crate::planning::expand_selection(
+            &snapshot.entries,
+            crate::planning::CatalogSelection::Entries {
+                positions: &positions,
+                directories: &[],
+            },
+            credit,
+            |_, entry| crate::planning::SelectionEntry {
+                ordinal: entry.id.ordinal,
+                path: &entry.display_path,
+                directory: entry.kind == EntryKind::Directory,
+            },
+            |_, entry, _, reservation| {
+                if reservation
+                    .checked_add((result.deleted.len() as u64 + 1).saturating_mul(64))
+                    .is_none_or(|bytes| bytes > credit)
+                {
+                    return Err(ArchiveError::ResourceLimit);
+                }
+                result.deleted.insert(entry.id.ordinal);
+                Ok(result.deleted.capacity() as u64 * 32)
+            },
+            || control.checkpoint(),
+            work,
+        )?;
+    }
     Ok(result)
 }
-struct Local {
-    header: Vec<u8>,
-    data: u64,
-    end: u64,
+type Local = zip::ValidatedRecord;
+fn intent_metadata(intent: &Intent) -> u64 {
+    intent.deleted.capacity() as u64 * 32
+        + intent.renamed.capacity() as u64 * 96
+        + intent
+            .renamed
+            .values()
+            .map(|name| name.capacity() as u64)
+            .sum::<u64>()
+        + intent.directories.capacity() as u64 * 24
+        + intent
+            .directories
+            .iter()
+            .map(|name| name.capacity() as u64)
+            .sum::<u64>()
+        + intent
+            .comment
+            .as_ref()
+            .map_or(0, |comment| comment.capacity() as u64)
 }
-fn structure(
-    file: &mut File,
-    entries: &[crate::ArchiveEntry],
+fn reserve_metadata(limits: &ResourceLimits, retained: u64) -> Result<ResourceLimits> {
+    Ok(ResourceLimits {
+        max_metadata_bytes: limits
+            .max_metadata_bytes
+            .checked_sub(retained)
+            .ok_or(ArchiveError::ResourceLimit)?,
+        ..*limits
+    })
+}
+fn records_metadata(records: &[Record]) -> Result<u64> {
+    records.iter().try_fold(0u64, |bytes, row| {
+        bytes
+            .checked_add(row.central.capacity() as u64 * 4 + 512)
+            .ok_or(ArchiveError::ResourceLimit)
+    })
+}
+fn retained_snapshot_bytes(snapshot: &ArchiveSnapshot) -> Result<u64> {
+    let fixed = (std::mem::size_of::<ArchiveSnapshot>()
+        + snapshot.comment.capacity()
+        + snapshot.revision.path.as_os_str().as_encoded_bytes().len() * 2) as u64;
+    snapshot.entries.iter().try_fold(fixed, |bytes, entry| {
+        bytes
+            .checked_add(
+                (std::mem::size_of::<crate::ArchiveEntry>()
+                    + 64
+                    + entry.raw_name.capacity()
+                    + entry.display_path.capacity()
+                    + entry.warnings.capacity() * std::mem::size_of::<crate::EntryWarning>())
+                    as u64,
+            )
+            .ok_or(ArchiveError::ResourceLimit)
+    })
+}
+fn structure<'a>(
+    file: &'a mut File,
+    entries: &'a [crate::ArchiveEntry],
     directory: &zip_container::Directory,
     limits: &ResourceLimits,
     control: &OperationControl,
-) -> Result<Vec<Local>> {
+) -> Result<zip::ValidatedZip<'a>> {
     if entries.len() != directory.records.len() {
         return Err(ArchiveError::SourceChanged);
     }
-    zip::preflight_created(file, entries, limits, control)?;
-    let mut locals = Vec::new();
-    let mut charged = 0u64;
+    let limits = reserve_metadata(
+        limits,
+        records_metadata(&directory.records)?
+            .checked_add(directory.comment.capacity() as u64)
+            .ok_or(ArchiveError::ResourceLimit)?,
+    )?;
+    let locals = zip::ValidatedZip::new(file, entries, &limits, control, true)?;
     for (entry, row) in entries.iter().zip(&directory.records) {
         control.checkpoint()?;
         if entry
@@ -267,36 +409,8 @@ fn structure(
         {
             return Err(ArchiveError::SourceChanged);
         }
-        let data = zip::validate_local(file, entry)?;
-        let end = zip::validate_descriptor(file, entry, data)?;
-        let length = usize::try_from(data - row.local).map_err(|_| ArchiveError::ResourceLimit)?;
-        charged = charged
-            .checked_add(length as u64)
-            .and_then(|v| v.checked_add(row.central.len() as u64 * 4 + 512))
-            .ok_or(ArchiveError::ResourceLimit)?;
-        if charged > limits.max_metadata_bytes {
-            return Err(ArchiveError::ResourceLimit);
-        }
-        let mut header = vec![0; length];
-        file.seek(SeekFrom::Start(row.local))?;
-        exact(file, &mut header)?;
-        locals.push(Local { header, data, end });
     }
-    let mut ranges: Vec<_> = directory
-        .records
-        .iter()
-        .zip(&locals)
-        .map(|(row, local)| (row.local, local.end))
-        .collect();
-    ranges.sort_unstable();
-    let mut expected = 0;
-    for (start, end) in ranges {
-        if start != expected {
-            return Err(ArchiveError::UnsupportedOperation);
-        }
-        expected = end;
-    }
-    if expected != directory.offset {
+    if !locals.contiguous() {
         return Err(ArchiveError::UnsupportedOperation);
     }
     Ok(locals)
@@ -359,36 +473,30 @@ fn copy(
     Ok(())
 }
 fn write_records(
-    input: &mut File,
+    input: &mut zip::ValidatedZip<'_>,
     out: &mut File,
     directory: zip_container::Directory,
-    locals: Vec<Local>,
     selected: &Intent,
     records: &mut Vec<Record>,
     context: (&ResourceLimits, &OperationControl),
 ) -> Result<()> {
     let (limits, control) = context;
-    for (index, (mut row, local)) in directory.records.into_iter().zip(locals).enumerate() {
+    for (index, mut row) in directory.records.into_iter().enumerate() {
         if selected.deleted.contains(&(index as u64)) {
             continue;
         }
         control.checkpoint()?;
+        let local = input.record(index as u64)?;
         let (header, central) = renamed_record(
             &row,
-            &local,
+            local,
             selected.renamed.get(&(index as u64)).map(String::as_str),
         )?;
+        let (data, end) = (local.data, local.end);
         row.local = out.stream_position()?;
         row.central = central;
         out.write_all(&header)?;
-        copy(
-            input,
-            out,
-            local.data,
-            local.end - local.data,
-            limits,
-            control,
-        )?;
+        copy(input.file(), out, data, end - data, limits, control)?;
         records.push(row);
     }
     Ok(())
@@ -421,14 +529,7 @@ fn directory_header(name: &str) -> Vec<u8> {
     local.extend_from_slice(name.as_bytes());
     local
 }
-pub(crate) fn verify(
-    file: &mut File,
-    limits: &ResourceLimits,
-    control: &OperationControl,
-    password: Option<&str>,
-) -> Result<()> {
-    file.rewind()?;
-    let (entries, _, safe) = zip::list(file, crate::NameEncoding::Auto, limits, control)?;
+fn validate_metadata(entries: &[crate::ArchiveEntry], safe: bool) -> Result<()> {
     if !safe
         || entries.iter().any(|entry| {
             entry
@@ -439,12 +540,47 @@ pub(crate) fn verify(
     {
         return Err(ArchiveError::OutputCollision);
     }
-    zip::preflight_created(file, &entries, limits, control)?;
+    Ok(())
+}
+pub(crate) fn verify(
+    file: &mut File,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    password: Option<&str>,
+) -> Result<()> {
+    verify_with_source_budget(file, limits, control, password, None)
+}
+fn verify_with_source_budget(
+    file: &mut File,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    password: Option<&str>,
+    source_budget: Option<(u64, usize)>,
+) -> Result<()> {
+    file.rewind()?;
+    let (entries, _, safe) = zip::list(file, crate::NameEncoding::Auto, limits, control)?;
+    validate_metadata(&entries, safe)?;
+    let mut plan = zip::ValidatedZip::new(file, &entries, limits, control, false)?;
     let mut total = 0;
-    for entry in &entries {
-        zip::stream_entry(file, entry, limits, control, password, &mut total, |_| {
-            Ok(())
-        })?;
+    let (mut source_bytes, retained_count) = source_budget.unwrap_or((0, 0));
+    for (index, entry) in entries.iter().enumerate() {
+        control.record_work(|work| work.zip_candidate_payload_decodes += 1);
+        let bytes = plan.stream(
+            entry.id.ordinal,
+            limits,
+            control,
+            password,
+            &mut total,
+            |_| Ok(()),
+        )?;
+        if index < retained_count {
+            source_bytes = source_bytes
+                .checked_add(bytes)
+                .ok_or(ArchiveError::ResourceLimit)?;
+            if source_bytes > limits.max_output_bytes {
+                return Err(ArchiveError::ResourceLimit);
+            }
+        }
     }
     Ok(())
 }
@@ -471,16 +607,40 @@ pub(crate) fn candidate(
     if edits.is_empty() && additions.is_none() {
         return Err(ArchiveError::UnsupportedOperation);
     }
-    let selected = intent(snapshot, edits)?;
-    verify(&mut source, limits, control, password)?;
-    let directory = zip_container::single_directory(&mut source, limits, control)?;
+    let selected = intent(snapshot, edits, limits, control)?;
+    let intent_bytes = intent_metadata(&selected);
+    let intent_limits = reserve_metadata(limits, intent_bytes)?;
+    validate_metadata(&snapshot.entries, snapshot.backend_safe)?;
+    let directory = zip_container::single_directory(&mut source, &intent_limits, control)?;
     let comment = selected
         .comment
         .clone()
         .unwrap_or_else(|| directory.comment.clone());
-    let locals = structure(&mut source, &snapshot.entries, &directory, limits, control)?;
+    let mut locals = structure(
+        &mut source,
+        &snapshot.entries,
+        &directory,
+        &intent_limits,
+        control,
+    )?;
+    let mut removed_bytes = 0;
+    for entry in snapshot
+        .entries
+        .iter()
+        .filter(|entry| selected.deleted.contains(&entry.id.ordinal))
+    {
+        control.record_work(|work| work.zip_source_payload_decodes += 1);
+        locals.stream(
+            entry.id.ordinal,
+            limits,
+            control,
+            password,
+            &mut removed_bytes,
+            |_| Ok(()),
+        )?;
+    }
     // Validate ALL kept metadata before creating the candidate, including distinct local extras.
-    for (index, (row, local)) in directory.records.iter().zip(&locals).enumerate() {
+    for (index, (row, local)) in directory.records.iter().zip(locals.records()).enumerate() {
         if !selected.deleted.contains(&(index as u64)) {
             renamed_record(
                 row,
@@ -492,24 +652,39 @@ pub(crate) fn candidate(
     let mut output = tempfile::tempfile()?;
     let mut records = Vec::new();
     write_records(
-        &mut source,
+        &mut locals,
         &mut output,
         directory,
-        locals,
         &selected,
         &mut records,
         (limits, control),
     )?;
+    let retained_count = records.len();
+    drop(locals);
+    let source_metadata = retained_snapshot_bytes(snapshot)?;
     for name in &selected.directories {
         control.checkpoint()?;
         records.push(empty_directory(name, output.stream_position()?));
         output.write_all(&directory_header(name))?;
     }
     if let Some(additions) = additions {
-        verify(additions, limits, control, None)?;
-        let directory = zip_container::single_directory(additions, limits, control)?;
-        let (entries, _, _) = zip::list(additions, crate::NameEncoding::Auto, limits, control)?;
-        let locals = structure(additions, &entries, &directory, limits, control)?;
+        let retained = source_metadata
+            .checked_add(records_metadata(&records)?)
+            .and_then(|bytes| bytes.checked_add(intent_bytes))
+            .and_then(|bytes| bytes.checked_add(comment.capacity() as u64))
+            .ok_or(ArchiveError::ResourceLimit)?;
+        let addition_limits = reserve_metadata(limits, retained)?;
+        let directory = zip_container::single_directory(additions, &addition_limits, control)?;
+        let listing_limits =
+            reserve_metadata(&addition_limits, records_metadata(&directory.records)?)?;
+        let (entries, _, safe) = zip::list(
+            additions,
+            crate::NameEncoding::Auto,
+            &listing_limits,
+            control,
+        )?;
+        validate_metadata(&entries, safe)?;
+        let mut locals = structure(additions, &entries, &directory, &addition_limits, control)?;
         let all = Intent {
             deleted: HashSet::new(),
             renamed: HashMap::new(),
@@ -517,10 +692,9 @@ pub(crate) fn candidate(
             comment: None,
         };
         write_records(
-            additions,
+            &mut locals,
             &mut output,
             directory,
-            locals,
             &all,
             &mut records,
             (limits, control),
@@ -530,13 +704,26 @@ pub(crate) fn candidate(
         return Err(ArchiveError::ResourceLimit);
     }
     zip_container::finish_single(&mut output, &records, comment, control)?;
+    drop(records);
+    drop(selected);
+    let candidate_limits = reserve_metadata(limits, source_metadata)?;
     if output.stream_position()? > limits.max_output_bytes {
         return Err(ArchiveError::ResourceLimit);
     }
     output.flush()?;
-    verify(&mut output, limits, control, password)?;
+    verify_with_source_budget(
+        &mut output,
+        &candidate_limits,
+        control,
+        password,
+        Some((removed_bytes, retained_count)),
+    )?;
     crate::engine::ensure_revision(&mut source, &snapshot.revision, control)?;
     control.checkpoint()?;
     output.rewind()?;
     Ok(output)
 }
+
+#[cfg(test)]
+#[path = "zip_edit_selection_tests.rs"]
+mod selection_tests;

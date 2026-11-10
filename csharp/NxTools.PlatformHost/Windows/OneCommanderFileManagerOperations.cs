@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -103,10 +102,10 @@ internal sealed class UiaOneCommanderWindowOperations :
         TimeSpan.FromMilliseconds(120);
     private static readonly TimeSpan NavigationTimeout =
         TimeSpan.FromMilliseconds(1_500);
-    private static readonly OneCommanderFocusTracker FocusTracker = new();
+    private static readonly Lazy<OneCommanderFocusTracker<AutomationElement>> FocusTracker = new(CreateFocusTracker);
 
     public static void WarmUpFocusTracker() =>
-        FocusTracker.EnsureStarted();
+        FocusTracker.Value.EnsureStarted();
 
     public bool IsMainWindow(long windowHandle)
     {
@@ -249,7 +248,7 @@ internal sealed class UiaOneCommanderWindowOperations :
             System.Windows.Automation.Automation.Compare(focused, root) ||
             !IsInsideRoot(focused, root))
         {
-            focused = FocusTracker.TryGet(windowHandle);
+            focused = FocusTracker.Value.TryGet(windowHandle);
         }
         if (focused is null ||
             !IsInsideRoot(focused, root))
@@ -422,151 +421,46 @@ internal sealed class UiaOneCommanderWindowOperations :
         return false;
     }
 
-    private sealed class OneCommanderFocusTracker
+    private static OneCommanderFocusTracker<AutomationElement> CreateFocusTracker()
     {
-        private readonly ConcurrentDictionary<long, AutomationElement>
-            _lastFocusedByWindow = new();
-        private readonly ManualResetEventSlim _started = new();
-
-        public OneCommanderFocusTracker()
-        {
-            var thread = new Thread(Run)
+        var tracker = new OneCommanderFocusTracker<AutomationElement>(new(
+            element => OneCommanderFocusProcessGate.ResolveTopLevelWindow(
+                element.Current.ProcessId, IsOneCommanderProcessId,
+                () => FindTopLevelWindowHandle(element),
+                window => WindowBelongsToProcess(new IntPtr(window), "OneCommander")),
+            window => IsWindow(new IntPtr(window)) && WindowBelongsToProcess(new IntPtr(window), "OneCommander"),
+            element => { _ = element.Current.ProcessId; return true; },
+            () => AutomationElement.FocusedElement,
+            remember =>
             {
-                IsBackground = true,
-                Name = "NxTools.OneCommanderFocusTracker"
-            };
-            thread.SetApartmentState(ApartmentState.MTA);
-            thread.Start();
-            _started.Wait(TimeSpan.FromMilliseconds(500));
-        }
-
-        public void EnsureStarted() =>
-            _started.Wait(TimeSpan.FromMilliseconds(500));
-
-        public AutomationElement? TryGet(long windowHandle)
-        {
-            if (!_lastFocusedByWindow.TryGetValue(
-                    windowHandle,
-                    out var element))
-            {
-                return null;
-            }
-            try
-            {
-                _ = element.Current.ProcessId;
-                return element;
-            }
-            catch (ElementNotAvailableException)
-            {
-                _lastFocusedByWindow.TryRemove(windowHandle, out _);
-                return null;
-            }
-        }
-
-        private void Run()
-        {
-            AutomationFocusChangedEventHandler handler = OnFocusChanged;
-            try
-            {
-                Automation.AddAutomationFocusChangedEventHandler(handler);
-                CaptureCurrentFocus();
-                _started.Set();
-                Thread.Sleep(Timeout.Infinite);
-            }
-            catch (ThreadInterruptedException)
-            {
-            }
-            catch (ElementNotAvailableException)
-            {
-            }
-            finally
-            {
-                _started.Set();
-                try
+                AutomationFocusChangedEventHandler handler = (source, _) =>
                 {
-                    Automation.RemoveAutomationFocusChangedEventHandler(
-                        handler);
-                }
+                    if (source is AutomationElement element) remember(element);
+                };
+                try { Automation.AddAutomationFocusChangedEventHandler(handler); }
                 catch
                 {
+                    try { Automation.RemoveAutomationFocusChangedEventHandler(handler); } catch { }
+                    throw;
                 }
-            }
-        }
+                return () => Automation.RemoveAutomationFocusChangedEventHandler(handler);
+            }));
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => tracker.Dispose();
+        return tracker;
+    }
 
-        private void OnFocusChanged(
-            object source,
-            AutomationFocusChangedEventArgs args)
+    private static long FindTopLevelWindowHandle(AutomationElement element)
+    {
+        var walker = TreeWalker.RawViewWalker;
+        AutomationElement? node = element;
+        long lastNativeWindow = 0;
+        for (var depth = 0; depth < 64 && node is not null; depth++)
         {
-            if (source is not AutomationElement element)
-            {
-                return;
-            }
-            RememberFocus(element);
+            var nativeWindow = node.Current.NativeWindowHandle;
+            if (nativeWindow != 0) lastNativeWindow = nativeWindow;
+            node = walker.GetParent(node);
         }
-
-        private void CaptureCurrentFocus()
-        {
-            try
-            {
-                var focused = AutomationElement.FocusedElement;
-                if (focused is not null)
-                {
-                    RememberFocus(focused);
-                }
-            }
-            catch (ElementNotAvailableException)
-            {
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (COMException)
-            {
-            }
-        }
-
-        private void RememberFocus(AutomationElement element)
-        {
-            try
-            {
-                var windowHandle = FindTopLevelWindowHandle(element);
-                if (windowHandle == 0 ||
-                    !WindowBelongsToProcess(
-                        new IntPtr(windowHandle),
-                        "OneCommander"))
-                {
-                    return;
-                }
-                _lastFocusedByWindow[windowHandle] = element;
-            }
-            catch (ElementNotAvailableException)
-            {
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (COMException)
-            {
-            }
-        }
-
-        private static long FindTopLevelWindowHandle(
-            AutomationElement element)
-        {
-            var walker = TreeWalker.RawViewWalker;
-            AutomationElement? node = element;
-            long lastNativeWindow = 0;
-            for (var depth = 0; depth < 64 && node is not null; depth++)
-            {
-                var nativeWindow = node.Current.NativeWindowHandle;
-                if (nativeWindow != 0)
-                {
-                    lastNativeWindow = nativeWindow;
-                }
-                node = walker.GetParent(node);
-            }
-            return lastNativeWindow;
-        }
+        return lastNativeWindow;
     }
 
     private static bool WindowBelongsToProcess(
@@ -574,18 +468,37 @@ internal sealed class UiaOneCommanderWindowOperations :
         string expectedProcessName)
     {
         _ = GetWindowThreadProcessId(window, out var processId);
-        if (processId == 0)
+        return processId <= int.MaxValue &&
+            IsProcessIdOwnedByProcess((int)processId, expectedProcessName);
+    }
+
+    private static bool IsOneCommanderProcessId(int processId) =>
+        IsProcessIdOwnedByProcess(processId, "OneCommander");
+
+    private static bool IsProcessIdOwnedByProcess(
+        int processId,
+        string expectedProcessName)
+    {
+        if (processId <= 0)
         {
             return false;
         }
         try
         {
-            using var process = Process.GetProcessById((int)processId);
+            using var process = Process.GetProcessById(processId);
             return process.ProcessName.Equals(
                 expectedProcessName,
                 StringComparison.OrdinalIgnoreCase);
         }
         catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception)
         {
             return false;
         }
@@ -621,4 +534,23 @@ internal sealed class UiaOneCommanderWindowOperations :
     private sealed record OneCommanderNavigationResult(
         bool Success,
         string? Error);
+}
+
+internal static class OneCommanderFocusProcessGate
+{
+    internal static long ResolveTopLevelWindow(
+        int processId,
+        Func<int, bool> isExpectedProcess,
+        Func<long> findTopLevelWindow,
+        Func<long, bool> windowBelongsToExpectedProcess)
+    {
+        if (processId <= 0 || !isExpectedProcess(processId))
+        {
+            return 0;
+        }
+        var windowHandle = findTopLevelWindow();
+        return windowHandle != 0 && windowBelongsToExpectedProcess(windowHandle)
+            ? windowHandle
+            : 0;
+    }
 }

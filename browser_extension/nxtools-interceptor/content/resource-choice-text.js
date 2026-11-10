@@ -32,23 +32,27 @@
     return kindScore + completeScore + heightScore + sizeScore + timeScore;
   }
 
-  async function backgroundResourceChoiceCandidates(selected) {
+  async function backgroundResourceChoiceCandidates(selected, localCandidates = []) {
+    const pageKey = currentPageKey();
     const selectedDimensions = mediaDimensions(selected?.media);
     const response = await runtimeMessage({
       type: "content_get_resource_choices",
       href: location.href,
-      pageKey: currentPageKey(),
+      pageKey,
+      localCandidates: localCandidates.slice(0, 80).map(candidate => ({ url: candidate.url, mime: candidate.mime, mediaElement: candidate.mediaElement })),
       width: selectedDimensions.width,
       height: selectedDimensions.height,
       resolution: selectedDimensions.width > 0 && selectedDimensions.height > 0 ? `${selectedDimensions.width}x${selectedDimensions.height}` : "",
       requestedAt: Date.now()
     });
+    if (currentPageKey() !== pageKey) return [];
 
     if (response.lastError || response.result?.ok === false || !Array.isArray(response.result?.choices)) {
-      return [];
+      return localCandidates;
     }
 
-    return response.result.choices;
+    const excluded = new Set((response.result.excludedUrls || []).map(normalizeChoiceKey));
+    return [...response.result.choices, ...localCandidates.filter(candidate => !excluded.has(normalizeChoiceKey(candidate.url)))];
   }
 
   function resourceChoiceLabel(candidate, index) {

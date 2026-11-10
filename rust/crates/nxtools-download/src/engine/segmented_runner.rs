@@ -111,6 +111,137 @@ pub(crate) async fn run_task(
             .request()
             .clone()
     };
+    let prepared = {
+        let tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.prepared_size_bytes.map(|size| {
+            (
+                size,
+                state.transfer.temporary_path.clone(),
+                state.transfer.final_path.clone(),
+                state.transfer.downloaded_bytes,
+                state.control.clone(),
+            )
+        })
+    };
+    if let Some((size, source, target, downloaded_bytes, control)) = prepared {
+        let source = source.ok_or(DownloadEngineError::MissingTemporaryPath(task_id))?;
+        let target = target.ok_or(DownloadEngineError::MissingTemporaryPath(task_id))?;
+        let control = control.ok_or(DownloadEngineError::MissingTransferControl(task_id))?;
+        let observed = tokio::fs::metadata(&source).await?.len();
+        if observed != size {
+            return Err(HttpDownloadError::LengthMismatch {
+                expected_bytes: size,
+                downloaded_bytes: observed,
+            }
+            .into());
+        }
+        if let Some(stop) = hls_stop_directive(&control) {
+            if stop == TransferDirective::Cancel {
+                match request.media.as_ref() {
+                    Some(DownloadRequestMedia::Hls(_)) => {
+                        remove_hls_owned_artifacts(
+                            &request,
+                            task_id,
+                            Some(&source),
+                            correlation_id,
+                            "cancelled",
+                            Instant::now(),
+                        )?;
+                        inner.store.clear_hls_transfer_plan(task_id)?;
+                    }
+                    Some(DownloadRequestMedia::Dash(_)) => {
+                        remove_dash_owned_artifacts(
+                            &request,
+                            task_id,
+                            Some(&source),
+                            correlation_id,
+                            "cancelled",
+                            Instant::now(),
+                        )?;
+                        inner.store.clear_dash_transfer_plan(task_id)?;
+                    }
+                    None => remove_path_if_exists(&source)?,
+                }
+            }
+            let mut tasks = inner.lock_tasks()?;
+            let state = tasks
+                .get_mut(&task_id)
+                .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+            state.task.transition_to(
+                if stop == TransferDirective::Pause {
+                    DownloadStatus::Paused
+                } else {
+                    DownloadStatus::Cancelled
+                },
+                now_unix_ms(),
+            )?;
+            if stop == TransferDirective::Cancel {
+                state.transfer.prepared_size_bytes = None;
+            }
+            state.control = None;
+            inner.persist(state)?;
+            let task = Box::new(state.task.clone());
+            drop(tasks);
+            inner.emit(DownloadEvent::TaskChanged { task });
+            return Ok(());
+        }
+        {
+            let mut tasks = inner.lock_tasks()?;
+            let state = tasks
+                .get_mut(&task_id)
+                .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+            state
+                .task
+                .transition_to(DownloadStatus::Downloading, now_unix_ms())?;
+            state
+                .task
+                .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
+            inner.persist(state)?;
+            let task = Box::new(state.task.clone());
+            drop(tasks);
+            inner.emit(DownloadEvent::TaskChanged { task });
+        }
+        http.commit_prepared(PreparedDownload {
+            temporary_path: source,
+            final_path: target,
+            downloaded_bytes,
+        })
+        .await?;
+        commit_completed_state(&inner, task_id)?;
+        if let Some(media) = request.media.as_ref() {
+            let (working, clear) = match media {
+                DownloadRequestMedia::Hls(_) => (hls_working_directory(&request, task_id), true),
+                DownloadRequestMedia::Dash(_) => (dash_working_directory(&request, task_id), false),
+            };
+            let removed = match tokio::fs::remove_dir_all(&working).await {
+                Ok(()) => true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => true,
+                Err(error) => {
+                    warn!(event = "download.prepared_cleanup.failed", %correlation_id, ?task_id,
+                    native_error_code = error.raw_os_error(), "prepared media staging cleanup failed");
+                    false
+                }
+            };
+            if removed {
+                let plan = if clear {
+                    inner.store.clear_hls_transfer_plan(task_id)
+                } else {
+                    inner.store.clear_dash_transfer_plan(task_id)
+                };
+                if let Err(_error) = plan {
+                    warn!(event = "download.prepared_cleanup.failed", %correlation_id, ?task_id,
+                        error_kind = "storage", "prepared media plan cleanup failed");
+                }
+            }
+        }
+        info!(event = "download.prepared_commit.completed", %correlation_id, ?task_id,
+            prepared_bytes = size, "retained prepared artifact published");
+        return Ok(());
+    }
+
     if let Some(DownloadRequestMedia::Hls(hls)) = request.media.as_ref() {
         return run_hls_task(
             Arc::clone(&inner),
@@ -188,6 +319,9 @@ pub(crate) async fn run_task(
         proxy_mode = proxy_mode_name(http.network_proxy_mode()),
         proxy_source = http.network_proxy_source(),
         certificate_policy = certificate_policy_name(http.certificate_policy()),
+        route_kind = probe.server_observation.as_ref().map(|value| value.route_kind.diagnostic_name()),
+        peer_present = probe.server_observation.as_ref().is_some_and(|value| value.peer_ip.is_some()),
+        response_ms = probe.server_observation.as_ref().map(|value| value.response_ms),
         media_kind,
         variant_count,
         video_track_count,
@@ -274,8 +408,16 @@ pub(crate) async fn run_task(
             }
         }
     }
-    let (temporary_path, final_path) =
+    let (derived_temporary, final_path) =
         HttpDownloadClient::artifact_paths(&request, &probe, task_id)?;
+    let temporary_path = inner
+        .lock_tasks()?
+        .get(&task_id)
+        .ok_or(DownloadEngineError::TaskNotFound(task_id))?
+        .transfer
+        .temporary_path
+        .clone()
+        .unwrap_or(derived_temporary);
     tokio::fs::create_dir_all(&request.save_directory).await?;
     if tokio::fs::try_exists(&final_path).await? {
         return Err(HttpDownloadError::DestinationExists(final_path).into());
@@ -315,9 +457,9 @@ pub(crate) async fn run_task(
             .clone()
             .ok_or(DownloadEngineError::MissingTransferControl(task_id))?;
         inner.persist(state)?;
-        inner.emit(DownloadEvent::TaskChanged {
-            task: Box::new(state.task.clone()),
-        });
+        let task = Box::new(state.task.clone());
+        drop(tasks);
+        inner.emit(DownloadEvent::TaskChanged { task });
         control
     };
 
@@ -371,21 +513,35 @@ pub(crate) async fn run_single_stream_task(
         expected_bytes = probe.total_bytes.unwrap_or_default(),
         "single-stream transfer started"
     );
+    let existing_temporary = inner
+        .lock_tasks()?
+        .get(&task_id)
+        .ok_or(DownloadEngineError::TaskNotFound(task_id))?
+        .transfer
+        .temporary_path
+        .clone();
     let mut attempt = 1_u32;
     let outcome = loop {
         let progress_inner = Arc::clone(inner);
         let outcome = http
-            .prepare_download(request, probe, task_id, control, move |progress| {
-                publish_transfer_progress(
-                    &progress_inner,
-                    task_id,
-                    progress.downloaded_bytes,
-                    progress.total_bytes,
-                    1,
-                    None,
-                    None,
-                );
-            })
+            .prepare_download(
+                request,
+                probe,
+                task_id,
+                control,
+                existing_temporary.as_deref(),
+                move |progress| {
+                    publish_transfer_progress(
+                        &progress_inner,
+                        task_id,
+                        progress.downloaded_bytes,
+                        progress.total_bytes,
+                        1,
+                        None,
+                        None,
+                    );
+                },
+            )
             .await;
         match outcome {
             Err(error) if should_retry_transfer(attempt, &error) => {
@@ -445,6 +601,7 @@ pub(crate) async fn run_single_stream_task(
                     .get_mut(&task_id)
                     .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
                 state.transfer.downloaded_bytes = ready.downloaded_bytes;
+                state.transfer.prepared_size_bytes = Some(ready.downloaded_bytes);
                 state
                     .task
                     .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;
@@ -2071,6 +2228,7 @@ async fn run_segmented_task_with_samples(
             .get_mut(&task_id)
             .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
         state.transfer.downloaded_bytes = total_bytes;
+        state.transfer.prepared_size_bytes = Some(total_bytes);
         state
             .task
             .transition_to(DownloadStatus::Finalizing, now_unix_ms())?;

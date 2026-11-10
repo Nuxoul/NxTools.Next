@@ -1,5 +1,7 @@
 //! Actual worker protocol, source reader closure and held-candidate readback boundary.
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -39,7 +41,7 @@ fn original_zip_edit_worker_closes_source_before_handoff_and_rejects_bad_readbac
             .stderr(Stdio::piped())
             .spawn()
             .expect("worker");
-        let request = json!({"schema":2,"operation_id":operation,"op":"start","operation":"modify_zip","path":path.to_str().expect("path"),"job_execution":true,"job_modify":{"browser":{"snapshot_id":Uuid::new_v4(),"format":"Zip","comment":"","source":{"native":"v1:fixture","digest":digest,"size":metadata.len(),"modified_unix_ns":modified}},"action":"rename","ordinals":[0],"value":"renamed.txt"}});
+        let request = json!({"schema":2,"bulk_transfer":1,"operation_id":operation,"op":"start","operation":"modify_zip","path":path.to_str().expect("path"),"job_execution":true,"job_modify":{"browser":{"snapshot_id":Uuid::new_v4(),"format":"Zip","comment":"","source":{"native":"v1:fixture","digest":digest,"size":metadata.len(),"modified_unix_ns":modified}},"action":"rename","ordinals":[0],"value":"renamed.txt"}});
         write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("start");
         let mut handed_off = false;
         let mut committed = false;
@@ -116,6 +118,16 @@ fn original_zip_edit_worker_closes_source_before_handoff_and_rejects_bad_readbac
         assert_eq!(aborted, corrupt);
         assert_eq!(std::fs::read(&path).expect("source retained"), original);
         assert_eq!(terminal["op"], if corrupt { "failure" } else { "complete" });
+        if !corrupt {
+            assert_eq!(
+                terminal["work"]["zip_local_checks"], 2,
+                "one source admission plus one complete final candidate"
+            );
+            assert_eq!(
+                terminal["work"]["zip_descriptor_checks"], 2,
+                "worker source and final candidate each admit descriptors once"
+            );
+        }
         if corrupt {
             assert_eq!(terminal["error_code"], "CorruptArchive");
         }

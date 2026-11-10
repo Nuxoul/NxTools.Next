@@ -14,7 +14,10 @@ impl ArchiveApplication {
             return;
         };
         let Some(result) = record.terminal.as_ref().filter(|result| {
-            result.outcome == ArchiveJobOutcome::Succeeded && result.cleanup_complete
+            matches!(
+                result.outcome,
+                ArchiveJobOutcome::Succeeded | ArchiveJobOutcome::SucceededWithWarnings
+            ) && result.cleanup_complete
         }) else {
             return;
         };

@@ -2,6 +2,7 @@
 param(
     [switch]$CheckOnly,
     [switch]$SkipVerification,
+    [switch]$CreateDistributionArchive,
     [string]$SigningKeyPath = $env:NXTOOLS_RELEASE_SIGNING_KEY
 )
 
@@ -68,6 +69,7 @@ $ready = $headroom -ge 6.0 -and $activeBuilds.Count -eq 0
     SequenceReserved = $false
     CheckOnly = [bool]$CheckOnly
     SkipVerification = [bool]$SkipVerification
+    CreateDistributionArchive = [bool]$CreateDistributionArchive
     InstallerPath = $installerPath
 } | ConvertTo-Json
 if ($CheckOnly) { return }
@@ -83,10 +85,11 @@ foreach ($entry in @(@{ Source = $packageDirectory; Name = 'previous-package' },
 }
 $statusPath = Join-Path $runDirectory 'status.json'
 $started = Get-Date -Format o
-$state = @{ state = 'Building'; started = $started; sequence = $nextSequence; skip_verification = [bool]$SkipVerification; installation_executed = $false }
+$state = @{ state = 'Building'; started = $started; sequence = $nextSequence; skip_verification = [bool]$SkipVerification; create_distribution_archive = [bool]$CreateDistributionArchive; installation_executed = $false }
 $state | ConvertTo-Json | Set-Content -LiteralPath $statusPath -Encoding UTF8
 $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'package.ps1'), '-Configuration', 'Release', '-SigningKeyPath', $SigningKeyPath, '-ReleaseSequence', $nextSequence.ToString([Globalization.CultureInfo]::InvariantCulture))
 if ($SkipVerification) { $arguments += '-SkipVerification' }
+if ($CreateDistributionArchive) { $arguments += '-CreateDistributionArchive' }
 try {
     Write-Host "Packaging sequence $nextSequence. Logs and backup: $runDirectory"
     # Capture OS streams without turning normal native stderr (Cargo progress) into PowerShell errors.

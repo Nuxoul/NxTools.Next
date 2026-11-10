@@ -1,0 +1,48 @@
+{
+  "batch": "B3 — Split-file usability",
+  "verdict": "accepted_source_production_testplatform_and_owned_native_fixtures",
+  "accepted_at": "2026-11-10T07:35:24.203Z",
+  "coordination_state": "paused_by_user",
+  "implementation_session": "0ffe6ffa-9e52-420b-af61-a29fdd0f37b4",
+  "delivery_message_id": "a2fad500-827e-40aa-a117-7186d0df09a7",
+  "delivery_turn_id": "5c029aec-3329-40ee-ac97-7db7266f1317",
+  "repair_independent_checks": {
+    "desktop_ref17": { "listed": 8, "passed": 8, "failed": 0, "ignored": 0 },
+    "desktop_ref18": { "listed": 11, "passed": 11, "failed": 0, "ignored": 0 },
+    "desktop_forms": { "listed": 48, "passed": 48, "failed": 0, "ignored": 0 },
+    "desktop_draft": { "listed": 12, "passed": 12, "failed": 0, "ignored": 0 },
+    "desktop_jobs": { "listed": 129, "passed": 129, "failed": 0, "ignored": 0, "prerequisite": "actual_CSharp_exports_supplied_by_repair_delivery" },
+    "desktop_quick": { "listed": 3, "passed": 3, "failed": 0, "ignored": 0 },
+    "desktop_tools": { "listed": 11, "passed": 11, "failed": 0, "ignored": 0 },
+    "core_ref17": { "listed": 2, "passed": 2, "failed": 0, "ignored": 0 },
+    "protocol_ref18": { "listed": 1, "passed": 1, "failed": 0, "ignored": 0 },
+    "ipc": { "listed": 62, "passed": 62, "failed": 0, "ignored": 0 },
+    "scoped_rustfmt": { "files": 6, "exit_code": 0 },
+    "spec_contracts": { "passed": true, "documents": 129, "owners": 14 },
+    "gpui_component_catalog": { "passed": true },
+    "gpui_release_contracts": { "passed": true },
+    "markdown_editor_contracts": { "passed": true },
+    "desktop_strict_clippy": { "exit_code": 101, "new_diagnostics": 0, "retained_baselines": ["downloads/browser_handoff_impl.rs:436 nonminimal_bool", "downloads/settings_task_rem_tests.rs:612 unwrap_used"] }
+  },
+  "retained_prior_independent_native_checks": {
+    "rerun_in_repair_round": false,
+    "raw_join": { "listed": 4, "run": 4, "passed": 4, "skipped": 0, "failed": 0, "not_run": 0 },
+    "split": { "listed": 3, "run": 3, "passed": 3, "skipped": 0, "failed": 0, "not_run": 0 }
+  },
+  "closed_items": [
+    { "id": "B3-01", "status": "closed", "evidence": "actual_invalid_input_unit_switch_and_correction" },
+    { "id": "B3-02", "status": "closed", "evidence": "first_semantically_focused_Enter_and_Space_single_Start_Escape_back_repeat" },
+    { "id": "B3-E1", "status": "closed", "evidence": "actual_preset_and_NumberInput_increment_decrement_default_and_minimum_viewports" },
+    { "id": "B3-E2", "status": "closed", "evidence": "actual_Submit_same_immutable_JobRecord_and_outbound_ArchiveJob_66560_bytes" }
+  ],
+  "open_b3_findings": [],
+  "verification_process_count_at_final_scan": 0,
+  "exact_repair_results": "coordinator-reacceptance-results.json",
+  "limits": [
+    "Selections overlap and are not summed as a unique test total.",
+    "Physical IME/DPI/provider, human visual, installed/Release and whole-workspace acceptance remain unperformed.",
+    "Strict Desktop lint retains two unrelated baseline errors; no whole-workspace green claim.",
+    "Generic raw numbered families cannot prove an unknown final part exists.",
+    "No further implementation, B4 dispatch, packaging, install, system mutation, commit or push."
+  ]
+}

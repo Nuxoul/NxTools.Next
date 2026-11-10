@@ -32,3 +32,7 @@ fn step4_zip_add_original_conflict_tickets_and_one_candidate() {
 fn step4_zip_autorename_reserves_future_incoming_names() {
     run("auto_rename", "future-name");
 }
+#[test]
+fn opt02_distinct_sources_same_name_reach_add_conflict() {
+    run("auto_rename", "duplicate-sources");
+}

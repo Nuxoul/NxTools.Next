@@ -19,7 +19,7 @@ internal sealed record ArchiveShellIntegrationCommand(
 {
     public string DoubleClickAction { get; init; } = "open";
     public string MenuLayout { get; init; } = "cascade";
-    public string[] MenuCommands { get; init; } = ArchiveIntegrationIntent.DefaultMenuCommands;
+    public string[] MenuCommands { get; init; } = ArchiveIntegrationIntent.RecommendedMenuCommands;
 
     internal ArchiveIntegrationIntent ToIntent() => new(ClassicCascade, OpenWith, Extensions)
     {
@@ -252,7 +252,7 @@ internal sealed class ArchiveIntegrationService
         catch (Exception) { return Failed(command.DesiredRevision, "selection_helper_identity_unavailable"); }
         using var retainedHelperApproval = helperApproval;
         if (command.ClassicCascade && command.MenuCommands.Length > 0 && helperApproval is null &&
-            (_approveSelectionHelper is not null || command.MenuCommands.Contains("create")))
+            (_approveSelectionHelper is not null || command.MenuCommands.Any(ArchiveSelectionHandlerPlan.IsCreation)))
             return Failed(command.DesiredRevision, "selection_helper_identity_unavailable");
         ArchiveIntegrationPlan plan;
         try

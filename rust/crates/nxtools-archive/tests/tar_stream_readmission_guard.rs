@@ -21,6 +21,7 @@ fn second_actual_resource_limit_facts_never_create_a_third_attempt() {
             WorkerRequest::open(work_control.operation_id(), "owned-known-stream.xz".into());
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.limits.max_entry_bytes = 1;
         request.limits.max_output_bytes = 8192;
         let mut attempts = 0;

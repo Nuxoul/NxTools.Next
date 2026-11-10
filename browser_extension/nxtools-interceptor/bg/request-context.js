@@ -65,13 +65,67 @@ function youtubeCookieFallbackUrls(url, contextUrl = "") {
   return uniqueHttpUrls(urls);
 }
 
-async function cookiePairsForUrl(url) {
-  if (!isHttpUrl(url) || !chrome.cookies?.getAll) {
+// null means the originating store could not be established, not the default jar.
+async function cookieContextForSource(source = {}) {
+  if (typeof source.cookieStoreId === "string" && source.cookieStoreId) {
+    return { storeId: source.cookieStoreId };
+  }
+  if (Object.hasOwn(source, "cookieContext")) return source.cookieContext;
+  const tabId = source.tabId;
+  let tab = Number.isInteger(tabId) && tabId >= 0 ? await tabInfo(tabId) : null;
+  if (tab && !matchesRequestContext({ ...cookieSourceDetails(tab), tabId, tabIdObserved: true }, source)) {
+    tab = null;
+  }
+  const privacy = typeof source.incognito === "boolean" ? source.incognito : tab?.incognito;
+  const chromiumPrivacyKnown = Boolean(chrome.downloads?.["onDetermining" + "Filename"]?.addListener) &&
+    typeof privacy === "boolean";
+  if (tab?.cookieStoreId) return { storeId: tab.cookieStoreId };
+  if (!tab && !chromiumPrivacyKnown) return null;
+  if (!chrome.cookies?.getAllCookieStores) return null;
+  try {
+    const stores = await chrome.cookies.getAllCookieStores();
+    const store = chromiumPrivacyKnown
+      ? stores.find(candidate => candidate.id === (privacy ? "1" : "0"))
+      : stores.find(candidate => candidate.tabIds?.includes(tabId));
+    return store ? { storeId: store.id } : null;
+  } catch {
+    return null;
+  }
+}
+
+function cookieSourceDetails(source = {}) {
+  return {
+    ...(source?.cookieStoreId ? { cookieStoreId: source.cookieStoreId } : {}),
+    ...(typeof source?.incognito === "boolean" ? { incognito: source.incognito } : {})
+  };
+}
+
+async function cookieContextForCapture(source, tab, settings) {
+  const origin = { ...cookieSourceDetails(tab), ...cookieSourceDetails(source), tabId: source.tabId ?? tab?.id };
+  if (origin.cookieStoreId) return { storeId: origin.cookieStoreId };
+  if (!settings.includeRequestHeaders || !settings.includeCookies) return null;
+  return cookieContextForSource(origin);
+}
+
+function matchesRequestContext(snapshot, source = {}) {
+  if (Number.isInteger(source.tabId) && source.tabId > 0 &&
+      (!snapshot.tabIdObserved || snapshot.tabId !== source.tabId)) return false;
+  if (source.cookieStoreId && snapshot.cookieStoreId !== source.cookieStoreId) return false;
+  if (typeof source.incognito === "boolean") {
+    if (typeof snapshot.incognito === "boolean" && source.incognito !== snapshot.incognito) return false;
+    const sameObservedTab = snapshot.tabIdObserved && source.tabId === snapshot.tabId;
+    if (typeof snapshot.incognito !== "boolean" && !source.cookieStoreId && !sameObservedTab) return false;
+  }
+  return true;
+}
+
+async function cookiePairsForUrl(url, cookieContext) {
+  if (!isHttpUrl(url) || !cookieContext?.storeId || !chrome.cookies?.getAll) {
     return [];
   }
 
   try {
-    const cookies = await chrome.cookies.getAll({ url });
+    const cookies = await chrome.cookies.getAll({ url, storeId: cookieContext.storeId });
     return (cookies || [])
       .filter((cookie) => cookie?.name && cookie.value != null)
       .sort((left, right) => String(right.path || "").length - String(left.path || "").length)
@@ -81,11 +135,11 @@ async function cookiePairsForUrl(url) {
   }
 }
 
-async function cookieHeaderForContexts(url, contextUrl = "") {
+async function cookieHeaderForContexts(url, contextUrl = "", cookieContext = null) {
   const pairs = [];
   const seen = new Set();
   for (const candidateUrl of youtubeCookieFallbackUrls(url, contextUrl)) {
-    for (const pair of await cookiePairsForUrl(candidateUrl)) {
+    for (const pair of await cookiePairsForUrl(candidateUrl, cookieContext)) {
       if (!pair || seen.has(pair)) {
         continue;
       }
@@ -98,19 +152,26 @@ async function cookieHeaderForContexts(url, contextUrl = "") {
   return pairs.join("; ");
 }
 
-async function enrichHeadersForDownload(url, headers, settings, contextUrl = "") {
+async function enrichHeadersForDownload(url, headers, settings, contextUrl = "", source = {}) {
+  if (!settings.includeRequestHeaders) return {};
   const merged = {
     ...defaultHeadersForUrl(url),
     ...(headers || {})
   };
 
   if (settings.includeCookies && !merged.cookie) {
-    const cookie = await cookieHeaderForContexts(url, contextUrl || merged.referer || "");
+    const cookieContext = await cookieContextForSource(source);
+    const cookie = await cookieHeaderForContexts(url, contextUrl || merged.referer || "", cookieContext);
     if (cookie) {
       merged.cookie = cookie;
     }
   }
 
+  if (!settings.includeCookies) {
+    for (const name of Object.keys(merged)) {
+      if (name.toLowerCase() === "cookie") delete merged[name];
+    }
+  }
   return merged;
 }
 
@@ -334,29 +395,19 @@ function sanitizeCapturedHeaderObject(headers) {
 }
 
 function headerObjectToPayload(headers, settings) {
-  if (!settings.includeRequestHeaders) {
-    return { headerText: "", cookie: "" };
-  }
+  const outbound = {};
+  if (!settings.includeRequestHeaders) return { headers: outbound };
 
-  const lines = [];
   let cookie = "";
   for (const [name, value] of Object.entries(headers || {})) {
-    if (!value) {
-      continue;
-    }
+    if (!value) continue;
     if (name.toLowerCase() === "cookie") {
-      if (settings.includeCookies) {
-        cookie = value;
-      }
-      continue;
+      if (settings.includeCookies) cookie = value;
+    } else {
+      outbound[name] = value;
     }
-    lines.push(`${name}: ${value}`);
   }
-
-  return {
-    headerText: lines.join("\n"),
-    cookie
-  };
+  return cookie ? { headers: outbound, cookie } : { headers: outbound };
 }
 
 function cleanupRequestCache() {
@@ -412,14 +463,12 @@ function rememberRequestHeaders(details) {
   }
 
   const headers = normalizeHeaders(details.requestHeaders);
-  if (Object.keys(headers).length === 0) {
-    return;
-  }
 
   const snapshot = {
     requestId: details.requestId,
     tabId: details.tabId > 0 ? details.tabId : lastActiveTabId || 0,
     tabIdObserved: details.tabId > 0,
+    ...cookieSourceDetails(details),
     url: normalizeUrlKey(details.url),
     initiator: details.initiator || details.originUrl || "",
     time: Date.now(),
@@ -429,6 +478,13 @@ function rememberRequestHeaders(details) {
 
   recentRequestsByUrl.set(snapshot.url, snapshot);
   recentRequestsByRequestId.set(details.requestId, snapshot);
+  if (snapshot.tabIdObserved && (!snapshot.cookieStoreId || typeof snapshot.incognito !== "boolean")) {
+    void tabInfo(snapshot.tabId).then(tab => {
+      if (!tab || recentRequestsByRequestId.get(details.requestId) !== snapshot) return;
+      if (!matchesRequestContext({ ...cookieSourceDetails(tab), tabId: snapshot.tabId, tabIdObserved: true }, snapshot)) return;
+      Object.assign(snapshot, cookieSourceDetails(tab), cookieSourceDetails(details));
+    });
+  }
   cleanupRequestCache();
 }
 
@@ -470,9 +526,13 @@ function rememberRedirectHint(details) {
     }
   }
 
-  const snapshot = resolveHeaderSnapshot(details.url);
+  const snapshot = resolveHeaderSnapshot(details.url, details);
   const hint = {
     requestId: details.requestId || "",
+    ...cookieSourceDetails(snapshot),
+    ...cookieSourceDetails(details),
+    tabIdObserved: details.tabId > 0 || snapshot?.tabIdObserved === true,
+    url: targetUrl ? normalizeUrlKey(targetUrl) : normalizeUrlKey(details.url),
     sourceUrl: normalizeUrlKey(details.url),
     targetUrl: targetUrl ? normalizeUrlKey(targetUrl) : "",
     tabId: details.tabId > 0 ? details.tabId : snapshot?.tabId || lastActiveTabId || 0,
@@ -509,13 +569,13 @@ function rememberRedirectHint(details) {
 function resolveRedirectHint(details) {
   cleanupRequestCache();
   if (details?.requestId && redirectHintsByRequestId.has(details.requestId)) {
-    return redirectHintsByRequestId.get(details.requestId);
+    const hint = redirectHintsByRequestId.get(details.requestId);
+    if (matchesRequestContext(hint, details)) return hint;
   }
 
   const normalized = normalizeUrlKey(details?.url || "");
-  if (normalized && redirectHintsByUrl.has(normalized)) {
-    return redirectHintsByUrl.get(normalized);
-  }
+  const hint = redirectHintsByUrl.get(normalized);
+  if (hint && matchesRequestContext(hint, details)) return hint;
 
   return null;
 }
@@ -542,29 +602,39 @@ function responseMeta(details) {
     size = rangeSize;
   }
 
+  const range = /^bytes\s+(\d+)-(\d+)\/(\d+)$/i.exec(rangeText.trim());
+  const incomplete = range && Number(range[1]) <= Number(range[2]) && Number(range[2]) < Number(range[3]) &&
+    (Number(range[1]) > 0 || Number(range[2]) + 1 < Number(range[3]));
+  const query = new URL(details.url).searchParams;
+  const rangedUrl = ["range", "byterange", "bytestart"].some(key => /^\d+(?:-\d+)?$/.test(query.get(key) || ""));
   return {
     mime: assetHint?.mime || contentType,
     filename,
     size,
+    discovery: NxToolsCapturePolicy.normalizeDiscovery({
+      fragment: Boolean(incomplete && rangedUrl && /^(?:video|audio)\//.test(contentType)),
+      attachment: /^attachment(?:\s*;|\s*$)/i.test(disposition),
+      manifest: /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(details.url)
+    }, contentType),
     supportsRange: details.statusCode === 206 || /bytes/i.test(acceptRanges) || Boolean(rangeText),
     assetHint
   };
 }
 
-function resolveHeaderSnapshot(url) {
+function resolveHeaderSnapshot(url, source = {}) {
   cleanupRequestCache();
-  const normalized = normalizeUrlKey(url);
-  if (recentRequestsByUrl.has(normalized)) {
-    return recentRequestsByUrl.get(normalized);
-  }
-
+  const exactRequest = recentRequestsByRequestId.get(source.requestId);
+  if (exactRequest && matchesRequestContext(exactRequest, source)) return exactRequest;
   let best = null;
   let bestScore = 0;
-  for (const snapshot of recentRequestsByUrl.values()) {
-    const score = headerSnapshotScore(url, snapshot);
-    if (score <= 0) {
-      continue;
-    }
+  const snapshots = new Set([...recentRequestsByRequestId.values(), ...recentRequestsByUrl.values(), ...redirectHintsByRequestId.values()]);
+  const exact = [...snapshots].filter(snapshot => snapshot.url === normalizeUrlKey(url) && matchesRequestContext(snapshot, source));
+  const hasSource = source.tabId > 0 || source.cookieStoreId;
+  if (!hasSource && new Set(exact.map(snapshot => `${snapshot.tabId}:${snapshot.cookieStoreId || snapshot.incognito || ""}`)).size > 1) return null;
+  for (const snapshot of snapshots) {
+    if (!matchesRequestContext(snapshot, source)) continue;
+    const score = snapshot.url === normalizeUrlKey(url) ? 10000 : headerSnapshotScore(url, snapshot);
+    if (score <= 0) continue;
     if (!best || score > bestScore || (score === bestScore && snapshot.time > best.time)) {
       best = snapshot;
       bestScore = score;

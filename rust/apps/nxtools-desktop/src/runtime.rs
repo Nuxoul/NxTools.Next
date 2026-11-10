@@ -86,15 +86,40 @@ impl IndexerBridge {
     }
 
     pub(crate) fn send_command(&self, command: IndexerCommand) -> Result<uuid::Uuid> {
+        self.send_command_with_id(command, uuid::Uuid::new_v4())
+    }
+
+    pub(crate) fn send_command_with_id(
+        &self,
+        command: IndexerCommand,
+        command_id: uuid::Uuid,
+    ) -> Result<uuid::Uuid> {
         if !self.is_connected() {
             anyhow::bail!("the indexer process is disconnected");
         }
-        let envelope = Envelope::new(Message::IndexerCommand(command));
-        let command_id = envelope.id;
+        let mut envelope = Envelope::new(Message::IndexerCommand(command));
+        envelope.id = command_id;
         self.commands.try_send(envelope).map_err(|error| {
             anyhow::anyhow!("indexer command queue rejected the request: {error}")
         })?;
         Ok(command_id)
+    }
+
+    pub(crate) async fn cancel_search(
+        &self,
+        cancel: nxtools_protocol::IndexSearchCancel,
+    ) -> Result<()> {
+        if !self.is_connected() {
+            anyhow::bail!("the indexer process is disconnected");
+        }
+        let mut envelope = Envelope::new(Message::IndexerCommand(IndexerCommand::CancelSearch(
+            cancel,
+        )));
+        envelope.correlation_id = Some(cancel.request_id);
+        self.commands
+            .send(envelope)
+            .await
+            .map_err(|_| anyhow::anyhow!("indexer command queue is closed"))
     }
 }
 
@@ -242,7 +267,7 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
     let (engine, _network_policy) =
         open_download_engine_from_config(paths.data_dir.join("downloads.sqlite3"), &config)
             .context("failed to initialize the background download engine")?;
-    let (_extensions, _) = crate::extensions::service::ExtensionService::new_with_storage(
+    let (extensions, _) = crate::extensions::service::ExtensionService::new_with_storage(
         &engine,
         config.extensions.clone(),
         None,
@@ -285,6 +310,9 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
         {
             activity.begin_draining();
             info!("background download host entered draining before idle exit");
+            extensions
+                .shutdown_and_wait()
+                .context("failed to drain background extension resources")?;
             activity.mark_stopped();
             info!("background download host exited after becoming idle");
             return Ok(());
@@ -571,8 +599,8 @@ fn supervise_indexer_service_at(
         endpoint.connected.store(false, Ordering::Release);
         while endpoint.commands.try_recv().is_ok() {}
         if !reconnect {
-            // The service intentionally outlives the desktop. Do not join a synchronous reader
-            // that may still be blocked on that persistent pipe during application shutdown.
+            // The service owns the authenticated desktop process lifetime. Do not wait for a
+            // synchronous pipe reader here: process exit is what releases that final owner.
             drop(reader);
             return;
         }
@@ -865,7 +893,7 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn desktop_shutdown_does_not_wait_for_the_persistent_service_reader() {
+    fn desktop_shutdown_does_not_wait_for_the_service_lifetime_reader() {
         let pipe_name = format!(r"\\.\pipe\nxtools-desktop-stop-{}", uuid::Uuid::new_v4());
         let server_name = pipe_name.clone();
         let (accepted, accepted_receiver) = mpsc::channel();

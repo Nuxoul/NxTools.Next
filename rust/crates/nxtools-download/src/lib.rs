@@ -56,9 +56,10 @@ pub use message::{
     DownloadCommandOutcome, DownloadCommandResult, DownloadEvent, DownloadEventEnvelope,
     DownloadEventSequenceError, DownloadEventSequencer, DownloadFault, DownloadFaultCode,
     DownloadMediaProbe, DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueueAction,
-    DownloadQueuePlacement, DownloadSegmentProgress, DownloadSnapshot, DownloadSubmitMode,
-    DownloadTaskAction, DownloadTaskDetail, DownloadTaskSummary, DownloadTaskTimelineEntry,
-    DownloadTaskTimelineEvent, HlsProbe, HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
+    DownloadQueuePlacement, DownloadRouteKind, DownloadSegmentProgress, DownloadServerObservation,
+    DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail,
+    DownloadTaskSummary, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, HlsProbe,
+    HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
 };
 pub use nxtools_network::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 pub use organization::{DownloadOrganizationPolicy, DownloadOrganizationPolicyError};

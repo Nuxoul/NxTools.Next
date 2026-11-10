@@ -80,11 +80,10 @@ impl ExtensionApplication {
         }
         let platform = self.platform.as_ref()?;
         let (reply, receiver) = async_channel::bounded(1);
-        let timeout = if matches!(&command, PlatformCommand::PickExtensionRuntime(_)) {
-            300
-        } else {
-            30
-        };
+        let human_selection = matches!(
+            &command,
+            PlatformCommand::PickExtensionRuntime(_) | PlatformCommand::PickExtensionSettingPath(_)
+        );
         self.pending_runtime
             .insert(id, (Instant::now(), reply, operation));
         if platform.send_command_with_id(command, id).is_err() {
@@ -93,12 +92,12 @@ impl ExtensionApplication {
             return None;
         }
         info!(event=operation.accepted_event(),correlation_id=%id,"extension platform operation admitted");
-        if matches!(operation, PlatformRequestOperation::SettingPath) {
+        if human_selection {
             return Some(receiver);
         }
         cx.spawn(async move |this, cx| {
             cx.background_executor()
-                .timer(std::time::Duration::from_secs(timeout))
+                .timer(std::time::Duration::from_secs(30))
                 .await;
             let _ = this.update(cx, |app, _| {
                 if let Some((started, reply, operation)) = app.pending_runtime.remove(&id) {

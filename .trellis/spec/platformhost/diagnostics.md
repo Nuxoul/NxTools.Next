@@ -14,13 +14,15 @@ Native output failure crosses the private Rust worker rendezvous and becomes the
 ### 2. Signatures
 `ArchiveWorkerOutputBridge.Execute(..., out ArchiveNativeOutputFailure?)` returns operation/call/action/token/category/native/state; `ArchiveWorkerRunner.ResolveTerminal` produces one immutable ArchiveWorkerEvent consumed by DiagnosticTerminal and publish. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerRunner.cs`, `repo:csharp/NxTools.PlatformHost.Tests/ArchiveWorkerOutcomeTests.cs`.
 ### 3. Contracts
-Fix the current native-call failure by first-failure CAS, never restore a mutable last-file error at terminal time. Begin has no allocated token. Six target failures and existing overwrite special states are promoted; unrelated codec/domain mappings stay unchanged. No private wire/schema change. Terminal log reuses exact category/native_error_code/commit_state/files_committed/elapsed_ms/cleanup_complete/correlation from the event. Publication/unknown/postcommit facts outrank cancellation; diagnostic exceptions cannot change the result.
+Fix the current native-call failure by first-failure CAS,never restore a mutable last-file error at terminal time. A failed ordinary begin has no token; target_exists remains a conflict result. The terminal log reuses exact category/native_error_code/completion state/files completed/elapsed_ms/cleanup_complete/correlation from the resolved event. Completed/unknown output facts outrank cancellation; diagnostic exceptions cannot change the result.
+The same terminal projects bounded native read observations from their owning scopes. Archive Edit/Create candidate source/target/output and held-partial readback follow [protected archive observations](archive-read-observation.md). Ordinary destination extraction has no output fingerprint/postpublication read and retains only journal completion/cleanup plus transport/native counters. Observation counters never become source,conflict or output authority.
+Negotiated payload transfer projects numeric JSON/binary bytes/frames,conversion/copy bytes,reservation and bounded buffer high-water. Rust ordinary observations are `output_{begin,close,directory,directory_metadata}_{calls,wait_us}` with begin=begin+begin_overwrite, close=commit and directory=directory+directory_new. Waits start after prior Rust-tail flush, cover serialization/send/reply, and close includes queued payload consumed before close; counts include returned failures/cancel. Native fields are `native_begin_ms` for the whole bridge begin action, inclusive `native_parent_resolution_ms`, `native_final_open_ms` for final-open allocation/syscall/inspection, `native_create_ms` for `NtCreateFile` plus P/Invoke marshalling, `native_open_inspection_ms`, `native_directory_ms` and `native_directory_metadata_ms`. `native_commit_ms` surrounds only `session.Commit` inside the stdout pump after payload drain; `output_close_wait_us` is the full Rust await. `output_write_ack_frames=0`, JSON frames remain `2N + operation overhead`, `output_ipc_ack_us` remains Rust send/backpressure, and fingerprint/postpublication durations are zero. All durations are inclusive/overlapping, non-additive and not exclusive IPC. No per-chunk events, paths or payloads.
 ### 4. Validation & Error Matrix
-Target changed/missing/directory/reparse/busy/denied→exact category+FailedBeforeCommit+actual native code when supplied. Existing cancel→cancelled, publication+cancel→cancelled_with_committed_output. Unknown/postcommit→retained truthful state/count/native, no retry/delete. target_exists remains worker OutputCollision, not this promotion. Prior operation/earlier committed file cannot supply a later failure's category/native code.
+Target changed/missing/directory/reparse/busy/denied -> exact category+incomplete-output cleanup+actual native code when supplied. Existing cancel -> cancelled; prior successful closes+cancel -> cancelled_with_committed_output. Unknown close/delete -> retained truthful state/count/native,no retry/rollback. target_exists remains worker OutputCollision/prompt input,not terminal failure promotion. A prior completed file cannot supply a later failure's category/native code.
 ### 5. Good/Base/Bad Cases
-Good: current Begin/Commit fault causes fixed typed terminal. Base: success logs category success. Bad: recover LastCommitCategory regardless of terminating cause or log run.Failure while event resolves another category.
+Good: current ordinary write/close fault or Create/Edit candidate fault causes one fixed typed terminal. Base: success logs fixed category/counts. Bad: recover LastCommitCategory regardless of terminating cause,log run.Failure while event resolves another category,or log per-record/path/payload data.
 ### 6. Tests Required
-ActualTargetFailures12cases assert event/state/native/count/cleanup/bytes/owned partials; ActualTerminalDiagnostics8cases compare structured log/event fields and throwing-sink/privacy behavior; ActualOperationIsolation4cases cover committed-first/failed-second and next-job success. Preserve original29fixtures. No raw names/paths/passwords/frames/tokens in logs.
+Actual target/terminal/isolation coverage asserts event/state/native/count/cleanup/bytes, ordinary incomplete outputs and candidate partials separately. Ordinary diagnostics additionally require exact begin/close/directory/directory-metadata counts and waits, native begin/parent/open/create/inspection/directory aggregates, failure/cancel inclusion, post-tail-flush wait start and the `native_commit_ms` versus `output_close_wait_us` boundary. Preserve sticky native write code, completed-first/failed-second, source/candidate/cache observations and throwing-sink/privacy behavior. No raw names/paths/passwords/frames/tokens in logs; final Release performance acceptance remains separate.
 ### 7. Wrong vs Correct
 Wrong: terminal event resolves overwrite_not_supported but failed log says worker_failure. Correct: resolve once after real cleanup→write safe fields from terminal→publish same terminal.
 
@@ -44,3 +46,30 @@ correlation, fixed stage/count/elapsed/native fields; original read/job/worker o
 is unchanged. No adapter/UI or raw frame/path/error output. EOF sets stop before original channel
 completion so normal shutdown cannot be diagnosed as a failed event pump. Child exit still reflects
 actual transport/session drain failure. CLI structured product output is separate from diagnostics.
+
+Keyboard hook lifecycle logs `quick_launch.keyboard_hook.install_started`, `installed`, `install_failed`,
+`thread_exited` and `reinstalled`, with the installation/configuration correlation, elapsed_ms and native_error_code.
+Normal stop is not an unexpected exit; bounded join exhaustion logs stop_deferred without claiming native termination.
+These run outside HookCallback. Key/down/up callbacks never log or publish IPC. No key content, display binding,
+heartbeat, idle probe or silent-removal inference is permitted. Typed health forwarding uses the negotiated
+quick_launch_keyboard_health_v1 capability; reconnect availability remains the Hello snapshot.
+Health snapshot replay and current-session queue recovery preserve the original correlation/native code;
+they are transport projection, not a new native operation or lifecycle log. The reader coalesces unchanged
+facts without per-event recovery diagnostics; the original observed state transition remains the log owner.
+
+## Bounded ordinary-Host memory observation
+
+Evidence: `repo:scripts/observe-platformhost-memory.ps1`,
+`repo:tests/architecture/platformhost-memory-sampler.tests.ps1`,
+[runtime audit](../../../docs/audits/2026-11-06-platformhost-memory.md).
+This external read-only entry selects one exact Host/Desktop image pair, actual parent PID,
+ordinary `--parent-pid` role, session and creation times. It pins and rechecks identity, never
+follows a replacement or starts the product. Default60seconds/5secondinterval, maximum600seconds,
+minimum5secondinterval. Process private commit/working set/handles/threads and explicit
+System.Runtime EventCounters share one observation window; preserve independent timestamps/units.
+The counter collector disables runtime resume and exports GC heap, GC committed, naturalGen2count
+and allocation rate only. Missing counters/target, changed identity and collector failure cannot
+be a successful leak check. Private commit is not GC heap; private-minus-GC is not exact native
+allocation. No payload/dump/forcedGC/trim/restart/service/pressure/packaging or production logging
+changes. Only the owned collector can be terminated after the bounded shutdown wait. Raw command
+lines are not persisted. Absent affected process is a diagnostic blocker, not a repaired incident.

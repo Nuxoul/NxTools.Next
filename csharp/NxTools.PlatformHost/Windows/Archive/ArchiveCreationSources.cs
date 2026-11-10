@@ -130,6 +130,9 @@ internal sealed class ArchiveCreationSources : IDisposable
     private ActiveFile? activeFile;
     private bool disposed;
     internal Func<string, string>? NamespacePathProbe { get; set; }
+    internal long PayloadReadCalls { get; private set; }
+    internal long PayloadReadBytes { get; private set; }
+    internal long PayloadConversionInputBytes { get; private set; }
 
     private ArchiveCreationSources(ulong maxEntries, ulong maxMetadata, ulong maxEntryBytes, ulong maxTotalBytes)
     {
@@ -188,7 +191,7 @@ internal sealed class ArchiveCreationSources : IDisposable
         RevalidateRoots();
     }
 
-    internal object Execute(Guid operationId, JsonElement call)
+    internal object Execute(Guid operationId, JsonElement call, ArchiveBulkBinding? bulk = null)
     {
         Guid? callId = null;
         try
@@ -215,7 +218,10 @@ internal sealed class ArchiveCreationSources : IDisposable
                     SourceOpen(ReadToken(call));
                     break;
                 case "source_read":
-                    readData = SourceRead(ReadToken(call), ReadOffset(call), ReadLength(call));
+                    if (bulk is { } binding) return new ArchiveBulkReply(binding, SourceReadBytes(ReadToken(call), ReadOffset(call), ReadLength(call)));
+                    var payload = SourceReadBytes(ReadToken(call), ReadOffset(call), ReadLength(call));
+                    try { PayloadConversionInputBytes += payload.Length; readData = Convert.ToBase64String(payload); }
+                    finally { CryptographicOperations.ZeroMemory(payload); }
                     break;
                 case "source_close":
                     SourceClose(ReadToken(call));
@@ -375,7 +381,7 @@ internal sealed class ArchiveCreationSources : IDisposable
         activeFile = new ActiveFile(record, OpenRecordChain(record));
     }
 
-    private string SourceRead(Guid token, ulong offset, int length)
+    private byte[] SourceReadBytes(Guid token, ulong offset, int length)
     {
         var current = activeFile;
         if (current is null || current.Record.Id != token) throw new ArchiveOutputException("invalid_source_call");
@@ -386,6 +392,7 @@ internal sealed class ArchiveCreationSources : IDisposable
         var remaining = current.Record.Size - offset;
         var count = (int)Math.Min((ulong)length, remaining);
         var buffer = new byte[count];
+        PayloadReadCalls++;
         try
         {
             var read = 0;
@@ -395,16 +402,19 @@ internal sealed class ArchiveCreationSources : IDisposable
                     checked((long)offset + read));
                 if (currentRead == 0) throw new ArchiveOutputException("source_changed");
                 read += currentRead;
+                PayloadReadBytes += currentRead;
             }
-            return Convert.ToBase64String(buffer);
+            return buffer;
         }
         catch (IOException failure)
         {
+            CryptographicOperations.ZeroMemory(buffer);
             throw MapIoFailure(failure, observed: true);
         }
-        finally
+        catch
         {
             CryptographicOperations.ZeroMemory(buffer);
+            throw;
         }
     }
 

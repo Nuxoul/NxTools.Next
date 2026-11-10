@@ -28,6 +28,25 @@ pub(super) struct Lease {
     pub id: Uuid,
     pub operation: Uuid,
 }
+pub(super) fn preview_native_result(code: Option<ArchiveReadError>) -> PreviewResult {
+    match code {
+        Some(ArchiveReadError::Cancelled) => PreviewResult::PasswordCancelled,
+        Some(ArchiveReadError::SelectedOutputLimit) => PreviewResult::TooLarge,
+        Some(ArchiveReadError::ResourceLimit) => PreviewResult::ReadLimit,
+        Some(ArchiveReadError::SourceChanged) => PreviewResult::SourceChanged,
+        Some(ArchiveReadError::CorruptArchive | ArchiveReadError::AuthenticationOrDataError) => {
+            PreviewResult::Corrupt
+        }
+        Some(
+            ArchiveReadError::UnsupportedFormat
+            | ArchiveReadError::UnsupportedMethod
+            | ArchiveReadError::UnsupportedEncryption
+            | ArchiveReadError::UnsupportedOperation,
+        ) => PreviewResult::Unsupported,
+        Some(ArchiveReadError::Disconnected) => PreviewResult::Disconnected,
+        _ => PreviewResult::Failed,
+    }
+}
 impl ArchiveApplication {
     pub(crate) fn open_entry(&mut self, id: Uuid, entry: RowId, cx: &mut Context<Self>) {
         self.cancel_preview(id, cx);
@@ -86,7 +105,7 @@ impl ArchiveApplication {
         }
         let nested = is_archive(&name);
         if nested && slot.depth >= 3 {
-            self.notice(id, "嵌套归档最多打开 3 层。".into(), cx);
+            self.notice(id, "嵌套压缩包最多打开 3 层。".into(), cx);
             return;
         }
         let generation = slot.generation;
@@ -101,7 +120,7 @@ impl ArchiveApplication {
                         let close_owner = owner.clone();
                         dialog
                             .title("打开活动内容？")
-                            .child("归档中的程序或脚本可能执行代码。仅在确认来源可信时继续。")
+                            .child("压缩包中的程序或脚本可能执行代码。仅在确认来源可信时继续。")
                             .footer(
                                 DialogFooter::new()
                                     .child(
@@ -177,6 +196,7 @@ impl ArchiveApplication {
             depth: slot.depth,
             copy_motw: Some(self.settings.copy_motw),
             password_interaction: true,
+            preview_options: None,
             temp_policy: Some(ArchiveTempPolicy {
                 base_directory: self.settings.temp.base_directory.clone(),
                 retention_hours: self.settings.temp.retention_hours,
@@ -300,6 +320,7 @@ impl ArchiveApplication {
                                 copy_motw: None,
                                 password_interaction: false,
                                 temp_policy: None,
+                                preview_options: None,
                             }),
                             shell_id,
                             lease.operation,
@@ -389,6 +410,7 @@ impl ArchiveApplication {
             copy_motw: None,
             password_interaction: false,
             temp_policy: None,
+            preview_options: None,
         };
         let _ = self
             .platform
@@ -412,6 +434,7 @@ impl ArchiveApplication {
                 copy_motw: None,
                 password_interaction: false,
                 temp_policy: None,
+                preview_options: None,
             };
             let _ = self
                 .platform
@@ -434,7 +457,7 @@ impl ArchiveApplication {
                 let _ = window.update(cx, |_, window, cx| {
                     window.open_dialog(cx, move |dialog, _, _| {
                         dialog
-                            .title("归档操作")
+                            .title("压缩包操作")
                             .child(message.clone())
                             .footer(DialogClose::new().trigger(|button| button.label("关闭")))
                     })
@@ -521,6 +544,7 @@ impl ArchiveApplication {
             return;
         }
         let generation = slot.generation;
+        let profile = self.settings.preview;
         let browser = slot.browser.clone();
         let data = slot
             .view
@@ -544,6 +568,7 @@ impl ArchiveApplication {
             .flatten();
         self.cancel_preview(id, cx);
         let state = self.previews.entry(id).or_default();
+        state.profile = profile;
         state.retired = false;
         state.selection_generation = selection_generation;
         state.row = row.clone();
@@ -573,7 +598,9 @@ impl ArchiveApplication {
                     {
                         result = PreviewResult::Unsupported;
                     } else if let Some(kind) = preview::kind(&entry.name) {
-                        if entry.size.is_some_and(|size| size > kind.limit()) {
+                        if profile.validate().is_err() {
+                            result = PreviewResult::Failed;
+                        } else if entry.size.is_some_and(|size| size > kind.limit(profile)) {
                             result = PreviewResult::TooLarge;
                         } else {
                             state.latest = Some(PreviewRequest {
@@ -583,6 +610,7 @@ impl ArchiveApplication {
                                 row,
                                 selection_generation,
                                 kind,
+                                profile,
                                 started: Instant::now(),
                             });
                             result = PreviewResult::Loading;
@@ -603,6 +631,13 @@ impl ArchiveApplication {
         self.start_preview(id, cx);
     }
     pub(crate) fn cancel_preview(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if let Some(lease) = self
+            .windows
+            .get_mut(&id)
+            .and_then(|slot| slot.preview_lease.take())
+        {
+            self.release(lease);
+        }
         let Some(state) = self.previews.get_mut(&id) else {
             return;
         };
@@ -642,6 +677,7 @@ impl ArchiveApplication {
         };
         let selection_generation = state.selection_generation;
         let row = state.row.clone();
+        let profile = state.profile;
         let generation = slot.generation;
         let browser = slot.browser.clone();
         let window = slot.window;
@@ -663,6 +699,7 @@ impl ArchiveApplication {
                 let _ = window.update(cx, |_, window, cx| {
                     let _ = view.update(cx, |view, cx| {
                         if view.preview_selection_matches(selection_generation, &row) {
+                            view.preview_profile(profile);
                             view.preview_result(selection_generation, row, result, window, cx);
                         }
                     });
@@ -740,6 +777,10 @@ impl ArchiveApplication {
             depth: slot.depth,
             copy_motw: Some(self.settings.copy_motw),
             password_interaction: true,
+            preview_options: Some(nxtools_protocol::archive_browser::ArchivePreviewOptions {
+                max_bytes: request.kind.limit(request.profile),
+                timeout_ms: request.profile.timeout_ms(),
+            }),
             temp_policy: Some(ArchiveTempPolicy {
                 base_directory: self.settings.temp.base_directory.clone(),
                 retention_hours: self.settings.temp.retention_hours,
@@ -778,6 +819,7 @@ impl ArchiveApplication {
                 request,
                 PreviewResult::Disconnected,
                 "not_submitted",
+                None,
                 cx,
             );
         }
@@ -822,23 +864,7 @@ impl ArchiveApplication {
             let result = if !current {
                 PreviewResult::Cancelled
             } else if identity {
-                match value.code {
-                    Some(ArchiveReadError::Cancelled) => PreviewResult::PasswordCancelled,
-                    Some(ArchiveReadError::ResourceLimit) => PreviewResult::ReadLimit,
-                    Some(ArchiveReadError::SourceChanged) => PreviewResult::SourceChanged,
-                    Some(
-                        ArchiveReadError::CorruptArchive
-                        | ArchiveReadError::AuthenticationOrDataError,
-                    ) => PreviewResult::Corrupt,
-                    Some(
-                        ArchiveReadError::UnsupportedFormat
-                        | ArchiveReadError::UnsupportedMethod
-                        | ArchiveReadError::UnsupportedEncryption
-                        | ArchiveReadError::UnsupportedOperation,
-                    ) => PreviewResult::Unsupported,
-                    Some(ArchiveReadError::Disconnected) => PreviewResult::Disconnected,
-                    _ => PreviewResult::Failed,
-                }
+                preview_native_result(value.code)
             } else {
                 PreviewResult::Failed
             };
@@ -890,7 +916,7 @@ impl ArchiveApplication {
                 PreviewResult::Cancelled => "superseded",
                 _ => "native_failure",
             };
-            self.complete_preview(pending.operation, request, result, outcome, cx);
+            self.complete_preview(pending.operation, request, result, outcome, None, cx);
         } else {
             if let Some(state) = self.previews.get_mut(&pending.window_id) {
                 state.running = None;
@@ -921,6 +947,7 @@ impl ArchiveApplication {
             .cancel
             .clone();
         let kind = request.kind;
+        let profile = request.profile;
         let platform = self.platform.clone();
         #[cfg(test)]
         let barrier = self.preview_decode_barrier.take();
@@ -929,20 +956,13 @@ impl ArchiveApplication {
             #[cfg(test)]
             if let Some(barrier) = barrier { let _ = barrier.recv().await; }
             tracing::info!(event="archive.preview.decode_started",correlation_id=%operation,"archive preview decode started");
-            preview::prepare(&path, kind, &cancellation)
+            preview::prepare(&path, kind, profile, &cancellation)
         });
         cx.spawn(async move |this, cx| {
             let decoded = task.await;
-            // Detached from the Browser: lease release still runs after Browser/app retirement.
-            let release = preview_control(
-                lease.session,
-                lease.generation,
-                lease.operation,
-                ArchiveEntryAction::Release,
-                Some(lease.id),
-            );
-            let _ =
-                platform.send_command_correlated(PlatformCommand::ArchiveEntry(release), operation);
+            // The original lease remains with this completion until the visible Ready owner
+            // accepts it; a retired application still sends the exact native release.
+            let mut lease = Some(lease);
             let outcome = match &decoded {
                 Ok(_) => "ready",
                 Err(preview::PreviewFailure::TooLarge) => "too_large",
@@ -954,14 +974,26 @@ impl ArchiveApplication {
                 Err(preview::PreviewFailure::Corrupt) => "corrupt",
                 Err(preview::PreviewFailure::Cancelled) => "cancelled",
                 Err(preview::PreviewFailure::Io) => "io_failure",
+                Err(preview::PreviewFailure::InvalidSettings) => "invalid_settings",
             };
             let result = match decoded {
                 Ok(payload) => PreviewResult::Ready(payload),
                 Err(failure) => failure.into(),
             };
             let _ = this.update(cx, |app, cx| {
-                app.complete_preview(operation, request, result, outcome, cx)
+                app.complete_preview(operation, request, result, outcome, lease.take(), cx)
             });
+            if let Some(lease) = lease {
+                let release = preview_control(
+                    lease.session,
+                    lease.generation,
+                    lease.operation,
+                    ArchiveEntryAction::Release,
+                    Some(lease.id),
+                );
+                let _ = platform
+                    .send_command_correlated(PlatformCommand::ArchiveEntry(release), operation);
+            }
         })
         .detach();
     }
@@ -971,23 +1003,42 @@ impl ArchiveApplication {
         request: PreviewRequest,
         result: PreviewResult,
         outcome: &'static str,
+        lease: Option<Lease>,
         cx: &mut Context<Self>,
     ) {
         let current = self.preview_current(&request, cx);
-        if let Some(state) = self.previews.get_mut(&request.window_id) {
-            if state.running != Some(operation) {
-                return;
+        let Some(state) = self.previews.get_mut(&request.window_id) else {
+            if let Some(lease) = lease {
+                self.release(lease);
             }
-            state.running = None;
-            if state
-                .latest
-                .as_ref()
-                .is_some_and(|latest| latest.selection_generation == request.selection_generation)
-            {
-                state.latest = None;
-            }
-        } else {
             return;
+        };
+        if state.running != Some(operation) {
+            if let Some(lease) = lease {
+                self.release(lease);
+            }
+            return;
+        }
+        state.running = None;
+        if state
+            .latest
+            .as_ref()
+            .is_some_and(|latest| latest.selection_generation == request.selection_generation)
+        {
+            state.latest = None;
+        }
+        if let Some(lease) = lease {
+            if current && matches!(&result, PreviewResult::Ready(_)) {
+                if let Some(slot) = self.windows.get_mut(&request.window_id) {
+                    if let Some(previous) = slot.preview_lease.replace(lease) {
+                        self.release(previous);
+                    }
+                } else {
+                    self.release(lease);
+                }
+            } else {
+                self.release(lease);
+            }
         }
         tracing::info!(event="archive.preview.terminal",correlation_id=%operation,outcome=if current { outcome } else { "superseded" },elapsed_ms=request.started.elapsed().as_millis() as u64,"archive passive preview finished");
         if current {
@@ -1005,6 +1056,14 @@ impl ArchiveApplication {
         }
     }
     pub(super) fn previews_disconnected(&mut self, cx: &mut Context<Self>) {
+        let visible = self
+            .windows
+            .values_mut()
+            .filter_map(|slot| slot.preview_lease.take())
+            .collect::<Vec<_>>();
+        for lease in visible {
+            self.release(lease);
+        }
         let operations = self.preview_prompts.keys().copied().collect::<Vec<_>>();
         for operation in operations {
             self.dismiss_preview_password(operation, cx);
@@ -1070,6 +1129,7 @@ fn preview_control(
         copy_motw: None,
         password_interaction: false,
         temp_policy: None,
+        preview_options: None,
     }
 }
 
@@ -1172,10 +1232,10 @@ impl ArchiveApplication {
                         .title(if dialog_prompt.error_code == "WrongPassword" {
                             "密码错误，请重试"
                         } else {
-                            "归档预览需要密码"
+                            "压缩包预览需要密码"
                         })
                         .child(
-                            gpui_kit::component::input::Input::new(&input).aria_label("归档密码"),
+                            gpui_kit::component::input::Input::new(&input).aria_label("压缩包密码"),
                         )
                         .footer(
                             DialogFooter::new()

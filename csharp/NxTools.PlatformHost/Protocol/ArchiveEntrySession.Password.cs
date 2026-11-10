@@ -86,8 +86,13 @@ internal sealed partial class ArchiveEntrySession
             token = authorizations[id.Value].Token; return true;
         }
     }
-    internal Task<WindowsCommandResult> DispatchVirtualMaterialize(ArchiveEntryCommand command, ulong outputLimit, Guid? authorizationId) =>
-        Dispatch(ProtocolEnvelope.Create("platform_command", new { command = "archive_entry", data = command }, command.OperationId), outputLimit, authorizationId);
+    internal async Task<MaterializationCompletion> DispatchVirtualMaterialize(ArchiveEntryCommand command, ulong outputLimit, Guid? authorizationId)
+    {
+        var response = DispatchCore(ProtocolEnvelope.Create("platform_command", new { command = "archive_entry", data = command }, command.OperationId), outputLimit, authorizationId, out var materialized);
+        if (materialized is not null) return await materialized;
+        var rejected = await response;
+        return new(System.Text.Json.JsonSerializer.Deserialize<ArchiveEntryResult>(rejected.Data ?? "", JsonDefaults.Options) ?? throw new InvalidDataException(), null);
+    }
     private void CancelAuthorizedEntry(Pending pending)
     {
         lock (gate) {

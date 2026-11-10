@@ -64,11 +64,14 @@ fn real_rust_coordinator_reenters_original_native_admission_only_after_cleanup()
         );
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.codepage = 936;
         request.conflict_policy =
             Some(serde_json::from_value(json!("auto_rename")).expect("policy"));
-        request.extract_options =
-            Some(nxtools_archive::worker::ExtractOptions { copy_motw: false, reclamation: None });
+        request.extract_options = Some(nxtools_archive::worker::ExtractOptions {
+            copy_motw: false,
+            reclamation: None,
+        });
         request.limits.max_entries = 100;
         request.limits.max_entry_bytes = if mode == "total" { 8192 } else { 1024 };
         request.limits.max_output_bytes = if mode == "total" { 4096 } else { 8192 };

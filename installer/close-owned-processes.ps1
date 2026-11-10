@@ -9,7 +9,8 @@ param(
     [string]$NewManifestPath = '',
     [string]$NewSignaturePath = '',
     [string]$BootstrapMigrationPackage = '',
-    [string]$DiagnosticPath = ''
+    [string]$DiagnosticPath = '',
+    [switch]$RepairMissingBootstrap
 )
 $ErrorActionPreference = 'Stop'
 
@@ -181,8 +182,12 @@ function Resolve-UpgradeUpdaterProcessId($Registration, [string]$ExpectedBootstr
         $Registration.NxToolsUpdateKeySha256 -notmatch '^[a-fA-F0-9]{64}$' -or
         $ActualHash -notmatch '^[a-fA-F0-9]{64}$' -or
         ![string]::Equals([string]$Registration.NxToolsBootstrapSha256, $ActualHash, [StringComparison]::OrdinalIgnoreCase) -or
-        @($ServiceStatus).Count -ne 3 -or [uint32]$ServiceStatus[1] -ne 4 -or [uint32]$ServiceStatus[2] -ne 0x10 -or
-        [uint32]$ServiceStatus[0] -eq 0 -or [uint64]$ServiceStatus[0] -gt [int]::MaxValue) {
+        @($ServiceStatus).Count -ne 3 -or [uint32]$ServiceStatus[2] -ne 0x10) {
+        throw [IO.InvalidDataException]::new('Updater service identity is not approved for process exclusion.')
+    }
+    if ([uint32]$ServiceStatus[1] -eq 1 -and [uint32]$ServiceStatus[0] -eq 0) { return 0 }
+    if ([uint32]$ServiceStatus[1] -ne 4 -or [uint32]$ServiceStatus[0] -eq 0 -or
+        [uint64]$ServiceStatus[0] -gt [int]::MaxValue) {
         throw [IO.InvalidDataException]::new('Updater service identity is not approved for process exclusion.')
     }
     return [int]$ServiceStatus[0]
@@ -694,13 +699,18 @@ function Prepare-UpgradeBrowserHost([string]$InstallRoot, [string]$StateFile, [s
     Suspend-UpgradeBrowserHost $installPath $statePath $OperationId -NewManifestPath $NewManifestPath -NewSignaturePath $NewSignaturePath
 }
 
-function Invoke-UpgradeBootstrapMigration([string]$Package, [string]$OperationId) {
+function Invoke-UpgradeBootstrapMigration([string]$Package, [string]$OperationId, [switch]$RepairMissing) {
     $migrationHost = Join-Path $Package 'NxTools.PlatformHost.exe'
     Assert-UpgradePlainPath $migrationHost
-    Write-Output "installer.bootstrap_migration.started correlation=$OperationId"
-    & $migrationHost --maintain-trusted-bootstrap
+    $repairId=[Guid]::NewGuid()
+    Write-Output "installer.bootstrap_migration.started correlation=$OperationId repair_id=$repairId missing_root=$([int][bool]$RepairMissing)"
+    if ($RepairMissing) {
+        & $migrationHost --repair-missing-trusted-bootstrap $repairId.ToString('D')
+    } else {
+        & $migrationHost --maintain-trusted-bootstrap
+    }
     if ($LASTEXITCODE -ne 0) { throw [InvalidOperationException]::new('Updater migration failed before application file replacement.') }
-    Write-Output "installer.bootstrap_migration.completed correlation=$OperationId"
+    Write-Output "installer.bootstrap_migration.completed correlation=$OperationId repair_id=$repairId"
 }
 
 function Write-UpgradeDiagnostic([string]$EventName, [string]$Stage, $FailureRecord = $null, [int]$NativeCode = 0) {
@@ -760,7 +770,7 @@ try {
     if ($BootstrapMigrationPackage) {
         $diagnosticStage = 'bootstrap_migration'
         Write-UpgradeDiagnostic 'stage' $diagnosticStage
-        Invoke-UpgradeBootstrapMigration $BootstrapMigrationPackage $CorrelationId
+        Invoke-UpgradeBootstrapMigration $BootstrapMigrationPackage $CorrelationId -RepairMissing:$RepairMissingBootstrap
     }
     if (!$InstallDirectory -or !(Test-Path -LiteralPath $InstallDirectory -PathType Container)) {
         # First installation has no prior application directory, but the protected

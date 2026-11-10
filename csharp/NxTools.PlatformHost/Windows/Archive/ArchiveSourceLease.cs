@@ -38,6 +38,7 @@ internal sealed class ArchiveSourceLease : IDisposable
     private string? editSourceTargetSignature;
     private Guid pendingEditReadCompletion;
     private bool editFileReleased;
+    internal ArchiveNativeReadObservation ReadObservation { get; } = new();
     internal uint EditAttributes { get; private set; }
     internal ReadOnlyMemory<byte>? EditZoneIdentifier => zoneIdentifier is null ? null : new ReadOnlyMemory<byte>(zoneIdentifier);
     private string? readmissionIdentity;
@@ -54,7 +55,8 @@ internal sealed class ArchiveSourceLease : IDisposable
     private string? sourceName;
     private ArchiveSourceLease() { }
     internal static ArchiveSourceLease Open(string path) => OpenCore(path,false);
-    internal static ArchiveSourceLease OpenForEdit(string path) => OpenCore(path,true);
+    internal static ArchiveSourceLease OpenForEdit(string path, CancellationToken cancellationToken = default) =>
+        OpenCore(path, true, cancellationToken: cancellationToken);
     // Inspector-only: same held read-only namespace; ordinary Open still refuses marked files.
     internal static ArchiveSourceLease OpenForRecoveryInspection(string path) => OpenCore(path, false, allowRecovery: true);
     internal SafeFileHandle InspectionSource => handles[^1];
@@ -67,8 +69,10 @@ internal sealed class ArchiveSourceLease : IDisposable
         using var probe = OpenCore(path, false, register: false, allowRecovery: continuing);
         return ArchiveSourceActivity.Acquire(probe.ActivityIdentity, reclaim, operation);
     }
-    private static ArchiveSourceLease OpenCore(string path,bool editing, bool register = true, bool allowRecovery = false)
+    private static ArchiveSourceLease OpenCore(string path,bool editing, bool register = true, bool allowRecovery = false,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrEmpty(path) || path.Length is < 4 or > 32767 || !char.IsAsciiLetter(path[0]) ||
             path[1] != ':' || path[2] != '\\' || path.IndexOfAny(['/', '\0']) >= 0)
             throw new ArchiveOutputException("invalid_source");
@@ -90,8 +94,9 @@ internal sealed class ArchiveSourceLease : IDisposable
             if (editing) {
                 lease.EditAttributes = ArchiveMetadataNative.Attributes(lease.handles[^1]);
                 lease.CaptureZoneIdentifier();
-                (lease.editSourceVersion, lease.editSourceHash) = lease.CaptureEditSource();
-                lease.editSourceTargetSignature = lease.CaptureTargetSignature();
+                var (version, hash) = lease.CaptureEditSource(ArchiveNativeReadStage.EditOpen, cancellationToken);
+                lease.editSourceVersion = version; lease.editSourceHash = hash;
+                lease.editSourceTargetSignature = lease.CaptureTargetSignature(version, hash, cancellationToken);
             }
             return lease;
         }
@@ -113,27 +118,33 @@ internal sealed class ArchiveSourceLease : IDisposable
     // Future runner wiring may create this evidence only after its acknowledged edit-read-
     // complete message is owned and every worker-side source reader has actually closed.
     // The evidence is single-use and bound to this exact lease; it is not commit permission.
-    internal EditReadCompletion CompleteEditReads()
+    internal EditReadCompletion CompleteEditReads(CancellationToken cancellationToken = default)
     {
         if (editSourceHash is null || handles.Count < 2 || editFileReleased || handles[^1].IsClosed || pendingEditReadCompletion != Guid.Empty)
             throw new ArchiveOutputException("edit_reads_incomplete");
-        VerifyEditSource(editSourceTargetSignature!);
+        VerifyEditSource(editSourceTargetSignature!, ArchiveNativeReadStage.EditReadsComplete, cancellationToken);
         pendingEditReadCompletion = Guid.NewGuid();
         return new EditReadCompletion(this, pendingEditReadCompletion);
     }
-    internal void VerifyEditSource(string expectedTargetIdentity)
+    internal void VerifyEditSource(string expectedTargetIdentity, ArchiveNativeReadStage stage = ArchiveNativeReadStage.EditVerification,
+        CancellationToken cancellationToken = default, SafeFileHandle? outputTarget = null, string? expectedOutputTargetIdentity = null)
     {
-        if (handles.Count < 2 || editFileReleased || handles[^1].IsClosed) throw new ArchiveOutputException("source_unavailable");
-        var (currentVersion, currentHash) = CaptureEditSource();
+        RequireEditFile();
+        var (currentVersion, currentHash) = CaptureEditSource(stage, cancellationToken);
         try
         {
             if (editSourceVersion is null || editSourceHash is null || !editSourceVersion.Equals(currentVersion) ||
                 !editSourceHash.AsSpan().SequenceEqual(currentHash)) throw new ArchiveOutputException("source_changed");
+            var target = CaptureTargetSignature(currentVersion, currentHash, cancellationToken);
+            if (!string.Equals(target, editSourceTargetSignature, StringComparison.Ordinal)) throw new ArchiveOutputException("source_changed");
+            if (!string.Equals(target, expectedTargetIdentity, StringComparison.Ordinal)) throw new ArchiveOutputException("edit_target_mismatch");
+            if (outputTarget is not null)
+            {
+                var outputIdentity = EquivalentTargetIdentity(outputTarget, currentVersion, currentHash, "target_changed", cancellationToken);
+                if (!string.Equals(outputIdentity, expectedOutputTargetIdentity, StringComparison.Ordinal)) throw new ArchiveOutputException("target_changed");
+            }
         }
         finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(currentHash); }
-        var target = CaptureTargetSignature();
-        if (!string.Equals(target, editSourceTargetSignature, StringComparison.Ordinal)) throw new ArchiveOutputException("source_changed");
-        if (!string.Equals(target, expectedTargetIdentity, StringComparison.Ordinal)) throw new ArchiveOutputException("edit_target_mismatch");
     }
     internal void ReleaseEditFile(EditReadCompletion completion)
     {
@@ -144,20 +155,46 @@ internal sealed class ArchiveSourceLease : IDisposable
         editFileReleased = true;
         pendingEditReadCompletion = Guid.Empty;
     }
-    private (object Version, byte[] Hash) CaptureEditSource()
+    private void RequireEditFile()
     {
+        if (handles.Count < 2 || editFileReleased || handles[^1].IsClosed) throw new ArchiveOutputException("source_unavailable");
+    }
+    private (object Version, byte[] Hash) CaptureEditSource(ArchiveNativeReadStage stage, CancellationToken cancellationToken)
+    {
+        RequireEditFile();
+        cancellationToken.ThrowIfCancellationRequested();
         var handle = handles[^1];
         var version = ArchiveRecycleVersion.Capture(handle);
         using var borrowed = new SafeFileHandle(handle.DangerousGetHandle(), false);
         using var stream = new FileStream(borrowed, FileAccess.Read, 65536, false);
         stream.Position = 0;
-        return (version, System.Security.Cryptography.SHA256.HashData(stream));
+        var hash = ReadObservation.Hash(stream, stage, ArchiveNativeReadKind.Source, cancellationToken);
+        try
+        {
+            if (!version.Equals(ArchiveRecycleVersion.Capture(handle))) throw new ArchiveOutputException("source_changed");
+            return (version, hash);
+        }
+        catch { System.Security.Cryptography.CryptographicOperations.ZeroMemory(hash); throw; }
     }
-    private string CaptureTargetSignature()
+    private string CaptureTargetSignature(object version, ReadOnlySpan<byte> hash, CancellationToken cancellationToken)
     {
-        if (handles.Count < 2) throw new ArchiveOutputException("source_unavailable");
+        RequireEditFile();
+        cancellationToken.ThrowIfCancellationRequested();
         using var target = OutputNative.Open(handles[^2], sourceName!, directory: false, readOnly: true, anyKind: true);
-        return ArchiveOutputSession.TargetIdentity(target);
+        return EquivalentTargetIdentity(target, version, hash, "source_changed", cancellationToken);
+    }
+    // Reuse is confined to this fresh call. Both live handles must have the complete same
+    // version (full native ID, size, mtime, ChangeTime and attributes), with the original FILE
+    // still denying writes/deletion and all parents protected. A path or signature is not proof.
+    private string EquivalentTargetIdentity(SafeFileHandle target, object version, ReadOnlySpan<byte> hash,
+        string mismatch, CancellationToken cancellationToken)
+    {
+        RequireEditFile();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!version.Equals(ArchiveRecycleVersion.Capture(handles[^1])) ||
+            !version.Equals(ArchiveRecycleVersion.Capture(target))) throw new ArchiveOutputException(mismatch);
+        var stamp = OutputNative.Identity(target);
+        return $"v2:{stamp.Volume:X}:{stamp.IdHigh:X16}{stamp.IdLow:X16}:{stamp.Size:X}:{stamp.Modified:X}:{Convert.ToHexString(hash)}";
     }
     public void Dispose()
     {

@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "11-02-archive-workflow-optimization"
+  ],
   "parent": null,
   "relatedFiles": [
     "docs/reference-code/archive.md",

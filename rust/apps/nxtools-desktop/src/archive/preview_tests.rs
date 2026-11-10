@@ -3,7 +3,12 @@ use image::ImageEncoder as _;
 use std::sync::atomic::AtomicBool;
 
 fn decoded(bytes: Vec<u8>, kind: PreviewKind) -> Result<PreviewPayload, PreviewFailure> {
-    decode_bytes(bytes, kind, &AtomicBool::new(false))
+    decode_bytes(
+        bytes,
+        kind,
+        ArchivePreviewSettings::default(),
+        &AtomicBool::new(false),
+    )
 }
 fn png(width: u32, height: u32) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -25,6 +30,7 @@ fn materialized_eighty_byte_text_is_read_and_decoded() {
     let payload = prepare(
         &path,
         PreviewKind::Text(DocumentMode::Literal(None)),
+        ArchivePreviewSettings::default(),
         &AtomicBool::new(false),
     )
     .expect("actual bounded read and UTF-8 decode");
@@ -37,9 +43,9 @@ fn materialized_eighty_byte_text_is_read_and_decoded() {
 #[test]
 fn actual_text_bytes_utf8_controls_lines_and_markdown_projection_are_bounded() {
     let text = PreviewKind::Text(DocumentMode::Literal(None));
-    assert!(decoded(vec![b'a'; 65536], text).is_ok());
+    assert!(decoded(vec![b'a'; 1 << 20], text).is_ok());
     assert!(matches!(
-        decoded(vec![b'a'; 65537], text),
+        decoded(vec![b'a'; (1 << 20) + 1], text),
         Err(PreviewFailure::TooLarge)
     ));
     for bytes in [vec![0xff], b"a\0b".to_vec(), b"a\x1bb".to_vec()] {
@@ -48,9 +54,9 @@ fn actual_text_bytes_utf8_controls_lines_and_markdown_projection_are_bounded() {
             Err(PreviewFailure::Unsupported)
         ));
     }
-    assert!(decoded("line\n".repeat(1200).into_bytes(), text).is_ok());
+    assert!(decoded("line\n".repeat(20_000).into_bytes(), text).is_ok());
     assert!(matches!(
-        decoded("line\n".repeat(1201).into_bytes(), text),
+        decoded("line\n".repeat(20_001).into_bytes(), text),
         Err(PreviewFailure::TextLines)
     ));
     let source = "# Title\n<script>no()</script>\n![remote](https://invalid.test/a.png)\n![local](file:///C:/secret)";
@@ -59,34 +65,69 @@ fn actual_text_bytes_utf8_controls_lines_and_markdown_projection_are_bounded() {
         PreviewKind::Text(DocumentMode::Markdown),
     )
     .expect("passive markdown");
-    let PreviewPayload::Text { text, mode } = payload else {
+    let PreviewPayload::Text { text, mode, budget } = payload else {
         panic!("text")
     };
-    let prepared =
-        crate::ui::markdown_document::prepared_source(&text, mode).expect("safe shared projection");
+    let prepared = crate::ui::markdown_document::prepared_source_with_budget(&text, mode, budget)
+        .expect("safe shared projection");
     assert!(!prepared.contains("https://invalid.test") && !prepared.contains("file:///C:/secret"));
 }
+#[test]
+fn preview_line_endings_obey_configured_archive_limit() {
+    let profile = ArchivePreviewSettings {
+        text_max_lines: 2,
+        ..ArchivePreviewSettings::default()
+    };
+    let kind = PreviewKind::Text(DocumentMode::Literal(None));
+    for ending in ["\r", "\n", "\r\n"] {
+        assert!(
+            decode_bytes(
+                format!("first{ending}second{ending}").into_bytes(),
+                kind,
+                profile,
+                &AtomicBool::new(false)
+            )
+            .is_ok()
+        );
+        assert!(
+            matches!(
+                decode_bytes(
+                    format!("first{ending}second{ending}third").into_bytes(),
+                    kind,
+                    profile,
+                    &AtomicBool::new(false)
+                ),
+                Err(PreviewFailure::TextLines)
+            ),
+            "line ending {ending:?} must obey the configured two-line limit"
+        );
+    }
+}
+
 #[test]
 fn image_headers_encoded_bytes_axis_pixels_and_high_depth_are_bounded() {
     assert!(decoded(png(2, 3), PreviewKind::Image).is_ok());
     assert!(matches!(
-        decoded(vec![0; 8 * 1024 * 1024 + 1], PreviewKind::Image),
+        decoded(vec![0; 32 * 1024 * 1024 + 1], PreviewKind::Image),
         Err(PreviewFailure::TooLarge)
     ));
     assert!(matches!(
         decoded(b"not an image".to_vec(), PreviewKind::Image),
         Err(PreviewFailure::Corrupt)
     ));
-    assert!(check_dimensions(8192, 1024).is_ok());
+    assert!(check_dimensions(4000, 4000, ArchivePreviewSettings::default()).is_ok());
     assert_eq!(
-        check_dimensions(8192, 1025),
+        check_dimensions(4000, 4001, ArchivePreviewSettings::default()),
         Err(PreviewFailure::ImageDimensions)
     );
     assert_eq!(
-        check_dimensions(8193, 1),
+        check_dimensions(8193, 1, ArchivePreviewSettings::default()),
         Err(PreviewFailure::ImageDimensions)
     );
-    assert_eq!(check_dimensions(0, 1), Err(PreviewFailure::Corrupt));
+    assert_eq!(
+        check_dimensions(0, 1, ArchivePreviewSettings::default()),
+        Err(PreviewFailure::Corrupt)
+    );
     let mut bytes = Vec::new();
     image::codecs::png::PngEncoder::new(&mut bytes)
         .write_image(&[0; 8], 1, 1, image::ExtendedColorType::Rgba16)
@@ -122,7 +163,12 @@ fn actual_read_and_cancel_precede_decode() {
     ));
     stop.store(true, Ordering::Release);
     assert!(matches!(
-        decode_bytes(png(1, 1), PreviewKind::Image, &stop),
+        decode_bytes(
+            png(1, 1),
+            PreviewKind::Image,
+            ArchivePreviewSettings::default(),
+            &stop
+        ),
         Err(PreviewFailure::Cancelled)
     ));
     assert!(kind("script.ps1").is_some());
@@ -232,7 +278,7 @@ fn webp_rejects_unbounded_transforms_and_accepts_bounded_static_lossless() {
         result
     }
     let encoded = container(&payload);
-    assert!(webp_admission(&encoded).is_ok());
+    assert!(webp_admission(&encoded, ArchivePreviewSettings::default()).is_ok());
     let PreviewPayload::Image { image, .. } =
         decoded(encoded, PreviewKind::Image).expect("bounded static WebP")
     else {
@@ -242,20 +288,118 @@ fn webp_rejects_unbounded_transforms_and_accepts_bounded_static_lossless() {
     let mut bomb = payload.clone();
     bomb[1..5].copy_from_slice(&0x0fff_ffffu32.to_le_bytes());
     assert_eq!(
-        webp_admission(&container(&bomb)),
+        webp_admission(&container(&bomb), ArchivePreviewSettings::default()),
         Err(PreviewFailure::ImageDimensions)
     );
     for flag in [2, 4] {
         let mut meta = payload.clone();
         meta[5] |= flag;
         assert_eq!(
-            webp_admission(&container(&meta)),
+            webp_admission(&container(&meta), ArchivePreviewSettings::default()),
             Err(PreviewFailure::Unsupported)
         );
     }
     payload[5] |= 1; // predictor transform: refused before any decoder allocation.
     assert_eq!(
-        webp_admission(&container(&payload)),
+        webp_admission(&container(&payload), ArchivePreviewSettings::default()),
         Err(PreviewFailure::Unsupported)
     );
+}
+
+#[test]
+fn archive_defaults_admit_ordinary_text_and_photos() {
+    let kind = PreviewKind::Text(DocumentMode::Literal(None));
+    assert!(
+        decoded(vec![b'x'; 70 * 1024], kind).is_ok(),
+        "ordinary text above legacy 64 KiB"
+    );
+    assert!(
+        decoded("line\n".repeat(2000).into_bytes(), kind).is_ok(),
+        "ordinary text above legacy 1200 lines"
+    );
+    let mut jpeg = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(image::RgbImage::new(1024, 768))
+        .write_to(&mut jpeg, ImageFormat::Jpeg)
+        .expect("owned ordinary photo");
+    assert!(
+        decoded(jpeg.into_inner(), PreviewKind::Image).is_ok(),
+        "1024x768 photo preview"
+    );
+}
+
+#[test]
+fn configured_limits_narrow_actual_reads_lines_pixels_and_decoder_memory() {
+    let stop = AtomicBool::new(false);
+    let text = PreviewKind::Text(DocumentMode::Literal(None));
+    let mut profile = ArchivePreviewSettings {
+        text_limit_kib: 1,
+        text_max_lines: 2,
+        ..Default::default()
+    };
+    assert!(decode_bytes(vec![b'x'; 1024], text, profile, &stop).is_ok());
+    assert!(matches!(
+        decode_bytes(vec![b'x'; 1025], text, profile, &stop),
+        Err(PreviewFailure::TooLarge)
+    ));
+    assert!(decode_bytes(b"one\ntwo\n".to_vec(), text, profile, &stop).is_ok());
+    assert!(matches!(
+        decode_bytes(b"one\ntwo\nthree".to_vec(), text, profile, &stop),
+        Err(PreviewFailure::TextLines)
+    ));
+    profile.image_max_megapixels = 1;
+    assert!(check_dimensions(1000, 1000, profile).is_ok());
+    assert_eq!(
+        check_dimensions(1000, 1001, profile),
+        Err(PreviewFailure::ImageDimensions)
+    );
+    profile.image_max_megapixels = 16;
+    profile.image_decode_mib = 32;
+    profile.image_limit_mib = 128;
+    let mut jpeg = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgb8(image::RgbImage::new(1024, 768))
+        .write_to(&mut jpeg, ImageFormat::Jpeg)
+        .expect("owned JPEG");
+    let encoded = jpeg.into_inner();
+    assert!(
+        decode_bytes(encoded.clone(), PreviewKind::Image, profile, &stop).is_ok(),
+        "actual input, not configured128MiB, is charged"
+    );
+    let mut padded = encoded;
+    padded.resize(9 << 20, 0);
+    assert!(
+        matches!(
+            decode_bytes(padded.clone(), PreviewKind::Image, profile, &stop),
+            Err(PreviewFailure::ImageMemory)
+        ),
+        "actual encoded bytes plus working pixels exceed32MiB"
+    );
+    profile.image_decode_mib = 512;
+    assert!(decode_bytes(padded, PreviewKind::Image, profile, &stop).is_ok());
+    let root = tempfile::tempdir().expect("owned input");
+    let path = root.path().join("small.txt");
+    std::fs::write(&path, b"small").expect("input");
+    assert!(prepare(&path, text, profile, &stop).is_ok());
+    let actual = read_bounded(&b"small"[..], 5, &stop).expect("actual-length allocation");
+    assert_eq!(actual.capacity(), 6);
+    profile.text_limit_kib = 0;
+    assert!(matches!(
+        prepare(&path, text, profile, &stop),
+        Err(PreviewFailure::InvalidSettings)
+    ));
+}
+
+#[test]
+fn archive_document_budget_does_not_raise_shared_defaults() {
+    let text = "line\n".repeat(2000);
+    let mode = DocumentMode::Literal(None);
+    assert!(crate::ui::markdown_document::prepared_source(&text, mode).is_none());
+    let payload =
+        decoded(text.clone().into_bytes(), PreviewKind::Text(mode)).expect("archive text");
+    let PreviewPayload::Text { budget, .. } = payload else {
+        panic!("text")
+    };
+    assert!(
+        crate::ui::markdown_document::prepared_source_with_budget(&text, mode, budget).is_some()
+    );
+    assert!(crate::ui::markdown_document::prepared_source(&"x".repeat(65537), mode).is_none());
 }

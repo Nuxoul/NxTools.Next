@@ -162,18 +162,20 @@ pub(super) struct PendingAction {
     pub(super) drop_id: Option<Uuid>,
     pub(super) image: Option<OwnedImage>,
     session: Uuid,
+    generation: u64,
     correlation: Uuid,
     dispatched: bool,
     cancelled: bool,
     follow_up: Option<PlatformCommand>,
 }
 impl PendingAction {
-    fn new(session: Uuid, correlation: Uuid, drop_id: Option<Uuid>) -> Self {
+    fn new(session: Uuid, generation: u64, correlation: Uuid, drop_id: Option<Uuid>) -> Self {
         Self {
             started: Instant::now(),
             drop_id,
             image: None,
             session,
+            generation,
             correlation,
             dispatched: false,
             cancelled: false,
@@ -293,8 +295,10 @@ impl FloatingAssistantApplication {
             tracing::info!(event="floating_assistant.action.terminal",correlation_id=%id,success=false,reason="busy",elapsed_ms=0,"floating action rejected");
             return;
         }
-        self.pending_actions
-            .insert(id, PendingAction::new(self.session, id, drop_id));
+        self.pending_actions.insert(
+            id,
+            PendingAction::new(self.session, self.generation, id, drop_id),
+        );
         match route {
             Route::Main => {
                 self.pending_actions
@@ -417,15 +421,21 @@ impl FloatingAssistantApplication {
     fn action_is_current(&self, id: Uuid) -> bool {
         self.settings().enabled
             && !self.settings().click_through
-            && self
-                .pending_actions
-                .get(&id)
-                .is_some_and(|pending| pending.session == self.session && !pending.cancelled)
+            && self.pending_actions.get(&id).is_some_and(|pending| {
+                pending.session == self.session
+                    && pending.generation == self.generation
+                    && !pending.cancelled
+            })
     }
     fn finish_routed_action(&mut self, id: Uuid, success: bool) {
         if let Some(pending) = self.pending_actions.remove(&id) {
-            self.release_drop(pending.drop_id);
+            self.release_action_drop(&pending);
             tracing::info!(event="floating_assistant.action.terminal",correlation_id=%pending.correlation,success,elapsed_ms=pending.started.elapsed().as_millis(),"floating routed action terminated");
+        }
+    }
+    fn release_action_drop(&self, pending: &PendingAction) {
+        if pending.session == self.session && pending.generation == self.generation {
+            self.release_drop(pending.drop_id);
         }
     }
     /// Preparation/deferred work is cancellable. An admitted Windows copy still owns
@@ -436,15 +446,17 @@ impl FloatingAssistantApplication {
             pending.cancelled = true;
             pending.follow_up = None;
             if !pending.dispatched || retiring {
-                releases.push(pending.drop_id.take());
+                releases.push((pending.session, pending.generation, pending.drop_id.take()));
             }
             if !pending.dispatched {
                 tracing::info!(event="floating_assistant.action.terminal",correlation_id=%pending.correlation,success=false,reason="cancelled",elapsed_ms=pending.started.elapsed().as_millis(),"floating action cancelled before dispatch");
             }
             pending.dispatched
         });
-        for drop_id in releases {
-            self.release_drop(drop_id);
+        for (session, generation, drop_id) in releases {
+            if session == self.session && generation == self.generation {
+                self.release_drop(drop_id);
+            }
         }
     }
     fn send_pending_action(&mut self, command: PlatformCommand, id: Uuid, cx: &mut Context<Self>) {
@@ -470,7 +482,7 @@ impl FloatingAssistantApplication {
             cx.background_executor().timer(Duration::from_secs(15)).await;
             let _ = this.update(cx, |owner, cx| {
                 if let Some(pending) = owner.pending_actions.remove(&id) {
-                    owner.release_drop(pending.drop_id);
+                    owner.release_action_drop(&pending);
                     tracing::warn!(event="floating_assistant.action.terminal",correlation_id=%pending.correlation,success=false,reason="timeout",elapsed_ms=pending.started.elapsed().as_millis(),"floating action timed out");
                     if !pending.cancelled { owner.notice("悬浮窗操作超时，请重试。", true, cx); }
                 }
@@ -489,6 +501,7 @@ impl FloatingAssistantApplication {
         if result.success
             && !pending.cancelled
             && pending.session == self.session
+            && pending.generation == self.generation
             && self.settings().enabled
             && let Some(command) = pending.follow_up.take()
         {
@@ -497,9 +510,13 @@ impl FloatingAssistantApplication {
             self.send_pending_action(command, next, cx);
             return true;
         }
-        self.release_drop(pending.drop_id);
+        self.release_action_drop(&pending);
         tracing::info!(event="floating_assistant.action.terminal",correlation_id=%pending.correlation,success=result.success,cancelled=pending.cancelled,native_error_code=?result.native_error_code,elapsed_ms=pending.started.elapsed().as_millis(),"floating action terminated");
-        if !pending.cancelled && pending.session == self.session && self.settings().enabled {
+        if !pending.cancelled
+            && pending.session == self.session
+            && pending.generation == self.generation
+            && self.settings().enabled
+        {
             if !result.success {
                 self.notice("Windows 未完成悬浮窗操作，请重试。", true, cx);
             } else if pending.image.is_some() {

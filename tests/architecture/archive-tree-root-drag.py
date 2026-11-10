@@ -33,14 +33,20 @@ class TreeRootDragBoundary(unittest.TestCase):
         wire = (ROOT / 'rust/crates/nxtools-protocol/src/archive_virtual_drag.rs').read_text('utf-8-sig')
         native = (ROOT / 'csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualDragSession.cs').read_text('utf-8-sig')
         content = (ROOT / 'csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualContent.cs').read_text('utf-8-sig')
-        for declaration in ['ARCHIVE_DRAG_MAX_ROOTS: usize = 32', 'ARCHIVE_DRAG_MAX_DESCRIPTORS: usize = 128', 'ARCHIVE_DRAG_MAX_FILES: usize = 32', 'ARCHIVE_DRAG_MAX_BYTES: u64 = 512 << 20', 'ARCHIVE_DRAG_MAX_COMMAND_BYTES: usize = 256 << 10']:
-            self.assertIn(declaration, wire)
+        for declaration in ['ARCHIVE_DRAG_MAX_ROOTS', 'ARCHIVE_DRAG_MAX_DESCRIPTORS', 'ARCHIVE_DRAG_MAX_FILES', 'ARCHIVE_DRAG_MAX_BYTES', 'ARCHIVE_DRAG_MAX_COMMAND_BYTES']:
+            self.assertNotIn(declaration, wire, 'complete selection uses original resource/frame budgets')
+        self.assertIn('struct DragSource', wire, 'original source context is shared, not a per-member authority')
+        self.assertIn('> crate::MAX_FRAME_BYTES', wire)
+        self.assertIn('ordinary_directory_drag_wire_preserves_256_files_and_all_descriptor_indices', wire)
         self.assertIn('self.version != 1', wire)
         self.assertIn('valid_drag_name_component', wire)
         self.assertIn('ApartmentState.STA', native)
         self.assertIn('TryReleaseSourcePointerCapture', native)
         self.assertIn('GetAsyncKeyState(1)&0x8000', native)
-        self.assertIn('var command=items[index].Entry;', content)
+        self.assertIn('entries.CreateVirtualMaterialization(plan,authorizationId,operation,memberProgress)', content)
+        self.assertIn('Action<ArchiveEntrySession.VirtualMemberProgress>? memberProgress=null', content)
+        self.assertIn('entries.DemandVirtual(context,index,remaining)', content)
+        self.assertIn('await entries.CloseVirtual(context)', content)
         self.assertNotIn('items[index].Name', content, 'descriptor wrapper is never an output path')
 
 

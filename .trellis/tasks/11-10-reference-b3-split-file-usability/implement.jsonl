@@ -1,0 +1,13 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust/GPUI/C# ownership and deferred lease boundary"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Correlated operations, changed-leaf configuration and privacy"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official compound, variants and catalog tile requirements"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Current locked released API and narrow patches"}
+{"file":"docs/reference-code/gpui-kit-component-index.md","reason":"Form/Field/NumberInput/Select/ListItem/Dialog public selection"}
+{"file":"docs/reference-code/archive-volumes.md","reason":"Verified original and reference split/raw-join distinction and source chain"}
+{"file":"docs/reference-code/archive-formats.md","reason":"No format or signature-bound route expansion"}
+{"file":".trellis/spec/nxtools-archive/backend/zip-volumes.md","reason":"Original genuine ZIP/7z segmentation/publication contract"}
+{"file":".trellis/spec/nxtools-desktop/backend/database-guidelines.md","reason":"Original accepted form/persistence/window owners"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Bounded detached native execution and actual completion"}
+{"file":".trellis/spec/platformhost/archive-creation.md","reason":"Original protected source/candidate/readback/publication preservation"}
+{"file":".trellis/tasks/11-10-reference-b3-split-file-usability/design.md","reason":"B3 exact-byte and bounded raw join design"}
+{"file":".trellis/spec/platformhost/raw-numbered-join.md","reason":"Strict explicit join, original router/reader, native finite IO and terminal-bound UI contract"}

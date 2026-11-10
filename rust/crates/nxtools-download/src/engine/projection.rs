@@ -9,7 +9,7 @@ use tracing::{info, warn};
 
 use super::{DownloadEngine, DownloadEngineError, DownloadEngineTask, EngineTaskState};
 use crate::{
-    DownloadAggregateMetrics, DownloadQuery, DownloadRequest, DownloadSnapshot,
+    DownloadAggregateMetrics, DownloadProbe, DownloadQuery, DownloadRequest, DownloadSnapshot,
     DownloadStorageError, DownloadTask, DownloadTaskDetail, DownloadTaskId, DownloadTaskSummary,
 };
 
@@ -60,6 +60,18 @@ impl DownloadTaskSummary {
 }
 
 impl DownloadEngine {
+    /// Original response metadata for a task surface, without queue or segment storage IO.
+    pub fn task_probe(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<Option<DownloadProbe>, DownloadEngineError> {
+        Ok(self
+            .inner
+            .lock_tasks()?
+            .get(&task_id)
+            .and_then(|state| state.transfer.probe.clone()))
+    }
+
     pub fn task(
         &self,
         task_id: DownloadTaskId,
@@ -335,6 +347,28 @@ impl DownloadEngine {
                 }),
             };
             let _ = sender.try_send(detail);
+        });
+        Ok(receiver)
+    }
+
+    /// Dispatches the original correlated batch command off the UI turn.
+    pub fn request_batch_background(
+        &self,
+        task_ids: Vec<DownloadTaskId>,
+        action: crate::DownloadBatchAction,
+        correlation_id: uuid::Uuid,
+    ) -> Result<async_channel::Receiver<crate::DownloadCommandOutcome>, crate::DownloadFault> {
+        let runtime = super::download_runtime().map_err(|error| error.fault())?;
+        let engine = self.clone();
+        let (sender, receiver) = async_channel::bounded(1);
+        runtime.spawn_blocking(move || {
+            let result = engine.handle_command(crate::DownloadCommandEnvelope {
+                protocol_version: crate::DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+                request_id: correlation_id,
+                origin: crate::RequestOrigin::Ui,
+                command: crate::DownloadCommand::Batch { task_ids, action },
+            });
+            let _ = sender.try_send(result.outcome);
         });
         Ok(receiver)
     }

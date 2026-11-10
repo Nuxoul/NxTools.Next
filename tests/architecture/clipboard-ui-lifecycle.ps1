@@ -16,7 +16,7 @@ $uiTestsSource = Get-Content -Raw -LiteralPath $uiTestsPath
 foreach ($contract in @('Settings::new("clipboard-official-settings")', 'SettingPage::new(',
     'SettingGroup::new()', 'SettingItem::render(', 'aligned_setting_row(', '.justify_end()',
     '.resettable(false)', 'Form::vertical()', 'Field::new()', 'fn render_clipboard_control(',
-    'clipboard-settings-workspace', 'clipboard-storage-path', '"呼出与快捷操作"', '"保留与隐私"', '"归档与存储"',
+    'clipboard-settings-workspace', 'clipboard-storage-path', '"呼出与快捷操作"', '"保留与隐私"', '"压缩包与存储"',
     'application.set_clipboard_modifier_action(modifier, action)', 'application.set_clipboard_retention(',
     'update_clipboard_capture_limit(', 'application.request_clipboard_export(cx)',
     'application.request_clipboard_import(cx)', 'application.request_clipboard_database_backup(cx)',

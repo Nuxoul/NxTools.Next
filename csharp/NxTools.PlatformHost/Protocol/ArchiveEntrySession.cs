@@ -16,16 +16,18 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
     private readonly IPlatformLog? log;
     private readonly Dictionary<Guid, Pending> active = [];
     private readonly HashSet<Guid> retired = [];
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, (Guid Operation, Guid Session, ulong Generation)> previewLeases = new();
+    private sealed record PreviewLease(ArchiveEntryCommand Command, bool Encrypted);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, PreviewLease> previewLeases = new();
     private readonly Queue<Guid> recent = new();
     private bool stopped;
     internal Action<ProtocolEnvelope>? PasswordPrompt { get; set; }
+    internal sealed record MaterializationCompletion(ArchiveEntryResult Result, long? SealedSize);
     private sealed class Pending(ArchiveEntryCommand command,ulong outputLimit)
     {
         internal readonly ArchiveEntryCommand Command = command;
         internal readonly ulong OutputLimit=outputLimit;
         internal readonly Stopwatch Clock = Stopwatch.StartNew();
-        internal readonly TaskCompletionSource<WindowsCommandResult> Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal readonly TaskCompletionSource<MaterializationCompletion> Done = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal ArchiveSourceActivity.Reservation? SourceActivity;
         internal ArchiveEntryCache.Lease? Lease;
         internal string? Relative, Failure;
@@ -34,7 +36,7 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
         internal Guid? AuthorizationId;
         internal CancellationTokenRegistration AuthorizationStop;
         internal int? FailureNative;
-        internal bool Complete, Cancelled, Finishing;
+        internal bool Complete, Cancelled, Finishing, PasswordRequired;
     }
     internal ArchiveEntrySession(IPlatformLog? log = null) : this(ArchiveReadHelper.Production(), ArchiveEntryCache.Production(log), log) { }
     private ArchiveEntrySession(ArchiveReadHelper helper, ArchiveEntryCache cache, IPlatformLog? log, Func<DateTimeOffset>? utcNow = null)
@@ -45,18 +47,27 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
     }
     internal static ArchiveEntrySession ForOwnedTestPackage(string root, IPlatformLog? log = null, Func<DateTimeOffset>? utcNow = null) => new(ArchiveReadHelper.OwnedPackage(root), ArchiveEntryCache.ForOwnedTestCache(root), log, utcNow);
     internal void ProbeWriteForFixture(Action<int> probe)=>runner.OutputWriteCheckpointProbe=probe;
+    internal ArchiveEntryCache.VerificationCounts CacheVerificationForFixture => cache.VerificationForFixture;
+    private Action? sealedCheckpointForFixture;
+    internal void SealedCheckpointForFixture(Action probe) => sealedCheckpointForFixture = probe;
     internal const ulong MaterializeEntryLimit=32UL<<30;
     internal const ulong MaterializeOutputLimit=100UL<<30;
     // Internal caller may only narrow original worker/output authority; never a public wire budget.
-    internal Task<WindowsCommandResult> Dispatch(ProtocolEnvelope envelope,ulong outputLimit=MaterializeOutputLimit, Guid? authorizationId = null)
+    internal Task<WindowsCommandResult> Dispatch(ProtocolEnvelope envelope,ulong outputLimit=MaterializeOutputLimit, Guid? authorizationId = null) =>
+        DispatchCore(envelope,outputLimit,authorizationId,out _);
+    private static async Task<WindowsCommandResult> WireCompletion(Task<MaterializationCompletion> completion) =>
+        ArchiveEntryWire.Result((await completion).Result);
+    private Task<WindowsCommandResult> DispatchCore(ProtocolEnvelope envelope,ulong outputLimit,Guid? authorizationId,out Task<MaterializationCompletion>? materialized)
     {
+        materialized = null;
         ArchiveEntryCommand command;
         try { command = ArchiveEntryWire.Parse(envelope); }
         catch { return Task.FromResult(ArchiveEntryWire.Result(new(1, Guid.Empty, Guid.Empty, 0, false, null, null, "invalid_request"))); }
         lock (gate) {
             if(outputLimit==0||outputLimit>MaterializeOutputLimit)return Task.FromResult(ArchiveEntryWire.Result(new(1,command.OperationId,command.SessionId,command.Generation,false,null,null,"resource_limit")));
-            // Purpose is immutable admission state; previews cannot inherit materialize authority.
-            outputLimit = Math.Min(outputLimit, command.Action switch { "preview" => 8ul << 20, "preview_text" => 64ul << 10, _ => MaterializeOutputLimit });
+            // Purpose and preview options are immutable admission state; neither can inherit materialize authority.
+            var purposeLimit = command.PreviewOptions?.MaxBytes ?? command.Action switch { "preview" => 8ul << 20, "preview_text" => 64ul << 10, _ => MaterializeOutputLimit };
+            outputLimit = Math.Min(outputLimit, purposeLimit);
             WindowsCommandResult Result(bool success, string? code = null, Guid? lease = null, bool retained = false) => ArchiveEntryWire.Result(new(1, command.OperationId, command.SessionId, command.Generation, success, lease, null, code, Retained: retained));
             if (stopped) return Task.FromResult(Result(false, "disconnected"));
             ExpireAuthorizationsLocked();
@@ -85,7 +96,8 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
                 failure.Stage.StartsWith("reclamation_", StringComparison.Ordinal) ? "source_unavailable" : ArchiveReadSession.Map(failure.Stage), failure.NativeCode))); }
             var pending = new Pending(command,outputLimit) { AuthorizationId = authorizationId, SourceActivity = sourceActivity }; active.Add(command.OperationId, pending); Diagnostic("accepted", pending);
             if (authorizationId is { } boundId) pending.AuthorizationStop = authorizations[boundId].Token.Register(() => CancelAuthorizedEntry(pending));
-            _ = Task.Run(() => Start(pending)); return pending.Done.Task;
+            materialized = pending.Done.Task;
+            _ = Task.Run(() => Start(pending)); return WireCompletion(materialized);
         }
     }
     private void Start(Pending pending)
@@ -103,12 +115,13 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
             ArchiveEntryCache.Lease lease;
             lock (cache) {
                 lease = cache.Create(pending.Command.OperationId, pending.Command.SessionId, pending.Command.Generation, pending.Command.LeaseId, pending.Command.TempPolicy);
-                foreach (var item in previewLeases) if (!cache.Owns(item.Key, item.Value.Operation, item.Value.Session, item.Value.Generation)) previewLeases.TryRemove(item.Key, out _);
+                foreach (var item in previewLeases) if (!cache.Owns(item.Key, item.Value.Command.OperationId, item.Value.Command.SessionId, item.Value.Command.Generation)) previewLeases.TryRemove(item.Key, out _);
             }
             lock (gate) pending.Lease = lease;
             var command = pending.Command;
-            // Keep the private worker's original shape/schema. Pending retains preview purpose.
-            if (command.Action is "preview" or "preview_text") command = command with { Action = "materialize" };
+            var timeoutMs = pending.Command.Action is "preview" or "preview_text" ? (int)(pending.Command.PreviewOptions?.TimeoutMs ?? 30000) : 30000;
+            // Keep the private worker's original shape/schema. Pending retains preview purpose/options.
+            if (command.Action is "preview" or "preview_text") command = command with { Action = "materialize", PreviewOptions = null };
             byte[]? password = null;
             try {
                 lock (gate) {
@@ -119,8 +132,9 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
                     }
                 }
                 runner.Start(new(command.OperationId, "extract", command.Path!, (int)command.Codepage,
-                    new ArchiveAdmittedLimits(100000, 134217728, 67108864, Math.Min(pending.OutputLimit,MaterializeEntryLimit), pending.OutputLimit), OutputRoot: Path.Combine(lease.Root, "files"),
-                    ExtractOptions: new(command.CopyMotw ?? true), ActiveTemporarySource: true, BrowserEntry: command, PasswordInteraction: command.PasswordInteraction), browserPassword: password);
+                    new ArchiveAdmittedLimits(100000, 134217728, 67108864, Math.Min(pending.OutputLimit,MaterializeEntryLimit), pending.OutputLimit), TimeoutMs: timeoutMs,
+                    OutputRoot: Path.Combine(lease.Root, "files"), ExtractOptions: new(command.CopyMotw ?? true), ActiveTemporarySource: true,
+                    BrowserEntry: command, PasswordInteraction: command.PasswordInteraction), browserPassword: password);
             } finally { if (password is not null) System.Security.Cryptography.CryptographicOperations.ZeroMemory(password); }
             lock (gate) { if (stopped || pending.Cancelled) runner.Cancel(command.OperationId); }
         } catch (ArchiveOutputException failure) { lock (gate) Finish(pending, ArchiveReadSession.Map(failure.Stage), true, failure.NativeCode); }
@@ -143,6 +157,7 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
     }
     private void OnRunner(ArchiveWorkerEvent item)
     {
+        if (OnVirtualRunner(item)) return;
         lock (gate) {
             if (!active.TryGetValue(item.OperationId, out var pending)) return;
             if (item.Kind is "accepted" or "started") { Diagnostic(item.Kind, pending); return; }
@@ -156,6 +171,7 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
                         state.TryGetProperty("ticket", out var ticket) && ticket.ValueKind == JsonValueKind.Object
                         ? ticket.Deserialize<ArchivePasswordTicket>() : null;
                     if (pending.PasswordTicket is not null) {
+                        pending.PasswordRequired = true;
                         var prompt = ArchiveBrowserPasswordPrompt.From(passwordFrame, item.OperationId, pending.Command.SessionId, pending.Command.Generation);
                         if (prompt is not null) PasswordPrompt?.Invoke(prompt.Envelope());
                     }
@@ -195,8 +211,9 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
     private void Complete(Pending pending, string? code, bool cleanup, int? native)
     {
         string? path = null;
+        long? sealedSize = null;
         if (code is null && pending.Lease is { } lease && pending.Relative is { } relative) {
-            try { path = Path.Combine(lease.Root, "files", relative.Replace('/', '\\')); lock (cache) lease.Seal(path); }
+            try { path = Path.Combine(lease.Root, "files", relative.Replace('/', '\\')); lock (cache) sealedSize = lease.Seal(path); sealedCheckpointForFixture?.Invoke(); }
             catch { code = "io_failure"; path = null; }
         }
         lock (gate) {
@@ -225,10 +242,10 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
                 lock (cache) sourceBoundLease.BindSourceActivity(sourceActivity);
                 pending.SourceActivity = null;
             }
-            if (code is null && pending.Lease is { } previewLease && pending.Command.Action is "preview" or "preview_text") previewLeases.TryAdd(previewLease.Id, (pending.Command.OperationId, pending.Command.SessionId, pending.Command.Generation));
+            if (code is null && pending.Lease is { } previewLease && pending.Command.Action is "preview" or "preview_text") previewLeases.TryAdd(previewLease.Id, new(pending.Command, pending.PasswordRequired));
             var result = new ArchiveEntryResult(1, pending.Command.OperationId, pending.Command.SessionId, pending.Command.Generation, code is null,
                 authorization ?? pending.Lease?.Id, path, code, native, cleanup, retained || code is not null && pending.Lease is not null);
-            pending.Done.TrySetResult(ArchiveEntryWire.Result(result)); Diagnostic("terminal", pending, result); Diagnostic("cleanup", pending, result);
+            pending.Done.TrySetResult(new(result, result.Success && cleanup ? sealedSize : null)); Diagnostic("terminal", pending, result); Diagnostic("cleanup", pending, result);
             if (cleanup) pending.SourceActivity?.Dispose();
             if (cleanup) active.Remove(pending.Command.OperationId); retired.Add(pending.Command.OperationId); recent.Enqueue(pending.Command.OperationId);
             if (recent.Count > 4096) retired.Remove(recent.Dequeue());
@@ -252,6 +269,7 @@ internal sealed partial class ArchiveEntrySession : IAsyncDisposable
             foreach (var use in external.Values) use.Done.TrySetResult(OpenResult(use, false, "disconnected"));
             foreach (var grant in authorizations.Values) grant.Dispose(); authorizations.Clear();
             foreach (var item in active.Values) { item.Cancelled = true; item.PasswordTicket = null; ClearSuppliedSecret(item); } runner.Stop();
+            foreach (var context in virtualRuns.Values) { context.Cancelled = true; context.Closing = true; }
             // A disconnected Rust decoder may still hold a read handle. Original cache Release
             // retains locked output for its bounded later sweep; never force-delete or recurse.
             var abandoned = previewLeases.Keys.ToArray();

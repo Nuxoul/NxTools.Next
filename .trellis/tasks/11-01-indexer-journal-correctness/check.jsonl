@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Actual selected test effects, counts, red/green and authorized release limits"}
+{"file":".trellis/spec/nxtools-indexer/backend/database-guidelines.md","reason":"Base/delta recovery and publication ordering"}
+{"file":".trellis/spec/nxtools-indexer/backend/quality-guidelines.md","reason":"Authentication, bounded sessions/recursive work and last-good availability"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Legacy/new optional maintenance compatibility"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Official settings, minimum bounds and no popup layout changes"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Confirmed indexing/session/status reference invariants"}

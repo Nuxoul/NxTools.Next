@@ -275,8 +275,9 @@ internal sealed class TarStreamFixturePackage
     internal static string EvidenceRoot()
     {
         var evidence = Environment.GetEnvironmentVariable("NXTOOLS_TAR_STREAM_EVIDENCE_ROOT");
-        var scratch = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".pi-desktop", "scratch");
-        if (string.IsNullOrWhiteSpace(evidence) || !Directory.Exists(evidence) || !IsWithin(evidence, scratch))
+        var scratch = Environment.GetEnvironmentVariable("PI_SCRATCH_DIR");
+        if (string.IsNullOrWhiteSpace(evidence) || string.IsNullOrWhiteSpace(scratch)
+            || !Directory.Exists(evidence) || !Directory.Exists(scratch) || !IsWithin(evidence, scratch))
             throw new TestSkippedException("Explicit existing current TAR/stream scratch evidence root required.");
         return Path.GetFullPath(evidence);
     }
@@ -364,7 +365,7 @@ internal sealed class TarStreamFixtureAudit : IPlatformLog
             Interlocked.Add(ref writeBytes, count); Interlocked.Increment(ref writes);
         };
         runner.OutputCommitCheckpointProbe = stage => {
-            if (stage != "native_published") return;
+            if (stage != "native_closed") return;
             var count = Interlocked.Increment(ref published);
             if (CancelAfterCommit && count == 1) CancelAccepted = runner.Cancel(id);
         };

@@ -271,9 +271,9 @@ impl ArchiveApplication {
                         .title(if prompt.error_code == "WrongPassword" {
                             "密码错误，请重试"
                         } else {
-                            "归档需要密码"
+                            "压缩包需要密码"
                         })
-                        .child(Input::new(&input).aria_label("归档密码"))
+                        .child(Input::new(&input).aria_label("压缩包密码"))
                         .child("密码不会写入磁盘；解锁拖出的授权仅短期保留在受保护内存。完成后需重新按住拖动。")
                         .footer(
                             DialogFooter::new()

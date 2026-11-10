@@ -1,3 +1,432 @@
+# Current checkpoint — 正式 Release64 安装器已生成
+
+2026-11-10。[Release64](release64-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release64，releaseID `ca3bd589-c3e9-4d85-8662-f8dedc8fa037`；安装器28,445,245bytes（27.13MiB），SHA256 `F837F4D6569496370F9546B57FDED3E79EFCFDEDD0B4B0FE46FA59F2B747012A`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定8,713源码文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、93成员/精确95散装包文件、10输出、80扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复保持。
+- 新增15个当前扩展测试目录文件，无删除项；均匹配源码和本次签名清单。交付读回一致；证据 `.diagnostics/packaging/20261110-145554-c0f39b2a/`。对应材料与108源文件/3清单/147依赖匹配。
+- 全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行。真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持；未执行服务操作、注册表修改、提交或推送。旧产物和历史记录完整保留；仅prepend，原317194bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release63 安装器已生成
+
+2026-11-09。[Release63](release63-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release63，releaseID `1c02d96c-419f-4f45-be88-58bf7492cda1`；安装器28,276,433bytes（26.97MiB），SHA256 `3BF86431C917C0D34B3B40AA2FDACB17D71BE8CDE0249892C4B8BB0FFE8BAC69`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定8,625源码文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、78成员/精确80散装包文件、10输出、65扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost核验通过。原停止状态修复及助手身份保持。
+- 正式交付读回匹配；证据 `.diagnostics/packaging/20261109-170424-3490ac21/`。对应材料与106源文件/3清单/147依赖匹配；产品全量及独立离线重构建未重跑，历史定向验证复用不计新执行。真实安装、UAC/恢复、卸载、索引器安装态及物理UI等开放项保持。
+- 未执行真实安装/卸载、服务操作、注册表修改、提交或推送。旧产物及历史记录完整保留；仅prepend，原315908bytes保持精确suffix。
+
+---
+
+# Current checkpoint — Release62 安装准备修复包已生成
+
+2026-11-09。[停止状态修复](installer-stopped-updater-repair.md)／[Release62](release62-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定和待验范围保持。
+
+- 实际correlation `20261109110405-is-9R3J9TM5Z7-tmp` 探测compatible后，在process_close/InvalidDataException/scriptline187拒绝。原只读函数重现：有效Demand更新服务Stopped/PID0被误判。现保留全部登记/文件/type验证，仅正常停止返回无排除进程，继续原候选原生查询和精确Stop；不启动服务、跳过未知进程或删除恢复文件。
+- 身份30/退出47各在x86/x64通过；升级18、诊断8、源码材料5及语法/文档契约通过。本机x86/x64只读重放返回0，服务仍Manual/Stopped/PID0。原打包流程新增身份门禁，本轮再次通过30/47各两种位数以及16Inno/5BrowserHost。
+- 正式Release62，releaseID `eb6d209d-2726-4519-ae5f-b3018589c351`；安装器28,212,392bytes（26.91MiB），SHA256 `ACA23678A3BB2341A46C0510DCD7F17764E4F8C3FFF95C1B5000BED6BB3F5C30`。仅安装器，无外层完整分发ZIP；新助手SHA256 `61BF530E71493B4715C5174FBF9052988A7B73BBCCF87B85F6178B2353688EA1`。
+- 固定8,605源码输入无内容漂移，原package.ps1退出0；签名、78成员/精确80文件、10输出、65扩展源、5批准/helper绑定及交付读回一致。证据 `.diagnostics/packaging/20261109-111508-d6303d3a/` 保留实际失败日志及回归。
+- 未执行真实安装/卸载、服务操作、注册表修改、提交或推送；实际安装与完整文件读回待确认。全量产品/离线源码重构建未重跑，历史限定及索引器安装态/物理UI开放项保持。仅prepend，原314072bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release61 安装器已生成
+
+2026-11-09。[Release61](release61-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release61，releaseID `34b339a9-79db-427c-91b5-8d304e6c95ee`；安装器28,212,963bytes（26.91MiB），SHA256 `1F9264250DB8CB305E060A68EC8B71A57E258EDEEFD8CF9C445A7448A5127639`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定8,603源码文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、78成员/精确80散装包文件、10输出、65扩展源、5批准/helper绑定及16Inno/5BrowserHost核验通过。两份卸载支持脚本已核对固定源及Inno输入。
+- 产品全量未重跑，复用已有定向验证；打包入口12/源码材料5为匹配输入的历史结果，不计新执行。对应材料与106源文件/3清单/147依赖匹配，当前独立离线重构建未执行，历史结果不作为当前输入接受。
+- 正式交付读回匹配；证据 `.diagnostics/packaging/20261109-104330-39bb44e4/`。真实安装、UAC/恢复、卸载、LocalSystem索引器门禁、物理UI/DPI和其他原开放项保持；未操作真实服务、提交或推送。仅prepend，原312740bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release60 安装器已生成
+
+2026-11-07。[Release60](release60-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际重新构建并生成正式Release60，releaseID `31c5f27f-fed5-4664-90ab-289f2fd1a5d9`；安装器28,085,626bytes（26.78MiB），SHA256 `0EE071FB3B1EF0CE5ED8A3A799F5D555ABC3352FD128E14CBB6E97DD48EFF719`。只交付安装器，未生成外层完整分发ZIP。
+- 固定8,587源码文件、独立缓存及输出，内容无漂移；原package.ps1退出0，原发布签名、78成员/精确80散装包文件、10输出、65扩展源、5批准/helper绑定及16Inno/5BrowserHost通过。两份卸载支持脚本已核对源和Inno输入；真实卸载未执行。
+- 当前首次索引/设置/原生选择器/Shell/卸载实现已入包，复用各自已有定向记录；产品全量未重跑。材料对齐104源文件/3清单/147依赖，独立离线重构建未跑，旧输入接受不复用。既有Desktop完整运行失败/忽略及三条可见性警告保持记录。
+- 正式交付读回匹配；证据 `.diagnostics/packaging/20261107-232843-76c0e449/`。真实安装、UAC/恢复、LocalSystem索引器重启/空闲CPU/搜索、物理选择器/DPI和卸载实机接受保持开放；未操作真实服务、安装、卸载、提交或推送。仅prepend，原311296bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release59 安装器已生成
+
+2026-11-07。[Release59](release59-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定和待验范围保持。
+
+- 按用户要求只交付正常安装器，普通打包默认不生成外层完整分发ZIP；只有显式 `-CreateDistributionArchive` 才生成。本次未启用，旧产物保留在持久证据的previous-installer中。
+- 正式Release59，releaseID `d66864ee-07a0-4498-a8d6-dc3d46f93af0`；安装器28,039,810bytes（26.74MiB），SHA256 `366ACF9FD5D18A323F5BD1CE83B800CE722D5E2DCCEAC70608084908F393D955`。原package.ps1退出0；签名、78成员/精确80文件、10构建输出、65扩展源和5批准/helper绑定一致，交付读回匹配。
+- 固定8,556文件源码、独立缓存和输出，构建期间无内容漂移；本机入口12/源码材料5回归、16Inno/5BrowserHost和文档契约126文档/14owner通过。对应材料与103源文件/3清单/147依赖一致，当前源码独立离线重构建未跑，旧接受不复用。
+- 持久证据 `.diagnostics/packaging/20261107-095705-c94ac017/`。产品全量验证未重跑，复用已有定向记录；真实安装、服务恢复/重启、索引器安装态门禁和物理UI等仍待授权/确认。本次未安装、操作真实服务、提交或推送。仅prepend，原309881bytes保持精确suffix。
+
+---
+
+# Current checkpoint — Release58 缺失父目录修复包已生成，实际安装待确认
+
+2026-11-07。[缺失父目录修复](installer-missing-parent-repair.md)／[Release58](release58-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定与待验范围保持。
+
+- 用户实际Release56 correlation `20261106233632-is-8JZ6TPER2G-tmp` 在提权后、停止服务/登记前拒绝，Host native2。固定厂商/产品父目录与Updater一并缺失；显式恢复入口现在使用真实Windows稳定目录校验，允许缺失产品节点，已有异常节点/权限/恢复记录仍保留并拒绝。
+- 同一固定源码快照重新构建定向测试，0warning0error；精确LIST/RUN15，PASS15/SKIP0/FAIL0/not_run0。生产校验实际机器只读调用成功且目录未改变；未执行真实安装或服务操作。
+- 正式Release58，releaseID `d8b521da-420c-446c-93a2-788070d89dce`；安装器27,971,220bytes（26.68MiB），SHA256 `5BF5ACF493F3432AF333B98D29EB09597A5ED51BED4D2107E74ACFD8DFE2AF1A`。完整ZIP62,527,667bytes（59.63MiB），SHA256 `46A663E5327F8B38B910221752589539DC58BC3560AF396D673EEB4B30B153F7`，包含同安装器与WIM/LGPL源码材料。
+- 8,536文件复制前/快照/复制后内容一致，独立复制Release缓存，固定输入构建期间无内容漂移。原package.ps1退出0；78签名成员/精确80文件、10输出、65扩展源、5批准/helper绑定、16Inno/5BrowserHost及分发12项核验通过。Authenticode仍NotSigned。正式目录读回与已核验产物一致。
+- 证据 `.diagnostics/packaging/20261107-003108-2d48fb71/`。复用原产品定向结果，不重跑全量/矩阵；真实UAC、服务恢复、安装后文件读回、索引器安装态门禁、物理UI和其他开放项保持。本次仅prepend，原307988bytes保持精确suffix，未提交或推送。
+
+---
+
+# Current checkpoint — Release56 安装修复包已生成，未执行真实恢复
+
+2026-11-06。[缺失更新组件修复](installer-missing-bootstrap-repair.md)／[Release56](release56-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定与待验范围保持。
+
+- 用户日志001/002成功完成安装，003停在更新组件探测；本机只读原入口复现“同公钥固定LocalSystem服务登记存在、整个Updater根目录原生错误3缺失”。新安装器区分首次安装/兼容/限定缺失修复/拒绝，明确确认与UAC后复用原登记/锁/部署；现有根目录和恢复记录不清空。探测早退前保留真实退出和诊断。
+- 恢复快照先记实际部署待定，释放父锁后由原LocalSystem broker部署并验证；失败保留待定，不能用同版本already-current跳过实际部署。原协议标记和完成登记/实际bootstrap一致才继续正常安装。真实服务/注册表/安装未执行，不称报告机器已恢复。
+- C#构建0warning0error，精确LIST/RUN13/PASS13/SKIP0；原探测x86/x64及助手49断言、原诊断8/身份22/升级18、正式Inno16/BrowserHost回滚5通过。产品全量/原生矩阵未重跑，规范/语法和定向源门禁通过。
+- 正式Release56，releaseID `666ec4b2-cf23-4e5c-9950-ec4f055bdd7a`；安装器27,957,621bytes（26.66MiB），SHA256 `47E6F59B5E9F713109F2502BE4678076909C69C62383C75C71C97114651633E3`。完整分发ZIP62,514,029bytes（59.62MiB），SHA256 `2F90BF2280AB272850B028CD41BA8A4A94F29B03AB356EB98351EB41A2358F73`，同安装器及原WIM源码材料。
+- 原生产签名身份不变；78签名成员/精确80文件、10构建输出、65扩展源、5批准/helper绑定及分发12项核对通过。1,298源码输入打包期无漂移；Authenticode仍NotSigned。证据 `.diagnostics/packaging/20261106-232739-c80ca6a4/`，历史包/占号/失败证据保留。
+- 索引器安装态门禁、实际UAC/修复安装文件读回、物理UI及原开放项不因包生成关闭；回收/HZ5限定保持。本次仅prepend，原305826bytes保持精确suffix，未提交或推送。
+
+---
+
+# Current checkpoint — 正式 Release54 完整分发包已生成
+
+2026-11-06。[Release54记录](release54-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**；限定接受和实机/服务/性能待验范围保持。
+
+- 当前源码实际Release编译、原发布身份签名和正常安装器生成完成，原package.ps1/统一入口均exit0。序号54，releaseID `7d413365-e409-49b1-9b96-1677a91255b4`；安装器27,949,457bytes（26.65MiB），SHA256 `39962577C0B142F3472EDA8989529E86935DF155FF986D259C320C780B6A25F7`。
+- 完整分发ZIP含正常安装器及WIM/LGPL许可证、对应源码和离线重构建说明，62,505,898bytes（59.61MiB），SHA256 `08B0E0A3AE911D1710DED8894C96ED2B2B9BD50BDCB97F7239C63851ED94E25D`。WIM保留，原可信安装清单/身份校验/密钥不变；分发保留完整ZIP。
+- 独立内部RSA3072-PSS/SHA256、78成员/精确80文件、10构建输出、65扩展源文件及5批准/helper绑定一致；安装器11/BrowserHost替换5隔离场景通过。1,295源码输入打包期不变。完整ZIP12项核对；3本项目crate/147依赖源码齐全、102源文件一致，实际离线Release worker重构建exit0；分发回归4和原入口回归11通过。
+- 复用本次兼容性/70,000项ZIP/速启首批发布及原定向产品验证，未重跑全量或矩阵，不扩大变体/性能/物理接受。未安装/启动产品、部署或重启服务，索引器安装态门禁待授权；原失败/未运行项、PlatformHost内存原因未定和HZ5/回收限定保持。Authenticode仍NotSigned。
+- 日志和核验 `.diagnostics/packaging/20261106-182923-3c160402/`；历史包与证据保留，仅prepend，原304061bytes保持精确suffix。未提交或推送。
+
+---
+
+# Current checkpoint — 正式 Release52 已重新打包
+
+2026-11-06。[Release52记录](release52-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定接受与待验边界保持。
+
+- 当前源码实际Release构建、原发布签名和正常安装器完成，原package.ps1子进程exit0。序号52，releaseID `4682399f-7a03-40b4-804a-07ab958d3d5b`；27,528,547bytes（26.25MiB），SHA256 `105C8C1984027121EA31C59D13066E3865B7A67A27DF444DD0EA5128C573212F`。
+- 独立RSA3072-PSS/SHA256、78成员/精确80文件、10构建输出、65扩展源文件、5批准及helper绑定一致；安装器11/BrowserHost替换5隔离场景通过。1,273源码输入打包期无变化。复用已有定向验证，未重跑全量或归档矩阵；最新progress界面/测试改动纳入包，未在本次单独接受交互行为。
+- 未安装/启动产品、部署或重启服务。索引器安装态CPU/I/O/恢复/搜索、物理Explorer/DOpus/IME/DPI/用户视觉和整体性能待验；原失败/未运行项和回收/HZ5限定保持。Authenticode仍NotSigned。
+- 证据 `.diagnostics/packaging/20261106-003343-2f3cc7e3/`；旧包和历史记录保留，仅prepend，原302781bytes保持精确suffix。未提交或推送。
+
+---
+
+# Current checkpoint — 正式 Release51 已重新打包
+
+2026-11-05。[Release51记录](release51-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，各限定接受和实机/服务/整体性能待验边界保持。
+
+- 当前源码实际Release构建、原签名与正常安装器完成，原package.ps1子进程exit0。序号51，releaseID `12273a05-69c8-47e3-b0cb-52b0696371a9`；27,525,021bytes（26.25MiB），SHA256 `7EB60377AF56218426ED94CB7DCEE3E203A58868C61BD7022F80FE6C1F14FBFF`。
+- 包含速启搜索头/窗口几何稳定、新建下载精简输入及首次链接预填、Root拖出目标定位和受保护解压读取优化；原Incoming Add、统一通知及各工作流修复保持。复用记录不覆盖原失败/缺夹具/未验范围，不宣称全量或普遍性能通过。
+- 独立RSA3072-PSS/SHA256、78成员/精确80文件、10构建输出、65扩展源文件及5批准/helper绑定一致；安装器11/BrowserHost替换5隔离场景通过。1,273源码输入打包期无变化，未重跑全量Rust/C#或归档矩阵。Authenticode仍NotSigned。
+- 未安装/启动产品、部署或重启服务；索引器CPU/I/O/重启恢复/真实搜索门禁和物理Explorer/DOpus/IME/DPI/用户视觉保持待验。HZ5/回收原权限和限定不扩大。
+- 日志及核验 `.diagnostics/packaging/20261105-233745-a005bdb4/`。历史包/证据保留，本次仅prepend，原301283bytes保持精确suffix。未提交或推送。
+
+---
+
+# Current checkpoint — 正式 Release50 已打包，包含 Incoming Add 修复
+
+2026-11-05。[Release50记录](release50-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定接受和实机/服务/整体性能待验范围保持。
+
+- 当前源码实际Release构建、原发布签名和正常安装器完成，原package.ps1子进程exit0。序号50，releaseID `8a76f89c-04d1-4c9f-bff3-1964cf11af16`；27,511,029bytes（26.24MiB），SHA256 `E7B8818D8281560FA6248390AD4B09AF8822DC0DC89EEF3729A3D90E3AF96E9A`。
+- 包含“添加到当前压缩包”明确选择后直接原Add、反斜杠目录ZIP比较空间修复及原NotificationCenter友好统一失败反馈；来源/快照/目录/连接绑定、原主动添加表单、单次发布与清理边界保留。复用Incoming独立Rust546/C#11等定向证据，不重跑全量或矩阵。
+- 独立内部RSA3072-PSS/SHA256、78成员/精确80文件、10构建输出、65扩展源文件和5批准/helper绑定一致；安装器11/BrowserHost替换5隔离场景通过。1,266源码输入打包期不变；Authenticode仍NotSigned。
+- 最新工作区2487通过/1下载菜单断言失败/2忽略及未执行目标保持原归属，不称全量通过。未安装/启动产品、部署保护副本或重启服务；索引器CPU/I/O/恢复/搜索门禁及归档实机/整体PhaseE保持待验，HZ5原权限和限定不变。
+- 日志和独立核验 `.diagnostics/packaging/20261105-124405-4e09c0a9/`。历史包和记录保留；本次仅prepend，原299670bytes保持精确suffix。未提交或推送。
+
+---
+
+# Current checkpoint — Incoming Add 独立限定验收通过
+
+2026-11-05。[独立验收](../11-02-archive-workflow-optimization/incoming-add-independent-acceptance.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**。
+
+- “添加到当前压缩包”明确选择后直接提交原Add请求，无额外编辑表单；原来源、目录、快照、代次和连接冻结，按钮回调与排队派发均拒绝失效目标。
+- 原ZIP反斜杠结尾目录在Add比较空间先统一分隔符再去除目录标记；原记录拼写、序号、安全校验、来源及原生单次发布保持。普通文件/目录及只读样本隔离副本在根目录/已有子目录成功。
+- 原NotificationCenter承担友好失败反馈、去重及主窗口隐藏时的prepare/frame/reveal；真实发布、清理和未知结果风险保持。
+- 本轮新跑Rust546项及精确C# LIST/RUN11项通过，skip0/fail0；含五格式145场景、ZIP保留17场景、14项实际incoming操作和4次原Desktop按钮桥接。严格Clippy、10文件格式及相关规范/Kit/editor/Root门禁通过。
+- 已交付Release46不含本批。物理DOpus/视觉/DPI/安装服务/整体性能及原开放门禁不变；未修改用户压缩包或执行成员。
+
+---
+
+# Current checkpoint — 正式 Release46 已从当前源码重新打包
+
+2026-11-05。[Release46记录](release46-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，各限定接受及实机/服务/性能待验边界保持。
+
+- 新序号46，releaseID `5419a572-f9ec-4ea5-8c84-d6c15810c4d4`；实际Release构建、原发布签名与正常安装器完成，原package.ps1子进程exit0。27,493,857bytes（26.22MiB），SHA256 `97262BD8CFCC397B277BA172B7B06A51B90E90DF2D84759A7656B587FFBB5B5B`。
+- 独立RSA3072-PSS/SHA256、78成员/精确80文件、10构建输出、65扩展源文件、5批准及helper/Desktop绑定一致；安装器11/BrowserHost替换5隔离场景通过。1,264源码输入打包期不变，复用速启Listary对齐、归档拖出AC01/7z限制修复及原定向证据，不重跑全量或矩阵。速启历史完整Desktop1718通过/10失败不计作全绿。
+- 未安装/启动产品、部署或重启服务；索引器CPU/I/O/重启恢复/搜索发布门禁待另行授权。归档真实DOpus/Explorer/选择器/DPI/用户及整体性能/PhaseE不因打包关闭；源回收/HZ5原权限和限定保持。
+- 证据 `.diagnostics/packaging/20261105-050827-428445a5/`；Authenticode仍NotSigned，与内部签名区分。Release45备份及历史记录保留，本次仅prepend，原296988bytes保持精确suffix。未提交或推送。
+
+---
+
+# Current checkpoint — 正式 Release45 已打包，限定验收与实机待验边界保持
+
+2026-11-04。[Release45记录](release45-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing**，整体in_progress；OPT-02～07限定接受及O5/O7已关闭结论保持，不覆盖OPT-00/01整体、完整G-04、G-18/G-28实机和G-29前置。
+
+- 原正式入口 `-SkipVerification` 完成实际Release构建、原发布身份签名和正常安装器。原package.ps1子进程exit0；序号45、releaseID `8648890a-50db-41d3-959d-4ded6ee1f82c`，27,482,071bytes（26.21MiB），SHA256 `73180348434EBD98DE22F165F18021D9FE1ED4775C4B163659747655113E9459`。
+- 独立RSA3072-PSS/SHA256、公钥锚、78成员/精确80文件、10构建输出、65扩展源文件、5批准及helper/Desktop绑定均一致。安装器11/BrowserHost替换5隔离场景通过；1,259源码输入打包期无变化。复用各任务定向记录，不重跑全量Rust/C#/HZ5/OPT矩阵；Authenticode仍NotSigned。
+- 未安装/启动产品、部署保护副本或重启服务。现有LocalSystem服务保护三元组与批准哈希不匹配本包，索引器CPU/I/O、重启base+delta恢复及真实搜索发布门禁待另行授权部署后完成。源回收未放开，HZ5原默认关闭/Stored ZIP同卷NTFS/独立不可逆确认边界不变。
+- 持久日志、原退出事实和独立核验 `.diagnostics/packaging/20261104-151404-22f10991/`。原Release44记录、包备份及各轮失败/冻结/测量保持。本次仅prepend，原295385bytes检查点保持精确suffix；未提交或推送。
+
+---
+
+# Current checkpoint — OPT-07 Required batch and browser workflow delivery 独立定向验收通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**，整体保持in_progress。**OPT-07 — Required batch and browser workflow delivery** 在授权自动化/自有原生范围独立接受，O7-AC01/02/03均关闭；[定向独立验收](../11-02-archive-workflow-optimization/opt07-ac01-ac03-independent-acceptance.md)。原部分报告、修复记录、原生/性能/冻结归属与OPT-02～06独立结论、O5-AC01/02关闭保持。
+
+- **O7-AC01关闭：** Find原ID/路径/共享warning资格检查先于关闭和目录变更；两个实际footer回归保持同一Dialog/query/result及folder/filter/selection/focus/anchor/投影，零表单/Job/命令。warning Navigate和原有效/过期动作保持。
+- **O7-AC02关闭：** 当前worker_state在Retry代际与派发重置，原pump先于快照发布；owner和实际汇总在dispatch/receipt/旧Started期间均Admitting，仅当前Started后Running，历史never-started统计保持。
+- **O7-AC03关闭：** 原密码确认在复制/清空/关闭/发送前拒绝失效勾选，保留票据/输入/可达Checkbox；显式取消勾选后仅一次普通回复，原密码字节与最终一次性守卫保持。
+- 本轮独立精确LIST61/RUN61/PASS61/FAIL0/ignored0（原57+新4，39.43s），严格Desktop全目标Clippy、6文件rustfmt、Debug链接与相关源码/规范/Kit/editor门禁通过。四条保留行为RED、六文件差异及142修复冻结一致。未重跑或新增C#/worker/native矩阵，先前controlled14/native5/Protocol等独立证据保持原轮归属；未宣称历史448全量复测或新性能提速。
+- G-16、Retry触及G-17及G-20/触及G-26接受限定边界。G-00、OPT-00/01整体、完整G-04、整体PhaseE/物理/Release、G-18实机、真实G-28系统选择器与G-29原对象回收/through-post-Test前置保持开放；无新增OPT-08。本轮只修改验收文档，无真实产品GUI/Explorer/系统剪贴板/交互选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-07 Required batch and browser workflow delivery 定向修复验证通过，待独立关闭
+
+归档仍 **Phase E — Format expansion and ZIP editing**，整体保持in_progress。[O7-AC01/02/03定向修复](../11-02-archive-workflow-optimization/opt07-ac01-ac03-repair.md)已通过原回调RED→GREEN及限定Desktop验证；三项编号仍开放，等待定向独立关闭。[原部分接受报告](../11-02-archive-workflow-optimization/opt07-independent-acceptance.md)保持不变，OPT-02～06独立结论、O5-AC01/02关闭及历史交付/测量/冻结归属保持。
+
+- **O7-AC01：** Find先校验原ID/安全路径/共享warning资格，再关闭或进入目录；Extract/Delete实际footer拒绝保留Dialog/query/result及folder/filter/selection/focus/anchor/投影，零表单/Job/派发，warning Navigate与原有效/过期提交保留。
+- **O7-AC02：** Retry转换清空当前worker_state，原队列pump后发布快照；派发/回执/旧Started期间原owner与实际汇总均为Admitting，仅当前Started后Running。ever_started继续只承担历史never-started统计。
+- **O7-AC03：** 已勾选reuse在兄弟Retry复验退休后，原Dialog确认在复制/清空/关闭/发送前拒绝；原票据/输入/勾选控件保留，Field说明显式取消勾选后可发送一次普通回复，密码字节与最终reply_job守卫保持。
+- 最终精确LIST61/RUN61/PASS61/FAIL0/ignored0（原57唯一保留名+4新回归），严格Desktop全目标Clippy、6文件格式、Debug Desktop链接及6项源码/契约门禁通过。原C#/worker/native独立证据保持原归属；本轮修复源码/DebugDesktop/文档/完成日志单独冻结于scratch的opt07-ac-delivery，不覆盖旧交付或独立产物。
+- G-16、Retry触及G-17及G-20/触及G-26待本次定向独立关闭。G-00、OPT-00/01整体、完整G-04、整体PhaseE/物理/Release、G-18实机、真实G-28系统选择器及G-29原对象回收/through-post-Test前置仍开放。不新增OPT-08；无真实产品GUI/Explorer/系统剪贴板/交互选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-07 Required batch and browser workflow delivery 独立验收部分接受
+
+归档仍 **Phase E — Format expansion and ZIP editing**，整体任务保持in_progress。**OPT-07 — Required batch and browser workflow delivery** 独立验收为部分接受，暂不关闭；[独立报告](../11-02-archive-workflow-optimization/opt07-independent-acceptance.md)。Standards2项/Spec1项中等缺陷待定向修复，原交付验证、历史失败/测量/冻结及OPT-02～06独立结论、O5-AC01/02关闭保持。
+
+- **O7-AC01：** Find警告项Extract/Delete在资格拒绝前已关闭Find并修改folder/filter/selection，随后未同步projection；须先校验再变更，补两动作的零状态变化/零提交原footer回归，保留warning Navigate。
+- **O7-AC02：** Retry新attempt取得槽位但未Started时，summary仍按历史ever_started显示Running；须使用当前attempt启动事实，补recheck→dispatch/receipt→Started的Admitting→Running回归，保留历史never-started计数。
+- **O7-AC03：** 密码reuse勾选后，同批兄弟Retry异步复验返回使资格退休，当前Dialog确认把同意静默变成remember=false并清空/关闭/发回复；须拒绝失效同意并保留原票据/输入，补真实确认callback回归。
+- 本轮独立Desktop57、Protocol105/IPC3/matcher1/CLI15通过；五包严格Clippy、worker/C#构建0警告0错误；受控精确LIST14/RUN14/PASS14/SKIP0，actual-worker/native精确LIST5/RUN5/PASS5/SKIP0，均fail0/not_run0，含13空目录定位及5次真实批次Test/Extract。原生保护内存、票据/批次、原STA实际退出及源/输出/清理正面证据保持，不掩盖三处Desktop缺陷。
+- 冻结787文件集合、509源码上下文与逐名日志/45覆盖行核对通过；仅本轮另建isolated-codecs worker与旧交付worker字节不同，未覆盖旧冻结。历史24失败名均在当前57通过名中，但未重跑或宣称448全绿。投影计数/Find原始观察保留，不新增I/O或普遍性能结论。
+- G-16与G-20/触及G-26等保持部分；G-18实机、真实G-28系统选择器及G-29原对象回收/through-post-Test前置仍独立待验收。G-00、OPT-00/01整体、完整G-04、整体PhaseE/物理/Release开放。不新增OPT-08。本轮未修改产品/测试源码，未执行真实GUI/Explorer/剪贴板/交互选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-07 Required batch and browser workflow delivery 实施验证通过，待独立验收
+
+归档仍 **Phase E — Format expansion and ZIP editing**，整体任务保持in_progress。**OPT-07 — Required batch and browser workflow delivery** 已完成授权范围内产品实施及自动化/自有原生验证；[交付](../11-02-archive-workflow-optimization/opt07-workflows.md)、[精确验证](../11-02-archive-workflow-optimization/opt07-verification.md)、[45项覆盖对齐](../11-02-archive-workflow-optimization/opt07-coverage.md)。本记录不是独立OPT-07验收。OPT-02/03/04/05/06独立限定接受、O5-AC01/02关闭及历史报告/测量保持。
+
+- 原Jobs/两运行FIFO内一个批次窗口保留并发ticket和详情；显式默认未勾选密码复用只在原C#pipe-session保护内存内生存，WrongPassword、尝试代次、活动兄弟退休与断连隔离。单任务原初始baseline/显式Retry、真实warning Locate及未决receipt寿命、Up子目录选择、全catalog Find原ID/最终提交、原生多文件夹及New/Add原子输入、浏览预览/投影收尾完成。
+- 当前定向Desktop证据去重57项通过，其中26项OPT-07命名；历史448项集成原424通过/24失败的24个名称均有当前同名通过证据，不宣称448项重跑通过。Protocol105/IPC3/matcher1/CLI15通过。最终C#受控LIST14/RUN14/PASS14/SKIP0，真实worker/native LIST5/RUN5/PASS5/SKIP0，均fail0/not_run0；含新批次5次真实Test/Extract及原13个空目录定位场景，真实清理/源保留通过。
+- Debug构建、五package全目标严格Clippy、23文件格式与spec125文档/14owner、锁定Kit/editor、CLI/树拖拽/PhaseF源码门禁通过。同一万条catalog重复绘制检查120003→0，挂载控件45保持；Find一万条查询检查/匹配各10000、虚拟控件30，不作归档I/O或不存在的Find基线提速结论。源码/Debug/文档/证据独立冻结于本会话scratch的opt07-delivery，manifest记录身份。
+- G-18真实GUI/Explorer/焦点键盘DPI与G-28真实系统多文件夹交互待授权/验收；G-29原对象生产回收能力及Create-through-post-Test源寿命前置未解决，生产仍不可用。G-00、OPT-00/01整体、完整G-04、整体PhaseE与物理/Release开放。不新增OPT-08；无真实系统/用户源变更、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-07 Required batch and browser workflow delivery 实施中
+
+归档仍 **Phase E — Format expansion and ZIP editing**，整体任务保持in_progress。本轮授权实施 **OPT-07 — Required batch and browser workflow delivery** 全部可独立推进内容；[实施边界与组件账本](../11-02-archive-workflow-optimization/opt07-workflows.md)。OPT-02/03/04/05/06独立限定接受、O5-AC01/02关闭及原始报告/测量保持。
+
+- 沿原Jobs/两运行FIFO/进度窗口/secret/picker/browser/preview所有者推进统一批量与显式密码复用、单任务初始baseline+Retry、warning Locate、Up/Find、系统多文件夹和浏览预览收尾。已核对需求/适用规范、锁定Kit0.8.0组件和保存的参考调用链；本轮回归/实施结果按实际运行记录，尚不宣称OPT-07完成或独立验收。
+- G-18真实GUI/Explorer/焦点键盘DPI、G-28真实系统多文件夹交互保持待授权/待验收。G-29原对象生产回收能力及Create-through-post-Test源寿命决策仍未解决，生产不可用，不修改真实源；该前置不阻塞其他内容。
+- G-00、OPT-00/01整体、完整G-04、整体PhaseE与物理/Release保持开放。禁止真实产品GUI/Explorer/系统剪贴板/交互选择器、用户归档源修改/回收/HZ5、服务注册表、打包签名安装、参考程序/新逆向或commit/push；不新增OPT-08。
+
+---
+
+# Current checkpoint — OPT-06 Bounded binary bulk transfer 独立限定验收通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-06 — Bounded binary bulk transfer** 已在授权自动化/自有原生范围独立接受；[独立验收](../11-02-archive-workflow-optimization/opt06-independent-acceptance.md)。G-14与触及G-01/G-02/G-04/G-07/G-19/G-23/G-25通过，Standards0/Spec0发现，未确认本批产品或证据阻塞。OPT-02/03/04/05与O5-AC01/02关闭、原交付/测量及历史记录保持归属。
+
+- 原private pipes/Run内三路source/output/held-partial协商、精确operation/call/token/sequence/range、单未决停等及真实ACK排空通过。<=64KiB与每方向<=2payload buffers、原overhead内1MiB预留，不提升并发/资源/超时；源与候选完整性、FILE-only/native发布/实际清理和retained消费者寿命保留。
+- 独立复跑worker单元28、去重集成95通过；C#构建0警告0错误，wire/legacy精确LIST13/RUN13/PASS13/SKIP0，受影响actual-native精确LIST13/RUN13/PASS13/SKIP0，均fail0/not_run0。另LIST1/RUN1完成当前Create/Extract/Add各3次共9作业，独立字节/源保护/一次发布/实际drain通过。严格archive Clippy与相关源码/规范/Kit/editor门禁通过。
+- 独立核对18条保留原始样本/48组统计、332源码文件及当前/交付二进制一致。Debug原测量Create/Extract/Add中位数691.335→183.681、542.544→246.609、1260.297→495.964ms；wire减少53.28%/71.79%/56.20%，native/payload工作逐试验相同，非源I/O节省。新9条当前控制单列，不作为历史before/after比；采样CPU/内存与不可观测指标保留限制。
+- 整体任务仍in_progress。G-00、OPT-00/01整体、完整G-04、整体PhaseE与物理/Release保持开放；止于OPT-06，OPT-07未开始。本轮未修改产品/测试源码，未执行真实GUI/Explorer/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装、参考程序或commit/push。
+
+---
+
+# Current checkpoint — OPT-06 Bounded binary bulk transfer 实施验证通过，待独立验收
+
+归档仍 **Phase E — Format expansion and ZIP editing**，整体任务保持in_progress。**OPT-06 — Bounded binary bulk transfer** 已完成产品实现及授权自动化/自有原生验证；[实施交接](../11-02-archive-workflow-optimization/opt06-acceptance.md)、[唯一帧契约](../11-02-archive-workflow-optimization/opt06-binary-transfer.md)、[完整测量](../11-02-archive-workflow-optimization/opt06-measurements.md)。本轮不是独立验收结论。OPT-02/03/04/05独立限定接受及O5-AC01/02关闭、原报告和历史数据保持。
+
+- 原worker pipes/Run/source/output所有者内覆盖Create/Add实际源读取、Extract/retained输出写入和held-partial候选回读。严格bulk_transfer1/binary_bulk_v1协商，原u32LE高位discriminator与76字节头，操作级序列/精确绑定，单未决调用停等背压。数据<=64KiB、每方向<=2buffer；1MiB计入原64MiB overhead，不提升并发、预算或超时。公共IPC、格式/依赖/Job运行时及UI未扩展。
+- 有效Rust/C#真实边界RED/GREEN已保留。Rust新worker8组/35进程场景、相关单元28和定向集成95项通过；C#wire/legacy精确LIST13/RUN13/PASS13/SKIP0，受影响真实native精确5/5+6/6+2/2，均fail0/not_run0。保持完整性、source freshness、metadata/MOTW、候选/移除源验证、FILE-only handoff、失败/未知/晚取消和实际清理；retained/预览/分卷/加密授权寿命通过。
+- Debug最终C#构建0警告0错误；archive全目标严格Clippy、37文件rustfmt、spec123文档/14owner及锁定Kit/editor、CLI/树拖拽/PhaseF源码门禁通过。一次有界只读正确性复核未发现可操作缺陷。源码/worker/Host/tests与before均独立冻结，HEAD未变。
+- 三条原Job/native路线每侧各3次完整样本，共18条。Create Store/Extract/Add完整作业中位数分别691.335→183.681ms、542.544→246.609ms、1260.297→495.964ms；双向wire中位数6,789,553→3,172,163、3,755,971→1,059,473、12,054,485→5,280,000字节。对应native/source/output/partial实际工作相同，每次一次发布/真实清理；after转换输入0、host缓冲高水位Create/Add2/131072bytes、Extract1/65536。保留全部样本/范围，CPU和内存仅区间采样，内部/总I/O、独占CPU/精确峰值及单独清理耗时仍不可用。
+- G-14及触及G-01/G-02/G-04/G-07/G-19/G-23/G-25仅完成本轮实施边界验证，独立OPT-06收口待确认。G-00、OPT-00/01整体、完整G-04、整体PhaseE及物理/Release仍开放；在OPT-06停止，OPT-07未开始。未执行真实GUI/Explorer/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-05 O5-AC01/02 独立定向验收通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-05 — Reusable format and update plans** 已在授权自动化/自有原生范围独立接受，O5-AC01/02 均关闭；[定向独立验收](../11-02-archive-workflow-optimization/opt05-ac01-ac02-independent-acceptance.md)。原部分接受报告、修复记录、性能数据和 OPT-02/03/04 独立结论保持历史归属。
+
+- **O5-AC01 关闭：** 生产终端 source/target/output 分角色 attempts/full_reads/实际字节/完整字节与 held-partial 独立计数核对通过。成功完整读取5/2/2；已建立租约取消额外65536字节计入实际读取但无完整读取信用。相关ID、耗时、原生码、发布/清理与原终端一致，抛异常sink不改变成功结果。
+- **O5-AC02 关闭：** 本轮 actual-worker implicit/explicit all-Skip分别 eligibility1、local/descriptor2/3、零负载/候选/发布且源不变；保存的单点qualification-bypass worker在新自有目录复跑均因新断言变红，业务仍完成、零发布且源不变。当前产品源码与保存的正确源码逐字节一致。
+- 独立复跑 worker4/4、C# Debug构建0警告0错误；effects-reviewed精确native LIST9/RUN9/PASS9/SKIP0、not_run0。三组生产终端成功/取消/rejecting-sink数据一致，身份/八条中断读取、原终端操作隔离、handoff/一次性完成、失败/未知/晚取消及实际清理保留。规格与锁定Kit/editor门禁通过；各轮重叠不相加，未新增性能结论。
+- 整体任务仍in_progress。G-00、OPT-00/01整体、完整G-04、Phase E及物理/Release保持开放；止于OPT-05，OPT-06/07未开始。本轮未修改产品/测试源码，未执行真实GUI/Explorer/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-05 O5-AC01/02 定向修复验证通过，待独立收口
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-05 — Reusable format and update plans** 两项发现已完成定向修复和自动化/自有原生验证；[修复证据](../11-02-archive-workflow-optimization/opt05-ac01-ac02-repair.md)。[原独立部分接受报告](../11-02-archive-workflow-optimization/opt05-independent-acceptance.md) 保持，独立定向收口待确认；OPT-02/03/04 独立限定接受及历史证据不变。
+
+- **O5-AC01 已修复验证：** 原 Run 在实际清理/终端解析后聚合既有 source/target/output 与 held-partial 计数，无新增读取。真实 worker 成功终端为完整读取5/2/2；已建立租约的中断保留额外65536实际字节，不增加完整读取。相关ID、原生码、耗时、提交/清理和抛异常sink隔离均通过。
+- **O5-AC02 已修复验证：** implicit/explicit all-Skip actual-worker分别断言 eligibility1、local/descriptor2/3、零负载/候选/发布且源不变；仅绕过fresh qualification时两者均变红。产品Rust源码已逐字节恢复，相关worker合同4/4通过。
+- C# Debug构建0警告0错误；effects-reviewed精确native LIST9/RUN9/PASS9/SKIP0、not_run0，保留身份/取消、原终端隔离、handoff/一次性完成、未知/失败/晚取消与真实清理。原性能表不重算、不合并计数，不新增普遍提速结论。
+- 整体仍in_progress；两项修复待独立定向收口。G-00、OPT-00/01整体、完整G-04、Phase E及物理/Release保持开放；到OPT-05停止，OPT-06/07未开始。未执行真实GUI/Explorer/剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-05 Reusable format and update plans 独立验收部分接受
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-05 — Reusable format and update plans** 独立验收为部分接受，暂不关闭；[独立报告](../11-02-archive-workflow-optimization/opt05-independent-acceptance.md)。原交付与 OPT-02/03/04 独立限定接受、历史证据保持。
+
+- 已执行的格式/选择/完整性、五阶段新鲜源观察、单次原生发布及实际清理通过，未确认损坏发布或源保护退化。G-03/G-05/G-24 与触及 G-04/G-19 的功能证据保留。
+- **O5-AC01：生产诊断缺陷。** source 五次读取计数未导出，target/output 仍合并，未满足原 operation 下分角色实际字节契约。须在原 bridge/session 低频终端聚合既有计数，并补成功与中断读取的真实诊断断言。
+- **O5-AC02：回归证据缺口。** 全 Skip Add 的生产 fresh qualification 调用正确保留，但 actual-worker 测试只断言零候选/零发布，不能保护这次资格检查；须补可变红的 eligibility/结构准入断言。
+- 本轮 archive48、Desktop124加Add选择6、protocol104加integration2/IPC55通过；native精确LIST12/RUN12/PASS12/SKIP0，另有同当前版本控制1/1。严格archive/Desktop Clippy、worker/C#构建与相关源码门禁通过。独立核对240条保留原始样本、118组统计及58条当前样本；旧对象完整读取14→7不含两次output读取。普通TAR提取等变慢路径保留，不作普遍提速结论。
+- 整体仍in_progress；O5-AC01/02待定向修复验收。G-00、OPT-00/01整体、完整G-04、Phase E与物理/Release保持开放；OPT-06/07未开始。本轮未修改产品/测试源码，未执行真实GUI/Explorer/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-05 Reusable format and update plans 自动化/自有原生范围通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-05 — Reusable format and update plans** 已完成授权范围内实施与限定验收：G-03/G-04/G-05/G-24 及触及 G-19 通过；[实施与验证](../11-02-archive-workflow-optimization/opt05-reusable-plans.md)、[限定验收](../11-02-archive-workflow-optimization/opt05-acceptance.md)、[三次可比测量](../11-02-archive-workflow-optimization/opt05-measurements.md)。OPT-02/03/04 独立限定接受及历史证据保持。
+
+- 原 operation/attempt 内复用完整验证 TAR spool/ordinal Vec、真实 reader 绑定 ZIP records；readmission 复用计划但仍经过原引擎源/布局/metadata/终结边界。ZIP retained/new 在最终候选验证，removed/replaced-away 仍在原源验证；原结构、编码/extras/encryption、实际字节与共存预算保留。
+- native 同阶段旧对象完整读取14→7，实际字节117,442,220→58,721,110；五个新鲜阶段、FILE-only/reader-close、fingerprint/postpublication及实际清理保留。65536/4096目录展开268,435,456→65,536visits，描述符排序/碰撞不变。
+- 三次完成样本：提取计划中位164.915s→5.919s；拖出模型102.370s→37.991s；原生owner130.377ms→87.545ms，清理单列。ZIP更新与小型compound不作整体提速结论；总/内部I/O与峰值内存不可观测项仍null。
+- 交付配对48/48、Desktop124/124、协议104/IPC55、相关保留71/71通过；实际native编辑/输出15/15、owner/compound8/8、retained六项加独立context1项、交付关键6/6及30compound作业通过，接受结果零skip。严格archive/Desktop all-target Clippy、32文件格式、C#0警告0错误及相关源码/文档/Kit/editor门禁通过；各组重叠不相加。
+- 整体仍in_progress。G-00、OPT-00/01整体、完整G-04、Phase E与物理/Release保持开放；分卷全卷校验、7z consuming-block/RAR回放限制保持。到OPT-05停止，OPT-06/07未开始。未执行真实GUI/Explorer/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-05 Reusable format and update plans 实施中
+
+归档仍 **Phase E — Format expansion and ZIP editing**。本轮独立授权 **OPT-05 — Reusable format and update plans**，复用已独立限定接受的 OPT-02/03/04；[本批范围与证据](../11-02-archive-workflow-optimization/opt05-reusable-plans.md)。当前建立新鲜 before 配对、真实所有者计数与有效边界 RED，尚无本批优化/性能验收结论。
+
+- 仅在原 operation/attempt 内复用 TAR spool/ordinal lookup、ZIP validated record plan，优化一次规范化目录展开、ZIP 最终候选/移除源载荷验证责任及同阶段等价原生观察。
+- 保留全部源/完整性/metadata/取消/原生发布/实际清理边界；ordinary single-source lease 不升级为多卷、编辑或回收权限，OPT-04 协议与寿命不重做。
+- 退出 G-03/G-04/G-05/G-24 及触及 G-19；G-00、OPT-00/01整体、Phase E与物理/Release保持开放。到OPT-05停止，不进入OPT-06/07，不执行真实GUI/Explorer/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-04 retained materialization 独立限定验收通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。[独立验收](../11-02-archive-workflow-optimization/opt04-independent-acceptance.md)限定接受 G-07/G-08/G-09/G-10/G-27 与触及 G-19：描述符零启动、1/2/16需求同一Run/source/catalog、完整格式校验、Seal期限与真实drain、独立授权/预览消费者和转交流寿命均有当前复跑证据。
+
+- 原生 retained六项、保留十二项精确LIST/RUN通过且零跳过；当前同版本控制与生命周期模式各完成描述符及九次需求试验，不作为历史before/after比。Archive59、Desktop新增预览4/当前preview筛选122（有重叠）、Protocol50、IPC17、archive/Desktop严格Clippy通过。
+- 当前普通ZIP每组revision4；分卷两成员仍有40次按卷revision，TAR逐需求索引和7z完整块重解/RAR回放成本保留。历史27.68s→2.45s沿用原交付归属，本轮未读取原始历史before重算提速比；未宣称Release、冷缓存或Bandizip等效。
+- 整体任务仍in_progress；G-00、OPT-00/01整体、完整G-04、Phase E及真实Explorer/GUI/DPI/用户/Release开放。产品源码未改；未打包安装、修改用户源、回收/HZ5、服务注册表或commit/push。OPT-05/06/07未开始。
+
+---
+
+# Current checkpoint — OPT-04 retained materialization 自动化/自有原生范围通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-04 — Drag-scoped retained materialization** 已完成授权范围内实施与验收，G-07/G-08/G-09/G-10/G-27 和触及 G-19 通过；[完整结果与证据](../11-02-archive-workflow-optimization/opt04-retained-materialization.md)。到 OPT-04 停止，不进入后续工作包。
+
+- 同输入、同 Debug、同执行路径，各三次完成试验：ZIP 1/2/16 需求均只有一个原 worker/source/catalog；16 成员总就绪中位数 **27.68s→2.45s**，源 revision 工作64→4次。首流仍承担原源/目录验证；receiver end 后真实 drain 单列，不把成员 ready 写成 cleanup。
+- 最终 lifecycle 精确 LIST1/RUN1/PASS1、集成 LIST6/RUN6/PASS6，零跳过：solid7z 完整块与合法重解码、RAR4/5 前驱/反向回放、TGZ/TXZ 首次已验证 spool、分卷 ZIP normalized 源保留；坏块不给早成员流。Seal 越过30s不给 medium，31s receiver idle 后仍复用同一 Run；取消、崩溃、EOF、目标持流与真实槽位/源释放通过。
+- 可见预览 Ready 保留原 lease，原选择/刷新/编码/标签/关闭/断连退休释放；4个新回归和105个含重叠的预览测试通过。原生8种普通预览、3种加密RAR4独立授权/复用/撤销，独立游标、cache sweep 和转交流寿命通过。原异步/密码6项、tree/descriptor/split/OPT-01/预算/手势/慢取消10项保留通过，计数有重叠不相加。
+- archive59、protocol50、IPC17，archive/Desktop全目标严格Clippy、限定格式、C#0警告0错误及spec/Kit/editor四门禁通过。原 before/RED/首次ZIP-green/最终源码及二进制配对均保留；非冷缓存、非Release、非真实Explorer目标结论。
+- OPT-02/03独立限定接受保持；OPT-00/01整体、G-00、完整G-04、Phase E和物理/Release仍开放。未执行真实Explorer/产品GUI/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。OPT-05/06/07未开始。
+
+---
+
+# Current checkpoint — OPT-04 retained ZIP/native 纵向切片通过，格式与预览寿命实施中
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-04 — Drag-scoped retained materialization** 已建立同路径before及有效原生生命周期RED，原私有协议/所有权已记录；[本批记录](../11-02-archive-workflow-optimization/opt04-retained-materialization.md)。本批尚未退出，不关闭G-00或其他开放门禁。
+
+- ZIP原controlled-COM→EntrySession→runner/worker→native output/cache→IStream：descriptor-only及1/2/16各三次完成试验通过，一次拖出一个worker/source/catalog，首成员ready时Run仍占槽，receiver end后真实drain，独立游标及转交流寿命保持。
+- preview→drag原生八场景与receiver取消/abort/源关闭/断连联合LIST2/RUN2/PASS2/SKIP0；原async多成员/未知大小及OPT-01 Seal/游标篡改保留LIST4/RUN4/PASS4/SKIP0。真实Run槽位0、源独占重开和目标持流同时验证。Rust私有wire3/3、demand port2/2与worker/C#编译通过。
+- 7z/RAR retained格式、compound TAR目录/已验证spool复用、Desktop可见预览lease寿命与最终集成/测量仍在实施。旧测量和首次ZIP-green均独立保留，不把此切片写成整批或延迟提升结论。
+- OPT-02/03限定接受保持；OPT-00/01整体、G-00、完整G-04、Phase E和物理/Release仍开放。止于OPT-04，不进入OPT-05/06/07；未执行真实Explorer/产品GUI/系统剪贴板/选择器、用户源修改/回收/HZ5、服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-04 Drag-scoped retained materialization 参考与基线准备中
+
+归档仍 **Phase E — Format expansion and ZIP editing**。本轮独立授权 **OPT-04 — Drag-scoped retained materialization**，在G-00未整体关闭时先建立本批相关before基线、真实边界回归和私有协议/所有权设计；[本批记录](../11-02-archive-workflow-optimization/opt04-retained-materialization.md)。当前为参考、原所有者追踪和基线夹具准备，尚无新的产品实现或性能/原生验收结论。
+
+- 复用原持续按压/source HWND/连接/快照/ordinal、单STA/OLE、EntrySession/runner/worker/output/cache及独立IStream。成员ready与真实Run/session清理终态分开，原active槽位与转交流寿命保持。
+- OPT-02/03独立限定接受、OPT-01共享读取/Seal实际大小与旧测量保留；G-00、第一批整体收尾、完整G-04、Phase E和物理/Release门禁仍开放。
+- 退出G-07/G-08/G-09/G-10/G-27及触及G-19，到OPT-04停止；不提前OPT-05/06/07，不运行真实Explorer/产品GUI/系统剪贴板/选择器，不修改用户归档/源回收/HZ5，不操作服务注册表、打包签名安装或commit/push。
+
+---
+
+# Current checkpoint — OPT-03 三项定向返修独立限定验收通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。[定点独立验收](../11-02-archive-workflow-optimization/opt03-ac01-ac03-independent-acceptance.md)关闭 O3-AC01/02/03；结合原已接受的 writer/命名/隔离原生证据，**OPT-03 — Complete Add intake and results** 在授权的自动化/自有原生停止点通过，G-12/G-13/G-21/G-22/G-23 与触及的 G-18/G-19 限定接受。原部分结论、返修记录及旧测量保留。
+
+- 独立复跑：原生创建位置精确 LIST1/RUN1/PASS1/SKIP0，重新导出三种真实创建主文件；输入8/8、合法Add终态6/6、post-Test4/4（9种Test清理失败组合）、Job111/111、Step411/11、Desktop全目标严格Clippy通过。测试组有重叠，不相加计数；未重跑 writer/完整原生矩阵或性能基线。
+- 整体任务仍in_progress；G-00、OPT-00/01整体、完整G-04、Phase E与真实剪贴板/选择器/Explorer/GUI、DPI/用户/Release验收保持开放。未改产品代码，未打包安装、修改用户源、回收/HZ5、服务注册表或commit/push；OPT-04至OPT-07未开始。
+
+---
+
+# Current checkpoint — OPT-03 O3-AC01/02/03 定向返修自动化通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。[定向返修记录](../11-02-archive-workflow-optimization/opt03-ac01-ac03-repair.md)补齐[独立验收](../11-02-archive-workflow-optimization/opt03-independent-acceptance.md)的三项发现；原独立部分接受结论与G-21/G-22限定接受保持，本轮不改写为新的独立整批结项。
+
+- O3-AC01：原编辑表单上下文保存创建连接；真实路由替换、旧断线通知未消费时，旧Add表单不能提交或发起Paste/两种选择器；同连接正常动作保持。输入回归8/8。
+- O3-AC02：六种合法无刷新终态先通过协议校验并安装到原Job，再断言原快照/目录/选择保持；非法帧拒绝单列。Add结果组6/6。
+- O3-AC03：真实C#Create导出经原Test Start后投递cleanup=false终态，三种主文件×三种结果均保留创建事实/取消失败语义和运行槽位；无Locate/Retry/回收权限。post-Test组4/4。
+- 集成Job111/111、OPT0322/22、Step411/11、Desktop全目标严格Clippy与限定格式通过。原C#/worker/七格式互通/OPT02证据保持；本轮未改writer、队列、公开协议或native发布机制。
+- 整体任务仍in_progress；G-00、OPT-00/01整体、完整G-04、Phase E和物理/Release验收未关闭。不进入OPT-04；未执行真实系统剪贴板/选择器/Explorer/产品GUI、打包安装、用户归档修改、源回收/HZ5、服务注册表或commit/push。
+
+---
+
+# Current checkpoint — OPT-03 Complete Add intake and results 限定自动化与自有原生验证通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。**OPT-03 — Complete Add intake and results** 已完成授权范围内实施与验证；[本批记录](../11-02-archive-workflow-optimization/opt03-intake-results.md)与[Create选项记录](../11-02-archive-workflow-optimization/opt03-create-options.md)保留代码入口、真实边界回归和证据分级。
+
+- G-12/G-13/G-21/G-22/G-23及触及的G-18/G-19自动化/隔离原生边界通过。Remove、完整New-all/冻结Add、HDROP-only Paste、实际Add新快照选择、七格式Create选项、完整输出计划及native定位/post-Test事实保留均接入原所有者。
+- 原Job107/107、表单41/41、草稿12/12、进度13/13、输出规划15/15；协议50/50、IPC17/17、CLI7/7。Add worker35场景含完整301成员/展示256；native Add21场景含已发布晚取消。OPT03精确LIST5/RUN5全部通过、零跳过；七格式互通8项/43输出和OPT02保留3项/79场景通过。
+- 最终C#构建零警告错误；五包全目标严格Clippy、限定格式及spec/Kit/editor门禁通过。真实系统剪贴板/选择器/Explorer/产品GUI、IME/DPI/视觉与Release验收仍需另行授权。
+- OPT-02独立限定接受及原历史测量保持；OPT-00/01整体、G-00、完整G-04和Phase E未关闭。到OPT-03停止，OPT-04及后续未开始；未打包签名安装、修改用户归档、回收源/HZ5、操作服务注册表或commit/push。
+
+---
+
+# Current checkpoint — OPT-03 Complete Add intake and results 实施中
+
+归档仍 **Phase E — Format expansion and ZIP editing**。当前独立授权 **OPT-03 — Complete Add intake and results**；[本批记录](../11-02-archive-workflow-optimization/opt03-intake-results.md)记录来源编辑、拖入/Paste、实际 Add 结果及 Create 输入/输出计划/post-Test 工作。OPT-02 独立限定接受保持，OPT-00/01、G-00及完整G-04未关闭。
+
+- 输入切片：真实 TestWindow Remove/New-all/Paste/文本焦点与返回生命周期6/6，Rust协议1/1、Hello协商1/1通过。C#自有HGLOBAL、只读目标枚举及真实创建位置夹具3/3，零跳过；构建零警告错误。
+- Add实际结果与新快照选择、分别压缩完整输出计划、Create选项writer回归及post-Test发布事实合并尚在实施，未宣告本批退出验收通过。
+- 完成OPT-03后停止；OPT-04及后续未开始。真实系统剪贴板/选择器/Explorer/产品GUI、打包签名安装、用户归档、源回收/HZ5、服务注册表及commit/push均未执行。
+
+---
+
+# Current checkpoint — OPT-02 Add namespace 限定自动化与自有原生验收通过
+
+归档仍 **Phase E — Format expansion and ZIP editing**。本轮独立授权 **OPT-02 — Add namespace correctness**；[本批记录](../11-02-archive-workflow-optimization/opt02-add-namespace.md)记录完整 incoming 规划、原冲突 ticket、五格式名称预留与无变化边界。
+
+- G-11及本批触及的G-04/G-19保留断言通过：五格式各29场景，共145次worker操作；普通Create5/5、ZIP交互3/3、格式保真/故障/reader-close35/35、ZIP64头部1/1。真实原生79场景（ZIP17、7z20、TAR/TGZ/TXZ各14）共43次单次发布、36次零发布，全部清理完成；原有源变化/取消/未知提交/晚取消7/7通过，零跳过。严格Clippy及C#构建通过。
+- OPT-00/01 与 G-00 仍未关闭；原独立验收、AC-01/02/03返修、共享读取/Seal限定接受及216作业测量保持。G-04重复载荷验证优化仍属OPT-05，不在本批。
+- OPT-02已到本轮停止点，OPT-03及后续未开始。真实Explorer/产品GUI、Release打包签名安装、真实用户归档、源回收/HZ5、服务注册表及commit/push均未执行。
+
+---
+
+# Current checkpoint — OPT-00 / OPT-01 实施中
+
+2026-11-02。归档仍 **Phase E — Format expansion and ZIP editing**。本批为 **OPT-00 — Reproducible baseline and real-seam regressions** 与 **OPT-01 — Task controls, shared read path and drag first-stream cost**；[实施与测量记录](../11-02-archive-workflow-optimization/opt00-opt01-results.md)记录实际构建配对、三次测量、生产边界回归及剩余门禁。
+
+**独立验收后返修：** [AC-01/02/03 记录](../11-02-archive-workflow-optimization/opt01-ac01-ac03-repair.md)覆盖提示先到再关闭/后台、双通道迟到进度和 TAR 系列误用 7z 文案。原后台/native-close 回调、五类提示一次答复、退役保护、实际 C# 反序帧与冻结格式呈现通过；C#3/3、桌面 jobs83/83、progress15/15、协议101/101、严格 Clippy 通过。[原独立验收](../11-02-archive-workflow-optimization/opt00-opt01-independent-acceptance.md)及测量证据保留。G-00 仍缺总源读取/内部阶段/block 计量及原始137,737,166字节样本对比；整批仍未关闭，真实 GUI/Explorer/Release 未验收。
+
+- OPT-01 七项已有对应编译/受控回归：后台原提示恢复、真实排队控制、C# 六阶段事件贯通原视图、ACK 所有权停止确认、共享目录资格准入、原生保护下固定 revision、Seal 实际大小回传。桌面任务76/76、进度15/15、协议101/101、共享读取4/4及最终引擎保留46/46通过；最终原生合并4/4、零跳过。
+- 216 个补测原生作业覆盖 ZIP 读取、创建/分别/分卷/post-Test/Add、solid7z/solidRAR5/TAR.GZ/TAR.XZ，保留三次原始测量、实际身份、传输及有界内存采样。G-00 仍缺完整源读取、内部格式阶段和 block 解码计量，不能据此判定 OPT-00/01 或 Phase E 完成。OPT-02 及后续工作包未开始。
+- 真实 Explorer/产品 GUI、打包、签名、安装、用户归档修改、源回收与 HZ5 源变更均不属于本批执行范围。Release44 及原1–7步限定接受范围保持。
+
+---
+
+
+# Current checkpoint — 正式 Release44 已打包，索引器安装态发布验收待完成
+
+2026-11-02。[Release44记录](release44-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing**；原1–7步限定接受范围不扩大，新增压缩工作流优化仍为计划。
+
+- 原 `package-local.ps1 -SkipVerification` 实际Release构建、原签名和正常安装器完成，stateCompleted/exit0。序号44、releaseID `32487b85-cff6-44ea-a340-732b43f3ddd8`；27,284,125bytes（26.02MiB），SHA256 `6D40393212C8F77014549E5C69323E60727B5FFA082F0F594B9DAAA6D45CABF5`。
+- 内部RSA3072-PSS/SHA256独立核验，78签名成员/精确80文件、10构建输出、65扩展源文件、5批准及helper/Desktop绑定均一致。安装器11/BrowserHost替换5隔离场景通过。1,189源码输入打包期无变化；复用下载/输入/索引/IPC及原HZ5定向记录，不重跑全量Rust/C#或HZ5矩阵。Authenticode仍NotSigned。
+- 未安装、启动产品、部署保护副本或重启服务。只读确认现有LocalSystem服务保护三元组和批准哈希不匹配本包；索引器CPU/I/O、重启base+delta恢复与真实服务搜索发布门禁待另行授权部署后完成，不能以旧服务或包构建成功替代。
+- 持久日志及核验 `.diagnostics/packaging/20261102-101400-79f5589e/`。HZ5默认关闭、Stored ZIP/同卷NTFS/不可逆确认及继续剩余解压边界不变；原历史证据与Release43备份保留。本次仅prepend，原254715bytes检查点保持精确suffix。
+
+---
+
 # Current checkpoint — 正式 Release43 已打包，HZ5限定切片随包交付
 
 2026-10-31。[Release43发布记录](release43-package-outcomes.md)／[HZ5独立限定验收](hz5-independent-acceptance.md)。仍 **Phase E — Format expansion and ZIP editing**，原1–7步限定接受范围不扩大。

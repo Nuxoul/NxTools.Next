@@ -8,13 +8,15 @@ $quickLaunchModuleDir = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_lau
 $quickLaunchSource = (@(
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'preview.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'panel.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'result_motion.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'actions.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'search.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'icon.rs')),
         (Get-Content -Raw -LiteralPath $quickLaunchPath),
         # The module's production-window regressions live in its test submodule;
         # they are part of the lifecycle contract this gate enforces.
-        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'tests.rs'))
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'tests.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'refresh_tests.rs'))
     )) -join "`n"
 $metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
 $metricsSource = Get-Content -Raw -LiteralPath $metricsPath
@@ -50,11 +52,17 @@ if ($panelRenderStart -lt 0 -or $panelRenderEnd -le $panelRenderStart) {
 $panelRender = $quickLaunchSource.Substring($panelRenderStart, $panelRenderEnd - $panelRenderStart)
 foreach ($requiredPopupConstant in @(
     'const PANEL_WIDTH: f32 = 620.0',
-    'const PANEL_HEIGHT: f32 = 410.0',
-    'const SEARCH_HEADER_HEIGHT: f32 = 42.0'
+    'const LAUNCHER_LIST_MAX_HEIGHT: f32 = 470.0',
+    'const LAUNCHER_RESULT_ROW_HEIGHT: f32 = 52.0',
+    'const LAUNCHER_RESULT_ICON_SIZE: f32 = 32.0',
+    'const LAUNCHER_APPLICATION_TITLE_SIZE: f32 = 16.0',
+    'const LAUNCHER_FILE_TITLE_SIZE: f32 = 15.0',
+    'const SEARCH_HEADER_HEIGHT: f32 = 58.0',
+    'const SEARCH_INPUT_TEXT_SIZE: f32 = 26.0',
+    'const SEARCH_INPUT_LINE_HEIGHT: f32 = 34.0'
 )) {
     if (-not $quickLaunchSource.Contains($requiredPopupConstant)) {
-        throw 'Quick Launch must preserve the tokenized collapsed/expanded popup constants.'
+        throw 'Quick Launch must preserve its launcher-specific density, capped list and fixed header/width.'
     }
 }
 foreach ($requiredPopupRenderContract in @(
@@ -275,7 +283,7 @@ if (-not $pathListSource.Contains(
     )) {
     throw 'QL-10 must preserve and test the exact original path used by the production tooltip.'
 }
-$exclusionRenderStart = $quickLaunchSettings.IndexOf('        let main_window = cx.entity();')
+$exclusionRenderStart = $quickLaunchSettings.IndexOf('        let index_exclusions_control = path_exclusion_setting(')
 $exclusionRenderEnd = $quickLaunchSettings.IndexOf(
     '        let selected_command = self',
     $exclusionRenderStart
@@ -289,7 +297,7 @@ $exclusionRender = $quickLaunchSettings.Substring(
 )
 if (($exclusionRender.Split('cx.defer(move |cx|').Count - 1) -lt 2 -or
     -not $exclusionRender.Contains('application.remove_excluded_path(&path, cx)') -or
-    -not $exclusionRender.Contains('application.request_index_exclusion_directory(cx)')) {
+    -not $exclusionRender.Contains('application.request_index_exclusion_directory(source_window_handle, cx)')) {
     throw 'Exclusion-list add and remove callbacks must defer cross-entity updates.'
 }
 $exclusionKeyboardStart = $quickLaunchPageSource.IndexOf('fn handle_index_exclusion_keyboard(')
@@ -496,12 +504,14 @@ foreach ($requiredCustomCommandCallback in @(
     'custom_command_editor(',
     'application.add_custom_command(cx)',
     'application.update_custom_command(index, command, cx)',
-    'application.remove_custom_command(index, cx)',
-    'application.request_custom_command_program(index, current_path, cx)'
+    'application.remove_custom_command(index, cx)'
 )) {
     if (-not $customCommandCallbacks.Contains($requiredCustomCommandCallback)) {
         throw 'QL-11 explicit custom-command actions must retain their production behavior.'
     }
+}
+if ($customCommandCallbacks -notmatch 'application\.request_custom_command_program\(\s*index,\s*current_path,\s*source_window_handle,\s*cx,?\s*\)') {
+    throw 'QL-11 program selection must retain its source HWND and original command arguments.'
 }
 if (($customCommandCallbacks.Split('cx.defer(move |cx|').Count - 1) -lt 4 -or
     -not $mainWindowAllSource.Contains('pending_custom_command_program_picker') -or
@@ -674,11 +684,12 @@ if ($searchInputStart -lt 0 -or $searchInputEnd -le $searchInputStart) {
 }
 $searchInputRender = $panelRender.Substring($searchInputStart, $searchInputEnd - $searchInputStart)
 foreach ($requiredSearchInputTypeRole in @(
-    '.text_size(px(TEXT_BODY))',
-    '.line_height(px(LINE_HEIGHT_BODY))'
+    '.with_size(ControlSize::Large)',
+    '.text_size(px(SEARCH_INPUT_TEXT_SIZE))',
+    '.line_height(px(SEARCH_INPUT_LINE_HEIGHT))'
 )) {
     if (-not $searchInputRender.Contains($requiredSearchInputTypeRole)) {
-        throw 'Quick Launch search input must apply the shared Body type role directly.'
+        throw 'Quick Launch search input must retain official Large sizing and the reference-sized text roles.'
     }
 }
 $resultRenderStart = $quickLaunchSource.IndexOf('fn render_result(')
@@ -702,7 +713,7 @@ foreach ($requiredResultConstant in @(
     'const COMPACT_RESULT_TRAILING_RAIL_WIDTH: f32 = 48.0'
 )) {
     if (-not $metricsSource.Contains($requiredResultConstant)) {
-        throw 'Quick Launch result rows must preserve the fixed three-rail geometry.'
+        throw 'Shared compact search/action metrics must not change with launcher density.'
     }
 }
 foreach ($requiredResultRenderContract in @(
@@ -711,17 +722,55 @@ foreach ($requiredResultRenderContract in @(
     'quick-launch-result-title-',
     'quick-launch-result-subtitle-',
     'quick-launch-result-shortcut-',
-    '.gap(px(SPACING_4))',
+    '.gap_0()',
     '.text_size(px(TEXT_BODY))',
-    '.line_height(px(LINE_HEIGHT_BODY))',
+    '.text_size(px(title_size))',
+    '.line_height(px(title_line_height))',
+    'LAUNCHER_APPLICATION_TITLE_SIZE',
+    'LAUNCHER_FILE_TITLE_SIZE',
+    'Label::new(subtitle)',
+    '.text_ellipsis_middle()',
+    '.line_height(px(LAUNCHER_SUBTITLE_LINE_HEIGHT))',
+    '.h(px(LAUNCHER_RESULT_ROW_HEIGHT))',
+    '.when(!subtitle.is_empty()',
     '.text_size(px(TEXT_LABEL))',
     '.line_height(px(LINE_HEIGHT_LABEL))',
-    '.size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))',
+    '.size(px(LAUNCHER_RESULT_ICON_SIZE))',
     '.w(px(COMPACT_RESULT_TRAILING_RAIL_WIDTH))'
 )) {
     if (-not $resultRender.Contains($requiredResultRenderContract)) {
         throw 'Quick Launch heterogeneous results must share one tokenized three-rail row.'
     }
+}
+foreach ($requiredContentGeometryContract in @(
+    'let content_size_subscription =',
+    'this.resize_to_content(window, cx)',
+    'if this.is_open',
+    'fn quick_launch_result_tween_content_height_does_not_follow_ordinary_result_counts(',
+    'fn quick_launch_result_tween_stable_expanded_viewport_admits_late_rows(',
+    'fn quick_launch_result_tween_delayed_identity_reorder_and_virtual_scroll_do_not_replay(',
+    'fn quick_launch_result_tween_modes_are_finite_ease_out_values(',
+    'Timing::new(RESULTS_APPEAR_DURATION).ease(Easing::EaseOut)',
+    'fn content_height(',
+    'quick-launch-status-footer',
+    'fn published_result_count_keeps_the_expanded_panel_and_header_fixed(',
+    'fn result_publication_cannot_resize_a_hidden_or_new_session(',
+    'fn unicode_path_middle_ellipsis_uses_measured_width_without_changing_full_text(',
+    'fn native_content_resize_coalesces_publications_without_activation_or_closed_session_replay(',
+    'fn resize_popup_content(',
+    'application.resize_popup_content(cx)',
+    'quick_launch.popup.resize.accepted',
+    'quick_launch.popup.resize.completed'
+)) {
+    if (-not $quickLaunchSource.Contains($requiredContentGeometryContract)) {
+        throw "Quick Launch content sizing/middle truncation boundary missing: $requiredContentGeometryContract"
+    }
+}
+$nativeBoundsSource = Get-Content -Raw -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.NativeMethods.cs')
+$nativeBounds = ($nativeBoundsSource -split 'internal static WindowsCommandResult SetWindowBounds\(', 2)[1] -split 'internal static WindowsCommandResult SetWindowBoundsCentered\(', 2 | Select-Object -First 1
+if (-not $nativeBounds.Contains('SwpNoZOrder | SwpNoActivate') -or
+    -not $nativeBounds.Contains('after.Width == width && after.Height == height')) {
+    throw 'Content sizing must retain the existing no-activate C# client-bounds/readback owner.'
 }
 if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
     $resultRender.Contains('RESULT_DETAIL_SIZE') -or
@@ -1960,15 +2009,14 @@ $statusRender = $quickLaunchSource.Substring(
     $statusRenderStart,
     $sourceIconStart - $statusRenderStart
 )
-if ($statusRender -notmatch '\.absolute\(\)') {
-    throw @'
-Quick-launch layout regression: transient launch/error status must be an
-absolute overlay. An in-flow status row steals height from the result list as
-soon as an item is clicked, making the panel appear to shrink.
-'@
+if ($statusRender -match '\.absolute\(\)' -or
+    -not $statusRender.Contains('quick-launch-status-footer') -or
+    -not $statusRender.Contains('.flex_none()') -or
+    -not $quickLaunchSource.Contains('LAUNCHER_STATUS_FOOTER_HEIGHT')) {
+    throw 'Quick-launch error footer must reserve its own native height without covering or shrinking the result viewport.'
 }
 
-Write-Host 'PASS actionable error status does not change quick-launch layout height'
+Write-Host 'PASS actionable error footer reserves content-sized native height'
 
 if ($quickLaunchSource -notmatch '(?s)background\s*\.spawn\(async move \{ scan_application_roots\(&roots\) \}\)') {
     throw @'

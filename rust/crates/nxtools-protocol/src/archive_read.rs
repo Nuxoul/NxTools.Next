@@ -60,6 +60,7 @@ pub enum ArchiveReadError {
     UnsafePath,
     OutputCollision,
     ResourceLimit,
+    SelectedOutputLimit,
     SourceUnavailable,
     SourceChanged,
     Busy,
@@ -283,6 +284,16 @@ impl ArchiveReadBatch {
                     | "Bzip2"
                     | "Xz"
                     | "Zstd"
+                    | "Cab"
+                    | "Iso"
+                    | "Udf"
+                    | "Wim"
+                    | "Ar"
+                    | "Cpio"
+                    | "Lzma"
+                    | "Lz4"
+                    | "Lz4Block"
+                    | "Brotli"
             )
         {
             return Err(ArchiveReadError::ProtocolViolation);
@@ -460,6 +471,16 @@ mod tests {
         assert_eq!(command.validate(), Ok(()));
         command.path = Some("C:\\forbidden.zip".into());
         assert_eq!(command.validate(), Err(ArchiveReadError::InvalidRequest));
+    }
+    #[test]
+    fn selected_output_limit_has_a_fixed_public_code() {
+        let encoded = serde_json::to_string(&ArchiveReadError::SelectedOutputLimit)
+            .expect("fixed selected output code");
+        assert_eq!(encoded, "\"selected_output_limit\"");
+        assert_eq!(
+            serde_json::from_str::<ArchiveReadError>(&encoded).expect("roundtrip"),
+            ArchiveReadError::SelectedOutputLimit
+        );
     }
 }
 

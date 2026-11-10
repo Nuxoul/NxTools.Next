@@ -48,7 +48,7 @@ internal static class ArchiveOutputReadmissionHost
                 using (File.Open(helper, FileMode.Open, FileAccess.ReadWrite, FileShare.None)) { }
                 var result = new { operation_id = id, cleanup_complete = terminal.CleanupComplete,
                     files_committed = terminal.FilesCommitted,
-                    error_code = failure.ValueKind == JsonValueKind.Object ? failure.GetProperty("error_code").GetString() : terminal.Category == "success" ? null : terminal.Category,
+                    error_code = ResolveErrorCode(terminal, failure.ValueKind == JsonValueKind.Object ? failure.GetProperty("error_code").GetString() : null),
                     shortfall = shortfall.ValueKind == JsonValueKind.Object ? (JsonElement?)shortfall.GetProperty("output_budget_shortfall") : null,
                     audit = new { attempt = attempts, started = events.Count(e => e.Kind == "started"), active = runner.ActiveCount,
                         source_released = true, helper_released = true, output_exists = Directory.Exists(outputRoot),
@@ -60,6 +60,29 @@ internal static class ArchiveOutputReadmissionHost
             return 0;
         } finally { runner.Stop(); await runner.DrainAsync(); File.Delete(helper); }
     }
+    internal static string? ResolveErrorCode(ArchiveWorkerEvent terminal, string? workerFailure) => terminal.Category switch
+    {
+        "success" or "succeeded_with_warnings" => null,
+        "source_changed" => "SourceChanged",
+        "worker_failure" or "resource_limit" => workerFailure ?? terminal.Category,
+        _ => terminal.Category
+    };
+
+    internal static Task NativeFailureAuthority()
+    {
+        var terminal = new ArchiveWorkerEvent("exited", Guid.NewGuid(), "source_changed");
+        foreach (var workerFailure in new[] { "Cancelled", "IoFailure", "SourceChanged" })
+            if (ResolveErrorCode(terminal, workerFailure) != "SourceChanged")
+                throw new InvalidOperationException("Native source change must outrank a later worker failure.");
+        if (ResolveErrorCode(terminal with { Category = "commit_outcome_unknown" }, "Cancelled") != "commit_outcome_unknown")
+            throw new InvalidOperationException("Native publication uncertainty must remain authoritative.");
+        if (ResolveErrorCode(terminal with { Category = "resource_limit" }, "ResourceLimit") != "ResourceLimit" ||
+            ResolveErrorCode(terminal with { Category = "worker_failure" }, "CorruptArchive") != "CorruptArchive" ||
+            ResolveErrorCode(terminal with { Category = "success" }, null) is not null)
+            throw new InvalidOperationException("Original worker failure and success projections must remain intact.");
+        return Task.CompletedTask;
+    }
+
     private static async Task<JsonElement?> Read(Stream stream) {
         var header = new byte[4]; var first = await stream.ReadAsync(header.AsMemory(0, 1));
         if (first == 0) return null;

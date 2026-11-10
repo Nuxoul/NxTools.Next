@@ -14,7 +14,7 @@ namespace NxTools.PlatformHost.Tests;
 internal static class ArchiveResourceProbe
 {
     private static void Check(bool condition, string detail) { if (!condition) throw new InvalidOperationException(detail); }
-    private static object Field(object instance, string name) => instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.GetValue(instance)!;
+    internal static object Field(object instance, string name) => instance.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.GetValue(instance)!;
     private static object Run(ArchiveWorkerRunner runner, Guid id) => ((System.Collections.IDictionary)Field(runner, "active"))[id]!;
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint GetProcessId(IntPtr process);
     [StructLayout(LayoutKind.Sequential)] private struct ProcessBasicInformation
@@ -38,7 +38,7 @@ internal static class ArchiveResourceProbe
         return image.ToString();
     }
     // Native runner handle, not name-based discovery/PID reuse, supplies both identity and image.
-    private static Process Worker(ArchiveWorkerRunner runner, Guid id, string expected)
+    internal static Process Worker(ArchiveWorkerRunner runner, Guid id, string expected)
     {
         lock (Field(runner, "gate")) {
             var resources = (List<IDisposable>)Field(Run(runner, id), "Resources");

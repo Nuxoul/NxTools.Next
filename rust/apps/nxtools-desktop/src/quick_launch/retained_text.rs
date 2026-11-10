@@ -22,6 +22,23 @@ impl From<Vec<SearchResult>> for QuickLaunchResults {
                     || {
                         if result.copy_text().is_some() {
                             SharedString::from("按 Enter 复制结果")
+                        } else if matches!(
+                            result.entry.source,
+                            ApplicationSource::StartMenu
+                                | ApplicationSource::Desktop
+                                | ApplicationSource::System
+                        ) {
+                            SharedString::default()
+                        } else if matches!(
+                            result.entry.source,
+                            ApplicationSource::IndexedFile | ApplicationSource::IndexedDirectory
+                        ) {
+                            Path::new(&result.entry.target)
+                                .parent()
+                                .filter(|parent| !parent.as_os_str().is_empty())
+                                .map(|parent| parent.to_string_lossy().into_owned())
+                                .unwrap_or_else(|| result.entry.target.clone())
+                                .into()
                         } else {
                             result.entry.target.clone().into()
                         }

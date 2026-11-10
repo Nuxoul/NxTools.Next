@@ -5,13 +5,15 @@ use serde::{Deserialize, Serialize};
 pub const VERSION: u32 = 1;
 pub const MAX_EXTENSIONS: usize = 32;
 
-pub const MENU_COMMANDS: [&str; 7] = [
+pub const MENU_COMMANDS: [&str; 9] = [
     "open",
     "extract_smart",
     "extract_here",
     "extract_name",
     "extract_dialog",
     "test",
+    "create_zip",
+    "create_7z",
     "create",
 ];
 fn default_double_click() -> String {
@@ -27,6 +29,9 @@ fn default_menu_commands() -> Vec<String> {
         "extract_here",
         "extract_name",
         "test",
+        "create_zip",
+        "create_7z",
+        "create",
     ]
     .into_iter()
     .map(str::to_owned)
@@ -108,7 +113,9 @@ impl ArchiveShellIntegrationCommand {
         if self.action == ArchiveShellIntegrationAction::Apply
             && (self.open_with
                 || (self.classic_cascade
-                    && self.menu_commands.iter().any(|command| command != "create")))
+                    && self.menu_commands.iter().any(|command| {
+                        !matches!(command.as_str(), "create" | "create_zip" | "create_7z")
+                    })))
             && self.extensions.is_empty()
         {
             return Err("invalid_request");
@@ -231,7 +238,19 @@ mod settings_completion_tests {
             serde_json::from_value(legacy.clone()).expect("old wire");
         assert_eq!(command.double_click_action, "open");
         assert_eq!(command.menu_layout, "cascade");
-        assert_eq!(command.menu_commands.len(), 5);
+        assert_eq!(command.menu_commands, default_menu_commands());
+        for commands in [
+            serde_json::json!([]),
+            serde_json::json!(["create_zip", "create_7z", "create"]),
+        ] {
+            let mut value = legacy.clone();
+            value["open_with"] = serde_json::json!(false);
+            value["extensions"] = serde_json::json!([]);
+            value["menu_commands"] = commands;
+            let command: ArchiveShellIntegrationCommand =
+                serde_json::from_value(value).expect("creation-only wire");
+            assert_eq!(command.validate(), Ok(()));
+        }
         for (field, value) in [
             ("double_click_action", serde_json::json!("admin")),
             ("menu_layout", serde_json::json!("windows11")),

@@ -12,6 +12,9 @@ internal sealed class PlatformCommandSequenceDispatcher
     {
         NativeFileDragCommand,
         "archive_entry",
+        "raw_numbered_join",
+        "read_clipboard_file_drop",
+        "read_clipboard_text",
         "show_context_menu",
         "set_clipboard_capture_paused",
         "present_fixed_window_over_anchor",
@@ -29,6 +32,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         "pick_extension_manifest",
         "pick_extension_runtime",
         "pick_extension_setting_path",
+        "pick_browser_extension_export_path",
         "inspect_extension_runtime",
         "export_browser_extension",
         // Launching a Shell target waits on process start and can take
@@ -37,6 +41,8 @@ internal sealed class PlatformCommandSequenceDispatcher
         // the self-healing retry queued behind the same stall — the panel
         // stayed on screen until the launch finished.
         "open_shell_target",
+        "launch_process",
+        "ensure_indexer_service",
         "open_default_apps_settings",
         "archive_shell_integration",
         "navigate_directory",

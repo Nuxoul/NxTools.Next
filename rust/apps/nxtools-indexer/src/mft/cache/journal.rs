@@ -388,7 +388,8 @@ pub(super) fn decode(bytes: &[u8], expected_journal: Option<u64>) -> Result<Pers
                     is_directory: flags & FLAG_DIRECTORY != 0,
                     size_bytes: (size != NONE_U64).then_some(size),
                     modified_at_unix_ms: (modified != NONE_I64).then_some(modified),
-                },
+                }
+                .into(),
             );
             offset = end;
         }

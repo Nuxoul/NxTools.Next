@@ -14,10 +14,10 @@ internal static class ExtensionSettingPathPicker
         var clock=Stopwatch.StartNew();
         ExtensionRuntimeDiagnostics.Write(log,"setting_path","accepted",correlation,clock);
         var completed=BoundedStaOperationRunner.TryRun("NxTools extension setting picker",Timeout.InfiniteTimeSpan, token=>
-            StaDialogRunner.RunInline(()=> {
+            StaDialogRunner.RunInline(()=> PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, token, _=> {
                 ExtensionRuntimeDiagnostics.Write(log,"setting_path","started",correlation,clock);
                 return PickCore(command,token,ValidOwner,File.Exists,Directory.Exists,Show);
-            },token),out WindowsCommandResult? result,out _,cancellation);
+            }),token),out WindowsCommandResult? result,out _,cancellation);
         result=completed && result is not null ? result : new(false,cancellation.IsCancellationRequested?"setting_picker_cancelled":"setting_picker_busy",NativeErrorCode:cancellation.IsCancellationRequested?995:170);
         ExtensionRuntimeDiagnostics.Write(log,"setting_path",result.Success?"completed":result.NativeErrorCode==995?"cancelled":"failed",correlation,clock,result.Success?(string.IsNullOrEmpty(result.Data)?"dismissed":"selected"):"picker_failure",result.NativeErrorCode);
         return result;

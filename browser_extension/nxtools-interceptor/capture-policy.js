@@ -218,7 +218,10 @@
       size: chooseSize(existing, incoming),
       width: Math.max(Number(existing.width || 0), Number(incoming.width || 0)),
       height: Math.max(Number(existing.height || 0), Number(incoming.height || 0)),
+      poster: preferText(incoming.poster, existing.poster),
       supportsRange: Boolean(existing.supportsRange || incoming.supportsRange),
+      discovery: mergeDiscovery(existing.discovery, incoming.discovery),
+      mediaElement: mergeMediaElement(existing.mediaElement, incoming.mediaElement),
       mediaHint: incoming.mediaHint || incoming.assetHint || existing.mediaHint || existing.assetHint || null,
       assetHint: incoming.assetHint || existing.assetHint || null,
       requestHeaders: mergeRequestHeaders(existing, incoming),
@@ -233,6 +236,7 @@
   function projectResourceForPopup(resource) {
     const {
       requestHeaders: _requestHeaders,
+      cookieContext: _cookieContext,
       referer: _referer,
       pageUrl: _pageUrl,
       pendingBatchHandoffId: _pendingBatchHandoffId,
@@ -249,6 +253,7 @@
   function projectResourceForStorage(resource) {
     const {
       requestHeaders: _requestHeaders,
+      cookieContext: _cookieContext,
       referer: _referer,
       pageUrl: _pageUrl,
       pageTitle: _pageTitle,
@@ -288,8 +293,48 @@
     };
   }
 
+  function normalizeDiscovery(value, observedMime = "") {
+    const mime = String(observedMime).split(";")[0].trim().toLowerCase();
+    return { fragment: value?.fragment === true || /^(?:video|audio)\/iso\.segment$/.test(mime), attachment: value?.attachment === true,
+      manifest: value?.manifest === true || /^(?:application\/(?:vnd\.apple\.mpegurl|x-mpegurl|dash\+xml)|audio\/(?:x-)?mpegurl)$/.test(mime) };
+  }
+
+  function mergeDiscovery(existing, incoming) {
+    const left = normalizeDiscovery(existing);
+    const right = normalizeDiscovery(incoming);
+    return { fragment: left.fragment || right.fragment, attachment: left.attachment || right.attachment, manifest: left.manifest || right.manifest };
+  }
+
+  function normalizeMediaElement(value) {
+    if (value?.kind !== "audio" && value?.kind !== "video") return null;
+    return { kind: value.kind, duration: typeof value.duration === "number" && Number.isFinite(value.duration) && value.duration > 0 ? value.duration : null,
+      controls: value.controls === true, autoplay: value.autoplay === true, loop: value.loop === true, presentation: value.presentation === true };
+  }
+
+  function mergeMediaElement(existing, incoming) {
+    const left = normalizeMediaElement(existing);
+    const right = normalizeMediaElement(incoming);
+    if (!right || (left?.kind === "video" && right.kind !== "video") ||
+        (left?.controls && !right.controls && right.kind !== "video")) return left;
+    return right;
+  }
+
+  function discoveryCandidateReason(resource) {
+    const facts = resource?.discovery;
+    const manifest = /\.(?:m3u8|mpd)(?:[?#]|$)/i.test(resource?.url || "");
+    if (facts?.manifest || manifest || facts?.attachment || /^blob:/i.test(resource?.url || "")) return "";
+    const media = normalizeMediaElement(resource?.mediaElement);
+    if (media?.kind === "audio" && media.duration !== null && media.duration <= 2 && media.autoplay &&
+        !media.controls && !media.loop && media.presentation) return "decorative_audio";
+    if (media) return "";
+    return facts?.fragment === true ? "fragment" : "";
+  }
+
   return {
     Sources,
+    discoveryCandidateReason,
+    normalizeDiscovery,
+    normalizeMediaElement,
     buildPageCaptureContext,
     mergeCapturedResource,
     projectResourceForPopup,

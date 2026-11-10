@@ -383,7 +383,7 @@ fn icon_layout_same_basename_wheel_menu_pointer_and_keyboard_close_keep_owners(
             gpui_kit::base::test_support::snapshots(window)
                 .iter()
                 .any(|node| {
-                    node.label() == Some("关闭归档标签页")
+                    node.label() == Some("关闭压缩包标签页")
                         && node.bounds() == target
                         && node.focused() == Some(true)
                 })
@@ -552,14 +552,13 @@ fn icon_layout_tree_icon_and_text_still_enter_original_held_native_drag(cx: &mut
         assert_eq!(command.source_window_handle, 917);
         let items = command.items.expect("original immutable descriptors");
         if selector.ends_with("folder") {
+            assert_eq!(command.action, "start");
             assert!(items.iter().any(|item| item.name == "folder/deep/file.txt"));
         } else {
-            assert!(
-                items
-                    .iter()
-                    .any(|item| item.name == "drag/folder/deep/file.txt")
-            );
-            assert!(items.iter().any(|item| item.name == "drag/other.txt"));
+            // Root drags the archive-named folder; the receiver's copy locates the extraction.
+            assert_eq!(command.action, "locate");
+            assert_eq!(items.len(), 1);
+            assert!(items[0].directory && items[0].name == "drag");
         }
         close(&owner, &mut surface);
     }

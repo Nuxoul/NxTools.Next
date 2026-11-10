@@ -12,6 +12,9 @@ internal sealed class ArchiveBudgetException(string category) : Exception
 internal static class ArchiveWorkerBudget
 {
     internal const ulong Overhead = 64UL << 20;
+    // Included in Overhead: four 64KiB transport payloads plus fixed headers/single-binding state.
+    // This reservation does not enlarge process, codec, metadata or output admission.
+    internal const ulong BulkTransportReservation = 1UL << 20;
     internal const int DefaultProcess = 832 << 20;
     internal static ArchiveAdmittedLimits Capture(object source)
     {

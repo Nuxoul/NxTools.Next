@@ -154,7 +154,7 @@ impl Render for BrowserHost {
                             )))
                             .debug_selector(move || format!("archive-tab-close-{id}"))
                             .icon(gpui_kit::component::IconName::Close)
-                            .accessibility_label("关闭归档标签页")
+                            .accessibility_label("关闭压缩包标签页")
                             .ghost()
                             .with_size(Size::XSmall)
                             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())

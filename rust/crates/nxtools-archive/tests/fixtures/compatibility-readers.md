@@ -1,0 +1,7 @@
+# Reader compatibility fixtures
+
+- `py7zr-interleaved-empty.7z` is the independently produced `7z-py7zr-producer.7z` from the supplied archive corpus. It has 38 catalog records with empty records interspersed among solid-block files. The layout regression requires every original ordinal and declared member size to be visited.
+- `two-image-members.wim` contains two images, each with `same.txt`: image 1 is `image one\n`, image 2 is `image two\n`. It is a controlled mapping fixture written with published `wim-format 0.1.1` `image_build::ImageBuilder`, `NewImage`, and `metadata_write::{OwnedMetadata,OwnedDentry}`. GUID bytes are sixteen `0x42` bytes. Resources are uncompressed with the format's integrity table. It tests global/image-local ordinal mapping, not independent WIM codec interoperability; the supplied WIM corpus provides the separate reader/output comparison.
+- Binary CPIO byte-order and symbolic-link records are literal headers in `worker_formats_compat.rs`; no external archive writer or filesystem link is required.
+
+The opt-in supplied corpus is selected by `NXTOOLS_ARCHIVE_COMPAT_CORPUS`. Tests copy sources into owned temporary storage and never edit the originals. Windows bsdtar's odc sample contains ANSI names, including irreversible `?` substitutions. Listing/Test and safe-member preview are supported; whole extraction refuses those invalid Windows paths rather than silently renaming them.

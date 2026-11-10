@@ -91,7 +91,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public WindowsPlatformAdapter(
         ForegroundContextProvider foregroundContextProvider,
         IPlatformLog? log = null,
-        ICompletionSystemActions? completionSystemActions = null)
+        ICompletionSystemActions? completionSystemActions = null, int? clipboardConsumerProcessId = null)
     {
         _log = log ?? NullPlatformLog.Instance;
         _completionSystemActions = completionSystemActions ?? new WindowsCompletionSystemActions();
@@ -105,7 +105,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             _log);
         _thread = new Thread(() => RunMessageLoop(
             foregroundContextProvider,
-            _elevatedDirectoryNavigation))
+            _elevatedDirectoryNavigation, clipboardConsumerProcessId))
         {
             IsBackground = true,
             Name = "NxTools.WindowsPlatformAdapter"
@@ -284,6 +284,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     public bool ClipboardHotKeyAvailable => _window?.ClipboardHotKeyAvailable ?? false;
     public bool QuickLaunchHotKeyAvailable => _window?.QuickLaunchHotKeyAvailable ?? false;
+    public QuickLaunchKeyboardHealthChangedEvent? QuickLaunchKeyboardHealthSnapshot => _window?.QuickLaunchKeyboardHealthSnapshot;
     internal MotionPreferenceSnapshot SystemMotionSnapshot =>
         _window?.SystemMotionSnapshot ?? new MotionPreferenceSnapshot(true, -1);
     internal ThemePreferenceSnapshot SystemThemeSnapshot =>
@@ -329,6 +330,12 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
             .EnqueueDesktopShellConfiguration(command, correlationId, cancellationToken);
 
+    public Task<WindowsCommandResult> ReadClipboardFileDropAsync(ArchiveClipboardCommand command, CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
+            .EnqueueFileDropRead(command, cancellationToken);
+    }
     public Task<WindowsCommandResult> PasteTextAsync(
         PasteTextCommand command,
         Guid correlationId,
@@ -1054,6 +1061,17 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult ShutdownSystem(ShutdownSystemCommand command) =>
         _completionSystemActions.RequestShutdown(command.DelaySeconds);
 
+    public WindowsCommandResult PickBrowserExtensionExportPath(PickBrowserExtensionExportPathCommand command,
+        Guid correlationId, CancellationToken cancellationToken)
+    {
+        var clock = Stopwatch.StartNew();
+        ExtensionRuntimeDiagnostics.Write(_log, "browser_export_path", "accepted", correlationId, clock);
+        var result = BrowserExtensionExportDialog.PickDestination(command, cancellationToken);
+        ExtensionRuntimeDiagnostics.Write(_log, "browser_export_path", result.Success ? "completed" : result.NativeErrorCode == 995 ? "cancelled" : "failed",
+            correlationId, clock, result.Success ? (string.IsNullOrEmpty(result.Data) ? "dismissed" : "selected") : "picker_failure", result.NativeErrorCode);
+        return result;
+    }
+
     public WindowsCommandResult ExportBrowserExtension(
         ExportBrowserExtensionCommand command,
         Guid diagnosticCorrelationId,
@@ -1064,30 +1082,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         var format = BrowserExtensionPackageService.NormalizeFormat(command.Format);
         var destination = command.Destination;
         if (string.IsNullOrWhiteSpace(destination))
-        {
-            // Empty destination asks the host to show the save dialog; a
-            // cancelled dialog reports success with empty data.
-            var picked = BrowserExtensionExportDialog.PickDestination(format, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!picked.Success)
-            {
-                return picked;
-            }
-            destination = picked.Data ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(destination))
-            {
-                _log.Write(
-                    "info",
-                    "browser_extension.export_cancelled",
-                    diagnosticCorrelationId,
-                    new Dictionary<string, object?>
-                    {
-                        ["format"] = format,
-                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                    });
-                return new WindowsCommandResult(true, Data: string.Empty);
-            }
-        }
+            return new WindowsCommandResult(false, "browser_extension_export_destination_required", NativeErrorCode: 87);
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1103,7 +1098,6 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 new Dictionary<string, object?>
                 {
                     ["format"] = format,
-                    ["file_name"] = Path.GetFileName(actualPath),
                     ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
                 });
             return new WindowsCommandResult(true, Data: actualPath);
@@ -1121,7 +1115,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 new Dictionary<string, object?>
                 {
                     ["format"] = format,
-                    ["error"] = error.Message,
+                    ["exception_type"] = error.GetType().Name,
+                    ["native_error_code"] = error is Win32Exception native ? native.NativeErrorCode : error.HResult,
                     ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
                 });
             return new WindowsCommandResult(false, error.Message);
@@ -1132,7 +1127,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     {
         try
         {
-            Process.Start(CreateProcessStartInfo(command));
+            using var process = Process.Start(CreateProcessStartInfo(command));
             return new WindowsCommandResult(true);
         }
         catch (Exception error) when (error is Win32Exception or InvalidOperationException or ArgumentException)
@@ -1253,6 +1248,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                     ["operation"] = operation,
                     ["success"] = result.Success,
                     ["native_error_code"] = result.NativeErrorCode,
+                    ["failure_kind"] = operation == "extract_shell_icon" && !result.Success
+                        ? result.Error?.StartsWith("shell_icon_", StringComparison.Ordinal) == true
+                            ? result.Error : "shell_icon_failure"
+                        : null,
                     ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
                 });
             return result;
@@ -1581,7 +1580,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     private void RunMessageLoop(
         ForegroundContextProvider foregroundContextProvider,
-        IElevatedDirectoryNavigationChannel elevatedDirectoryNavigation)
+        IElevatedDirectoryNavigationChannel elevatedDirectoryNavigation, int? clipboardConsumerProcessId)
     {
         try
         {
@@ -1591,7 +1590,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 elevatedDirectoryNavigation,
                 _log,
                 _clipboardCaptureDropDiagnosticGate,
-                _contextMenus);
+                _contextMenus, clipboardConsumerProcessId);
             _started.Set();
             Application.Run();
         }

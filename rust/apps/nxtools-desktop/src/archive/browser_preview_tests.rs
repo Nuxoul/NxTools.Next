@@ -79,6 +79,7 @@ fn browser_preview_document_source_and_retirement_stay_local(cx: &mut TestAppCon
                     text: "# Heading\n\n**strong** ![blocked](https://example.invalid/a.png)"
                         .into(),
                     mode: DocumentMode::Markdown,
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -124,6 +125,7 @@ fn browser_preview_document_source_and_retirement_stay_local(cx: &mut TestAppCon
                 PreviewResult::Ready(PreviewPayload::Text {
                     text: "stale".into(),
                     mode: DocumentMode::Markdown,
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -159,6 +161,7 @@ fn browser_preview_same_turn_selection_aba_rejects_old_result_and_preserves_doub
                 PreviewResult::Ready(PreviewPayload::Text {
                     text: "old".into(),
                     mode: DocumentMode::Markdown,
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -312,6 +315,7 @@ fn browser_preview_long_document_last_block_scrolls_inside_its_pane(cx: &mut Tes
                 PreviewResult::Ready(PreviewPayload::Text {
                     text: source,
                     mode: DocumentMode::Markdown,
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -410,7 +414,7 @@ fn feedback_preview_original_decoder_to_actual_md_txt_image_pane(cx: &mut TestAp
     ] {
         let path = directory.path().join(name);
         std::fs::write(&path, bytes).expect("owned bounded input");
-        let payload = preview::prepare(&path, kind, &std::sync::atomic::AtomicBool::new(false))
+        let payload = preview::prepare(&path, kind, Default::default(), &std::sync::atomic::AtomicBool::new(false))
             .unwrap_or_else(|_| panic!("original decoder: {name}"));
         let token = view.read_with(&surface, |view, _| view.preview.generation);
         surface.update(|window, cx| {
@@ -471,6 +475,7 @@ fn feedback_preview_long_markdown_real_wheel_reaches_content(cx: &mut TestAppCon
                         "paragraph **strong**\n\n".repeat(80)
                     ),
                     mode: DocumentMode::Markdown,
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -578,6 +583,7 @@ fn feedback_preview_tab_suspend_retires_local_content_and_old_selection_token(
                 PreviewResult::Ready(PreviewPayload::Text {
                     text: "old tab".into(),
                     mode: DocumentMode::Literal(None),
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -666,6 +672,7 @@ fn automatic_preview_ignores_historical_disabled_state_and_has_no_opt_in_control
                 PreviewResult::Ready(PreviewPayload::Text {
                     text: "automatic small text".into(),
                     mode: DocumentMode::Literal(None),
+                    budget: Default::default(),
                 }),
                 window,
                 cx,
@@ -679,6 +686,7 @@ fn automatic_preview_ignores_historical_disabled_state_and_has_no_opt_in_control
                 PreviewResult::Ready(PreviewPayload::Text {
                     text: "stale".into(),
                     mode: DocumentMode::Literal(None),
+                    budget: Default::default(),
                 }),
                 window,
                 cx,

@@ -30,7 +30,7 @@ internal sealed class ArchiveReadMetadata(ArchiveReadLimits limits, uint selecte
         var name = frame.GetProperty("format").GetString()!;
         var raw = frame.GetProperty("entries");
         if (id == Guid.Empty || sequence != Batches || snapshot is { } prior && prior != id ||
-            format is { } previous && previous != name || name is not ("Zip" or "SevenZ" or "Rar4" or "Rar5" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd") ||
+            format is { } previous && previous != name || name is not ("Zip" or "SevenZ" or "Rar4" or "Rar5" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" or "Cab" or "Iso" or "Udf" or "Wim" or "Ar" or "Cpio" or "Lzma" or "Lz4" or "Lz4Block" or "Brotli") ||
             raw.ValueKind != JsonValueKind.Array || raw.GetArrayLength() < 1 || raw.GetArrayLength() > (version == 2 ? 256 : 2)) throw new InvalidDataException();
         var entries = new ArchiveReadEntry[raw.GetArrayLength()];
         for (var index = 0; index < entries.Length; index++) {

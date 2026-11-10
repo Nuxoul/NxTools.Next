@@ -28,13 +28,17 @@ pub fn execute_with_output_readmission(
         || command.operation_id != control.operation_id()
         || request.kind != ArchiveJobKind::Extract
         || request.readmission.is_some()
-        || request.extract.as_ref().is_some_and(|extract| extract.reclamation.is_some())
+        || request
+            .extract
+            .as_ref()
+            .is_some_and(|extract| extract.reclamation.is_some())
     {
         return Err(ArchiveError::UnsupportedOperation);
     }
     let mut private = WorkerRequest::open(command.operation_id, request.paths[0].clone());
     private.version = 2;
     private.operation = "extract".into();
+    private.bulk_transfer = Some(1);
     private.codepage = request.codepage;
     private.job_execution = Some(true);
     private.job_extract = request.extract.clone();

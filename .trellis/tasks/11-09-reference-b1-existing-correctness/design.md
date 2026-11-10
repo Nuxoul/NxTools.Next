@@ -1,0 +1,16 @@
+# B1 design and implementation boundaries
+
+## Baseline and authority
+Read current taskbook, Mister research, download/clipboard reference notes and applicable shared/package specs. Existing staged user changes are retained; initial relevant diff is held in session scratch only. Mister is GPL behavioral reference; no source/comments/tests/assets copied. ABDM Native Messaging DefinedHandlers -> application IPC -> IntegrationHandlerImp ordinary add owner is authoritative before legacy NxTools background Header/Cookie and browser fallback behavior. ABDM's separate browser extension is not locally available.
+
+## REF-01 owner
+Production LinkPanelView ListItem -> close owning window -> next-turn ClipboardApplication -> existing platform bridge. Ordinary routing must read current persisted owner settings outside the leased view; do not read the application during render. Preserve explicit Copy (no launch) and named open (no clipboard write). Current generation/window identity guards prevent old callbacks clearing/replacing a restaged panel. No new controller or native APIs. Preserve420DIP panel,28DIP rows, existing XSmall ghost Copy, official ListItem/Label/StatusBar and focus/timer owners. Exact Kit0.8.0 list/list_item.rs, button/button.rs and status_bar.rs public composition are reviewed before editing; no Toolbar parent adaptation or repaint substitute is introduced.
+
+## REF-02 owner
+DownloadItem/request snapshot/tab metadata -> privileged browser-source context -> enrichHeadersForDownload -> cookies.getAll({url,storeId}) -> existing single request-context projection -> Native Messaging headers/cookie -> BrowserHost -> DownloadRequest. Prefer source store over a later tab lookup. Closed/replaced tabs may not redirect a saved source to another store. Request evidence must not be selected solely by URL when the same resource exists in different stores. Context identity is only useful until Cookie query, so no Cookie-store field in Rust IPC/storage. Original bounded request/resource owners hold transient identity; sanitized popup/persisted resource projections exclude it and credentials. Unsupported source-store resolution yields no Cookie fallback query, while an already captured Cookie remains governed by original gates.
+
+## REF-03 owner
+Existing automatic-interception admission -> stable browserDownloadHandoffId -> Native Messaging request -> BrowserHost -> current-user pipe -> original desktop/engine -> durable handoff receipt -> identity-matched response -> cancel browser -> optional erase. Keep browser ownership until matching durable acceptance and successful cancel. Cancel failure invokes original task_action cancel compensation; rollback failure remains visible and same ID cannot create another task. Add fixed reason/state projection in original bounded session state/popup, not a second manager or persistent task store. Temporary pause refers to existing automatic-capture enablement; no new timed rule UI.
+
+## Diagnostics
+Existing correlation/handoff ID spans started, decision/persisted/transfer terminal states and elapsed milliseconds. Fixed reason categories only; no URL/path/text/Cookie/Header/native error dumps. Native codes remain at owning boundaries. Queue admission is pending, not durable acceptance or completed download. Existing demand-only transport/idle/timeout/disconnect boundaries stay.

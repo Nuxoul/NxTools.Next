@@ -16,6 +16,16 @@ NxTools.Next follows Listary's user-facing interaction unless a project requirem
 SwiftList is used to inform independently written architecture and algorithms, not to override that
 behavior.
 
+The [Listary 6.3.5.94 result logic and presentation reference](quick-launch-listary-results.md) records
+verified provider distinctions, managed ranking comparers, BAML-derived launcher geometry and current
+NxTools.Next differences. Launcher-local templates differ from the shared compact embedded-search templates.
+
+### Approved result entrances / stable viewport (2026-11-09)
+
+The [result-motion slice](../../.trellis/tasks/11-09-desktop-interaction-polish/quick-launch-slice.md) supersedes count-driven launcher sizing/height settling only. Ordinary typed search keeps PANEL_HEIGHT530DIP; compact empty-input/show/hide lifecycle, virtual rows, actions, activating primary input and passive generation-scoped preview remain owned by the original panel/application. QuickLaunchSettings.result_entrance uses slide_up default, slide_from_right, fade and none through the existing Settings field/section transaction. Released Base0.8.0 motion::Timing/Easing::EaseOut samples one finite row-content Tween per admitted identity/query, with immediate suppression/retirement and no animation timer or native size interpolation.
+
+Rechecked exact managed lifecycle chain: LauncherSearchWindowFactory.cs18 → LauncherSearchWindow.cs24/base → SearchWindowBase.cs268 event wiring; ShowWindow333–348 reaches base.Show, ActivateWindow323–329 reaches native foreground and input focus, Hide274 reaches base.Hide. LauncherSearchWindow.cs50–69 owns position and its PreviewPopup remains adjacent. SwiftList QuickSearchWindowController.cs71–75 constructs position/foreground owners; ShowWindow127–207 prepares layout/position before Show191/activation; HideWindow314–404 resets preview before query reset and token-checks deferred Hide361/focus restoration367. Listary native engine source remains unavailable; legacy NxTools has no Quick Launch implementation. Reference geometry is historical evidence; the explicit current viewport/motion change is product-approved.
+
 ## Reference roots
 
 | Root | Status |
@@ -207,7 +217,7 @@ dnSpy.Console.exe --no-sln --no-resources --no-resx --no-baml -o <diagnostics> L
 | `Listary.Core.Launcher.Class293` | The default launcher creates its multi-provider `SearchMode` without enabling incremental publication, so the last committed list remains visible until the next merged query completes. The separate web-suggestion mode explicitly enables incremental results with a 20 ms coalescing delay; that specialized setting is not the default launcher policy. |
 | `Listary.Core.Launcher.Class293` | The default launcher constructs the final merge with a 50-result cap. Its indexed-file and history providers are also each configured for 50 results; the special prior-folder provider requests up to 100 candidates. Eight visible rows are a viewport choice, not the query/result cap. |
 | `Listary.Main.Views.SearchItemList` | Selection changes call `ScrollIntoView`. Mouse movement selects a row only when the same row reports a second `MouseMove` at a different pointer position; entering a row or leaving the pointer stationary does not steal a keyboard selection. |
-| `Listary.Core.Search.Class256` + `Class258` + `Listary.Core.History.HistoryKey` | Results from multiple providers are not merged by directly comparing provider-local scores. They are classified by history state and match quality, history is looked up through an item key that carries the used keyword, and only then are groups ordered and capped. The exact native/obfuscated comparer formula is not treated as available source. |
+| `Listary.Core.Search.Class256` + `Class258` + `Listary.Core.History.Class148` / `HistoryKey` | Results are classified by exact-query history, prefix-query history, ordinary history and match quality before ordering and capping. Exact/prefix history uses recency, not activation count. Compiler-generated managed comparers are available through `--show-all --dont-anon-methods`; native `CombinedScore` production remains unknown. See [result logic and presentation](quick-launch-listary-results.md). |
 | `Listary.Main.Views.FileManagerSearchWindow` | Uses a separate surface for file-manager-integrated search. |
 | `Listary.Main.Views.DialogSearchWindow` | Uses a separate surface/popup for file-dialog search rather than overloading the launcher window. |
 | `Listary.MiniCore.IndexedSearchService` | Generated gRPC client exposes session open, search, result-detail retrieval and index status/rebuild operations. |
@@ -1455,3 +1465,248 @@ ordinary rows from the provider merge; an empty batch retains the old noninterac
 a nonempty current batch replaces it with usable current rows. Original identity/trust/generation
 checks and execution revalidation remain. Regression extends the actual apply_extension_batch
 to real panel path; no provider runtime, approval or matching policy is changed.
+
+## 2026-11-01 keyboard hook ownership and recovery
+
+Listary managed boundary was reread first: `Listary/Main/Views/LauncherSearchWindow.cs`
+constructor delegates to `SearchWindowBase`; `SearchWindowBase.method_7` binds view-model
+show/hide/activate/close to the existing WPF Window. `ShowWindow` calls `Show` then input
+focus, `ActivateWindow` uses the HWND foreground adapter, and deactivation keeps the
+original hide/reset policy. Launcher placement uses the cursor display working area.
+Listary's native keyboard-hook implementation is not available from this managed boundary.
+
+SwiftList secondary source: `Core/Hook/InlineSearch/GlobalHotkeyDetector.cs` keeps
+bare-modifier double taps distinct from complete combinations and resets a tap on another
+key; `KeyboardHookService.cs::Start/Stop/HookCallback` owns the raw native hook and detector
+dispatch. `Site/zh-CN/user-guide/settings/hotkeys-page.md` documents default double Ctrl
+and the same configurable summon control. `App/Views/QuickSearchWindow/Helpers/QuickSearchWindowController.cs`
+constructor creates one positioner/foreground watcher; `ShowWindow` captures the prior HWND,
+lays out and positions before `_window.Show`, then defers activation/input focus. `HideWindow`
+uses a visibility token before `_window.Hide` and restores only the retained eligible target.
+The legacy NxTools tree exposes clipboard/global-hotkey services, not this Quick Launch
+double-Ctrl controller; it is not evidence for a different summon lifecycle.
+
+Migration invariants: keep the current double-tap timing, independent left/right Ctrl,
+other-key cancellation, injected-input filtering and complete-release gesture boundary.
+Only the dedicated hook thread mutates its detectors. EventWindow publishes an immutable
+enabled/recording/trigger/reset-generation snapshot; the next callback applies reset.
+The hook only posts to the captured EventWindow HWND; foreground capture, bounded IPC,
+panel placement, cancellation, failure and focus owners remain unchanged. Install/uninstall
+and blocking GetMessage belong to that hook thread; disposal requests WM_QUIT and joins
+within a fixed budget. Native install failure, unexpected owned-thread exit and reinstall
+are observable facts; a retained handle cannot prove Windows did not silently remove a hook.
+
+Current paste boundary: `EventWindow.DrainPasteRequests` invokes `WindowsPasteCoordinator.Execute`,
+whose `IWindowsPasteOperations.ReleaseActivationModifiers` returns to
+`WindowsPlatformAdapter.NativeMethods.ReleaseActivationModifiers`. It sends modifier-up
+inputs and sleeps 3 ms for at most 12 attempts without pumping EventWindow messages. An
+injected-event flag is filtered only after hook delivery. Moving the hook off EventWindow
+removes this shared-thread delivery dependency; isolated fixtures do not establish physical
+modifier-release or paste acceptance.
+
+Health wire contract: outer protocol1, opt-in `quick_launch_keyboard_health_v1`, typed
+`quick_launch_keyboard_health_changed` with correlated `install_failed`, `thread_exited`
+or `reinstalled` and native error code. Rust rejects unknown event variants and the IPC
+reader ends that session, so C# sends this event only after HelloAck accepts the capability.
+Reconnect uses the existing Hello `quick_launch_panel_hotkey` availability snapshot.
+The existing summon settings row and ConfigureQuickLaunch owner handle recovery; no new
+window, hotkey setting, polling or heartbeat owner is introduced.
+`LowLevelKeyboardMonitor.HealthSnapshot` retains the latest fact before EventWindow's nonblocking
+TryWrite. `PlatformPipeClient.ReadEventsWithKeyboardHealthSnapshots` projects that fact before
+each queued event; queued health only wakes the reader. This preserves current-session recovery
+after queue saturation, suppresses stale queued states and deduplicates the handshake snapshot.
+Ordinary events retain order, and capability rejection suppresses both queued and retained health.
+
+## 2026-11-01 journal correctness and maintenance status
+
+Listary managed reference was verified first. `Listary/MiniCore/IndexedSearchService.cs`
+exposes OpenSession, session-bound Search/GetResults, ReleaseSession, index status and rebuild.
+`MiniCore/IndexerInfo.cs` and `IndexerState.cs` separate Building/Ready/Err from IsUpdating,
+error, count and last-change time. `Core/FileSearch/Class387.cs` owns a GUID-backed
+SearchSessionToken and asynchronously releases it on Dispose. `Core/FileSearch/IndexerInfo.cs`
+projects status, and `Core/OptionsWindow/FileSearchOptionsViewModel.cs` refreshes per-index
+state/count/updating after rebuild. These are managed contracts, not native engine source;
+they do not reveal native takeover, recursive budgets, cache pairs or rebuild reason taxonomy.
+
+Current SwiftList secondary entries:
+- `Core/Indexer/Usn/Journal/JournalReader.cs` queries journal ID/NextUsn before raw scanning;
+  `Core/Indexer/Mft/MftIndexScanner.cs` emits files and directories without an upper-USN filter.
+  `Core/SearchEngineInitializer.cs` publishes a completed snapshot, then
+  `Core/DriveMonitoring/UsnMonitor.cs` resumes from the saved pre-scan cursor.
+- `Core/Indexer/Usn/UsnIndexerExtensions.cs` applies catch-up batches atomically.
+  `Core/IndexV2/Delta/DeltaLinkOps.cs::AddLink` ignores an already visible exact FRN/parent/name;
+  `Tests/Core/IndexV2/Delta/DeltaLinkOpsTests.cs` covers repeated upsert.
+  `Delta/DeltaCascade.cs` skips deleted/renamed/moved-out descendants. It has no work cap;
+  NxTools.Next's4096recursive-expansion bound is a separate project contract, not a copied limit.
+- `Core/IndexV2/LiveIndex.cs::Compact` releases the old mapping before replacement and reopens
+  the selected base; `Core/Indexer/FileRecordStoreReplaceHelper.cs` removes obsolete backup files.
+  SwiftList does not persist NxTools.Next-style base/delta pairs. Its full-rebuild drop-before-write
+  and failure-finally overlay reset are not authority for weakening last-good retention here.
+- `Core/Services/UsnServicePipeServer.cs` accepts independent connections, publishes an immediate
+  status snapshot, and removes subscriptions on disconnect. `Core/Services/Search/SearchPipeClient.cs`
+  uses fresh command/search connections. These confirm connection-independent admission, not a
+  requirement to reproduce SwiftList's transport or add another coordinator.
+- `Core/Indexer/Usn/UsnIndexerStatus.cs` and
+  `Core/DriveMonitoring/SearchEngineDriveMaintenance.cs` separate per-drive maintenance from
+  availability; `App/ViewModels/Settings/LocalDrive/LocalDriveSettingsViewModel.cs` and
+  `App/Views/Settings/IndexSettings/LocalTab.xaml` render per-drive state/count and maintenance.
+
+Targeted legacy NxTools searches found no matching Quick Launch/indexer/MFT/USN entrypoint.
+For this explicitly changed slice, retain pre-enumeration cursor and unfiltered upper-USN
+enumeration, idempotent replay, visible-only recursive expansion, completed base/delta publication
+before obsolete cleanup, last-good search during maintenance, and one service-owned worker/runtime
+across desktop connections. Session requests/results remain lease/generation-scoped. The existing
+Settings/volume-selection/scroll owners remain; no popup strip, placement, focus or native show/hide
+change. Rebuild reasons and initial/rebuild/ready tags are explicit new product requirements.
+
+NxTools.Next publication boundary: `mft::scan_volume_and_persist` uses the same injected
+scan/persist seam as its failure regression; a failed durable base write does not replace
+last-good. `windows::win32_error` retains the native io::Error source for the service's
+correlated terminal diagnostic. `IndexerService::apply_build`/`apply_compaction` publish;
+the original coordinator retires obsolete cache versions only once build/compaction workers
+are quiescent. `maintenance.rs` projects typed per-volume operations into the existing
+IndexDriveStatus; Settings composes official Small Tags inside the original volume rows.
+These are NxTools.Next contracts, not claims about unavailable Listary native internals.
+`spawn_snapshot_compaction_with` is the shared native/injected worker handoff boundary:
+store the result, release the old input snapshot, then enqueue either terminal event.
+Coordinator activity removal and cleanup therefore follow input-owner release, not merely
+compaction computation. Temporary mapped-input ownership tests cover both terminal paths.
+
+## Demand-only service amendment — 2026-11-06
+
+User-approved current policy supersedes only the earlier automatic/resident service behavior. The LocalSystem native boundary and standard-user Desktop remain. IndexerServiceInstaller registers Demand; approved Desktop startup starts the service, and the Rust Windows service begins discovery/work only after an authenticated desktop Hello/process lease. Last desktop exit ends the runtime and service; pipe reconnect alone does not. Startup uses the original persisted mmap base plus delta and USN cursor. It does not rebuild merely because Desktop was closed. Only original journal/cache validity conditions schedule rebuild maintenance.
+
+SwiftList Service/Program.cs and Service/UsnService.cs were reviewed for SCM startup/stop and pipe disposal; its automatic service registration is reference behavior, not the requested product policy. No legacy NxTools index-service owner or Listary native engine source was found. Current cross-owner signatures, diagnostics, tests and installed acceptance limits are in [system shell](system-shell.md#demand-service-lifetime--2026-11-06) and `.trellis/tasks/11-06-demand-service-lifetime/`.
+
+## OneCommander focus-anchor lifetime (2026-11-06)
+
+Reverified `D:/Code/SwiftList-main/Plugins/OneCommander/OneCommanderPathCollector.cs` and
+`OneCommanderInlineSearchAdapter.cs`: host identity precedes UIA, and both refresh the anchor
+before the search window takes focus. The exact accessor is
+`Plugins/OneCommander/Automation/UiaPathAccessor.cs`, not a root Automation directory. It stores
+one strong AutomationElement per HWND and walks upward from that anchor to the nearest pane's
+CurrentPathGet/CurrentPathSet; its dictionary has no close/capacity policy to adopt. The sibling
+`Automation/UiaFocusTracker.cs` is a separate250ms editable-control check, not this anchor owner.
+
+Next's ordinary WindowsPlatformAdapter and ElevatedDirectoryNavigationHelper both prewarm the
+same per-process OneCommander tracker. The helper has no ordinary EventWindow destroy hook.
+Preserve process-gate-before-tree-walk, same-window latest focus and the request-bound frozen
+OneCommanderPaneState. Cache retirement must not rewrite an already captured pane/session.
+The shared tracker may retain the64most recently focused windows, and must retire unavailable
+native windows without requiring another TryGet for their HWND. A60second bounded native-only
+sweep covers both process roles without UIA idle polling or new global hooks. Element validity
+remains checked on the existing bounded capture/query path; no TTL for an otherwise valid anchor.
+Stop clears remembered anchors and unsubscribes its owned focus handler; late callbacks cannot
+repopulate a stopped owner. Layout, placement, focus restoration, hotkeys and UIA120/1500ms
+capture/navigation budgets remain unchanged. This cache-retention repair does not identify the
+allocation source of the recorded19GiB PlatformHost incident.
+
+## Clear/hide search retirement (2026-11-06)
+
+Current SwiftList source: `App/Views/QuickSearchWindow/QuickSearchWindow.xaml.cs` constructs
+the controller/input/view-model chain. `Helpers/QuickSearchWindowInputHandler.cs` Escape calls
+HideWindow; `Helpers/QuickSearchWindowController.cs::FinishHide` clears SearchQuery before
+WPF Hide. Its visibility operation token prevents an old delayed hide from clearing a new show.
+`App/ViewModels/Search/SearchExecutionViewModel.cs` and
+`Search/Dispatch/SearchDispatchController.cs` cancel empty queries;
+`Search/SearchExecutionEngine.cs` owns cancellation sources and search version.
+`Core/Services/Search/SearchService.cs` forwards cancellation to
+`Search/SearchPipeClient.cs`, which closes that query's pipe. Server
+`Core/Services/UsnServicePipeServer.cs` -> `Search/SearchStreamPump.cs` detects disconnect and
+cancels the query producer. `Core/SearchEngine.cs` links the request token to separate global/
+directory channel cancellation; `Core/Indexer/Usn/SearchCoordinator.cs` rechecks it while
+searching captured indexes. Shared live-directory enumeration explicitly uses CancellationToken.None;
+do not infer that every SwiftList background task is interrupted or client-session isolated.
+
+Existing Listary managed output: SearchMode -> Class268/Class269 owns query CTS and mode session;
+replacement disposes the previous query, empty disallowed query disposes the session and clears
+Results. SearchBarViewModel Reset/Close and SearchWindowBase deactivation reset before hiding.
+Bare Hide itself only raises visibility events. These observations do not expose native index
+engine cancellation, worker ownership or snapshot retirement.
+
+Next uses a persistent pipe rather than one pipe per query. Its panel clear/hide must retire the
+corresponding IndexSearchSession and send cancellation through IndexerBridge, not only reject late
+batches. The service-issued endpoint lease plus original search request ID and generation bind
+retirement; a stale hide/cancel cannot retire a newer query or endpoint. SearchExecutor must clear
+matching pending work and invalidate the active task's cooperative checks, releasing request-owned
+snapshots/results when the actual worker returns. Existing bounded channels, immutable snapshot
+ownership, index maintenance, native show/hide/focus and ranking remain unchanged. Cancellation
+diagnostics carry fixed reason, IDs, generation and elapsed time only; never query/path payloads.
+
+## Rebuilt/compacted base representation (2026-11-06)
+
+Rechecked SwiftList `Core/IndexV2/LiveIndex.cs::Compact`,
+`Core/IndexV2/Persistence/SnapshotWriter.cs` and
+`Core/IndexV2/Persistence/Snapshot.cs::Open`: compaction merges rows, writes the base atomically
+and reopens its read-only mapping. The current Snapshot entry is under Persistence. SwiftList's
+early disposal of its old mapping and finally-block delta reset do not govern NxTools.Next's
+immutable search leases or last-good failure behavior. Legacy NxTools has no matching indexer;
+Listary evidence remains managed-only, not native cache implementation.
+
+NxTools.Next's `mft::scan_volume_and_persist` and `compact_system_snapshot` must return a mapped
+new base only after durable persistence and exact-file reopening. `cache::persist_snapshot`
+sorts rows by file reference, so `MftSnapshot::from_mapped` must rebuild runtime search groups
+and postings in mapped row order rather than transfer owned row IDs. Release the newly built
+owned rows, masks and lookup tables before constructing mapped auxiliary data. Keep journal ID,
+pre-scan/effective cursor, metadata and visible count; subsequent original delta persistence/replay
+continues against the new base. Exact reopening must not use `load_cached_snapshot` candidate
+fallback or cleanup. Reopen failure follows the original build/compaction failure path, with no
+owned fallback and no replacement of last-good. Service apply, stale-compaction rejection,
+worker-terminal ownership handoff and quiescent retirement retain their existing boundaries.
+This changes representation, not search algorithms, cache format, maintenance concurrency or
+working-set trimming. Historical M8 allocator/mapping/process measurements are separate evidence.
+
+## Global compaction admission (2026-11-06)
+
+Rechecked SwiftList `Core/IndexV2/LiveIndex.cs::Compact`: its per-index write lock covers merge,
+write and reopen, including the old-mapping release. This blocks that index's readers; it is not
+evidence of a global multi-volume worker bound. `Core/DriveMonitoring/SearchEngineDriveMaintenance.cs`
+deduplicates pending drive rebuilds, starts independent Task.Run work and removes per-drive state in
+finally before activity-completed notification. Legacy NxTools has no matching indexer scheduler;
+Listary evidence remains managed-only. Global single-compaction admission is the requested
+NxTools.Next policy, not a copied reference algorithm.
+
+Current Next ownership: `IndexerService::poll_journals_with_persistence` derives every eligible
+oversized volume from its current immutable base+overlay, excluding disabled/rebuild volumes;
+`schedule_snapshot_compactions` admits work inside the sole `run_coordinator`.
+`spawn_snapshot_compaction_with` releases its input before success/failure terminal enqueue.
+The terminal branches apply or reject the result, preserve per-volume faults/backoff, and perform
+quiescent published-cache cleanup before another admission. Pending entries store only volume names;
+their original overlays and retry deadlines remain authoritative, not queued cloned snapshots.
+Revalidate enabled/oversized current state before each launch, and refresh candidates on the original
+journal cadence. Success, stale completion or failure advances the remaining batch. Standalone EOF
+finishes already discovered eligible volumes before returning, without starting future polls/retries;
+persistent endpoint disconnect does not own service work. A held worker retains the slot; no timeout
+or replacement worker bypasses ownership cleanup. SearchExecutor and last-good search remain
+independent. Preserve thresholds, base/delta formats and the earlier maintenance phase order.
+
+## DOpus observation export lifetime
+
+The official DOpusRT `/info` interface returns XML through an output file; helper exit is not
+writer-completion evidence. SwiftList's `Plugins/DirectoryOpus/DirectoryOpusPathCollector.cs`
+and `DirectoryOpusInlineSearchAdapter.cs` read window paths and send `WM_COPYDATA`; they do
+not implement this export lifecycle. The old NxTools checkout has no corresponding adapter.
+
+The Next call chain is `PlatformPipeClient` -> `WindowsPlatformAdapter.OpenShellTargetAsync`
+-> detached Shell STA -> `ShellTarget.Launch` -> `ExplorerShellActivation` ->
+`NativeDirectoryOpusTargetPlatform.Export`. The serial reader does not wait synchronously for
+the native operation. The command-local observer keeps its original 1500 ms total budget,
+250 ms helper/output budget, at most 25 ms termination confirmation, and 2 MiB output cap.
+Exact active-tab/native identity, selected-target and fresh second-path confirmation remain
+separate from helper acceptance and cleanup.
+
+Each export owns only its new GUID directory, `result.xml` and helper child. A writer can keep
+the output open after the helper exits or is terminated. File or directory deletion failure
+retains that exact cleanup owner; an unconfirmed helper retains its process handle until actual
+exit. At most two active/retiring exports are admitted process-wide, with no pending queue.
+Capacity is returned only after helper exit and actual directory removal. Cleanup retries do
+not read XML, retry observation, change a result, activate a window or touch a user DOpus process.
+Fixed busy/deferred/completed stages reuse the original command correlation; retries do not log
+paths, XML, child output or a per-attempt stream.
+
+### Verification
+Owned test-apphost helpers and independent writers exercise asynchronous output with real Windows
+file/directory handles. The writer-completion barrier distinguishes logical timeout from actual
+resource release. This is isolated lifecycle evidence, not live DOpus timing or interaction acceptance.
+A controlled termination request also keeps an owned helper alive after the writer exits with
+all output handles closed; the same cleanup owner waits for the helper's actual exit before removal.

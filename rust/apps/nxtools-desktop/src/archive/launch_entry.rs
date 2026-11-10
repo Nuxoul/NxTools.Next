@@ -164,13 +164,27 @@ impl ArchiveApplication {
             );
             return;
         }
+        let quick_create = matches!(
+            intent.action,
+            ArchiveIntentAction::CompressZip | ArchiveIntentAction::CompressSevenZ
+        );
+        let started = Instant::now();
+        if quick_create {
+            tracing::info!(event="archive.quick_create.accepted", correlation_id=%intent.request_id, count=intent.paths.len(), action=?intent.action, "quick creation accepted");
+        }
         let owner = cx.entity().downgrade();
         let background = cx.background_executor().clone();
         cx.spawn(async move|_,cx|{
             let paths=intent.paths.clone();
             let sources=background.spawn(async move{paths.into_iter().map(|path|{let normalized=std::fs::canonicalize(path).map_err(|_|LaunchFailure::OpenFailed)?;let metadata=std::fs::symlink_metadata(&normalized).map_err(|_|LaunchFailure::OpenFailed)?;if metadata.file_type().is_symlink(){return Err(LaunchFailure::InvalidRequest)};let value=normalized.to_string_lossy();let path=value.strip_prefix(r"\\?\").map(PathBuf::from).unwrap_or(normalized);Ok(DraftSource{path,directory:metadata.is_dir(),bytes:metadata.is_file().then_some(metadata.len())})}).collect::<Result<Vec<_>,LaunchFailure>>()}).await;
-            if !completion.is_pending(){return}
-            let Ok(mut sources)=sources else{completion.finish(Err(LaunchFailure::OpenFailed));return};
+            if !completion.is_pending(){
+                if quick_create { tracing::info!(event="archive.quick_create.admission_finished",correlation_id=%intent.request_id,accepted=false,reason="retired",elapsed_ms=started.elapsed().as_millis() as u64,"quick creation admission finished"); }
+                return
+            }
+            let Ok(mut sources)=sources else{
+                if quick_create { tracing::info!(event="archive.quick_create.admission_finished",correlation_id=%intent.request_id,accepted=false,reason="source_validation",elapsed_ms=started.elapsed().as_millis() as u64,"quick creation admission finished"); }
+                completion.finish(Err(LaunchFailure::OpenFailed));return
+            };
             if intent.action==ArchiveIntentAction::Extract && sources.len()>1 {
                 let mut observed=Vec::new();
                 for source in &sources {
@@ -188,6 +202,26 @@ impl ArchiveApplication {
                 if !completion.is_pending(){return}
                 match intent.action{
                     ArchiveIntentAction::Compress=>{if sources.len()>32{completion.finish(Err(LaunchFailure::InvalidRequest));}else{let before=app.jobs.forms.len();app.open_create_form(sources,cx);completion.finish(if app.jobs.forms.len()>before{Ok(())}else{Err(LaunchFailure::OpenFailed)});}},
+                    ArchiveIntentAction::CompressZip | ArchiveIntentAction::CompressSevenZ => {
+                        let mut draft = crate::archive::draft::CreateDraft::new(&app.settings, sources);
+                        draft.volume_mib.clear();
+                        draft.set_format(if intent.action == ArchiveIntentAction::CompressZip {
+                            nxtools_core::archive::ArchiveCreateFormat::Zip
+                        } else {
+                            nxtools_core::archive::ArchiveCreateFormat::SevenZ
+                        });
+                        let result = draft.requests(&app.settings).map_err(|_| LaunchFailure::InvalidRequest)
+                            .and_then(|mut requests| {
+                                let request = requests.remove(0);
+                                tracing::info!(event="archive.quick_create.planned", correlation_id=%intent.request_id, count=request.paths.len(), "combined creation output planned");
+                                app.submit_job_with_id(intent.request_id, request, FormCompletion {
+                                    keep_open: app.settings.keep_create_progress_open,
+                                    ..Default::default()
+                                }, cx).map(|_| ()).map_err(|_| LaunchFailure::QueueFull)
+                            });
+                        tracing::info!(event="archive.quick_create.admission_finished", correlation_id=%intent.request_id, accepted=result.is_ok(), elapsed_ms=started.elapsed().as_millis() as u64, "quick creation admission finished");
+                        completion.finish(result);
+                    },
                     ArchiveIntentAction::Extract=>{
                         if sources.iter().any(|s|s.directory)||sources.len()>32{completion.finish(Err(LaunchFailure::InvalidRequest));return}
                         if matches!(intent.mode, Some(ArchiveExtractMode::Dialog | ArchiveExtractMode::SmartDialog | ArchiveExtractMode::NameDialog)) {
@@ -363,6 +397,109 @@ mod settings_completion_tests {
                     vec![Err("missing_volume".into())]
                 )
                 .is_err()
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod polish_tests {
+    use super::*;
+    #[gpui_kit::test]
+    fn archive_polish_quick_launch_submits_original_job_without_form(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        for (action, format, name) in [
+            ("compress_zip", ArchiveJobFormat::Zip, "report.zip"),
+            ("compress_7z", ArchiveJobFormat::SevenZ, "report.7z"),
+        ] {
+            let (owner, _endpoint) = super::super::tests::setup(cx);
+            owner.update(cx, |app, _| {
+                app.settings.create_format = nxtools_core::archive::ArchiveCreateFormat::Tar;
+                app.settings.create_volume_size = Some(nxtools_core::archive::ArchiveVolumeSize {
+                    value: 100,
+                    unit: nxtools_core::archive::ArchiveVolumeUnit::MiB,
+                });
+            });
+            let directory = tempfile::tempdir().expect("owned sources");
+            let paths = [
+                directory.path().join("report.txt"),
+                directory.path().join("other.bin"),
+            ];
+            for path in &paths {
+                std::fs::write(path, b"fixture").expect("source");
+            }
+            let intent: DesktopArchiveIntent = serde_json::from_value(serde_json::json!({"version":1,"request_id":Uuid::new_v4(),"action":action,"paths":paths,"mode":null})).expect("quick wire action");
+            let correlation_id = intent.request_id;
+            let (ingress, receiver) = nxtools_ipc::desktop_archive_intent::archive_intent_channel();
+            ingress.submit(intent);
+            let (intent, completion) = receiver.try_next().expect("bounded original ingress");
+            owner.update(cx, |app, cx| app.launch_intent(intent, completion, cx));
+            cx.run_until_parked();
+            owner.read_with(cx, |app, _| {
+                assert!(
+                    app.jobs.forms.is_empty(),
+                    "quick command must not open the editable form"
+                );
+                assert_eq!(app.jobs.records.len(), 1, "one original creation job");
+                let record = app.jobs.records.values().next().expect("job");
+                assert_eq!(record.command.operation_id, correlation_id);
+                assert_eq!(record.command.session_id, correlation_id);
+                let request = record
+                    .command
+                    .request
+                    .as_ref()
+                    .expect("immutable original request");
+                assert_eq!(request.kind, ArchiveJobKind::Create);
+                assert_eq!(request.destination.as_deref(), directory.path().to_str());
+                assert_eq!(
+                    request.paths,
+                    paths.map(|p| p.to_string_lossy().into_owned())
+                );
+                let create = request.create.as_ref().expect("create plan");
+                assert_eq!(create.format, format);
+                assert_eq!(create.name, name);
+                assert!(create.password.is_none() && create.volume_bytes.is_none());
+            });
+        }
+    }
+
+    #[gpui_kit::test]
+    fn archive_polish_quick_retirement_and_partial_source_failure_start_no_job(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        for retire in [false, true] {
+            let (owner, _endpoint) = super::super::tests::setup(cx);
+            let directory = tempfile::tempdir().expect("owned sources");
+            let first = directory.path().join("valid.txt");
+            std::fs::write(&first, b"fixture").expect("valid first source");
+            let intent: DesktopArchiveIntent = serde_json::from_value(serde_json::json!({
+                "version":1,"request_id":Uuid::new_v4(),"action":"compress_zip",
+                "paths":[first, directory.path().join("missing.txt")],"mode":null
+            }))
+            .expect("quick action");
+            let id = intent.request_id;
+            let (ingress, receiver) = nxtools_ipc::desktop_archive_intent::archive_intent_channel();
+            ingress.submit(intent);
+            let (intent, completion) = receiver.try_next().expect("original ingress");
+            if retire {
+                completion.finish(Err(LaunchFailure::Disconnected));
+            }
+            owner.update(cx, |app, cx| app.launch_intent(intent, completion, cx));
+            cx.run_until_parked();
+            owner.read_with(cx, |app, _| {
+                assert!(
+                    app.jobs.records.is_empty() && app.jobs.forms.is_empty(),
+                    "never submit a prefix or retired selection"
+                );
+            });
+            assert_eq!(
+                ingress.receipt(id).expect("one terminal receipt").failure,
+                Some(if retire {
+                    LaunchFailure::Disconnected
+                } else {
+                    LaunchFailure::OpenFailed
+                })
             );
         }
     }

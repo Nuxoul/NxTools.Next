@@ -17,7 +17,21 @@ pub(crate) fn stem(path: &str) -> String {
         .map_or(file, |(base, _)| base)
         .to_owned()
 }
-pub(crate) fn plan(request: &WorkerRequest, snapshot: &ArchiveSnapshot) -> Result<ExtractionPlan> {
+pub(crate) fn plan(
+    request: &WorkerRequest,
+    snapshot: &ArchiveSnapshot,
+    control: &OperationControl,
+) -> Result<ExtractionPlan> {
+    let mut work = crate::planning::SelectionWork::default();
+    let result = plan_observed(request, snapshot, &mut work);
+    control.record_work(|current| current.selection += work);
+    result
+}
+fn plan_observed(
+    request: &WorkerRequest,
+    snapshot: &ArchiveSnapshot,
+    work: &mut crate::planning::SelectionWork,
+) -> Result<ExtractionPlan> {
     if let Some(options) = &request.job_extract {
         let selection = if let Some(selected) = &options.selection {
             ExtractionSelection::Entries(
@@ -25,6 +39,7 @@ pub(crate) fn plan(request: &WorkerRequest, snapshot: &ArchiveSnapshot) -> Resul
                     .ordinals
                     .iter()
                     .map(|ordinal| {
+                        work.ordinal_probes += 1;
                         snapshot
                             .entries()
                             .get(*ordinal as usize)
@@ -37,22 +52,47 @@ pub(crate) fn plan(request: &WorkerRequest, snapshot: &ArchiveSnapshot) -> Resul
         } else {
             ExtractionSelection::All
         };
-        if snapshot.entries().len() > 65536
+        if (request.job_large_count != Some(true) && snapshot.entries().len() > 65536)
             || request.limits.max_metadata_bytes
                 < (snapshot.entries().len() as u64).saturating_mul(512)
         {
             return Err(ArchiveError::ResourceLimit);
         }
-        let plan = ExtractionPlan::build(snapshot, selection, strategy(options, &request.path))?;
-        if plan.files().len() > 4096 {
+        let plan = ExtractionPlan::build_observed_with_limits(
+            snapshot,
+            selection,
+            strategy(options, &request.path),
+            &request.limits.into(),
+            work,
+        )?;
+        if plan.files().len() as u64 > request.output_file_limit() {
             return Err(ArchiveError::ResourceLimit);
+        }
+        if request.job_large_count == Some(true) {
+            let prefix = plan
+                .subfolder()
+                .map_or(0, |folder| folder.encode_utf16().count() as u64 + 1);
+            let retained = plan.files().iter().try_fold(0u64, |total, file| {
+                let units =
+                    prefix.checked_add(file.relative_path().encode_utf16().count() as u64)?;
+                total.checked_add(2560u64.checked_add(units.checked_mul(4)?)?)
+            });
+            if retained.is_none_or(|bytes| bytes > request.limits.max_metadata_bytes) {
+                return Err(ArchiveError::ResourceLimit);
+            }
         }
         Ok(plan)
     } else {
         if let Some(entry) = crate::worker_browser::selected(request, snapshot.entries())? {
             ExtractionPlan::browser_entry(snapshot, entry)
         } else {
-            ExtractionPlan::build(snapshot, ExtractionSelection::All, TargetStrategy::Here)
+            ExtractionPlan::build_observed_with_limits(
+                snapshot,
+                ExtractionSelection::All,
+                TargetStrategy::Here,
+                &request.limits.into(),
+                work,
+            )
         }
     }
 }
@@ -107,39 +147,41 @@ pub(crate) fn extract_compound(
     request: &WorkerRequest,
     snapshot: &ArchiveSnapshot,
     plan: &ExtractionPlan,
+    retained: &crate::engine::RetainedCatalog,
     control: &OperationControl,
     output: &mut dyn crate::output::ArchiveOutput,
 ) -> Result<crate::output::ExtractOutcome> {
-    let limits: crate::ResourceLimits = request.limits.into();
+    let limits = crate::worker_browser::decode_limits(request);
+    let records = retained
+        .tar_plan
+        .as_ref()
+        .ok_or(ArchiveError::SourceChanged)?;
     let working = (snapshot.entries().len() as u64)
         .checked_mul(128)
+        .and_then(|bytes| bytes.checked_add(records.locator_bytes()))
         .and_then(|bytes| bytes.checked_add(256 * 1024))
         .ok_or(ArchiveError::ResourceLimit)?;
     if working > limits.max_working_bytes {
         return Err(ArchiveError::ResourceLimit);
     }
-    let spool_limits = spool_limits(limits);
     let mut source = std::fs::File::open(&request.path)?;
     crate::engine::ensure_revision(&mut source, &snapshot.revision, control)?;
-    let spool = match snapshot.format() {
-        crate::ArchiveFormat::TarGz => {
-            crate::formats::tgz::decode(&mut source, &spool_limits, control)?
-        }
-        crate::ArchiveFormat::TarBz2 => {
-            crate::formats::tgz::decode_bzip(&mut source, &spool_limits, control)?
-        }
-        crate::ArchiveFormat::TarXz => {
-            crate::formats::tgz::decode_xz(&mut source, &spool_limits, control)?
-        }
-        crate::ArchiveFormat::TarZstd => {
-            crate::formats::tgz::decode_zstd(&mut source, &spool_limits, control)?
-        }
-        _ => return Err(ArchiveError::UnsupportedOperation),
-    };
-    // Existing TAR transaction validates the immutable records, enforces the ORIGINAL target
-    // byte limits, and stages through full original-source recheck before native commits.
-    let result =
-        crate::formats::tar::extract(spool, snapshot, plan, &limits, control, &mut source, output)?;
+    let spool = retained
+        .input
+        .as_ref()
+        .ok_or(ArchiveError::SourceChanged)?
+        .try_clone()?;
+    // Spool admission used finite discovery credit. Browser payload decode keeps general finite
+    // codec limits while the original native browser-output quota owns selected output bytes.
+    let result = crate::formats::tar::extract_validated(
+        (spool, records),
+        snapshot,
+        plan,
+        &limits,
+        control,
+        &mut source,
+        output,
+    )?;
     let mut directories = plan
         .explicit_directories
         .iter()
@@ -170,6 +212,7 @@ pub(crate) fn extract_compound(
 pub(crate) fn codec_plan(
     request: &WorkerRequest,
     entries: std::sync::Arc<[ArchiveEntry]>,
+    control: &OperationControl,
 ) -> Result<Option<ExtractionPlan>> {
     if request.job_extract.is_none() && request.output_readmission.is_none() {
         return Ok(None);
@@ -189,7 +232,7 @@ pub(crate) fn codec_plan(
         comment: String::new(),
         backend_safe: true,
     };
-    plan(request, &snapshot).map(Some)
+    plan(request, &snapshot, control).map(Some)
 }
 
 // A writer wrapper samples the ORIGINAL control only at serialized frame boundaries. Native
@@ -202,6 +245,7 @@ pub(crate) struct ProgressWriter<'a, W> {
     header: [u8; 4],
     header_len: usize,
     remaining: usize,
+    drag: Option<crate::worker_drag::DragPort>,
 }
 impl<'a, W> ProgressWriter<'a, W> {
     pub fn new(inner: &'a mut W, control: &'a OperationControl, enabled: bool) -> Self {
@@ -213,7 +257,13 @@ impl<'a, W> ProgressWriter<'a, W> {
             header: [0; 4],
             header_len: 0,
             remaining: 0,
+            drag: None,
         }
+    }
+    pub(crate) fn with_drag(mut self, drag: Option<crate::worker_drag::DragPort>) -> Self {
+        self.enabled |= drag.is_some();
+        self.drag = drag;
+        self
     }
     fn at_frame_boundary(&self) -> bool {
         self.header_len == 0 && self.remaining == 0
@@ -231,7 +281,8 @@ impl<W: std::io::Write> std::io::Write for ProgressWriter<'_, W> {
                 self.header_len += take;
                 cursor = &cursor[take..];
                 if self.header_len == 4 {
-                    self.remaining = u32::from_le_bytes(self.header) as usize;
+                    self.remaining =
+                        (u32::from_le_bytes(self.header) & !crate::worker_bulk::FLAG) as usize;
                 }
             } else {
                 let take = cursor.len().min(self.remaining);
@@ -251,6 +302,10 @@ impl<W: std::io::Write> std::io::Write for ProgressWriter<'_, W> {
             && self.last.elapsed() >= std::time::Duration::from_millis(100)
         {
             self.last = std::time::Instant::now();
+            let demand = self.drag.as_ref().and_then(|drag| drag.progress_demand());
+            if self.drag.is_some() && demand.is_none() {
+                return Ok(());
+            }
             if let Some(snapshot) = self.control.progress_snapshot() {
                 let progress = snapshot.progress;
                 let mut frame = serde_json::json!({"schema":1,"operation_id":self.control.operation_id(),"op":"progress","progress":{"phase":snapshot.phase,"bytes_done":progress.bytes,"bytes_total":progress.total_bytes,"files_done":progress.files,"files_total":snapshot.files_total,"current_member":snapshot.current_member}});
@@ -259,6 +314,11 @@ impl<W: std::io::Write> std::io::Write for ProgressWriter<'_, W> {
                 }
                 if let Some(total) = snapshot.current_bytes_total {
                     frame["progress"]["current_bytes_total"] = serde_json::json!(total);
+                }
+                if let Some(demand) = demand {
+                    frame["progress"]["drag_demand"] = serde_json::json!({
+                        "request_id": demand.request_id, "index": demand.index, "ordinal": demand.ordinal,
+                    });
                 }
                 crate::worker::write_frame(self.inner, &frame)?;
             }
@@ -271,6 +331,87 @@ impl<W: std::io::Write> std::io::Write for ProgressWriter<'_, W> {
 mod tests {
     use super::*;
     use std::io::Write;
+    #[test]
+    fn r45_drag_writer_emits_only_current_initialized_demand() {
+        use crate::worker_drag::{DragDemand, DragMaterialization, DragMember, DragPort};
+        let control = OperationControl::default();
+        let port = DragPort::new(
+            &DragMaterialization {
+                version: 1,
+                members: vec![
+                    DragMember {
+                        index: 2,
+                        ordinal: 7,
+                    },
+                    DragMember {
+                        index: 4,
+                        ordinal: 9,
+                    },
+                ],
+            },
+            100,
+        );
+        let mut bytes = Vec::new();
+        let mut writer =
+            ProgressWriter::new(&mut bytes, &control, false).with_drag(Some(port.clone()));
+        control.configure_extraction_progress(Some(30), 1);
+        control.begin_extracted_member("previous.bin", Some(30));
+        writer.last -= std::time::Duration::from_secs(1);
+        writer.flush().expect("idle boundary");
+        assert!(writer.inner.is_empty(), "no eager or idle progress");
+        for (index, ordinal, total) in [(2, 7, Some(30)), (4, 9, None)] {
+            let request_id = uuid::Uuid::new_v4();
+            assert!(port.accept(DragDemand {
+                request_id,
+                index,
+                ordinal,
+                output_limit: 100
+            }));
+            port.wait(&control)
+                .expect("current demand")
+                .expect("active");
+            writer.last -= std::time::Duration::from_secs(1);
+            writer.flush().expect("before new member initialization");
+            assert!(
+                writer.inner.is_empty(),
+                "old snapshot cannot inherit a new demand"
+            );
+            control.configure_extraction_progress(total, 1);
+            control.begin_extracted_member("current.bin", total);
+            control.publish_extraction_progress(
+                crate::ArchiveProgress {
+                    bytes: 5,
+                    files: 0,
+                    total_bytes: total,
+                },
+                5,
+            );
+            port.progress_started();
+            writer.last -= std::time::Duration::from_secs(1);
+            writer.flush().expect("bound snapshot");
+            let frame =
+                crate::worker::read_frame::<_, serde_json::Value>(&mut writer.inner.as_slice())
+                    .expect("frame")
+                    .expect("progress");
+            assert_eq!(
+                frame["progress"]["drag_demand"],
+                serde_json::json!({"request_id":request_id,"index":index,"ordinal":ordinal})
+            );
+            assert_eq!(frame["progress"]["current_bytes_done"], 5);
+            assert_eq!(
+                frame["progress"]["current_bytes_total"],
+                serde_json::json!(total)
+            );
+            writer.inner.clear();
+            port.finished();
+            writer.last -= std::time::Duration::from_secs(1);
+            writer.flush().expect("retired boundary");
+            assert!(
+                writer.inner.is_empty(),
+                "ready member cannot publish stale progress"
+            );
+        }
+    }
     #[test]
     fn extraction_snapshot_keeps_member_and_plan_totals_independent_of_commits() {
         let control = OperationControl::default();

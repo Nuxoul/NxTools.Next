@@ -34,7 +34,7 @@ qualify for a ratio. No division or whole-archive/solid-block ratio is substitut
 **Risk:** strictly declared output >64MiB AND >1000 times reliable positive packed bytes, overflow-safe.
 The original operation/ticket/generation and exact admitted entry ceiling bind approval. Risk cannot
 raise any output/work/dictionary/metadata/Job budget. Decline/cancel stops subsequent output; prior
-committed facts survive. Read/TEST have no extraction Risk interaction; CLI cannot silently approve.
+successfully closed facts survive. Read/TEST have no extraction Risk interaction; CLI cannot silently approve.
 
 **Encoded source admission:** ONLY opt-in 7z extraction readmission uses
 max(original max_output_bytes, existing default 100GiB) as its finite encoded-source ceiling. C# reads
@@ -46,12 +46,12 @@ not gain this bound. This is not an output allowance or a Job/work/dictionary/me
 **Shortage:** original complete metadata/path/selection/format/source plan precedes preflight. Fully
 known regular-member max/sum may produce OutputShortfall {current, required, source}; declarations
 are admission information, not integrity proof. Original AttemptResult must match operation/current
-limits, ResourceLimit, zero committed files and actual cleanup_complete. A valid source binding and
-explicit finite OutputBudget approval (entry <=32GiB, total <=2^50, covering required) permit one new
+limits,ResourceLimit,zero successfully closed files and actual cleanup_complete. A valid source binding and
+explicit finite OutputBudget approval (entry <=32GiB,total <=2^50,covering required) permit one new
 operation/control ID under the same logical ID/shared cancellation. Only entry/output limits change;
 selection/codepage/password/conflict/MOTW and work/dictionary/metadata/Job limits are preserved.
 Fresh normal admission verifies original native source identity/version and Rust digest again.
-No third attempt, output merging, automatic approval or rollback of replaced user files.
+No third attempt,output merging,automatic approval or rollback of completed user files.
 
 **Costs:** an unsuccessful declared preflight reads/hashes source and headers, then a fresh attempt
 reads/verifies again. C# adds a six-byte held-source signature probe. No new complete payload decode
@@ -73,10 +73,10 @@ No secrets go to argv, persisted requests or evidence; fixture audit records pas
 | Ordinary member or shared/unknown packed | No fabricated Risk prompt; original actual byte limits remain active |
 | Stale/cross-operation/duplicate/wrong-generation/larger Risk reply | Cannot authorize current output |
 | Reliable entry/total declaration shortage before effects | ResourceLimit + matching bound facts; wait actual exited cleanup before OutputBudget prompt |
-| Incomplete cleanup, wrong attempt/current limits, commits/publication or invalid hard ceiling | No new attempt |
-| Actual decode/output overflow or corrupt payload | Terminal original failure, no shortfall or budget prompt |
-| Source identity/version/digest changes between attempts | source_changed/SourceChanged, no output and no further retry |
-| Second attempt fails or publishes before cancellation | No third attempt; retain actual commit/journal/cleanup facts |
+| Incomplete cleanup,wrong attempt/current limits,successfully closed output or invalid hard ceiling | No new attempt |
+| Actual decode/output overflow or corrupt payload | Terminal original failure,no shortfall or budget prompt |
+| Source identity/version/digest changes between attempts | source_changed/SourceChanged,no output and no further retry |
+| Second attempt fails or closes output before cancellation | No third attempt; retain actual completion/journal/cleanup facts |
 | Release receives DEBUG fixture field | Strict request rejection, not a relaxed production threshold |
 
 ## 5. Good/Base/Bad Cases
@@ -90,16 +90,16 @@ exceeds total4096; actual overflow is terminal, not a guessed declaration shorta
   length above total1 reaches original declaration shortfall before any output.
 - `repo:rust/crates/nxtools-archive/src/worker_codecs.rs#packed_risk_tests`: orphan trailing packed
   stream cannot dilute member ratio; this structural metadata test is not a payload decoder oracle.
-- `repo:rust/crates/nxtools-archive/tests/output_readmission_contract.rs`: malformed cleanup/commit/
-  ID/limit facts, finite ceilings, ticket retirement and shared cancellation never create unsafe retry.
+- `repo:rust/crates/nxtools-archive/tests/output_readmission_contract.rs`: malformed cleanup/completed-output/
+  ID/limit facts,finite ceilings,ticket retirement and shared cancellation never create unsafe retry.
 - `repo:rust/crates/nxtools-archive/tests/sevenz_readmission_chain.rs`: unchanged Rust coordinator ->
-  original native runner/Job/output, held-cleanup barrier (active1/source+helper protected/no prompt),
-  actual drain (active0/exclusive reopen), new IDs, preserved request/options/memory/source binding,
-  selected actual overflow/no third attempt and committed journal truth.
+  original native runner/Job/output,held-cleanup barrier (active1/source+helper protected/no prompt),
+  actual drain (active0/exclusive reopen),new IDs,preserved request/options/memory/source binding,
+  selected actual overflow/no third attempt and completed journal truth.
 - `repo:csharp/NxTools.PlatformHost.Tests/SevenzRiskReadmissionTests.cs` with
   `repo:csharp/NxTools.PlatformHost.Tests/SevenzReadmissionHost.cs`: actual worker/native output,
-  Risk approve/decline/cancel/stale/larger replies, shared packed, ordinary and no-output TEST,
-  solid skip/integrity and truthful publication. Assert exact LIST/RUN/PASS names/order and all
+  Risk approve/decline/cancel/stale/larger replies,shared packed,ordinary and no-output TEST,
+  solid skip/integrity and truthful close/journal. Assert exact LIST/RUN/PASS names/order and all
   skip/fail/not_run counts plus matching final worker hash, not just process exit zero.
 - `repo:tests/integration/prepare-sevenz-safety-fixtures.py`: independently stock-produced tiny
   solid/nonsolid and owned corruption; list/test/x-so compared to fixed literal member bytes.

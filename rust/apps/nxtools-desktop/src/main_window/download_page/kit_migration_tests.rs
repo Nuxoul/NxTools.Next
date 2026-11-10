@@ -148,6 +148,18 @@ fn workspace(
     tempfile::TempDir,
     Entity<DownloadApplication>,
 ) {
+    workspace_with_count(cx, 2)
+}
+
+fn workspace_with_count(
+    cx: &mut TestAppContext,
+    count: usize,
+) -> (
+    Entity<MainWindow>,
+    gpui_kit::AnyWindowHandle,
+    tempfile::TempDir,
+    Entity<DownloadApplication>,
+) {
     cx.update(gpui_kit::init);
     cx.update(crate::theme::apply_component_theme);
     let temp = tempfile::tempdir().expect("isolated download workspace");
@@ -176,8 +188,14 @@ fn workspace(
         .expect("queue-only synthetic task");
     request.file_name = Some("Synthetic-second.bin".into());
     engine
-        .enqueue(request, RequestOrigin::Internal)
+        .enqueue(request.clone(), RequestOrigin::Internal)
         .expect("second queue-only synthetic task");
+    for index in 2..count {
+        request.file_name = Some(format!("Synthetic-{index}.bin"));
+        engine
+            .enqueue(request.clone(), RequestOrigin::Internal)
+            .expect("additional queue-only synthetic task");
+    }
     let (platform, _) = nxtools_ipc::platform_bridge(16);
     let paths = temp.path().to_owned();
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
@@ -1333,7 +1351,7 @@ fn audit06_download_rows_and_header_follow_root_rem(cx: &mut TestAppContext) {
                 .debug_bounds("download-table-header")
                 .expect("header");
             let vector = surface
-                .debug_bounds("download-task-icon-fallback-selected")
+                .debug_bounds("download-task-file-fallback-selected")
                 .expect("actual vector fallback");
             let rem = surface.update(|window, _| window.rem_size());
             let painted = surface.update(|window, _| {
@@ -1702,4 +1720,171 @@ fn ux_repair_download_single_click_selects_and_menu_explicitly_opens_details(
         task_states,
         "inspector close must not change task state"
     );
+}
+
+#[gpui_kit::test]
+async fn batch_feedback_busy_official_toolbar_and_failed_notification_select_original_rows(
+    cx: &mut TestAppContext,
+) {
+    let (main, handle, _temp, downloads) = workspace(cx);
+    cx.executor().allow_parking();
+    let ids = downloads.read_with(cx, |app, _| {
+        app.tasks()
+            .iter()
+            .map(|task| task.task.id())
+            .collect::<Vec<_>>()
+    });
+    main.update(cx, |main, cx| {
+        main.selected_download_tasks = ids.iter().copied().collect();
+        cx.notify();
+    });
+    let mut confirmation_ids = ids.clone();
+    confirmation_ids.extend((ids.len()..20).map(|_| DownloadTaskId::new()));
+    downloads.update(cx, |app, cx| {
+        app.batch_action(confirmation_ids, DownloadBatchAction::Cancel, cx)
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(920.0), px(480.0)));
+    surface.refresh().expect("production busy batch toolbar");
+    let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    let controls: Vec<_> = nodes
+        .iter()
+        .filter(|node| {
+            node.role() == Some(gpui_kit::Role::Button)
+                && node
+                    .path()
+                    .contains(&gpui_kit::ElementId::from("download-batch-command-group"))
+        })
+        .collect();
+    assert!(!controls.is_empty());
+    assert!(
+        controls
+            .iter()
+            .all(|button| button.disabled() == Some(true)),
+        "official batch controls reject dispatch while busy"
+    );
+    let confirmation = cx
+        .read(|cx| cx.windows())
+        .into_iter()
+        .find(|window| *window != handle)
+        .expect("existing confirmation window");
+    let mut confirmation = VisualTestContext::from_window(confirmation, cx);
+    confirmation
+        .refresh()
+        .expect("production cancel confirmation");
+    let cancel = confirmation
+        .debug_bounds("download-delete-secondary-cancel-action")
+        .expect("cancel confirmation");
+    confirmation.simulate_click(cancel.center(), Modifiers::default());
+    confirmation.run_until_parked();
+    downloads.update(cx, |app, cx| {
+        app.batch_action(ids.clone(), DownloadBatchAction::Pause, cx)
+    });
+    cx.condition(&downloads, |app, _| !app.batch_busy()).await;
+    cx.condition(&main, |main, cx| {
+        main.notifications
+            .read(cx)
+            .items()
+            .iter()
+            .any(|notice| notice.id.starts_with("download-batch-") && notice.action.is_some())
+    })
+    .await;
+    let action = main.read_with(cx, |main, cx| {
+        main.notifications
+            .read(cx)
+            .items()
+            .iter()
+            .find(|notice| notice.id.starts_with("download-batch-"))
+            .expect("actual batch notice")
+            .action
+            .clone()
+            .expect("failed-only action")
+    });
+    main.update(cx, |main, _| {
+        main.selected_download_tasks.clear();
+        main.selected_download_task = None;
+    });
+    surface.update(|window, cx| action.invoke(window, cx));
+    surface.run_until_parked();
+    assert_eq!(
+        main.read_with(&surface, |main, _| main.selected_download_tasks.clone()),
+        ids.into_iter().collect()
+    );
+}
+
+#[gpui_kit::test]
+fn batch_feedback_file_deletion_is_reachable_from_original_toolbar_and_menu(
+    cx: &mut TestAppContext,
+) {
+    let (main, handle, _temp, downloads) = workspace_with_count(cx, 20);
+    let ids = downloads.read_with(cx, |app, _| {
+        app.tasks()
+            .iter()
+            .map(|task| task.task.id())
+            .collect::<Vec<_>>()
+    });
+    main.update(cx, |main, cx| {
+        main.retire_download_detail_scope(cx);
+        main.selected_download_tasks = ids.iter().copied().collect();
+        main.selected_download_task = Some(ids[0]);
+        cx.notify();
+    });
+    let mut surface = VisualTestContext::from_window(handle, cx);
+    surface.simulate_resize(size(px(1060.0), px(650.0)));
+    for from_menu in [false, true] {
+        surface.refresh().expect("original batch controls");
+        let selector = if from_menu {
+            let row_selector: &'static str =
+                Box::leak(format!("download-task-row-{}", ids[0].as_uuid()).into_boxed_str());
+            let row = surface
+                .debug_bounds(row_selector)
+                .expect("selected original row");
+            surface.simulate_mouse_down(
+                row.center(),
+                gpui_kit::MouseButton::Right,
+                Modifiers::default(),
+            );
+            surface.run_until_parked();
+            surface.refresh().expect("original batch context menu");
+            assert!(surface.debug_bounds("download-menu-remove").is_some());
+            "download-menu-remove-with-artifact"
+        } else {
+            assert!(surface.debug_bounds("download-batch-remove").is_some());
+            "download-batch-remove-with-artifact"
+        };
+        let delete = surface
+            .debug_bounds(selector)
+            .expect("explicit file-deleting batch action");
+        surface.simulate_click(delete.center(), Modifiers::default());
+        surface.run_until_parked();
+        assert!(downloads.read_with(&surface, |app, _| app.batch_busy()));
+        let confirmations = surface
+            .read(|cx| cx.windows())
+            .into_iter()
+            .filter(|window| *window != handle)
+            .collect::<Vec<_>>();
+        assert_eq!(confirmations.len(), 1, "one existing quantity confirmation");
+        let mut confirmation = VisualTestContext::from_window(confirmations[0], cx);
+        confirmation.simulate_resize(size(px(380.0), px(178.0)));
+        confirmation
+            .refresh()
+            .expect("production quantity confirmation");
+        let labels =
+            confirmation.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        assert!(
+            labels
+                .iter()
+                .any(|node| node.label() == Some("删除 20 个下载任务"))
+        );
+        let cancel = confirmation
+            .debug_bounds("download-delete-secondary-cancel-action")
+            .expect("original cancel");
+        confirmation.simulate_click(cancel.center(), Modifiers::default());
+        confirmation.run_until_parked();
+        assert!(!downloads.read_with(&confirmation, |app, _| app.batch_busy()));
+        assert_eq!(
+            downloads.read_with(&confirmation, |app, _| app.tasks().len()),
+            20
+        );
+    }
 }

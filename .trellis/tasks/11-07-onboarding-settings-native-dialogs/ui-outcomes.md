@@ -1,0 +1,28 @@
+# R2/R3/R5 settings UI outcome
+
+## Verified source and selection
+
+- `docs/reference-code/graphite-theme.md:15` establishes Light/Latte and Dark/Frappe as the same default pairs. The existing Next chooser's `ThemePreference` stores distinct legacy values; this slice maps aliases only for displayed selection, not persistence. `vendor/gpui-component-080/src/setting/page.rs:228` owns the page list and scrollbar; `vendor/gpui-component-080/src/radio.rs` provides the existing semantic radios.
+- ABDM `D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\pages\addDownload\shared\LocationTextField.kt:46` binds a destination picker to one field; it does not supply a settings category controller. Legacy `D:\Code\NxTools\Views\SettingsWindow.axaml:6` and `SettingsWindow.axaml.cs:15`/`:21`/`:68` establish the settings window size, constructor animation, scope-dependent opening and Apply/Close boundary. `D:\Code\NxTools\ViewModels\MainWindowViewModel.cs:1735`/`:1741`/`:1764` own add/edit/delete; `D:\Code\NxTools\Views\CategoryWindow.axaml.cs:15`/`:29`/`:35`/`:41`/`:61`/`:79` own category modal creation, picker, commit and cancellation; `CategoryDialogViewModel.cs:8`/`:25` validates only on submission. Next keeps the existing application draft and persistence owner, not the legacy separate category dialog.
+- `vendor/gpui-component-080/src/setting/fields/mod.rs:207` and `setting/fields/dropdown.rs:65` provide the exact released `SettingField::scrollable_dropdown`/outlined full-width vertical button/scrollable PopupMenu; `setting/item.rs:45` provides its `SettingItem` public slot. Category editor remains `Form::new().columns(2)`/`Field`; additions and order controls remain actual styled buttons, outside Toolbar.child. Page scrollbar is the sole content scroll owner, with the official popup's bounded temporary menu scrolling only while open. Category menu uses IDs as values; drafts and subscriptions stay in DownloadSettingsView. Existing footer continues to own Apply/Cancel.
+- `docs/reference-code/archive-picker.md:9`/`:19` establishes owner-bound native modal selection and cancellation without implicit settings changes. `csharp/NxTools.PlatformHost/Windows/Archive/ArchiveEntryCache.cs:34`/`:40` derives default LocalApplicationData/NxTools/NxTools.Next/cache/archive/sessions; `csharp/NxTools.PlatformHost/Protocol/ArchiveEntryContract.cs:41` appends NxTools.Next/archive/sessions to a custom base. `rust/crates/nxtools-core/src/paths.rs:17` creates directories during discovery, so the display uses read-only Windows LocalApplicationData without calling discovery or touching the cache. The raw InputState remains blank for default; a public Label and Small outline Copy button present the effective path. Save/Reset/Reload/Browse continue through the existing revision and config owners.
+
+## Interaction boundaries and checks
+
+- Requested geometry: two natural-height theme preview columns with a separate System Radio; category dropdown above a naturally sized original editor; original settings pages scroll, footers remain reachable at the minimum client size. Official radio and 32-DIP dropdown retain Kit states; ordinary actions are real Small/outlined buttons, not Toolbar.child children. No new window, focus, native or persistence owner was introduced.
+- Opening, cancelling and an unsuccessful save must not rewrite an alias. Category selection must not mutate disk; later Add/Delete/Move/Enable stay draft-local until Apply. Native picker returns must still check the existing input revision and owner. Temp path display follows the current draft (including reset and conflict); invalid/non-absolute drafts do not offer Copy. No directory creation, enumeration or cleanup occurs during presentation.
+- Category extension tags also use natural height; the page owns their vertical overflow. The official category popup keeps its own bounded menu scrolling while open.
+
+## Verification
+
+- The Desktop integration run exercised the theme alias/no-write, natural preview/page wheel, last-choice keyboard access, save failure and single palette-owner tests successfully.
+- Six focused category tests passed: two extension-tag interactions, category select/edit with page wheel, Add/Delete/Apply draft ownership, long-category/error scrolling across the supported size/rem fixture matrix, and the official dropdown's real selection action. Pointer fixtures reveal controls inside the actual page/footer or popup viewport before clicking.
+- `archive_temp_display_matches_native_default_and_custom_session_roots`, the archive settings keyboard/scroll/theme test and the late temporary-picker draft test passed in the Desktop integration run.
+- The final browser-export completion test and saved custom Shell choice test each passed after the relevant interaction changes.
+- Scoped Rustfmt checks passed for the category/settings implementation and parent-owned polish/archive settings tests. The existing three `private_interfaces` warnings are not suppressed.
+
+## Acceptance limits
+
+The full Desktop run recorded 1765 passed, 15 failed and 1 ignored. All seven in-scope failing integration tests subsequently passed focused verification; the remaining recorded failures are seven archive tests requiring external C# wire exports and one unrelated download context-menu test. The full suite was not rerun.
+
+These production GPUI fixtures establish the tested layout, actions and draft ownership, not user visual acceptance or physical keyboard/DPI behavior. No product window, screenshot or live native picker acceptance was performed.

@@ -40,3 +40,72 @@ Real upgrade acceptance must also cover a RUNNING installed Desktop/protected re
 ## 7. Wrong vs Correct
 Wrong: `if (!$entry.ExecutablePath) { throw Win32Exception(5) }` before checking the native object.
 Correct: SCM-proved updater exclusion -> query-only handle/exit/image -> exact target membership -> original same-handle Stop -> original recover/replace/finalize. Only authorized real-install logs and installed-file readback establish installed acceptance.
+
+## Explicit missing-root repair (2026-11-06)
+
+The separately approved installer repair covers an existing updater registration whose entire
+protected `Updater` directory is genuinely absent. `bootstrap-migration.ps1` distinguishes no
+registration (exit0), approved legacy maintenance (exit10), approved missing root (exit11), and
+failure (exit1). Path/account/publisher/registered hash are checked before reporting repair.
+Access errors, existing directories/files, foreign registration and surviving recovery records
+must not become absence. Detection records bounded stage/reason/exception/native facts and the
+same installer correlation; Inno persists `bootstrap-detection.jsonl` and actual launch/exit even
+when preparation exits early.
+
+Only explicit user confirmation and UAC permit the extracted same-release Host command
+`--repair-missing-trusted-bootstrap <GUID>`. Its original package/caller verification precedes
+native effects. `TrustedMissingBootstrapRepair` rechecks the fixed registration, stops only that
+approved service, acquires the existing deployment gate, and rechecks parent/root/registration.
+`TrustedUpdateBroker.EnrollMissingRoot` reuses the original enrollment/provisioning implementation;
+ordinary `EnrollIfConfigured` and bootstrap maintenance retain their original refusal semantics.
+Completed enrollment, actual bootstrap hash and protocol/version marker must agree before success.
+The marker lets a same-release installer retry recognize compatible completed repair.
+
+Do not delete a service or recovery tree to implement repair. A surviving incomplete root remains
+an inspectable recovery condition, not authorization to reset trust or erase its records. No
+unknown path, process-name kill or key replacement is permitted. This source contract is not
+installed repair acceptance; real installation requires separately authorized actual logs/readback.
+
+Regression owners: original `installer-bootstrap-migration.ps1` now runs the actual detection
+entry with injected registration and owned roots on x86/x64; `installer-runtime.ps1` covers repair
+success/cancel/failure/tamper and detection refusal at the actual Inno callback; C# missing-bootstrap,
+enrollment and maintenance fixtures use signed temporary packages and the real enrollment journal.
+
+Repair enrollment stages its initial signed snapshot with `State.DeploymentPending=true`.
+Only the original LocalSystem broker deployment and complete protected-file verification may
+clear that durable fact. The repair caller releases its parent deployment gate before requesting
+this initial deployment over the original pipe, and does not return success until that request
+completes. Deployment failure preserves the pending snapshot for ordinary same-key retry; a
+same-release request must not report already-current while its initial deployment is pending.
+The false/default field is omitted, preserving ordinary stored-state serialization.
+
+### Missing product ancestors
+
+The2026-11-06actual repair rejection at correlation20261106233632 reports root_absence/native2
+before service stop. Both NxTools and NxTools.Next ancestors were absent, not just Updater.
+Explicit repair therefore uses `IndexerServiceInstaller.ValidateMissingProductParents` before
+mutation and again before provisioning. It opens the existing CommonApplicationData anchor with
+the original stable native directory lease, then validates each existing fixed vendor/product
+ancestor and its protected ACL. Only file/directory-not-found at these fixed product nodes may
+end the precreation check; access errors, files, reparse objects and bad existing ACLs refuse.
+The base data root itself must exist. Creation and ACL hardening remain in the original
+`HardenProductChildDirectory` after signed repair admission; ordinary validation is unchanged.
+
+Missing-bootstrap fixtures must use this actual native parent validator with an initially absent
+vendor/product tree, not a no-op parent callback. A read-only probe of the actual production
+anchor is separate from service recovery or installed acceptance. Diagnostic parent_validation
+and root_absence stages distinguish ancestor failure from the updater-root decision.
+
+## Stopped Demand updater during process discovery
+
+The fixed updater registration and bootstrap hash/type validation also applies when its Demand
+service is stopped. Validated SCM Stopped/PID0 returns no excluded process; discovery then uses
+the original candidate QueryImage and exact-target Stop boundary. It must not require starting
+the updater just to close ordinary owned processes. Running exclusion retains the validated
+positive own-process SCM PID. Stopped/nonzero PID, invalid registration/hash/type and malformed
+status still refuse, and live native candidate failures retain their actual code/PID.
+
+`repo:tests/architecture/installer-process-identity.ps1` covers both original resolver and
+CIM-null Host discovery with the real resolver: owned, foreign, exited and query-denied outcomes.
+The report-machine read-only Get-UpgradeUpdaterProcessId replay is distinct from actual install,
+service startup, termination or complete installed-file readback acceptance.

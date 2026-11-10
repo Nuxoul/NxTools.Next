@@ -9,8 +9,7 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 8;
-
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 9;
 pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +149,7 @@ pub enum DownloadTaskAction {
     Resume,
     Retry,
     Redownload,
+    RetryWithAutoRename,
     Cancel,
     SetSpeedLimit { bytes_per_second: Option<u64> },
     Remove { delete_artifact: bool },
@@ -277,6 +277,35 @@ pub struct DownloadProbe {
     pub media: Option<DownloadMediaProbe>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution: Option<Box<crate::DownloadProbeResolution>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_observation: Option<DownloadServerObservation>,
+}
+
+/// One successful response's endpoint and time to headers, including connection setup.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadServerObservation {
+    pub host: String,
+    pub peer_ip: Option<std::net::IpAddr>,
+    pub route_kind: DownloadRouteKind,
+    pub response_ms: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadRouteKind {
+    Direct,
+    ManualProxy,
+    SystemPolicy,
+}
+
+impl DownloadRouteKind {
+    pub const fn diagnostic_name(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::ManualProxy => "manual_proxy",
+            Self::SystemPolicy => "system_policy",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -508,6 +537,7 @@ pub enum DownloadFaultCode {
     NotFound,
     InvalidState,
     Storage,
+    DestinationExists,
     Network,
     Protocol,
     Permission,

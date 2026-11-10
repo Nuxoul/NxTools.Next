@@ -3,7 +3,7 @@
 Evidence: `repo:csharp/NxTools.PlatformHost/Protocol/PlatformCommandSequenceDispatcher.cs`, `repo:csharp/NxTools.PlatformHost/Windows/BoundedStaOperationRunner.cs`, `repo:csharp/NxTools.PlatformHost/Windows/CenteredResizeCoordinator.cs`, `repo:csharp/NxTools.PlatformHost/Windows/BrowserRegistrationTransaction.cs`, `repo:csharp/NxTools.PlatformHost.Tests/Program.cs`.
 
 ## Ownership / observed runtime
-Program initializes PerMonitorV2, log/cancellation/adapter/pipe lifecycle. Protocol v1 GUID envelope has1MiB frame limit; BoundedFrameReader honors cancellation/limit. PlatformPipeClient outgoing queue256; serial reader dispatch detaches blocking Shell/picker/OLE work before synchronous native call can block. EventWindow owns dedicated STA WinForms messages/hooks/timers and cleanup; domain/GPUI remains Rust. Native methods partials are real code boundaries; prefixed P/Invoke needs actual EntryPoint.
+Program initializes PerMonitorV2, log/cancellation/adapter/pipe lifecycle. Protocol v1 GUID envelope has1MiB frame limit; BoundedFrameReader honors cancellation/limit. PlatformPipeClient outgoing queue256; serial reader dispatch detaches blocking Shell/picker/OLE/process launch/service work before synchronous native calls can block. EventWindow owns the clipboard/WinForms STA, window messages and timers; LowLevelKeyboardMonitor owns a separate blocking keyboard-hook thread. Domain/GPUI remains Rust. Native methods partials are real code boundaries; prefixed P/Invoke needs actual EntryPoint.
 
 ## Scenario: Bounded native acceptance and applied result
 ### 1. Scope / Trigger
@@ -207,19 +207,31 @@ Evidence: `repo:csharp/NxTools.PlatformHost.Tests/ArchiveRemediationTests.cs` so
 
 ## Scenario: Archive handle-output rendezvous
 ### 1. Scope / Trigger
-Isolated Rust extraction writes only via C# held-directory capabilities. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveOutputSession.cs`, `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerOutputBridge.cs`, `repo:csharp/NxTools.PlatformHost.Tests/ArchiveExtractionWorkerTests.cs`.
+Isolated Rust ordinary known-destination extraction writes only through C# held-directory capabilities. This includes button/dialog/context,Smart/Here/Name/Desktop/custom and destination-directory drag across admitted formats. Virtual cache,archive Create/Edit/split candidates and HZ5 retain separate output contracts. The current ZIP parallel slice follows the completed original synchronous-pump baseline. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveOutputSession.cs`, `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveWorkerOutputBridge.cs`; approved targets: [ordinary output alignment](../../tasks/11-02-archive-workflow-optimization/ordinary-extraction-output.md), [bounded parallel ZIP](../../tasks/11-02-archive-workflow-optimization/parallel-extraction.md).
 ### 2. Signatures
-ArchiveWorkerRequest.OutputRoot stays in C#. Rust ArchiveOutput directory/begin/write/commit/abort emits native_call{call_id,action,path?,token?,data?}; matching version1/op=native_result/call_id/success/token?/error_code?/native_error_code?. One outstanding call; chunk<=65536bytes, no payload in published events/logs.
+ArchiveWorkerRequest.OutputRoot stays in C#. Ordinary begin/write/commit/abort uses the existing native-call envelope and matching native result; accepted bulk v1 must include private `extraction_output_v1`. Private `ParallelExtraction=true` additionally requires `parallel_extraction_v1` before mutation and serializes as `parallel_extraction:true`; absent/false remains serial. Production ordinary Jobs request parallel capability by default, not through a new public Job/UI schema. Begin returns a token for a new final-name handle or `success:false,error_code:target_exists,existing_bytes`. `begin_overwrite` directly truncates the same relative path. Binary write records are <=32KiB and receive no per-record native result. `commit{token,metadata}` is ordered metadata+drain+close.
 ### 3. Contracts
-OutputSession uses held non-share-delete parent handles/relative single components/no-reparse/exclusive GUID partials. Flush/integrity before no-replace commit; exact-token abort. Cleanup new outputs only after identity/size/mtime/hash match; replacements retained. No implicit NFC. Current local-drive/depth64/4096file/finite directory limits are not broad format acceptance. RAR/7z stage partials through full codec integrity/source recheck. Worker stdout pump owns native work; no serial command/event blocking.
+OutputSession holds non-share-delete safe parent handles and resolves relative single components with no reparse. Initial ordinary begin opens the final name with `CREATE_NEW`; no exclusive GUID/sibling partial,rename/replacement,FlushFileBuffers,per-write/content/file-ID fingerprint,per-file VerifyDirectory or published reopen. Existing-target failure mutates nothing and Rust owns Ask/Overwrite/Skip/AutoRename/current-attempt ApplyAll. Overwrite has no target signature/CAS and directly truncates the same path; AutoRename repeats bounded CREATE_NEW attempts.
+
+Rust sends coalesced <=32KiB records through the original anonymous stdout pipe without ACK. The original independent input/stdout pumps keep the existing synchronous `CreatePipe` handles: input uses `FileStream` buffer1 and cancellation-prechecked synchronous `Write`; stdout `ReadFrames`/`ReadBulkWrite` use synchronous `Read`/`ReadExactly`. The pipes supply bounded backpressure. Keep the first native write failure/code sticky. The stdout pump consumes preceding payload before calling `session.Commit`; logical commit remains drain -> metadata/MOTW -> close, but `native_commit_ms` measures only that post-drain native metadata/handle-close call. Rust `output_close_wait_us` measures the full await including queued payload consumption. No new pipe/runtime/handle authority or native-flag change. Unnegotiated directions retain one pending control; negotiated ordinary parallel extraction uses at most32 keyed controls and bounded native tasks on the original Run.
+
+Codec/source integrity controls when Rust may commit. Delayed solid/format integrity may retain a bounded set of live final-name handles. Cancel,CRC/codec/size/source/native failure closes and deletes only incomplete owned output(s); successfully closed files/finalized directories and pre-existing skipped targets remain. Journal stores bounded result paths,created counts and completion/cleanup state,not ordinary file hashes or IDs. Worker stdout pump owns native work; no serial command/event blocking or second runtime.
+
+Only independent ordinary begin/begin_overwrite/commit/abort may overlap after parallel negotiation. Clone retained JSON before its document is disposed; keep accepted native work bounded32 and await every accepted operation before terminal,Cancel/Dispose cleanup or source/destination lease release. Replies use the existing bounded stdin queue without treating temporary fullness as native failure. Payload remains on the original ordered stdout consumer; close cannot overtake earlier token payload and later payload cannot follow close. Protect shared admission/journal/cache with short locks and per-file ordering, never a session-wide lock across native open/metadata/close. The first native category/code survives EOF,cancel and cleanup; every incomplete owned file is deleted while completed closes remain journal facts.
+Parallel native/worker operation faults may replace only a provisional `cancelled` result; a real category/code remains first-wins. Remove completed native tasks before admission/high-water accounting. `archive.worker.work` forwards `parallel_workers_planned`, `parallel_workers_high_water` and `parallel_members_completed` as bounded numeric aggregates.
+
+Archive Create/Edit output continues using exclusive candidates,complete verification/readback,target checks and verified replacement. HZ5 continues append/flush/readback/recovery. ArchiveEntryCache continues Seal/verified cursor checks.
+
+Native timing exports are inclusive: `native_begin_ms` covers the whole bridge begin action; `native_parent_resolution_ms` is validation/cache parent resolution within it; `native_final_open_ms` covers ordinary open allocation, syscall and inspection; `native_create_ms` covers only `NtCreateFile` plus P/Invoke marshalling; `native_open_inspection_ms` covers post-open inspection; `native_directory_ms` and `native_directory_metadata_ms` cover their native actions. These overlap and are neither additive nor exclusive IPC. A duplicated-output-handle boundary remains only a causally supported authorized option, not the current design. The [current genuine Release nine-trial result](../../tasks/11-02-archive-workflow-optimization/ordinary-extraction-pump-results.md) is byte-correct at4241/4214ms button/Root medians versus Bandizip1476.011ms,2.873×/2.855×; the required<=1.5× gate remains open.
 ### 4. Validation & Error Matrix
-Unsafe/reparse reject; no-replace appearance returns target_exists80/183. Approved2026-10-17 overwrite: full verified temporary→relative volume/full128-bitID/size/mtime/hash recheck→close only target check→single SetFileInformationByHandle(FileRenameInfoEx22,flags1|2). Parent/source/temp protections remain; TOCTOU accepted, no target-ID CAS. Win32 full name derives from held parent VOLUME_NAME_GUID, RootDirectoryNULL; counted UTF16 bytes exclude explicit WCHAR NUL. Relative RootDirectory returned87 here; unterminated name probe published wrong suffix. No delete/truncate/backup-first or MoveFileEx fallback. Native32/5/87remain real failures, not unsupported; only proved capability codes qualify. FAT/SMB/old systems unverified.
+Unsafe/name/reparse -> typed refusal. Existing CREATE_NEW -> target_exists+bytes,no token. Direct overwrite wrong-kind/access/reparse -> exact native code,no observation retry. AutoRename target_exists -> next bounded candidate; exhaustion -> OutputCollision,no overwrite. Short/native write -> first code returned by commit. Metadata/close failure -> delete current incomplete owned output. Cancel with prior completed files -> completed journal retained and cancelled-with-output semantics. Unknown close/delete -> explicit cleanup ownership,no blind retry or rollback.
 ### 5. Good/Base/Bad Cases
-Good: independent payload byte comparison through real Job/Rust/native handles. Base: verified no-replace commit. Bad: unrestricted unpack, lexical-only path proof, raw output logs or failed default suite described as green.
+Good: independent payload+metadata comparison through actual Job/Rust/native final handles. Base: new file begin,payload,commit. Bad: unrestricted unpack,lexical-only path proof,per-file ACK/partial rename/fingerprint,or ordinary direct-close semantics applied to archive candidates/cache/HZ5.
 ### 6. Tests Required
-Preserve native path/cleanup and ZIP/RAR/7z integrity fixtures;7overwrite/ABI fixtures cover bytes, stale/missing/appeared/directory/reparse/busy, native unsupported/unknown, cancel before/during/after and cleanup. Historical strict-CAS32FAIL stays historical; current path contract supersedes it.
+Boundary coverage retains final-name/no-partial/rename/flush/fingerprint/reopen, two JSON controls, zero write ACKs, <=32KiB backpressure, sticky write error, conflicts/direct overwrite/AutoRename, commit metadata, delayed-integrity cleanup, prior completed retention, journal truth and actual cleanup. It additionally fixes synchronous original-pump behavior and exact native begin/parent/open/create/inspection/directory timing boundaries, including the distinction between post-drain `native_commit_ms` and full Rust `output_close_wait_us`. Preserve Create/Edit candidate,HZ5,cache,path/source/integrity and operation-isolation suites. Current genuine Release bytes/cleanup pass; the required performance gate and installed-package acceptance remain open.
+Parallel coverage adds actual native-begin overlap, deterministic32 pending-task cap, multiple-incomplete cancellation/completed retention, native/worker failure after provisional cancellation, nonaccumulating pending diagnostics, exact token ordering and source-lease release only after joins. `repo:csharp/NxTools.PlatformHost.Tests/ArchiveParallelExtractionTests.cs` exercises the native/runner seam; `repo:csharp/NxTools.PlatformHost.Tests/ArchiveParallelExtractionTests.ActualWorker.cs` combines actual Rust Stored/Deflate decoding with original native output for exact bytes, dual-incomplete cancellation and CRC cleanup. Genuine Release nine-trial acceptance remains separate.
 ### 7. Wrong vs Correct
-Wrong: own target lease blocks replace, or cancelled implies unchanged. Correct: integrity/flush→relative recheck→close target only→final cancel checkpoint→CommitInFlight→one rename. Native success sets Committed and idempotent FilesCommitted before close/hash. Postcheck/unknown never retry or partial-delete. Preserve overwrite_not_supported/native code to terminal; published cancellation says cancelled_with_committed_output. Log correlation/state/count/elapsed/native only.
+Wrong: integrity -> FlushFileBuffers -> sibling rename -> output fingerprint/reopen for ordinary extraction. Correct: held safe final-name open -> bounded original-pipe writes -> integrity -> metadata+drain+close -> incomplete-only delete on failure; candidate owners remain separate.
 
 ## Scenario: Runtime clipboard capture pause
 ### 1. Scope / Trigger
@@ -258,8 +270,22 @@ Wrong: `if (isDirectory) return viewWithEmptySelection;`. Correct: always read a
 
 ## Reveal through the observed replacement host (2026-10-24)
 Evidence: `repo:csharp/NxTools.PlatformHost/Windows/DirectoryOpusTargetObservation.cs`, `repo:csharp/NxTools.PlatformHost.Tests/DirectoryOpusTargetObservationTests.cs`; [reference](../../../docs/reference-code/quick-launch-research.md). Windows Shell acceptance may open Directory Opus instead of Explorer. Shared NativeExplorerShellPlatform preserves Explorer-first observation, then an on-demand bounded DOpus observer; Rust Quick Launch/Downloads retain their original pending/result owners and no protocol changes. Exact parent plus selected target is mandatory for files and nonroot directories; drive roots confirm their own view.
-Official DOpusRT `/info` `paths` and `listsel,<exacttab>` are read-only evidence, never `open/select/Go`. Resolve only dopusrt.exe sibling of the observed running same-session dopus.exe, not PATH. Require visible dopus.lister and visible same-PID child dopus.filedisplaycontainer, retained process starttime, XML active_tab=1/tab_state=1, exact filesystem path (not localized display_path), matching exported lister/tab and exact selected item. Re-export paths and native identity before accepting; inactive same-root/same-directory tabs cannot succeed. One command-local platform budget1500ms, each helper/output250ms; no new retry worker or change to existing8attempts/75ms/onefallback. Bound XML2MiB,256tabs/4096selected and4matching candidates; prohibit DTD/external resolver. Unique fresh temporary result and cleanup, fixed diagnostic stage/nativecode only. Missing helper/bad XML/wrong selection/stale/hidden/foreign/budget failure stays unconfirmed; helper exit or lister appearance alone never authorizes success.
+Official DOpusRT `/info` `paths` and `listsel,<exacttab>` are read-only evidence, never `open/select/Go`. Resolve only dopusrt.exe sibling of the observed running same-session dopus.exe, not PATH. Require visible dopus.lister and visible same-PID child dopus.filedisplaycontainer, retained process starttime, XML active_tab=1/tab_state=1, exact filesystem path (not localized display_path), matching exported lister/tab and exact selected item. Re-export paths and native identity before accepting; inactive same-root/same-directory tabs cannot succeed. One command-local platform budget1500ms, each helper/output250ms; no observation retry worker or change to existing8attempts/75ms/onefallback. Bound XML2MiB,256tabs/4096selected and4matching candidates; prohibit DTD/external resolver. Unique fresh temporary result and cleanup, fixed diagnostic stage/nativecode only. Missing helper/bad XML/wrong selection/stale/hidden/foreign/budget failure stays unconfirmed; helper exit or lister appearance alone never authorizes success.
 Three synthetic fixtures cover production shared Reveal red→green, wrong/inactive/stale/identity/path/selection and XML/selection budgets/diagnostic sink behavior. Separately authorized owned target passed actual product native entry and exact-selection positive/unselected-file negative on DOpus13.22. That is not broad third-party/mixed-DPI/release acceptance. Service-only Explorer COM candidates are independently guarded by actual IShellBrowser.GetWindow/root/view proof; initial QI probe alone did not establish the installed cause.
+
+Export cleanup is an actual-lifetime owner, not part of observation retry. Process-wide capacity2
+covers active exports plus pending cleanup; full admission returns unconfirmed without a helper,
+directory or queue. Each owner retains only its exact GUID directory/result.xml and helper Process.
+After helper timeout, the original <=25ms confirmation remains; unconfirmed actual exit keeps the
+handle and slot. File.Delete or Directory.Delete failure retains ownership and retries those exact
+paths every250ms asynchronously, with no prefix sweep or recursive deletion. Helper exit plus actual
+directory removal returns the slot; deferred cleanup never changes the original result or serial
+reader responsiveness. Fixed cleanup_failed/deferred/completed/busy stages use the original
+correlation; no per-retry logging or paths/XML/child output. Cross-thread stage deduplication is locked.
+`repo:csharp/NxTools.PlatformHost.Tests/DirectoryOpusExportTests.cs` covers real independent writers
+after helper exit/timeout, file/directory sharing failures, bounded admission/recovery, actual XML
+read-size limits and controlled termination with a still-live helper after writer exit. Owned
+apphosts/files only; no live DOpus/Shell/GUI acceptance. Cleanup ownership is in-process, not restart-persistent recovery.
 
 Chrome store addition uses original exporter/registrar owners: additiveformat chrome_store producesZIPmanifestcopywithoutkey, noPEMaccess,localCRX/XPIunchanged. Existing EnsureBrowserNativeMessaging command carries an optional configuredstoreID ascommandidentity; command/pinnedsource/existingexportedexactoriginunion preserveslocalcompatibility; no wildcard/newprotocol. Registrar remainsread-onlyforPEM; actualregistrytransactionunchanged. Existing7signingfixturecallgraphsre-reviewedwithstore ZIP tempfiles/lockedtempPEM only; no newTestEffects symbols/nativeeffects. Contract: [key-free upload and optional identity](../browser-extension/contracts.md#scenario-key-free-chrome-store-upload-and-optional-exact-identity).
 
@@ -268,6 +294,39 @@ Chrome store addition uses original exporter/registrar owners: additiveformat ch
 
 ## Extension settings path picker (2026-10-24)
 `repo:csharp/NxTools.PlatformHost/Windows/ExtensionSettingPathPicker.cs` uses additive strict sourceHWND/sourcePID/kind/currentPath DTO. Original authenticated pipe peer must match sourcePID; native owner checks HWND/process before presentation and before accepting selection. Detached reader path, one bounded STA reservation retained until real modal exit, no human-wait deadline or replacement workers. Existing-file/folder only, successful empty dismissal, logical session cancellation drops late selection; no config/trust/write/execution in picker. Rust applies only matching current draft/request/package/input revision and final text, never saves automatically. Revision counts each official InputEvent::Change rather than coalesced observed values, so same-turn A-B-A user edits retire an older reply; silent set_value hydration emits no Change. Actual fakeIPC/GPUI regression and source acceptance limits are in the owning task. Diagnostics accepted/start/terminal fixedreason/elapsed/nativecode only, never paths/exception output. `repo:csharp/NxTools.PlatformHost.Tests/ExtensionSettingPathTests.cs` is an exact TestEffects fixture with injected owner/existence/presentation, not a real dialog or user-state acceptance.
+
+## Scenario: Human picker ownership and machine execution
+
+### 1. Scope / Trigger
+Directory/program, clipboard archive/storage, extension manifest/runtime/settings-path, archive and browser-export destination selection. Use the existing detached dispatcher and bounded STA; state/draft ownership remains Rust. See [owned picker evidence](../../../docs/reference-code/archive-picker.md).
+
+### 2. Signatures
+Human command DTOs carry `source_window_handle: i64` and `source_process_id: u32` from the actual initiating GPUI Window. `pick_browser_extension_export_path { format, source_window_handle, source_process_id }` selects only a destination. `export_browser_extension { format, destination }` performs bounded machine work and requires nonempty destination. Existing archive picker version/vector shape remains unchanged.
+
+### 3. Contracts
+`PlatformPipeClient.ValidatePickerPeer` binds source PID to the authenticated Desktop pipe peer. `PickerOwner.Run` validates HWND/process before and after the native show. `BoundedStaOperationRunner` uses `Timeout.InfiniteTimeSpan` for human wait and retains admission through real modal exit and dispatcher cleanup. `StaDialogRunner.RunInline` closes only that STA's dialogs on cancellation or original-owner loss. Temporary Topmost suspension/restoration concerns only the same Desktop process; do not pin a chooser over unrelated applications. Router and feature owners impose no human elapsed deadline; machine operations keep bounded policies.
+
+Browser export installs pending state before each send, uses distinct chooser/export command IDs and one logical correlation, and never starts export after source retirement or duplicate selection. A started exporter can complete after settings close. Directory and FFmpeg replies recheck original draft/input generation both before scheduling and at deferred application. Managed FFmpeg installation is not a manual selection origin. Closing settings retires a pending picker without retiring unrelated machine work.
+
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Normal Cancel | Successful empty selection; no settings write or export, no error toast |
+| PID differs from authenticated peer | Reject before presentation; no selection |
+| Missing/invalid/retired HWND | `picker_invalid_owner`, native1400; no selection |
+| Cancel/disconnect during presentation | Matching native close request; late selection discarded, admission retained until cleanup |
+| Picker cancelled | Native995; no successful late payload |
+| Existing admission occupied | Existing busy result; no replacement STA/controller |
+| Empty machine-export destination | Parser rejects; exporter never opens a second chooser |
+
+### 5. Good/Base/Bad Cases
+Good: choose after the old10second/two-minute/FFmpeg deadline, then apply once to the original unchanged draft. Base: Cancel leaves the draft untouched. Bad: use the worker-time foreground window, start another modal thread after a logical timeout, or broadcast an old FFmpeg choice into a reopened settings draft.
+
+### 6. Tests Required
+Protocol roundtrips assert every owner field and the selection-only export command. IPC controlled clocks assert all human commands remain pending while machine commands expire; disconnect/replaced-generation/duplicate replies cannot complete a replacement. `Opt07PickerTests` retains original parser/STA/owned HWND, Topmost restore, atomic-vector and real-reservation assertions. Extension manifest/runtime/path fixtures retain cancellation and detached-reader responsiveness. Desktop regressions assert edited/reopened draft isolation, quiet Cancel, two-stage export and one logical notification identity. Owned synthetic HWNDs do not certify live focus, physical keyboard or DPI.
+
+### 7. Wrong vs Correct
+Wrong: increase the global timeout or let `export_browser_extension` wait for a path. Correct: human destination selection has no elapsed deadline; only its nonempty result starts the existing bounded exporter. Wrong: an expired Rust request releases native admission. Correct: matching cancellation requests native close, and the original STA slot is released only after actual cleanup.
 
 ## Scenario: Archive association and classic-menu settings (2026-10-25)
 
@@ -289,14 +348,21 @@ the existing version1/revision/action/extension contract; original Apply/Revert 
 
 ### 3. Contracts
 Double-click values: `open|smart|name`; layouts: `cascade|flat`; commands: `open`,
-`extract_smart`, `extract_here`, `extract_name`, `extract_dialog`, `test`, `create` (unique, max7).
-Missing fields retain legacy open/cascade/five commands; explicit empty commands remain empty.
+`extract_smart`, `extract_here`, `extract_name`, `extract_dialog`, `test`, `create_zip`, `create_7z`, `create` (unique, max9).
+Missing fields and fresh defaults recommend open/cascade plus the original five commands and all
+three creation commands; integration remains disabled until explicit Apply. Every explicit saved
+array, including empty/custom/historical five commands, remains exact. The historical three-argument
+plan overload retains five commands. Selected Create maps ordinary files/folders through `*`/`Directory`
+and one complete grouped `--archive-compress` intent; ZIP/7z use fixed quick actions with the same owner.
 `classic_cascade` retains its legacy menu-enabled meaning; layout is a separate field.
 Smart/name ProgID commands use `--archive-extract smart-dialog|name-dialog "%1"`; the original
 Desktop intent/form preselects a strategy but does not submit a job or approve risk/output budget.
-Flat means separately owned classic HKCU verbs, not Windows11 top-level `IExplorerCommand` support.
-Create uses the existing Compress helper identity and whole selection; ExtractDialog has one stable
-new identity. Other CLSIDs and `IObjectWithSelection`/`IExecuteCommand` grouping remain unchanged.
+Flat means separately owned classic HKCU verbs, not Windows11 top-level menu placement.
+ZIP/7z classic verbs use independent ExplorerCommandHandler identities with SDK IExplorerCommand
+GetTitle/Invoke: first ordered selected file stem or full folder name plus fixed extension, complete
+once-only IShellItemArray forwarding, and the original out-of-process identity/final Release lifetime.
+Create retains Compress/IObjectWithSelection/IExecuteCommand grouping; ExtractDialog retains its
+stable identity. Quick argv correlation becomes the original native Job operation/session ID.
 Default-app result success requires `success=true,data="opened"` (Shell accepted only). Rust keeps
 original pending/correlation/timeout/disconnect and deferred publication; native diagnostics record
 accepted/start/terminal, elapsed/native code, never request payloads. Saving/revision/request
@@ -324,7 +390,7 @@ no UserChoice writes, shared-tree deletion or grouped-selection fallback to per-
 
 ### 5. Good / Base / Bad Cases
 Good: smart+flat+[test,create] reaches the native plan; double-click smart opens the original
-confirmation form with no started jobs. Base: legacy config yields open/cascade/old five commands.
+confirmation form with no started jobs. Base: missing fields recommend creation; explicit old arrays stay exact.
 Bad: a default-app URI parameter, repeated command or forged applied result without revision.
 
 ### 6. Tests Required
@@ -349,3 +415,340 @@ Correct: public menu layout only changes owned plan values; identity lease and t
 
 ## Extension v2 data outer budgets and backpressure (2026-10-26)
 Evidence: `repo:csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionProcessProtocol.cs`, `repo:csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionProcessRunner.cs`, `repo:csharp/NxTools.PlatformHost/ExtensionHost/ExtensionHostBroker.cs`. Original authenticated demandStart optional data_plane=2 opts into finite combined25MiBstdin/28MiBstdout; omittedlegacy1MiB/4MiB,256KiBframe/stderr64KiB/token/Job-before-resume/global4+perpackage1/actualcleanup unchanged. Rust alone classifies exactcontrol/data/session semantics. Native v2stdout awaits originalbounded32slot outgoingchannel with2seconddeadline; controls and nativecleanup remain independent, no second receiver/unboundedbuffer. Rust reader has finite250msbackpressure, cancels only exactslowrun and retainscleanupslots. Real256progressburst reproduced NativeUnavailable beforeboundedpumpfix; lateractualscriptregression passes. Native fixture10group covers explicitv2input and28MiBoutputceiling pluslegacy/UTF8/Job/cancel/parentdeath. DrainAsync proves physicalslotdrain,not diagnosticcallbackcompletion: tests must await actualexited/terminaldiagnostic counts beforeprivacyassertions. Fixtures own currenttestapphost/temporaryfiles only,not ordinaryproduct/nativeUI/installedacceptance.
+
+## Scenario: Keyboard hook ownership and observable recovery
+### 1. Scope / Trigger
+Double-Ctrl installation, configuration/recording changes, explicit recovery and shutdown.
+### 2. Signatures
+`LowLevelKeyboardMonitor.TryInstall(Guid correlationId) -> bool`; `Dispose()` requests WM_QUIT and joins up to2seconds.
+`QuickLaunchKeyboardConfiguration(bool Enabled, bool Recording, QuickLaunchTriggerKind Trigger, long ResetGeneration)`
+is published by EventWindow through Volatile. `QuickLaunchKeyboardHealthChangedEvent(Guid CorrelationId,
+QuickLaunchKeyboardHealthState State, int NativeErrorCode)` maps to the matching Rust typed platform event.
+### 3. Contracts
+One background thread creates its message queue, installs WH_KEYBOARD_LL, blocks in GetMessage and unhooks in finally.
+The delegate stays rooted for that lifetime. No replacement is started while a prior owned thread remains alive.
+Only that thread mutates left/right tap detectors; each down/up callback consumes one immutable snapshot and resets
+on generation change. Injected flags0x10/0x02 remain filtered; callbacks do no logging, IO, foreground capture or lock waits.
+They post the existing gesture to a captured HWND; original EventWindow foreground/fullscreen/IPC ownership remains.
+ConfigureQuickLaunch double Ctrl calls TryInstall before rejecting an unavailable monitor, preserving its command correlation.
+No polling or heartbeat: state is install_failed/thread_exited/reinstalled, not proof of Windows silent-removal detection.
+Outer protocol1 remains. Hello advertises quick_launch_keyboard_health_v1; only a HelloAck accepting it enables new health
+event forwarding, because unknown event variants fail Rust decoding. The existing quick_launch_panel_hotkey Hello capability
+is current availability on reconnect. Install failure/native thread exit clears IsInstalled; healthy retry is idempotent.
+After HelloAck, discard old queued events before reading the monitor's immutable current health snapshot.
+Send that snapshot only to an accepted health peer before normal forwarding; pass the same fact as the
+reader's last-sent state. A transition between Hello's availability sample and the acknowledgement must
+not disappear with the discarded queue. `ReadEventsWithKeyboardHealthSnapshots` samples retained health
+before each queued event and emits only a changed fact; queued health records wake the reader but never
+override the latest snapshot. Queue saturation therefore recovers within the current session when reading
+resumes, without blocking the native publisher, polling or another queue. Ordinary events retain their order.
+The same correlated lifecycle fact may be replayed on reconnect without a new native operation.
+### 4. Validation & Error Matrix
+Native installation failure -> unavailable/typed install_failed/native code. GetMessage failure or unexpected loop return ->
+unhook/unavailable/thread_exited. Explicit retry success -> reinstalled with retry correlation/code0. Recording/custom hotkey/
+disabled snapshot -> no double-Ctrl gesture. Reset after armed down but before up -> no stale summon. Intentional Dispose ->
+same-thread unhook/no unexpected-exit event; a join budget does not claim forced termination of a stuck native call.
+### 5. Good/Base/Bad Cases
+Good: clipboard STA blocks while the hook loop still recognizes taps. Base: both released taps are processed by one owner.
+Bad: move only the native callback while leaving detectors/config fields mutable across threads, or send an unnegotiated event.
+### 6. Tests Required
+`KeyboardMonitorTests` uses injected native queue/delegates, not global hooks or SendInput: different installation thread,
+2second caller stall, same-thread loop/callback/unhook, actual bounded joined exit; reset-generation/recording/injection/
+left-right controls; native failure/retry/unexpected-exit/correlation/no-key-log; paired wire and accepted-capability gating.
+`HealthSnapshotSurvivesFullQueue` uses the production reader with512queued events and a rejected health
+TryWrite, then asserts current-session recovery, ordinary ordering, stale-health suppression, handshake
+deduplication and capability rejection. `ObservableFailureRetryAndThreadExit` also preserves the post-ack
+snapshot's original correlation/native code after the event queue was consumed.
+Keep original DoubleControlGesture and QuickLaunchContracts/diagnostic/fullscreen/paste regressions. Physical keyboard,
+real clipboard delayed rendering, modifier release and user acceptance remain separate native evidence.
+### 7. Wrong vs Correct
+Wrong: EventWindow resets a detector while the hook callback mutates it. Correct: publish a new reset generation and let
+the next hook callback reset both detectors. Wrong: nonzero retained HHOOK means Windows still delivers input.
+Correct: report only observed native installation and owned-thread lifecycle.
+
+## Detached process and service command lifecycle
+`launch_process` and `ensure_indexer_service` use the original detached dispatcher/tracked-task drain.
+Launch disposes the Process handle without terminating the application. The existing named indexer installation gate
+serializes concurrent installers; Rust installs its bootstrap command identity before dispatch and matches the result.
+Drain observes the tracked work within its existing2second budget; neither drain nor cancellation forcibly ends UAC/native work.
+`DetachedCommandsKeepReaderResponsive` holds synthetic delegates for picker/probe/process/service, verifies a later
+visibility command runs, then verifies drain remains pending until actual completion. No live launch/service effects.
+
+## Scenario: Unlimited broker control lifetime with finite run budgets
+### 1. Scope / Trigger
+Changes to ExtensionLineReader, broker control construction or per-run stdin/stdout readers.
+### 2. Signatures
+`ExtensionHostBroker.CreateControlReader(Stream)` selects `ExtensionLineReader.Unlimited(stream,"control")`. `ExtensionLineReader(Stream,int totalLimit,string prefix,Action<int>? observeBytes=null)` remains the finite caller API.
+### 3. Contracts
+Unlimited is explicit nullable-budget state, not int.MaxValue or another sentinel. It never accumulates a lifetime byte counter. Fixed8KiBchunk/256KiBline buffers, strict UTF8, CRLF trimming and EOF-without-LF failure remain. Finite readers check `end > limit-finiteTotal` before accumulation and retain byte observation. ExtensionProcessRunner stays finite: legacy1MiBstdin/4MiBstdout, data_plane2 combined25MiB/28MiB, stderr64KiB. Protocol1, authenticated parent/Jobs/admission/cleanup unchanged.
+### 4. Validation & Error Matrix
+Control lifetime>2^31 valid bytes -> continue. Finite total exceeded -> prefix_total_limit. Current line>256KiB -> prefix_line_limit. InvalidUTF8 -> prefix_invalid_utf8. EOF with partial line -> prefix_truncated_line. No payload in diagnostics.
+### 5. Good/Base/Bad Cases
+Good:8193stream-generated262144byteframes read with bounded memory. Base: ordinary finite child output still rejects its run budget. Bad: int.MaxValue advertised as unlimited, or remove line/run limits with the lifetime limit.
+### 6. Tests Required
+`ExtensionProcessBrokerTests.ControlReaderStreamsBeyondInt32WithoutLifetimeBudget` uses the actual broker factory and generates2147745792bytes, retaining one frame template/current decoded frame only. `FiniteReaderBudgetsAndFrameErrors` asserts finite total/exactline/overline/UTF8/truncated failures; retain parent identity/malformed control fixture. Build then select these exact reviewed fixture names, not broad native tests.
+### 7. Wrong vs Correct
+Wrong: `new ExtensionLineReader(input,int.MaxValue,"control")`. Correct: named Unlimited for broker lifetime; original finite constructor for every per-run caller.
+
+## Scenario: Virtual Root descriptor name units
+
+### 1. Scope / Trigger
+Root names entering `ArchiveVirtualDragWire.Parse` from the actual Rust envelope. Owners: `repo:csharp/NxTools.PlatformHost/Protocol/ArchiveVirtualDragContract.cs`, `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveVirtualFileDataObject.cs`.
+### 2. Signatures
+`ArchiveVirtualPlan.Admit(items)` retains descriptor names/original ordinals; `IDataObject.GetData(CFSTR_FILEDESCRIPTORW)` emits the SDK descriptor HGLOBAL.
+### 3. Contracts
+Windows component<=255 UTF-16 code units; complete relative descriptor path<260 UTF-16 units, reserving the terminating WCHAR. Full serialized envelope retains its separate1MiB UTF-8 transport limit. No255-byte UTF-8 component veto. Noncolliding valid names remain verbatim; wrapper prefix is descriptor-only and does not change original member ordinals/cache paths.
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+|86 ordinary CJK units /258 UTF-8 bytes, safe short child|Admit unshortened wrapper and emit exact UTF-16 names|
+|256 component units, full path>=260 units, Windows-invalid name or envelope overflow|Original invalid-request refusal before native descriptor publication|
+### 5. Good/Base/Bad Cases
+Good:86-CJK Root plus short child passes both languages. Base:ASCII Root follows the same limits. Bad:rejecting a legal Windows component solely because its UTF-8 encoding exceeds255 bytes.
+### 6. Tests Required
+Rust real serialized command fixture -> C# Parse/Admit -> native HGLOBAL; assert count, all names/NUL/attributes and original ordinals. `repo:csharp/NxTools.PlatformHost.Tests/ArchiveVirtualTreeTests.cs` also covers85/86/255 accepted and256 refused component units.
+### 7. Wrong vs Correct
+Wrong:component UTF-8 bytes<=255. Correct:component UTF-16 units<=255, complete descriptor path<260, separately bounded serialized transport. Progress identity and cache/receiver semantics follow [the original demand contract](../nxtools-archive/backend/product-read.md#scenario-demand-bound-drag-byte-progress).
+
+## Scenario: Demand index registration and one-shot trusted update
+### 1. Scope / Trigger
+User2026-11-06 rejects index/update processes remaining after Desktop Exit. This supersedes
+automatic/resident registration only, not signed complete-release, native ownership or UAC contracts.
+### 2. Signatures
+`IndexerServiceInstaller.RegistrationArguments` emits Demand for create/config. `IDeploymentPlatform`
+adds NeedsLifetimeMigration/ConfigureLifetimeAsync; the exact current tuple alone may enter
+`--configure-indexer-lifetime <GUID>` through its explicit authorized helper.
+`TrustedUpdateBroker.RequestAsync/StartIfStopped/ServeAsync` retain original validated service,
+peer and bounded frame owners; BrokerService owns actual normal Stop after one operation.
+### 3. Contracts
+Normal verified startup starts the Demand indexer. A same-release Auto registration requires one
+configuration-only authorization, not binary redeployment; successful configuration then starts
+the service. Cancellation/failure/unhealthy tuple never claims running or silently replaces files.
+Updater enrollment registers Demand without starting it. A real request verifies enrollment and
+signed package before service start; a cancelled request does not wake it. Running/StartPending
+reuse the existing start, never duplicate a service invocation. Serve owns30s first-connect/10s
+read bounds and one accepted request/probe/rejection/EOF, then returns instead of reopening a pipe.
+An accepted transaction uses its original independent settle/recover/rollback boundary despite
+client exit or SCM Stop; OnStop waits real completion with SCM wait hints, not self-wait deadlock.
+Normal stop does not Environment.Exit(1) or trigger failure restart. Explicit same-key bootstrap
+maintenance configures Demand and verifies one probe plus actual Stopped. Old Auto registrations
+require that original approved maintenance path even with a valid historical version marker;
+ordinary requests cannot overwrite protected bootstrap, rotate keys or reset the ledger.
+### 4. Validation & Error Matrix
+No update -> no start. Handshake timeout/EOF/malformed/terminal -> release listener and stop.
+Prepared work -> settle first. Wrong peer/signature/registration -> original refusal, no fallback
+UAC or arbitrary service. Configure declined -> actionable cancellation and no service start.
+### 5. Good/Base/Bad Cases
+Good: stopped approved service starts only for an update, returns result and stops. Base: later
+normal index launches need no repeated authorization. Bad: demand registration with an infinite
+Serve loop, stop only the desktop helper, or treat old marker as proof of one-shot execution.
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/TrustedUpdateBrokerLifecycleTests.cs` uses actual owned
+pipes/injected settlement and original demand-start decision. Preserve original signature,
+rollback/enrollment/maintenance and IndexerUpgradeDecision fixtures. Installer bootstrap-migration
+gate covers approved Auto -> required, compatible Demand -> skip, identity refusal and x86/x64.
+Source/owned fixtures do not establish installed SCM or packaged upgrade/exit acceptance.
+### 7. Wrong vs Correct
+Wrong: updater waits forever just because it is a service. Correct: durable registration and trust
+remain, but listener/process are bounded to the original actual update/maintenance operation.
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/IndexerServiceInstaller.Lifetime.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/TrustedUpdateBroker.cs`,
+`repo:installer/bootstrap-migration.ps1`.
+
+## Clipboard capture staging ownership
+
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/ClipboardCaptureFiles.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/ClipboardStagingDirectory.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.EventWindow.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/ClipboardStagingTests.cs`.
+
+`ReadClipboardContent` owns each newly allocated path before the first write. Image promotion
+cleans partial output and borrows its source. The publication tail takes the capture owner;
+stop/pause, tail admission failure, partial format writes and publication failure dispose only
+capture-owned files. Successful event publication transfers exactly its referenced files.
+Source icons are copied from the shared IconCache into the capture run; neither producer nor
+Rust consumer may delete the borrowed cache entry. Direct-paste fallback is a separate owner.
+
+Each Host writes into a GUID run below `%TEMP%/NxTools.Next/clipboard-staging`. Its owner file
+holds a non-delete-sharing Host lease and the Desktop PID plus process-start time supplied by
+the existing `--parent-pid` startup argument. Closing the Host lease never deletes nonempty runs:
+pipe write completion does not mean the Rust worker/deferred capture has finished. Startup
+recovery requires an exclusive owner-file claim and confirmed retirement of both recorded
+process identities. One pass examines at most64run directories and256files, deletes only owned
+GUID PNG/BIN files, and retains locked files for a later pass. Unknown identities, unknown files,
+live runs and legacy flat staging are retained; no age-based or whole-Temp cleanup.
+
+Recovery start/completion share one correlation and expose only counts/elapsed time; cleanup
+failure diagnostics never include paths or payload and cannot change capture results.
+`ClipboardContentOperations` substitutes native reads/file writers only for isolated fixtures;
+the production capture order, real publication tail and filesystem remain under test. Preserve
+existing Rust policy rejection/serialized persistence cleanup and the unchanged wire contract.
+These fixtures do not authorize live clipboard/listener/global input, product launch or packaging.
+Publication tails capture the pause owner's epoch. Closing that gate retires the epoch, so
+pause followed by resume cannot revive pre-pause queued work. The same production-tail fixture
+covers pause, pause/resume, stop and count-budget rejection with real tiny temporary files.
+
+## Clipboard image capture budgets
+
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/ClipboardImageEncoding.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/ClipboardImagePromotion.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/ClipboardImageCompatibility.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/ClipboardImageBudgetTests.cs`.
+
+Keep the existing ClipboardCaptureLimits settings/defaults/clamps. Pixels and encoded PNG bytes
+are independent budgets; compressed input length cannot substitute for either. Native capture
+checks dimensions immediately after the Image API returns, before creating/encoding a PNG.
+File promotion probes dimensions with eager GDI+ validation disabled, disposes that probe, then
+performs the original full validation only for admitted dimensions. Known budget rejection must
+not materialize another native bitmap or repeat text-path image promotion. Preserve independent
+file/text representations, source files and existing capture-owned partial-output cleanup.
+
+All production PNG writes use SavePng with the current encoded-byte setting. Its private output
+stream rejects Write/Seek/Position/SetLength beyond that budget; a rejected codec write stays
+rejected even if GDI+ wraps or consumes its exception. No scaling, truncation, new setting,
+dependency or format parser. Successful captures preserve their original dimensions/pixels.
+Canonical DIB conversion checks its existing32MiB pixel-buffer budget from the dimension probe
+before full validation and bitmap/DIB allocation; publish both arrays only on success.
+
+Limits: the initial Windows Image call, GDI+ dimension probe, full validation and codec buffers
+can allocate internally. The32MiB canonical limit bounds one pixel buffer, not aggregate process
+commit. These controls are not a process-wide decoder memory cap. Isolated fixtures use at most
+1001x1000 bitmaps and640x640 PNG noise to cover early rejection, actual output caps, exact allowed
+boundaries, lossless roundtrip, malformed input and conversion failure without live clipboard IO.
+
+## Clipboard publication-tail byte admission
+
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.EventWindow.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/ClipboardPublicationBudgetTests.cs`.
+
+Retain the original64-entry serial ContinueWith tail. A single short gate admits count and
+payload bytes atomically; no IO/native callbacks run under that gate. Charge native array
+LongLength plus input text/path/format/source strings at UTF-16 width. Shared references may
+be conservatively charged more than once; declared sizes and staged image file lengths never
+substitute for resident input data. The normal budget is32MiB. One larger legal capture may
+enter only when no tail work remains and excludes every subsequent capture until retirement.
+Thus charged payload is at most32MiB, or exactly one oversized capture's charge, never64copies.
+
+Count/byte rejection preserves owned-file cleanup and the existing throttled drop event.
+Count-full remains publication_tail_full; byte-full is publication_byte_budget_full with only
+numeric payload/retained/limit fields. Failed logging cannot affect rejection/cleanup. Keep
+accepted order, pause epochs and full/closed event-queue cleanup. Cancel/stop must not release
+the bytes of a blocked callback until it actually returns. Completion/failure clears the
+continuation's input references and disposes its file owner before returning count/bytes.
+Scheduling failure also unwinds reservation and ownership.
+
+StageNativeFormats writes raw arrays to run-owned files; ClipboardCapturedEvent and the original
+PlatformPipeClient path carry only references and metadata. No protocol/pipe capacity change;
+serialization/write/session failure still uses the original exact-file cleanup. The quota ends
+at tail retirement, not the Rust persistence acknowledgement. Initial capture, object headers,
+native/IO buffers, downstream metadata and CLR collection/working-set timing are outside this
+charged-payload bound. No forced GC, working-set trimming, new queue or replacement worker.
+Scaled isolated fixtures block the actual consumer and cover bytes/text, order/reuse, exclusive
+oversize, throwing logs, copy/write failure, pause/resume/stop and downstream retirement.
+
+## OneCommander focus-anchor lifetime
+
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/OneCommanderFocusTracker.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/OneCommanderFileManagerOperations.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/OneCommanderFocusTrackerTests.cs`.
+
+The static per-process Lazy tracker is explicitly prewarmed by both ordinary adapter and
+elevated-helper startup. Native/UIA operations are injected only at this owner boundary; the
+production element type remains AutomationElement. Keep process identity before ancestor UIA
+walk, initial focused-element sampling and same-window latest focus. Queries never change
+focus recency, and cache eviction never rewrites request-bound OneCommanderPaneState.
+
+Retain strong anchors for at most64most recently focused HWNDs. The original MTA worker waits
+60seconds between sweeps, snapshots at most64entries, then performs native HWND/process checks
+outside the short cache gate. Idle sweeps do not read AutomationElement or walk UIA trees. Dead
+or unavailable windows retire without another query; valid anchors have no TTL. Element
+availability remains on the existing bounded query path. Query/sweep failure removes only the
+exact observed anchor so an asynchronous replacement is not erased.
+
+Stop clears anchors before waiting for the worker and requests wakeup/unsubscription; a500ms
+join is not proof that uncooperative native cleanup ended. Late in-flight callbacks recheck stop
+under the cache gate and cannot repopulate records. No replacement thread, high-frequency poll,
+new global hook, weak-reference anchor, UI/layout/focus change or UIA-budget expansion. Existing
+120ms capture and1500ms navigation STA ownership remains. Pure fixtures use synthetic elements,
+native state and shortened fake-only sweep intervals; no desktop applications or UIA subscription
+is touched. Bounded cache references do not establish the source of the19GiB private-commit event.
+
+## Native temporary-allocation ownership
+
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveOutputSession.cs#OutputNative.Open`,
+`repo:csharp/NxTools.PlatformHost/Windows/Extensions/ExtensionNative.cs#Spawn`,
+`repo:csharp/NxTools.PlatformHost.Tests/NativeAllocationTests.cs`.
+
+Initialize both temporary pointers to zero and enter the existing try before either native
+allocation. Assign each successful allocation directly to its owned pointer; finally frees
+only nonzero pointers, including when the next allocation or initialization fails. Open owns
+its UTF-16 name/UNICODE_STRING through NtCreateFile and inspection; the returned SafeFileHandle
+remains caller-owned. Spawn owns list/handle-value storage through CreateProcessW; delete the
+attribute list only after successful initialization, before freeing its storage. Keep input
+stdio borrowed, returned process/thread caller-owned, and original native flags/errors unchanged.
+
+Per-call allocation/free delegates provide failure injection at those actual method boundaries;
+production defaults remain Marshal.AllocHGlobal/FreeHGlobal, with no global allocator or new
+resource framework. Isolated fixtures inject first/second allocation exceptions without system
+memory pressure, track real tiny native buffers by pointer and require exactly-once cleanup and
+the same exception instance. Later native failure/success fixtures preserve fixed native codes,
+borrowed pipe usability, returned file-handle usability and post-create exception/handle cleanup.
+Existing owned echo/suspended-admission fixture covers successful process and Job handoff.
+
+## Scenario: Invocation-owned temporary .NET build trees
+### 1. Scope / Trigger
+Build, Release fixture verification and packaging complete or fail after creating temporary .NET trees.
+### 2. Signatures
+`scripts/build.ps1` owns `vh-*`; `scripts/test-platformhost-fixtures.ps1` owns only its new `vf-*`,
+not its caller's HostBuildRoot; `scripts/package.ps1` owns `package-build-*`.
+`publish-release-hosts.ps1 -GeneratedDirectory ... -BuildDirectory ...` borrows caller-owned outputs.
+### 3. Contracts
+Claim the exact unique path before any creation and remove that tree in the creating wrapper's outermost
+finally, for PI_SCRATCH_DIR or Windows Temp. Package ownership begins before generated-directory creation
+and sequence/trust setup and lasts through installer/distribution stages. No wildcard or whole-Temp sweep.
+Borrowed publisher outputs survive until test builds/copies consume them. Keep published package files,
+logs and explicit evidence outside transient ownership; retain original private-key/sequence/service policy.
+Default fixture evidence lives in `.diagnostics/verification/fixtures-<unique-id>/`; custom roots remain
+effective and all caller fixture environment values are restored even on failure.
+Staging copies only DesktopIdentity, ReleaseBinaryManifest, ArchiveReleaseManifest and UpdateTrust public
+C# inputs to `<output>.generated-inputs/` and the current managed Host assembly to
+`<output>.TEST-PlatformHost.dll`. `.build-inputs.json` references retained generated_directory and
+host_assembly, never a deleted build_directory. `ArchiveReleaseTests.StagedActualIdentities` loads
+that retained assembly for its unchanged reflection/runner/approval/signature checks; its explicit
+staging root uses the same scratch-or-Temp selection as packaging. TEST public trust remains beside
+output, private PEM is never copied, and evidence sidecars are not production installation members.
+### 4. Validation & Error Matrix
+Partial directory/create, sequence/trust/key/preflight, verification, publish/test, copy/source/sign,
+installer compiler or final distribution failure -> original failure, exact owned tree removed.
+Success -> owned tree removed,
+necessary public artifacts/evidence retained. Foreign same-prefix directories and caller inputs remain intact.
+### 5. Good / Base / Bad Cases
+Good: finally encloses allocation through the final consumer. Base: caller-specified evidence roots persist.
+Bad: clean publisher output before its caller consumes it, retain dangling staging references, sweep Temp,
+delete borrowed roots, or mistake a synthetic fixture key for production publisher material.
+### 6. Tests Required
+`tests/architecture/build-tree-cleanup.tests.py` runs whole unchanged script copies with external tools
+stubbed in self-owned roots, both scratch/Temp, success/throw/native nonzero, early setup/late installer
+and final distribution failure, native-shell/ISCC/distribution live-tree assertions, nested verification,
+borrowed lifetime, retained managed/public-input references and matching consumer source bindings. Retain
+`build-host-bindings.tests.py`, `staging-key-cleanup.ps1` and release-chain/memory-policy source gates.
+No Cargo, .NET build, real signing/reservation, product/service/installer operation is authorized by these tests.
+### 7. Wrong vs Correct
+Wrong: mkdir temporary; reserve; try publish finally restore location. Correct: own exact temporary path;
+try create/reserve/publish/consume finally remove exact tree, while durable outputs keep independent ownership.
+
+## Scenario: Resolution-aware Shell icons
+### 1. Scope / Trigger
+File/type icon pixels for the existing download40DIP image slot and other original Shell-icon consumers. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/ShellIconExtractor.cs#ExtractHighResolutionShellIcon`, `repo:csharp/NxTools.PlatformHost/Windows/IconCache.cs`, `repo:csharp/NxTools.PlatformHost.Tests/ArchiveTypeIconTests.cs`.
+### 2. Signatures
+Existing `ExtractShellIconCommand(Target, Size)` accepts16..256; `ExtractOnSta` owns5-second logical wait/max8 real operations; `Extract(..., cancellationToken, IconCache?)` returns the original success/native-error/PNG-path result. No command/schema or GPUI layout change.
+### 3. Contracts
+For ordinary Shell selectors with Size>32, read SHGFI_SYSICONINDEX then SHGetImageList(SHIL_JUMBO=4)/IImageList.GetIcon on the original STA. Preserve SHGFI_USEFILEATTRIBUTES for reserved type targets, so names never become filesystem/member/shortcut probes. Each query owns the returned native interface pointer, calls GetIcon through its native vtable and releases that exact reference; do not share or FinalRelease a managed image-list RCW across concurrent STAs. Destroy every acquired HICON. Cache the native raster, at most256px, under the original key plus the `/image-list` target-type discriminator; do not reuse old small/large PNG entries. Existing small requests and explicit indexed-resource selectors retain their paths. IconCache remains128memory paths/2048disk entries with original per-key dedup/trim. Validate disk PNGs inside the existing generation owner and regenerate unreadable entries; memory hits retain the cheap existence check. No global clear or new file hashes are added.
+### 4. Validation & Error Matrix
+Invalid size/reserved target -> original rejection before native query. High-resolution lookup unavailable -> existing Shell-icon fallback. PNG/native failure -> failed result and no successful cache entry. ExtractOnSta preserves the original Win32 code/HRESULT with a fixed `shell_icon_*` failure category; diagnostics never contain target paths or raw exception messages. Cancellation -> original actual-operation/STA lifetime and no late successful publication. Native fallback does not guarantee high-resolution artwork when the Windows association itself supplies none.
+### 5. Good/Base/Bad Cases
+Good: folder/file-type and GUID-owned completed-file48/96requests obtain native raster pixels at least as large as requested and reuse one corresponding cache entry. Base:32px type query and cancellation remain unchanged. Bad: label a32px SHGetFileInfo bitmap as48/96px, or continue serving it from the old cache key.
+### 6. Tests Required
+`ArchiveTypeIconTests.FolderPngUsesOwnedCacheAndOriginalSta` asserts PNG pixel bounds, folder/extension/completed-file paths, legacy-key isolation, cache reuse and cancelled work using one owned root. `ParallelPngExtractionKeepsNativeImageListReferences` runs48 cold-cache queries at concurrency8; `CorruptPngRegeneratesThroughOriginalSta`, `NativeFailureRetainsSafeCategoryAndCode` and `CompletedExecutableUsesOwnedCache` cover recovery, HRESULT/Win32 retention and executable files. Preserve fixed-target rejection, original dedicated/bounded STA and all six IconCache lifecycle fixtures. No production cache, Shell open, shortcut COM, registry, service or external file mutation. Installed/mixed-DPI/user visual acceptance is separate.
+### 7. Wrong vs Correct
+Wrong: choose only SHGFI_LARGEICON for every Size>20 and enlarge its fixed raster in the list. Correct: resolve a high-resolution system image-list icon, retain its native pixels through PNG/cache and let the existing Contain renderer scale down.

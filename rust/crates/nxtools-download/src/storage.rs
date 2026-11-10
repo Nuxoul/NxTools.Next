@@ -41,6 +41,8 @@ struct StoredResolvedRequest {
     request: DownloadRequest,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     resolution: Option<crate::DownloadResolutionProvenance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    probe: Option<DownloadProbe>,
 }
 
 fn sqlite_extended_code(error: &DownloadStorageError) -> Option<i32> {
@@ -1703,7 +1705,8 @@ impl SqliteDownloadStore {
                     last_modified,
                     error_code,
                     error_message,
-                    error_retryable
+                    error_retryable,
+                    request_json
                 FROM download_tasks
                 WHERE task_id = ?1
                 "#,
@@ -1730,7 +1733,11 @@ impl SqliteDownloadStore {
                         },
                         media: None,
                         resolution: None,
+                        server_observation: None,
                     });
+                    let stored: StoredResolvedRequest =
+                        json_from_text(&row.get::<_, String>(9)?, 9)?;
+                    let probe = stored.probe.or(probe);
                     let error = match (error_code, error_message) {
                         (Some(code), Some(message)) => Some(DownloadFault {
                             code: enum_from_name(&code, 6)?,
@@ -1743,6 +1750,7 @@ impl SqliteDownloadStore {
                         probe,
                         downloaded_bytes,
                         error,
+                        prepared_size_bytes: None,
                         temporary_path: None,
                         final_path: None,
                         final_committed: false,
@@ -1751,19 +1759,26 @@ impl SqliteDownloadStore {
             )
             .optional()?
             .ok_or(DownloadStorageError::TaskNotFound(task_id))?;
-        let mut statement = connection
-            .prepare("SELECT kind, path, state FROM download_artifacts WHERE task_id = ?1")?;
+        let mut statement = connection.prepare(
+            "SELECT kind, path, state, size_bytes FROM download_artifacts WHERE task_id = ?1",
+        )?;
         let artifacts = statement.query_map([task_id.as_uuid().to_string()], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 PathBuf::from(row.get::<_, String>(1)?),
                 row.get::<_, String>(2)?,
+                optional_nonnegative_u64(row.get(3)?, 3)?,
             ))
         })?;
         for artifact in artifacts {
-            let (kind, path, artifact_state) = artifact?;
+            let (kind, path, artifact_state, size_bytes) = artifact?;
             match kind.as_str() {
-                "temporary" => state.temporary_path = Some(path),
+                "temporary" => {
+                    state.temporary_path = Some(path);
+                    state.prepared_size_bytes = (artifact_state == "prepared")
+                        .then_some(size_bytes)
+                        .flatten();
+                }
                 "final" => {
                     state.final_path = Some(path);
                     state.final_committed = artifact_state == "committed";
@@ -1879,6 +1894,7 @@ pub(crate) struct StoredTransferState {
     pub probe: Option<DownloadProbe>,
     pub downloaded_bytes: u64,
     pub error: Option<DownloadFault>,
+    pub prepared_size_bytes: Option<u64>,
     pub temporary_path: Option<PathBuf>,
     pub final_path: Option<PathBuf>,
     pub final_committed: bool,
@@ -1946,6 +1962,7 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
     let request_json = serde_json::to_string(&StoredResolvedRequest {
         request: task.request().clone(),
         resolution: task.resolution().cloned(),
+        probe: None,
     })?;
     let origin = enum_name(&task.origin)?;
     connection.execute(
@@ -1963,7 +1980,8 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
         )
         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
         ON CONFLICT(task_id) DO UPDATE SET
-            request_json = excluded.request_json,
+            request_json = json_set(excluded.request_json, '$.probe',
+                json_extract(download_tasks.request_json, '$.probe')),
             origin = excluded.origin,
             status = excluded.status,
             updated_at_unix_ms = excluded.updated_at_unix_ms,
@@ -2129,7 +2147,8 @@ fn save_transfer_state_row(
             last_modified = ?7,
             error_code = ?8,
             error_message = ?9,
-            error_retryable = ?10
+            error_retryable = ?10,
+            request_json = json_set(request_json, '$.probe', json(?11))
         WHERE task_id = ?1
         "#,
         params![
@@ -2159,6 +2178,11 @@ fn save_transfer_state_row(
             error_code,
             error_message,
             error_retryable,
+            state
+                .probe
+                .as_ref()
+                .map(serde_json::to_string)
+                .transpose()?,
         ],
     )?;
     if let Some(path) = state.temporary_path.as_ref() {
@@ -2169,10 +2193,12 @@ fn save_transfer_state_row(
             path,
             if state.final_committed {
                 "removed"
+            } else if state.prepared_size_bytes.is_some() {
+                "prepared"
             } else {
                 "pending"
             },
-            Some(state.downloaded_bytes),
+            state.prepared_size_bytes.or(Some(state.downloaded_bytes)),
             None,
         )?;
     }
@@ -3581,9 +3607,11 @@ mod tests {
                 validator: ResourceValidator::default(),
                 media: None,
                 resolution: None,
+                server_observation: None,
             }),
             downloaded_bytes: 16,
             error: None::<DownloadFault>,
+            prepared_size_bytes: None,
             temporary_path: Some(directory.path().join(".archive.part")),
             final_path: Some(directory.path().join("archive.bin")),
             final_committed: false,

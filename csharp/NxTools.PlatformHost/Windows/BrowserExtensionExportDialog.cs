@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using NxTools.PlatformHost.Protocol;
 
 namespace NxTools.PlatformHost.Windows;
 
@@ -9,30 +10,19 @@ namespace NxTools.PlatformHost.Windows;
 /// </summary>
 internal static class BrowserExtensionExportDialog
 {
-    public static WindowsCommandResult PickDestination(string format) =>
-        PickDestination(format, CancellationToken.None);
-
-    public static WindowsCommandResult PickDestination(
-        string format,
+    public static WindowsCommandResult PickDestination(PickBrowserExtensionExportPathCommand command,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
             return CancelledResult();
         }
-        var isFirefox = string.Equals(
-            format,
-            BrowserExtensionPackageService.FirefoxFormat,
-            StringComparison.OrdinalIgnoreCase);
+        var format = BrowserExtensionPackageService.NormalizeFormat(command.Format);
+        var isFirefox = string.Equals(format, BrowserExtensionPackageService.FirefoxFormat, StringComparison.OrdinalIgnoreCase);
         var isStore = string.Equals(format, BrowserExtensionPackageService.ChromeStoreFormat, StringComparison.OrdinalIgnoreCase);
-        return StaDialogRunner.Run(
-            "NxTools browser extension export",
-            () =>
+        var completed = BoundedStaOperationRunner.TryRun("NxTools browser extension export picker", Timeout.InfiniteTimeSpan,
+            token => StaDialogRunner.RunInline(() => PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, token, owner =>
             {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    return CancelledResult();
-                }
                 using var dialog = new SaveFileDialog
                 {
                     AddExtension = true,
@@ -48,12 +38,11 @@ internal static class BrowserExtensionExportDialog
                         : "NxTools Chrome/Edge 扩展 (*.crx)|*.crx",
                     Title = "导出浏览器扩展",
                 };
-                var result = dialog.ShowDialog() == DialogResult.OK
+                return dialog.ShowDialog(owner) == DialogResult.OK
                     ? new WindowsCommandResult(true, Data: dialog.FileName)
                     : new WindowsCommandResult(true, Data: string.Empty);
-                return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
-            },
-            cancellationToken);
+            }), token), out WindowsCommandResult? result, out _, cancellationToken);
+        return completed && result is not null ? result : new(false, cancellationToken.IsCancellationRequested ? "picker_cancelled" : "picker_busy", NativeErrorCode: cancellationToken.IsCancellationRequested ? 995 : 170);
     }
 
     private static WindowsCommandResult CancelledResult() =>

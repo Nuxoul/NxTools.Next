@@ -38,6 +38,23 @@ function isMessageAllowedFrom(type, context) {
   return false;
 }
 
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "nxtools-popup" ||
+      messageSenderContext(port.sender) !== "extension_page" ||
+      port.sender.url !== chrome.runtime.getURL("popup.html")) return;
+  const release = retainDesktopPort();
+  popupPortOwners += 1;
+  let closed = false;
+  port.onDisconnect.addListener(() => {
+    if (closed) return;
+    closed = true;
+    popupPortOwners -= 1;
+    release();
+  });
+  // Popup-open is demand. Its refreshes have no reconnect authority after loss.
+  void ensureDesktopConnection().catch(() => {});
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") {
     return false;
@@ -94,18 +111,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return { ok: false, fallbackToBrowser: true, message: "不是 Blob 下载请求" };
       }
 
-      if (!settings.interceptDownloads) {
-        sendExtensionLog("info", "blob_download_intercept_disabled", "Blob 点击下载未接管，因为浏览器下载拦截已关闭", {
-          url: blobUrl,
-          pageUrl: payload.href || sender.tab?.url || "",
-          tabId: sender.tab?.id || 0
-        }, 15000);
-        return { ok: false, fallbackToBrowser: true, message: "浏览器下载拦截已关闭，交还浏览器下载" };
-      }
-
-      if (!isSiteEnabled(sender.tab?.url, payload.pageUrl, payload.href)) {
-        return { ok: false, fallbackToBrowser: true, message: "已在本网站停用 NxTools，交还浏览器下载" };
-      }
+      const excluded = await automaticCaptureDecision({
+        url: payload.sourceUrl || blobUrl, finalUrl: blobUrl,
+        referrer: sender.tab?.url || payload.href || payload.pageUrl,
+        filename: payload.filename, mime: payload.mime, totalBytes: payload.size
+      }, settings);
+      if (excluded) return automaticCaptureFallback(excluded);
 
       await capturePageResource(sender, payload);
       const tabId = sender.tab?.id || lastActiveTabId || 0;
@@ -155,28 +166,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void (async () => {
       const settings = await getSettings();
       const url = String(message.url || "");
-      if (!settings.interceptDownloads) {
-        return { ok: false, fallbackToBrowser: true, message: "浏览器下载拦截已关闭" };
-      }
 
       if (!isHttpUrl(url)) {
         return { ok: false, fallbackToBrowser: true, message: "不是 HTTP/HTTPS 下载链接" };
       }
 
-      if (!isSiteEnabled(sender.tab?.url, message.href, url)) {
-        return { ok: false, fallbackToBrowser: true, message: "已在本网站停用 NxTools，交还浏览器下载" };
-      }
+      const excluded = await automaticCaptureDecision({
+        url, referrer: sender.tab?.url || message.href,
+        filename: message.filename, mime: message.mime, totalBytes: message.size
+      }, settings);
+      if (excluded) return automaticCaptureFallback(excluded);
 
       const result = await sendUrl(url, {
+        cookieSource: { ...cookieSourceDetails(sender.tab), tabId: sender.tab?.id },
         fileName: cleanFileName(message.filename || "") || getFileNameFromUrl(url),
         referrer: message.href || sender.tab?.url || ""
       });
       if (result?.ok === false) {
         return { ok: false, fallbackToBrowser: true, message: result.message || "NxTools 拒绝接管" };
       }
-      setBadge("OK", "#138a72");
+      setBadge(result.data?.handoffState === "awaiting_confirmation" ? "…" : "OK", "#138a72");
       setTimeout(() => setBadge("", "#138a72"), 1600);
-      return { ok: true, message: "已发送到 NxTools" };
+      return { ...result, message: result.message || "已发送到 NxTools" };
     })().then(sendResponse, (error) => {
       sendResponse({
         ok: false,
@@ -218,7 +229,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }, 10000);
       return {
         ok: true,
-        choices
+        choices,
+        excludedUrls: excludedLocalResourceUrls(tabId, message.localCandidates)
       };
     })().then(sendResponse, (error) => {
       sendResponse({
@@ -254,15 +266,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }, 0);
 
       const result = await sendUrl(url, {
+        cookieSource: { ...cookieSourceDetails(sender.tab), tabId: sender.tab?.id },
         fileName: getFileNameFromUrl(url) || message.filename || "",
         referrer: message.href || sender.tab?.url || ""
       });
-      if (result?.ok !== true || result?.accepted !== true) {
-        return { ok: false, message: result?.message || "NxTools 未接受拖放下载" };
+      if (result?.ok !== true) {
+        return { ...result, ok: false, message: result?.message || "NxTools 未接受拖放下载" };
       }
-      setBadge("OK", "#138a72");
+      setBadge(result.data?.handoffState === "awaiting_confirmation" ? "…" : "OK", "#138a72");
       setTimeout(() => setBadge("", "#138a72"), 1600);
-      return { ok: true, message: "已发送到 NxTools" };
+      return { ...result, message: result.message || "已发送到 NxTools" };
     })().then(sendResponse, (error) => {
       sendResponse({
         ok: false,
@@ -275,6 +288,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "popup_get_state") {
     const index = Number.isInteger(message.mediaIndex) ? message.mediaIndex : null;
     void buildPopupState(index, String(message.currentView || "tasks")).then(sendResponse);
+    return true;
+  }
+
+  if (message.type === "popup_set_capture_paused") {
+    const correlationId = nextRequestId();
+    const startedAt = Date.now();
+    sendExtensionLog("info", "capture_pause_started", "会话接管状态开始更新", {
+      reason: message.paused ? "paused" : "resumed", elapsedMs: 0
+    }, 0, correlationId);
+    void (async () => {
+      if (typeof message.paused !== "boolean") throw new Error("capture_pause_invalid");
+      const paused = await setCapturePaused(message.paused);
+      sendExtensionLog("info", "capture_pause_applied", "会话接管状态已更新", {
+        reason: paused ? "paused" : "resumed", elapsedMs: Math.max(0, Date.now() - startedAt)
+      }, 0, correlationId);
+      return { ok: true, capturePaused: paused, correlationId };
+    })().then(sendResponse, () => {
+      sendExtensionLog("warn", "capture_pause_failed", "会话接管状态更新失败", {
+        reason: "session_storage_failed", elapsedMs: Math.max(0, Date.now() - startedAt)
+      }, 0, correlationId);
+      sendResponse({ ok: false, correlationId, message: "无法保存会话暂停状态，请重试" });
+    });
     return true;
   }
 
@@ -322,7 +357,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "popup_test_connection") {
-    void checkApiStatus().then(sendResponse);
+    void checkApiStatus(true).then(sendResponse);
     return true;
   }
 
@@ -334,6 +369,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       const result = await sendUrl(tab.url, {
+        cookieSource: { ...cookieSourceDetails(tab), tabId: tab.id },
         fileName: getFileNameFromUrl(tab.url),
         referrer: tab.url
       });

@@ -11,6 +11,7 @@
   const { OVERLAY_GAP, MEDIA_CANDIDATE_TTL_MS, DIRECT_DOWNLOAD_EXTENSIONS, MEDIA_SELECTOR, MEDIA_CONTAINER_SELECTOR } = NxToolsContent.constants;
   const { safeRuntimeSendMessage } = NxToolsContent.runtime;
   const { extensionOf, isInterestingUrl, isOverlayMediaResourceUrl, mediaElementKind, isUsableGoogleVideoUrl, filenameFromUrl, firstSrcsetUrl, mediaMimeFromElement, mediaDimensions, mediaResolutionText, mediaCandidateKey, currentPageKey, performanceEntryCapturedAt, candidateMediaInfo, mediaKindIcon } = NxToolsContent.media;
+  const { observedMediaElement, sameMediaElementFacts } = NxToolsContent.media;
   const { normalizeChoiceKey, rankResourceChoice, backgroundResourceChoiceCandidates, resourceChoiceLabel, resourceChoiceQuality, resourceChoiceTypeText, resourceChoiceSizeText, resourceChoiceFileText, resourceChoiceMetaText } = NxToolsContent.choices;
   const { blobInfoFromPage, uploadBlobFromPage, readBlobInPage, downloadBlobInPage } = NxToolsContent.blob;
   const { mediaHasPlayableSource, viewportFallbackRect, visibleElementRect, visibleMediaRect, hasMediaSurface, containerUrl, mediaContainerScore, mediaScore, mediaElements, selectionResolutionText, sameResourceUrl } = NxToolsContent.geometry;
@@ -20,6 +21,7 @@
   let detectedCount = 0;
   let overlayHost = null;
   let overlayEnabled = true;
+  let overlayDismissed = false;
   let captureResourcesEnabled = false;
   let dropTargetHost = null;
   let dropTargetVisible = false;
@@ -47,6 +49,7 @@
     mediaCandidates.clear();
     sent.clear();
     detectedCount = 0;
+    overlayDismissed = false;
     scheduleOverlayUpdate();
     safeRuntimeSendMessage({
       type: "content_page_context_changed",
@@ -83,8 +86,12 @@
     const key = mediaCandidateKey(absoluteUrl);
     const previous = mediaCandidates.get(key);
     const capturedAt = Number(extra.capturedAt || Date.now());
+    const evidence = NxToolsCapturePolicy.mergeCapturedResource(previous, { mediaElement: extra.mediaElement,
+      discovery: NxToolsCapturePolicy.normalizeDiscovery(null, extra.mime) });
     const candidate = {
       ...previous,
+      mediaElement: evidence.mediaElement,
+      discovery: evidence.discovery,
       url: absoluteUrl,
       key,
       pageKey: extra.pageKey || currentPageKey(),
@@ -140,6 +147,7 @@
     const pageKey = currentPageKey();
     return [...mediaCandidates.values()]
       .filter((candidate) =>
+        !NxToolsCapturePolicy.discoveryCandidateReason(candidate) &&
         Number(candidate.capturedAt || 0) >= cutoff &&
         (!candidate.pageKey || candidate.pageKey === pageKey) &&
         isOverlayMediaResourceUrl(candidate.url, candidate) &&
@@ -150,9 +158,9 @@
 
   async function resourceChoiceCandidates(selected = null) {
     const seen = new Set();
-    const backgroundChoices = await backgroundResourceChoiceCandidates(selected);
     const localChoices = recentMediaResourceCandidates(100 * 1000);
-    return [...backgroundChoices, ...localChoices]
+    const combined = await backgroundResourceChoiceCandidates(selected, localChoices);
+    return combined
       .filter((candidate) => !String(candidate.url || "").startsWith("blob:") || candidate.sourceUrl)
       .filter((candidate) => {
         const idKey = candidate.resourceId ? `id:${candidate.resourceId}` : "";
@@ -182,9 +190,6 @@
       return;
     }
 
-    if (!isInterestingUrl(absoluteUrl, extra)) {
-      return;
-    }
 
     const previous = sent.get(absoluteUrl);
     const size = Number(extra.size || 0);
@@ -192,16 +197,20 @@
     const dimensions = mediaDimensions(element);
     const resolvedWidth = Number(extra.width || dimensions.width || 0);
     const resolvedHeight = Number(extra.height || dimensions.height || 0);
-    const elementKind = extra.elementKind || mediaElementKind(element);
+    const mediaElement = observedMediaElement(element);
+    const elementKind = mediaElement?.kind || extra.elementKind || mediaElementKind(element);
+    if (!isInterestingUrl(absoluteUrl, { ...extra, mime, elementKind })) return;
     if (previous &&
         (!mime || previous.mime === mime) &&
         (!size || size <= previous.size) &&
         (!resolvedWidth || resolvedWidth <= previous.width) &&
-        (!resolvedHeight || resolvedHeight <= previous.height)) {
+        (!resolvedHeight || resolvedHeight <= previous.height) &&
+        (!mediaElement || sameMediaElementFacts(previous.mediaElement, mediaElement))) {
       return;
     }
 
     sent.set(absoluteUrl, {
+      mediaElement: mediaElement || previous?.mediaElement || null,
       mime: mime || previous?.mime || "",
       size: Math.max(size, previous?.size || 0),
       width: Math.max(resolvedWidth, previous?.width || 0),
@@ -217,6 +226,7 @@
       sourceMime: extra.sourceMime || "",
       sourceSize: Number(extra.sourceSize || 0),
       elementKind,
+      mediaElement,
       pageKey: currentPageKey(),
       source: extra.source || "content",
       capturedAt: Number(extra.capturedAt || Date.now())
@@ -249,9 +259,11 @@
         sourceMime: extra.sourceMime || "",
         sourceSize: Number(extra.sourceSize || 0),
         elementKind,
+        mediaElement,
         capturedAt: Number(extra.capturedAt || Date.now()),
         source: extra.source || "content",
-        blobUrl: absoluteUrl.startsWith("blob:") ? absoluteUrl : ""
+        blobUrl: absoluteUrl.startsWith("blob:") ? absoluteUrl : "",
+        poster: videoPosterUrl(element)
       }
     });
   }
@@ -451,6 +463,40 @@
     return recentMediaResourceCandidates().map((candidate) => candidate.url);
   }
 
+  function httpUrlOrEmpty(value) {
+    if (!value) {
+      return "";
+    }
+    try {
+      const url = new URL(value, location.href);
+      const text = url.toString();
+      return /^https?:$/.test(url.protocol) && text.length <= 2048 ? text : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function videoPosterUrl(element) {
+    return element instanceof HTMLVideoElement ? httpUrlOrEmpty(element.poster) : "";
+  }
+
+  // Popup thumbnail for resources that have no frame of their own (streams,
+  // segments, audio): the active player's poster, any poster, then og:image.
+  function pageThumbnailUrl() {
+    const activePoster = videoPosterUrl(findActiveMedia()?.media);
+    if (activePoster) {
+      return activePoster;
+    }
+    for (const video of document.querySelectorAll("video[poster]")) {
+      const poster = videoPosterUrl(video);
+      if (poster) {
+        return poster;
+      }
+    }
+    const meta = document.querySelector('meta[property="og:image"], meta[name="og:image"], meta[name="twitter:image"], meta[property="twitter:image"]');
+    return httpUrlOrEmpty(meta?.getAttribute("content") || "");
+  }
+
   function closeOverlayPanel(schedule = true) {
     if (!overlayHost?.shadowRoot) {
       return false;
@@ -462,7 +508,7 @@
     }
 
     panel.hidden = true;
-    const button = overlayHost.shadowRoot.querySelector("button");
+    const button = overlayHost.shadowRoot.querySelector(".trigger");
     button?.setAttribute("aria-expanded", "false");
     const activeElement = overlayHost.shadowRoot.activeElement;
     if (activeElement && panel.contains(activeElement)) {
@@ -536,10 +582,14 @@
         <span class="label">下载此媒体</span>
         <span class="status" role="status" aria-live="polite"></span>
       </button>
+      <button class="dismiss" type="button" title="暂时隐藏（刷新页面后恢复）" aria-label="暂时隐藏下载按钮">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>
+      </button>
       <div class="panel" id="nxtools-media-panel" aria-label="媒体资源列表" role="group" hidden></div>
     `;
 
-    const button = root.querySelector("button");
+    const button = root.querySelector(".trigger");
+    const dismiss = root.querySelector(".dismiss");
     const label = root.querySelector(".label");
     const status = root.querySelector(".status");
     const panel = root.querySelector(".panel");
@@ -621,7 +671,7 @@
         resourceCandidates
       }, (result, lastError) => {
         const ok = !lastError && result?.ok !== false;
-        setStatus(ok ? "已发送" : lastError?.message || result?.message || "发送失败", !ok);
+        setStatus(lastError?.message || result?.message || (ok ? "已发送" : "发送失败"), !ok);
         label.textContent = "下载此媒体";
         button.disabled = false;
         scheduleOverlayUpdate();
@@ -668,6 +718,7 @@
       button.setAttribute("aria-expanded", "true");
       panel.querySelectorAll(".choice").forEach((choice) => {
         choice.addEventListener("click", (event) => {
+          if (!event.isTrusted) return;
           event.preventDefault();
           event.stopPropagation();
           const index = Number(choice.getAttribute("data-index") || 0);
@@ -684,6 +735,7 @@
     }
 
     button.addEventListener("click", async (event) => {
+      if (!event.isTrusted) return;
       event.preventDefault();
       event.stopPropagation();
       if (panel?.hidden === false) {
@@ -717,6 +769,17 @@
       sendOverlayResource(selected, null);
     });
 
+    // Hides the entry for this page view only; a reload or navigation to
+    // another page shows it again.
+    dismiss.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      overlayDismissed = true;
+      closeOverlayPanel(false);
+      setStatus("");
+      overlayHost.style.display = "none";
+    });
+
     document.documentElement.appendChild(overlayHost);
     return overlayHost;
   }
@@ -724,7 +787,7 @@
   function updateOverlayPosition() {
     updateQueued = false;
     const host = ensureOverlay();
-    if (!host || !overlayEnabled) {
+    if (!host || !overlayEnabled || overlayDismissed) {
       if (host) {
         closeOverlayPanel(false);
         host.style.display = "none";
@@ -742,7 +805,7 @@
     host.style.display = "block";
     const shadowRoot = host.shadowRoot;
     const label = shadowRoot?.querySelector(".label");
-    const button = shadowRoot?.querySelector("button");
+    const button = shadowRoot?.querySelector(".trigger");
     const panel = shadowRoot?.querySelector(".panel");
     if (label && !button?.disabled && panel?.hidden !== false) {
       const resolution = selectionResolutionText(selected);
@@ -1092,6 +1155,7 @@
   }
 
   function handleDragOver(event) {
+    if (!event.isTrusted) return;
     if (!showDropTarget(event)) {
       return;
     }
@@ -1108,6 +1172,7 @@
   }
 
   function handleDrop(event) {
+    if (!event.isTrusted) return;
     if (!dropTargetVisible || !pointInRect(event, dropTargetRect)) {
       hideDropTargetSoon();
       return;
@@ -1177,6 +1242,7 @@
   }
 
   function handleDirectDownloadClick(event) {
+    if (!event.isTrusted) return;
     if (event.defaultPrevented ||
         event.button !== 0 ||
         event.altKey ||
@@ -1356,7 +1422,7 @@
 
     if (message?.type === "content_scan_now") {
       scanPage(true);
-      sendResponse({ ok: true, count: detectedCount });
+      sendResponse({ ok: true, count: detectedCount, pageThumbnail: pageThumbnailUrl() });
       return true;
     }
 
@@ -1446,6 +1512,9 @@
 
     if (changes.mediaOverlayEnabled) {
       overlayEnabled = changes.mediaOverlayEnabled.newValue !== false;
+      if (overlayEnabled) {
+        overlayDismissed = false;
+      }
       scheduleOverlayUpdate();
     }
 
@@ -1486,7 +1555,7 @@
     childList: true,
     subtree: true,
     attributes: true,
-    attributeFilter: ["src", "href"]
+    attributeFilter: ["src", "href", "srcset", "type", "controls", "autoplay", "loop", "role"]
   });
   setInterval(() => {
     if (document.visibilityState === "visible") {

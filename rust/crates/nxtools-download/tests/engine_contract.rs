@@ -3783,6 +3783,80 @@ async fn ranged_task_resumes_persisted_bytes_after_the_engine_is_reopened() {
 }
 
 #[tokio::test]
+async fn numbered_retry_keeps_the_original_segment_checkpoint_artifact() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create checkpoint directory");
+    let database = directory.path().join("downloads.sqlite3");
+    let destination = directory.path().join("artifacts");
+    let engine = DownloadEngine::open(&database).expect("open checkpoint engine");
+    let mut task_request = request(&server, destination.clone());
+    task_request.source_url = format!("http://{}/range-resume-required", server.address());
+    let task_id = engine
+        .submit(task_request, RequestOrigin::Ui)
+        .expect("start ranged transfer");
+    wait_for_progress(&engine, task_id).await;
+    engine.pause(task_id).expect("pause checkpoint");
+    let paused = engine
+        .wait_for_terminal(task_id, Duration::from_secs(2))
+        .await
+        .expect("wait for pause");
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
+    let original_temp = paused.temporary_path.expect("durable partial file");
+    let checkpoint = paused.downloaded_bytes;
+    assert!(checkpoint > 0 && checkpoint < 16);
+    std::fs::write(destination.join("engine-fixture.bin"), b"foreign bytes")
+        .expect("occupy old destination");
+    drop(engine);
+    let engine = DownloadEngine::open(&database).expect("restore checkpoint engine");
+    engine.resume(task_id).expect("retry original target");
+    let failed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("wait for conflict");
+    assert_eq!(
+        failed.error.as_ref().map(|error| error.code),
+        Some(nxtools_download::DownloadFaultCode::DestinationExists)
+    );
+    let command_id = uuid::Uuid::new_v4();
+    let result = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: command_id,
+        origin: RequestOrigin::Ui,
+        command: DownloadCommand::Task {
+            task_id,
+            action: DownloadTaskAction::RetryWithAutoRename,
+        },
+    });
+    assert_eq!(result.request_id, command_id);
+    assert!(
+        matches!(result.outcome, DownloadCommandOutcome::Accepted { task_id: Some(id) } if id == task_id)
+    );
+    let completed = engine
+        .wait_for_terminal(task_id, Duration::from_secs(3))
+        .await
+        .expect("resume original checkpoint");
+    assert_eq!(
+        completed.task.status(),
+        DownloadStatus::Completed,
+        "{:?}",
+        completed.error
+    );
+    assert_eq!(
+        completed.task.request().file_name.as_deref(),
+        Some("engine-fixture (1).bin")
+    );
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture (1).bin")).expect("numbered bytes"),
+        b"0123456789abcdef"
+    );
+    assert_eq!(
+        std::fs::read(destination.join("engine-fixture.bin")).expect("foreign file"),
+        b"foreign bytes"
+    );
+    assert!(!original_temp.exists());
+}
+
+#[tokio::test]
 async fn range_ignored_after_probe_restarts_cleanly_as_a_single_stream() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create engine directory");
@@ -5721,4 +5795,130 @@ fn compact_snapshot_preserves_legacy_filtering_and_queue_order() {
             .expect("read selected equivalence task")
             .expect("selected equivalence task exists")
     );
+}
+
+#[tokio::test]
+async fn ref06_existing_http_hls_dash_waiters_wake_without_restarting_tasks() {
+    for protocol in ["http", "hls", "dash"] {
+        let server = DeterministicHttpServer::start_concurrent();
+        let directory = tempfile::tempdir().expect("isolated rate waiter output");
+        let destination = directory.path().join("artifacts");
+        let engine = DownloadEngine::open(directory.path().join("downloads.sqlite3"))
+            .expect("persistent engine");
+        let mut limited = request(&server, destination.clone());
+        limited.file_name = Some("waiter.bin".into());
+        limited.connection_limit = Some(1);
+        limited.speed_limit_bytes_per_second = Some(1);
+        let expected = match protocol {
+            "http" => {
+                limited.source_url = format!("http://{}/range-concurrent", server.address());
+                concurrent_fixture_bytes()
+            }
+            "hls" => {
+                limited.source_url = format!("http://{}/hls/master.m3u8", server.address());
+                limited.media = Some(DownloadRequestMedia::Hls(HlsDownloadRequest {
+                    playlist_url: format!(
+                        "http://{}/hls/rate-limited/index.m3u8",
+                        server.address()
+                    ),
+                }));
+                vec![b'x'; 64 * 1024]
+            }
+            _ => {
+                limited.source_url = format!("http://{}/dash/static.mpd", server.address());
+                limited.media = Some(DownloadRequestMedia::Dash(DashDownloadRequest {
+                    manifest_url: limited.source_url.clone(),
+                    video_representation_id: Some("v1080".into()),
+                    audio_representation_id: None,
+                }));
+                b"VINIT|V0|V1".to_vec()
+            }
+        };
+        engine
+            .set_global_speed_limit(Some(1))
+            .expect("manual global ceiling");
+        engine
+            .set_runtime_speed_cap(Some(1), uuid::Uuid::new_v4())
+            .expect("runtime ceiling");
+        let task_id = engine
+            .submit(limited, RequestOrigin::Ui)
+            .expect("start original transfer");
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let current = engine.task(task_id).expect("query").expect("original task");
+            if current.task.status() == DownloadStatus::Downloading && server.total_requests() >= 2
+            {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "{protocol} did not reach its real transfer boundary: {:?}",
+                current.error
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(
+            engine
+                .wait_for_terminal(task_id, Duration::from_millis(120))
+                .await
+                .is_err(),
+            "{protocol} must remain limited"
+        );
+        engine
+            .set_task_speed_limit(task_id, None)
+            .expect("release original task waiter");
+        assert!(
+            engine
+                .wait_for_terminal(task_id, Duration::from_millis(120))
+                .await
+                .is_err(),
+            "{protocol} retains global/runtime ceiling"
+        );
+        engine
+            .set_global_speed_limit(None)
+            .expect("remove manual ceiling");
+        assert_eq!(engine.effective_global_speed_limit(), Some(1));
+        assert!(
+            engine
+                .wait_for_terminal(task_id, Duration::from_millis(120))
+                .await
+                .is_err(),
+            "{protocol} retains runtime ceiling"
+        );
+        let released_at = std::time::Instant::now();
+        engine
+            .set_runtime_speed_cap(None, uuid::Uuid::new_v4())
+            .expect("wake original aggregate waiters");
+        let completed = engine
+            .wait_for_terminal(task_id, Duration::from_secs(3))
+            .await
+            .expect("live waiters must wake");
+        assert_eq!(completed.task.id(), task_id);
+        assert_eq!(
+            completed.task.status(),
+            DownloadStatus::Completed,
+            "{protocol}: {:?}",
+            completed.error
+        );
+        assert!(released_at.elapsed() < Duration::from_secs(3));
+        assert_eq!(completed.task.request().speed_limit_bytes_per_second, None);
+        assert_eq!(
+            std::fs::read(destination.join("waiter.bin")).expect("original artifact"),
+            expected,
+            "{protocol} output"
+        );
+        let reopened = DownloadEngine::open(directory.path().join("downloads.sqlite3"))
+            .expect("reopen accepted intent");
+        assert_eq!(reopened.global_speed_limit(), None);
+        assert_eq!(
+            reopened
+                .task(task_id)
+                .expect("query")
+                .expect("persisted task")
+                .task
+                .request()
+                .speed_limit_bytes_per_second,
+            None
+        );
+    }
 }

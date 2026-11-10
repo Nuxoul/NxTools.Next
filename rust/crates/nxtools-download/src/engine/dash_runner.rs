@@ -25,11 +25,11 @@ pub(crate) async fn run_dash_task(
         source = manifest_source,
         "DASH manifest resolution started"
     );
-    let manifest = match http
+    let (manifest, server_observation) = match http
         .load_dash_manifest(request, &selection.manifest_url)
         .await
     {
-        Ok(manifest) => manifest,
+        Ok(result) => result,
         Err(error) => {
             warn!(
                 event = "download.dash_manifest.failed",
@@ -49,6 +49,9 @@ pub(crate) async fn run_dash_task(
         %correlation_id,
         ?task_id,
         source = manifest_source,
+        route_kind = server_observation.route_kind.diagnostic_name(),
+        peer_present = server_observation.peer_ip.is_some(),
+        response_ms = server_observation.response_ms,
         video_track_count = manifest
             .tracks
             .iter()
@@ -150,9 +153,18 @@ pub(crate) async fn run_dash_task(
         validator: crate::ResourceValidator::default(),
         media: Some(crate::DownloadMediaProbe::Dash(manifest.probe())),
         resolution: None,
+        server_observation: Some(server_observation),
     };
-    let (temporary_path, final_path) =
+    let (derived_temporary, final_path) =
         HttpDownloadClient::artifact_paths(request, &probe, task_id)?;
+    let temporary_path = inner
+        .lock_tasks()?
+        .get(&task_id)
+        .ok_or(DownloadEngineError::TaskNotFound(task_id))?
+        .transfer
+        .temporary_path
+        .clone()
+        .unwrap_or(derived_temporary);
     tokio::fs::create_dir_all(&request.save_directory).await?;
     if tokio::fs::try_exists(&final_path).await? {
         return Err(HttpDownloadError::DestinationExists(final_path).into());
@@ -798,6 +810,22 @@ pub(crate) async fn run_dash_task(
         )
         .await;
     }
+    {
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .open(&temporary_path)
+            .await?
+            .sync_all()
+            .await?;
+        let prepared_bytes = tokio::fs::metadata(&temporary_path).await?.len();
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.prepared_size_bytes = Some(prepared_bytes);
+        inner.persist(state)?;
+    }
+
     if let Err(error) = http
         .commit_prepared(PreparedDownload {
             temporary_path,

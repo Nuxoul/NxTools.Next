@@ -116,6 +116,7 @@ internal sealed record OpenShellTargetCommand(string Target, string Action);
 internal sealed record OpenDefaultAppsSettingsCommand;
 internal sealed record ShutdownSystemCommand(ushort DelaySeconds);
 internal sealed record ExportBrowserExtensionCommand(string Format, string Destination);
+internal sealed record PickBrowserExtensionExportPathCommand(string Format, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record LaunchProcessCommand(
     string Executable,
     IReadOnlyList<string> Arguments,
@@ -142,12 +143,12 @@ internal sealed record InvokeShellActionCommand(
     uint CommandId,
     long OwnerWindowHandle);
 internal sealed record ExtractShellIconCommand(string Target, uint Size);
-internal sealed record PickClipboardArchivePathCommand(string Mode, string SuggestedFileName);
-internal sealed record PickClipboardStorageDirectoryCommand(string CurrentDirectory);
-internal sealed record PickDirectoryCommand(string CurrentDirectory, string Title);
-internal sealed record PickProgramCommand(string CurrentPath);
-internal sealed record PickExtensionManifestCommand(string CurrentPath);
-internal sealed record PickExtensionRuntimeCommand(string Program, string CurrentPath);
+internal sealed record PickClipboardArchivePathCommand(string Mode, string SuggestedFileName, long SourceWindowHandle, uint SourceProcessId);
+internal sealed record PickClipboardStorageDirectoryCommand(string CurrentDirectory, long SourceWindowHandle, uint SourceProcessId);
+internal sealed record PickDirectoryCommand(string CurrentDirectory, string Title, long SourceWindowHandle, uint SourceProcessId);
+internal sealed record PickProgramCommand(string CurrentPath, long SourceWindowHandle, uint SourceProcessId);
+internal sealed record PickExtensionManifestCommand(string CurrentPath, long SourceWindowHandle, uint SourceProcessId);
+internal sealed record PickExtensionRuntimeCommand(string Program, string CurrentPath, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record PickExtensionSettingPathCommand(long SourceWindowHandle, uint SourceProcessId, string Kind, string CurrentPath);
 internal sealed record InspectExtensionRuntimeCommand(string Program, string Executable);
 internal sealed record EnsureIndexerServiceCommand;
@@ -246,6 +247,8 @@ internal static class PlatformCommandParser
         { throw new InvalidDataException("Invalid native context menu cancellation."); }
     }
 
+    public static ArchiveClipboardCommand ParseReadClipboardFileDrop(ProtocolEnvelope envelope) =>
+        ArchiveClipboardCommand.Parse(envelope);
     public static PasteTextCommand ParsePasteText(ProtocolEnvelope envelope)
     {
         var command = GetCommandName(envelope);
@@ -481,11 +484,22 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
     public static ShutdownSystemCommand ParseShutdownSystem(ProtocolEnvelope envelope) =>
         Parse<ShutdownSystemCommand>(envelope, "shutdown_system", "Shutdown command payload was empty.");
 
-    public static ExportBrowserExtensionCommand ParseExportBrowserExtension(ProtocolEnvelope envelope) =>
-        Parse<ExportBrowserExtensionCommand>(
-            envelope,
-            "export_browser_extension",
+    public static ExportBrowserExtensionCommand ParseExportBrowserExtension(ProtocolEnvelope envelope)
+    {
+        var command = Parse<ExportBrowserExtensionCommand>(envelope, "export_browser_extension",
             "Browser extension export command payload was empty.");
+        if (string.IsNullOrWhiteSpace(command.Destination))
+            throw new InvalidDataException("Browser extension export requires a destination.");
+        return command;
+    }
+
+    public static PickBrowserExtensionExportPathCommand ParsePickBrowserExtensionExportPath(ProtocolEnvelope envelope)
+    {
+        var command = ParsePicker<PickBrowserExtensionExportPathCommand>(envelope, "pick_browser_extension_export_path");
+        if (string.IsNullOrWhiteSpace(command.Format))
+            throw new InvalidDataException("Browser export picker format is required.");
+        return command;
+    }
 
     public static LaunchProcessCommand ParseLaunchProcess(ProtocolEnvelope envelope) =>
         Parse<LaunchProcessCommand>(
@@ -523,31 +537,29 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
     public static PickArchivePathCommand ParsePickArchivePath(ProtocolEnvelope envelope) =>
         Parse<PickArchivePathCommand>(envelope, "pick_archive_path", "Archive picker payload was empty.");
 
+    private static T ParsePicker<T>(ProtocolEnvelope envelope, string name)
+    {
+        if (GetCommandName(envelope) != name ||
+            !envelope.Payload.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
+            !data.TryGetProperty("source_window_handle", out var handle) || !handle.TryGetInt64(out var hwnd) || hwnd <= 0 ||
+            !data.TryGetProperty("source_process_id", out var process) || !process.TryGetUInt32(out var pid) || pid == 0)
+            throw new InvalidDataException("Invalid picker source identity.");
+        return Parse<T>(envelope, name, "Invalid picker payload.");
+    }
+
     public static PickClipboardArchivePathCommand ParsePickClipboardArchivePath(
         ProtocolEnvelope envelope) =>
-        Parse<PickClipboardArchivePathCommand>(
-            envelope,
-            "pick_clipboard_archive_path",
-            "Clipboard archive picker payload was empty.");
+        ParsePicker<PickClipboardArchivePathCommand>(envelope, "pick_clipboard_archive_path");
 
     public static PickClipboardStorageDirectoryCommand ParsePickClipboardStorageDirectory(
         ProtocolEnvelope envelope) =>
-        Parse<PickClipboardStorageDirectoryCommand>(
-            envelope,
-            "pick_clipboard_storage_directory",
-            "Clipboard storage picker payload was empty.");
+        ParsePicker<PickClipboardStorageDirectoryCommand>(envelope, "pick_clipboard_storage_directory");
 
     public static PickDirectoryCommand ParsePickDirectory(ProtocolEnvelope envelope) =>
-        Parse<PickDirectoryCommand>(
-            envelope,
-            "pick_directory",
-            "Directory picker payload was empty.");
+        ParsePicker<PickDirectoryCommand>(envelope, "pick_directory");
 
     public static PickProgramCommand ParsePickProgram(ProtocolEnvelope envelope) =>
-        Parse<PickProgramCommand>(
-            envelope,
-            "pick_program",
-            "Program picker payload was empty.");
+        ParsePicker<PickProgramCommand>(envelope, "pick_program");
 
     public static PickExtensionManifestCommand ParsePickExtensionManifest(ProtocolEnvelope envelope)
     {
@@ -559,7 +571,7 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
         {
             throw new InvalidDataException("Invalid extension manifest picker payload.");
         }
-        return new PickExtensionManifestCommand(currentPath.GetString()!);
+        return ParsePicker<PickExtensionManifestCommand>(envelope, "pick_extension_manifest");
     }
 
     internal static PickExtensionSettingPathCommand ParsePickExtensionSettingPath(ProtocolEnvelope envelope)
@@ -580,7 +592,8 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
     public static PickExtensionRuntimeCommand ParsePickExtensionRuntime(ProtocolEnvelope envelope)
     {
         var (program, path) = ParseExtensionRuntime(envelope, "pick_extension_runtime", "current_path");
-        return new(program, path);
+        var owner = ParsePicker<PickExtensionRuntimeCommand>(envelope, "pick_extension_runtime");
+        return new(program, path, owner.SourceWindowHandle, owner.SourceProcessId);
     }
 
     public static InspectExtensionRuntimeCommand ParseInspectExtensionRuntime(ProtocolEnvelope envelope)

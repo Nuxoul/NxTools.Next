@@ -17,7 +17,7 @@ internal sealed partial class ArchiveWorkerOutputBridge
     internal void BindEditSource(ArchiveSourceLease source,string expected)
     {
         if(!editing || editSource is not null || files!=0)throw new ArchiveOutputException("invalid_edit_request");
-        source.VerifyEditSource(expected);editSource=source;editTargetIdentity=expected;
+        source.VerifyEditSource(expected, cancellationToken: cancellation.Token);editSource=source;editTargetIdentity=expected;
     }
     internal void ConfigureVolumeOutput(ArchiveWorkerRequest request)
     {
@@ -55,7 +55,7 @@ internal sealed partial class ArchiveWorkerOutputBridge
             if(!editing || editSource is null || editCompletion is not null || active.Count!=1)throw new ArchiveOutputException("edit_reads_incomplete");
             var token=call.GetProperty("token").GetGuid();RequireToken(token);
             session.MarkCandidateVerified(token);
-            editCompletion=editSource.CompleteEditReads();
+            editCompletion=editSource.CompleteEditReads(cancellation.Token);
         }
         else if(action=="flush_volume")
         {

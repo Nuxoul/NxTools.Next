@@ -2,12 +2,16 @@
 //! Create 680 / extract 560 starting widths belong to the parent window. One scroll body,
 //! fixed Medium (32px) primary/outline footer; no Toolbar.child variant coercion or extra Root.
 //! Native picker, admission, settings persistence and jobs remain ArchiveApplication's owners.
+#[path = "forms_intake.rs"]
+mod intake;
 #[path = "forms_layout.rs"]
 mod layout;
 #[path = "forms_recovery.rs"]
 mod recovery;
 #[path = "forms_space.rs"]
 mod space_view;
+#[path = "forms_volume.rs"]
+mod volume_view;
 use super::{
     ArchiveApplication,
     draft::{self, CreateDraft, DraftSelection, DraftSource, ExtractDraft, ModifyDraft},
@@ -51,7 +55,7 @@ const FORMATS: &[&str] = &["ZIP", "7Z", "TAR", "TGZ", "TXZ", "GZ", "XZ"];
 const LEVELS: &[&str] = &["仅存储", "快速", "标准", "最大"];
 const STRATEGIES: &[&str] = &["自定义目标", "智能解压", "当前文件夹", "压缩包名称文件夹"];
 const CONFLICTS: &[&str] = &["询问", "覆盖", "跳过", "自动重命名"];
-const SEVENZ_EDIT_COST: &str = "7z 编辑会完整解码并重编码为非固实 LZMA2；保留支持的内容、时间、属性与加密设置。需要原归档与候选并存空间；无法准确估算时为未知。";
+const SEVENZ_EDIT_COST: &str = "7z 编辑会完整解码并重编码为非固实 LZMA2；保留支持的内容、时间、属性与加密设置。需要原压缩包与候选并存空间；无法准确估算时为未知。";
 const TAR_EDIT_COST: &str = "TAR 编辑会完整重写；tar.gz / tar.xz 会完整解码与重编码。保留已确认的内容与原成员元数据；新增项使用 uid/gid/mtime=0、文件0644/目录0755，不复制 ACL/ADS。gzip 保留可支持头属性，压缩级别按 XFL 映射；xz 使用 LZMA2 fast，保留校验类型，压缩参数和布局可能变化。需要原件、候选及有限匿名 spool 并存空间，估算未知，不计源删除收益。TAR 没有内容校验和；提交前另做完整内容比较。";
 type Choice = Entity<SelectState<Vec<&'static str>>>;
 
@@ -107,6 +111,8 @@ pub(crate) struct OperationForm {
     create_exclusions: Vec<Entity<TextareaState>>,
     create_rule_subscriptions: Vec<Subscription>,
     volume: Entity<InputState>,
+    volume_unit: Choice,
+    volume_preset: Choice,
     format: Choice,
     level: Choice,
     method: Choice,
@@ -114,6 +120,7 @@ pub(crate) struct OperationForm {
     conflict: Choice,
     pending_format: Option<ArchiveCreateFormat>,
     pending_picker: Option<PendingPicker>,
+    pending_clipboard: Option<nxtools_protocol::archive_clipboard::ArchiveClipboardCommand>,
     enumeration_epoch: u64,
     enumeration_cancel: Arc<AtomicBool>,
     enumerating: bool,
@@ -137,11 +144,37 @@ pub(crate) struct OperationForm {
 }
 #[cfg(test)]
 impl OperationForm {
+    pub(in crate::archive) fn sources_for_test(&self) -> (bool, Vec<PathBuf>) {
+        (
+            self.enumerating,
+            match &self.draft {
+                Draft::Create(draft) => draft
+                    .sources
+                    .iter()
+                    .map(|source| source.path.clone())
+                    .collect(),
+                Draft::Modify(draft) => draft.added.iter().map(PathBuf::from).collect(),
+                _ => vec![],
+            },
+        )
+    }
     pub(in crate::archive) fn confirmation_strategy_for_test(&self) -> Option<ArchiveDestination> {
         match &self.draft {
             Draft::Extract(draft) => Some(draft.strategy),
             _ => None,
         }
+    }
+    pub(in crate::archive) fn revise_submitted_create_volume_for_test(
+        &mut self,
+        size: nxtools_core::archive::ArchiveVolumeSize,
+    ) {
+        assert!(self.submitted, "only probe an already submitted draft");
+        let Draft::Create(draft) = &mut self.draft else {
+            panic!("submitted Create draft");
+        };
+        draft.volume_mib = size.value.to_string();
+        draft.volume_unit = size.unit;
+        assert_eq!(draft.volume_size().expect("revised draft size"), Some(size));
     }
 }
 #[cfg(test)]
@@ -267,6 +300,18 @@ impl OperationForm {
         let password = input("", true, window, cx);
         let confirm = input("", true, window, cx);
         let volume = input(&volume_value, false, window, cx);
+        volume.update(cx, |state, cx| state.set_step(None, window, cx));
+        let initial_unit = match &draft {
+            Draft::Create(draft) => draft.volume_unit,
+            _ => nxtools_core::archive::ArchiveVolumeUnit::MiB,
+        };
+        let volume_unit = choice(volume_view::VOLUME_UNITS, initial_unit as usize, window, cx);
+        let volume_preset = choice(
+            volume_view::VOLUME_PRESETS,
+            volume_view::preset_index(&volume_value, initial_unit),
+            window,
+            cx,
+        );
         let recovery_id = input(&recovery_id_value, false, window, cx);
         let exclusions = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx);
@@ -331,14 +376,71 @@ impl OperationForm {
         let strategy = choice(STRATEGIES, strategy_index(initial_strategy), window, cx);
         let conflict = choice(CONFLICTS, conflict_index(initial_conflict), window, cx);
         let mut subscriptions = Vec::new();
-        for state in [
-            &destination,
-            &name,
-            &password,
-            &confirm,
+        subscriptions.push(cx.subscribe_in(
+            &volume_preset,
+            window,
+            |_, _, event: &SelectEvent<Vec<&'static str>>, window, cx| {
+                let SelectEvent::Confirm(Some(value)) = event else {
+                    return;
+                };
+                let value = *value;
+                cx.defer_in(window, move |this, window, cx| {
+                    if let Some(index) = volume_view::VOLUME_PRESETS
+                        .iter()
+                        .position(|label| *label == value)
+                    {
+                        this.select_volume_preset(index, window, cx);
+                    }
+                });
+            },
+        ));
+        subscriptions.push(cx.subscribe_in(
+            &volume_unit,
+            window,
+            |_, _, event: &SelectEvent<Vec<&'static str>>, window, cx| {
+                let SelectEvent::Confirm(Some(value)) = event else {
+                    return;
+                };
+                let value = *value;
+                cx.defer_in(window, move |this, window, cx| {
+                    if let Some(unit) = nxtools_core::archive::ArchiveVolumeUnit::ALL
+                        .into_iter()
+                        .find(|unit| unit.label() == value)
+                    {
+                        this.select_volume_unit(unit, window, cx);
+                    }
+                });
+            },
+        ));
+        subscriptions.push(cx.subscribe_in(
             &volume,
-            &recovery_id,
-        ] {
+            window,
+            |_, _, event: &gpui_kit::component::input::NumberInputEvent, window, cx| {
+                let gpui_kit::component::input::NumberInputEvent::Step(action) = *event;
+                cx.defer_in(window, move |this, window, cx| {
+                    this.step_volume(action, window, cx)
+                });
+            },
+        ));
+        subscriptions.push(cx.subscribe_in(
+            &volume,
+            window,
+            |_, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::Change) {
+                    cx.defer_in(window, |this, window, cx| {
+                        this.revalidate(cx);
+                        if let Draft::Create(draft) = &this.draft {
+                            let label = volume_view::VOLUME_PRESETS
+                                [volume_view::preset_index(&draft.volume_mib, draft.volume_unit)];
+                            this.volume_preset.update(cx, |state, cx| {
+                                state.set_selected_value(&label, window, cx)
+                            });
+                        }
+                    });
+                }
+            },
+        ));
+        for state in [&destination, &name, &password, &confirm, &recovery_id] {
             subscriptions.push(cx.subscribe_in(
                 state,
                 window,
@@ -525,6 +627,8 @@ impl OperationForm {
             confirm,
             recovery_id,
             volume,
+            volume_unit,
+            volume_preset,
             exclusions,
             create_exclusions,
             create_rule_subscriptions,
@@ -535,6 +639,7 @@ impl OperationForm {
             conflict,
             pending_format: None,
             pending_picker: None,
+            pending_clipboard: None,
             enumeration_epoch: 0,
             enumeration_cancel: Arc::new(AtomicBool::new(false)),
             enumerating: false,
@@ -593,9 +698,13 @@ impl OperationForm {
             || self.submitted
             || self.enumerating
             || self.pending_picker.is_some()
+            || self.pending_clipboard.is_some()
             || self.pending_format.is_some()
             || self.recovery.pending
             || self.reclamation_confirmation_pending
+    }
+    pub(in crate::archive) fn output_plan_current(&self, id: Uuid, generation: u64) -> bool {
+        self.id == id && self.generation == generation && self.submitted && !self.retired
     }
     fn sync_inputs(&mut self, cx: &App) {
         let recovery_facts = self.recovery_facts();
@@ -607,6 +716,9 @@ impl OperationForm {
                 draft.password = self.password.read(cx).value().to_string();
                 draft.confirm = self.confirm.read(cx).value().to_string();
                 draft.volume_mib = self.volume.read(cx).value().to_string();
+                if draft.password.is_empty() || draft.password != draft.confirm {
+                    draft.encrypt_header = false;
+                }
                 draft.exclusions = self
                     .create_exclusions
                     .iter()
@@ -660,6 +772,7 @@ impl OperationForm {
                 remembered.exclude_patterns = draft.exclusions.clone();
                 remembered.test_after_create = draft.test_after_create;
                 remembered.keep_create_progress_open = self.keep_open;
+                remembered.create_volume_size = draft.volume_size()?;
                 requests
             }
             Draft::Extract(draft) => {
@@ -790,7 +903,7 @@ impl OperationForm {
                 let _ = source.update(cx, |_, window, cx| {
                     let _ = view.update(cx, |form, cx| {
                         form.fail_submit(
-                            "归档操作所有者已关闭，请重新打开表单。".into(),
+                            "压缩包操作所有者已关闭，请重新打开表单。".into(),
                             window,
                             cx,
                         )
@@ -819,7 +932,7 @@ impl OperationForm {
                 .child(
                     Alert::warning(
                         "archive-reclamation-confirmation-warning",
-                        "原压缩包中的文件数据会在解压核验并保存恢复记录后逐步释放，不能撤销，也不会进入回收站。中断后请保留原压缩包、恢复记录和已解压文件，使用“继续空间回收解压”。本版本只能继续剩余解压，不能重建剩余归档或恢复完整原压缩包。当前文件完整输出所需的空间仍必须足够。",
+                        "原压缩包中的文件数据会在解压核验并保存恢复记录后逐步释放，不能撤销，也不会进入回收站。中断后请保留原压缩包、恢复记录和已解压文件，使用“继续空间回收解压”。本版本只能继续剩余解压，不能重建剩余压缩包或恢复完整原压缩包。当前文件完整输出所需的空间仍必须足够。",
                     )
                     .with_size(Size::Small),
                 )
@@ -888,7 +1001,7 @@ impl OperationForm {
     pub(super) fn fail_submit(
         &mut self,
         message: String,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if self.retired {
@@ -896,7 +1009,31 @@ impl OperationForm {
         }
         self.submit_epoch = self.submit_epoch.wrapping_add(1);
         self.submitted = false;
-        self.error = Some(message);
+        if matches!(&self.draft, Draft::Modify(draft) if draft.action == ArchiveJobModifyAction::Add)
+        {
+            self.error = None;
+            if let Some(center) = crate::notifications::current(cx) {
+                let notice = crate::notifications::AppNotification::new(
+                    format!("archive-form-{}", self.id),
+                    crate::notifications::NotificationLevel::Error,
+                    "添加文件失败",
+                    message,
+                )
+                .in_window(window.window_handle());
+                cx.defer(move |cx| center.update(cx, |center, cx| center.push(notice, cx)));
+            }
+        } else {
+            self.error = Some(message);
+        }
+        cx.notify();
+    }
+    pub(super) fn release_failed_submit(&mut self, cx: &mut Context<Self>) {
+        if self.retired {
+            return;
+        }
+        self.submit_epoch = self.submit_epoch.wrapping_add(1);
+        self.submitted = false;
+        self.error = None;
         cx.notify();
     }
     pub(super) fn block_uncertain_retry(&mut self, message: String, cx: &mut Context<Self>) {
@@ -919,6 +1056,7 @@ impl OperationForm {
         self.space.plan = None;
         self.generation = self.generation.wrapping_add(1).max(1);
         self.pending_picker = None;
+        self.pending_clipboard = None;
         self.pending_format = None;
         self.reclamation_confirmation_pending = false;
         self.enumeration_cancel.store(true, Ordering::Release);
@@ -1125,7 +1263,9 @@ impl OperationForm {
                 }
                 if operation.is_none() {
                     form.pending_picker = None;
-                    form.error = Some("文件选择器不可用或繁忙，请重试。".into());
+                    if form.error.is_none() {
+                        form.error = Some("文件选择器不可用或繁忙，请重试。".into());
+                    }
                 }
                 cx.notify();
             });
@@ -1194,7 +1334,8 @@ impl OperationForm {
             cx.notify();
             return;
         }
-        if result.paths.is_empty()
+        if result.validate().is_err()
+            || result.paths.is_empty()
             || result.paths.len() > 32
             || result.paths.iter().any(|p| !valid_job_path(p))
         {
@@ -1209,7 +1350,7 @@ impl OperationForm {
                 }
                 Draft::Extract(draft) => {
                     if result.paths.len() != 1 {
-                        self.error = Some("解压表单一次只接受一个归档；本次未更改来源。".into());
+                        self.error = Some("解压表单一次只接受一个压缩包；本次未更改来源。".into());
                     } else {
                         draft.source = PathBuf::from(&result.paths[0]);
                         draft.selection = None;
@@ -1226,7 +1367,7 @@ impl OperationForm {
                         self.revalidate(cx);
                     }
                 }
-                Draft::Create(_) => self.enumerate_sources(result.paths, cx),
+                Draft::Create(_) => self.accept_sources(result.paths, cx),
                 Draft::Modify(draft) if draft.action == ArchiveJobModifyAction::ReplaceContent => {
                     if purpose != ArchivePickerPurpose::Files || result.paths.len() != 1 {
                         self.error =
@@ -1235,22 +1376,7 @@ impl OperationForm {
                         self.enumerate_sources(result.paths, cx);
                     }
                 }
-                Draft::Modify(draft) => {
-                    let mut unique = std::collections::HashSet::new();
-                    if draft.action != ArchiveJobModifyAction::Add
-                        || draft.added.len() + result.paths.len() > 31
-                        || result.paths.iter().any(|p| {
-                            !unique.insert(p.to_lowercase())
-                                || p.eq_ignore_ascii_case(&draft.source.to_string_lossy())
-                                || draft.added.iter().any(|old| old.eq_ignore_ascii_case(p))
-                        })
-                    {
-                        self.error = Some("来源重复或超过 31 个；未添加任何输入。".into());
-                    } else {
-                        draft.added.extend(result.paths);
-                        self.revalidate(cx);
-                    }
-                }
+                Draft::Modify(_) => self.accept_sources(result.paths, cx),
             },
             ArchivePickerPurpose::Destination => {
                 if result.paths.len() != 1 {
@@ -1289,7 +1415,7 @@ impl OperationForm {
         }
         cx.notify();
     }
-    fn enumerate_sources(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
+    pub(super) fn enumerate_sources(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
         let within_limit = match &self.draft {
             Draft::Create(draft) => draft.sources.len() + paths.len() <= 32,
             Draft::Modify(draft) if draft.action == ArchiveJobModifyAction::ReplaceContent => {
@@ -1326,8 +1452,8 @@ impl OperationForm {
                 match prepared {
                     Ok(sources) => {
                         if let Draft::Create(draft)=&mut form.draft {
-                            let duplicate=sources.iter().any(|source|draft.sources.iter().any(|old|old.path.to_string_lossy().eq_ignore_ascii_case(&source.path.to_string_lossy())));
-                            if duplicate {form.error=Some("本次选择包含已有来源；未添加任何重复输入。".into());}
+                            let roots = draft.sources.iter().chain(&sources).map(|source| source.path.to_string_lossy().into_owned()).collect::<Vec<_>>();
+                            if !intake::valid_source_roots(roots.iter().map(String::as_str), 32, None) {form.error=Some("来源重复、重叠或超出预算；本次未添加任何输入。".into());}
                             else {draft.sources.extend(sources);form.revalidate(cx);}
                         }
                         else if let Draft::Modify(draft) = &mut form.draft {
@@ -1338,7 +1464,7 @@ impl OperationForm {
                                 draft.added = vec![sources[0].path.to_string_lossy().into_owned()];
                                 form.revalidate(cx);
                             } else {
-                                form.error = Some("替换内容必须选择一个不同于原归档的普通文件；原选择保持不变。".into());
+                                form.error = Some("替换内容必须选择一个不同于原压缩包的普通文件；原选择保持不变。".into());
                             }
                         }
                         tracing::info!(event="archive.form.sources.finished",correlation_id=%id,generation,elapsed_ms=started.elapsed().as_millis() as u64,"archive source metadata completed");
@@ -1485,14 +1611,14 @@ impl OperationForm {
             Form::vertical()
                 .child(
                     Field::new()
-                        .label("当前归档")
+                        .label("当前压缩包")
                         .description(draft.source.to_string_lossy().into_owned()),
                 )
                 .child(Field::new().label("源快照").description(
                     "编辑绑定当前读取的原始版本和条目 ID；提交前由工作进程再次验证。",
                 ));
         if !self.modify_objects.is_empty() {
-            form = form.child(Field::new().label("本次归档内对象（仅供核对）").child(
+            form = form.child(Field::new().label("本次压缩包内对象（仅供核对）").child(
                 div().flex().flex_col().gap_1().children(
                     self.modify_objects.iter().enumerate().map(|(index, name)| {
                         div()
@@ -1543,7 +1669,7 @@ impl OperationForm {
         match draft.action {
             ArchiveJobModifyAction::Add => {
                 let target = draft.value.as_deref().unwrap_or("/").to_owned();
-                form = form.child(Field::new().label("归档内目标目录").child(
+                form = form.child(Field::new().label("压缩包内目标目录").child(
                     div().id("archive-edit-target-folder").role(gpui_kit::Role::Label).aria_label(target.clone()).test_support().child(gpui_kit::component::label::Label::new(target).whitespace_normal()),
                 )).child(Field::new().label("同名处理").child(
                     div().id("archive-edit-conflict-policy").role(gpui_kit::Role::Note).aria_label("逐项询问；仅当前任务可选择应用到后续冲突。不同类型或改名目标冲突会拒绝，不会先删除再提交。")
@@ -1553,16 +1679,18 @@ impl OperationForm {
                     Field::new()
                         .label("添加文件或文件夹")
                         .description(if draft.browser.format == "SevenZ" {
-                            format!("已选 {} / 31 个来源；仅添加到当前目录，保留原归档支持的加密设置。", draft.added.len())
+                            format!("已选 {} / 31 个来源；总大小未知。仅添加到当前目录，保留原压缩包支持的加密设置。", draft.added.len())
                         } else if matches!(draft.browser.format.as_str(), "Tar" | "TarGz" | "TarXz") {
-                            format!("已选 {} / 31 个来源；仅添加到当前目录。新增项使用上方说明的规范化元数据，不加密。", draft.added.len())
+                            format!("已选 {} / 31 个来源；总大小未知。仅添加到当前目录。新增项使用上方说明的规范化元数据，不加密。", draft.added.len())
                         } else {
-                            format!("已选 {} / 31 个来源；仅添加到当前目录。新增文件使用 Deflate，不加密；原有条目的压缩与加密记录保持不变。", draft.added.len())
+                            format!("已选 {} / 31 个来源；总大小未知。仅添加到当前目录。新增文件使用 Deflate，不加密；原有条目的压缩与加密记录保持不变。", draft.added.len())
                         })
                         .child(
                             div()
                                 .flex()
                                 .gap_2()
+                                .flex_wrap()
+                                .child(self.paste_button(cx))
                                 .child(self.picker_button(
                                     "archive-edit-add-files",
                                     "添加文件…",
@@ -1580,7 +1708,31 @@ impl OperationForm {
                             div()
                                 .flex()
                                 .flex_col()
-                                .children(draft.added.iter().cloned()),
+                                .gap_2()
+                                .when(draft.added.is_empty(), |list| {
+                                    list.child(div().id("archive-edit-sources-empty")
+                                        .debug_selector(|| "archive-edit-sources-empty".into())
+                                        .child("尚未选择来源。请添加文件或文件夹。"))
+                                })
+                                .children(draft.added.iter().enumerate().map(|(index, path)| {
+                                    div().flex().items_center().gap_2().min_w_0()
+                                        .child(div().flex_1().min_w_0().child(
+                                            gpui_kit::component::label::Label::new(path.clone()).whitespace_normal()))
+                                        .child(Button::new(("archive-edit-remove", index))
+                                            .debug_selector(move || format!("archive-edit-remove-{index}"))
+                                            .label("移除").outline().with_size(Size::Small)
+                                            .disabled(self.busy())
+                                            .on_click(cx.listener(move |this, _, _, cx| {
+                                                if this.busy() { return; }
+                                                if let Draft::Modify(draft) = &mut this.draft
+                                                    && draft.action == ArchiveJobModifyAction::Add
+                                                    && index < draft.added.len()
+                                                {
+                                                    draft.added.remove(index);
+                                                }
+                                                this.revalidate(cx);
+                                            })))
+                                })),
                         ),
                 );
             }
@@ -1593,7 +1745,7 @@ impl OperationForm {
             }
             ArchiveJobModifyAction::Delete => {
                 form = form.child(Field::new().label("删除选中条目").description(format!(
-                    "从压缩包删除 {} 个原始条目（所选目录后代已去重）。删除全部会生成经校验的合法空归档，不会删除归档文件；取消不提交。原文件在提交前保持不变。",
+                    "从压缩包删除 {} 个原始条目（所选目录后代已去重）。删除全部会生成经校验的合法空压缩包，不会删除压缩包文件；取消不提交。原文件在提交前保持不变。",
                     draft.ordinals.len()
                 )));
             }
@@ -1606,10 +1758,10 @@ impl OperationForm {
                             "新文件夹"
                         })
                         .required(true)
-                        .description("相对归档路径；文件夹以 / 结尾。非法路径、目标占用或移入自身会拒绝，不会先删除冲突成员。")
+                        .description("相对压缩包路径；文件夹以 / 结尾。非法路径、目标占用或移入自身会拒绝，不会先删除冲突成员。")
                         .child(
                             Input::new(&self.name)
-                                .aria_label("编辑归档目标名称")
+                                .aria_label("编辑压缩包目标名称")
                                 .disabled(self.busy()),
                         ),
                 );
@@ -1661,6 +1813,7 @@ impl Render for OperationForm {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::file_paste_key))
             .capture_key_down(cx.listener(Self::default_enter))
             .capture_key_up(cx.listener(|this, event: &gpui_kit::KeyUpEvent, _, _| {
                 if event.keystroke.key == "enter" {
@@ -1806,7 +1959,7 @@ fn choice(
     })
 }
 fn source_metadata(paths: Vec<String>, cancel: &AtomicBool) -> Result<Vec<DraftSource>, String> {
-    if paths.is_empty() || paths.len() > 32 {
+    if !intake::valid_source_roots(paths.iter().map(String::as_str), 32, None) {
         return Err("请选择 1–32 个来源。".into());
     }
     let mut sources = Vec::with_capacity(paths.len());

@@ -2,7 +2,7 @@
 use super::*;
 use gpui_kit::TestAppContext;
 use gpui_kit::component::WindowExt as _;
-use nxtools_protocol::{Message, PlatformCommand, PlatformCommandResult};
+use nxtools_protocol::{Envelope, Message, PlatformCommand, PlatformCommandResult};
 struct PickerHost;
 impl gpui_kit::Render for PickerHost {
     fn render(
@@ -611,7 +611,7 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
     deliver(&endpoint, negotiated, cx);
     let snapshot = Uuid::new_v4();
     let mut batch = read_event(&request, ArchiveReadEventKind::Batch);
-    batch.batch=Some(ArchiveReadBatch {snapshot_id:snapshot,sequence:0,format:"Zip".into(),entries:vec![serde_json::from_value(serde_json::json!({"ordinal":0,"name":"drag.txt","kind":"File","size":3,"packed_size":3,"encrypted":false,"warning_codes":[],"provenance":"Utf8Flag","codepage":65001})).expect("entry")]});
+    batch.batch=Some(ArchiveReadBatch {snapshot_id:snapshot,sequence:0,format:"Zip".into(),entries:[(0,"drag.txt",3),(1,"second.txt",7)].into_iter().map(|(ordinal,name,size)| serde_json::from_value(serde_json::json!({"ordinal":ordinal,"name":name,"kind":"File","size":size,"packed_size":size,"encrypted":false,"warning_codes":[],"provenance":"Utf8Flag","codepage":65001})).expect("entry")).collect()});
     deliver(&endpoint, batch, cx);
     let _ack = endpoint
         .try_receive_command_for_contract_test()
@@ -633,9 +633,9 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
     terminal.terminal = Some(ArchiveReadTerminal {
         status: ArchiveReadStatus::Succeeded,
         code: None,
-        files_verified: 1,
+        files_verified: 2,
         bytes_verified: 0,
-        entry_count: 1,
+        entry_count: 2,
         batch_count: 1,
         elapsed_ms: 1,
         native_error_code: None,
@@ -643,7 +643,7 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         transfer: Some(ArchiveReadTransfer {
             private_bytes: 4096,
             received_bytes: 4096,
-            max_batch_entries: 1,
+            max_batch_entries: 2,
             max_batch_bytes: 1024,
             max_inflight_batches: 1,
             process_budget_bytes: 536870912,
@@ -674,6 +674,8 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         .debug_bounds("archive-entry-0")
         .expect("production row")
         .center();
+    surface.simulate_click(point, gpui_kit::Modifiers::default());
+    surface.simulate_keystrokes("ctrl-a");
     surface.simulate_event(gpui_kit::MouseDownEvent {
         position: point,
         button: gpui_kit::MouseButton::Left,
@@ -685,11 +687,13 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         pressed_button: Some(gpui_kit::MouseButton::Left),
         ..Default::default()
     });
-    let wire = endpoint
-        .try_receive_business_command()
-        .expect("formal row command");
-    let Message::PlatformCommand(PlatformCommand::ArchiveVirtualDrag(drag)) = wire.message else {
-        panic!("formal drag")
+    let (wire, drag) = loop {
+        let wire = endpoint
+            .try_receive_business_command()
+            .expect("formal row command");
+        if let Message::PlatformCommand(PlatformCommand::ArchiveVirtualDrag(drag)) = &wire.message {
+            break (wire.clone(), drag.clone());
+        }
     };
     assert_eq!(
         drag.items.as_ref().expect("selected")[0].entry.browser,
@@ -700,6 +704,11 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         Some(0)
     );
     assert_eq!(drag.source_window_handle, 311);
+    assert_eq!(
+        drag.items.as_ref().expect("selected").len(),
+        2,
+        "complete actual multi-selection"
+    );
     let drag_progress = nxtools_protocol::archive_virtual_drag::ArchiveVirtualDragProgress {
         version: 1,
         operation_id: drag.operation_id,
@@ -707,26 +716,22 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         generation: drag.generation,
         phase: "materializing".into(),
         bytes_done: 0,
-        bytes_total: Some(3),
+        bytes_total: Some(10),
         files_done: 0,
-        files_total: 1,
+        files_total: 2,
         current_index: Some(0),
         current_member: Some("drag.txt".into()),
+        current_request_id: Some(drag.items.as_ref().expect("items")[0].entry.operation_id),
+        current_bytes_done: Some(1),
+        current_bytes_total: Some(3),
+        bytes_processed: Some(1),
+        sequence: Some(1),
         cleanup_complete: None,
         code: None,
         native_error_code: None,
     };
-    owner.update(&mut surface, |app, cx| {
-        app.notification(
-            PlatformNotification::Event(
-                nxtools_protocol::PlatformEvent::ArchiveVirtualDragProgress(Box::new(
-                    drag_progress,
-                )),
-            ),
-            cx,
-        )
-    });
-    surface.run_until_parked();
+    let before_progress = surface.update(|_, cx| cx.windows());
+    r45_deliver_drag_progress(&owner, drag_progress.clone(), &mut surface);
     assert!(
         owner.read_with(&surface, |app, _| app
             .jobs
@@ -734,6 +739,158 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
             .as_ref()
             .is_some_and(|slot| slot.operation == drag.operation_id)),
         "real held gesture + native demand opens original shared progress presentation"
+    );
+    let progress_window = surface
+        .update(|_, cx| cx.windows())
+        .into_iter()
+        .find(|candidate| !before_progress.contains(candidate))
+        .expect("original demand window");
+    let mut progress_surface = gpui_kit::VisualTestContext::from_window(progress_window, cx);
+    progress_surface.simulate_resize(gpui_kit::size(px(480.), px(260.)));
+    progress_surface.run_until_parked();
+    let labels = r45_drag_labels(&mut progress_surface);
+    assert!(labels.iter().any(|label| label == "拖出解压"), "{labels:?}");
+    assert!(
+        labels
+            .iter()
+            .any(|label| label.starts_with("当前文件 ·") && label.contains("33%")),
+        "{labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .any(|label| label.starts_with("总体解压 ·") && label.contains("10%")),
+        "{labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .all(|label| !label.contains("缓存物化") && !label.contains("关闭窗口不会")),
+        "{labels:?}"
+    );
+    let current = progress_surface
+        .debug_bounds("archive-current-file-progress")
+        .expect("current group");
+    let overall = progress_surface
+        .debug_bounds("archive-overall-progress")
+        .expect("overall group");
+    let footer = progress_surface
+        .debug_bounds("archive-progress-footer")
+        .expect("footer");
+    assert!(current.bottom() <= overall.top() && overall.bottom() <= footer.top());
+    let mut next = drag_progress.clone();
+    next.sequence = Some(2);
+    next.current_index = Some(1);
+    next.current_request_id = Some(drag.items.as_ref().expect("items")[1].entry.operation_id);
+    next.current_member = Some("second.txt".into());
+    next.current_bytes_total = Some(7);
+    next.bytes_done = 3;
+    next.bytes_processed = Some(4);
+    next.files_done = 1;
+    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
+    let labels = r45_drag_labels(&mut progress_surface);
+    assert!(
+        labels
+            .iter()
+            .any(|label| label.starts_with("当前文件 ·") && label.contains("14%")),
+        "{labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .any(|label| label.starts_with("总体解压 ·") && label.contains("40%")),
+        "{labels:?}"
+    );
+    let mut stale = drag_progress;
+    stale.bytes_done = 3;
+    stale.files_done = 1;
+    stale.bytes_processed = Some(4);
+    let mut wrong_request = next.clone();
+    wrong_request.sequence = Some(50);
+    wrong_request.current_request_id = Some(Uuid::new_v4());
+    let mut wrong_index = next.clone();
+    wrong_index.sequence = Some(50);
+    wrong_index.current_index = Some(99);
+    let mut wrong_generation = next.clone();
+    wrong_generation.sequence = Some(50);
+    wrong_generation.generation += 1;
+    let mut wrong_operation = next.clone();
+    wrong_operation.operation_id = Uuid::new_v4();
+    let mut wrong_session = next.clone();
+    wrong_session.session_id = Uuid::new_v4();
+    let mut rewind = next.clone();
+    rewind.sequence = Some(50);
+    rewind.current_bytes_done = Some(0);
+    for invalid in [
+        stale,
+        wrong_request,
+        wrong_index,
+        wrong_generation,
+        wrong_operation,
+        wrong_session,
+        rewind,
+        next.clone(),
+    ] {
+        r45_deliver_drag_progress(&owner, invalid, &mut progress_surface);
+        let after = r45_drag_labels(&mut progress_surface);
+        assert!(after.iter().any(|label| label == "second.txt"), "{after:?}");
+        assert!(
+            after
+                .iter()
+                .any(|label| label.starts_with("当前文件 ·") && label.contains("14%")),
+            "{after:?}"
+        );
+    }
+    next.sequence = Some(3);
+    next.current_bytes_total = None;
+    next.bytes_total = None;
+    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
+    let unknown = r45_drag_labels(&mut progress_surface);
+    for title in ["当前文件 ·", "总体解压 ·"] {
+        let label = unknown
+            .iter()
+            .find(|label| label.starts_with(title))
+            .expect("unknown amount");
+        assert!(
+            label.contains("大小未知") && !label.contains('%'),
+            "{label}"
+        );
+    }
+    next.sequence = Some(4);
+    next.phase = "target_copying".into();
+    next.current_bytes_done = Some(7);
+    next.current_bytes_total = Some(7);
+    next.bytes_done = 10;
+    next.bytes_processed = Some(10);
+    next.bytes_total = Some(10);
+    next.files_done = 2;
+    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
+    let waiting = r45_drag_labels(&mut progress_surface);
+    assert!(waiting.iter().any(|label| label == "等待接收方完成"));
+    assert!(!waiting.iter().any(|label| label == "已完成"));
+    assert!(
+        waiting
+            .iter()
+            .any(|label| label.starts_with("总体解压 ·") && label.contains("100%"))
+    );
+    next.sequence = Some(5);
+    next.phase = "finished".into();
+    next.code = Some("receiver_reported_complete".into());
+    next.cleanup_complete = Some(true);
+    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
+    assert!(
+        r45_drag_labels(&mut progress_surface)
+            .iter()
+            .any(|label| label == "已完成")
+    );
+    next.sequence = Some(6);
+    next.phase = "materializing".into();
+    next.cleanup_complete = None;
+    r45_deliver_drag_progress(&owner, next, &mut progress_surface);
+    assert!(
+        r45_drag_labels(&mut progress_surface)
+            .iter()
+            .any(|label| label == "已完成")
     );
     owner.update(&mut surface, |app, cx| {
         app.background_drag_progress(drag.operation_id, cx)
@@ -762,6 +919,37 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
     });
     surface.run_until_parked();
     view.read_with(&surface, |view, _| assert!(!view.drag_matches(wire.id)));
+}
+
+fn r45_deliver_drag_progress(
+    owner: &Entity<ArchiveApplication>,
+    event: nxtools_protocol::archive_virtual_drag::ArchiveVirtualDragProgress,
+    surface: &mut gpui_kit::VisualTestContext,
+) {
+    let serialized = serde_json::to_vec(&Envelope::new(Message::PlatformEvent(
+        nxtools_protocol::PlatformEvent::ArchiveVirtualDragProgress(Box::new(event)),
+    )))
+    .expect("native progress wire");
+    let decoded: Envelope = serde_json::from_slice(&serialized).expect("decoded progress");
+    let Message::PlatformEvent(event) = decoded.message else {
+        panic!("progress event")
+    };
+    owner.update(surface, |app, cx| {
+        app.notification(PlatformNotification::Event(event), cx)
+    });
+    surface.run_until_parked();
+}
+
+fn r45_drag_labels(surface: &mut gpui_kit::VisualTestContext) -> Vec<String> {
+    surface.run_until_parked();
+    surface.update(|window, cx| {
+        window.activate_window();
+        window.draw(cx).clear(cx);
+        gpui_kit::base::test_support::snapshots(window)
+            .iter()
+            .filter_map(|node| node.label().map(str::to_owned))
+            .collect()
+    })
 }
 
 // Keep original transport/client/completion + deferred install; pause only the application drain
@@ -2132,7 +2320,7 @@ fn browser_tabs_pointer_selection_and_close_preserve_other_session(cx: &mut Test
         nodes
             .iter()
             .find(|node| {
-                node.label() == Some("关闭归档标签页") && tab.contains(&node.bounds().center())
+                node.label() == Some("关闭压缩包标签页") && tab.contains(&node.bounds().center())
             })
             .expect("official close inside first tab")
             .bounds()
@@ -2785,7 +2973,7 @@ fn step4_drop_add_uses_format_neutral_dialog_and_cancel_has_no_edit(cx: &mut Tes
         assert!(
             nodes
                 .iter()
-                .any(|node| node.label() == Some("添加到当前归档")),
+                .any(|node| node.label() == Some("添加到当前压缩包")),
             "TAR drop must not claim ZIP"
         );
     });
@@ -2915,7 +3103,6 @@ fn step4_drop_add_rechecks_frozen_folder_snapshot_and_generation(cx: &mut TestAp
         context.format = "Tar".into();
         context.tar_edit =
             Some(nxtools_protocol::archive_browser::TarEditEligibility { refusal: None });
-        let generation = slot.generation;
         let browser = slot.browser.clone().expect("browser");
         let view = slot.view.upgrade().expect("view");
         slot.window
@@ -2928,49 +3115,44 @@ fn step4_drop_add_rechecks_frozen_folder_snapshot_and_generation(cx: &mut TestAp
                 })
             })
             .expect("window");
-        for (generation, target) in [
-            (generation + 1, Some((snapshot, String::new()))),
-            (generation, Some((Uuid::new_v4(), String::new()))),
-            (generation, Some((snapshot, "changed-folder".into()))),
-            (generation, None),
-        ] {
-            app.add_drop(
-                id,
-                generation,
-                target,
-                vec![r"C:\owned\incoming.txt".into()],
-                cx,
-            );
-            assert!(
-                app.jobs.forms.is_empty(),
-                "changed drop target cannot create form"
-            );
-            assert!(app.jobs.records.is_empty());
+        let target = app
+            .drop_add_target(id, &[r"C:\owned\incoming.txt".into()], cx)
+            .expect("frozen Add");
+        for case in 0..5 {
+            let mut stale = target.clone();
+            match case {
+                0 => stale.origin.browser.1 += 1,
+                1 => stale.origin.browser.2 = Uuid::new_v4(),
+                2 => {
+                    stale.request.modify.as_mut().expect("Modify").value =
+                        Some("changed-folder/".into())
+                }
+                3 => stale.origin.connection += 1,
+                _ => stale.request.paths[0] = r"C:\owned\different.zip".into(),
+            }
+            app.add_drop(stale, cx);
+            assert!(app.jobs.forms.is_empty(), "stale drop cannot create form");
+            assert!(app.jobs.records.is_empty(), "stale drop cannot submit");
         }
-        app.add_drop(
-            id,
-            generation,
-            Some((snapshot, String::new())),
-            vec![r"C:\owned\incoming.txt".into()],
-            cx,
-        );
+        app.add_drop(target, cx);
+        assert!(app.jobs.forms.is_empty(), "direct Add has no form");
         assert_eq!(
-            app.jobs.forms.len(),
+            app.jobs.records.len(),
             1,
-            "unchanged target still opens original Add form"
-        );
-        assert!(
-            app.jobs.records.is_empty(),
-            "opening form is not submission"
+            "unchanged frozen target submits once"
         );
     });
     cx.run_until_parked();
+    let mut jobs = 0;
     while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
-        assert!(!matches!(
+        if matches!(
             envelope.message,
             Message::PlatformCommand(PlatformCommand::ArchiveJob(_))
-        ));
+        ) {
+            jobs += 1;
+        }
     }
+    assert_eq!(jobs, 1, "one original typed Add request");
 }
 
 #[gpui_kit::test]
@@ -3051,4 +3233,683 @@ fn step4_original_app_and_final_form_refuse_missing_or_wrong_kind_member(cx: &mu
             Message::PlatformCommand(PlatformCommand::ArchiveJob(_))
         ));
     }
+}
+
+#[gpui_kit::test]
+fn opt03_drop_new_keeps_all_sources_in_original_create_form(cx: &mut TestAppContext) {
+    use gpui_kit::{MouseButton, MouseDownEvent, MouseUpEvent};
+    let (owner, endpoint, id, _) = preview_fixture(cx);
+    let root = std::env::temp_dir().join(format!("archive-opt03-drop-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(root.join("folder")).expect("owned directory");
+    std::fs::write(root.join("first.zip"), b"fixture").expect("owned archive input");
+    std::fs::write(root.join("last.txt"), b"last").expect("owned ordinary input");
+    let paths = vec![
+        root.join("first.zip"),
+        root.join("folder"),
+        root.join("last.txt"),
+    ];
+    let window = owner.read_with(cx, |app, _| app.windows[&id].window);
+    let mut surface = gpui_kit::VisualTestContext::from_window(window, cx);
+    owner.update(&mut surface, |app, cx| {
+        app.handle_drop(id, paths.clone(), window, cx)
+    });
+    surface.run_until_parked();
+    let position = surface.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.label() == Some("全部来源新建"))
+            .expect("real New-all drop button")
+            .bounds()
+            .center()
+    });
+    surface.simulate_event(MouseDownEvent {
+        button: MouseButton::Left,
+        position,
+        click_count: 1,
+        ..Default::default()
+    });
+    surface.simulate_event(MouseUpEvent {
+        button: MouseButton::Left,
+        position,
+        click_count: 1,
+        ..Default::default()
+    });
+    surface.run_until_parked();
+    let form_window = owner.read_with(&surface, |app, _| {
+        assert_eq!(app.jobs.forms.len(), 1);
+        assert!(
+            app.jobs.records.is_empty(),
+            "choosing New is not submission"
+        );
+        app.jobs
+            .forms
+            .values()
+            .next()
+            .expect("original form")
+            .window
+    });
+    let mut form_surface = gpui_kit::VisualTestContext::from_window(form_window, cx);
+    form_surface.run_until_parked();
+    form_surface.update(|window, cx| {
+        window.draw(cx).clear(cx);
+        let nodes = gpui_kit::base::test_support::snapshots(window);
+        assert_eq!(
+            nodes
+                .iter()
+                .filter(|node| node.label() == Some("移除"))
+                .count(),
+            paths.len(),
+            "real source rows"
+        );
+    });
+    owner.read_with(&form_surface, |app, cx| {
+        let form = app
+            .jobs
+            .forms
+            .values()
+            .next()
+            .expect("form")
+            .view
+            .upgrade()
+            .expect("live form");
+        let (enumerating, actual) = form.read(cx).sources_for_test();
+        assert!(!enumerating, "original metadata enumeration completed");
+        assert_eq!(actual, paths, "all sources keep their order and identity");
+    });
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        assert!(!matches!(
+            envelope.message,
+            Message::PlatformCommand(PlatformCommand::ArchiveJob(_))
+        ));
+    }
+    std::fs::remove_dir_all(root).expect("owned fixture cleanup");
+}
+
+#[path = "opt03_add_selection_tests.rs"]
+mod opt03_add_selection_tests;
+
+#[path = "incoming_add_tests.rs"]
+mod incoming_add_tests;
+
+#[path = "opt04_preview_tests.rs"]
+mod opt04_preview_tests;
+
+#[gpui_kit::test]
+fn opt07_find_extract_and_delete_reuse_original_forms_and_frozen_submit_guards(
+    cx: &mut TestAppContext,
+) {
+    use crate::archive::model::RowId;
+    use gpui_kit::{Role, VisualTestContext};
+    fn click(surface: &mut VisualTestContext, label: &str, role: Role) {
+        surface.run_until_parked();
+        let position = surface.update(|window, cx| {
+            window.activate_window();
+            window.draw(cx).clear(cx);
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| {
+                    node.label() == Some(label) && node.role() == Some(role) && node.visible()
+                })
+                .expect("original visible control")
+                .bounds()
+                .center()
+        });
+        surface.simulate_event(gpui_kit::MouseDownEvent {
+            position,
+            button: gpui_kit::MouseButton::Left,
+            click_count: 1,
+            ..Default::default()
+        });
+        surface.simulate_event(gpui_kit::MouseUpEvent {
+            position,
+            button: gpui_kit::MouseButton::Left,
+            click_count: 1,
+            modifiers: Default::default(),
+        });
+        surface.run_until_parked();
+    }
+    for (action, stale) in [
+        ("提取结果", false),
+        ("提取结果", true),
+        ("删除结果", false),
+        ("删除结果", true),
+    ] {
+        let (owner, _endpoint, id, snapshot) = preview_fixture(cx);
+        owner.update(cx, |app, cx| {
+            let slot = app.windows.get_mut(&id).expect("original source");
+            let browser = slot.browser.as_mut().expect("original context");
+            browser.format = "Tar".into();
+            browser.tar_edit =
+                Some(nxtools_protocol::archive_browser::TarEditEligibility { refusal: None });
+            let context = browser.clone();
+            slot.window
+                .update(cx, |_, window, cx| {
+                    slot.view.update(cx, |view, cx| {
+                        let entries = view.model.as_ref().expect("catalog").entries.clone();
+                        view.install(snapshot, entries, "Tar".into(), window, cx);
+                        view.bind_edit_context(&context, cx);
+                    })
+                })
+                .expect("source window")
+                .expect("source view");
+        });
+        let window = owner.read_with(cx, |app, _| app.windows[&id].window);
+        let mut surface = VisualTestContext::from_window(window, cx);
+        click(&mut surface, "查看", Role::Button);
+        click(&mut surface, "查找整个压缩包  Ctrl+Shift+F", Role::MenuItem);
+        surface.simulate_input("item1");
+        surface.run_until_parked();
+        surface.update(|window, cx| {
+            window.draw(cx).clear(cx);
+        });
+        let position = surface
+            .debug_bounds("archive-find-result-0")
+            .expect("Find row")
+            .center();
+        surface.simulate_event(gpui_kit::MouseDownEvent {
+            position,
+            button: gpui_kit::MouseButton::Left,
+            click_count: 1,
+            ..Default::default()
+        });
+        surface.simulate_event(gpui_kit::MouseUpEvent {
+            position,
+            button: gpui_kit::MouseButton::Left,
+            click_count: 1,
+            modifiers: Default::default(),
+        });
+        surface.run_until_parked();
+        surface.update(|window, cx| {
+            window.draw(cx).clear(cx);
+            let nodes = gpui_kit::base::test_support::snapshots(window);
+            assert!(
+                nodes
+                    .iter()
+                    .any(|node| node.label() == Some("item1.txt") && node.selected() == Some(true)),
+                "Find row selected before {action}"
+            );
+            assert!(
+                nodes.iter().any(|node| node.label() == Some(action)
+                    && node.role() == Some(Role::Button)
+                    && node.disabled() != Some(true)),
+                "{action}: Find action available"
+            );
+        });
+        click(&mut surface, action, Role::Button);
+        let form_window = owner.read_with(&surface, |app, _| {
+            assert_eq!(
+                app.jobs.forms.len(),
+                1,
+                "{action}: one original decision form"
+            );
+            assert!(
+                app.jobs.records.is_empty(),
+                "Find never starts a Job directly"
+            );
+            let slot = app.windows.get(&id).expect("same source");
+            assert_eq!(
+                slot.view
+                    .read_with(&surface, |view, _| view
+                        .model
+                        .as_ref()
+                        .expect("same catalog")
+                        .selected
+                        .iter()
+                        .cloned()
+                        .collect::<Vec<_>>())
+                    .expect("view"),
+                vec![RowId::Entry(snapshot, 1)]
+            );
+            app.jobs
+                .forms
+                .values()
+                .next()
+                .expect("original form")
+                .window
+        });
+        if stale {
+            owner.update(&mut surface, |app, cx| {
+                app.windows[&id]
+                    .view
+                    .update(cx, |view, _| {
+                        view.status = BrowserStatus::Stale("来源已变化".into())
+                    })
+                    .expect("source invalidated");
+            });
+        }
+        let mut form_surface = VisualTestContext::from_window(form_window, cx);
+        click(
+            &mut form_surface,
+            if action == "删除结果" {
+                "应用编辑"
+            } else {
+                "解压"
+            },
+            Role::Button,
+        );
+        owner.read_with(&form_surface, |app, _| {
+            if stale {
+                assert!(
+                    app.jobs.records.is_empty(),
+                    "original submit refuses stale Find-derived intent"
+                );
+            } else {
+                assert_eq!(
+                    app.jobs.records.len(),
+                    1,
+                    "original valid form starts exactly one Job"
+                );
+                let request = app
+                    .jobs
+                    .records
+                    .values()
+                    .next()
+                    .expect("original Job")
+                    .command
+                    .request
+                    .as_ref()
+                    .expect("request");
+                if action == "提取结果" {
+                    let selected = request
+                        .extract
+                        .as_ref()
+                        .expect("Extract")
+                        .selection
+                        .as_ref()
+                        .expect("original selected snapshot");
+                    assert_eq!(selected.browser.snapshot_id, snapshot);
+                    assert_eq!(selected.ordinals, vec![1]);
+                } else {
+                    let modify = request.modify.as_ref().expect("Modify");
+                    assert_eq!(modify.browser.snapshot_id, snapshot);
+                    assert_eq!(modify.ordinals, vec![1]);
+                }
+            }
+        });
+    }
+}
+
+fn opt07_assert_find_warning_refusal(cx: &mut TestAppContext, action: &str) {
+    use crate::archive::model::RowId;
+    use gpui_kit::{Role, VisualTestContext};
+    fn draw(surface: &mut VisualTestContext) {
+        surface.run_until_parked();
+        surface.update(|window, cx| {
+            window.activate_window();
+            window.draw(cx).clear(cx);
+        });
+    }
+    fn click(surface: &mut VisualTestContext, label: &str, role: Role, count: usize) {
+        draw(surface);
+        let position = surface.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| {
+                    node.label() == Some(label) && node.role() == Some(role) && node.visible()
+                })
+                .expect("current original control")
+                .bounds()
+                .center()
+        });
+        surface.simulate_event(gpui_kit::MouseDownEvent {
+            position,
+            button: gpui_kit::MouseButton::Left,
+            click_count: count,
+            ..Default::default()
+        });
+        surface.simulate_event(gpui_kit::MouseUpEvent {
+            position,
+            button: gpui_kit::MouseButton::Left,
+            click_count: count,
+            modifiers: Default::default(),
+        });
+        draw(surface);
+    }
+    fn key(surface: &mut VisualTestContext, stroke: &str) {
+        surface.simulate_event(gpui_kit::KeyDownEvent {
+            keystroke: gpui_kit::Keystroke::parse(stroke).expect("key"),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        surface.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse(stroke).expect("release"),
+        });
+        draw(surface);
+    }
+    let (owner, endpoint, id, snapshot) = preview_fixture(cx);
+    let (window, browser) = owner.update(cx, |app, cx| {
+        let slot = app.windows.get_mut(&id).expect("original source");
+        let context = slot.browser.as_mut().expect("original context");
+        context.format = "Tar".into();
+        context.tar_edit =
+            Some(nxtools_protocol::archive_browser::TarEditEligibility { refusal: None });
+        let context = context.clone();
+        let browser = slot.view.upgrade().expect("original browser");
+        slot.window
+            .update(cx, |_, window, cx| {
+                browser.update(cx, |view, cx| {
+                    let template = view.model.as_ref().expect("catalog").entries[0].clone();
+                    let mut warning = template.clone();
+                    warning.ordinal = 411;
+                    warning.name = "blocked/collision.txt".into();
+                    warning.warning_codes = vec!["OutputCollision".into()];
+                    let mut keep = template;
+                    keep.ordinal = 777;
+                    keep.name = "current/keep.txt".into();
+                    view.install(snapshot, vec![warning, keep], "Tar".into(), window, cx);
+                    view.bind_edit_context(&context, cx);
+                })
+            })
+            .expect("source window");
+        (slot.window, browser)
+    });
+    let mut surface = VisualTestContext::from_window(window, cx);
+    click(&mut surface, "current", Role::ListBoxOption, 2);
+    key(&mut surface, "ctrl-f");
+    surface.simulate_input("keep");
+    draw(&mut surface);
+    click(&mut surface, "keep.txt", Role::ListBoxOption, 1);
+    let state = |view: &ArchiveBrowser| {
+        let model = view.model.as_ref().expect("same loaded catalog");
+        (
+            model.folder.clone(),
+            model.filter.clone(),
+            model.selected.clone(),
+            model.focused.clone(),
+            model.anchor.clone(),
+            model
+                .visible()
+                .iter()
+                .map(|row| row.id.clone())
+                .collect::<Vec<_>>(),
+            model.work.get(),
+        )
+    };
+    let before = browser.read_with(&surface, |view, _| state(view));
+    assert_eq!(before.0, "current");
+    assert_eq!(before.1, "keep");
+    assert_eq!(before.3, Some(RowId::Entry(snapshot, 777)));
+    assert_eq!(before.4, before.3);
+    key(&mut surface, "ctrl-shift-f");
+    surface.simulate_input("collision");
+    draw(&mut surface);
+    let result = surface
+        .debug_bounds("archive-find-result-0")
+        .expect("original warning Find row")
+        .center();
+    surface.simulate_click(result, Default::default());
+    draw(&mut surface);
+    while let Ok(wire) = endpoint.try_receive_command_for_contract_test() {
+        assert!(
+            !matches!(
+                wire.message,
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(_))
+            ),
+            "setup does not start a Job"
+        );
+    }
+    click(&mut surface, action, Role::Button, 1);
+    assert!(
+        surface.update(|window, cx| window.has_active_dialog(cx)),
+        "{action}: refusal retains original Find Dialog"
+    );
+    assert_eq!(
+        browser.read_with(&surface, |view, _| state(view)),
+        before,
+        "{action}: refusal cannot mutate folder/filter/selection/focus/anchor or projection"
+    );
+    surface.update(|window, _| {
+        let nodes = gpui_kit::base::test_support::snapshots(window);
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.label() == Some("名称或内部路径")
+                    && node.value() == Some("collision")),
+            "same Find query/input remains"
+        );
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.label() == Some("blocked/collision.txt")
+                    && node.selected() == Some(true)),
+            "same Find result remains selected"
+        );
+    });
+    owner.read_with(&surface, |app, _| {
+        assert!(
+            app.jobs.forms.is_empty() && app.jobs.records.is_empty(),
+            "{action}: zero original form or Job"
+        );
+    });
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "{action}: zero dispatch"
+    );
+}
+
+#[gpui_kit::test]
+fn opt07_ac01_find_warning_extract_preserves_dialog_and_browser(cx: &mut TestAppContext) {
+    opt07_assert_find_warning_refusal(cx, "提取结果");
+}
+
+#[gpui_kit::test]
+fn opt07_ac01_find_warning_delete_preserves_dialog_and_browser(cx: &mut TestAppContext) {
+    opt07_assert_find_warning_refusal(cx, "删除结果");
+}
+
+#[gpui_kit::test]
+fn root_drop_extracts_whole_archive_into_receiver_created_folder(cx: &mut TestAppContext) {
+    use nxtools_protocol::archive_job::*;
+    let (owner, endpoint, _, _) = preview_fixture(cx);
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    let job = owner.update(cx, |app, cx| {
+        app.extract_dropped(
+            crate::archive::browser::LocatedDrop {
+                source: PathBuf::from(r"C:\owned\preview.zip"),
+                codepage: 936,
+                destination: r"D:\Downloads\preview".into(),
+            },
+            cx,
+        );
+        assert_eq!(app.jobs.records.len(), 1, "one ordinary job");
+        *app.jobs.records.keys().next().expect("job")
+    });
+    owner.read_with(cx, |app, _| {
+        let request = app.jobs.records[&job]
+            .command
+            .request
+            .as_ref()
+            .expect("start request");
+        assert_eq!(request.kind, ArchiveJobKind::Extract);
+        assert_eq!(request.paths, vec![r"C:\owned\preview.zip".to_owned()]);
+        assert_eq!(
+            request.destination.as_deref(),
+            Some(r"D:\Downloads\preview")
+        );
+        assert_eq!(request.codepage, 936, "browser code page is retained");
+        let extract = request.extract.as_ref().expect("extract options");
+        assert_eq!(
+            extract.strategy,
+            ArchiveJobStrategy::Here,
+            "the receiver already created the wrapper folder"
+        );
+        assert!(!extract.single_file_folder);
+        assert!(
+            extract.selection.is_none(),
+            "whole archive, not a member list"
+        );
+        assert!(extract.reclamation.is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn ref17_b3_e2_actual_create_submit_freezes_volume_in_job_and_wire(cx: &mut TestAppContext) {
+    use gpui_kit::{MouseButton, VisualTestContext, px};
+    use nxtools_core::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
+    use nxtools_protocol::archive_job::{ArchiveJobAction, ArchiveJobKind};
+
+    fn draw(surface: &mut VisualTestContext) {
+        surface.run_until_parked();
+        surface.update(|window, cx| {
+            window.activate_window();
+            window.draw(cx).clear(cx);
+        });
+    }
+    fn click(surface: &mut VisualTestContext, selector: &'static str) {
+        let position = surface
+            .debug_bounds(selector)
+            .expect("actual form control")
+            .center();
+        surface.simulate_event(gpui_kit::MouseDownEvent {
+            position,
+            button: MouseButton::Left,
+            ..Default::default()
+        });
+        surface.simulate_event(gpui_kit::MouseUpEvent {
+            position,
+            button: MouseButton::Left,
+            modifiers: Default::default(),
+            click_count: 1,
+        });
+        surface.run_until_parked();
+    }
+    fn reveal(surface: &mut VisualTestContext, selector: &'static str) {
+        for _ in 0..60 {
+            draw(surface);
+            let viewport = surface
+                .debug_bounds("archive-form-body")
+                .expect("original scroll body");
+            let bounds = surface.debug_bounds(selector);
+            if bounds.is_some_and(|bounds| {
+                bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
+            }) {
+                return;
+            }
+            let direction = if bounds.is_some_and(|bounds| bounds.top() < viewport.top()) {
+                2.
+            } else {
+                -2.
+            };
+            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
+                ..Default::default()
+            });
+        }
+        panic!("original form control {selector} must be reachable");
+    }
+    let (owner, endpoint) = setup(cx);
+    owner.update(cx, |app, cx| {
+        app.settings.create_volume_size = Some(ArchiveVolumeSize {
+            value: 64,
+            unit: ArchiveVolumeUnit::KiB,
+        });
+        app.open_create_form(
+            vec![crate::archive::draft::DraftSource {
+                path: r"C:\synthetic\split-submit.txt".into(),
+                directory: false,
+                bytes: Some(12),
+            }],
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let (form_id, form, window) = owner.read_with(cx, |app, _| {
+        assert_eq!(app.jobs.forms.len(), 1);
+        let (id, slot) = app
+            .jobs
+            .forms
+            .iter()
+            .next()
+            .expect("original Create form slot");
+        (
+            *id,
+            slot.view.upgrade().expect("retained original form"),
+            slot.window,
+        )
+    });
+    let mut surface = VisualTestContext::from_window(window, cx);
+    reveal(&mut surface, "archive-options-toggle");
+    click(&mut surface, "archive-options-toggle");
+    reveal(&mut surface, "archive-volume-number");
+    click(&mut surface, "archive-volume-number");
+    surface.simulate_keystrokes("ctrl-a");
+    surface.simulate_input("65");
+    draw(&mut surface);
+    assert!(owner.read_with(&surface, |app, _| app.jobs.records.is_empty()));
+    let starts_before = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+        .filter(|envelope| matches!(&envelope.message, Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) if command.action == ArchiveJobAction::Start))
+        .count();
+    assert_eq!(starts_before, 0, "editing must not admit a job");
+    click(&mut surface, "archive-form-submit");
+    // Accepted Create closes its original window; inspect the retained entity and owner, not a removed surface.
+    surface.run_until_parked();
+    let (job_id, accepted) = owner.read_with(&surface, |app, _| {
+        assert!(
+            !app.jobs.forms.contains_key(&form_id),
+            "actual form accepted and retired"
+        );
+        assert_eq!(app.jobs.records.len(), 1, "one original JobRecord");
+        let (id, record) = app.jobs.records.iter().next().expect("accepted job");
+        assert_eq!(
+            record.state, "正在准入",
+            "original queue dispatched the accepted job"
+        );
+        (*id, record.command.clone())
+    });
+    assert_eq!(accepted.action, ArchiveJobAction::Start);
+    assert_eq!(accepted.operation_id, job_id);
+    let request = accepted.request.as_ref().expect("immutable job request");
+    assert_eq!(request.kind, ArchiveJobKind::Create);
+    assert_eq!(
+        request.paths,
+        vec![r"C:\synthetic\split-submit.txt".to_owned()]
+    );
+    assert_eq!(
+        request.create.as_ref().expect("create").volume_bytes,
+        Some(66_560)
+    );
+    let starts: Vec<_> =
+        std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .filter_map(|envelope| match envelope.message {
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(command))
+                    if command.action == ArchiveJobAction::Start =>
+                {
+                    Some(command)
+                }
+                _ => None,
+            })
+            .collect();
+    assert_eq!(
+        starts.len(),
+        1,
+        "actual Submit crosses the original PlatformBridge once"
+    );
+    assert_eq!(
+        *starts[0], accepted,
+        "JobRecord and outbound command are the same snapshot"
+    );
+    form.update(&mut surface, |form, _| {
+        form.revise_submitted_create_volume_for_test(ArchiveVolumeSize {
+            value: 128,
+            unit: ArchiveVolumeUnit::MiB,
+        })
+    });
+    owner.read_with(&surface, |app, _| {
+        assert_eq!(app.jobs.records[&job_id].command, accepted)
+    });
+    assert_eq!(
+        starts[0]
+            .request
+            .as_ref()
+            .expect("outbound request")
+            .create
+            .as_ref()
+            .expect("outbound create")
+            .volume_bytes,
+        Some(66_560)
+    );
+    assert!(std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+        .all(|envelope| !matches!(envelope.message, Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) if command.action == ArchiveJobAction::Start)), "post-submit draft change cannot enqueue another Start");
 }

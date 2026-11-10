@@ -38,6 +38,7 @@ pub(crate) struct DiskSet {
     pub files: Vec<File>,
     starts: Vec<u64>,
     pub length: u64,
+    continuous: bool,
 }
 pub(crate) fn candidate_set(files: &[File], limits: &ResourceLimits) -> Result<DiskSet> {
     if files.is_empty() || files.len() > MAX_VOLUMES {
@@ -61,6 +62,7 @@ pub(crate) fn candidate_set(files: &[File], limits: &ResourceLimits) -> Result<D
         files: copies,
         starts,
         length,
+        continuous: false,
     })
 }
 impl DiskSet {
@@ -96,6 +98,7 @@ impl DiskSet {
             files,
             starts,
             length,
+            continuous: false,
         })
     }
     fn global(&self, disk: u32, offset: u64) -> Result<u64> {
@@ -177,7 +180,11 @@ pub(crate) fn discover(
     path: &Path,
     limits: &ResourceLimits,
     control: &OperationControl,
+    held_paths: Option<&[String]>,
 ) -> Result<Option<DiskSet>> {
+    if let Some(set) = discover_continuous(path, limits, control, held_paths)? {
+        return Ok(Some(set));
+    }
     let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
     let numbered = extension
         .as_bytes()
@@ -256,6 +263,101 @@ pub(crate) fn discover(
             return Err(ArchiveError::CorruptArchive);
         }
     }
+    Ok(Some(set))
+}
+
+fn discover_continuous(
+    path: &Path,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    held_paths: Option<&[String]>,
+) -> Result<Option<DiskSet>> {
+    let extension = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+    let Ok(ordinal) = extension.parse::<usize>() else {
+        return Ok(None);
+    };
+    if ordinal == 0 || extension != format!("{ordinal:03}") {
+        return Ok(None);
+    }
+    let first = path.with_extension("001");
+    let mut source = File::open(&first).map_err(missing)?;
+    let mut signature = [0; 4];
+    exact(&mut source, &mut signature)?;
+    if !matches!(&signature, b"PK\x03\x04" | b"PK\x05\x06") {
+        return Ok(None);
+    }
+    let stem = path.file_stem().ok_or(ArchiveError::CorruptArchive)?;
+    let mut members = std::collections::BTreeMap::new();
+    if let Some(paths) = held_paths {
+        if paths.is_empty() || paths.len() > MAX_VOLUMES {
+            return Err(ArchiveError::MissingVolume);
+        }
+        for (index, candidate) in paths.iter().enumerate() {
+            let expected = path.with_extension(format!("{:03}", index + 1));
+            let same = if cfg!(windows) {
+                candidate.eq_ignore_ascii_case(&expected.to_string_lossy())
+            } else {
+                Path::new(candidate) == expected
+            };
+            if !same {
+                return Err(ArchiveError::SourceChanged);
+            }
+            members.insert(index + 1, PathBuf::from(candidate));
+        }
+    } else {
+        for (inspected, candidate) in
+            std::fs::read_dir(path.parent().unwrap_or(Path::new(".")))?.enumerate()
+        {
+            control.checkpoint()?;
+            if inspected >= 16384 {
+                return Err(ArchiveError::ResourceLimit);
+            }
+            let candidate = candidate?.path();
+            let Some(candidate_stem) = candidate.file_stem() else {
+                continue;
+            };
+            let same_stem = if cfg!(windows) {
+                candidate_stem
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&stem.to_string_lossy())
+            } else {
+                candidate_stem == stem
+            };
+            if !same_stem {
+                continue;
+            }
+            let Some(extension) = candidate.extension().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            let Ok(index) = extension.parse::<usize>() else {
+                continue;
+            };
+            if index == 0 || extension != format!("{index:03}") {
+                continue;
+            }
+            if index > MAX_VOLUMES || members.len() >= MAX_VOLUMES {
+                return Err(ArchiveError::ResourceLimit);
+            }
+            if members.insert(index, candidate).is_some() {
+                return Err(ArchiveError::CorruptArchive);
+            }
+        }
+    }
+    let count = *members
+        .last_key_value()
+        .ok_or(ArchiveError::MissingVolume)?
+        .0;
+    if members.len() != count || !members.contains_key(&ordinal) {
+        return Err(ArchiveError::MissingVolume);
+    }
+    if std::fs::canonicalize(members.get(&ordinal).ok_or(ArchiveError::MissingVolume)?)
+        .map_err(missing)?
+        != std::fs::canonicalize(path).map_err(missing)?
+    {
+        return Err(ArchiveError::SourceChanged);
+    }
+    let mut set = DiskSet::new(members.into_values().collect(), limits, control)?;
+    set.continuous = true;
     Ok(Some(set))
 }
 
@@ -386,6 +488,7 @@ pub(crate) fn directory(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Directory> {
+    control.record_work(|work| work.catalog_loads += 1);
     let last = set.files.len() - 1;
     let base = set.starts[last];
     let mut ending = end(file, base, set.length - base)?;
@@ -573,6 +676,7 @@ pub(crate) fn single_directory(
         files: vec![file.try_clone()?],
         starts: vec![0],
         length,
+        continuous: false,
     };
     directory(file, &set, limits, control)
 }
@@ -608,6 +712,9 @@ pub(crate) fn normalize(
     control: &OperationControl,
 ) -> Result<File> {
     let mut joined = set.spool(control)?;
+    if set.continuous {
+        return Ok(joined);
+    }
     let directory = directory(&mut joined, set, limits, control)?;
     let mut out = tempfile::tempfile()?;
     copy_range(&mut joined, &mut out, 0, directory.offset, control)?;
@@ -658,6 +765,7 @@ pub(crate) fn split_encoded(
         files: vec![input.try_clone()?],
         starts: vec![0],
         length,
+        continuous: false,
     };
     let directory = directory(input, &set, limits, control)?;
     let mut order: Vec<usize> = (0..directory.records.len()).collect();
@@ -889,5 +997,49 @@ mod tests {
             .expect("full integrity");
         assert_eq!(result.bytes_verified(), 600);
         assert_eq!(result.files_verified(), 1);
+    }
+}
+
+#[cfg(test)]
+mod continuous_lease_tests {
+    use super::*;
+    use crate::{ArchiveEngine, ArchiveRequest, OpenRequest};
+
+    #[test]
+    fn native_continuous_source_uses_only_the_original_held_members() {
+        let root = tempfile::tempdir().expect("owned source set");
+        let single = root.path().join("single.zip");
+        let mut writer = zip::ZipWriter::new(File::create(&single).expect("single source"));
+        writer
+            .start_file("small.txt", zip::write::SimpleFileOptions::default())
+            .expect("member");
+        writer.write_all(b"held source payload").expect("payload");
+        writer.finish().expect("complete source");
+        let encoded = std::fs::read(&single).expect("encoded source");
+        let mut held = Vec::new();
+        for (index, bytes) in encoded.chunks(41).enumerate() {
+            let path = root.path().join(format!("parts.zip.{:03}", index + 1));
+            std::fs::write(&path, bytes).expect("owned part");
+            held.push(path.to_string_lossy().into_owned());
+        }
+        let extra = root.path().join(format!("parts.zip.{:03}", held.len() + 1));
+        std::fs::write(extra, [0; 41]).expect("unadmitted sibling");
+        let engine = ArchiveEngine::default().with_held_zip_volumes(&held);
+        let control = OperationControl::default();
+        let snapshot = engine
+            .open(OpenRequest::new(&held[0]), &control)
+            .expect("only held members enter catalog");
+        let outcome = engine
+            .execute(ArchiveRequest::test(snapshot), &control)
+            .expect("reopen preserves exact admitted set");
+        assert_eq!(outcome.files_verified(), 1);
+        assert_eq!(outcome.bytes_verified(), 19);
+        assert!(
+            ArchiveEngine::default()
+                .with_zip_volumes()
+                .open(OpenRequest::new(&held[0]), &control)
+                .is_err(),
+            "public discovery still observes the extra segment"
+        );
     }
 }

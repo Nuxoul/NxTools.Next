@@ -671,25 +671,34 @@ fn theme_draft_cancel_save_and_reopen_preserve_one_palette_owner(cx: &mut TestAp
 fn density_theme_visual_radios_fit_minimum_and_keep_disabled_draft_local(cx: &mut TestAppContext) {
     let (application, view, mut surface, directory) = fixture(cx);
     select_page(&mut surface, 3);
-    let scroll = surface
-        .debug_bounds("global-theme-preview-scroll")
-        .expect("bounded previews");
     let footer = surface
         .debug_bounds("network-settings-save")
         .expect("fixed footer");
     assert!(
-        scroll.bottom() <= footer.top(),
-        "theme body must not hide Apply"
+        surface
+            .debug_bounds("global-theme-preview-scroll")
+            .is_none()
     );
     let nodes = surface.update(|window, _| test_support::snapshots(window));
     for preference in nxtools_core::ThemePreference::ALL {
-        assert!(
-            nodes
-                .iter()
-                .any(|node| node.label() == Some(preference.label())),
-            "all existing choices retained: {preference:?}"
-        );
+        let count = nodes
+            .iter()
+            .filter(|node| node.label() == Some(preference.label()))
+            .count();
+        if matches!(
+            preference,
+            nxtools_core::ThemePreference::CatppuccinLatte
+                | nxtools_core::ThemePreference::CatppuccinFrappe
+        ) {
+            assert_eq!(count, 0, "default aliases have no duplicate Radio");
+        } else {
+            assert_eq!(
+                count, 1,
+                "each effective palette is selectable: {preference:?}"
+            );
+        }
     }
+    assert!(footer.bottom() <= px(480.0));
     let original = std::fs::read(directory.join("config.json")).expect("saved config");
     choose_light_theme(&mut surface);
     assert_eq!(
@@ -795,10 +804,13 @@ fn density_theme_failed_save_keeps_active_palette_and_retryable_draft(cx: &mut T
 fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &mut TestAppContext) {
     let (application, view, mut surface, directory) = fixture(cx);
     select_page(&mut surface, 3);
-    let scroll = surface
-        .debug_bounds("global-theme-preview-scroll")
-        .expect("theme viewport");
-    let pointer = gpui_kit::point(scroll.right() - px(40.0), scroll.center().y);
+    let preview = surface
+        .debug_bounds("theme-preview-默认深色")
+        .expect("theme preview");
+    let pointer = preview.center();
+    let before = surface
+        .debug_bounds("global-theme-chooser")
+        .expect("page content");
     surface.simulate_mouse_move(pointer, None, Default::default());
     for _ in 0..6 {
         surface.simulate_event(gpui_kit::ScrollWheelEvent {
@@ -817,9 +829,19 @@ fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &m
         .find(|node| node.label() == Some("Solarized Dark"))
         .expect("last official Radio")
         .bounds();
+    let after = surface
+        .debug_bounds("global-theme-chooser")
+        .expect("page scrolled");
     assert!(
-        last.top() >= scroll.top() && last.bottom() <= scroll.bottom(),
-        "last choice reachable: {last:?} in {scroll:?}"
+        after.top() < before.top(),
+        "wheel on preview scrolls the SettingPage"
+    );
+    let content = surface
+        .debug_bounds("global-theme-chooser")
+        .expect("page content");
+    assert!(
+        last.top() >= px(0.0) && last.bottom() <= px(480.0),
+        "last choice reachable: {last:?} {content:?}"
     );
     surface.simulate_click(last.center(), Default::default());
     surface.run_until_parked();
@@ -848,9 +870,49 @@ fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &m
     let apply = surface
         .debug_bounds("network-settings-save")
         .expect("Apply remains visible");
-    assert!(apply.top() >= scroll.bottom() && apply.bottom() <= px(480.0));
+    assert!(apply.top() >= px(0.0) && apply.bottom() <= px(480.0));
     application.update(&mut surface, |app, cx| app.close_window(cx));
     let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn saved_theme_aliases_select_defaults_without_writing_on_open_or_cancel(cx: &mut TestAppContext) {
+    for (alias, selected) in [
+        (nxtools_core::ThemePreference::CatppuccinLatte, "默认浅色"),
+        (nxtools_core::ThemePreference::CatppuccinFrappe, "默认深色"),
+    ] {
+        let (application, _, _, directory) = fixture(cx);
+        cx.update(|cx| application.update(cx, |app, cx| app.close_window(cx)));
+        let path = directory.join("config.json");
+        let mut config = AppConfig::load_from(&path).expect("stored config");
+        config.system.theme = alias;
+        config.save_to(&path).expect("legacy preference fixture");
+        let original = std::fs::read(&path).expect("original bytes");
+        cx.update(|cx| application.update(cx, |app, cx| app.open_window(cx)));
+        cx.run_until_parked();
+        let handle = cx.read(|cx| application.read(cx).window.expect("window"));
+        let mut surface = VisualTestContext::from_window(handle, cx);
+        surface.simulate_resize(size(px(720.0), px(480.0)));
+        surface.refresh().expect("alias chooser");
+        select_page(&mut surface, 3);
+        let nodes = surface.update(|window, _| test_support::snapshots(window));
+        assert_eq!(
+            nodes
+                .iter()
+                .find(|node| node.label() == Some(selected))
+                .expect("default radio")
+                .checked(),
+            Some(true)
+        );
+        assert_eq!(std::fs::read(&path).expect("opened bytes"), original);
+        let cancel = surface
+            .debug_bounds("network-settings-cancel")
+            .expect("Cancel");
+        surface.simulate_click(cancel.center(), Default::default());
+        surface.run_until_parked();
+        assert_eq!(std::fs::read(&path).expect("cancelled bytes"), original);
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }
 
 #[gpui_kit::test]

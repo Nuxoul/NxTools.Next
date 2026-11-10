@@ -164,9 +164,17 @@ impl DownloadApplication {
         }
         let command_id = request.command_id;
         let target = request.target();
+        let source_window_handle = request
+            .window
+            .update(cx, |_, window, _| {
+                crate::ui::native_window_handle(window).unwrap_or_default()
+            })
+            .unwrap_or_default();
         let command = PlatformCommand::PickDirectory(PickDirectoryCommand {
             current_directory: request.current_directory.clone(),
             title: "选择下载保存目录".into(),
+            source_window_handle,
+            source_process_id: std::process::id(),
         });
         self.pending_directory_picker = Some(PendingDownloadDirectoryPicker {
             request,

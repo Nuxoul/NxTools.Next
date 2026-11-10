@@ -11,7 +11,7 @@ using NxTools.PlatformHost.Generated;
 
 namespace NxTools.PlatformHost.Windows;
 
-internal static class IndexerServiceInstaller
+internal static partial class IndexerServiceInstaller
 {
     internal const string ServiceName = "NxToolsIndexerV1";
     private const int OperationTimeoutMs = 30_000;
@@ -96,6 +96,9 @@ internal static class IndexerServiceInstaller
         Task<WindowsCommandResult> InstallAsync(Guid correlationId, CancellationToken cancellationToken);
         bool HasTrustedUpdater() => false;
         bool NeedsTrustEnrollment() => false;
+        bool NeedsLifetimeMigration() => false;
+        Task<WindowsCommandResult> ConfigureLifetimeAsync(Guid correlationId, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Service lifetime configuration is unavailable.");
         Task<WindowsCommandResult> UpdateTrustedAsync(Guid correlationId, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Trusted updater is unavailable.");
     }
@@ -131,6 +134,17 @@ internal static class IndexerServiceInstaller
             if (decision == ServiceDeploymentDecision.Reuse && platform.NeedsTrustEnrollment())
                 decision = ServiceDeploymentDecision.Install;
             Trace(decision.ToString());
+            if (decision == ServiceDeploymentDecision.Reuse && platform.NeedsLifetimeMigration())
+            {
+                Trace("lifetime_authorization_requested");
+                result = await platform.ConfigureLifetimeAsync(correlationId, cancellationToken);
+                if (result.Success)
+                    result = platform.StartService()
+                        ? new WindowsCommandResult(true, Data: "running")
+                        : new WindowsCommandResult(false, "按需启动设置已保存，但索引服务启动失败，请重试。", Data: "start_failed");
+                Trace(result.Data ?? "lifetime_configuration_failed", result);
+                return result;
+            }
             switch (decision)
             {
                 case ServiceDeploymentDecision.RepairRequired:
@@ -234,6 +248,13 @@ internal static class IndexerServiceInstaller
             return new DeploymentState(exists, healthy, approved, new ReleaseTuple(desktop.Sha256, hostHash, indexer.Sha256));
         }
         public bool StartService() => TryStartService(log, correlationId);
+        public bool NeedsLifetimeMigration()
+        {
+            using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+            return key?.GetValue("Start") is not int start || start != 3;
+        }
+        public Task<WindowsCommandResult> ConfigureLifetimeAsync(Guid correlationId, CancellationToken cancellationToken) =>
+            ConfigureLifetimeWithAuthorizationAsync(log, correlationId, cancellationToken);
         public bool HasTrustedUpdater() => TrustedUpdateBroker.IsEnrolled();
         public bool NeedsTrustEnrollment() => !string.IsNullOrEmpty(NxTools.PlatformHost.Generated.UpdateTrust.PublicKeySpkiBase64)
             && !TrustedUpdateBroker.IsEnrolled();
@@ -367,13 +388,7 @@ internal static class IndexerServiceInstaller
             ValidateDeployedBinary(
                 protectedBrowserHostPath,
                 browserHostSource.Sha256);
-            RunSc([
-                RegistrationVerb(serviceExists), ServiceName,
-                "binPath=", $"\"{protectedIndexerPath}\" --service",
-                "start=", "auto",
-                "obj=", "LocalSystem",
-                "DisplayName=", "NxTools File Indexer"
-            ], [0]);
+            RunSc(RegistrationArguments(serviceExists, protectedIndexerPath), [0]);
             RunSc(["description", ServiceName, "NxTools NTFS MFT and USN index service"], [0]);
             RunSc(["sdset", ServiceName, ServiceSddl], [0]);
             RunSc(["failure", ServiceName, "reset=", "86400", "actions=", "restart/3000/restart/10000"], [0]);
@@ -593,7 +608,7 @@ internal static class IndexerServiceInstaller
     {
         return RegisteredImagePathMatches(registration.ImagePath, expectedIndexerPath) &&
             string.Equals(registration.ObjectName, "LocalSystem", StringComparison.OrdinalIgnoreCase) &&
-            registration.StartMode == 2 &&
+            registration.StartMode is 2 or 3 &&
             registration.SecurityDescriptor.Contains(
                 "(A;;CCLCSWRPWPLORC;;;AU)",
                 StringComparison.Ordinal);
@@ -935,6 +950,25 @@ internal static class IndexerServiceInstaller
             lease.Add(path);
         }
         lease.Validate();
+    }
+
+    internal static void ValidateMissingProductParents() => ValidateMissingProductParents(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData));
+
+    internal static void ValidateMissingProductParents(string commonData)
+    {
+        // ProgramData must exist and be a stable directory; product ancestors may be absent.
+        using var baseLease = new ProtectedDirectoryLease();
+        baseLease.Add(commonData);
+        using var productLease = new ProtectedDirectoryLease();
+        foreach (var path in new[] { Path.Combine(commonData, "NxTools"), Path.Combine(commonData, "NxTools", "NxTools.Next") })
+        {
+            try { _ = File.GetAttributes(path); }
+            catch (FileNotFoundException) { productLease.Validate(); return; }
+            catch (DirectoryNotFoundException) { productLease.Validate(); return; }
+            productLease.Add(path);
+        }
+        productLease.Validate();
     }
 
     private static ProtectedDirectoryLease HardenServiceDirectory(

@@ -91,6 +91,16 @@ impl ArchiveBrowserContext {
                     | "Bzip2"
                     | "Xz"
                     | "Zstd"
+                    | "Cab"
+                    | "Iso"
+                    | "Udf"
+                    | "Wim"
+                    | "Ar"
+                    | "Cpio"
+                    | "Lzma"
+                    | "Lz4"
+                    | "Lz4Block"
+                    | "Brotli"
             )
         {
             return Err(ArchiveReadError::ProtocolViolation);
@@ -178,6 +188,28 @@ pub enum ArchiveEntryAction {
     Authorize,
     Revoke,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchivePreviewOptions {
+    pub max_bytes: u64,
+    pub timeout_ms: u32,
+}
+impl ArchivePreviewOptions {
+    fn validate(self, action: ArchiveEntryAction) -> Result<(), ArchiveReadError> {
+        let maximum = match action {
+            ArchiveEntryAction::PreviewText => 8 << 20,
+            ArchiveEntryAction::Preview => 128 << 20,
+            _ => return Err(ArchiveReadError::InvalidRequest),
+        };
+        if self.max_bytes == 0
+            || self.max_bytes > maximum
+            || !(200..=120_000).contains(&self.timeout_ms)
+        {
+            return Err(ArchiveReadError::InvalidRequest);
+        }
+        Ok(())
+    }
+}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveEntryCommand {
@@ -205,6 +237,8 @@ pub struct ArchiveEntryCommand {
     pub password_interaction: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temp_policy: Option<ArchiveTempPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_options: Option<ArchivePreviewOptions>,
 }
 impl ArchiveEntryCommand {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
@@ -228,6 +262,9 @@ impl ArchiveEntryCommand {
                 return Err(ArchiveReadError::InvalidRequest);
             }
             policy.validate()?;
+        }
+        if let Some(options) = self.preview_options {
+            options.validate(self.action)?;
         }
         match self.action {
             ArchiveEntryAction::Materialize
@@ -440,6 +477,7 @@ mod authorization_tests {
             copy_motw: Some(true),
             password_interaction: true,
             temp_policy: None,
+            preview_options: None,
         };
         command.validate().expect("authorize source only");
         let value = serde_json::to_value(&command).expect("wire");
@@ -507,5 +545,79 @@ mod remaining_temp_tests {
                 .is_err()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod preview_options_tests {
+    use super::*;
+    #[test]
+    fn preview_options_are_strict_optional_and_never_materialize_authority() {
+        let mut value = serde_json::json!({
+            "version":1, "operation_id":Uuid::new_v4(), "session_id":Uuid::new_v4(),
+            "generation":1, "action":"preview_text", "path":"C:\\owned\\source.zip", "ordinal":0,
+            "browser": {"snapshot_id":Uuid::new_v4(), "format":"Zip", "comment":"",
+                "source":{"native":"v1:test", "digest":[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],"size":1,"modified_unix_ns":1}}
+        });
+        let parse = |value: serde_json::Value| {
+            serde_json::from_value::<ArchiveEntryCommand>(value)
+                .map_or(false, |command| command.validate().is_ok())
+        };
+        assert!(parse(value.clone()), "legacy request");
+        let legacy: ArchiveEntryCommand = serde_json::from_value(value.clone()).expect("legacy");
+        assert!(
+            serde_json::to_value(legacy)
+                .expect("wire")
+                .get("preview_options")
+                .is_none()
+        );
+        value["preview_options"] = serde_json::Value::Null;
+        assert!(parse(value.clone()), "explicit legacy null");
+        value["preview_options"] = serde_json::json!({"max_bytes":1048576,"timeout_ms":120000});
+        assert!(parse(value.clone()), "configured preview options");
+        for action in [
+            "materialize",
+            "authorize",
+            "cancel",
+            "release",
+            "open",
+            "revoke",
+        ] {
+            let mut invalid = value.clone();
+            invalid["action"] = serde_json::json!(action);
+            assert!(!parse(invalid), "options cannot authorize {action}");
+        }
+        for (action, maximum) in [("preview_text", 8u64 << 20), ("preview", 128u64 << 20)] {
+            value["action"] = serde_json::json!(action);
+            for (bytes, timeout, valid) in [
+                (1, 200, true),
+                (maximum, 120000, true),
+                (0, 30000, false),
+                (maximum + 1, 30000, false),
+                (1, 199, false),
+                (1, 120001, false),
+            ] {
+                value["preview_options"] =
+                    serde_json::json!({"max_bytes":bytes,"timeout_ms":timeout});
+                assert_eq!(parse(value.clone()), valid, "{action}/{bytes}/{timeout}");
+            }
+        }
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::json!({"max_bytes":1}),
+            serde_json::json!({"max_bytes":1,"timeout_ms":30000,"unknown":1}),
+            serde_json::json!({"max_bytes":"1","timeout_ms":30000}),
+            serde_json::json!({"max_bytes":1.5,"timeout_ms":30000}),
+            serde_json::json!([]),
+        ] {
+            value["preview_options"] = invalid;
+            assert!(!parse(value.clone()), "malformed options");
+        }
+        let wire = serde_json::to_string(&value).expect("JSON");
+        let duplicate = wire.replace(
+            "\"preview_options\":[]",
+            "\"preview_options\":{\"max_bytes\":1,\"max_bytes\":2,\"timeout_ms\":30000}",
+        );
+        assert!(serde_json::from_str::<ArchiveEntryCommand>(&duplicate).is_err());
     }
 }

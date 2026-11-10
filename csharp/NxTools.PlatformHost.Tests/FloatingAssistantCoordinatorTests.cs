@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Forms;
@@ -350,6 +351,134 @@ internal static class FloatingAssistantCoordinatorTests
             "full transport rejects text-only event without a staged token");
         Assert((await coordinator.Dispatch(Envelope(command with { Operation = "retire" }))).Success,
             "failed event does not prevent native retirement");
+    }
+
+    internal static async Task FullNativeQueueRetainsCleanup()
+    {
+        foreach (var operation in new[] { "release_drop", "retire" })
+        {
+            using var windows = new PumpedWindows();
+            using var resume = new ManualResetEventSlim();
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var command = Command(windows.Renderer, windows.Source);
+            string? stage = null;
+            using var coordinator = new FloatingAssistantCoordinator((uint)Environment.ProcessId, evt =>
+            {
+                var data = evt.Payload.GetProperty("data");
+                if (data.GetProperty("kind").GetString() == "drop")
+                {
+                    stage = data.GetProperty("image_path").GetString();
+                    entered.TrySetResult();
+                    if (!resume.Wait(TimeSpan.FromSeconds(5))) throw new TimeoutException("fixture STA hold expired");
+                }
+                return true;
+            }, NullPlatformLog.Instance);
+            try
+            {
+                Assert((await coordinator.Dispatch(Envelope(command))).Success &&
+                    (await coordinator.Dispatch(Envelope(command with { Operation = "show" }))).Success, "owned receiver prepared");
+                var id = Guid.NewGuid();
+                var drop = coordinator.ReceiveDropForFixture(new("fixture", null, null, [1], "png", [], id));
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                var updates = Enumerable.Range(0, 16).Select(_ => coordinator.Dispatch(Envelope(command with { Operation = "update" }))).ToArray();
+                var coveredRelease = operation == "retire"
+                    ? coordinator.Dispatch(Envelope(command with { Operation = "release_drop", DropId = id })) : null;
+                var cleanup = coordinator.Dispatch(Envelope(command with { Operation = operation, DropId = operation == "release_drop" ? id : null }));
+                Assert(!cleanup.IsCompleted, "full native queue retains cleanup on original STA rather than rejecting it");
+                if (coveredRelease is not null) Assert((await coveredRelease).Success, "retire owns the coalesced release obligation");
+                resume.Set();
+                Assert(await drop && (await cleanup.WaitAsync(TimeSpan.FromSeconds(5))).Success, "retained cleanup progresses when original STA recovers");
+                await Task.WhenAll(updates);
+                Assert(!Directory.Exists(Path.GetDirectoryName(stage)), "native queue recovery deletes exact owned staging");
+            }
+            finally
+            {
+                resume.Set();
+                coordinator.Dispose();
+                if (stage is not null && Directory.Exists(Path.GetDirectoryName(stage))) Directory.Delete(Path.GetDirectoryName(stage)!, true);
+            }
+        }
+    }
+
+    internal static Task ReleaseDeletionFailureRetainsOwner() => DeletionFailureRetainsOwner("release");
+    internal static Task RetireDeletionFailureRetainsOwner() => DeletionFailureRetainsOwner("retire");
+    internal static Task RejectedDeletionFailureRetainsOwner() => DeletionFailureRetainsOwner("rejected");
+    internal static Task StopDeletionFailureRetainsOwner() => DeletionFailureRetainsOwner("stop");
+
+    private static async Task DeletionFailureRetainsOwner(string mode)
+    {
+        using var windows = new PumpedWindows();
+        var command = Command(windows.Renderer, windows.Source);
+        string? stage = null;
+        FileStream? held = null;
+        var source = Path.Combine(Path.GetTempPath(), "floating-source-fixture-" + Guid.NewGuid().ToString("N") + ".png");
+        File.WriteAllBytes(source, [4, 5, 6]);
+        using var coordinator = new FloatingAssistantCoordinator((uint)Environment.ProcessId, evt =>
+        {
+            var data = evt.Payload.GetProperty("data");
+            if (data.GetProperty("kind").GetString() != "drop") return true;
+            if (held is not null) return true;
+            stage = data.GetProperty("image_path").GetString();
+            held = new FileStream(stage!, FileMode.Open, FileAccess.Read, FileShare.Read);
+            return mode != "rejected";
+        }, NullPlatformLog.Instance);
+        try
+        {
+            Assert((await coordinator.Dispatch(Envelope(command))).Success &&
+                (await coordinator.Dispatch(Envelope(command with { Operation = "show" }))).Success, "owned receiver ready");
+            var id = Guid.NewGuid();
+            Assert(await coordinator.ReceiveDropForFixture(new("fixture", null, null, [1, 2, 3], "png", [source], id)) ==
+                (mode != "rejected"), "publication result remains accurate");
+            Assert(stage is not null && File.Exists(stage), "real no-delete handle holds exact staging");
+            if (mode == "release")
+                Assert((await coordinator.Dispatch(Envelope(command with { Operation = "release_drop", DropId = id }))).Success,
+                    "release transfers cleanup to original STA");
+            if (mode == "retire")
+            {
+                Assert((await coordinator.Dispatch(Envelope(command with { Operation = "retire" }))).Success, "logical retirement completes");
+                command = command with { SessionId = Guid.NewGuid(), Generation = command.Generation + 1 };
+                Assert((await coordinator.Dispatch(Envelope(command))).Success &&
+                    (await coordinator.Dispatch(Envelope(command with { Operation = "show" }))).Success, "replacement can prepare");
+            }
+            if (mode == "stop")
+            {
+                coordinator.Dispose();
+                using var replacementWindows = new PumpedWindows();
+                using var replacement = new FloatingAssistantCoordinator((uint)Environment.ProcessId, _ => true, NullPlatformLog.Instance);
+                var nextCommand = Command(replacementWindows.Renderer, replacementWindows.Source);
+                Assert((await replacement.Dispatch(Envelope(nextCommand))).Success &&
+                    (await replacement.Dispatch(Envelope(nextCommand with { Operation = "show" }))).Success, "replacement pipe owns a fresh renderer");
+                Assert(!await replacement.ReceiveDropForFixture(new("new peer", null, null, [9], "png", [], Guid.NewGuid())),
+                    "stopped original cleanup retains sole process-wide staging capacity across reconnect");
+            }
+            else Assert(!await coordinator.ReceiveDropForFixture(new("second", null, null, [7], "png", [], Guid.NewGuid())),
+                "failed physical deletion keeps the sole staging slot occupied");
+            held!.Dispose();
+            held = null;
+            var deadline = Stopwatch.StartNew();
+            while (Directory.Exists(Path.GetDirectoryName(stage)) && deadline.Elapsed < TimeSpan.FromSeconds(5))
+                await Task.Delay(25);
+            Assert(!Directory.Exists(Path.GetDirectoryName(stage)), "original STA retries deletion after handle release, including retired/stopped lease");
+            Assert(File.ReadAllBytes(source).SequenceEqual(new byte[] { 4, 5, 6 }), "original dragged source is never owned/deleted");
+            if (mode == "retire")
+            {
+                var nextId = Guid.NewGuid();
+                Assert(await coordinator.ReceiveDropForFixture(new("new", null, null, [8], "png", [], nextId)), "physical cleanup returns capacity");
+                var newStage = stage!;
+                held!.Dispose(); held = null;
+                Assert(!(await coordinator.Dispatch(Envelope(command with { Generation = command.Generation - 1,
+                    Operation = "release_drop", DropId = nextId }))).Success && File.Exists(newStage), "old generation cannot delete new staging");
+                Assert((await coordinator.Dispatch(Envelope(command with { Operation = "release_drop", DropId = nextId }))).Success,
+                    "new generation owns its exact release");
+            }
+        }
+        finally
+        {
+            held?.Dispose();
+            coordinator.Dispose();
+            if (stage is not null && Directory.Exists(Path.GetDirectoryName(stage))) Directory.Delete(Path.GetDirectoryName(stage)!, true);
+            File.Delete(source);
+        }
     }
 
     internal static async Task SourceDestroyedRetiresInput()

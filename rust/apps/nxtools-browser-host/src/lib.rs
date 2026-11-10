@@ -49,6 +49,9 @@ const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
     "blob_source_resolved",
     "browser_download_already_preempted",
     "browser_download_site_disabled",
+    "capture_pause_started",
+    "capture_pause_applied",
+    "capture_pause_failed",
     "content_bridge_inject_failed",
     "content_media_resource_failed",
     "content_resource_choices_built",
@@ -77,7 +80,43 @@ const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
     "send_resource_missing",
     "youtube_captured_selected",
     "youtube_progressive_selected",
+    "handoff_state",
 ];
+const HANDOFF_STATES: &[&str] = &[
+    "submitting",
+    "persisted",
+    "transferred",
+    "skipped",
+    "queued",
+    "awaiting_confirmation",
+    "rejected",
+    "failed",
+];
+const HANDOFF_REASONS: &[&str] = &[
+    "handoff_started",
+    "desktop_accepted",
+    "browser_transferred",
+    "rule_excluded",
+    "temporarily_paused",
+    "desktop_unavailable",
+    "desktop_refused",
+    "handoff_timeout",
+    "handoff_disconnected",
+    "browser_cancel_failed",
+    "identity_mismatch",
+    "confirmation_pending",
+    "queued_not_accepted",
+];
+const HANDOFF_BOUNDARY_CODES: &[&str] = &[
+    "connect_failed",
+    "connect_timeout",
+    "port_disconnected",
+    "native_rejected",
+    "request_too_large",
+    "request_timeout",
+    "send_failed",
+];
+const HANDOFF_COMPENSATION: &[&str] = &["not_available", "succeeded", "failed"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DesktopStartMode {
@@ -156,12 +195,22 @@ struct BrowserBatchDownloadPayload {
     items: Vec<BrowserDownloadPayload>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BrowserExtensionLogPayload {
     event: String,
     #[serde(default)]
     correlation_id: Option<String>,
+    #[serde(default)]
+    handoff_state: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    elapsed_ms: Option<u64>,
+    #[serde(default)]
+    boundary_code: Option<String>,
+    #[serde(default)]
+    compensation: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -197,12 +246,47 @@ fn validate_extension_log_payload(payload: &BrowserExtensionLogPayload) -> Resul
     if !ALLOWED_EXTENSION_LOG_EVENTS.contains(&payload.event.as_str()) {
         bail!("browser extension log event is invalid");
     }
-    payload
+    let correlation_id = payload
         .correlation_id
         .as_deref()
         .filter(|value| !value.is_empty())
         .map(|value| Uuid::parse_str(value).context("extensionLog.correlationId must be a UUID"))
-        .transpose()
+        .transpose()?;
+    if payload.event == "handoff_state"
+        && (correlation_id.is_none()
+            || !payload
+                .handoff_state
+                .as_deref()
+                .is_some_and(|state| HANDOFF_STATES.contains(&state))
+            || !payload
+                .reason
+                .as_deref()
+                .is_some_and(|reason| HANDOFF_REASONS.contains(&reason))
+            || payload.elapsed_ms.is_none()
+            || payload
+                .boundary_code
+                .as_deref()
+                .is_some_and(|code| !HANDOFF_BOUNDARY_CODES.contains(&code))
+            || payload
+                .compensation
+                .as_deref()
+                .is_some_and(|value| !HANDOFF_COMPENSATION.contains(&value)))
+    {
+        bail!("browser handoff diagnostic metadata is invalid");
+    }
+    if payload.event.starts_with("capture_pause_") {
+        let valid_reason = match payload.event.as_str() {
+            "capture_pause_started" | "capture_pause_applied" => {
+                matches!(payload.reason.as_deref(), Some("paused" | "resumed"))
+            }
+            "capture_pause_failed" => payload.reason.as_deref() == Some("session_storage_failed"),
+            _ => false,
+        };
+        if correlation_id.is_none() || payload.elapsed_ms.is_none() || !valid_reason {
+            bail!("browser capture pause diagnostic metadata is invalid");
+        }
+    }
+    Ok(correlation_id)
 }
 
 #[derive(Debug, Serialize)]
@@ -409,7 +493,28 @@ fn handle_request(
             let payload: BrowserExtensionLogPayload = serde_json::from_value(request.payload)
                 .context("browser extension log has an invalid shape")?;
             let correlation_id = validate_extension_log_payload(&payload)?;
-            if let Some(correlation_id) = correlation_id {
+            if payload.event == "handoff_state" {
+                info!(
+                    event = "browser_extension.event",
+                    correlation_id = %correlation_id.expect("validated handoff correlation"),
+                    extension_event = "handoff_state",
+                    handoff_state = payload.handoff_state.as_deref().unwrap_or_default(),
+                    reason = payload.reason.as_deref().unwrap_or_default(),
+                    elapsed_ms = payload.elapsed_ms.unwrap_or_default(),
+                    boundary_code = payload.boundary_code.as_deref().unwrap_or("none"),
+                    compensation = payload.compensation.as_deref().unwrap_or("none"),
+                    "bounded browser handoff state received"
+                );
+            } else if payload.event.starts_with("capture_pause_") {
+                info!(
+                    event = "browser_extension.event",
+                    correlation_id = %correlation_id.expect("validated pause correlation"),
+                    extension_event = %payload.event,
+                    reason = payload.reason.as_deref().unwrap_or_default(),
+                    elapsed_ms = payload.elapsed_ms.unwrap_or_default(),
+                    "bounded browser capture pause state received"
+                );
+            } else if let Some(correlation_id) = correlation_id {
                 info!(
                     event = "browser_extension.event",
                     %correlation_id,
@@ -713,6 +818,32 @@ fn submit_download(
     paths: &AppPaths,
     executable: &Path,
 ) -> Result<BrowserResponse> {
+    submit_download_with_client(
+        request_id,
+        payload,
+        paths,
+        |start_mode, correlation_id| connect_or_start(executable, start_mode, correlation_id),
+        |client, command, open_dialog| {
+            if open_dialog {
+                command_browser_dialog_when_ready(client, command)
+            } else {
+                client.command(command)
+            }
+        },
+    )
+}
+
+fn submit_download_with_client(
+    request_id: String,
+    payload: Value,
+    paths: &AppPaths,
+    connect: impl FnOnce(DesktopStartMode, Uuid) -> Result<DownloadIpcClient>,
+    mut send_command: impl FnMut(
+        &mut DownloadIpcClient,
+        nxtools_download::DownloadCommandEnvelope,
+        bool,
+    ) -> Result<DownloadCommandResult>,
+) -> Result<BrowserResponse> {
     let payload: BrowserDownloadPayload =
         serde_json::from_value(payload).context("browser download payload has an invalid shape")?;
     let handoff_id = if payload.handoff_id.is_empty() {
@@ -722,24 +853,69 @@ fn submit_download(
     };
     let open_dialog = payload.open_dialog;
     let start_immediately = payload.start_immediately;
-    let config = AppConfig::load_or_create(paths)?;
+    let command_request_id = correlation_id(&request_id)?;
+    let started = Instant::now();
+    info!(
+        event = "browser_native_host.handoff_started",
+        correlation_id = %command_request_id,
+        %handoff_id,
+        open_dialog,
+        "browser handoff received by the native host"
+    );
+    let config = match AppConfig::load_or_create(paths) {
+        Ok(config) => config,
+        Err(_) => {
+            return Ok(browser_handoff_failure(
+                request_id,
+                handoff_id,
+                "desktop_unavailable",
+                started,
+                None,
+                None,
+            ));
+        }
+    };
     let save_directory = if config.download.default_directory.trim().is_empty() {
         default_download_directory(paths)
     } else {
         PathBuf::from(&config.download.default_directory)
     };
-    let request = build_browser_download_request(payload, &config, save_directory)?;
+    let request = match build_browser_download_request(payload, &config, save_directory) {
+        Ok(request) => request,
+        Err(_) => {
+            return Ok(browser_handoff_failure(
+                request_id,
+                handoff_id,
+                "desktop_refused",
+                started,
+                None,
+                None,
+            ));
+        }
+    };
     let mode = if start_immediately {
         DownloadSubmitMode::StartNow
     } else {
         DownloadSubmitMode::QueueOnly
     };
-    let command_request_id = correlation_id(&request_id)?;
-    let mut client = connect_or_start(
-        executable,
+    let mut client = match connect(
         DesktopStartMode::for_browser_request(open_dialog),
         command_request_id,
-    )?;
+    ) {
+        Ok(client) => client,
+        Err(error) => {
+            return Ok(browser_handoff_failure(
+                request_id,
+                handoff_id,
+                "desktop_unavailable",
+                started,
+                error
+                    .downcast_ref::<std::io::Error>()
+                    .and_then(std::io::Error::raw_os_error),
+                None,
+            ));
+        }
+    };
     let command = nxtools_download::DownloadCommandEnvelope {
         protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
         request_id: command_request_id,
@@ -757,20 +933,48 @@ fn submit_download(
             }
         },
     };
-    let result = if open_dialog {
-        command_browser_dialog_when_ready(&mut client, command)?
-    } else {
-        client.command(command)?
+    let result = match send_command(&mut client, command, open_dialog) {
+        Ok(result) => result,
+        Err(error) => {
+            let native_error = error.downcast_ref::<std::io::Error>();
+            let reason =
+                if native_error.is_some_and(|error| error.kind() == std::io::ErrorKind::TimedOut) {
+                    "handoff_timeout"
+                } else {
+                    "handoff_disconnected"
+                };
+            return Ok(browser_handoff_failure(
+                request_id,
+                handoff_id,
+                reason,
+                started,
+                native_error.and_then(std::io::Error::raw_os_error),
+                None,
+            ));
+        }
     };
+    if result.request_id != command_request_id {
+        return Ok(browser_handoff_failure(
+            request_id,
+            handoff_id,
+            "identity_mismatch",
+            started,
+            None,
+            None,
+        ));
+    }
     match result.outcome {
-        DownloadCommandOutcome::BrowserAccepted { task_id, duplicate } => {
+        DownloadCommandOutcome::BrowserAccepted { task_id, duplicate } if !open_dialog => {
             info!(
                 event = "browser_native_host.handoff_accepted",
                 correlation_id = %command_request_id,
                 %handoff_id,
                 ?task_id,
                 duplicate,
-                "browser handoff accepted by the download engine"
+                handoff_state = "persisted",
+                reason = "desktop_accepted",
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "browser task durably accepted by the download engine"
             );
             Ok(BrowserResponse::accepted(
                 request_id,
@@ -783,28 +987,81 @@ fn submit_download(
         DownloadCommandOutcome::BrowserDialogAccepted {
             handoff_id: accepted_handoff_id,
             duplicate,
-        } => {
-            if accepted_handoff_id != handoff_id {
-                bail!("download engine returned a mismatched browser dialog handoff ID");
-            }
+        } if open_dialog && accepted_handoff_id == handoff_id => {
             info!(
                 event = "browser_native_host.dialog_accepted",
                 correlation_id = %command_request_id,
                 %handoff_id,
                 duplicate,
-                "browser confirmation-window request accepted by the desktop"
+                handoff_state = "awaiting_confirmation",
+                reason = "confirmation_pending",
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "browser confirmation window created without durable task acceptance"
             );
             Ok(BrowserResponse::dialog_accepted(
                 request_id, handoff_id, duplicate,
             ))
         }
-        DownloadCommandOutcome::Rejected { fault } => Ok(BrowserResponse::failed(
+        DownloadCommandOutcome::BrowserDialogAccepted { .. } => Ok(browser_handoff_failure(
             request_id,
-            "download_rejected",
-            fault.message,
+            handoff_id,
+            "identity_mismatch",
+            started,
+            None,
+            None,
         )),
-        _ => bail!("download engine returned an unexpected browser submission result"),
+        DownloadCommandOutcome::Rejected { fault } => Ok(browser_handoff_failure(
+            request_id,
+            handoff_id,
+            "desktop_refused",
+            started,
+            None,
+            Some(fault.code),
+        )),
+        _ => Ok(browser_handoff_failure(
+            request_id,
+            handoff_id,
+            "identity_mismatch",
+            started,
+            None,
+            None,
+        )),
     }
+}
+
+fn browser_handoff_failure(
+    request_id: String,
+    handoff_id: Uuid,
+    reason: &'static str,
+    started: Instant,
+    native_error_code: Option<i32>,
+    fault_code: Option<DownloadFaultCode>,
+) -> BrowserResponse {
+    let (code, message) = match reason {
+        "desktop_unavailable" => ("download_unavailable", "NxTools 桌面下载服务不可用"),
+        "handoff_timeout" => ("download_unavailable", "NxTools 下载服务响应超时"),
+        "handoff_disconnected" => ("download_unavailable", "NxTools 下载服务连接中断"),
+        "desktop_refused" => ("download_rejected", "NxTools 桌面下载服务拒绝了交接"),
+        _ => (
+            "download_rejected",
+            "NxTools 下载服务返回了不匹配的交接结果",
+        ),
+    };
+    warn!(
+        event = "browser_native_host.handoff_failed",
+        correlation_id = %request_id,
+        %handoff_id,
+        handoff_state = "rejected",
+        reason,
+        ?fault_code,
+        native_error_code,
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "browser handoff failed without transferring browser ownership"
+    );
+    let mut response = BrowserResponse::failed(request_id, code, message.into());
+    response.handoff_id = Some(handoff_id.to_string());
+    response.data = Some(json!({ "handoffState": "rejected", "reason": reason }));
+    response
 }
 
 fn build_browser_download_request(
@@ -1349,7 +1606,9 @@ impl BrowserResponse {
             data: Some(json!({
                 "taskId": task_id.as_uuid(),
                 "duplicate": duplicate,
-                "queued": queued
+                "queued": queued,
+                "handoffState": "persisted",
+                "reason": "desktop_accepted"
             })),
         }
     }
@@ -1359,7 +1618,7 @@ impl BrowserResponse {
             protocol_version: BROWSER_PROTOCOL_VERSION,
             request_id,
             ok: true,
-            accepted: true,
+            accepted: false,
             duplicate,
             handoff_id: Some(handoff_id.to_string()),
             task_id: None,
@@ -1372,7 +1631,9 @@ impl BrowserResponse {
             data: Some(json!({
                 "openDialog": true,
                 "duplicate": duplicate,
-                "queued": false
+                "queued": false,
+                "handoffState": "awaiting_confirmation",
+                "reason": "confirmation_pending"
             })),
         }
     }
@@ -1627,6 +1888,7 @@ mod tests {
         let accepted = BrowserExtensionLogPayload {
             event: "resource_cached".into(),
             correlation_id: Some(Uuid::new_v4().to_string()),
+            ..Default::default()
         };
         assert!(
             validate_extension_log_payload(&accepted)
@@ -1637,11 +1899,13 @@ mod tests {
         let invalid = BrowserExtensionLogPayload {
             event: "not_allowlisted".into(),
             correlation_id: None,
+            ..Default::default()
         };
         assert!(validate_extension_log_payload(&invalid).is_err());
         let invalid_correlation = BrowserExtensionLogPayload {
             event: "resource_cached".into(),
             correlation_id: Some("not-a-uuid".into()),
+            ..Default::default()
         };
         assert!(validate_extension_log_payload(&invalid_correlation).is_err());
     }
@@ -1667,7 +1931,7 @@ mod tests {
         let expected_handoff_id = handoff_id.to_string();
 
         assert!(response.ok);
-        assert!(response.accepted);
+        assert!(!response.accepted);
         assert_eq!(
             response.handoff_id.as_deref(),
             Some(expected_handoff_id.as_str())
@@ -2020,3 +2284,6 @@ mod metadata_refactor_tests {
         assert_eq!(kind, "invalid");
     }
 }
+
+#[cfg(test)]
+mod browser_wire_tests;

@@ -17,6 +17,22 @@ internal static class PlatformEventEnvelopeFactory
                 Event = "system_theme_preference_changed",
                 Data = new { theme.CorrelationId, theme.Dark, theme.NativeErrorCode }
             }, theme.CorrelationId),
+            QuickLaunchKeyboardHealthChangedEvent health => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "quick_launch_keyboard_health_changed",
+                Data = new
+                {
+                    health.CorrelationId,
+                    State = health.State switch
+                    {
+                        QuickLaunchKeyboardHealthState.InstallFailed => "install_failed",
+                        QuickLaunchKeyboardHealthState.ThreadExited => "thread_exited",
+                        QuickLaunchKeyboardHealthState.Reinstalled => "reinstalled",
+                        _ => throw new ArgumentOutOfRangeException(nameof(health.State))
+                    },
+                    health.NativeErrorCode
+                }
+            }, health.CorrelationId),
             TrayActionRequestedEvent tray => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "tray_action_requested",

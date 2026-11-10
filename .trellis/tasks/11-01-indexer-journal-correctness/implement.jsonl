@@ -1,0 +1,11 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust index service ownership, reference and cross-owner boundaries"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Correlated operations, bounded state, diagnostic privacy"}
+{"file":".trellis/spec/shared/verification.md","reason":"Serialized Cargo memory policy and synthetic/native acceptance limits"}
+{"file":".trellis/spec/nxtools-indexer/backend/index.md","reason":"Indexer owner checklist and release boundary"}
+{"file":".trellis/spec/nxtools-indexer/backend/database-guidelines.md","reason":"Last-good versioned mmap base and durable delta contracts"}
+{"file":".trellis/spec/nxtools-indexer/backend/quality-guidelines.md","reason":"Authenticated session, truthful Ready and bounded subtree regressions"}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"Initial-frame deadline, bounded frame and connection isolation"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Optional field defaults and legacy/unknown field compatibility"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official Settings/Tag selection and existing lifecycle owners"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Verified Listary managed and SwiftList indexing/session/status references"}
+{"file":"docs/architecture.md","reason":"Quick-launch phase-2 and initial NTFS snapshot architecture"}

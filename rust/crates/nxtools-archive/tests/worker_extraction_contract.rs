@@ -1,4 +1,7 @@
-use nxtools_archive::worker::{WorkerRequest, read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
+use nxtools_archive::worker::WorkerRequest;
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -112,6 +115,7 @@ fn format_worker_fault(
         .expect("original worker");
     request.version = 2;
     request.operation = "extract".into();
+    request.bulk_transfer = Some(1);
     let id = request.operation_id;
     write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("start");
     let mut actions = Vec::<String>::new();
@@ -324,6 +328,7 @@ fn non_zip_readmission_reenters_original_worker_once_after_actual_exit() {
         request.operation_id = worker_control.operation_id();
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.password_interaction = Some(true); // Non-password formats bypass password preparation.
         request.limits.max_entry_bytes = 1;
         request.limits.max_output_bytes = 1;
@@ -505,6 +510,46 @@ fn rar_known_risk_rejects_before_output_unknown_size_and_solid_never_fake_a_rati
 }
 
 #[test]
+#[cfg(feature = "isolated-codecs")]
+fn sevenz_native_source_admission_preserves_resource_limit_before_output() {
+    for (native_code, expected) in [
+        ("resource_limit", "ResourceLimit"),
+        ("source_unavailable", "IoFailure"),
+    ] {
+        let mut request = format_request("upstream/lzma.7z");
+        request.limits.max_output_bytes = 1;
+        let (terminal, actions, frames) =
+            format_worker_fault(request, false, Some(("source_acquire", native_code)));
+        assert_eq!(terminal["op"], "failure");
+        assert_eq!(terminal["error_code"], expected, "{native_code}");
+        assert_eq!(
+            actions,
+            ["source_acquire"],
+            "no decode or output after refusal"
+        );
+        let accepted = frames
+            .iter()
+            .find(|frame| frame["op"] == "accepted")
+            .expect("accepted");
+        let capabilities = accepted["capabilities"].as_array().expect("capabilities");
+        assert!(capabilities.contains(&json!("source_lease_v1")));
+        assert!(capabilities.contains(&json!("binary_bulk_v1")));
+        assert_eq!(
+            frames
+                .iter()
+                .filter(|frame| frame["op"] == "failure" || frame["op"] == "complete")
+                .count(),
+            1,
+            "one original terminal"
+        );
+        assert!(!frames.iter().any(|frame| matches!(
+            frame["op"].as_str(),
+            Some("output_budget_shortfall" | "risk_prompt")
+        )));
+    }
+}
+
+#[test]
 fn non_zip_preflight_preserves_native_source_failure_without_shortfall() {
     for code in ["source_changed", "source_unavailable"] {
         let mut request = format_request("independent.tar");
@@ -530,4 +575,40 @@ fn non_zip_preflight_preserves_native_source_failure_without_shortfall() {
         )));
         assert!(!frames.iter().any(|f| f["op"] == "output_budget_shortfall"));
     }
+}
+
+#[test]
+fn opt05_zip_readmission_worker_reuses_one_structural_plan() {
+    let mut request = format_request("deflated.zip");
+    request.output_readmission = Some(nxtools_archive::output_readmission::ReadmissionOptions {
+        logical_id: request.operation_id,
+        expected_source: None,
+    });
+    let snapshot = nxtools_archive::ArchiveEngine::default()
+        .open(
+            nxtools_archive::OpenRequest::new(&request.path),
+            &nxtools_archive::OperationControl::default(),
+        )
+        .expect("independent catalog");
+    let count = snapshot.entries().len() as u64;
+    let files = snapshot
+        .entries()
+        .iter()
+        .filter(|entry| entry.kind() == nxtools_archive::EntryKind::File)
+        .count();
+    let (terminal, actions, _) = format_worker(request, false);
+    assert_eq!(terminal["op"], "complete");
+    assert_eq!(
+        actions
+            .iter()
+            .filter(|action| action.as_str() == "commit")
+            .count(),
+        files
+    );
+    assert!(actions.iter().any(|action| action == "output_ready"));
+    assert_eq!(
+        terminal["work"]["zip_local_checks"], count,
+        "the readmission preflight plan stays with its reader through payload execution"
+    );
+    assert_eq!(terminal["work"]["zip_descriptor_checks"], count);
 }

@@ -567,3 +567,176 @@ fn zip_backslash_members_share_folder_projection_and_drag_original_ordinals() {
         );
     }
 }
+
+fn opt05_large_drag_model() -> BrowserModel {
+    let snapshot = Uuid::new_v4();
+    let mut entries = Vec::new();
+    let mut selected = BTreeSet::new();
+    for root in (0..128).rev() {
+        let mut path = format!("r{root:03}");
+        for depth in 0..32 {
+            if depth != 0 {
+                path.push_str("/d");
+            }
+            let ordinal = entries.len() as u64;
+            entries.push(entry(ordinal, &format!("{path}/"), "Directory", None));
+            selected.insert(RowId::Entry(snapshot, ordinal));
+        }
+        for file in 0..480 {
+            let name = format!("{path}/f{file:03}");
+            let name = if file % 2 == 0 {
+                name.replace('/', "\\")
+            } else {
+                name
+            };
+            entries.push(entry(entries.len() as u64, &name, "File", Some(1)));
+        }
+    }
+    let mut model = BrowserModel::new(snapshot, entries);
+    model.selected = selected;
+    assert_eq!(model.entries.len(), 65_536);
+    assert_eq!(model.selected.len(), 4_096);
+    model
+}
+
+fn opt05_assert_drag_items(items: &[super::drag::FrozenDragItem]) {
+    assert_eq!(items.len(), 65_536);
+    assert_eq!(items.iter().filter(|item| !item.directory).count(), 61_440);
+    assert_eq!(
+        items
+            .iter()
+            .filter_map(|item| item.ordinal)
+            .collect::<BTreeSet<_>>(),
+        (0..65_536).collect()
+    );
+    assert!(
+        items
+            .windows(2)
+            .all(|pair| pair[0].name.to_lowercase() < pair[1].name.to_lowercase()),
+        "descriptor BTreeMap presentation order is independent of catalog expansion order"
+    );
+}
+
+#[test]
+fn opt05_before_drag_selection_three_trials() {
+    let model = opt05_large_drag_model();
+    for trial in 1..=3 {
+        let mut work = nxtools_archive::planning::SelectionWork::default();
+        let started = std::time::Instant::now();
+        let items = model
+            .freeze_drag_selection_observed(false, &mut work)
+            .expect("original model boundary");
+        let elapsed_us = started.elapsed().as_micros();
+        opt05_assert_drag_items(&items);
+        eprintln!(
+            "OPT05_SELECTION {}",
+            serde_json::json!({
+                "boundary": "browser_model_drag", "trial": trial,
+                "build_mode": if cfg!(debug_assertions) { "debug" } else { "release" },
+                "catalog": model.entries.len(), "selected_ids": model.selected.len(),
+                "descriptors": items.len(), "elapsed_us": elapsed_us, "work": work,
+            })
+        );
+    }
+}
+
+#[test]
+fn opt05_red_drag_selection_single_pass() {
+    let model = opt05_large_drag_model();
+    let mut work = nxtools_archive::planning::SelectionWork::default();
+    let items = model
+        .freeze_drag_selection_observed(false, &mut work)
+        .expect("complete selection");
+    opt05_assert_drag_items(&items);
+    assert!(
+        work.catalog_visits <= 65_536
+            && work.path_normalizations <= 65_536
+            && work.path_normalizations + work.root_normalizations <= 65_536
+            && work.normalization_allocations <= 30_720
+            && work.directory_roots <= 128
+            && work.ordinal_probes <= 65_536 + 4_096
+            && work.prefix_probes <= 65_536 * 16 + 4_096 * 64
+            && work.prefix_allocations <= 4_096,
+        "selection must bind IDs once and merge component-ended roots: {work:?}"
+    );
+}
+
+#[test]
+fn opt05_drag_selection_preserves_implicit_empty_collision_and_stale_semantics() {
+    let snapshot = Uuid::new_v4();
+    let mut model = BrowserModel::new(
+        snapshot,
+        vec![
+            entry(9, r"a\sub\z.txt", "File", None),
+            entry(3, "a/empty/", "Directory", None),
+            entry(7, "ab/peer", "File", Some(1)),
+            entry(2, "a/sub/Z.txt", "File", Some(2)),
+        ],
+    );
+    model.selected.extend([
+        RowId::Folder(snapshot, "a".into()),
+        RowId::Folder(snapshot, "a/sub".into()),
+        RowId::Entry(snapshot, 9),
+    ]);
+    let original = model
+        .entries
+        .iter()
+        .map(|entry| entry.name.clone())
+        .collect::<Vec<_>>();
+    let mut work = nxtools_archive::planning::SelectionWork::default();
+    let items = model
+        .freeze_drag_selection_observed(false, &mut work)
+        .expect("implicit and collision presentation");
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.name.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "a/empty", "a/sub", "a/sub/Z (2).txt", "a/sub/z.txt"]
+    );
+    assert_eq!(
+        items
+            .iter()
+            .filter_map(|item| item.ordinal)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([2, 3, 9])
+    );
+    assert!(
+        items
+            .iter()
+            .any(|item| item.directory && item.ordinal.is_none() && item.name == "a")
+    );
+    assert_eq!(
+        model
+            .entries
+            .iter()
+            .map(|entry| entry.name.clone())
+            .collect::<Vec<_>>(),
+        original
+    );
+    for id in [
+        RowId::Entry(Uuid::new_v4(), 9),
+        RowId::Entry(snapshot, 65_536),
+        RowId::Folder(snapshot, "missing".into()),
+    ] {
+        model.selected = BTreeSet::from([id]);
+        assert!(
+            model
+                .freeze_drag_selection_observed(false, &mut work)
+                .is_err()
+        );
+    }
+    model.selected.clear();
+    assert!(model.freeze_drag_selection().is_err());
+}
+
+#[test]
+fn opt05_drag_missing_nested_directory_is_not_hidden_by_ancestor_merging() {
+    let snapshot = Uuid::new_v4();
+    let mut model = BrowserModel::new(snapshot, vec![entry(9, "a/exists", "File", Some(1))]);
+    model.selected.extend([
+        RowId::Folder(snapshot, "a".into()),
+        RowId::Folder(snapshot, "a/missing".into()),
+    ]);
+    assert!(model.freeze_drag_selection().is_err());
+}

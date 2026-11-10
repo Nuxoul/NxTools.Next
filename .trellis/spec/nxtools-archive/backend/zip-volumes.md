@@ -25,6 +25,14 @@ C#. Native source owner acquires every exact ZIP/7z/RAR member before codec read
 through actual worker/Job cleanup. 7z uses encoded-length-bound continuous volumes; RAR4/5 transitions
 must stay within the native protected set. No RAR creation.
 
+Continuous ZIP `.zip.001` or signature-bound `.001` input is a distinct read adapter, not a
+disk-coordinate split writer. The original native owner acquires the complete consecutive family,
+checks the final ZIP extent and returns its exact ordered paths. Worker `with_held_zip_volumes`
+and snapshot reopen never rescan that production set. Public opt-in discovery remains available.
+Encoded normalization uses its own finite source allowance for isolated browser entries, not the
+selected text/image output quota; actual output and all other budgets stay unchanged. See
+[reader compatibility](reader-compatibility.md) for concrete seams and tests.
+
 ZIP split writer regenerates per-disk local/central/end coordinates, not ordinary byte chopping;
 7z splits the fully verified continuous encoded stream. NEW target families only: bounded first/
 final/surplus numeric-member preflight before effects, then authoritative native no-replace per member.

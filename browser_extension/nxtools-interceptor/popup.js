@@ -7,6 +7,9 @@
 //   popup/actions.js messaging, busy guards, feedback, event wiring
 // Opening the popup reads a passive snapshot only; it never starts the desktop app.
 
+const popupTransportPort = chrome.runtime.connect({ name: "nxtools-popup" });
+window.addEventListener("pagehide", () => popupTransportPort.disconnect(), { once: true });
+
 bindPopupEvents();
 setView(currentView);
 refresh().catch((error) => {

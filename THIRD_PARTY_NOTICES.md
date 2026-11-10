@@ -336,3 +336,20 @@ from https://github.com/fawazahmed0/exchange-api (CC0-1.0). Original license and
 source/snapshot provenance are retained in `third_party/currency-api/`. The
 catalog seeds offline selection only; reference rates are fetched as fixed public
 bulk data and validated locally. No upstream implementation code is incorporated.
+
+## WIM reader and compression libraries
+
+The isolated archive worker statically links unmodified wim-format0.1.1 and
+wim-types0.1.1 from https://github.com/CaddyGlow/wim-rs under LGPL-2.1-or-later.
+It also uses ms-compress0.2.1 under its original combined LGPL-2.1, Zlib,
+Apache-2.0 and MIT notices. Copyright belongs to the upstream authors and
+contributors identified in those source files and licenses.
+
+The complete corresponding library and worker application source, locked
+dependencies, and offline rebuild/relink instructions accompany this binary in
+`third_party/archive-worker/archive-worker-source.zip` and `REBUILD.md`.
+Full upstream license copies are also in `third_party/archive-worker/licenses/`.
+Modification for your own use and reverse engineering for debugging modifications
+to these LGPL-covered libraries are permitted without an additional NxTools
+restriction. Existing production release-identity verification is unchanged;
+rebuilding this source does not provide the publisher's signing key.

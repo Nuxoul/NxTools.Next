@@ -1,7 +1,9 @@
 //! Small independent fixtures at the real TAR edit worker rendezvous (not native publication).
 #![cfg(feature = "isolated-codecs")]
 use base64::Engine as _;
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -101,7 +103,7 @@ fn run(
     let empty_id = Uuid::new_v4();
     let zero_id = Uuid::new_v4();
     let incoming_name = "incoming";
-    let mut request = json!({"schema":2,"operation_id":operation,"op":"start","operation":"modify_tar","path":path.to_str().expect("path"),"job_execution":true,"password_interaction":true,"job_modify":edit});
+    let mut request = json!({"schema":2,"bulk_transfer":1,"operation_id":operation,"op":"start","operation":"modify_tar","path":path.to_str().expect("path"),"job_execution":true,"password_interaction":true,"job_modify":edit});
     if let Some(policy) = policy {
         request["conflict_policy"] = json!(policy);
     }

@@ -71,7 +71,9 @@ impl PlatformBridge {
             return Err(PlatformBridgeError::Busy);
         }
         // Formal starts require caller-origin authority; the historical isolated spike is separate.
-        if command.action == "start"
+        // Destination location is a start of the same single native drag slot.
+        let start = matches!(command.action.as_str(), "start" | "locate");
+        if start
             && origin_connection.is_none()
             && matches!(
                 envelope.message,
@@ -90,7 +92,6 @@ impl PlatformBridge {
             .filter(|active| origin_connection.is_none_or(|origin| active.generation == origin))
             .ok_or(PlatformBridgeError::Disconnected)?;
         let generation = active.generation;
-        let start = command.action == "start";
         if start {
             if active.archive_drag.is_some() {
                 return Err(PlatformBridgeError::Busy);
@@ -115,7 +116,7 @@ impl PlatformBridge {
                 PendingCommand {
                     generation,
                     accepted_at: Instant::now(),
-                    timeout: super::PENDING_COMMAND_TIMEOUT,
+                    timeout: Some(super::PENDING_COMMAND_TIMEOUT),
                     summon_reply: None,
                 },
             );
@@ -234,6 +235,7 @@ mod tests {
                         copy_motw: Some(true),
                         password_interaction: false,
                         temp_policy: None,
+                        preview_options: None,
                     },
                 },
             ]),

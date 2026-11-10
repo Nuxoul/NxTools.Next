@@ -26,6 +26,7 @@ changes only entry/output byte limits after matching zero-commit/actual-cleanup 
 stream overflow remains terminal ResourceLimit, never a guessed shortage. Compressed-TAR header
 discovery uses the existing verified anonymous spool bounded by max(output,metadata); an overflow
 before known inner sizes is terminal. Extraction uses the original target limits, not spool limits.
+Ordinary known-destination extraction uses the [shared final-name output contract](../../../tasks/11-02-archive-workflow-optimization/ordinary-extraction-output.md): private `extraction_output_v1` inside bulk v1, held-relative `CREATE_NEW` or decided direct overwrite, <=32KiB original-pipe records without ACK, and metadata+drain+close completion. No ordinary partial/rename/fingerprint/reopen/durability flush. All formats retain codec/source integrity; cancel/failure deletes only incomplete owned output(s) and preserves successfully closed files/directories. Archive Create/Edit,virtual cache and HZ5 remain separate.
 HZ5 [Stored ZIP reclamation](reclamation.md) is a separate destructive intent over the same original Job/worker/output owners. Start/Continue bypass ordinary finite readmission and batch retry; its consumed source is never restarted as ordinary extraction.
 
 ZIP and meaningful independent-block7z/non-solid nonsplitRAR member ratios reuse ZipRisk and the
@@ -53,8 +54,8 @@ NotificationCenter owners. Source deletion is visibly unavailable; strict recycl
 Invalid hidden format options/single-stream multiple roots -> reject before execution. Declared
 shortage -> ResourceLimit+bound facts before target effects; native failure -> original code, not
 shortage. Changed source/target -> typed refusal/no unsafe retry. Actual overflow -> terminal and
-owned-partial cleanup. Commit-bearing/unclean/mismatched shortfall -> no new attempt. Stale reply ->
-ignored. Cancel preserves native committed journal; cleanup unknown retains the running slot.
+owned-incomplete-output cleanup. Completed-file/unclean/mismatched shortfall -> no new attempt. Stale reply ->
+ignored. Cancel preserves native completed journal; cleanup unknown retains the running slot.
 
 ## 5. Good/Base/Bad Cases
 Good: tiny known TAR shortage -> actual exited cleanup -> explicit finite approval -> one bound
@@ -160,3 +161,48 @@ and real user/Explorer acceptance stay separate.
 ### 7. Wrong vs Correct
 Wrong: enable Add for TAR because a TAR encoder exists. Correct: backend missing -> typed refusal;
 future backend must connect to the original typed intent/candidate/verification/native commit seam.
+
+## Scenario: Negotiated large-count ordinary extraction
+### 1. Scope / Trigger
+Ordinary product Extract with `archive_job_large_count_v1` in the current Desktop/CLI HelloAck.
+Reference and native evidence: [large-count ZIP](../../../../docs/reference-code/archive-large-count.md).
+### 2. Signatures
+Private `WorkerRequest.job_large_count: Option<bool>` permits only true/schema2/product Extract/
+JobExtract without reclamation, preview or source deletion; accepted requires `job_large_count_v1`.
+`ArchiveOutputSession.ConfigureJournal(ArchiveAdmittedLimits)` retains bounded final-name result facts;
+optional `ArchiveJobTerminal.journal_summary` contains total_records/detail_complete/outcomes.
+### 3. Contracts
+Rust admits the complete original plan under entries/catalog/work/output and native-history path
+credit before output. Native cumulative records use admitted entry/metadata credit; active ordinary
+final-name tokens/streams retain their separate4096ceiling and close as soon as their required
+format integrity and metadata succeed. Journal records retain bounded result path,created count and
+completion/cleanup state,not ordinary output hashes or file IDs. Only negotiated ordinary product
+extraction may use no fixed work-duration deadline; cancellation,native errors,Job memory,cleanup
+and retained-slot ownership remain active. Other paths are unchanged. The native history owns
+complete `(state,completed,cleanup)` grouped file/byte totals. Public detail is at most256records,
+nonordinary outcomes first,original ordinal retained; detail_complete is exact.
+Rust validates group/ordinal uniqueness,checked totals,completed totals and detail membership.
+No global frame increase, unrelated jobs or silent detail completeness. Legacy sessions omit the
+summary and retain their old capacity. Desktop safe Retry checks full summary outcomes as well as
+legacy details, never infers zero output from an incomplete detail page. Success logs are cumulative
+milestones; failure/terminal diagnostics preserve original categories and native boundaries.
+### 4. Validation & Error Matrix
+No capability/old worker -> no large-count effects. Catalog/history/output shortage -> ResourceLimit
+before final-name begin. Cancel/error after prior closes -> exact completed totals and cleanup,no global
+rollback. Unknown close/delete or failed cleanup remains explicit in complete groups even when details
+are partial.
+### 5. Good/Base/Bad Cases
+Good:70,000tiny ZIP members close in one Job with a bounded terminal. Base: legacy small jobs retain
+wire and resource semantics. Bad: raise4096globally,expand1MiBframes or total only the detail page.
+### 6. Tests Required
+`repo:csharp/NxTools.PlatformHost.Tests/ArchiveLargeCountTests.cs` drives actual supplied70k/native
+bytes, cancel4,200, late CRC failure and legacy/metadata refusal. Explicit native-transcript gate:
+`repo:rust/crates/nxtools-protocol/tests/archive_large_count_native.rs`. Protocol malformed summary,
+IPC capability, original output/cleanup and Desktop retry regressions remain required. Capacity does
+not certify all staged codec workloads or Release performance.
+### 7. Wrong vs Correct
+Wrong: cumulative completed transactions are simultaneous open files, or256details mean256outputs.
+Correct: admitted cumulative native facts + independent active resources + complete bounded aggregates.
+Evidence: `repo:rust/crates/nxtools-archive/src/worker_job.rs`,
+`repo:csharp/NxTools.PlatformHost/Windows/Archive/ArchiveOutputSession.Journal.cs`,
+`repo:rust/apps/nxtools-desktop/src/archive/batch_jobs.rs`.

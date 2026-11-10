@@ -41,6 +41,7 @@ chrome.runtime.onStartup.addListener(() => {
 
 registerHeaderCapture();
 void getSettings();
+void getCapturePaused();
 void loadPersistentResources();
 void ensureDispositionNamesRestored();
 void activeTab().then((tab) => {
@@ -69,7 +70,16 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   clearTab(tabId);
 });
 
+chrome.tabs.onReplaced?.addListener((_addedTabId, removedTabId) => {
+  clearTab(removedTabId);
+});
+
 chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName === "session" && changes[CAPTURE_PAUSE_STORAGE_KEY]) {
+    capturePaused = changes[CAPTURE_PAUSE_STORAGE_KEY].newValue === true;
+    capturePauseLoaded = true;
+    capturePauseAvailable = true;
+  }
   if (areaName !== "local") {
     return;
   }
@@ -80,6 +90,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
       settingsLoaded = true;
     }
   }
+  cachedSettings = sanitizeSettings(cachedSettings);
 
   if (changes[STORAGE_DISABLED_SITES_KEY]) {
     loadDisabledSites(changes[STORAGE_DISABLED_SITES_KEY].newValue);

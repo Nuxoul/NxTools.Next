@@ -15,10 +15,10 @@ internal static class ProgramPicker
     public static WindowsCommandResult Pick(
         PickProgramCommand command,
         CancellationToken cancellationToken) =>
-        StaDialogRunner.Run(
-            "NxTools program picker",
-            () => PickOnStaThread(command, cancellationToken),
-            cancellationToken);
+        BoundedStaOperationRunner.TryRun("NxTools program picker", Timeout.InfiniteTimeSpan,
+            token => StaDialogRunner.RunInline(() => PickOnStaThread(command, token), token, command.SourceWindowHandle, command.SourceProcessId),
+            out WindowsCommandResult? result, out _, cancellationToken)
+            ? result ?? new(false, "picker_failed") : new(false, "picker_busy", NativeErrorCode: 170);
 
     private static WindowsCommandResult PickOnStaThread(
         PickProgramCommand command,
@@ -46,9 +46,10 @@ internal static class ProgramPicker
                 RestoreDirectory = true,
                 Title = "选择命令程序"
             };
-            var result = dialog.ShowDialog() == DialogResult.OK
-                ? new WindowsCommandResult(true, Data: dialog.FileName)
-                : new WindowsCommandResult(true, Data: string.Empty);
+            var result = PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, cancellationToken, owner =>
+                dialog.ShowDialog(owner) == DialogResult.OK
+                    ? new WindowsCommandResult(true, Data: dialog.FileName)
+                    : new WindowsCommandResult(true, Data: string.Empty));
             return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -57,17 +58,14 @@ internal static class ProgramPicker
         }
         catch (Win32Exception error)
         {
-            return new WindowsCommandResult(
-                false,
-                error.Message,
-                NativeErrorCode: error.NativeErrorCode);
+            return new WindowsCommandResult(false, "picker_failed", NativeErrorCode: error.NativeErrorCode);
         }
         catch (Exception error) when (error is InvalidOperationException
                                       or IOException
                                       or UnauthorizedAccessException
                                       or ArgumentException)
         {
-            return new WindowsCommandResult(false, error.Message);
+            return new WindowsCommandResult(false, "picker_failed", NativeErrorCode: error.HResult);
         }
     }
 

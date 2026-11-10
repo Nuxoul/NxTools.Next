@@ -13,7 +13,7 @@ Qualified ZIP supports Add/Delete/RenameFile/explicit-directory Rename/NewDirect
 
 Every Modify final submission binds archive path, original window generation/browser/snapshot/source and operation capability. Missing/warning original ordinals or wrong rename/replacement kind refuse before queue/IPC; worker still independently validates native source identity, revision, immutable ordinal and actual kind. Implicit subtree intent requires slash-ended original prefix plus a real member under that prefix. Frozen draft validation must not rebind to a later selected row.
 
-Add names the local protected sources and internal target directory; current policy is Ask with per-prompt Overwrite/Skip/AutoRename/Cancel and current-job/attempt-only ApplyAll, not a new persisted policy preference. Drop captures snapshot+folder+generation and rechecks before opening Add. Protected picker cancellation cannot submit/save or acquire source IO. ReplaceContent retains original name/metadata rules and uses a distinct typed action.
+Add names the local protected sources and internal target directory; current policy is Ask with per-prompt Overwrite/Skip/AutoRename/Cancel and current-job/attempt-only ApplyAll, not a new persisted policy preference. The explicit incoming-dialog choice “添加到当前压缩包” submits the original Add request directly; deliberate editing and Paste retain the original form. Drop freezes archive/window/session/generation/snapshot/source/read connection, internal folder and the complete source vector; recheck both the deferred choice and queued dispatch before native Start. Protected picker cancellation cannot submit/save or acquire source IO. ReplaceContent retains original name/metadata rules and uses a distinct typed action.
 
 ZIP adapter resolves Ask before source reads/candidate generation; overwrite composes original Delete IDs and Add in ONE candidate, never two commits or delete-old-first. Reserve archive names AND all planned incoming names before AutoRename so a numbered choice cannot consume a later source. Directory-directory merges; file/directory conflicts refuse. All skipped closes sources and returns zero publication plus skip warning. Finite metadata/spool/output/cancellation bounds and explicit finish/flush/revalidation remain mandatory. ZIP record editor and original native publication are unchanged.
 
@@ -76,3 +76,68 @@ Keep original actual control cancellation, native5/64/latecancel/sourcechange/un
 Wrong: exact directory record only; cancel request globally overrides errors. Correct: original
 logical directory merge/no-op -> zero candidate; exact native cancellation reply preserves its
 semantic through worker/Job while native publication and cleanup facts remain authoritative.
+
+## Scenario: OPT-02 complete Add namespace
+### 1. Scope / Trigger
+All qualified ZIP/ordinary single-volume7z/TAR/TGZ/TXZ Add operations use the original
+protected source, interaction, format adapter and native publication owners.
+### 2. Signatures
+`creation::IncomingPlan::build(source, limits, control)` retains `Vec<PlannedSource>` with
+every protected ID/requested relative path/type. Ordinary `CreationPlan::build` and
+ReplaceContent keep strict collision admission before directory traversal or payload reads.
+`worker_conflict::add::resolve` returns `(Vec<ResolvedAddition>, skipped)`;
+`ResolvedAddition { input: usize, name: String, replaces: Option<usize> }` binds the selected
+input index to the original member index without granting filesystem mutation authority.
+Evidence: `repo:rust/crates/nxtools-archive/src/creation.rs`,
+`repo:rust/crates/nxtools-archive/src/worker_conflict/add.rs`.
+### 3. Contracts
+Reserve original explicit/implicit types, ALL requested incoming paths and generated paths
+before AutoRename. Keep this reservation map separate from original/accepted occupancy.
+Use original case keys, path policy, numbered-name helper and InteractionPort tickets.
+Normalize admitted existing-member separators with `old.name.replace('\\', "/")` BEFORE
+trimming the terminal directory slash for Add reservation/occupancy. Preserve original member
+indices and encoded ZIP record spelling; this is comparison-space normalization, not input renaming.
+An existing `folder\` directory is valid; embedded empty components/traversal still fail the
+original `path_policy::validate_relative`. Windows Python `ZipInfo.orig_filename`, not its
+normalized `filename`, is the raw-name evidence when comparing separator encodings.
+Resolve all incoming conflicts before external payload opens; overwrite selects a source
+index and retains the old replacement binding/metadata, never deletes an external source.
+Logical directory merge keeps accepted parent spelling/old metadata. No selected addition
+means zero candidate/publication, including merge-only without any skipped file. New empty
+directories are changes. ApplyAll is local to this resolution attempt.
+ZIP new files stay plain Deflate; checked size plus worst-case expansion reserves ZIP64
+local headers before encoding. This does not change existing encoded-record preservation.
+The existing ZIP password transition `password_state.state="modifying"` is accepted by
+`ArchiveWorkerRunner.Password.cs::DiagnosticPassword` after successful preparation; it is
+not an unknown frame. PasswordRequired prompts; ZIP/7z ambiguous authentication remains
+terminal AuthenticationOrDataError, with no guessed WrongPassword or blind retry.
+### 4. Validation & Error Matrix
+- Same-type file collision -> original Ask/Overwrite/Skip/AutoRename/Cancel.
+- File/directory or ancestor type mismatch -> OutputCollision, no payload/candidate.
+- Source/stale identity or corrupt readback -> original typed failure, no publication.
+- Merge-only/allSkip -> exact original, zero candidate; accepted empty directory -> one.
+- Password cancel/authentication failure -> no candidate/publication, source retained.
+- Native unknown/late cancel -> original journal and cleanup facts, never automatic retry.
+### 5. Good/Base/Bad Cases
+Good: old `same.txt` + requested `same.txt`,`same (2).txt` assigns generated `same (3).txt`
+to the first input. Base: two roots named `folder` merge and resolve child conflicts.
+Bad: a future reservation is treated as an existing directory and drops a new empty folder.
+### 6. Tests Required
+`repo:rust/crates/nxtools-archive/tests/add_namespace_worker_contract.rs` runs the actual
+five-format worker, observes source-open/candidate/commit boundaries and independently
+checks exact name/content binding. `creation_plan_contract.rs` retains ordinary Create's
+early duplicate refusal; `worker_zip_edit::tests` checks ZIP64 local header reservation.
+`repo:csharp/NxTools.PlatformHost.Tests/EditInteractionTests.Opt02.cs` uses exact effects/LIST/RUN,
+hash-matched frozen worker, original browser/Job/source/publication and independent readers.
+Check same-batch decisions, future/reversed/case names, merge/no-op/new-empty/type refusal,
+ZIP/AES/header7z, wrong password/cancel, exclusive source release, journal and one publication.
+Original source-change/native5/64/latecancel/read-close/metadata gates remain mandatory.
+`repo:csharp/NxTools.PlatformHost.Tests/EditInteractionTests.Incoming.cs` additionally drives
+the actual Desktop drop button into the original typed command/Job/native worker, root and
+existing subdirectory, slash/backslash-ended directory records, Unicode/space file+folder+empty
+directory, one measured publication, independent bytes and actual cleanup. Preserve cancellation,
+Skip and original encoded names; successful compilation alone is not this boundary's acceptance.
+### 7. Wrong vs Correct
+Wrong: collapse Add into ordinary CreationPlan's unique-name map, or reserve only names
+already visited. Correct: retain all IDs -> reserve complete namespace -> original decisions
+-> one format-owned verified candidate -> original one-shot native publication.

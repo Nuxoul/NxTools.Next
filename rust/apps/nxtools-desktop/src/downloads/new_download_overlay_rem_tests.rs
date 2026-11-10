@@ -46,6 +46,7 @@ fn fixture(
     let retained = slot.clone();
     let probe = DownloadProbe {
         resolution: None,
+        server_observation: None,
         final_url: "https://synthetic.invalid/rem.bin".into(),
         file_name: Some("合成文件.bin".into()),
         total_bytes: Some(1024),

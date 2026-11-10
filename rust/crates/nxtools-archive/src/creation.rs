@@ -61,10 +61,35 @@ impl PlannedSource {
     }
 }
 pub struct CreationPlan {
-    entries: Vec<PlannedSource>,
+    pub(crate) entries: Vec<PlannedSource>,
     total: u64,
     excluded: u64,
     roots: Vec<(Uuid, bool)>,
+}
+/// Add retains every protected input until the worker resolves the complete namespace.
+pub(crate) struct IncomingPlan {
+    pub entries: Vec<PlannedSource>,
+}
+impl IncomingPlan {
+    pub fn build(
+        source: &mut impl CreationSource,
+        limits: &ResourceLimits,
+        control: &OperationControl,
+    ) -> Result<Self> {
+        let plan = CreationPlan::collect(
+            source,
+            &CreationOptions {
+                strip_single_root: false,
+                exclude_patterns: Vec::new(),
+            },
+            limits,
+            control,
+            None,
+        )?;
+        Ok(Self {
+            entries: plan.entries,
+        })
+    }
 }
 impl CreationPlan {
     pub fn entries(&self) -> &[PlannedSource] {
@@ -105,6 +130,15 @@ impl CreationPlan {
         limits: &ResourceLimits,
         control: &OperationControl,
     ) -> Result<Self> {
+        Self::collect(source, options, limits, control, Some(HashMap::new()))
+    }
+    fn collect(
+        source: &mut impl CreationSource,
+        options: &CreationOptions,
+        limits: &ResourceLimits,
+        control: &OperationControl,
+        mut names: Option<HashMap<String, (String, bool)>>,
+    ) -> Result<Self> {
         let filters = Filters::new(options, limits)?;
         control.checkpoint()?;
         let roots = source.roots()?;
@@ -120,7 +154,6 @@ impl CreationPlan {
         };
         let mut queue = VecDeque::new();
         let mut seen = HashSet::new();
-        let mut names = HashMap::<String, (String, bool)>::new();
         let mut metadata = 4 * 1024 * 1024u64; // bounded glob compiler/matchers and queue reservation
         let mut observed = 0u64;
         for root in roots {
@@ -142,7 +175,7 @@ impl CreationPlan {
                 continue;
             }
             if !strip {
-                plan.push(root.clone(), prefix.clone(), limits, &mut names)?;
+                plan.push(root.clone(), prefix.clone(), limits, names.as_mut())?;
             }
             if root.directory {
                 queue.push_back((root.id, prefix, 1usize));
@@ -177,7 +210,7 @@ impl CreationPlan {
                     }
                     queue.push_back((child.id, relative.clone(), depth + 1));
                 }
-                plan.push(child, relative, limits, &mut names)?;
+                plan.push(child, relative, limits, names.as_mut())?;
             }
         }
         source.revalidate()?;
@@ -188,27 +221,29 @@ impl CreationPlan {
         source: SourceEntry,
         mut relative: String,
         limits: &ResourceLimits,
-        names: &mut HashMap<String, (String, bool)>,
+        names: Option<&mut HashMap<String, (String, bool)>>,
     ) -> Result<()> {
-        let mut prefix = String::new();
-        let components: Vec<_> = relative.split('/').collect();
-        for (index, component) in components.iter().enumerate() {
-            if !prefix.is_empty() {
-                prefix.push('/');
-            }
-            prefix.push_str(component);
-            let directory = index + 1 != components.len() || source.directory;
-            let key = prefix.to_uppercase();
-            if let Some((spelling, previous_directory)) = names.get(&key) {
-                if spelling != &prefix
-                    || !directory
-                    || !previous_directory
-                    || index + 1 == components.len()
-                {
-                    return Err(ArchiveError::OutputCollision);
+        if let Some(names) = names {
+            let mut prefix = String::new();
+            let components: Vec<_> = relative.split('/').collect();
+            for (index, component) in components.iter().enumerate() {
+                if !prefix.is_empty() {
+                    prefix.push('/');
                 }
-            } else {
-                names.insert(key, (prefix.clone(), directory));
+                prefix.push_str(component);
+                let directory = index + 1 != components.len() || source.directory;
+                let key = prefix.to_uppercase();
+                if let Some((spelling, previous_directory)) = names.get(&key) {
+                    if spelling != &prefix
+                        || !directory
+                        || !previous_directory
+                        || index + 1 == components.len()
+                    {
+                        return Err(ArchiveError::OutputCollision);
+                    }
+                } else {
+                    names.insert(key, (prefix.clone(), directory));
+                }
             }
         }
         if source.directory {

@@ -690,11 +690,11 @@ impl MainWindow {
                     ),
                 ]),
             ),
-            SettingPage::new("归档与存储").resettable(false).group(
+            SettingPage::new("压缩包与存储").resettable(false).group(
                 SettingGroup::new().title("数据管理").items([
                     item(
                         10,
-                        "历史归档",
+                        "历史压缩包",
                         "便携 .nxtclip；图片与原生格式随包迁移",
                         false,
                         false,
@@ -911,11 +911,13 @@ impl MainWindow {
                     .label("导出…")
                     .debug_selector(|| "clipboard-export-archive".into())
                     .disabled(management_busy)
-                    .on_click(move |_event, _window, cx| {
+                    .on_click(move |_event, window, cx| {
                         let clipboard = export_clipboard.clone();
+                        let source_window_handle =
+                            crate::ui::native_window_handle(window).unwrap_or_default();
                         cx.defer(move |cx| {
                             let _ = clipboard.update(cx, |application, cx| {
-                                application.request_clipboard_export(cx);
+                                application.request_clipboard_export(source_window_handle, cx);
                             });
                         });
                     }),
@@ -927,11 +929,13 @@ impl MainWindow {
                     .label("导入…")
                     .debug_selector(|| "clipboard-import-archive".into())
                     .disabled(management_busy)
-                    .on_click(move |_event, _window, cx| {
+                    .on_click(move |_event, window, cx| {
                         let clipboard = import_clipboard.clone();
+                        let source_window_handle =
+                            crate::ui::native_window_handle(window).unwrap_or_default();
                         cx.defer(move |cx| {
                             let _ = clipboard.update(cx, |application, cx| {
-                                application.request_clipboard_import(cx);
+                                application.request_clipboard_import(source_window_handle, cx);
                             });
                         });
                     }),
@@ -983,11 +987,13 @@ impl MainWindow {
             .label("迁移…")
             .debug_selector(|| "clipboard-storage-migrate".into())
             .disabled(management_busy)
-            .on_click(move |_event, _window, cx| {
+            .on_click(move |_event, window, cx| {
                 let clipboard = migrate_clipboard.clone();
+                let source_window_handle =
+                    crate::ui::native_window_handle(window).unwrap_or_default();
                 cx.defer(move |cx| {
                     let _ = clipboard.update(cx, |application, cx| {
-                        application.request_clipboard_storage_migration(cx);
+                        application.request_clipboard_storage_migration(source_window_handle, cx);
                     });
                 });
             })

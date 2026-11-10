@@ -48,6 +48,7 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
 {
     private readonly object _gate = new();
     private readonly Queue<Work> _pending = new();
+    private Work? _cleanupPending;
     private readonly Queue<(FloatingAssistantDropData Data, TaskCompletionSource<bool> Completion)> _fixtureCallbacks = new();
     private readonly uint _peer;
     private readonly Func<ProtocolEnvelope, bool> _publish;
@@ -57,7 +58,18 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
     private readonly ManualResetEventSlim _ready = new();
     private FloatingAssistantCommand? _lease;
     private FloatingAssistantInputSurface? _input;
-    private readonly Dictionary<Guid, string?> _drops = new();
+    // A stopped pipe's failed deletion still consumes the same process-wide image slot.
+    private static int _dropSlot;
+    private readonly Dictionary<Guid, DropLease> _drops = new();
+    private sealed class DropLease(FloatingAssistantCommand command, Guid correlation)
+    {
+        internal FloatingAssistantCommand Command { get; } = command;
+        internal Guid Correlation { get; } = correlation;
+        internal long Started { get; } = Stopwatch.GetTimestamp();
+        internal string? Directory { get; set; }
+        internal bool Retired { get; set; }
+        internal bool PendingLogged { get; set; }
+    }
     private bool _visible;
     private readonly FloatingAssistantEnvironmentTracker _environment = new();
     private readonly Win32DesktopWindowOperations _desktopWindows = new();
@@ -91,12 +103,25 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         var id = envelope.CorrelationId is { } correlation && correlation != Guid.Empty ? correlation : envelope.Id;
         if (id == Guid.Empty) return Task.FromResult(new WindowsCommandResult(false, "invalid_request"));
         var started = Stopwatch.GetTimestamp();
+        var cleanup = command.Operation is "release_drop" or "retire";
         Task<WindowsCommandResult> result;
         lock (_gate)
         {
-            if (_stopping || _queued >= 16 || command.SourceProcessId != _peer || _peer == 0 ||
+            if (_stopping || (_queued >= 16 && !cleanup) || command.SourceProcessId != _peer || _peer == 0 ||
                 (command.Operation == "prepare" ? _lease is not null : command.Operation != "pick_image" && !Matches(command)))
                 return Task.FromResult(new WindowsCommandResult(false, "stale_or_busy"));
+            if (cleanup && _cleanupPending is { } previous)
+            {
+                if (previous.Command.SessionId != command.SessionId || previous.Command.Generation != command.Generation)
+                    return Task.FromResult(new WindowsCommandResult(false, "stale_or_busy"));
+                if (previous.Command.Operation == "retire" ||
+                    (command.Operation == "release_drop" && previous.Command.DropId == command.DropId))
+                    return previous.Completion.Task;
+                if (command.Operation != "retire") return Task.FromResult(new WindowsCommandResult(false, "stale_or_busy"));
+                // Retirement transfers this session's release to the same continuing STA owner.
+                previous.Completion.TrySetResult(new(true));
+                Log("terminal", previous.Correlation, previous.Command, previous.Started, new(true), "retirement_owns_cleanup");
+            }
             // Picker completion is detached by the pipe, not by this native queue; it
             // uses its own existing bounded STA runner and returns selected_path directly.
             if (command.Operation == "pick_image")
@@ -109,8 +134,9 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
             // Install lease synchronously so update/retire cannot overtake a queued preparation.
             if (command.Operation == "prepare") _lease = command;
             var completion = new TaskCompletionSource<WindowsCommandResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _pending.Enqueue(new(command, id, started, completion));
-            _queued++;
+            var work = new Work(command, id, started, completion);
+            if (cleanup && (_queued >= 16 || _cleanupPending is not null)) _cleanupPending = work;
+            else { _pending.Enqueue(work); _queued++; }
             result = completion.Task;
         }
         Log("accepted", id, command, started);
@@ -140,9 +166,27 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         _ownerThread = Environment.CurrentManagedThreadId;
         using var context = new ApplicationContext();
         using var timer = new System.Windows.Forms.Timer { Interval = 25 };
+        var stopCleaned = false;
         timer.Tick += (_, _) =>
         {
-            if (_stopping) { context.ExitThread(); return; }
+            if (_stopping)
+            {
+                if (!stopCleaned)
+                {
+                    try { Cleanup(); }
+                    catch (Exception error) when (error is COMException or Win32Exception or InvalidOperationException)
+                    { /* Cleanup's finally retains staged ownership; stopped receipts still drain. */ }
+                    finally { DrainStoppedRequests(); stopCleaned = true; }
+                }
+                if (Environment.TickCount64 - _lastObservation >= 500)
+                {
+                    _lastObservation = Environment.TickCount64;
+                    RetryDropCleanup();
+                }
+                // The original STA remains the cleanup owner after Dispose's bounded join.
+                if (_drops.Count == 0) context.ExitThread();
+                return;
+            }
             // Retire/stop invalidates admission on the reader; only this STA touches native state.
             Work? work;
             (FloatingAssistantDropData Data, TaskCompletionSource<bool> Completion)? fixture;
@@ -151,6 +195,12 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
                 fixture = _fixtureCallbacks.Count > 0 ? _fixtureCallbacks.Dequeue() : null;
                 work = fixture is null && _pending.Count > 0 ? _pending.Dequeue() : null;
                 if (fixture is not null || work is not null) _queued--;
+                if (_cleanupPending is { } cleanup && _queued < 16)
+                {
+                    _pending.Enqueue(cleanup);
+                    _cleanupPending = null;
+                    _queued++;
+                }
             }
             if (fixture is { } request)
             {
@@ -162,6 +212,7 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
             if (Environment.TickCount64 - _lastObservation >= 500)
             {
                 _lastObservation = Environment.TickCount64;
+                RetryDropCleanup();
                 Observe();
             }
         };
@@ -170,8 +221,19 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         Application.Run(context);
         timer.Stop();
         try { Cleanup(); } catch (Exception) { /* native teardown must still complete queued requests */ }
+        DrainStoppedRequests();
+    }
+
+    private void DrainStoppedRequests()
+    {
         lock (_gate)
         {
+            if (_cleanupPending is { } cleanup)
+            {
+                Log("terminal", cleanup.Correlation, cleanup.Command, cleanup.Started, new(false, "disconnected"));
+                cleanup.Completion.TrySetResult(new(false, "disconnected"));
+                _cleanupPending = null;
+            }
             while (_fixtureCallbacks.TryDequeue(out var request)) request.Completion.TrySetResult(false);
             while (_pending.TryDequeue(out var work))
             {
@@ -303,8 +365,11 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
 
     private WindowsCommandResult ReleaseDrop(FloatingAssistantCommand command)
     {
-        if (!_drops.Remove(command.DropId!.Value, out var directory)) return new(false, "stale_drop");
-        if (directory is not null) DeleteOwned(directory);
+        if (!_drops.TryGetValue(command.DropId!.Value, out var drop) || drop.Retired ||
+            drop.Command.SessionId != command.SessionId || drop.Command.Generation != command.Generation)
+            return new(false, "stale_drop");
+        drop.Retired = true;
+        DeleteOwned(command.DropId.Value, drop);
         return new(true);
     }
 
@@ -366,35 +431,43 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         if (command is null || !_visible || command.ClickThrough || _drops.Count >= 1 || drop.CorrelationId == Guid.Empty)
             return false;
         var id = drop.CorrelationId;
-        string? directory = null;
+        var owned = new DropLease(command, id);
+        if (Interlocked.CompareExchange(ref _dropSlot, 1, 0) != 0) return false;
+        _drops.Add(id, owned);
+        var published = false;
         string? image = null;
         try
         {
             if (drop.ImageBytes is { } bytes)
             {
                 if (bytes.Length is < 1 or > 16 * 1024 * 1024 || drop.ImageFormat is not ("png" or "dib" or "dib_v5")) return false;
-                directory = Path.Combine(Path.GetTempPath(), "NxTools-floating-" + Guid.NewGuid().ToString("N"));
-                Directory.CreateDirectory(directory);
-                image = Path.Combine(directory, "image." + drop.ImageFormat);
+                owned.Directory = Path.Combine(Path.GetTempPath(), "NxTools-floating-" + Guid.NewGuid().ToString("N"));
+                // Install ownership before the first fallible filesystem mutation.
+                Directory.CreateDirectory(owned.Directory);
+                image = Path.Combine(owned.Directory, "image." + drop.ImageFormat);
                 using var stream = new FileStream(image, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
                 stream.Write(bytes);
             }
             if (!Publish(command, id, "drop", drop: drop with { ImageBytes = null }, imagePath: image, dropId: id)) return false;
-            // Keep an accepted snapshot alive across hide until Rust releases its exact token;
-            // retire/disconnect destroys it. Never delete a dropped source file.
-            _drops[id] = directory;
-            directory = null;
+            published = true;
             return true;
         }
-        catch (IOException) { return false; }
-        finally { if (directory is not null) DeleteOwned(directory); }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException) { return false; }
+        finally
+        {
+            if (!published && _drops.ContainsKey(id))
+            {
+                owned.Retired = true;
+                DeleteOwned(id, owned);
+            }
+        }
     }
 
     private bool Publish(FloatingAssistantCommand command, Guid id, string kind, int x = 0, int y = 0,
         int delta = 0, bool fullscreen = false, FloatingAssistantDropData? drop = null,
         string? imagePath = null, Guid? dropId = null)
     {
-        // Only the fixed STA calls Publish; do not let a full transport queue retain staged files.
+        // Only the fixed STA calls Publish; rejected delivery retires its exact staging owner.
         if (_stopping) return false;
         try { return _publish(FloatingAssistantContract.Event(command, id, ++_sequence, kind, x, y, delta, fullscreen, drop, imagePath, dropId)); }
         catch { return false; }
@@ -502,8 +575,8 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         finally
         {
             _input = null;
-            foreach (var directory in _drops.Values) if (directory is not null) DeleteOwned(directory);
-            _drops.Clear();
+            foreach (var drop in _drops.Values) drop.Retired = true;
+            RetryDropCleanup();
             _environment.Reset();
             _lastFullscreen = null;
             _leaseCorrelation = Guid.Empty;
@@ -512,9 +585,31 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         }
     }
 
-    private static void DeleteOwned(string directory)
+    private void RetryDropCleanup()
     {
-        try { Directory.Delete(directory, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        foreach (var (id, drop) in _drops.ToArray())
+            if (drop.Retired) DeleteOwned(id, drop);
+    }
+
+    private void DeleteOwned(Guid id, DropLease drop)
+    {
+        try
+        {
+            if (drop.Directory is not null) Directory.Delete(drop.Directory, recursive: true);
+        }
+        catch (DirectoryNotFoundException) { /* already physically absent */ }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            if (!drop.PendingLogged)
+            {
+                Log("drop_cleanup_pending", drop.Correlation, drop.Command, drop.Started,
+                    new(false, "delete_failed", NativeErrorCode: error.HResult), "delete_failed");
+                drop.PendingLogged = true;
+            }
+            return;
+        }
+        if (_drops.Remove(id)) Interlocked.Exchange(ref _dropSlot, 0);
+        Log("drop_cleanup_complete", drop.Correlation, drop.Command, drop.Started, new(true));
     }
 
     internal void Stop()

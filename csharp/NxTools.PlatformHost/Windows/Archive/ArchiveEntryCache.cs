@@ -25,6 +25,11 @@ internal sealed partial class ArchiveEntryCache : IDisposable
     private int nextSweepRoot;
     private bool disposed;
     internal Task StartupCleanup { get; }
+    internal readonly record struct VerificationCounts(long SealHashBytes, long CursorHashBytes, long CursorChecks, long CursorOpens);
+    internal VerificationCounts VerificationForFixture {
+        get { lock (this) return new(leases.Values.Sum(lease => lease.sealHashBytes), leases.Values.Sum(lease => lease.cursorHashBytes),
+            leases.Values.Sum(lease => lease.cursorChecks), leases.Values.Sum(lease => lease.cursorOpens)); }
+    }
 
     private ArchiveEntryCache(string root, TimeProvider? clock = null, IPlatformLog? log = null)
     {
@@ -70,6 +75,8 @@ internal sealed partial class ArchiveEntryCache : IDisposable
         private bool retirementRecord;
         private bool disposed;
         private ArchiveSourceActivity.Reservation? sourceActivity;
+        internal long sealHashBytes, cursorHashBytes, cursorChecks, cursorOpens;
+        internal long? SealedSize => !disposed && !record.Retired ? record.Output?.Size : null;
         internal void BindSourceActivity(ArchiveSourceActivity.Reservation reservation) {
             if (disposed || sourceActivity is not null) throw new ArchiveOutputException("source_unavailable");
             sourceActivity = reservation;
@@ -106,7 +113,7 @@ internal sealed partial class ArchiveEntryCache : IDisposable
                 record = JsonSerializer.Deserialize<ManifestRecord>(manifestBytes) ?? throw new InvalidDataException();
                 Validate(id);
                 if (retired) {
-                    if (!record.OutputRemoved || !record.Retired) throw new InvalidDataException();
+                    if (!record.Retired) throw new InvalidDataException();
                     try { root = OutputNative.Open(Base, id.ToString("D"), true); }
                     catch (ArchiveOutputException missing) when (missing.NativeCode is 2 or 3) { }
                 }
@@ -171,7 +178,7 @@ internal sealed partial class ArchiveEntryCache : IDisposable
                 return OutputNative.Open(parent, parts[^1], false, readOnly: readOnly, metadataCleanup: !readOnly);
             } finally { if (retainedParents is null) foreach (var handle in held.AsEnumerable().Reverse()) handle.Dispose(); }
         }
-        internal void Seal(string output)
+        internal long Seal(string output)
         {
             var prefix = Root + "\\";
             if (record.Retired || !output.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) throw new ArchiveOutputException("invalid_component");
@@ -184,8 +191,10 @@ internal sealed partial class ArchiveEntryCache : IDisposable
             var mark = ArchiveMotw.Read(handle); string? zoneDigest;
             try { zoneDigest = mark is null ? null : Convert.ToHexString(SHA256.HashData(mark)); }
             finally { if (mark is not null) CryptographicOperations.ZeroMemory(mark); }
+            var digest = Convert.ToHexString(SHA256.HashData(stream));
+            sealHashBytes += stream.Position;
             var stamp = new OutputStamp(name, new(baseline.Volume, baseline.IdLow, baseline.IdHigh), baseline.Size, baseline.Modified,
-                Convert.ToHexString(SHA256.HashData(stream)), attributes, zoneDigest is not null, zoneDigest);
+                digest, attributes, zoneDigest is not null, zoneDigest);
             var directories = record.Directories.ToDictionary(item => item.Relative, StringComparer.Ordinal);
             var held = new List<SafeFileHandle>();
             try {
@@ -198,6 +207,7 @@ internal sealed partial class ArchiveEntryCache : IDisposable
                 }
             } finally { foreach (var directory in held.AsEnumerable().Reverse()) directory.Dispose(); }
             record = record with { Output = stamp, Directories = directories.Values.ToArray() }; Persist();
+            return stamp.Size;
         }
         private sealed class ShellOutputLease(SafeFileHandle handle, List<SafeFileHandle> ancestry) : IDisposable
         {
@@ -230,11 +240,15 @@ internal sealed partial class ArchiveEntryCache : IDisposable
             using var held=OpenOutput(output.Relative,true);
             var stamp=OutputNative.Identity(held);
             var expected=$"v2:{output.Identity.Volume:X}:{output.Identity.High:X16}{output.Identity.Low:X16}:{output.Size:X}:{output.Modified:X}:{output.Digest}";
-            if(ArchiveOutputSession.TargetIdentity(held,cancellationToken)!=expected||stamp.Size!=output.Size||expectedSize is {} size&&stamp.Size!=size)throw new ArchiveOutputException("source_changed");
+            var actualIdentity=ArchiveOutputSession.TargetIdentity(held,cancellationToken);
+            // TargetIdentity reads this write-denied held object completely before returning.
+            cursorHashBytes+=stamp.Size;cursorChecks++;
+            if(actualIdentity!=expected||stamp.Size!=output.Size||expectedSize is {} size&&stamp.Size!=size)throw new ArchiveOutputException("source_changed");
             cancellationToken.ThrowIfCancellationRequested();
             var stable=OutputNative.StableDirectoryPath(held); // Final path of the exact held, verified FILE object.
             var result=OpenNativeVirtualStream(stable,0x20,0,false,IntPtr.Zero,out var stream); // STGM_READ|SHARE_DENY_WRITE
             if(result<0)throw new System.Runtime.InteropServices.COMException("virtual_stream_open",result);
+            cursorOpens++;
             actualSize=stamp.Size;
             return stream; // Native +1 is transferred in STGMEDIUM; held binding closes only after this open.
         }
@@ -246,12 +260,14 @@ internal sealed partial class ArchiveEntryCache : IDisposable
             try {
                 if (!MatchesManifest()) return false;
                 if (!record.Retired) { record = record with { Retired = true }; Persist(); }
+                if (!record.OutputRemoved && retirementRecord && root is null)
+                    record = record with { OutputRemoved = true };
                 if (!record.OutputRemoved && record.Output is { } output) {
                     SafeFileHandle handle;
                     try { handle = OpenOutput(output.Relative, false); }
                     catch (ArchiveOutputException missing) when (missing.NativeCode is 2 or 3) {
                         // The exact owned manifest records the only output; no replacement is followed.
-                        record = record with { OutputRemoved = true }; Persist(); return RetireEmpty();
+                        record = record with { OutputRemoved = true }; return RetireEmpty();
                     }
                     using (handle) {
                         var baseline = OutputNative.Identity(handle);
@@ -267,7 +283,8 @@ internal sealed partial class ArchiveEntryCache : IDisposable
                         ArchiveMetadataNative.ClearOwnedReadOnly(handle); OutputNative.DeleteHandle(handle);
                     }
                 }
-                if (!record.OutputRemoved) { record = record with { OutputRemoved = true }; Persist(); }
+                // Recovery rechecks the durable retired stamp if deletion preceded a restart.
+                if (!record.OutputRemoved) record = record with { OutputRemoved = true };
                 return RetireEmpty();
             } catch (Exception failure) when (Recoverable(failure)) { return false; }
         }
@@ -339,7 +356,7 @@ internal sealed partial class ArchiveEntryCache : IDisposable
                 for (var index = 0; index < localBatchSize; index++) {
                     var id = localRetirements.Dequeue();
                     if (!leases.TryGetValue(id, out var inactive)) continue;
-                    if (externalHolds.ContainsKey(id)) { localRetirements.Enqueue(id); continue; }
+                    if (externalHolds.ContainsKey(id) || consumerHolds.ContainsKey(id)) { localRetirements.Enqueue(id); continue; }
                     if (inactive.Release()) { leases.Remove(id); inactive.Dispose(); removed++; }
                     else localRetirements.Enqueue(id);
                 }
@@ -415,7 +432,7 @@ internal sealed partial class ArchiveEntryCache : IDisposable
         lock (this) {
             if (!leases.TryGetValue(id, out var lease)) return releasedOwners.ContainsKey(id);
             RememberReleased(id);
-            if (externalHolds.ContainsKey(id) || !lease.Release()) return false;
+            if (externalHolds.ContainsKey(id) || consumerHolds.ContainsKey(id) || !lease.Release()) return false;
             leases.Remove(id); lease.Dispose(); return true;
         }
     }
@@ -439,7 +456,7 @@ internal sealed partial class ArchiveEntryCache : IDisposable
         lock (this) {
             if (disposed) return; disposed = true;
             foreach (var iterator in sweeps.Values) iterator.Dispose(); sweeps.Clear();
-            foreach (var lease in leases.Values) { if (released.Contains(lease.Id) && !externalHolds.ContainsKey(lease.Id)) lease.Release(); lease.Dispose(); }
+            foreach (var lease in leases.Values) { if (released.Contains(lease.Id) && !externalHolds.ContainsKey(lease.Id) && !consumerHolds.ContainsKey(lease.Id)) lease.Release(); lease.Dispose(); }
             leases.Clear();
         }
     }

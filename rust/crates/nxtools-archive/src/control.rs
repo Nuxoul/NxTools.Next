@@ -17,6 +17,7 @@ struct ExtractionProgress {
     files_total: u64,
     member_done: Option<u64>,
     member_total: Option<u64>,
+    parallel_limit: Option<u64>,
 }
 
 pub(crate) struct ProgressSnapshot {
@@ -43,6 +44,104 @@ pub(crate) struct CancellationObservation {
     observed_us: Option<u64>,
     boundary: Option<CancellationBoundary>,
 }
+/// Per-operation work at the original read boundaries; revision bytes exclude codec/catalog IO.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct ArchiveWorkObservation {
+    pub revision_passes: u64,
+    pub revision_bytes: u64,
+    pub revision_us: u64,
+    pub catalog_loads: u64,
+    pub eligibility_checks: u64,
+    pub outer_decodes: u64,
+    #[serde(default)]
+    pub zip_member_decodes: u64,
+    #[serde(default)]
+    pub tar_member_reads: u64,
+    #[serde(default)]
+    pub sevenz_block_decodes: u64,
+    #[serde(default)]
+    pub rar_decoder_opens: u64,
+    #[serde(default)]
+    pub rar_replayed_entries: u64,
+    #[serde(default)]
+    pub zip_local_checks: u64,
+    #[serde(default)]
+    pub zip_descriptor_checks: u64,
+    #[serde(default)]
+    pub zip_record_seeks: u64,
+    #[serde(default)]
+    pub zip_source_payload_decodes: u64,
+    #[serde(default)]
+    pub zip_addition_payload_decodes: u64,
+    #[serde(default)]
+    pub zip_candidate_payload_decodes: u64,
+    #[serde(default)]
+    pub tar_index_builds: u64,
+    #[serde(default)]
+    pub tar_record_scans: u64,
+    #[serde(default)]
+    pub tar_header_seeks: u64,
+    #[serde(default)]
+    pub tar_payload_seeks: u64,
+    #[serde(default)]
+    pub tar_plan_bytes: u64,
+    #[serde(default)]
+    pub outer_decoded_bytes: u64,
+    /// Raw Deflate call time, excluding the encoded input read and the output callback.
+    #[serde(default)]
+    pub zip_inflate_us: u64,
+    #[serde(default)]
+    pub zip_inflate_calls: u64,
+    /// ZIP payload reader time includes encoded input, codec, and checkpoints.
+    #[serde(default)]
+    pub zip_payload_read_us: u64,
+    /// Ordinary output measures pipe send/backpressure; acknowledged directions include ACK wait.
+    #[serde(default)]
+    pub output_ipc_ack_us: u64,
+    #[serde(default)]
+    pub output_write_calls: u64,
+    #[serde(default)]
+    pub output_write_bytes: u64,
+    #[serde(default)]
+    pub output_begin_calls: u64,
+    #[serde(default)]
+    pub output_begin_wait_us: u64,
+    #[serde(default)]
+    pub output_close_calls: u64,
+    #[serde(default)]
+    pub output_close_wait_us: u64,
+    #[serde(default)]
+    pub output_directory_calls: u64,
+    #[serde(default)]
+    pub output_directory_wait_us: u64,
+    #[serde(default)]
+    pub output_directory_metadata_calls: u64,
+    #[serde(default)]
+    pub output_directory_metadata_wait_us: u64,
+    #[serde(default)]
+    pub parallel_workers_planned: u64,
+    #[serde(default)]
+    pub parallel_workers_high_water: u64,
+    #[serde(default)]
+    pub parallel_members_completed: u64,
+    pub selection: crate::planning::SelectionWork,
+}
+
+pub(crate) struct RevisionObservation<'a> {
+    control: &'a OperationControl,
+    started: Instant,
+    pub bytes: u64,
+}
+impl Drop for RevisionObservation<'_> {
+    fn drop(&mut self) {
+        self.control.record_work(|work| {
+            work.revision_passes += 1;
+            work.revision_bytes += self.bytes;
+            work.revision_us += self.started.elapsed().as_micros().min(u64::MAX as u128) as u64;
+        });
+    }
+}
+
 struct State {
     cancelled: bool,
     paused: bool,
@@ -54,6 +153,8 @@ struct State {
     cancel_hooks: Vec<std::sync::Weak<dyn Fn() + Send + Sync>>,
     source_deletion: crate::source_deletion::Evidence,
     cancellation: CancellationObservation,
+    work: ArchiveWorkObservation,
+    protected_source: Option<std::path::PathBuf>,
     #[cfg(test)]
     pause_waiters: usize,
 }
@@ -89,6 +190,8 @@ impl OperationControl {
                     progress_phase: "running",
                     cancel_hooks: Vec::new(),
                     source_deletion: Default::default(),
+                    work: ArchiveWorkObservation::default(),
+                    protected_source: None,
                     cancellation: CancellationObservation {
                         received_us: None,
                         observed_us: None,
@@ -104,6 +207,38 @@ impl OperationControl {
     }
     pub fn operation_id(&self) -> Uuid {
         self.id
+    }
+    pub fn work_observation(&self) -> ArchiveWorkObservation {
+        self.shared
+            .state
+            .lock()
+            .map(|state| state.work)
+            .unwrap_or_default()
+    }
+    pub(crate) fn record_work(&self, update: impl FnOnce(&mut ArchiveWorkObservation)) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            update(&mut state.work);
+        }
+    }
+    pub(crate) fn observe_revision(&self) -> RevisionObservation<'_> {
+        RevisionObservation {
+            control: self,
+            started: Instant::now(),
+            bytes: 0,
+        }
+    }
+    /// The native runner holds this ordinary source with read-only sharing for the whole worker
+    /// lifetime, so its content cannot change after the digest taken when it was opened.
+    pub(crate) fn protect_source(&self, path: std::path::PathBuf) {
+        if let Ok(mut state) = self.shared.state.lock() {
+            state.protected_source = Some(path);
+        }
+    }
+    pub(crate) fn source_protected(&self, path: &std::path::Path) -> bool {
+        self.shared
+            .state
+            .lock()
+            .is_ok_and(|state| state.protected_source.as_deref() == Some(path))
     }
     /// An actual retry has a fresh identity but retains the logical operation's cancel/lifetime.
     pub(crate) fn attempt(&self) -> Self {
@@ -241,7 +376,7 @@ impl OperationControl {
                 .lock()
                 .map_err(|_| ArchiveError::IoFailure)?;
             state.cancel_hooks.retain(|hook| hook.strong_count() != 0);
-            if state.cancel_hooks.len() >= 32 {
+            if state.cancel_hooks.len() >= 64 {
                 return Err(ArchiveError::Busy);
             }
             state.cancel_hooks.push(Arc::downgrade(&hook));
@@ -267,6 +402,7 @@ impl OperationControl {
                 files_total,
                 member_done: None,
                 member_total: None,
+                parallel_limit: None,
             });
             state.current_member = None;
             state.latest = Some(ArchiveProgress {
@@ -274,6 +410,62 @@ impl OperationControl {
                 files: 0,
                 total_bytes,
             });
+        }
+    }
+    pub(crate) fn enable_parallel_progress(&self, limit: u64) {
+        if let Ok(mut state) = self.shared.state.lock()
+            && let Some(extraction) = &mut state.extraction
+        {
+            extraction.parallel_limit = Some(limit);
+        }
+    }
+    pub(crate) fn add_parallel_progress(
+        &self,
+        bytes: u64,
+        closed: bool,
+        member: &str,
+        member_done: u64,
+    ) -> Result<()> {
+        let mut state = self
+            .shared
+            .state
+            .lock()
+            .map_err(|_| ArchiveError::IoFailure)?;
+        let limit = state
+            .extraction
+            .and_then(|extraction| extraction.parallel_limit)
+            .ok_or(ArchiveError::IoFailure)?;
+        let mut progress = state.latest.ok_or(ArchiveError::IoFailure)?;
+        let next = progress
+            .bytes
+            .checked_add(bytes)
+            .filter(|bytes| *bytes <= limit)
+            .ok_or(ArchiveError::ResourceLimit)?;
+        progress.bytes = next;
+        progress.files += u64::from(closed);
+        state.latest = Some(progress);
+        if state.current_member.as_deref() == Some(member)
+            && let Some(extraction) = &mut state.extraction
+        {
+            if closed {
+                extraction.member_done = None;
+                extraction.member_total = None;
+                state.current_member = None;
+            } else {
+                extraction.member_done = Some(member_done);
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn clear_extracted_member_if(&self, member: &str) {
+        if let Ok(mut state) = self.shared.state.lock()
+            && state.current_member.as_deref() == Some(member)
+        {
+            state.current_member = None;
+            if let Some(extraction) = &mut state.extraction {
+                extraction.member_done = None;
+                extraction.member_total = None;
+            }
         }
     }
     pub(crate) fn begin_extracted_member(&self, member: &str, total: Option<u64>) {
@@ -349,6 +541,12 @@ impl OperationControl {
     }
     pub(crate) fn publish(&self, progress: ArchiveProgress) {
         if let Ok(mut state) = self.shared.state.lock() {
+            if state
+                .extraction
+                .is_some_and(|extraction| extraction.parallel_limit.is_some())
+            {
+                return;
+            }
             let now = Instant::now();
             if state
                 .last_publish
@@ -361,6 +559,12 @@ impl OperationControl {
     }
     pub(crate) fn finish_progress(&self, progress: ArchiveProgress) {
         if let Ok(mut state) = self.shared.state.lock() {
+            if state
+                .extraction
+                .is_some_and(|extraction| extraction.parallel_limit.is_some())
+            {
+                return;
+            }
             state.latest = Some(progress);
         }
     }
@@ -432,5 +636,58 @@ mod cancellation_tests {
         assert_eq!(observed.observed_us, duplicate.observed_us);
         assert_eq!(duplicate.boundary, Some(CancellationBoundary::Checkpoint));
         assert!(observed.observed_us >= observed.received_us);
+    }
+}
+
+#[cfg(test)]
+mod parallel_progress_tests {
+    use super::*;
+    #[test]
+    fn concurrent_deltas_are_monotonic_and_share_one_actual_byte_budget() {
+        let control = OperationControl::default();
+        control.configure_extraction_progress(Some(32000), 32);
+        control.enable_parallel_progress(32000);
+        std::thread::scope(|scope| {
+            for _ in 0..32 {
+                let control = &control;
+                scope.spawn(move || {
+                    let mut previous = 0;
+                    for done in 1..=1000 {
+                        control
+                            .add_parallel_progress(1, false, "member", done)
+                            .expect("actual delta");
+                        control.publish(ArchiveProgress {
+                            bytes: 0,
+                            files: 0,
+                            total_bytes: None,
+                        });
+                        let current = control.latest_progress().expect("aggregate").bytes;
+                        assert!(current >= previous);
+                        previous = current;
+                    }
+                    control
+                        .add_parallel_progress(0, true, "member", 1000)
+                        .expect("closed");
+                });
+            }
+        });
+        control.finish_progress(ArchiveProgress {
+            bytes: 0,
+            files: 0,
+            total_bytes: None,
+        });
+        assert_eq!(
+            control.latest_progress(),
+            Some(ArchiveProgress {
+                bytes: 32000,
+                files: 32,
+                total_bytes: Some(32000)
+            })
+        );
+        assert_eq!(
+            control.add_parallel_progress(1, false, "member", 1001),
+            Err(ArchiveError::ResourceLimit)
+        );
+        assert_eq!(control.latest_progress().expect("retained").bytes, 32000);
     }
 }

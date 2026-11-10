@@ -48,6 +48,11 @@ internal static class ArchiveSourceDeletionTests
         Require(await runner.DrainAsync(), "source-delete drain");
         return events.Single(item => item.Kind == "exited");
     }
+    private static void RequireSourceProtected(string source)
+    {
+        try { using var writer = new FileStream(source, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete); throw new InvalidOperationException("source lease released before output boundary"); }
+        catch (IOException) { }
+    }
     public static Task ConsentAndFailureProjection() => WithWorker(async owned => {
         foreach (var consent in new bool?[] { null, false, true }) {
             var source = Zip(owned);
@@ -157,32 +162,61 @@ internal static class ArchiveSourceDeletionTests
     }
 
     public static Task FailureAndCancellationMatrix() => WithWorker(async owned => {
-        foreach (var mode in new[] { "metadata", "motw", "directory", "postcommit", "unknown", "cancel", "active_temp" }) {
+        foreach (var mode in new[] { "metadata_failure", "motw_failure", "directory_failure", "write_failure", "cancel_open", "cancel_closed", "active_temp" }) {
             var source = Zip(owned); var output = Directory.CreateDirectory(Path.Combine(owned.FullName, Guid.NewGuid().ToString("N"))).FullName;
-            if (mode == "directory") {
+            if (mode == "directory_failure") {
                 using var zip = ZipFile.Open(source, ZipArchiveMode.Update);
                 zip.CreateEntry("empty/").ExternalAttributes = 0x10;
             }
+            if (mode == "motw_failure") File.WriteAllText(source + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n");
             var events = new ConcurrentQueue<ArchiveWorkerEvent>(); var backend = new Backend();
             using var runner = ArchiveWorkerRunner.ForRecycleFixture(events.Enqueue, backend);
-            var id = Guid.NewGuid();
-            if (mode is "metadata" or "motw" or "directory") runner.OutputCommitCheckpointProbe = stage => {
-                if (mode == "metadata" && stage == "before_metadata" || mode == "motw" && stage == "before_motw" || mode == "directory" && stage == "before_directory_metadata") throw new ArchiveOutputException(mode == "motw" ? "motw_write_failed" : "metadata_time_failed", 5);
+            var id = Guid.NewGuid(); var hits = 0;
+            runner.OutputCommitCheckpointProbe = stage => {
+                var expected = mode switch {
+                    "metadata_failure" or "cancel_open" => "before_metadata",
+                    "motw_failure" => "before_motw",
+                    "directory_failure" => "before_directory_metadata",
+                    "cancel_closed" or "active_temp" => "native_closed",
+                    _ => null
+                };
+                if (stage != expected) return;
+                RequireSourceProtected(source);
+                Require(Interlocked.Increment(ref hits) == 1, "output boundary repeated: " + mode);
+                if (mode == "metadata_failure" || mode == "directory_failure") throw new ArchiveOutputException("metadata_time_failed", 5);
+                if (mode == "motw_failure") throw new ArchiveOutputException("motw_write_failed", 5);
+                if (mode == "cancel_open") Require(runner.Cancel(id), "cancel incomplete ordinary output");
+                if (mode == "cancel_closed") Require(runner.Cancel(id), "cancel after ordinary output close");
             };
-            if (mode is "postcommit" or "unknown" or "cancel") runner.OutputCommitCheckpointProbe = stage => {
-                if (mode == "postcommit" && stage == "native_published") throw new ArchiveOutputException("committed_but_verification_failed", 5);
-                if (mode == "unknown" && stage == "commit_in_flight") throw new ArchiveOutputException("replace_file", 64);
-                if (mode == "cancel" && stage == "target_rechecked") runner.Cancel(id);
+            if (mode == "write_failure") runner.OutputWriteCheckpointProbe = _ => {
+                RequireSourceProtected(source);
+                Require(Interlocked.Increment(ref hits) == 1, "write boundary repeated");
+                throw new ArchiveOutputException("write_file", 112);
             };
-            if (mode == "motw") File.WriteAllText(source + ":Zone.Identifier", "[ZoneTransfer]\r\nZoneId=3\r\n");
-            Require(runner.Start(new(id, "extract", source, 0, new { max_entries = 100 }, OutputRoot: output, DeleteSource: true, ActiveTemporarySource: mode == "active_temp")), "failure admission");
-            var terminal = await Wait(runner, events);
-            Require((terminal.Category == "success") == (mode == "active_temp"), "fault injection did not reach real boundary: " + mode + "/" + terminal.Category);
-            if (mode is "postcommit" or "directory") Require(terminal.FilesCommitted == 1, "true postcommit count lost");
-            if (mode == "unknown") Require(terminal.CommitState == "CommitOutcomeUnknown", "unknown projection lost");
-            Require(backend.Calls == 0, "ineligible backend invocation: " + mode);
-            Require(terminal.SourceDeletion?.Reason != "completed", "failed lifecycle granted: " + mode);
-            Require(File.Exists(source), "failed lifecycle removed source");
+            Require(runner.Start(new(id, "extract", source, 0, new { max_entries = 100 }, OutputRoot: output,
+                DeleteSource: true, ActiveTemporarySource: mode == "active_temp")), "failure admission");
+            var terminal = await Wait(runner, events); var final = Path.Combine(output, "payload.txt");
+            Require(hits == 1, "configured cancellation/failure boundary not reached: " + mode);
+            var expectedCategory = mode switch {
+                "metadata_failure" or "directory_failure" => "metadata_time_failed",
+                "motw_failure" => "motw_write_failed",
+                "write_failure" => "write_file",
+                "cancel_open" => "cancelled",
+                "cancel_closed" => "cancelled_with_committed_output",
+                _ => "success"
+            };
+            var committed = mode is "directory_failure" or "cancel_closed" or "active_temp" ? 1 : 0;
+            Require(terminal.Category == expectedCategory && terminal.FilesCommitted == committed &&
+                terminal.CommitState == (committed == 1 ? "Committed" : "FailedBeforeCommit"), "direct output terminal truth: " + mode + "/" + terminal.Category);
+            if (mode is "metadata_failure" or "motw_failure" or "directory_failure") Require(terminal.NativeErrorCode == 5, "metadata native code lost: " + mode);
+            if (mode == "write_failure") Require(terminal.NativeErrorCode == 112, "write native code lost");
+            if (committed == 1) Require(File.ReadAllText(final) == "known synthetic source", "completed ordinary output was not retained: " + mode);
+            else Require(!File.Exists(final), "incomplete ordinary output was not deleted: " + mode);
+            Require(backend.Calls == 0, "failed, cancelled, or active temporary source reached recycle backend: " + mode);
+            Require(terminal.SourceDeletion?.Reason == (mode == "active_temp" ? "active_temporary_source" : "archive_not_fully_succeeded"),
+                "source-delete refusal reason: " + mode + "/" + terminal.SourceDeletion?.Reason);
+            Require(File.Exists(source) && !Directory.EnumerateFiles(output, ".nxpart-*", SearchOption.AllDirectories).Any(), "source or ordinary direct cleanup truth: " + mode);
+            using var released = new FileStream(source, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
         }
     });
     public static Task CodecFullExtraction() => WithWorker(async owned => {

@@ -7,12 +7,14 @@ internal static class PlatformCapabilities
     public const string ClipboardImageCapture = "clipboard_image_capture";
     public const string ClipboardFilesCapture = "clipboard_files_capture";
     public const string ClipboardNativeFormats = "clipboard_native_formats";
+    public const string ClipboardFileDropRead = "clipboard_file_drop_read_v1";
     public const string PasteText = "paste_text";
     public const string PasteImage = "paste_image";
     public const string PasteFiles = "paste_files";
     public const string ClipboardPanelHotKey = "clipboard_panel_hotkey";
     public const string QuickLaunchPanelHotKey = "quick_launch_panel_hotkey";
     public const string QuickLaunchConfiguration = "quick_launch_configuration";
+    public const string QuickLaunchKeyboardHealth = "quick_launch_keyboard_health_v1";
     public const string ClipboardConfiguration = "clipboard_configuration";
     public const string ClipboardArchivePicker = "clipboard_archive_picker";
     public const string ClipboardStoragePicker = "clipboard_storage_picker";
@@ -36,20 +38,27 @@ internal static class PlatformCapabilities
     public const string TrayEvents = "tray_events";
     // Adapter availability only. Each worker must independently negotiate its read contract.
     public const string ArchiveRead = "archive_read_v1";
+    public const string ArchiveJobLargeCount = "archive_job_large_count_v1";
     public const string ArchiveEntry = "archive_entry_v1";
     public const string ArchiveVirtualDrag = "archive_virtual_drag_v1";
 
+    public const string ArchiveCreateDestination = "archive_create_destination_v1";
+    public const string ArchiveMultiFolderPicker = "archive_multi_folder_picker_v1";
     public static string[] Create(bool clipboardHotKeyAvailable, bool quickLaunchHotKeyAvailable = false)
     {
         var capabilities = new List<string>
         {
             ArchiveRead,
+            ArchiveJobLargeCount,
             ArchiveEntry,
             ArchiveVirtualDrag,
+            ArchiveCreateDestination,
+            ArchiveMultiFolderPicker,
             "archive_virtual_drag_spike_v1", // Legacy alias; shares the production session and bounds.
             ForegroundContext,
             ClipboardTextCapture,
             ClipboardImageCapture,
+            ClipboardFileDropRead,
             ClipboardFilesCapture,
             ClipboardNativeFormats,
             PasteText,
@@ -57,6 +66,7 @@ internal static class PlatformCapabilities
             PasteFiles,
             ClipboardConfiguration,
             QuickLaunchConfiguration,
+            QuickLaunchKeyboardHealth,
             ClipboardArchivePicker,
             ClipboardStoragePicker,
             WindowTopmost,

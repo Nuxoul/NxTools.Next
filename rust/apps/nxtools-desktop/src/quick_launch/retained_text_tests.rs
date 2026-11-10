@@ -195,7 +195,7 @@ fn audit13_result_reorder_and_same_id_update_replace_presentation_without_mutati
     let original = vec![result("first"), result("second")];
     panel.update(&mut surface, |panel, cx| {
         panel.replace_results(original.clone(), cx);
-        panel.selected = 1;
+        panel.select_result(1, cx);
     });
     let retained = panel.read_with(&surface, |panel, _| panel.results.clone());
     let old_title = retained.display(1).title.clone();
@@ -268,7 +268,10 @@ fn audit13_result_fallbacks_and_status_keep_full_shared_view_values(cx: &mut Tes
     panel.read_with(&surface, |panel, _| {
         assert_eq!(
             panel.results.display(0).subtitle.as_ref(),
-            file.entry.target
+            Path::new(&file.entry.target)
+                .parent()
+                .expect("parent path")
+                .to_string_lossy()
         );
         assert_eq!(
             panel.results.display(1).subtitle.as_ref(),

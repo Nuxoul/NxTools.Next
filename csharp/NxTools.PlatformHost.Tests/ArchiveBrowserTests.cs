@@ -13,7 +13,7 @@ internal static class ArchiveBrowserTests
         var picker = ProtocolEnvelope.Create("platform_command", new { command = "pick_archive_path", data = new { source_hwnd = 42L } });
         Check(PlatformCommandParser.ParsePickArchivePath(picker).SourceHwnd == 42, "picker source identity");
         using var cancelledPicker = new CancellationTokenSource(); cancelledPicker.Cancel();
-        var cancelledReply = NxTools.PlatformHost.Windows.ArchivePathPicker.Pick(new(0), cancelledPicker.Token);
+        var cancelledReply = NxTools.PlatformHost.Windows.ArchivePathPicker.Pick(new(0), (uint)Environment.ProcessId, cancelledPicker.Token);
         Check(cancelledReply.Success && JsonDocument.Parse(cancelledReply.Data!).RootElement.GetProperty("status").GetString() == "cancelled", "picker pre-cancel must not show GUI");
         var entry = JsonSerializer.Deserialize<ArchiveReadEntry>("{\"ordinal\":0,\"name\":\"x\",\"kind\":\"File\",\"size\":0,\"packed_size\":0,\"encrypted\":false,\"warning_codes\":[],\"provenance\":\"Utf8Flag\",\"codepage\":65001}", JsonDefaults.Options)!;
         Check(entry.Modified is null && entry.Method is null && entry.Crc32 is null && entry.Attributes is null, "legacy optional display defaults");

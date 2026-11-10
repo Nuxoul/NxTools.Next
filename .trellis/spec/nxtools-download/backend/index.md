@@ -7,3 +7,5 @@ Read [download reference](../../../../docs/reference-code/download.md) then inde
 
 ## Quality Check
 Download lib plus affected domain/engine/HTTP/storage/artifact/message/rate/capacity contracts in tests; engine_contract serial. Strict scoped lint/check/fmt use [verification](../../shared/verification.md). Local deterministic IO, not real URLs/credentials. FFmpeg fixtures don't certify installed FFmpeg/live media. No package/launch unless separately authorized. [Entry](../../index.md).
+
+Server metadata follows [response observation](server-information.md): same-response host/peer/headers-time and immutable route, actual media manifest provenance, original probe transaction and memory-only task-window projection. No Ping or render-owned network work.

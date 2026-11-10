@@ -1,4 +1,5 @@
 //! Ordinal-bound sevenz edit plan. No filesystem or publication authority.
+use crate::planning::{CatalogSelection, SelectionEntry, SelectionWork, expand_selection};
 use crate::{ArchiveError, OperationControl, ResourceLimits, Result};
 use nxtools_protocol::archive_job::{ArchiveJobModify, ArchiveJobModifyAction as Action};
 use std::collections::{HashMap, HashSet};
@@ -67,6 +68,18 @@ pub(crate) fn build(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Vec<Planned>> {
+    let mut selection = SelectionWork::default();
+    let result = build_observed(files, intent, limits, control, &mut selection);
+    control.record_work(|work| work.selection += selection);
+    result
+}
+pub(crate) fn build_observed(
+    files: &[sevenz_rust2::ArchiveEntry],
+    intent: &ArchiveJobModify,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    work: &mut SelectionWork,
+) -> Result<Vec<Planned>> {
     control.checkpoint()?;
     if intent.ordinals.len()
         != intent
@@ -86,24 +99,39 @@ pub(crate) fn build(
     if selected.iter().any(|i| *i >= files.len()) {
         return Err(ArchiveError::SourceChanged);
     }
-    let mut removed = HashSet::new();
+    let original_bytes = files.iter().try_fold(0u64, |bytes, item| {
+        work.metadata_visits += 1;
+        bytes
+            .checked_add(std::mem::size_of::<sevenz_rust2::ArchiveEntry>() as u64)
+            .and_then(|bytes| bytes.checked_add(item.name.len() as u64))
+            .ok_or(ArchiveError::ResourceLimit)
+    })?;
+    let selection_credit = limits
+        .max_metadata_bytes
+        .checked_sub(original_bytes)
+        .ok_or(ArchiveError::ResourceLimit)?
+        .min(limits.max_working_bytes);
+    let mut removed = Vec::new();
     let mut rename = None;
     match intent.action {
         Action::Delete => {
-            for &index in &selected {
-                control.checkpoint()?;
-                let entry = &files[index];
-                removed.insert(index);
-                if entry.is_directory {
-                    let prefix = format!("{}/", entry.name.trim_end_matches('/'));
-                    for (n, item) in files.iter().enumerate() {
-                        control.checkpoint()?;
-                        if item.name.starts_with(&prefix) {
-                            removed.insert(n);
-                        }
-                    }
-                }
-            }
+            let positions = selected.iter().copied().collect::<Vec<_>>();
+            removed = expand_selection(
+                files,
+                CatalogSelection::Entries {
+                    positions: &positions,
+                    directories: &[],
+                },
+                selection_credit,
+                |index, item| SelectionEntry {
+                    ordinal: index as u64,
+                    path: &item.name,
+                    directory: item.is_directory,
+                },
+                |_, _, _, _| Ok(0),
+                || control.checkpoint(),
+                work,
+            )?;
         }
         Action::Rename => {
             let &index = selected.iter().next().ok_or(ArchiveError::SourceChanged)?;
@@ -154,10 +182,21 @@ pub(crate) fn build(
         Action::Comment => return Err(ArchiveError::UnsupportedOperation),
     }
     let mut result = Vec::new();
+    let mut plan_bytes = (removed.capacity() as u64)
+        .checked_mul(8)
+        .ok_or(ArchiveError::ResourceLimit)?;
     for (index, item) in files.iter().enumerate() {
         control.checkpoint()?;
-        if removed.contains(&index) {
+        work.plan_visits += 1;
+        if removed.binary_search(&(index as u64)).is_ok() {
             continue;
+        }
+        plan_bytes = plan_bytes
+            .checked_add(2 * std::mem::size_of::<Planned>() as u64)
+            .and_then(|bytes| bytes.checked_add(item.name.len() as u64))
+            .ok_or(ArchiveError::ResourceLimit)?;
+        if plan_bytes > selection_credit {
+            return Err(ArchiveError::ResourceLimit);
         }
         let mut entry = item.clone();
         if let Some((old, new, directory)) = &rename {

@@ -49,7 +49,7 @@ impl QuickLaunchApplication {
                                 success: outcome.is_ok(),
                                 error: outcome
                                     .err()
-                                    .map(|_| "归档窗口未能打开；请检查文件后重试。".into()),
+                                    .map(|_| "压缩包窗口未能打开；请检查文件后重试。".into()),
                                 native_error_code: None,
                                 data: None,
                             },

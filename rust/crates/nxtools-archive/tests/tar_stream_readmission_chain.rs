@@ -81,11 +81,14 @@ fn original_tar_stream_coordinator_readmits_only_after_actual_cleanup() {
         );
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.codepage = 936;
         request.conflict_policy =
             Some(serde_json::from_value(json!("auto_rename")).expect("policy"));
-        request.extract_options =
-            Some(nxtools_archive::worker::ExtractOptions { copy_motw: false, reclamation: None });
+        request.extract_options = Some(nxtools_archive::worker::ExtractOptions {
+            copy_motw: false,
+            reclamation: None,
+        });
         request.limits.max_entries = 100;
         request.limits.max_metadata_bytes = if mode == "spool_limit" { 2048 } else { 4 << 20 };
         request.limits.max_working_bytes = 64 << 20;

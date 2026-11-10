@@ -290,3 +290,46 @@ fn archive_directory_payload_is_zero_even_when_native_directory_object_has_physi
     );
     assert_eq!(plan.total_bytes(), 0);
 }
+
+#[test]
+fn ordinary_create_duplicate_roots_still_refuse_before_traversal_or_payload() {
+    struct Roots(Vec<SourceEntry>);
+    impl CreationSource for Roots {
+        fn roots(&mut self) -> Result<Vec<SourceEntry>> {
+            Ok(self.0.clone())
+        }
+        fn next_child(&mut self, _: Uuid, _: u64) -> Result<Option<SourceEntry>> {
+            panic!("ordinary duplicate roots must refuse before traversal")
+        }
+        fn open_file(&mut self, _: Uuid) -> Result<()> {
+            panic!("no payload")
+        }
+        fn read_file(&mut self, _: Uuid, _: u64, _: u32) -> Result<Vec<u8>> {
+            panic!("no payload")
+        }
+        fn close_file(&mut self, _: Uuid) -> Result<()> {
+            panic!("no payload")
+        }
+        fn revalidate(&mut self) -> Result<()> {
+            panic!("collision precedes final source check")
+        }
+    }
+    for directory in [false, true] {
+        for second in ["same", "SAME"] {
+            let mut source = Roots(vec![
+                entry("same", directory, 0),
+                entry(second, directory, 0),
+            ]);
+            assert_eq!(
+                CreationPlan::build(
+                    &mut source,
+                    &CreationOptions::default(),
+                    &ResourceLimits::default(),
+                    &OperationControl::default(),
+                )
+                .err(),
+                Some(nxtools_archive::ArchiveError::OutputCollision)
+            );
+        }
+    }
+}

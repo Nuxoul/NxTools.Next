@@ -17,11 +17,14 @@ internal static class ExtensionRuntimePicker
             ? new WindowsCommandResult(false, "extension_runtime_cancelled", NativeErrorCode: 995)
             : !PlatformCommandParser.IsExtensionRuntimeProgram(command.Program)
                 ? new WindowsCommandResult(false, "extension_runtime_invalid_program", NativeErrorCode: 87)
-                : StaDialogRunner.Run("NxTools extension runtime picker", () =>
-                {
-                    ExtensionRuntimeDiagnostics.Write(log, "pick", "started", correlationId, clock);
-                    return PickCore(command, cancellationToken, File.Exists, Directory.Exists, ExtensionManifestPicker.ShowDialog);
-                }, cancellationToken);
+                : BoundedStaOperationRunner.TryRun("NxTools extension runtime picker", Timeout.InfiniteTimeSpan, token =>
+                    StaDialogRunner.RunInline(() => PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, token, owner =>
+                    {
+                        ExtensionRuntimeDiagnostics.Write(log, "pick", "started", correlationId, clock);
+                        return PickCore(command, token, File.Exists, Directory.Exists, settings => ExtensionManifestPicker.ShowDialog(settings, owner));
+                    }), token), out WindowsCommandResult? picked, out _, cancellationToken)
+                    ? picked ?? new(false, "extension_runtime_picker_failed", NativeErrorCode: 31)
+                    : new(false, cancellationToken.IsCancellationRequested ? "extension_runtime_cancelled" : "extension_runtime_picker_busy", NativeErrorCode: cancellationToken.IsCancellationRequested ? 995 : 170);
         ExtensionRuntimeDiagnostics.Write(log, "pick", result.Success ? "completed" : result.NativeErrorCode == 995 ? "cancelled" : "failed",
             correlationId, clock, result.Success ? (string.IsNullOrEmpty(result.Data) ? "dismissed" : "selected") : "picker_failure", result.NativeErrorCode);
         return result;

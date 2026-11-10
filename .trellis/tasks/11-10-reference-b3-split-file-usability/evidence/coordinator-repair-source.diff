@@ -1,0 +1,607 @@
+﻿diff --git "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\forms_volume.rs" b/rust/apps/nxtools-desktop/src/archive/forms_volume.rs
+index 0da5145..acc9f08 100644
+--- "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\forms_volume.rs"
++++ b/rust/apps/nxtools-desktop/src/archive/forms_volume.rs
+@@ -98,11 +98,14 @@ impl OperationForm {
+                 });
+                 self.revalidate(cx);
+             }
+-            _ => {
++            rejected => {
+                 let old = draft.volume_unit.label();
+                 self.volume_unit
+                     .update(cx, |state, cx| state.set_selected_value(&old, window, cx));
+-                self.error = Some("当前大小不能用所选单位的正整数精确表示。已保留原值；请保留单位或明确修改大小。".into());
++                self.error = Some(match rejected {
++                    Err(reason) => reason,
++                    Ok(_) => "当前大小不能用所选单位的正整数精确表示。已保留原值；请保留单位或明确修改大小。".into(),
++                });
+                 cx.notify();
+             }
+         }
+diff --git "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\tools\\raw_join.rs" b/rust/apps/nxtools-desktop/src/tools/raw_join.rs
+index 6a98063..0838b7b 100644
+--- "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\tools\\raw_join.rs"
++++ b/rust/apps/nxtools-desktop/src/tools/raw_join.rs
+@@ -285,7 +285,17 @@ impl JoinWindow {
+                                     .debug_selector(|| "raw-join-confirm".into())
+                                     .label("确认合并")
+                                     .primary()
+-                                    .with_size(Size::Medium),
++                                    .with_size(Size::Medium)
++                                    .on_click(|event, window, cx| {
++                                        if event.is_keyboard() {
++                                            window.dispatch_action(
++                                                Box::new(gpui_kit::component::dialog::Confirm {
++                                                    secondary: false,
++                                                }),
++                                                cx,
++                                            );
++                                        }
++                                    }),
+                             ),
+                         ),
+                 )
+diff --git "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\forms_tests.rs" b/rust/apps/nxtools-desktop/src/archive/forms_tests.rs
+index 138434d..2a47973 100644
+--- "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\forms_tests.rs"
++++ b/rust/apps/nxtools-desktop/src/archive/forms_tests.rs
+@@ -2532,3 +2532,215 @@ fn ref17_actual_number_input_unit_keyboard_and_fixed_footer(cx: &mut TestAppCont
+         });
+     }
+ }
++
++fn reveal_form_control(surface: &mut VisualTestContext, selector: &'static str) {
++    for _ in 0..60 {
++        draw(surface);
++        let viewport = surface
++            .debug_bounds("archive-form-body")
++            .expect("original form viewport");
++        let bounds = surface.debug_bounds(selector);
++        if bounds.is_some_and(|bounds| {
++            bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
++        }) {
++            return;
++        }
++        let direction = if bounds.is_some_and(|bounds| bounds.top() < viewport.top()) {
++            2.
++        } else {
++            -2.
++        };
++        surface.simulate_event(gpui_kit::ScrollWheelEvent {
++            position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
++            delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
++            ..Default::default()
++        });
++    }
++    panic!("production form control {selector} was not reachable");
++}
++
++fn reveal_volume_controls(view: &Entity<OperationForm>, surface: &mut VisualTestContext) {
++    if !view.read_with(surface, |form, _| form.space.options_open) {
++        reveal_form_control(surface, "archive-options-toggle");
++        click(surface, "archive-options-toggle");
++        assert!(view.read_with(surface, |form, _| form.space.options_open));
++    }
++    reveal_form_control(surface, "archive-volume-number");
++}
++
++#[gpui_kit::test]
++fn ref17_b3_01_actual_invalid_unit_switch_preserves_reason_and_correction(cx: &mut TestAppContext) {
++    use nxtools_core::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
++    for (value, reason) in [
++        ("0", "分卷大小至少为 64 KiB，且必须是正整数。"),
++        ("63", "分卷大小至少为 64 KiB，且必须是正整数。"),
++        ("1.5", "分卷大小必须是正整数；请选择 KiB、MiB 或 GiB。"),
++        ("18446744073709551615", "分卷大小超出可表示范围。"),
++        ("18446744073709551616", "分卷大小超出可表示范围。"),
++        (
++            "65",
++            "当前大小不能用所选单位的正整数精确表示。已保留原值；请保留单位或明确修改大小。",
++        ),
++    ] {
++        let settings = ArchiveSettings {
++            create_volume_size: Some(ArchiveVolumeSize {
++                value: 64,
++                unit: ArchiveVolumeUnit::KiB,
++            }),
++            ..Default::default()
++        };
++        let (view, mut surface) = mount(cx, settings);
++        surface.simulate_resize(size(px(680.), px(600.)));
++        reveal_volume_controls(&view, &mut surface);
++        let input_id = view.read_with(&surface, |form, _| form.volume.entity_id());
++        click(&mut surface, "archive-volume-number");
++        surface.simulate_keystrokes("ctrl-a");
++        surface.simulate_input(value);
++        draw(&mut surface);
++        view.update_in(&mut surface, |form, window, cx| {
++            form.volume_unit.focus_handle(cx).focus(window, cx)
++        });
++        surface.simulate_keystrokes("enter down enter");
++        draw(&mut surface);
++        view.read_with(&surface, |form, cx| {
++            assert_eq!(
++                form.volume.read(cx).value().as_ref(),
++                value,
++                "rejected switch retains actual text"
++            );
++            assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"KiB"));
++            assert_eq!(form.volume.entity_id(), input_id);
++            assert_eq!(
++                form.error.as_deref(),
++                Some(reason),
++                "unit switch must preserve the real validation reason for {value}"
++            );
++            assert_eq!(form.submit_count, 0);
++            assert!(!form.submitted);
++        });
++        reveal_form_control(&mut surface, "archive-volume-number");
++        click(&mut surface, "archive-volume-number");
++        surface.simulate_keystrokes("ctrl-a");
++        surface.simulate_input("2048");
++        draw(&mut surface);
++        view.update_in(&mut surface, |form, window, cx| {
++            form.volume_unit.focus_handle(cx).focus(window, cx)
++        });
++        surface.simulate_keystrokes("enter down enter");
++        draw(&mut surface);
++        surface.update(|_, cx| {
++            view.update(cx, |form, cx| {
++                assert_eq!(form.volume.read(cx).value().as_ref(), "2");
++                assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"MiB"));
++                assert_eq!(form.volume.entity_id(), input_id);
++                assert!(
++                    form.error.is_none(),
++                    "corrected exact input clears the error"
++                );
++                assert_eq!(
++                    form.capture(cx).expect("corrected production form").0[0]
++                        .create
++                        .as_ref()
++                        .expect("create")
++                        .volume_bytes,
++                    Some(2_097_152)
++                );
++                assert_eq!(form.submit_count, 0);
++            })
++        });
++    }
++}
++
++#[gpui_kit::test]
++fn ref17_b3_e1_actual_preset_and_step_controls_preserve_bytes_and_focus(cx: &mut TestAppContext) {
++    for dimensions in [size(px(680.), px(600.)), size(px(480.), px(360.))] {
++        let (view, mut surface) = mount(cx, ArchiveSettings::default());
++        surface.simulate_resize(dimensions);
++        reveal_volume_controls(&view, &mut surface);
++        let input_id = view.read_with(&surface, |form, _| form.volume.entity_id());
++        view.update_in(&mut surface, |form, window, cx| {
++            form.volume_preset.focus_handle(cx).focus(window, cx)
++        });
++        surface.simulate_keystrokes("enter down down enter");
++        draw(&mut surface);
++        view.read_with(&surface, |form, cx| {
++            assert_eq!(
++                form.volume_preset.read(cx).selected_value(),
++                Some(&"100 MiB")
++            );
++            assert_eq!(form.volume.read(cx).value().as_ref(), "100");
++            assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"MiB"));
++            assert_eq!(form.volume.entity_id(), input_id);
++            assert_eq!(form.submit_count, 0);
++        });
++        for (button, value, bytes) in [
++            (None, "100", 104_857_600),
++            (Some("increment"), "101", 105_906_176),
++            (Some("decrement"), "100", 104_857_600),
++        ] {
++            if let Some(button) = button {
++                reveal_form_control(&mut surface, "archive-volume-number");
++                let wrapper = surface
++                    .debug_bounds("archive-volume-number")
++                    .expect("number wrapper");
++                let bounds = surface.update(|window, _| {
++                    gpui_kit::base::test_support::snapshots(window)
++                        .into_iter()
++                        .find(|node| {
++                            node.role() == Some(gpui_kit::Role::Button)
++                                && node.path().last() == Some(&gpui_kit::ElementId::from(button))
++                                && wrapper.contains(&node.bounds().center())
++                        })
++                        .expect("official NumberInput step button inside original wrapper")
++                        .bounds()
++                });
++                surface.simulate_event(gpui_kit::MouseDownEvent {
++                    position: bounds.center(),
++                    button: gpui_kit::MouseButton::Left,
++                    ..Default::default()
++                });
++                surface.simulate_event(gpui_kit::MouseUpEvent {
++                    position: bounds.center(),
++                    button: gpui_kit::MouseButton::Left,
++                    modifiers: Default::default(),
++                    click_count: 1,
++                });
++                draw(&mut surface);
++                assert!(
++                    surface.update(|window, cx| {
++                        view.read(cx).volume.focus_handle(cx).is_focused(window)
++                    }),
++                    "step buttons keep focus on the original numeric input"
++                );
++            }
++            surface.update(|_, cx| {
++                view.update(cx, |form, cx| {
++                    assert_eq!(form.volume.read(cx).value().as_ref(), value);
++                    assert_eq!(form.volume.entity_id(), input_id);
++                    assert_eq!(form.submit_count, 0);
++                    assert!(!form.submitted);
++                    assert_eq!(
++                        form.capture(cx).expect("actual preset and deferred step").0[0]
++                            .create
++                            .as_ref()
++                            .expect("create")
++                            .volume_bytes,
++                        Some(bytes)
++                    );
++                })
++            });
++        }
++        let viewport = surface
++            .debug_bounds("archive-form-body")
++            .expect("scroll body");
++        let number = surface
++            .debug_bounds("archive-volume-number")
++            .expect("reachable numeric row");
++        assert!(number.top() >= viewport.top() && number.bottom() <= viewport.bottom());
++        for selector in ["archive-form-submit", "archive-form-cancel"] {
++            let footer = surface.debug_bounds(selector).expect("fixed footer action");
++            assert_eq!(footer.size.height, px(32.));
++            assert!(footer.top() >= viewport.bottom() && footer.bottom() <= dimensions.height);
++        }
++    }
++}
+diff --git "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\application_tests.rs" b/rust/apps/nxtools-desktop/src/archive/application_tests.rs
+index 3ae8724..cfc7eb9 100644
+--- "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\application_tests.rs"
++++ b/rust/apps/nxtools-desktop/src/archive/application_tests.rs
+@@ -3723,7 +3723,10 @@ fn root_drop_extracts_whole_archive_into_receiver_created_folder(cx: &mut TestAp
+             .expect("start request");
+         assert_eq!(request.kind, ArchiveJobKind::Extract);
+         assert_eq!(request.paths, vec![r"C:\owned\preview.zip".to_owned()]);
+-        assert_eq!(request.destination.as_deref(), Some(r"D:\Downloads\preview"));
++        assert_eq!(
++            request.destination.as_deref(),
++            Some(r"D:\Downloads\preview")
++        );
+         assert_eq!(request.codepage, 936, "browser code page is retained");
+         let extract = request.extract.as_ref().expect("extract options");
+         assert_eq!(
+@@ -3732,7 +3735,181 @@ fn root_drop_extracts_whole_archive_into_receiver_created_folder(cx: &mut TestAp
+             "the receiver already created the wrapper folder"
+         );
+         assert!(!extract.single_file_folder);
+-        assert!(extract.selection.is_none(), "whole archive, not a member list");
++        assert!(
++            extract.selection.is_none(),
++            "whole archive, not a member list"
++        );
+         assert!(extract.reclamation.is_none());
+     });
+ }
++
++#[gpui_kit::test]
++fn ref17_b3_e2_actual_create_submit_freezes_volume_in_job_and_wire(cx: &mut TestAppContext) {
++    use gpui_kit::{MouseButton, VisualTestContext, px};
++    use nxtools_core::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
++    use nxtools_protocol::archive_job::{ArchiveJobAction, ArchiveJobKind};
++
++    fn draw(surface: &mut VisualTestContext) {
++        surface.run_until_parked();
++        surface.update(|window, cx| {
++            window.activate_window();
++            window.draw(cx).clear(cx);
++        });
++    }
++    fn click(surface: &mut VisualTestContext, selector: &'static str) {
++        let position = surface
++            .debug_bounds(selector)
++            .expect("actual form control")
++            .center();
++        surface.simulate_event(gpui_kit::MouseDownEvent {
++            position,
++            button: MouseButton::Left,
++            ..Default::default()
++        });
++        surface.simulate_event(gpui_kit::MouseUpEvent {
++            position,
++            button: MouseButton::Left,
++            modifiers: Default::default(),
++            click_count: 1,
++        });
++        surface.run_until_parked();
++    }
++    fn reveal(surface: &mut VisualTestContext, selector: &'static str) {
++        for _ in 0..60 {
++            draw(surface);
++            let viewport = surface
++                .debug_bounds("archive-form-body")
++                .expect("original scroll body");
++            let bounds = surface.debug_bounds(selector);
++            if bounds.is_some_and(|bounds| {
++                bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
++            }) {
++                return;
++            }
++            let direction = if bounds.is_some_and(|bounds| bounds.top() < viewport.top()) {
++                2.
++            } else {
++                -2.
++            };
++            surface.simulate_event(gpui_kit::ScrollWheelEvent {
++                position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
++                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
++                ..Default::default()
++            });
++        }
++        panic!("original form control {selector} must be reachable");
++    }
++    let (owner, endpoint) = setup(cx);
++    owner.update(cx, |app, cx| {
++        app.settings.create_volume_size = Some(ArchiveVolumeSize {
++            value: 64,
++            unit: ArchiveVolumeUnit::KiB,
++        });
++        app.open_create_form(
++            vec![crate::archive::draft::DraftSource {
++                path: r"C:\synthetic\split-submit.txt".into(),
++                directory: false,
++                bytes: Some(12),
++            }],
++            cx,
++        );
++    });
++    cx.run_until_parked();
++    let (form_id, form, window) = owner.read_with(cx, |app, _| {
++        assert_eq!(app.jobs.forms.len(), 1);
++        let (id, slot) = app
++            .jobs
++            .forms
++            .iter()
++            .next()
++            .expect("original Create form slot");
++        (
++            *id,
++            slot.view.upgrade().expect("retained original form"),
++            slot.window,
++        )
++    });
++    let mut surface = VisualTestContext::from_window(window, cx);
++    reveal(&mut surface, "archive-options-toggle");
++    click(&mut surface, "archive-options-toggle");
++    reveal(&mut surface, "archive-volume-number");
++    click(&mut surface, "archive-volume-number");
++    surface.simulate_keystrokes("ctrl-a");
++    surface.simulate_input("65");
++    draw(&mut surface);
++    assert!(owner.read_with(&surface, |app, _| app.jobs.records.is_empty()));
++    let starts_before = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
++        .filter(|envelope| matches!(&envelope.message, Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) if command.action == ArchiveJobAction::Start))
++        .count();
++    assert_eq!(starts_before, 0, "editing must not admit a job");
++    click(&mut surface, "archive-form-submit");
++    // Accepted Create closes its original window; inspect the retained entity and owner, not a removed surface.
++    surface.run_until_parked();
++    let (job_id, accepted) = owner.read_with(&surface, |app, _| {
++        assert!(
++            !app.jobs.forms.contains_key(&form_id),
++            "actual form accepted and retired"
++        );
++        assert_eq!(app.jobs.records.len(), 1, "one original JobRecord");
++        let (id, record) = app.jobs.records.iter().next().expect("accepted job");
++        assert_eq!(
++            record.state, "正在准入",
++            "original queue dispatched the accepted job"
++        );
++        (*id, record.command.clone())
++    });
++    assert_eq!(accepted.action, ArchiveJobAction::Start);
++    assert_eq!(accepted.operation_id, job_id);
++    let request = accepted.request.as_ref().expect("immutable job request");
++    assert_eq!(request.kind, ArchiveJobKind::Create);
++    assert_eq!(
++        request.paths,
++        vec![r"C:\synthetic\split-submit.txt".to_owned()]
++    );
++    assert_eq!(
++        request.create.as_ref().expect("create").volume_bytes,
++        Some(66_560)
++    );
++    let starts: Vec<_> =
++        std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
++            .filter_map(|envelope| match envelope.message {
++                Message::PlatformCommand(PlatformCommand::ArchiveJob(command))
++                    if command.action == ArchiveJobAction::Start =>
++                {
++                    Some(command)
++                }
++                _ => None,
++            })
++            .collect();
++    assert_eq!(
++        starts.len(),
++        1,
++        "actual Submit crosses the original PlatformBridge once"
++    );
++    assert_eq!(
++        *starts[0], accepted,
++        "JobRecord and outbound command are the same snapshot"
++    );
++    form.update(&mut surface, |form, _| {
++        form.revise_submitted_create_volume_for_test(ArchiveVolumeSize {
++            value: 128,
++            unit: ArchiveVolumeUnit::MiB,
++        })
++    });
++    owner.read_with(&surface, |app, _| {
++        assert_eq!(app.jobs.records[&job_id].command, accepted)
++    });
++    assert_eq!(
++        starts[0]
++            .request
++            .as_ref()
++            .expect("outbound request")
++            .create
++            .as_ref()
++            .expect("outbound create")
++            .volume_bytes,
++        Some(66_560)
++    );
++    assert!(std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
++        .all(|envelope| !matches!(envelope.message, Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) if command.action == ArchiveJobAction::Start)), "post-submit draft change cannot enqueue another Start");
++}
+diff --git "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\forms.rs" b/rust/apps/nxtools-desktop/src/archive/forms.rs
+index 0801785..eb1e8c6 100644
+--- "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\archive\\forms.rs"
++++ b/rust/apps/nxtools-desktop/src/archive/forms.rs
+@@ -164,6 +164,18 @@ impl OperationForm {
+             _ => None,
+         }
+     }
++    pub(in crate::archive) fn revise_submitted_create_volume_for_test(
++        &mut self,
++        size: nxtools_core::archive::ArchiveVolumeSize,
++    ) {
++        assert!(self.submitted, "only probe an already submitted draft");
++        let Draft::Create(draft) = &mut self.draft else {
++            panic!("submitted Create draft");
++        };
++        draft.volume_mib = size.value.to_string();
++        draft.volume_unit = size.unit;
++        assert_eq!(draft.volume_size().expect("revised draft size"), Some(size));
++    }
+ }
+ #[cfg(test)]
+ impl OperationForm {
+diff --git "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\tools\\raw_join\\tests.rs" b/rust/apps/nxtools-desktop/src/tools/raw_join/tests.rs
+index 4b7141a..4ac0cb6 100644
+--- "a/D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b3-repair-source-baseline\\rust\\apps\\nxtools-desktop\\src\\tools\\raw_join\\tests.rs"
++++ b/rust/apps/nxtools-desktop/src/tools/raw_join/tests.rs
+@@ -611,3 +611,116 @@ fn ref18_other_tools_tile_opens_reuses_and_retires_real_window(cx: &mut TestAppC
+         "closed mapped window is replaced, not activated"
+     );
+ }
++
++fn focus_dialog_button(surface: &mut VisualTestContext, label: &'static str) {
++    for _ in 0..48 {
++        draw(surface);
++        if surface.update(|window, _| {
++            gpui_kit::base::test_support::snapshots(window)
++                .iter()
++                .any(|node| {
++                    node.role() == Some(gpui_kit::Role::Button)
++                        && node.label() == Some(label)
++                        && node.focused() == Some(true)
++                })
++        }) {
++            return;
++        }
++        surface.update(|window, cx| window.focus_next(cx));
++    }
++    panic!("actual dialog button {label} must be keyboard reachable");
++}
++
++fn release_dialog_key(surface: &mut VisualTestContext, key: &str) {
++    let keystroke = gpui_kit::Keystroke::parse(key).expect("dialog activation key");
++    surface.simulate_event(gpui_kit::KeyDownEvent {
++        keystroke: keystroke.clone(),
++        is_held: false,
++        prefer_character_input: false,
++    });
++    surface.simulate_event(gpui_kit::KeyUpEvent { keystroke });
++    draw(surface);
++}
++
++fn first_keyboard_confirmation(cx: &mut TestAppContext, key: &'static str) {
++    let (view, mut surface, server, inspected) = prepared(cx);
++    let preview_id = view.read_with(&surface, |view, _| {
++        view.preview.as_ref().expect("frozen preview").preview_id
++    });
++    click(&mut surface, "raw-join-review");
++    focus_dialog_button(&mut surface, "确认合并");
++    surface.simulate_keystrokes("escape");
++    draw(&mut surface);
++    assert_eq!(
++        view.read_with(&surface, |view, _| view.phase),
++        Phase::Preview
++    );
++    assert!(
++        server.try_receive_command_for_contract_test().is_err(),
++        "Escape never starts output"
++    );
++    click(&mut surface, "raw-join-review");
++    focus_dialog_button(&mut surface, "返回核对");
++    release_dialog_key(&mut surface, "space");
++    assert_eq!(
++        view.read_with(&surface, |view, _| view.phase),
++        Phase::Preview
++    );
++    assert!(
++        server.try_receive_command_for_contract_test().is_err(),
++        "Back never starts output"
++    );
++    click(&mut surface, "raw-join-review");
++    focus_dialog_button(&mut surface, "确认合并");
++    assert!(
++        server.try_receive_command_for_contract_test().is_err(),
++        "no mouse Start before first keyboard activation"
++    );
++    release_dialog_key(&mut surface, key);
++    let (start_id, start) = next(&server);
++    assert_eq!(start.action, RawJoinAction::Start);
++    assert_eq!(start.operation_id, inspected.operation_id);
++    assert_eq!(start.session_id, inspected.session_id);
++    assert_eq!(start.generation, inspected.generation);
++    assert_eq!(start.preview_id, Some(preview_id));
++    assert_eq!(
++        start.output_path.as_deref(),
++        Some(r"C:\synthetic\parts.bin")
++    );
++    assert_eq!(
++        view.read_with(&surface, |view, _| view
++            .pending
++            .as_ref()
++            .map(|pending| pending.0)),
++        Some(start_id)
++    );
++    assert_eq!(
++        view.read_with(&surface, |view, _| view.phase),
++        Phase::Running
++    );
++    release_dialog_key(&mut surface, key);
++    release_dialog_key(&mut surface, key);
++    assert!(
++        server.try_receive_command_for_contract_test().is_err(),
++        "keyboard repeat must not submit a second Start"
++    );
++    deliver(
++        &mut surface,
++        &server,
++        receipt(start_id, terminal(&start, "succeeded", true)),
++    );
++    assert_eq!(
++        view.read_with(&surface, |view, _| view.phase),
++        Phase::Terminal
++    );
++}
++
++#[gpui_kit::test]
++fn ref18_b3_02_first_focused_enter_submits_exactly_one_start(cx: &mut TestAppContext) {
++    first_keyboard_confirmation(cx, "enter");
++}
++
++#[gpui_kit::test]
++fn ref18_b3_02_first_focused_space_submits_exactly_one_start(cx: &mut TestAppContext) {
++    first_keyboard_confirmation(cx, "space");
++}

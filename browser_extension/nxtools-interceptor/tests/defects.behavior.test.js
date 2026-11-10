@@ -56,7 +56,7 @@ test("R1.1 onDeterminingFilename keeps suggest pending by returning true", async
   const [returned] = bg.chrome.api.downloads.onDeterminingFilename.fire(downloadItem(), () => { suggestCalls += 1; });
   assert.equal(returned, true, "async suggest requires the listener to return true (Chrome API contract)");
   assert.equal(suggestCalls, 0, "suggest must not resolve before the handoff settles");
-  await bg.settle(40);
+  await bg.waitFor(() => suggestCalls === 1, "accepted filename suggestion");
   assert.equal(suggestCalls, 1, "suggest is resolved exactly once after the handoff");
   assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 1, "accepted handoff cancels the browser item");
 });
@@ -74,7 +74,7 @@ test("R1.1 every hand-back path resolves suggest exactly once", async () => {
       : downloadItem();
     const [returned] = bg.chrome.api.downloads.onDeterminingFilename.fire(item, () => { suggestCalls += 1; });
     assert.equal(returned, true, `${scenario}: listener returns true`);
-    await bg.settle(40);
+    await bg.waitFor(() => suggestCalls === 1, `${scenario} filename suggestion`);
     assert.equal(suggestCalls, 1, `${scenario}: suggest resolved exactly once`);
     assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 0, `${scenario}: browser item untouched`);
   }
@@ -204,7 +204,7 @@ test("R1.5 browser download does not borrow a resource from the last active tab"
   bg.chrome.api.tabs.onActivated.fire({ tabId: 3 });
   await bg.settle();
   bg.chrome.api.downloads.onDeterminingFilename.fire(downloadItem({ filename: "" }), () => {});
-  await bg.settle(40);
+  await bg.waitFor(() => bg.desktop.requestsOfType("create_task").length === 1, "download handoff sent");
   const request = bg.desktop.requestsOfType("create_task")[0];
   assert.ok(request, "handoff sent");
   assert.notEqual(request.message.payload.fileName, "wrong-name-from-other-tab.zip",
@@ -236,7 +236,7 @@ test("R1.6 Content-Disposition filename survives a worker restart without persis
   const second = loadBackground({ desktop: acceptingDesktop(), chrome: { sessionStorage: JSON.parse(serialized) } });
   await second.settle();
   second.chrome.api.downloads.onDeterminingFilename.fire(downloadItem({ filename: "" }), () => {});
-  await second.settle(40);
+  await second.waitFor(() => second.desktop.requestsOfType("create_task").length === 1, "restored worker native handoff");
   const request = second.desktop.requestsOfType("create_task")[0];
   assert.equal(request?.message.payload.fileName, "real-name.zip", "restored worker keeps authoritative filename");
 });

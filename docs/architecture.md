@@ -22,14 +22,17 @@ NxTools.Cli.exe
 Browser extension
   +---- NxTools.BrowserHost.exe (Rust Native Messaging adapter)
           -> browser-owned lifetime; exits when the native stdio channel closes
+          -> pending requests, full Blob operations and an open popup retain the demand-only
+             transport; one-second idle release, no autonomous reconnect; snapshots never start Desktop
           -> opens NxTools.exe --browser-dialog for confirmation-window requests;
              GPUI creates the main window hidden, then PlatformHost shows it minimized/no-activate
              while the add-download window claims foreground
           -> opens NxTools.exe --background only for non-interactive download commands
           -> Blob metadata/capability stays on Native Messaging; Blob bytes use a random-loopback,
              one-time, current-user capability stream with 1 MiB chunks and a 2 GiB total bound
-          -> only a complete staging ID crosses download command protocol v8; the engine owns
-             confirmation, final artifact import, task persistence and cancellation cleanup
+          -> only a complete staging ID crosses download command protocol v9; the engine claims
+             confirmation files in browser-blob-staging/pending and owns final import, persistence,
+             cancellation/close cleanup and startup orphan recovery
           -> ordinary batch intake is one bounded 1–32 item command with one parent correlation;
              each item has a stable handoff ID and is queue-only to avoid a window storm
 ```

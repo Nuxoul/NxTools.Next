@@ -1,5 +1,6 @@
 //! One bounded document presentation backend for Clipboard and Quick Launch.
 //! Original action/save payloads never come from this disposable view projection.
+pub(crate) use super::preview_text::TextBudget;
 use super::preview_text::{self, TextKind};
 use gpui_kit::{
     App, AppContext as _, Bounds, Context, Entity, IntoElement, ParentElement as _, Pixels, Render,
@@ -34,6 +35,19 @@ pub(crate) fn prepared_source(text: &str, mode: DocumentMode) -> Option<String> 
         DocumentMode::Markdown => preview_text::safe_markdown(text),
         DocumentMode::Literal(language) => {
             preview_text::within_budget(text).then(|| literal_source(text, language))
+        }
+    }
+}
+
+pub(crate) fn prepared_source_with_budget(
+    text: &str,
+    mode: DocumentMode,
+    budget: TextBudget,
+) -> Option<String> {
+    match mode {
+        DocumentMode::Markdown => preview_text::safe_markdown_with_budget(text, budget),
+        DocumentMode::Literal(language) => {
+            budget.allows(text).then(|| literal_source(text, language))
         }
     }
 }
@@ -148,6 +162,17 @@ pub(crate) fn document(
     cx: &mut App,
 ) -> Option<Entity<MarkdownDocument>> {
     let source = prepared_source(original, mode)?;
+    Some(cx.new(|cx| MarkdownDocument::from_prepared(original, mode, &source, window, cx)))
+}
+
+pub(crate) fn document_with_budget(
+    original: &str,
+    mode: DocumentMode,
+    budget: TextBudget,
+    window: &mut Window,
+    cx: &mut App,
+) -> Option<Entity<MarkdownDocument>> {
+    let source = prepared_source_with_budget(original, mode, budget)?;
     Some(cx.new(|cx| MarkdownDocument::from_prepared(original, mode, &source, window, cx)))
 }
 

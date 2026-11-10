@@ -31,6 +31,7 @@ fn file_dialog_preference_boosts_only_direct_children() {
 struct ChannelReader {
     receiver: mpsc::Receiver<Vec<u8>>,
     current: Cursor<Vec<u8>>,
+    retired: Option<Arc<AtomicBool>>,
 }
 
 impl ChannelReader {
@@ -38,6 +39,15 @@ impl ChannelReader {
         Self {
             receiver,
             current: Cursor::new(Vec::new()),
+            retired: None,
+        }
+    }
+
+    fn retiring(receiver: mpsc::Receiver<Vec<u8>>, retired: Arc<AtomicBool>) -> Self {
+        Self {
+            receiver,
+            current: Cursor::new(Vec::new()),
+            retired: Some(retired),
         }
     }
 }
@@ -45,14 +55,22 @@ impl ChannelReader {
 impl Read for ChannelReader {
     fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
         loop {
+            if self
+                .retired
+                .as_ref()
+                .is_some_and(|flag| flag.load(Ordering::Acquire))
+            {
+                return Ok(0);
+            }
             let read = self.current.read(buffer)?;
             if read > 0 {
                 return Ok(read);
             }
-            let Ok(next) = self.receiver.recv() else {
-                return Ok(0);
-            };
-            self.current = Cursor::new(next);
+            match self.receiver.recv_timeout(Duration::from_millis(8)) {
+                Ok(next) => self.current = Cursor::new(next),
+                Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(0),
+            }
         }
     }
 }
@@ -502,6 +520,7 @@ fn a_pending_explicit_rebuild_absorbs_later_missing_volume_work() {
     let explicit = PendingBuild {
         generation: 2,
         drives: vec![IndexDriveStatus {
+            maintenance: None,
             mount_point: r"C:\".into(),
             file_system: "NTFS".into(),
             indexed_items: 0,
@@ -513,6 +532,7 @@ fn a_pending_explicit_rebuild_absorbs_later_missing_volume_work() {
     let settings_update = PendingBuild {
         generation: 3,
         drives: vec![IndexDriveStatus {
+            maintenance: None,
             mount_point: r"D:\".into(),
             file_system: "NTFS".into(),
             indexed_items: 0,
@@ -840,7 +860,8 @@ fn an_oversized_overlay_is_published_before_background_compaction() {
                 format!(r"C:\overlay-{offset}.txt"),
                 format!("overlay-{offset}.txt"),
                 false,
-            ),
+            )
+            .into(),
         );
     }
     service.status.phase = IndexPhase::Ready;
@@ -930,7 +951,9 @@ fn journal_recovery_scopes_rebuild_to_the_affected_volume() {
     let maintenance = service.poll_journals_with_persistence(
         &|snapshot| {
             if snapshot.mount_point.eq_ignore_ascii_case(r"C:\") {
-                Ok(usn::JournalPoll::RebuildRequired("expired cursor".into()))
+                Ok(usn::JournalPoll::RebuildRequired(usn::JournalRebuild::new(
+                    IndexRebuildReason::CursorInvalid,
+                )))
             } else {
                 let mut updated = snapshot.clone();
                 updated.next_usn = Some(110);
@@ -975,9 +998,9 @@ fn scheduled_journal_rebuild_is_maintenance_not_a_user_facing_error() {
 
     let maintenance = service.poll_journals_with_persistence(
         &|_| {
-            Ok(usn::JournalPoll::RebuildRequired(
-                "bounded directory expansion requested a rebuild".into(),
-            ))
+            Ok(usn::JournalPoll::RebuildRequired(usn::JournalRebuild::new(
+                IndexRebuildReason::BulkChanges,
+            )))
         },
         &|_| Ok(()),
     );
@@ -1011,7 +1034,8 @@ fn one_poll_schedules_compaction_for_every_oversized_volume() {
                         format!(r"{mount_point}overlay-{offset}.txt"),
                         format!("overlay-{offset}.txt"),
                         false,
-                    ),
+                    )
+                    .into(),
                 );
             }
             snapshot
@@ -1044,7 +1068,8 @@ fn a_restored_oversized_overlay_retries_compaction_without_new_journal_records()
                 format!(r"C:\overlay-{offset}.txt"),
                 format!("overlay-{offset}.txt"),
                 false,
-            ),
+            )
+            .into(),
         );
     }
     service.snapshots = Arc::new(vec![snapshot]);
@@ -1457,7 +1482,9 @@ fn a_panicking_snapshot_worker_reports_failure_instead_of_stalling() {
 
     spawn_snapshot_build(
         9,
+        vec!["panic-fixture".into()],
         vec![IndexDriveStatus {
+            maintenance: None,
             mount_point: r"C:\".into(),
             file_system: "NTFS".into(),
             indexed_items: 0,
@@ -1484,11 +1511,12 @@ fn a_panicking_snapshot_worker_reports_failure_instead_of_stalling() {
 fn closing_search_executor_cancels_a_completion_blocked_by_backpressure() {
     let (events, _runtime) = mpsc::sync_channel(1);
     events
-        .send(RuntimeEvent::ReaderClosed)
+        .send(RuntimeEvent::ReaderClosed { lease: 0 })
         .expect("fill runtime queue");
     let active_task = Arc::new(AtomicU64::new(1));
     let executor = SearchExecutor::start(Arc::clone(&active_task), events);
     executor.submit(SearchJob {
+        lease: 0,
         task_id: 1,
         request: Envelope::new(Message::IndexerCommand(IndexerCommand::Search(
             IndexSearchRequest {
@@ -1995,11 +2023,11 @@ fn r8_search_matches_frozen_row_scan_with_delta_filters_and_cancellation() {
     snapshot.overlay.deleted.insert(10);
     snapshot.overlay.replacements.insert(
         11,
-        test_entry(r"C:\Work\renamed-report.txt", "renamed-report.txt", false),
+        test_entry(r"C:\Work\renamed-report.txt", "renamed-report.txt", false).into(),
     );
     snapshot.overlay.replacements.insert(
         900,
-        test_entry(r"C:\Work\xyz-new.txt", "xyz-new.txt", false),
+        test_entry(r"C:\Work\xyz-new.txt", "xyz-new.txt", false).into(),
     );
     let snapshots = [snapshot];
     let settings = IndexSettings {
@@ -2146,7 +2174,7 @@ fn r8_selective_scan_reuses_groups_and_finds_delta_only_trigrams() {
     let mut snapshot = test_snapshot(r"C:\", Some(17), Some(100), entries);
     snapshot.overlay.replacements.insert(
         9000,
-        test_entry(r"C:\Work\xyz-only-delta.txt", "xyz-only-delta.txt", false),
+        test_entry(r"C:\Work\xyz-only-delta.txt", "xyz-only-delta.txt", false).into(),
     );
     let data = snapshot.search_data.as_ref().expect("auxiliary built");
     assert_eq!(data.groups.len(), 2002);
@@ -2386,9 +2414,9 @@ fn persistence_fault_delta_survives_rebuild_reason_and_other_volume_success() {
     let rebuild = service.poll_journals_with_persistence(
         &|snapshot| {
             if snapshot.mount_point == r"C:\" {
-                Ok(usn::JournalPoll::RebuildRequired(
-                    "bounded maintenance reason".into(),
-                ))
+                Ok(usn::JournalPoll::RebuildRequired(usn::JournalRebuild::new(
+                    IndexRebuildReason::BulkChanges,
+                )))
             } else {
                 Ok(usn::JournalPoll::CursorAdvanced(snapshot.clone()))
             }
@@ -2658,13 +2686,13 @@ fn w1_pinyin_search_survives_masks_groups_delta_scopes_and_cancellation() {
     base.push(test_entry(r"C:\Work\银行卡.txt", "银行卡.txt", false));
     let mut snapshot = test_snapshot(r"C:\", Some(17), Some(100), base);
     snapshot.overlay.deleted.insert(10);
-    snapshot
-        .overlay
-        .replacements
-        .insert(14, test_entry(r"C:\Work\other.txt", "other.txt", false));
+    snapshot.overlay.replacements.insert(
+        14,
+        test_entry(r"C:\Work\other.txt", "other.txt", false).into(),
+    );
     snapshot.overlay.replacements.insert(
         900,
-        test_entry(r"C:\Work\重庆报告.txt", "重庆报告.txt", false),
+        test_entry(r"C:\Work\重庆报告.txt", "重庆报告.txt", false).into(),
     );
     let snapshots = [snapshot];
     let settings = IndexSettings {
@@ -2909,6 +2937,7 @@ fn w4_classifier_budget_failure_is_correlated_through_search_worker() {
     )));
     let request_id = request.id;
     let job = SearchJob {
+        lease: 0,
         task_id: 7,
         request,
         snapshots: Arc::new(vec![test_snapshot(r"C:\", Some(1), Some(20), entries)]),
@@ -2917,8 +2946,9 @@ fn w4_classifier_budget_failure_is_correlated_through_search_worker() {
     let snapshots = job.snapshots.clone();
     let (sender, receiver) = mpsc::sync_channel(10);
     run_snapshot_search(job, &AtomicU64::new(7), &sender);
-    let RuntimeEvent::SearchCompleted { task_id, response } =
-        receiver.recv().expect("terminal failure")
+    let RuntimeEvent::SearchCompleted {
+        task_id, response, ..
+    } = receiver.recv().expect("terminal failure")
     else {
         panic!("wrong result");
     };
@@ -2958,6 +2988,7 @@ fn w4_classifier_budget_failure_is_correlated_through_search_worker() {
     );
     run_snapshot_search(
         SearchJob {
+            lease: 0,
             task_id: 7,
             request: ordinary,
             snapshots,
@@ -2978,3 +3009,934 @@ fn w4_classifier_budget_failure_is_correlated_through_search_worker() {
         "default/file-dialog request must finish as ordinary search, not recent budget failure"
     );
 }
+
+fn m4_hello() -> Envelope {
+    Envelope::new(Message::Hello(Hello {
+        client_name: "session_fixture".into(),
+        client_version: "0.1.0".into(),
+        capabilities: vec!["index_status".into(), "file_search".into()],
+    }))
+}
+
+struct M4StoppedOutput {
+    output: SharedWriter,
+    stopped: Arc<AtomicBool>,
+    entered: mpsc::Sender<()>,
+    released: Arc<AtomicBool>,
+    retired: Arc<AtomicBool>,
+}
+
+impl Write for M4StoppedOutput {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if self.stopped.load(Ordering::Acquire) {
+            let _ = self.entered.send(());
+            while !self.released.load(Ordering::Acquire) && !self.retired.load(Ordering::Acquire) {
+                thread::sleep(Duration::from_millis(2));
+            }
+            if self.retired.load(Ordering::Acquire) {
+                return Err(std::io::ErrorKind::BrokenPipe.into());
+            }
+        }
+        self.output.write(bytes)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn m4_admitted_replacement_ack_status_does_not_wait_for_stopped_output_or_scan() {
+    let (started, scan_started) = mpsc::channel();
+    let (release, scan_release) = mpsc::channel();
+    let scan_release = Mutex::new(scan_release);
+    let calls = Arc::new(AtomicUsize::new(0));
+    let scan_calls = Arc::clone(&calls);
+    let runtime = SharedIndexerRuntime::with_sources(
+        IndexerService::from_volume_descriptors([VolumeDescriptor::new(r"C:\", "NTFS")]),
+        Arc::new(move |mount| {
+            scan_calls.fetch_add(1, AtomicOrdering::SeqCst);
+            started.send(()).expect("scan started");
+            scan_release
+                .lock()
+                .expect("scan release lock")
+                .recv()
+                .expect("release scan");
+            Ok(test_snapshot(
+                mount,
+                Some(7),
+                Some(100),
+                vec![test_entry(r"C:\retained.txt", "retained.txt", false)],
+            ))
+        }),
+        Arc::new(|_| Ok(usn::JournalPoll::NoChange)),
+    );
+    let (a_input, a_reader) = mpsc::channel();
+    let a_output = SharedWriter::default();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let released = Arc::new(AtomicBool::new(false));
+    let retired = Arc::new(AtomicBool::new(false));
+    let (entered, output_blocked) = mpsc::channel();
+    let a_runtime = runtime.clone();
+    let a_writer = M4StoppedOutput {
+        output: a_output.clone(),
+        stopped: Arc::clone(&stopped),
+        entered,
+        released: Arc::clone(&released),
+        retired: Arc::clone(&retired),
+    };
+    let a = thread::spawn(move || {
+        a_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(a_reader, Arc::clone(&retired))),
+            a_writer,
+            m4_hello(),
+            Arc::new(|_| None),
+            retired,
+        )
+    });
+    scan_started
+        .recv_timeout(Duration::from_secs(2))
+        .expect("held initial scan");
+    wait_for_frame(&a_output, |frame| {
+        matches!(frame.message, Message::HelloAck(_))
+    });
+    stopped.store(true, Ordering::Release);
+    a_input
+        .send(
+            Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 1 }))
+                .encode_line()
+                .expect("ping")
+                .into_bytes(),
+        )
+        .expect("A request");
+    output_blocked
+        .recv_timeout(Duration::from_secs(2))
+        .expect("A stopped reading");
+
+    let (b_input, b_reader) = mpsc::channel();
+    let b_output = SharedWriter::default();
+    let observed = b_output.clone();
+    let b_runtime = runtime.clone();
+    let b = thread::spawn(move || {
+        let retired = Arc::new(AtomicBool::new(false));
+        b_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(b_reader, Arc::clone(&retired))),
+            observed,
+            m4_hello(),
+            Arc::new(|_| None),
+            retired,
+        )
+    });
+    let deadline = Instant::now() + Duration::from_millis(500);
+    let responsive = loop {
+        let bytes = b_output.0.lock().expect("B output").clone();
+        let frames = String::from_utf8_lossy(&bytes)
+            .lines()
+            .filter_map(|line| Envelope::decode_line(line).ok())
+            .collect::<Vec<_>>();
+        if matches!(
+            frames.first().map(|frame| &frame.message),
+            Some(Message::HelloAck(_))
+        ) && matches!(
+            frames.get(1).map(|frame| &frame.message),
+            Some(Message::IndexerEvent(IndexerEvent::Status(_)))
+        ) {
+            break true;
+        }
+        if Instant::now() >= deadline {
+            break false;
+        }
+        thread::sleep(Duration::from_millis(5));
+    };
+    let retire_deadline = Instant::now() + Duration::from_millis(500);
+    while responsive && !a.is_finished() && Instant::now() < retire_deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    let a_released_while_scan_held = a.is_finished();
+    released.store(true, Ordering::Release);
+    release.send(()).expect("release retained scan");
+    drop(a_input);
+    let _ = a.join().expect("A thread");
+    assert!(
+        responsive,
+        "B HelloAck and current status must arrive within 500ms while A is nonreading and its scan is held"
+    );
+    assert!(
+        a_released_while_scan_held,
+        "retired A must release both I/O workers without waiting for its scan"
+    );
+    wait_for_frame(
+        &b_output,
+        |frame| matches!(&frame.message, Message::IndexerEvent(IndexerEvent::Status(status)) if status.phase == IndexPhase::Ready && status.indexed_items == 1),
+    );
+    let stale = m4_search(999, "retained");
+    let stale_id = stale.id;
+    runtime
+        .events_for_test()
+        .send(RuntimeEvent::Request {
+            lease: 1,
+            request: stale.clone(),
+        })
+        .expect("queued old-lease request");
+    runtime
+        .events_for_test()
+        .send(RuntimeEvent::ReaderClosed { lease: 1 })
+        .expect("delayed old EOF");
+    runtime
+        .events_for_test()
+        .send(RuntimeEvent::ReaderFailed {
+            lease: 1,
+            error: anyhow::anyhow!("old endpoint failed"),
+        })
+        .expect("delayed old failure");
+    let current = m4_search(1, "retained");
+    b_input
+        .send(current.encode_line().expect("B search").into_bytes())
+        .expect("B input");
+    wait_for_frame(&b_output, |frame| {
+        frame.correlation_id == Some(current.id)
+            && matches!(&frame.message, Message::IndexerEvent(IndexerEvent::SearchBatch(batch)) if batch.generation == 1 && batch.complete && batch.items.len() == 1 && batch.items[0].path == r"C:\retained.txt")
+    });
+    runtime
+        .events_for_test()
+        .send(RuntimeEvent::SearchCompleted {
+            lease: 1,
+            task_id: 3,
+            response: Envelope::reply_to(
+                &stale,
+                Message::IndexerEvent(IndexerEvent::SearchBatch(IndexSearchBatch {
+                    generation: 999,
+                    items: Vec::new(),
+                    complete: true,
+                    elapsed_us: 0,
+                })),
+            ),
+        })
+        .expect("delayed old result");
+    let barrier = Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 2 }));
+    runtime
+        .events_for_test()
+        .send(RuntimeEvent::Request {
+            lease: 2,
+            request: barrier.clone(),
+        })
+        .expect("FIFO boundary barrier");
+    wait_for_frame(&b_output, |frame| frame.correlation_id == Some(barrier.id));
+    assert!(
+        !m4_frames(&b_output)
+            .iter()
+            .any(|frame| frame.correlation_id == Some(stale_id)),
+        "old results cannot route to B"
+    );
+    drop(b_input);
+    b.join().expect("B thread").expect("B session");
+    assert_eq!(
+        calls.load(AtomicOrdering::SeqCst),
+        1,
+        "reconnect must not duplicate the original build"
+    );
+}
+
+fn m4_search(generation: u64, query: &str) -> Envelope {
+    Envelope::new(Message::IndexerCommand(IndexerCommand::Search(
+        IndexSearchRequest {
+            generation,
+            query: query.into(),
+            limit: 20,
+            context: IndexSearchContext {
+                include_files: true,
+                ..Default::default()
+            },
+        },
+    )))
+}
+
+fn m4_frames(output: &SharedWriter) -> Vec<Envelope> {
+    let bytes = output.0.lock().expect("fixture output").clone();
+    String::from_utf8_lossy(&bytes)
+        .lines()
+        .filter_map(|line| Envelope::decode_line(line).ok())
+        .collect()
+}
+#[test]
+fn first_durable_volume_is_searchable_while_later_volume_is_blocked() {
+    let (later_started, later_entered) = mpsc::channel();
+    let (release_later, later_release) = mpsc::channel();
+    let later_release = Mutex::new(later_release);
+    let scanner = Arc::new(move |mount: &str| {
+        if mount == r"D:\" {
+            later_started.send(()).expect("later scan entered");
+            later_release
+                .lock()
+                .expect("release lock")
+                .recv()
+                .expect("release later scan");
+        }
+        Ok(test_snapshot(
+            mount,
+            Some(17),
+            Some(100),
+            vec![test_entry(format!(r"{mount}early.txt"), "early.txt", false)],
+        ))
+    });
+    let (input, receiver) = mpsc::channel();
+    input
+        .send(m4_hello().encode_line().expect("hello").into_bytes())
+        .expect("send hello");
+    let output = SharedWriter::default();
+    let observed = output.clone();
+    let worker = thread::spawn(move || {
+        serve_with_scanner(
+            BufReader::new(ChannelReader::new(receiver)),
+            observed,
+            IndexerService::from_volume_descriptors([
+                VolumeDescriptor::new(r"C:\", "NTFS"),
+                VolumeDescriptor::new(r"D:\", "NTFS"),
+            ]),
+            scanner,
+        )
+    });
+    later_entered
+        .recv_timeout(Duration::from_secs(2))
+        .expect("second volume blocked");
+    let ping = Envelope::new(Message::Ping(Ping {
+        sent_at_unix_ms: 37,
+    }));
+    input
+        .send(ping.encode_line().expect("ping").into_bytes())
+        .expect("send ping");
+    wait_for_frame(&output, |frame| frame.correlation_id == Some(ping.id));
+    let search = m4_search(1, "early");
+    input
+        .send(search.encode_line().expect("search").into_bytes())
+        .expect("send search");
+    let batch = wait_for_frame(&output, |frame| {
+        frame.correlation_id == Some(search.id)
+            && matches!(
+                frame.message,
+                Message::IndexerEvent(IndexerEvent::SearchBatch(_))
+            )
+    });
+    let frames = m4_frames(&output);
+    release_later.send(()).expect("finish later scan");
+    wait_for_frame(&output, |frame| {
+        matches!(
+            &frame.message,
+            Message::IndexerEvent(IndexerEvent::Status(status))
+                if status.phase == IndexPhase::Ready && status.indexed_items == 2
+                    && status.drives.iter().all(|drive| drive.next_usn == Some(100))
+        )
+    });
+    drop(input);
+    worker
+        .join()
+        .expect("coordinator thread")
+        .expect("coordinator result");
+    assert!(
+        frames.iter().any(|frame| matches!(
+            &frame.message,
+            Message::IndexerEvent(IndexerEvent::Status(status))
+                if status.indexed_items == 1 && status.phase != IndexPhase::Ready
+                    && status.drives[0].next_usn == Some(100)
+                    && status.drives[1].next_usn.is_none()
+        )),
+        "partial volume status must precede full completion"
+    );
+    assert!(
+        matches!(batch.message,
+            Message::IndexerEvent(IndexerEvent::SearchBatch(ref result))
+                if result.items.len() == 1 && result.items[0].path == r"C:\early.txt"
+        ),
+        "first completed volume must answer real search"
+    );
+}
+
+#[test]
+fn m4_completed_build_is_published_without_a_client_and_reconnect_does_not_rescan() {
+    let (started, scan_started) = mpsc::channel();
+    let (release, scan_release) = mpsc::channel();
+    let scan_release = Mutex::new(scan_release);
+    let (published, publication) = mpsc::channel();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let scan_calls = Arc::clone(&calls);
+    let runtime = SharedIndexerRuntime::with_sources(
+        IndexerService::from_volume_descriptors([VolumeDescriptor::new(r"C:\", "NTFS")]),
+        Arc::new(move |mount| {
+            scan_calls.fetch_add(1, AtomicOrdering::SeqCst);
+            started.send(()).expect("scan started");
+            scan_release
+                .lock()
+                .expect("scan release lock")
+                .recv()
+                .expect("release scan");
+            Ok(test_snapshot(
+                mount,
+                Some(7),
+                Some(100),
+                vec![test_entry(r"C:\retained.txt", "retained.txt", false)],
+            ))
+        }),
+        Arc::new(move |_| {
+            let _ = published.send(());
+            Ok(usn::JournalPoll::NoChange)
+        }),
+    );
+    let (input, receiver) = mpsc::channel();
+    let output = SharedWriter::default();
+    let observed = output.clone();
+    let endpoint_runtime = runtime.clone();
+    let a = thread::spawn(move || {
+        let retired = Arc::new(AtomicBool::new(false));
+        endpoint_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(receiver, Arc::clone(&retired))),
+            observed,
+            m4_hello(),
+            Arc::new(|_| None),
+            retired,
+        )
+    });
+    wait_for_frame(&output, |frame| {
+        matches!(frame.message, Message::HelloAck(_))
+    });
+    scan_started
+        .recv_timeout(Duration::from_secs(2))
+        .expect("scan held");
+    drop(input);
+    a.join()
+        .expect("A worker")
+        .expect("A disconnected without scan wait");
+    release.send(()).expect("finish disconnected scan");
+    publication.recv_timeout(Duration::from_secs(3)).expect(
+        "service applies completed snapshot and resumes journal maintenance without a client",
+    );
+    let (input, receiver) = mpsc::channel();
+    let output = SharedWriter::default();
+    let observed = output.clone();
+    let endpoint_runtime = runtime.clone();
+    let b = thread::spawn(move || {
+        let retired = Arc::new(AtomicBool::new(false));
+        endpoint_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(receiver, Arc::clone(&retired))),
+            observed,
+            m4_hello(),
+            Arc::new(|_| None),
+            retired,
+        )
+    });
+    wait_for_frame(
+        &output,
+        |frame| matches!(&frame.message, Message::IndexerEvent(IndexerEvent::Status(status)) if status.phase == IndexPhase::Ready && status.indexed_items == 1),
+    );
+    let frames = m4_frames(&output);
+    assert!(matches!(
+        frames.first().map(|frame| &frame.message),
+        Some(Message::HelloAck(_))
+    ));
+    assert!(
+        matches!(frames.get(1).map(|frame| &frame.message), Some(Message::IndexerEvent(IndexerEvent::Status(status))) if status.indexed_items == 1)
+    );
+    let search = m4_search(1, "retained");
+    input
+        .send(search.encode_line().expect("search frame").into_bytes())
+        .expect("B search");
+    wait_for_frame(&output, |frame| {
+        frame.correlation_id == Some(search.id)
+            && matches!(&frame.message, Message::IndexerEvent(IndexerEvent::SearchBatch(batch)) if batch.items.len() == 1)
+    });
+    drop(input);
+    b.join().expect("B worker").expect("B session");
+    assert_eq!(calls.load(AtomicOrdering::SeqCst), 1);
+}
+
+#[test]
+fn m4_current_authenticated_handler_replaces_the_previous_endpoint_handler() {
+    let runtime = SharedIndexerRuntime::with_sources(
+        IndexerService::from_volume_descriptors([]),
+        Arc::new(|_| anyhow::bail!("unexpected scan")),
+        Arc::new(|_| Ok(usn::JournalPoll::NoChange)),
+    );
+    let mut endpoints = Vec::new();
+    for marker in [11, 22] {
+        let (input, receiver) = mpsc::channel();
+        let output = SharedWriter::default();
+        let observed = output.clone();
+        let endpoint_runtime = runtime.clone();
+        let worker = thread::spawn(move || {
+            let retired = Arc::new(AtomicBool::new(false));
+            endpoint_runtime.serve_admitted(
+                BufReader::new(ChannelReader::retiring(receiver, Arc::clone(&retired))),
+                observed,
+                m4_hello(),
+                Arc::new(move |request| {
+                    matches!(request.message, Message::Ping(_)).then(|| {
+                        vec![Envelope::reply_to(
+                            request,
+                            Message::Pong(Pong {
+                                sent_at_unix_ms: marker,
+                            }),
+                        )]
+                    })
+                }),
+                retired,
+            )
+        });
+        wait_for_frame(&output, |frame| {
+            matches!(frame.message, Message::HelloAck(_))
+        });
+        let ping = Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 0 }));
+        input
+            .send(ping.encode_line().expect("ping").into_bytes())
+            .expect("session ping");
+        wait_for_frame(&output, |frame| {
+            frame.correlation_id == Some(ping.id)
+                && matches!(&frame.message, Message::Pong(pong) if pong.sent_at_unix_ms == marker)
+        });
+        endpoints.push((input, worker));
+    }
+    for (input, worker) in endpoints {
+        drop(input);
+        worker
+            .join()
+            .expect("endpoint worker")
+            .expect("endpoint session");
+    }
+}
+
+#[test]
+fn m4_full_endpoint_output_retires_only_its_io_and_keeps_the_coordinator() {
+    let runtime = SharedIndexerRuntime::with_sources(
+        IndexerService::from_volume_descriptors([]),
+        Arc::new(|_| anyhow::bail!("unexpected scan")),
+        Arc::new(|_| Ok(usn::JournalPoll::NoChange)),
+    );
+    let (input, receiver) = mpsc::channel();
+    let output = SharedWriter::default();
+    let stopped = Arc::new(AtomicBool::new(false));
+    let retired = Arc::new(AtomicBool::new(false));
+    let endpoint_retired = Arc::clone(&retired);
+    let (entered, blocked) = mpsc::channel();
+    let writer = M4StoppedOutput {
+        output: output.clone(),
+        stopped: Arc::clone(&stopped),
+        entered,
+        released: Arc::new(AtomicBool::new(false)),
+        retired: Arc::clone(&retired),
+    };
+    let endpoint_runtime = runtime.clone();
+    let a = thread::spawn(move || {
+        endpoint_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(
+                receiver,
+                Arc::clone(&endpoint_retired),
+            )),
+            writer,
+            m4_hello(),
+            Arc::new(|_| None),
+            endpoint_retired,
+        )
+    });
+    wait_for_frame(&output, |frame| {
+        matches!(
+            frame.message,
+            Message::IndexerEvent(IndexerEvent::Status(_))
+        )
+    });
+    stopped.store(true, Ordering::Release);
+    let ping = Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 1 }));
+    input
+        .send(ping.encode_line().expect("ping").into_bytes())
+        .expect("first ping");
+    blocked
+        .recv_timeout(Duration::from_secs(2))
+        .expect("output is stopped");
+    for _ in 0..32 {
+        // Feed the real coordinator queue after the writer has stopped draining.
+        runtime
+            .events_for_test()
+            .send(RuntimeEvent::Request {
+                lease: 1,
+                request: ping.clone(),
+            })
+            .expect("bounded runtime input");
+    }
+    let deadline = Instant::now() + Duration::from_millis(500);
+    while !a.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    let released_in_bound = a.is_finished();
+    retired.store(true, Ordering::Release);
+    drop(input);
+    a.join().expect("A I/O workers").expect("retired endpoint");
+    assert!(
+        released_in_bound,
+        "full endpoint output releases its writer and idle reader"
+    );
+    let (input, receiver) = mpsc::channel();
+    let output = SharedWriter::default();
+    let observed = output.clone();
+    let endpoint_runtime = runtime.clone();
+    let b = thread::spawn(move || {
+        let retired = Arc::new(AtomicBool::new(false));
+        endpoint_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(receiver, Arc::clone(&retired))),
+            observed,
+            m4_hello(),
+            Arc::new(|_| None),
+            retired,
+        )
+    });
+    wait_for_frame(&output, |frame| {
+        matches!(frame.message, Message::HelloAck(_))
+    });
+    let search = m4_search(1, "anything");
+    input
+        .send(search.encode_line().expect("search").into_bytes())
+        .expect("B request");
+    wait_for_frame(&output, |frame| {
+        frame.correlation_id == Some(search.id)
+            && matches!(&frame.message, Message::IndexerEvent(IndexerEvent::SearchBatch(batch)) if batch.generation == 1 && batch.complete)
+    });
+    drop(input);
+    b.join()
+        .expect("B I/O workers")
+        .expect("replacement session");
+}
+
+#[test]
+fn m4_shared_admission_rejects_non_hello_without_resetting_the_current_session() {
+    let runtime = SharedIndexerRuntime::with_sources(
+        IndexerService::from_volume_descriptors([]),
+        Arc::new(|_| anyhow::bail!("unexpected scan")),
+        Arc::new(|_| Ok(usn::JournalPoll::NoChange)),
+    );
+    let (input, receiver) = mpsc::channel();
+    let output = SharedWriter::default();
+    let observed = output.clone();
+    let endpoint_runtime = runtime.clone();
+    let a = thread::spawn(move || {
+        let retired = Arc::new(AtomicBool::new(false));
+        endpoint_runtime.serve_admitted(
+            BufReader::new(ChannelReader::retiring(receiver, Arc::clone(&retired))),
+            observed,
+            m4_hello(),
+            Arc::new(|_| None),
+            retired,
+        )
+    });
+    wait_for_frame(&output, |frame| {
+        matches!(frame.message, Message::HelloAck(_))
+    });
+    let current = m4_search(99, "empty");
+    input
+        .send(current.encode_line().expect("search").into_bytes())
+        .expect("A search");
+    wait_for_frame(&output, |frame| frame.correlation_id == Some(current.id));
+    let rejected_output = SharedWriter::default();
+    assert!(
+        runtime
+            .serve_admitted(
+                Cursor::new(Vec::<u8>::new()),
+                rejected_output.clone(),
+                Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 0 })),
+                Arc::new(|_| None),
+                Arc::new(AtomicBool::new(false))
+            )
+            .is_err()
+    );
+    assert!(m4_frames(&rejected_output).is_empty());
+    let stale = m4_search(1, "empty");
+    input
+        .send(stale.encode_line().expect("stale search").into_bytes())
+        .expect("A stale request");
+    let barrier = Envelope::new(Message::Ping(Ping { sent_at_unix_ms: 1 }));
+    input
+        .send(barrier.encode_line().expect("barrier").into_bytes())
+        .expect("A barrier");
+    wait_for_frame(&output, |frame| frame.correlation_id == Some(barrier.id));
+    assert!(
+        !m4_frames(&output)
+            .iter()
+            .any(|frame| frame.correlation_id == Some(stale.id))
+    );
+    drop(input);
+    a.join().expect("A worker").expect("A session");
+}
+
+#[test]
+fn launcher_search_sends_real_file_matches_before_directory_pass_finishes() {
+    let entries = (0..20_000)
+        .map(|row| {
+            test_entry(
+                format!(r"C:\fixture\{row:05}\needle-{row:05}.txt"),
+                format!("needle-{row:05}.txt"),
+                false,
+            )
+        })
+        .chain((0..20_000).map(|row| {
+            test_entry(
+                format!(r"C:\fixture\folders\{row:05}\needle-{row:05}"),
+                format!("needle-{row:05}"),
+                true,
+            )
+        }))
+        .collect();
+    let snapshots = [test_snapshot(r"C:\", Some(1), Some(20), entries)];
+    let request = IndexSearchRequest {
+        generation: 71,
+        query: "needle".into(),
+        limit: 40,
+        context: IndexSearchContext {
+            include_files: true,
+            include_directories: true,
+            retain_kinds_apart: true,
+            ..Default::default()
+        },
+    };
+    let expected = search_snapshots_while(&snapshots, &IndexSettings::default(), &request, || true)
+        .expect("production query completes");
+    let mut framed = Vec::new();
+    let mut observed_first_before_second_pass = false;
+    let started = Instant::now();
+    let completed = search_launcher_snapshots_while(
+        &snapshots,
+        &IndexSettings::default(),
+        &request,
+        &|| true,
+        |items, complete| {
+            let frame = Envelope::new(Message::IndexerEvent(IndexerEvent::SearchBatch(
+                IndexSearchBatch {
+                    generation: request.generation,
+                    items,
+                    complete,
+                    elapsed_us: started.elapsed().as_micros() as u64,
+                },
+            )));
+            write_envelope_sync(&mut framed, &frame).expect("production bounded IPC frame");
+            if !complete && !observed_first_before_second_pass {
+                observed_first_before_second_pass = true;
+                assert!(
+                    String::from_utf8_lossy(&framed)
+                        .lines()
+                        .any(|line| matches!(
+                            Envelope::decode_line(line).expect("framed IPC").message,
+                            Message::IndexerEvent(IndexerEvent::SearchBatch(batch))
+                                if !batch.complete && !batch.items.is_empty()
+                        )),
+                    "file results must cross the framed boundary before scanning directories"
+                );
+            }
+            true
+        },
+    );
+    assert!(completed);
+    assert!(observed_first_before_second_pass);
+    let received = String::from_utf8(framed)
+        .expect("utf8 frames")
+        .lines()
+        .map(|line| Envelope::decode_line(line).expect("bounded frame"))
+        .filter_map(|envelope| match envelope.message {
+            Message::IndexerEvent(IndexerEvent::SearchBatch(batch)) => Some(batch),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(received.last().is_some_and(|batch| batch.complete));
+    assert_eq!(received.iter().filter(|batch| batch.complete).count(), 1);
+    let mut actual = received
+        .into_iter()
+        .flat_map(|batch| batch.items)
+        .collect::<Vec<_>>();
+    actual.sort_by(|left, right| left.path.cmp(&right.path));
+    let mut expected = expected;
+    expected.sort_by(|left, right| left.path.cmp(&right.path));
+    assert_eq!(
+        actual, expected,
+        "streamed candidates retain both kinds and ranking scores"
+    );
+}
+
+#[test]
+fn launcher_search_cancellation_does_not_send_terminal_after_first_kind() {
+    let snapshots = [test_snapshot(
+        r"C:\",
+        Some(1),
+        Some(20),
+        vec![
+            test_entry(r"C:\a\needle.txt", "needle.txt", false),
+            test_entry(r"C:\a\needle", "needle", true),
+        ],
+    )];
+    let request = IndexSearchRequest {
+        generation: 8,
+        query: "needle".into(),
+        limit: 20,
+        context: IndexSearchContext {
+            include_files: true,
+            include_directories: true,
+            retain_kinds_apart: true,
+            ..Default::default()
+        },
+    };
+    let current = AtomicBool::new(true);
+    let mut batches = Vec::new();
+    assert!(!search_launcher_snapshots_while(
+        &snapshots,
+        &IndexSettings::default(),
+        &request,
+        &|| current.load(Ordering::Acquire),
+        |items, complete| {
+            batches.push((items.len(), complete));
+            current.store(false, Ordering::Release);
+            true
+        }
+    ));
+    assert_eq!(batches.len(), 1);
+    assert!(!batches[0].1);
+}
+
+#[test]
+fn launcher_worker_emits_framed_first_batch_before_terminal() {
+    let snapshots = Arc::new(vec![test_snapshot(
+        r"C:\",
+        Some(1),
+        Some(20),
+        (0..20_000)
+            .map(|row| {
+                test_entry(
+                    format!(r"C:\fixture\{row:05}\needle-{row:05}.txt"),
+                    format!("needle-{row:05}.txt"),
+                    false,
+                )
+            })
+            .chain((0..20_000).map(|row| {
+                test_entry(
+                    format!(r"C:\fixture\folders\{row:05}\needle-{row:05}"),
+                    format!("needle-{row:05}"),
+                    true,
+                )
+            }))
+            .collect(),
+    )]);
+    let request = Envelope::new(Message::IndexerCommand(IndexerCommand::Search(
+        IndexSearchRequest {
+            generation: 91,
+            query: "needle".into(),
+            limit: 40,
+            context: IndexSearchContext {
+                include_files: true,
+                include_directories: true,
+                retain_kinds_apart: true,
+                ..Default::default()
+            },
+        },
+    )));
+    let correlation_id = request.id;
+    let (sender, receiver) = mpsc::sync_channel(16);
+    let started = Instant::now();
+    let worker = thread::spawn(move || {
+        run_snapshot_search(
+            SearchJob {
+                lease: 1,
+                task_id: 3,
+                request,
+                snapshots,
+                settings: IndexSettings::default(),
+            },
+            &AtomicU64::new(3),
+            &sender,
+        );
+    });
+    let mut wire = Vec::new();
+    let mut first_us = None;
+    let mut terminal_us = None;
+    let mut items = Vec::new();
+    while terminal_us.is_none() {
+        let RuntimeEvent::SearchCompleted { response, .. } = receiver
+            .recv_timeout(Duration::from_secs(5))
+            .expect("production search worker reply")
+        else {
+            panic!("expected worker search batch");
+        };
+        write_envelope_sync(&mut wire, &response).expect("framed IPC response");
+        let frame = String::from_utf8_lossy(&wire);
+        let decoded = Envelope::decode_line(frame.lines().last().expect("last frame"))
+            .expect("decode actual framed response");
+        assert_eq!(decoded.correlation_id, Some(correlation_id));
+        let Message::IndexerEvent(IndexerEvent::SearchBatch(batch)) = decoded.message else {
+            panic!("search batch on wire");
+        };
+        if first_us.is_none() && !batch.items.is_empty() {
+            first_us = Some(batch.elapsed_us);
+            assert!(
+                !batch.complete,
+                "first file candidates arrive before terminal"
+            );
+        }
+        if batch.complete {
+            terminal_us = Some(batch.elapsed_us);
+        }
+        items.extend(batch.items);
+    }
+    worker.join().expect("search worker");
+    assert!(items.iter().any(|item| !item.is_directory));
+    assert!(items.iter().any(|item| item.is_directory));
+    assert!(first_us.expect("first batch") < terminal_us.expect("terminal"));
+    println!(
+        "LAUNCHER_PROVIDER_FIXTURE first_batch_us={} terminal_us={} receive_us={} rows={}",
+        first_us.expect("first batch"),
+        terminal_us.expect("terminal"),
+        started.elapsed().as_micros(),
+        items.len()
+    );
+}
+
+#[test]
+fn launcher_stream_preserves_empty_and_homophone_fallback() {
+    let snapshots = [test_snapshot(
+        r"C:\",
+        Some(1),
+        Some(20),
+        vec![
+            test_entry(r"C:\Work\年度报告.docx", "年度报告.docx", false),
+            test_entry(r"C:\Work\年度报告", "年度报告", true),
+        ],
+    )];
+    for raw in ["年度报高", "no-matches-anywhere"] {
+        let request = IndexSearchRequest {
+            generation: 51,
+            query: raw.into(),
+            limit: 20,
+            context: IndexSearchContext {
+                include_files: true,
+                include_directories: true,
+                retain_kinds_apart: true,
+                allow_homophone_fallback: true,
+                ..Default::default()
+            },
+        };
+        let expected =
+            search_snapshots_while(&snapshots, &IndexSettings::default(), &request, || true)
+                .expect("original complete result");
+        let mut batches = Vec::new();
+        assert!(search_launcher_snapshots_while(
+            &snapshots,
+            &IndexSettings::default(),
+            &request,
+            &|| true,
+            |items, complete| {
+                batches.push((items, complete));
+                true
+            }
+        ));
+        assert_eq!(batches.iter().filter(|(_, complete)| *complete).count(), 1);
+        assert!(batches.last().is_some_and(|(_, complete)| *complete));
+        assert_eq!(
+            batches
+                .into_iter()
+                .flat_map(|(items, _)| items)
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+}
+
+#[path = "search_retirement_tests.rs"]
+mod search_retirement_tests;

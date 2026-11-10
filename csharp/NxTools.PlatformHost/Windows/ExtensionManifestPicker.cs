@@ -26,10 +26,11 @@ internal static class ExtensionManifestPicker
         {
             return CancelledResult();
         }
-        return StaDialogRunner.Run(
-            "NxTools extension manifest picker",
-            () => PickCore(command, cancellationToken, File.Exists, Directory.Exists, ShowDialog),
-            cancellationToken);
+        var completed = BoundedStaOperationRunner.TryRun("NxTools extension manifest picker", Timeout.InfiniteTimeSpan,
+            token => StaDialogRunner.RunInline(() => PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, token,
+                owner => PickCore(command, token, File.Exists, Directory.Exists, settings => ShowDialog(settings, owner))), token),
+            out WindowsCommandResult? result, out _, cancellationToken);
+        return completed && result is not null ? result : new(false, "picker_busy", NativeErrorCode: 170);
     }
 
     // Inject only native presentation/existence checks. This path never reads or interprets a manifest.
@@ -91,7 +92,7 @@ internal static class ExtensionManifestPicker
         }
     }
 
-    internal static string? ShowDialog(DialogSettings settings)
+    internal static string? ShowDialog(DialogSettings settings, IWin32Window owner)
     {
         using var dialog = new OpenFileDialog
         {
@@ -105,7 +106,7 @@ internal static class ExtensionManifestPicker
             RestoreDirectory = settings.RestoreDirectory,
             Title = settings.Title
         };
-        return dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : null;
+        return dialog.ShowDialog(owner) == DialogResult.OK ? dialog.FileName : null;
     }
 
     private static bool IsZipPath(string path) =>

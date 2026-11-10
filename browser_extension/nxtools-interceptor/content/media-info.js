@@ -97,6 +97,19 @@
     return "";
   }
 
+  function observedMediaElement(element) {
+    const media = element?.tagName?.toLowerCase?.() === "source" ? element.closest?.("audio,video") : element;
+    const kind = mediaElementKind(media);
+    if (kind !== "audio" && kind !== "video") return null;
+    return { kind, duration: Number.isFinite(media.duration) && media.duration > 0 ? media.duration : null,
+      controls: media.controls === true, autoplay: media.autoplay === true, loop: media.loop === true,
+      presentation: /^(?:presentation|none)$/i.test(media.getAttribute?.("role") || "") };
+  }
+
+  function sameMediaElementFacts(left, right) {
+    return ["kind", "duration", "controls", "autoplay", "loop", "presentation"].every(field => left?.[field] === right?.[field]);
+  }
+
   function isGoogleVideoUrl(url) {
     try {
       const host = new URL(url, location.href).hostname.toLowerCase();
@@ -350,6 +363,8 @@
     isInterestingUrl,
     isOverlayMediaResourceUrl,
     mediaElementKind,
+    observedMediaElement,
+    sameMediaElementFacts,
     isGoogleVideoUrl,
     isUsableGoogleVideoUrl,
     filenameFromUrl,

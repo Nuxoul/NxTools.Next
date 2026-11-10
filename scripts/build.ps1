@@ -21,6 +21,7 @@ if ($Configuration -eq 'Release') {
     Assert-ReleaseBuildCommitHeadroom -MinimumGiB $MinimumCommitHeadroomGiB
 }
 
+$hostBuildRoot = $null
 Push-Location $root
 try {
     & '.\tests\architecture\quick-launch-lifecycle.ps1'
@@ -86,5 +87,12 @@ try {
         -Configuration $Configuration -HostBuildRoot $hostBuildRoot
 }
 finally {
-    Pop-Location
+    try {
+        if ($hostBuildRoot -and (Test-Path -LiteralPath $hostBuildRoot)) {
+            Remove-Item -LiteralPath $hostBuildRoot -Recurse -Force
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }

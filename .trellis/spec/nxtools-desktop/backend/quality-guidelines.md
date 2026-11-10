@@ -554,3 +554,40 @@ Wrong: `disabled() == None` and a value-only label remain mandatory after upstre
 ## Archive password fixture compatibility (2026-10-25)
 Evidence: `repo:rust/apps/nxtools-desktop/src/archive/application_tests.rs`, `repo:rust/apps/nxtools-desktop/src/archive/browser.rs#install`.
 Use actual read-batch nullable encrypted metadata, never the synthetic archive filename, to establish the current unlock entry. production_password_unlock_visibility_uses_actual_read_encryption_metadata traverses original Accepted/Negotiated/Batch/credit/Terminal/deferred install for false/unknown/true; onlytrue exposes the actual named official Button and none sends authorization/OLE merely on render. Password Dialog/ticket/deferred-grant tests must seed true and keep real pointer/private reply/current identity/no-auto-start assertions. Original plain helper stays false. Current approved icon-over-label action is official Medium outline with64DIP public height adaptation; historical32DIP leaf assertion does not override the later approved browser UI. Never make production visibility unconditional or drop lifecycle assertions to repair a stale fixture. Test/native/user acceptance remain separate.
+
+## Launcher Indexer query retirement
+
+Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch.rs#cancel_index_search`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/panel.rs#close`,
+`repo:rust/apps/nxtools-desktop/src/runtime.rs#IndexerBridge`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/tests.rs`.
+
+Store the original Search envelope ID and generation before enqueue. Empty input begins a new
+local query generation and sends an exact cancellation; hiding invalidates the generation before
+native hide dispatch. A query that does not request Indexer or whose new Search cannot enqueue
+also retires its previous provider work. Ordinary admitted Search already supersedes the previous
+job, so do not send a redundant cancel for every replacement. Matching terminal/failure and
+disconnect clear pending identity; stale batches cannot clear a newer request.
+
+Cancel waits asynchronously for the original bounded IndexerBridge queue, never blocks GPUI or
+silently drops on Full. Capture the retired request identity before waiting; late delivery cannot
+target the current query. The original deferred panel close checks panel identity, closed state
+and query-dispatch generation before application hide, so reopening cannot cancel the new session.
+Retain original InputState/IME, layout, native placement/focus and extension-provider owners.
+Diagnostics carry request correlation, generation, fixed reason, queued state and elapsed time only.
+The search_retirement_ TestApp cases cover clear/hide wire frames, full-queue delivery and old-close
+reopen isolation; service retirement and protocol contracts are owned by Indexer/Protocol below.
+No installed-service or physical-input acceptance follows from these isolated tests.
+
+## Extension executor exit ownership
+Evidence: `repo:rust/apps/nxtools-desktop/src/extensions/service.rs`, `repo:rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs`, `repo:rust/apps/nxtools-desktop/src/main.rs`, `repo:rust/apps/nxtools-desktop/src/runtime.rs`.
+ExecutionLease retains the original executor JoinHandle and one shared terminal result. ExtensionService::shutdown_and_wait aborts event subscriptions, signals once and joins even when resolver/service clones remain. The original executor drives ExtensionRuntime::shutdown_and_wait while Tokio still runs, so cancelled feature futures and actual Blob IO can release their backing before physical cleanup joins. Final Drop only signals: it may run inside an executor task and must not self-join. The existing native grace/executor timeout never substitutes for Blob deletion completion.
+GUI joins after Application::run returns, outside GPUI callbacks, before Clipboard worker shutdown; both shutdown operations are attempted even if one reports failure. Headless host joins during original idle drain before marking stopped/returning. No component/layout/focus/window lifecycle changes. Synthetic GUI/headless service tests retain clones, observe suspended task destruction and immediate real storage-owner release after explicit join; keep the final-Drop compatibility regression. Do not run script/native fixtures merely to verify this owner seam.
+Source wiring gate: `repo:tests/architecture/extension-blob-lifecycle.py` rejects missing GUI post-GPUI join, skipped Clipboard flush, missing headless idle-drain join and draining outside the original live executor.
+
+## Floating assistant Drop release ownership
+`tools/floating_assistant/application.rs` captures the original PlatformBridge connection before Prepare. Release, native lifecycle and destructor use that connection under the router lock, not later is_connected/current identity. One pending release/retire survives full bounded command admission in the original connection; its consumer progresses it independently of a live GPUI controller. Retire covers same-session release and waits for original native result/EOF, not generic5second UI/10second IPC timeout. Repeated Retry preserves that pending identity. Only its real terminal advances session/generation and prepares a replacement.
+
+`actions.rs::PendingAction` captures session AND generation. Cancellation, native completion and deadline release only that still-current identity; old action completion never rebuilds ReleaseDrop from a new session. Deferred/copy cancellation and normalized-image ownership remain unchanged. C# owns physical image staging, retains its sole process-wide16MiB Drop slot through deletion failure/Stop, and retries on the original STA. Logical release success is a transfer of cleanup responsibility, not physical completion.
+
+Required production regressions in `repo:rust/apps/nxtools-desktop/src/tools/floating_assistant/application/tests.rs`: real bounded queue full -> exact release after recovery, cancellation, retry/destructor without controller, replacement pipe before UI sees EOF, stale action generation and60second late Retire result -> next-generation Prepare. IPC and self-owned C# locked-file fixtures protect the receiving/deletion boundaries. Preserve hidden-frame/passive focus/routing/component composition; no real Shell or Desktop product launch is implied by TestApp evidence.

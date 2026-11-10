@@ -22,6 +22,8 @@ public interface IDataObjectAsyncCapability
 internal sealed class ArchiveVirtualFileDataObject : System.Runtime.InteropServices.ComTypes.IDataObject, IDataObjectAsyncCapability, IDisposable
 {
     private readonly object operationGate=new();
+    private readonly Action<string>? observe;
+    private int descriptorObserved;
     private readonly CancellationToken stop;
     private bool asyncMode,started,ended,loopEnded;
     private readonly TaskCompletionSource<(int Result,uint Effects)> completion=new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -33,13 +35,15 @@ internal sealed class ArchiveVirtualFileDataObject : System.Runtime.InteropServi
     public int StartOperation(IntPtr reserved)
     {
         if(reserved!=IntPtr.Zero)return unchecked((int)0x80070057);
-        lock(operationGate){if(!asyncMode||started||loopEnded||stop.IsCancellationRequested||Volatile.Read(ref retired)!=0)return unchecked((int)0x8000FFFF);started=true;return 0;}
+        lock(operationGate){if(!asyncMode||started||loopEnded||stop.IsCancellationRequested||Volatile.Read(ref retired)!=0)return unchecked((int)0x8000FFFF);started=true;}
+        Observe("async_start");return 0;
     }
     public int InOperation(out bool active){lock(operationGate){active=started&&!ended;return 0;}}
     public int EndOperation(int result,IntPtr reserved,uint effects)
     {
         if(reserved!=IntPtr.Zero)return unchecked((int)0x80070057);
-        lock(operationGate){if(!started||ended)return unchecked((int)0x8000FFFF);ended=true;Interlocked.Exchange(ref retired,1);completion.TrySetResult((result,effects));return 0;}
+        lock(operationGate){if(!started||ended)return unchecked((int)0x8000FFFF);ended=true;Interlocked.Exchange(ref retired,1);completion.TrySetResult((result,effects));}
+        Observe("async_end");return 0;
     }
     internal static readonly short DescriptorFormat = (short)RegisterClipboardFormatW("FileGroupDescriptorW");
     internal static readonly short ContentsFormat = (short)RegisterClipboardFormatW("FileContents");
@@ -48,11 +52,16 @@ internal sealed class ArchiveVirtualFileDataObject : System.Runtime.InteropServi
     private readonly ArchiveVirtualFile[] files;
     private readonly Func<int, IntPtr> open;
     private int retired;
-    internal ArchiveVirtualFileDataObject(ArchiveVirtualFile[] files, Func<int, IntPtr> open,CancellationToken stop=default)
+    internal ArchiveVirtualFileDataObject(ArchiveVirtualFile[] files, Func<int, IntPtr> open,CancellationToken stop=default,Action<string>? observe=null)
     {
         if(!ValidTree(files))throw new ArgumentException("invalid_virtual_files");
-        this.files=files.ToArray();this.open=open;this.stop=stop;
+        this.files=files.ToArray();this.open=open;this.stop=stop;this.observe=observe;
     }
+    internal ArchiveVirtualFileDataObject(ArchiveVirtualPlan plan,Func<int,IntPtr> open,CancellationToken stop=default,Action<string>? observe=null)
+    {
+        files=plan.Descriptors;this.open=open;this.stop=stop;this.observe=observe;
+    }
+    private void Observe(string stage){try{observe?.Invoke(stage);}catch{}}
     internal static bool ValidTree(ArchiveVirtualFile[] files)
     {
         if(files.Length<1||files.Length>(int.MaxValue-4)/592||files.Any(file=>file is null||!ValidName(file.Name)||file.Size is <0||file.Directory&&file.Size is not null))return false;
@@ -90,6 +99,7 @@ internal sealed class ArchiveVirtualFileDataObject : System.Runtime.InteropServi
         }
         var bytes=format.cfFormat==EffectFormat?BitConverter.GetBytes(1):Descriptors();
         medium=new(){tymed=TYMED.TYMED_HGLOBAL,unionmember=Allocate(bytes)};
+        if(format.cfFormat==DescriptorFormat&&Interlocked.Exchange(ref descriptorObserved,1)==0)Observe("descriptor_delivered");
     }
     private byte[] Descriptors()
     {

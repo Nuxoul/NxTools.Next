@@ -14,6 +14,8 @@ internal sealed record ArchiveJobCommand {
     public required string Action {get;init;}
     public ArchiveJobRequest? Request {get;init;}
     public ArchiveJobReply? Reply {get;init;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? BatchId {get;init;}
 }
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveJobLimits {
@@ -86,6 +88,8 @@ internal sealed record ArchiveJobReply {
     public string? Decision {get;init;}
     public required bool ApplyToAll {get;init;}
     public ulong? ApprovedLimit {get;init;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)]
+    public bool RememberBatchPassword {get;init;}
     public override string ToString()=>"ArchiveJobReply([PRIVATE])";
 }
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -100,11 +104,12 @@ internal sealed record ArchiveJobOutputShortfall(ArchiveJobOutputBudget Current,
 internal sealed record ArchiveJobProgress(string Phase,ulong BytesDone,ulong? BytesTotal,ulong FilesDone,ulong? FilesTotal,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? CurrentMember=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesDone=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesTotal=null) {
-    internal bool Valid=>CurrentMember is null
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesTotal=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? Sequence=null) {
+    internal bool Valid=>Sequence is not 0 && (Phase is "running" or "edit_planning" or "edit_reading" or "edit_reencoding" or "edit_verifying" or "edit_committing") && (CurrentMember is null
         ? CurrentBytesDone is null && CurrentBytesTotal is null
         : CurrentMember.Length>0 && Encoding.UTF8.GetByteCount(CurrentMember)<=32767 && !CurrentMember.Any(char.IsControl)
-            && (CurrentBytesTotal is null || CurrentBytesDone is {} done && done<=CurrentBytesTotal);
+            && (CurrentBytesTotal is null || CurrentBytesDone is {} done && done<=CurrentBytesTotal));
 }
 // UI-only values; never pass these strings into native output or authorization APIs.
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -119,8 +124,28 @@ internal sealed record ArchiveJobCommit(ulong Ordinal,string State,bool Replaced
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? NativeIdentity=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] bool? Published=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? Cleanup=null);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveJobCommitOutcome(string State,bool? Published,string Cleanup,ulong Files,ulong Bytes);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveJobJournalSummary(ulong TotalRecords,bool DetailComplete,IReadOnlyList<ArchiveJobCommitOutcome> Outcomes);
 internal sealed record ArchiveJobResultLocation(string Target,string Action) {
     public override string ToString()=>"ArchiveJobResultLocation([PRIVATE])";
+}
+// Display-only member paths are private data, never passed to native output APIs or diagnostics.
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveJobAddMember(string Path,string Outcome) {
+    public override string ToString()=>"ArchiveJobAddMember([PRIVATE])";
+    internal bool Valid=>Outcome is "added" or "overwritten" or "renamed" &&
+        Path is not null && Encoding.UTF8.GetByteCount(Path)<=32767 &&
+        Path.TrimEnd('/').Split('/').All(ArchiveJobWire.NameValid) &&
+        !Path.StartsWith('/') && !Path.EndsWith("//",StringComparison.Ordinal);
+}
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchiveJobAddResult(ulong Total,IReadOnlyList<ArchiveJobAddMember> Members) {
+    public override string ToString()=>"ArchiveJobAddResult([PRIVATE])";
+    internal bool Valid=>Total>0 && Members is { Count: <=256 } && Total>=(ulong)Members.Count &&
+        Members.All(member=>member is not null && member.Valid) &&
+        Members.Sum(member=>(long)Encoding.UTF8.GetByteCount(member.Path))<=65536;
 }
 internal sealed record ArchiveJobTerminal(string Outcome,string? Code=null,ulong FilesCommitted=0,ulong BytesCommitted=0,
     ulong FilesVerified=0,ulong BytesVerified=0,ulong FilesSkipped=0,bool CleanupComplete=true,string? CommitState=null,
@@ -128,7 +153,9 @@ internal sealed record ArchiveJobTerminal(string Outcome,string? Code=null,ulong
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobOutputShortfall? OutputShortfall=null,
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobResultLocation? ResultLocation=null,
     // Native observation only: false is affirmative zero-output evidence; omitted/null is unknown.
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] bool? OutputPublished=null);
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] bool? OutputPublished=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobAddResult? AddResult=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveJobJournalSummary? JournalSummary=null);
 internal sealed record ArchiveJobEvent(uint Version,Guid OperationId,Guid SessionId,ulong Generation,string Kind,
     string? State=null,ArchiveJobProgress? Progress=null,ArchiveJobPrompt? Prompt=null,ArchiveJobTerminal? Terminal=null) {
     internal ProtocolEnvelope Envelope()=>ProtocolEnvelope.Create("platform_event",new{@event="archive_job",data=this},OperationId);
@@ -169,9 +196,12 @@ internal static class ArchiveJobWire {
         var c=data.Deserialize<ArchiveJobCommand>(Strict)??throw new InvalidDataException();
         if(c.Version!=1)throw new ArchiveReadVersionException();
         if(c.OperationId==Guid.Empty || c.SessionId==Guid.Empty || c.Generation==0 || envelope.CorrelationId!=c.OperationId || envelope.Id==c.OperationId)throw new InvalidDataException();
+        if(c.BatchId==Guid.Empty || c.Reply?.RememberBatchPassword==true && c.BatchId is null)throw new InvalidDataException();
+        if(c.Action=="retire_batch") {if(c.BatchId!=c.OperationId || c.SessionId!=c.OperationId || c.Request is not null || c.Reply is not null)throw new InvalidDataException();return c;}
         if(c.Action=="start") { if(c.Reply is not null || c.Request is not {} r || !Valid(r))throw new InvalidDataException(); }
         else if(c.Action=="reply") {
             if(c.Request is not null || c.Reply is not {} p || p.Ticket.OperationId!=c.OperationId || p.Ticket.PromptId==Guid.Empty || p.Ticket.Generation==0 || !PasswordValid(p.Password))throw new InvalidDataException();
+            if(p.RememberBatchPassword && (p.Kind!="password" || p.Password is null))throw new InvalidDataException();
             var valid=p.Kind switch {
                 "password"=>p.Decision is null && p.ApprovedLimit is null && !p.ApplyToAll,
                 "conflict"=>p.Password is null && p.ApprovedLimit is null && p.Decision is null or "overwrite" or "skip" or "auto_rename",
@@ -213,9 +243,11 @@ internal sealed class ArchiveJobSecretConverter : JsonConverter<byte[]> {
     public override byte[]? Read(ref Utf8JsonReader reader,Type type,JsonSerializerOptions options) {
         if(reader.TokenType==JsonTokenType.Null)return null;
         if(reader.TokenType!=JsonTokenType.StartArray)throw new JsonException();
-        var bytes=new List<byte>(64);
-        while(reader.Read() && reader.TokenType!=JsonTokenType.EndArray){if(bytes.Count>=4096)throw new JsonException();bytes.Add(reader.GetByte());}
-        if(reader.TokenType!=JsonTokenType.EndArray)throw new JsonException();return bytes.ToArray();
+        Span<byte> bytes=stackalloc byte[4096];var count=0;
+        try {
+            while(reader.Read() && reader.TokenType!=JsonTokenType.EndArray){if(count>=bytes.Length)throw new JsonException();bytes[count++]=reader.GetByte();}
+            if(reader.TokenType!=JsonTokenType.EndArray)throw new JsonException();return bytes[..count].ToArray();
+        }finally{System.Security.Cryptography.CryptographicOperations.ZeroMemory(bytes);}
     }
     public override void Write(Utf8JsonWriter writer,byte[] value,JsonSerializerOptions options){writer.WriteStartArray();foreach(var b in value)writer.WriteNumberValue(b);writer.WriteEndArray();}
 }

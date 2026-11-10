@@ -65,6 +65,7 @@ fn fixture(cx: &mut TestAppContext, confirmed: bool) -> RemFixture {
                 view.confirmed_request = Some(view.request(cx).expect("synthetic request"));
                 view.probe = Some(DownloadProbe {
                     resolution: None,
+                    server_observation: None,
                     final_url: "https://synthetic.invalid/rem.bin".into(),
                     file_name: Some("合成文件名.bin".into()),
                     total_bytes: Some(1024),
@@ -124,13 +125,18 @@ fn audit06_new_compact_and_confirmed_roles_follow_actual_root(cx: &mut TestAppCo
                 .debug_bounds("download-new-cancel-action")
                 .expect("original Cancel");
             let content = if confirmed {
-                f.surface
-                    .debug_bounds("download-new-probe-capability")
-                    .expect("actual inspector text")
+                Some(
+                    f.surface
+                        .debug_bounds("download-new-probe-capability")
+                        .expect("actual inspector text"),
+                )
             } else {
-                f.surface
-                    .debug_bounds("download-new-probe-guidance")
-                    .expect("actual guidance")
+                assert!(
+                    f.surface
+                        .debug_bounds("download-new-probe-guidance")
+                        .is_none()
+                );
+                None
             };
             measured.push((base, root, footer, input, paste, cancel, content));
         }
@@ -139,10 +145,13 @@ fn audit06_new_compact_and_confirmed_roles_follow_actual_root(cx: &mut TestAppCo
         assert_eq!(default_rem, px(16.0), "actual product design base");
         for (base, root, footer, input, paste, cancel, content) in measured {
             let ratio = base / 16.0;
-            assert!(
-                (content.size.height - px(18.0 * ratio)).abs() <= px(0.5),
-                "ordinary content line follows rem confirmed={confirmed} base={base}: {content:?}"
-            );
+            if let Some(content) = content {
+                assert!(
+                    (content.size.height - px(18.0 * ratio)).abs() <= px(0.5),
+                    "ordinary content line follows rem confirmed={confirmed} base={base}: {content:?}"
+                );
+                assert!(content.bottom() <= footer.top());
+            }
             assert_eq!(
                 root.size,
                 new_download_window_size(confirmed),
@@ -150,9 +159,13 @@ fn audit06_new_compact_and_confirmed_roles_follow_actual_root(cx: &mut TestAppCo
             );
             assert_eq!(footer.size.height, px(44.0));
             assert_eq!(input.size.height, px(32.0 * ratio));
-            assert_eq!(paste.size.height, input.size.height);
-            assert_eq!(paste.top(), input.top());
-            assert!(content.bottom() <= footer.top());
+            if confirmed {
+                assert_eq!(paste.size.height, input.size.height);
+                assert_eq!(paste.top(), input.top());
+            } else {
+                assert_eq!(paste.size.height, px(24.0 * ratio));
+                assert!(paste.top() >= input.top() && paste.bottom() <= input.bottom());
+            }
             assert!(cancel.top() >= footer.top() && cancel.bottom() <= footer.bottom());
         }
         assert!(
@@ -251,7 +264,7 @@ fn audit06_new_long_content_scrolls_without_moving_fixed_actions(cx: &mut TestAp
             );
             assert_eq!(
                 root.size,
-                size(px(560.0), px(if confirmed { 246.0 } else { 176.0 }))
+                size(px(560.0), px(if confirmed { 246.0 } else { 136.0 }))
             );
             assert_eq!(title.size.height, px(34.0));
             assert_eq!(footer.size.height, px(44.0));
@@ -305,7 +318,7 @@ fn audit06_new_painted_type_and_basic_control_rails_follow_root(cx: &mut TestApp
             for role in if confirmed {
                 vec!["status", "size", "capability"]
             } else {
-                vec!["guidance"]
+                vec![]
             } {
                 assert_eq!(
                     types.get(role),
@@ -313,24 +326,23 @@ fn audit06_new_painted_type_and_basic_control_rails_follow_root(cx: &mut TestApp
                     "paint role={role} base={base}"
                 );
             }
-            let (label_font, label_line) = types
-                .get("download-new-url-field")
-                .copied()
-                .expect("actual official label paint");
-            assert_eq!(label_font, px(14.0 * ratio), "official text_sm label font");
-            let baseline_line = *default_label_line.get_or_insert(label_line);
-            assert!(
-                (label_line - baseline_line * ratio).abs() < px(0.02),
-                "original inherited label line follows font, not a new forced type role"
-            );
+            if confirmed {
+                let (label_font, label_line) = types
+                    .get("download-new-url-field")
+                    .copied()
+                    .expect("actual official label paint");
+                assert_eq!(label_font, px(14.0 * ratio), "official text_sm label font");
+                let baseline_line = *default_label_line.get_or_insert(label_line);
+                assert!(
+                    (label_line - baseline_line * ratio).abs() < px(0.02),
+                    "original inherited label line follows font, not a new forced type role"
+                );
+            }
             let url = f
                 .surface
                 .debug_bounds("download-new-url-control")
                 .expect("URL rail");
-            let label = f
-                .surface
-                .debug_bounds("download-new-url-field-label")
-                .expect("label");
+            let label = f.surface.debug_bounds("download-new-url-field-label");
             let paste = f
                 .surface
                 .debug_bounds("download-new-url-paste")
@@ -339,17 +351,26 @@ fn audit06_new_painted_type_and_basic_control_rails_follow_root(cx: &mut TestApp
                 .surface
                 .debug_bounds("download-new-url-field-input")
                 .expect("input");
-            assert_eq!(label.left(), px(16.0 * ratio));
-            assert_eq!(
-                url.left(),
-                px(88.0 * ratio) + px(4.0),
-                "72 rem label plus released fixed4 Field gap"
-            );
+            if confirmed {
+                assert_eq!(label.expect("confirmed label").left(), px(16.0 * ratio));
+                assert_eq!(
+                    url.left(),
+                    px(88.0 * ratio) + px(4.0),
+                    "72 rem label plus released fixed4 Field gap"
+                );
+            } else {
+                assert!(label.is_none(), "compact input has no separate label rail");
+                assert_eq!(url.left(), px(16.0 * ratio));
+            }
             assert_eq!(url.size.height, px(32.0 * ratio));
-            assert!((paste.left() - input.right() - px(8.0 * ratio)).abs() < px(0.5));
+            if confirmed {
+                assert!((paste.left() - input.right() - px(8.0 * ratio)).abs() < px(0.5));
+            } else {
+                assert!(paste.left() >= input.left() && paste.right() <= input.right());
+            }
             if base == 16.0 {
-                assert_eq!(input.top(), px(42.0));
-                assert_eq!(paste.right(), px(544.0));
+                assert_eq!(input.top(), px(if confirmed { 42.0 } else { 38.0 }));
+                assert_eq!(paste.right(), px(if confirmed { 544.0 } else { 539.0 }));
             }
             if confirmed {
                 let directory = f

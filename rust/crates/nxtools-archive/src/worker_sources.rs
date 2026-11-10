@@ -92,6 +92,9 @@ impl<W: Write + Send> CreationSource for Sources<'_, '_, '_, W> {
             &[],
             Some((offset, length)),
         )?;
+        if let Some(mut payload) = reply.payload {
+            return Ok(std::mem::take(&mut *payload));
+        }
         use base64::Engine as _;
         let value = reply.read_data.ok_or(ArchiveError::IoFailure)?;
         if value.len() > 87384 {

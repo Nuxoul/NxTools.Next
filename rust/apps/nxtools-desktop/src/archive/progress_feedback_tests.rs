@@ -19,11 +19,15 @@ fn mount(cx: &mut TestAppContext) -> (Entity<JobProgressView>, VisualTestContext
 }
 fn running(elapsed_ms: u64, done: u64) -> ProgressSnapshot {
     ProgressSnapshot {
+        id: Uuid::nil(),
+        retry: false,
+        retry_pending: false,
         operation: Uuid::nil(),
         generation: 1,
         continuation: None,
         state: "运行中".into(),
         kind: ArchiveJobKind::Extract,
+        edit_format: None,
         elapsed_ms,
         reclamation: None,
         progress: Some(ArchiveJobProgress {
@@ -35,11 +39,17 @@ fn running(elapsed_ms: u64, done: u64) -> ProgressSnapshot {
             current_member: None,
             current_bytes_done: None,
             current_bytes_total: None,
+            sequence: None,
         }),
         progress_elapsed_ms: elapsed_ms,
         terminal: None,
         prompt: None,
         paused: false,
+        controls: JobControls {
+            pause: true,
+            stop: true,
+        },
+        stop_question: None,
         location_status: None,
         pause_requested: None,
         cancel_requested: false,
@@ -344,13 +354,14 @@ fn sevenz_edit_original_progress_distinguishes_reencode_verify_commit_without_fa
     let (view, mut surface) = mount(cx);
     for (phase, expected) in [
         ("edit_planning", "准备 7z 编辑"),
-        ("edit_reading", "读取并检查原归档"),
+        ("edit_reading", "读取并检查原压缩包"),
         ("edit_reencoding", "完整解码并重编码"),
         ("edit_verifying", "校验完整候选"),
         ("edit_committing", "等待原生提交"),
     ] {
         let mut snapshot = running(1000, 4096);
         snapshot.kind = ArchiveJobKind::Modify;
+        snapshot.edit_format = Some("SevenZ".into());
         let progress = snapshot.progress.as_mut().expect("original progress");
         progress.phase = phase.into();
         progress.bytes_total = None;
@@ -390,7 +401,7 @@ fn hz5_progress_distinguishes_destructive_start_and_retained_recovery_authority(
     let mut cancelled = running(2_000, 4_096);
     cancelled.reclamation = Some(ArchiveReclamationMode::Continue);
     cancelled.progress = None;
-    cancelled.state = "归档操作已取消".into();
+    cancelled.state = "压缩包操作已取消".into();
     cancelled.terminal = Some(
         serde_json::from_value(serde_json::json!({
             "outcome":"cancelled",
@@ -446,10 +457,12 @@ fn archive_progress_failure_keeps_recovery_visible_and_diagnostics_explicit(
     surface.update(|window, cx| view.update(cx, |view, cx| view.apply(failed, window, cx)));
     let shown = labels(&mut surface);
     assert!(
-        shown
-            .iter()
-            .any(|label| label.contains("失败") && label.contains("检查")),
-        "actionable failure must be visible: {shown:?}"
+        shown.iter().any(|label| label == "失败"),
+        "concise status: {shown:?}"
+    );
+    assert!(
+        shown.iter().any(|label| label.contains("清理")),
+        "actual cleanup risk: {shown:?}"
     );
     assert!(
         shown
@@ -563,4 +576,73 @@ fn extract_unknown_member_progress_is_not_derived_from_overall_bytes(cx: &mut Te
             .iter()
             .any(|label| label.contains("总体进度") && label.contains("40%"))
     );
+}
+
+#[gpui_kit::test]
+fn r45_drag_identity_does_not_change_ordinary_test_title(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx);
+    assert!(
+        labels(&mut surface)
+            .iter()
+            .any(|label| label == "测试压缩包")
+    );
+    let mut snapshot = running(0, 0);
+    snapshot.kind = ArchiveJobKind::Test;
+    surface.update(|window, cx| view.update(cx, |view, cx| view.apply(snapshot, window, cx)));
+    assert!(
+        labels(&mut surface)
+            .iter()
+            .any(|label| label == "测试压缩包")
+    );
+}
+
+#[gpui_kit::test]
+fn incoming_add_failure_progress_keeps_status_without_generic_alert(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx);
+    let mut snapshot = running(1, 0);
+    snapshot.kind = ArchiveJobKind::Modify;
+    snapshot.state = "失败".into();
+    snapshot.terminal = Some(serde_json::from_value(serde_json::json!({
+        "outcome":"failed", "code":"unsafe_path", "files_committed":0, "bytes_committed":0,
+        "files_verified":0, "bytes_verified":0, "files_skipped":0, "cleanup_complete":true,
+        "commit_state":null, "elapsed_ms":1, "native_error_code":null, "journal":[], "output_published":false
+    })).expect("terminal"));
+    surface.update(|window, cx| view.update(cx, |view, cx| view.apply(snapshot, window, cx)));
+    let labels = labels(&mut surface);
+    assert!(
+        !labels
+            .iter()
+            .any(|label| label.contains("请检查源文件、目标位置及可用空间")
+                || label.contains("已提交的文件不会自动撤销")),
+        "transient cause belongs to NotificationCenter"
+    );
+    assert!(
+        labels.iter().any(|label| label.contains("失败")),
+        "concise task status remains"
+    );
+}
+#[gpui_kit::test]
+fn successful_or_cancelled_extract_shows_no_diagnostics_disclosure(cx: &mut TestAppContext) {
+    for (outcome, code, state) in [
+        ("succeeded", None, "完成"),
+        ("succeeded_with_warnings", None, "完成"),
+        ("cancelled", Some("cancelled"), "已取消"),
+    ] {
+        let (view, mut surface) = mount(cx);
+        let mut snapshot = running(1, 0);
+        snapshot.state = state.into();
+        snapshot.terminal = Some(serde_json::from_value(serde_json::json!({
+            "outcome":outcome, "code":code, "files_committed":208, "bytes_committed":206572163,
+            "files_verified":0, "bytes_verified":0, "files_skipped":0, "cleanup_complete":true,
+            "commit_state":"Committed", "elapsed_ms":3000, "native_error_code":null, "journal":[]
+        })).expect("terminal"));
+        surface.update(|window, cx| view.update(cx, |view, cx| view.apply(snapshot, window, cx)));
+        labels(&mut surface);
+        assert!(
+            surface
+                .debug_bounds("archive-progress-diagnostics-toggle")
+                .is_none(),
+            "{outcome}: an ordinary committed result has nothing to diagnose"
+        );
+    }
 }

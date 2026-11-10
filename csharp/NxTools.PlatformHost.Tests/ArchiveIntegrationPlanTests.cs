@@ -20,6 +20,22 @@ internal static class ArchiveIntegrationPlanTests
         Check(!plan.SavedIntent.ClassicCascadeEnabled && !plan.SavedIntent.OpenWithEnabled && plan.SavedIntent.Extensions!.Count == 0, "saved intent is retained without becoming an applied fact");
         Check(plan.AppliedFacts is null, "a pure plan must not claim observed registry state");
         Check(plan.Scope == ArchiveIntegrationScope.CurrentUserClasses, "only HKCU Software\\Classes is planned");
+
+        Check(disabled.MenuCommands.Contains("create"), "fresh recommended menu includes creation without enabling integration");
+        foreach (var layout in new[] { "cascade", "flat" })
+        {
+            var recommended = ArchiveIntegrationPlan.Create(@"C:\NxTools\NxTools.exe", 1,
+                new ArchiveIntegrationIntent(true, false, [".zip"]) { MenuLayout = layout },
+                @"C:\NxTools\NxTools.ShellSelectionHelper.exe");
+            foreach (var source in new[] { @"Software\Classes\*\shell\", @"Software\Classes\Directory\shell\" })
+                Check(recommended.Changes.Any(change => change.Target.KeyPath.StartsWith(source, StringComparison.OrdinalIgnoreCase)
+                    && change.Target.ValueName == "DelegateExecute"), "recommended creation covers ordinary files and folders");
+            var custom = ArchiveIntegrationPlan.Create(@"C:\NxTools\NxTools.exe", 1,
+                new ArchiveIntegrationIntent(true, false, [".zip"]) { MenuLayout = layout, MenuCommands = ["test"] },
+                @"C:\NxTools\NxTools.ShellSelectionHelper.exe");
+            Check(!custom.Changes.Any(change => change.Target.KeyPath.StartsWith(@"Software\Classes\*\shell\")
+                || change.Target.KeyPath.StartsWith(@"Software\Classes\Directory\shell\")), "saved custom choices are not expanded");
+        }
         return Task.CompletedTask;
     }
 
@@ -28,7 +44,7 @@ internal static class ArchiveIntegrationPlanTests
         var plan = ArchiveIntegrationPlan.Create(
             @"C:\Program Files\NxTools\NxTools.exe",
             11,
-            new ArchiveIntegrationIntent(true, true, [".ZIP", ".7z", ".zip"]));
+            new ArchiveIntegrationIntent(true, true, [".ZIP", ".7z", ".zip"]) { MenuCommands = ArchiveIntegrationIntent.DefaultMenuCommands });
 
         Check(plan.Extensions.SequenceEqual([".7z", ".zip"]), "extensions must be normalized and deduplicated");
         Check(plan.Changes.All(change => change.Target.KeyPath.StartsWith(@"Software\Classes\", StringComparison.OrdinalIgnoreCase)), "HKCU Classes only");

@@ -172,6 +172,12 @@ internal static class NativeFileDragService
         return terminal.Success;
     }
 
+    // Real-file CF_HDROP plus Preferred DropEffect COPY for an owned path list. Diagnostics stay
+    // with the caller's own correlation; this object only answers the receiver's format queries.
+    internal static ComDataObject CreateFileDropDataObject(IReadOnlyList<string> paths) =>
+        new FileDropDataObject(paths.Select(Path.GetFullPath).ToArray(),
+            new OleDragTelemetry(GetCurrentThreadId(), Environment.CurrentManagedThreadId), null);
+
     internal static WindowsCommandResult ResultForOleExit(int result, int effect)
     {
         var success = result is Succeeded or DragDropDrop or DragDropCancel;

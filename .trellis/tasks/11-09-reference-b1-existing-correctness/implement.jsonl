@@ -1,0 +1,9 @@
+{"file":"docs/reference-improvement-taskbook.md","reason":"Approved B1 REF-01/02/03 scope and acceptance"}
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Mister behavioral reference and GPL clean-room boundary"}
+{"file":"docs/reference-code/download.md","reason":"ABDM then legacy migration authority and handoff invariants"}
+{"file":"docs/reference-code/clipboard.md","reason":"Link panel lifecycle and current/legacy routing"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Deferred ownership, diagnostics, persistence and identity"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official component-first selection"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Production GPUI behavior and lifecycle regressions"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Credential gates, identity and transport lifetime"}
+{"file":".trellis/tasks/11-09-reference-b1-existing-correctness/acceptance-repair.md","reason":"Approved closed-source Cookie, manual pending and stale Copy diagnostic corrections"}

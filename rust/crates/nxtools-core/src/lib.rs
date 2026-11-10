@@ -868,6 +868,30 @@ impl QuickLaunchRowStyle {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickLaunchResultEntrance {
+    Fade,
+    #[default]
+    SlideUp,
+    SlideFromRight,
+    #[serde(other)]
+    None,
+}
+
+impl QuickLaunchResultEntrance {
+    pub const ALL: [Self; 4] = [Self::None, Self::Fade, Self::SlideUp, Self::SlideFromRight];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::None => "无动画",
+            Self::Fade => "淡入",
+            Self::SlideUp => "向上滑入",
+            Self::SlideFromRight => "从右滑入",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QuickLaunchSettings {
     #[serde(default = "default_true")]
@@ -880,6 +904,8 @@ pub struct QuickLaunchSettings {
     pub suppress_in_exclusive_fullscreen: bool,
     #[serde(default)]
     pub row_style: QuickLaunchRowStyle,
+    #[serde(default)]
+    pub result_entrance: QuickLaunchResultEntrance,
     #[serde(default = "default_quick_launch_hotkey")]
     pub hotkey: ClipboardHotKey,
     #[serde(default)]
@@ -898,6 +924,7 @@ impl Default for QuickLaunchSettings {
             file_dialog_search: true,
             suppress_in_exclusive_fullscreen: true,
             row_style: QuickLaunchRowStyle::default(),
+            result_entrance: QuickLaunchResultEntrance::default(),
             hotkey: default_quick_launch_hotkey(),
             indexed_volumes: Vec::new(),
             excluded_paths: Vec::new(),
@@ -2122,6 +2149,45 @@ mod tests {
         assert_eq!(decoded.hotkey, settings.hotkey);
         assert_eq!(decoded.indexed_volumes, settings.indexed_volumes);
         assert_eq!(decoded.excluded_paths, settings.excluded_paths);
+    }
+    #[test]
+    fn quick_launch_result_tween_setting_defaults_and_survives_section_save() {
+        let legacy: QuickLaunchSettings =
+            serde_json::from_str(r#"{"enabled":true}"#).expect("legacy settings");
+        let default_json = serde_json::to_value(legacy).expect("serialize legacy settings");
+        assert_eq!(default_json["result_entrance"], "slide_up");
+        let unknown: QuickLaunchSettings = serde_json::from_str(
+            r#"{"result_entrance":"future_effect"}"#).expect("unknown entrance setting");
+        assert_eq!(unknown.result_entrance, QuickLaunchResultEntrance::None);
+
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-quick-result-entrance-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("test clock")
+                .as_nanos()
+        ));
+        let path = directory.join("config.json");
+        fs::create_dir_all(&directory).expect("create settings directory");
+        AppConfig::default().save_to(&path).expect("write starting settings");
+        for choice in ["none", "fade", "slide_up", "slide_from_right"] {
+            let mut value = serde_json::to_value(QuickLaunchSettings::default())
+                .expect("serialize quick launch settings");
+            value["result_entrance"] = choice.into();
+            let settings: QuickLaunchSettings =
+                serde_json::from_value(value).expect("decode entrance choice");
+            AppConfig::update_quick_launch_settings(&path, settings)
+                .expect("save quick-launch section");
+            let reloaded = AppConfig::load_from(&path).expect("reload saved settings");
+            assert_eq!(
+                serde_json::to_value(reloaded.quick_launch).expect("serialize saved settings")
+                    ["result_entrance"],
+                choice,
+                "setting must survive section save and reload"
+            );
+        }
+        fs::remove_dir_all(&directory).expect("remove settings directory");
     }
 
     #[test]

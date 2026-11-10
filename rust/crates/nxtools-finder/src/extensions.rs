@@ -1,7 +1,7 @@
 use crate::{
     ApplicationEntry, ApplicationSource, ExternalSearchEntry, FinderCatalog, SearchResult,
     SearchResultAction, command_display_line, normalize, prepare_custom_command,
-    unified_search_rank, validate_custom_command_template,
+    validate_custom_command_template,
 };
 use nxtools_core::CustomCommandSettings;
 use nxtools_extensions::{DeclarativeAction, Handler, InstalledPackage, Manifest, PackageRegistry};
@@ -118,7 +118,7 @@ impl FinderCatalog {
         if packages.packages.iter().all(|package| !package.enabled) || limit == 0 {
             return self.search_with_sources_normal(query, external, manual, limit);
         }
-        let mut results = self.search_with_sources_normal(query, external, manual, limit)?;
+        let mut results = self.search_candidates(query, external, manual, limit)?;
         let normalized = normalize(query);
         for package in packages.packages.iter().filter(|package| package.enabled) {
             for handler in package
@@ -162,14 +162,7 @@ impl FinderCatalog {
                 }
             }
         }
-        results.sort_by(|left, right| {
-            unified_search_rank(right)
-                .cmp(&unified_search_rank(left))
-                .then_with(|| left.entry.name.cmp(&right.entry.name))
-                .then_with(|| left.entry.target.cmp(&right.entry.target))
-        });
-        results.truncate(limit);
-        Ok(results)
+        Ok(self.rank_results(results, &normalized, limit))
     }
 
     pub fn search_with_packages(

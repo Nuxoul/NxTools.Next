@@ -1,0 +1,33 @@
+{
+  "id": "download-server-information",
+  "name": "download-server-information",
+  "title": "Download server information and reference comparison",
+  "status": "completed",
+  "scope": "downloads",
+  "package": "nxtools-download",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-11-09",
+  "completedAt": "2026-11-09",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "commit": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "rust/crates/nxtools-download/src/http.rs",
+    "rust/crates/nxtools-download/src/message.rs",
+    "rust/crates/nxtools-download/src/storage.rs",
+    "rust/crates/nxtools-download/src/engine/projection.rs",
+    "rust/apps/nxtools-desktop/src/downloads/task_window.rs",
+    "rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs",
+    "rust/apps/nxtools-desktop/src/assets.rs",
+    "rust/crates/nxtools-download/tests/server_info_contract.rs",
+    "rust/apps/nxtools-desktop/src/downloads/server_information_tests.rs",
+    "rust/apps/nxtools-desktop/src/downloads/new_download_intake_tests.rs"
+  ],
+  "notes": "Source and owned-fixture delivery complete. Existing message-version assertion and Desktop strict-Clippy issues remain recorded; installed and physical/DPI visual acceptance are separate.",
+  "meta": { "design": "design.md", "outcomes": "outcomes.md", "reference": "../../../docs/reference-code/mister-download-manager.md" }
+}

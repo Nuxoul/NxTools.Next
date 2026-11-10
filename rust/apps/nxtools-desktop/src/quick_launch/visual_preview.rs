@@ -11,7 +11,7 @@ fn result(id: &str, name: &str, target: &str, source: ApplicationSource) -> Sear
             source,
         },
         action: SearchResultAction::OpenTarget,
-        subtitle: Some(target.into()),
+        subtitle: (source == ApplicationSource::CustomCommand).then(|| target.into()),
         score: 0,
         activation_count: 0,
         last_activated_at_unix_ms: None,
@@ -114,6 +114,13 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
                         actions.current_level_mut().shell_pending = false;
                         panel.action_mode = Some(actions);
                     }
+                    panel.sync_window_content_size(
+                        if expanded { "synthetic" } else { "" },
+                        window,
+                        cx,
+                    );
+                    // This startup-isolated fixture has no application/native adapter.
+                    window.resize(panel.desired_content_size(window, cx));
                     panel
                 });
                 println!(

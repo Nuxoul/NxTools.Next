@@ -57,8 +57,8 @@ fn polished_results_keep_title_metadata_and_hint_inside_the_row(cx: &mut TestApp
         .expect("search header");
     assert_eq!(
         group.size.height,
-        px(32.0),
-        "released default InputGroup tier inside unchanged header"
+        px(44.0),
+        "released Large Input inside the reference-sized header"
     );
     assert!(group.left() >= header.left() && group.right() <= header.right());
     assert!(group.top() >= header.top() && group.bottom() <= header.bottom());
@@ -94,19 +94,19 @@ fn polished_results_keep_title_metadata_and_hint_inside_the_row(cx: &mut TestApp
     let hint = window
         .debug_bounds("quick-launch-result-shortcut-0")
         .expect("shortcut rail");
-    assert_eq!(row.size.height, px(COMPACT_RESULT_ROW_HEIGHT));
+    assert_eq!(row.size.height, px(LAUNCHER_RESULT_ROW_HEIGHT));
     assert_eq!(hint.size.width, px(48.0));
-    assert_eq!(metadata.top() - title.bottom(), px(4.0));
+    assert_eq!(metadata.top(), title.bottom());
     let icon = window
         .debug_bounds("quick-launch-result-icon-0")
         .expect("fixed icon rail");
-    assert_eq!(icon.size.width, px(26.0));
+    assert_eq!(icon.size.width, px(LAUNCHER_RESULT_ICON_SIZE));
     assert!(title.left() >= copy.left() && title.right() <= copy.right());
     assert!(metadata.left() >= copy.left() && metadata.right() <= copy.right());
     assert!(title.top() >= row.top() && metadata.bottom() <= row.bottom());
     assert!(copy.right() <= hint.left() && hint.right() <= row.right());
-    assert_eq!(title.size.height, px(18.0));
-    assert_eq!(metadata.size.height, px(16.0));
+    assert_eq!(title.size.height, px(LAUNCHER_TITLE_LINE_HEIGHT));
+    assert_eq!(metadata.size.height, px(LAUNCHER_SUBTITLE_LINE_HEIGHT));
     assert_eq!(copy.left(), icon.right() + px(8.0));
     assert_eq!(title.left(), metadata.left());
     assert_eq!(copy.center().y, row.center().y);
@@ -118,7 +118,7 @@ fn polished_results_keep_title_metadata_and_hint_inside_the_row(cx: &mut TestApp
             .expect("fixed search header")
             .size
             .height,
-        px(42.0)
+        px(58.0)
     );
     let second = window
         .debug_bounds("quick-launch-result-row-1")
@@ -720,7 +720,7 @@ fn steward_layout_search_addon_keeps_existing_input_identity_and_focus(cx: &mut 
                 .expect("fixed header")
                 .size
                 .height,
-            px(42.0)
+            px(58.0)
         );
         assert_eq!(
             window
@@ -728,7 +728,7 @@ fn steward_layout_search_addon_keeps_existing_input_identity_and_focus(cx: &mut 
                 .expect("default group tier")
                 .size
                 .height,
-            px(32.0)
+            px(44.0)
         );
     }
 }

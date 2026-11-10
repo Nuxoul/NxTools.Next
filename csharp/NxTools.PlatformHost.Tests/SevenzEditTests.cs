@@ -161,7 +161,7 @@ internal static class SevenzEditTests
                 Format = "seven_z", Name = "editable.7z", Level = "fast", Solid = solid, EncryptHeader = header,
                 Password = password is null ? null : Encoding.UTF8.GetBytes(password), StripSingleRoot = true, ExcludePatterns = [], TestAfterCreate = false } }, password));
         }
-        internal async Task<ArchiveJobTerminal> Run(ArchiveJobSession jobs, ArchiveJobRequest request, string? password = null, bool conflict = false, Action<ArchiveJobCommand>? beforeDispatch = null, Action? afterTerminal = null, string conflictDecision = "overwrite", bool applyToAll = false, int? expectedConflictPrompts = null)
+        internal async Task<ArchiveJobTerminal> Run(ArchiveJobSession jobs, ArchiveJobRequest request, string? password = null, bool conflict = false, Action<ArchiveJobCommand>? beforeDispatch = null, Action? afterTerminal = null, string conflictDecision = "overwrite", bool applyToAll = false, int? expectedConflictPrompts = null, bool sourceRefusal = false)
         {
             var index = ++sequence;
             if (request.Kind == "modify") {
@@ -169,7 +169,8 @@ internal static class SevenzEditTests
                 File.WriteAllText(Path.Combine(Root, "evidence", index + ".before.sha256"), Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(Archive))));
             }
             var command = Start(request); beforeDispatch?.Invoke(command);
-            Check(jobs.Dispatch(Wire(command)).Success, "native job admission");
+            var admission = jobs.Dispatch(Wire(command));
+            Check(sourceRefusal ? !admission.Success && admission.Error == "source_unavailable" : admission.Success, "native job admission");
             var prompts = 0; var passwordPrompts = 0; var conflictPrompts = 0;
             var phases = new List<string>();
             while (true)
@@ -309,8 +310,8 @@ internal static class SevenzEditTests
         try {
             var refused = await fixture.Run(jobs, fixture.Modify(current.Context, "delete", [current.Entries.First().Ordinal]),
                 beforeDispatch: _ => writer = new FileStream(fixture.Archive, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite),
-                afterTerminal: () => { writer?.Dispose(); writer = null; });
-            Check(refused.Code == "source_changed", "held writable source refused"); fixture.Unchanged(before, refused);
+                afterTerminal: () => { writer?.Dispose(); writer = null; }, sourceRefusal: true);
+            Check(refused.Outcome == "rejected" && refused.Code == "source_unavailable" && refused.NativeErrorCode is 32 or 33, "held writable source refused at reservation"); fixture.Unchanged(before, refused);
         } finally { writer?.Dispose(); }
         var stale = current.Context;
         Published(await fixture.Run(jobs, fixture.Modify(current.Context, "rename", [current.Entries.Single(e => e.Name == "keep.txt").Ordinal], "renamed.txt")));

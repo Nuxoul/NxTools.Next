@@ -37,7 +37,7 @@ pub struct ArchiveCommand {
 pub(crate) fn parse(args: Vec<String>) -> Result<ArchiveCommand, CliError> {
     let syntax = || {
         CliError::syntax(
-            "归档用法：archive list|test <source> [--json] [--codepage N]；archive extract <source> --dest <directory> [--conflict fail|skip|overwrite|rename] [--create-destination] [--json]",
+            "压缩包用法：archive list|test <source> [--json] [--codepage N]；archive extract <source> --dest <directory> [--conflict fail|skip|overwrite|rename] [--create-destination] [--json]",
         )
     };
     let action = match args.first().map(String::as_str) {
@@ -65,7 +65,7 @@ pub(crate) fn parse(args: Vec<String>) -> Result<ArchiveCommand, CliError> {
     while index < args.len() {
         let option = args[index].as_str();
         if !seen.insert(option) {
-            return Err(CliError::syntax("归档选项不能重复"));
+            return Err(CliError::syntax("压缩包选项不能重复"));
         }
         match option {
             "--json" => result.json = true,
@@ -200,7 +200,7 @@ fn emit(report: &ArchiveReport, json_output: bool) -> Result<(), CliError> {
     use std::io::Write;
     let output_error = || CliError {
         exit_code: EXIT_OPERATION_FAILED,
-        message: "无法写出归档命令结果".into(),
+        message: "无法写出压缩包命令结果".into(),
     };
     if json_output {
         let stdout = std::io::stdout();
@@ -221,7 +221,7 @@ fn emit(report: &ArchiveReport, json_output: bool) -> Result<(), CliError> {
             }
         }
         println!(
-            "归档 {} 完成；request_id={}",
+            "压缩包 {} 完成；request_id={}",
             report.command, report.request_id
         );
         println!("{}", report.result);
@@ -232,7 +232,7 @@ fn emit(report: &ArchiveReport, json_output: bool) -> Result<(), CliError> {
             .map(|e| e.code.as_str())
             .unwrap_or("operation_failed");
         eprintln!(
-            "归档 {} 失败：{code}；request_id={}；result={}",
+            "压缩包 {} 失败：{code}；request_id={}；result={}",
             report.command, report.request_id, report.result
         );
     }

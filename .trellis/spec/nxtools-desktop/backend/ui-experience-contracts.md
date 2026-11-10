@@ -386,6 +386,9 @@ Evidence: `repo:rust/apps/nxtools-desktop/src/archive/model_drag.rs`,
 descriptors or a member-specific String error. `preview_visible`, `observe_preview_selection`,
 `sync_preview_selection`, `preview_selection_matches` and `suspend_preview` retain the original
 generation/fingerprint seam. UiState has no enablement field; legacy show_preview is ignored.
+`BrowserSlot.preview_lease: Option<Lease>` owns the original visible Ready lease. `decode_preview`
+transfers it through `complete_preview(...,lease,cx)` only after actual prepare returns and the
+original selection/generation owner still matches. `cancel_preview` takes/releases it once.
 ### 3. Contracts
 Initially there is no right preview slot, handle or reserved width. A supported single-file
 selection automatically adds the existing official resizable preview panel; no toolbar/View-menu/
@@ -395,6 +398,14 @@ cache, cancellation and passive document/image rendering. Empty/unsupported/mult
 selection, tab suspend, source invalidation and close clear prior content and reject stale results.
 Cross-entity dispatch is next-turn and rechecks the fingerprint; preview never moves list/primary
 input focus. Name mode fills the measured viewport before/after preview and splitter changes.
+Successful current Ready retains the sealed native lease until selection/A→B→A, refresh/codepage,
+tab suspension, close or disconnect retires it. Failed/stale decode completion releases the exact
+original operation/session/generation/lease once; lost application owner sends that release directly.
+An in-flight decoder still owns its lease until actual completion, even after browser retirement.
+No cache-hit callback synchronously re-enters a leased GPUI entity. The original native cache may
+hold a separate drag consumer only for exact source/session/generation/snapshot/codepage/depth/MOTW/
+ordinal and independently valid encrypted-drag authorization. Preview closure releases only its share.
+See [retained demand runtime](../../nxtools-archive/backend/product-read.md#scenario-drag-scoped-retained-materialization).
 
 Freeze files by original ordinal and directory descendants by original subtree. Missing optional
 metadata, unknown size or resolvable case/name/file-directory conflicts do not veto selection.
@@ -410,7 +421,8 @@ Official Kit0.8.0 Empty/EmptyHeader/EmptyTitle/EmptyDescription retains stage-sp
 the public title child carries a nonfocusable semantic Label. Existing retry/source controls are
 Small outlined Buttons outside Toolbar.child transformations. File byte limit, read resources,
 text lines, image dimensions, decode memory and document limits are distinct results; native
-resource failure does not imply an oversized selected file. Limits are unchanged.
+resource failure does not imply an oversized selected file. Configurable member budgets follow
+[the frozen preview budget contract](archive-preview.md); source/spool/solid-work limits stay separate.
 Download PopupMenu builds original capability-driven actions first, then appends the original
 single-selection View Details callback last, without a leading separator or enablement change.
 Existing correlated preview/drag native lifecycle diagnostics remain; no frame/payload probes.
@@ -424,6 +436,8 @@ Existing correlated preview/drag native lifecycle diagnostics remain; no frame/p
 | Unrepresentable original path/link/special kind | Specific member/reason; whole selection rejected |
 | Native read resource limit | Read-stage title, not file-size title |
 | Actual byte/line/image/document limit | Corresponding stage-specific visible title |
+| Current visible Ready | Retain original native lease; no eager Release after decode |
+| Failed/stale/owner-lost decode | Exact original lease Release once; no stale Ready |
 | Download single/multiple selection | Details last only where originally available |
 ### 5. Good/Base/Bad Cases
 Good: file a plus A/x and a/y yields one renamed directory containing both original descendants.
@@ -435,10 +449,15 @@ Production ListItem/Tree gesture-to-command, complete ordinal and deferred lifec
 actual GPUI preview state titles, focus, tab/close/cancel, legacy loader/reopen, absent/revealed pane,
 Tree splitter in details/name mode, complete selection and download menu callback. Real worker/native
 IStream regressions are separate from simulated GPUI and physical Explorer/installed/DPI/user visuals.
+`repo:rust/apps/nxtools-desktop/src/archive/opt04_preview_tests.rs` asserts real background prepare,
+visible Ready with no Release, exact once-only selection/refresh/tab/close release, A→B→A stale
+rejection and invalid-UTF8 failure. Preserve decode-barrier close and original password-overlay tests.
 ### 7. Wrong vs Correct
 Wrong: default enablement true while persisting an off switch, reject OutputCollision before a
 source-bound lease, or test only strings. Correct: no enablement state, original selection-driven
 controller, presentation-only descriptor naming and executable owner-boundary regressions.
+Wrong: decode success -> Release -> visible Ready. Correct: decode owns lease -> current Ready
+slot takes ownership -> existing retirement releases; stale/failed completion releases directly.
 
 ## Scenario: Current Quick Launch result availability
 ### 1. Scope / Trigger
@@ -457,7 +476,7 @@ Current nonempty local/merged/extension results are immediately visible and acti
 for all providers or their terminal batch. Keep the existing65ms input coalescer, matching/ranking,
 final merge, provider execution revalidation and once-only close-on-acceptance behavior. During a
 new query, retained old rows are visual continuity only: Enter, shortcut, pointer and action mode
-cannot execute them. Empty current pending batches preserve that disabled presentation; current
+cannot execute them. Empty current pending batches preserve that noninteractive presentation; current
 nonempty batches replace it and enable only current rows. Old generation/session/Input, hidden or
 closed windows, disconnect and retired extension providers retain their original guards.
 Existing correlated provider/publication diagnostics distinguish row availability from complete;
@@ -468,7 +487,7 @@ indexed-service computation latency.
 | --- | --- |
 | Current local row, index provider unfinished | Visible/actionable; complete remains false |
 | Current nonterminal index batch has rows | Publish/rank now; real Enter/action works |
-| Current empty pending batch / retained old rows | Keep old display disabled; no stale action |
+| Current empty pending batch / retained old rows | Keep readable prior content and first-row selection paint; no stale action |
 | Current nonempty extension batch | Only current merged rows enabled, no retained ordinary rows |
 | Old generation / closed panel / retired provider | No publication or action |
 | Current terminal empty batch / disconnect | Original final-clear/error lifecycle |
@@ -486,3 +505,344 @@ publication timings are not live service, physical keyboard or installed-product
 ### 7. Wrong vs Correct
 Wrong: search_pending means any provider has unfinished work. Correct: current rows establish
 availability; complete tracks provider termination; stale retained rows grant no execution authority.
+
+## Scenario: Quick Launch continuous refresh and default selection
+### 1. Scope / Trigger
+User-approved Listary-informed result hierarchy and refresh/selection correction.
+Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/panel.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/retained_text.rs`,
+`repo:docs/reference-code/quick-launch-listary-results.md`.
+### 2. Signatures
+Original `QuickLaunchPanel::{schedule_search,run_search,replace_results,select_result,move_selection}`
+owns `selection_explicit` and `committed_query`; existing immutable `QuickLaunchResults` owns display text.
+### 3. Contracts
+New input resets default selection to rank zero before dispatch. Default selection follows the first
+ranked row across current batches. Explicit pointer/keyboard choice follows identity within that query,
+including choosing the already-selected first row; disappearance falls back to default-first.
+Extension publication delegates selection to the same panel, without a second selected-ID restore.
+Retained prior-query rows keep normal foreground, committed-query highlights and first-row background;
+they remain disabled for execution, action mode and preview. Pending arrows/shortcuts cannot move the
+old selection. Current nonempty results stay immediately usable under the availability contract above.
+Application rows without explicit subtitles render one centered16DIP title; other rows use15DIP
+titles and12DIP parent-path/description text. Normal launcher bodies are52DIP with32DIP icons;
+compact action and attached-dialog metrics remain40DIP. Retain4-or0external gap and620DIP width.
+Launcher search header is58DIP with official Input Large44DIP,26DIP text/34DIP line,4DIP vertical
+padding and24DIP search icon. Keep the original InputState and single visible input frame. Public
+Input::with_size(Large) supplies the single-line tier; Input::h is multiline-only in this release.
+Official Label middle ellipsis preserves full retained strings, accessible labels, tooltip and targets.
+Ordinary typed search uses a stable620×530DIP expanded client with the existing470DIP results viewport
+and monitor clamp. Pending/empty/error/current provider completion and result counts do not resize it;
+the existing error footer stays inside that budget. Empty input/hide/reopen use60DIP search-only;
+action and recent-directory modes retain their own geometry. The original panel observer schedules
+native sizing outside render/owner leases. Existing C# SetWindowBounds/SwpNoActivate/readback,
+one correlated in-flight resize, origin and preview docking remain. Hidden/retired callbacks cannot
+replay a size. No native bounds animation or new protocol.
+`QuickLaunchResultEntrance::{SlideUp,SlideFromRight,Fade,None}` persists through the original
+section-owned saver; missing defaults SlideUp, failed save leaves live state unchanged. Released
+Base motion::Timing/Easing::EaseOut supplies120ms finite content-only Tween,8DIP up or12DIP left
+travel with fade. Each identity is admitted once per query generation, including delayed batches;
+offscreen arrivals settle immediately. Stable row hit/focus/selection rails remain. Repaint, reorder,
+icon completion, selection and virtualization do not replay motion. New query/hide/close/disconnect,
+None and reduced/unknown policy settle immediately and retain no frame/timer owner. Diagnostics
+remain bounded generation/count/state events; no query/payload/frame logging.
+### 4. Validation & Error Matrix
+New query -> default-first/old actions inert; current reordered batch -> rank zero unless explicit;
+explicit identity removed -> first; pending empty -> retained paint; error -> existing status and
+old-row rejection; app subtitle absent -> no second line; explicit subtitle -> preserve verbatim.
+### 5. Good/Base/Bad Cases
+Good: a better late result becomes default-first but cannot steal a deliberate choice. Base: ordinary
+Enter opens a current result once. Bad: gray/clear every retained row or preserve default identity
+across queries, or enable stale rows solely to avoid their disabled appearance.
+### 6. Tests Required
+`repo:rust/apps/nxtools-desktop/src/quick_launch/refresh_tests.rs` drives actual Input, batch replacement,
+explicit first/keyboard selection, pending selected paint and application/file row bounds; also
+0/1/many publication sizes, overflow last-row visibility, error footer, Unicode middle truncation,
+both gap styles and coalesced native command/closed-session behavior. TestWindow resize requires
+simulate_resize to deliver the native viewport event and device-pixel assertions use its real scale.
+Retain old-row Enter/shortcut/pointer/action rejection, extension freshness, IME and focus tests.
+Native-query resize tests reject count/provider-driven geometry changes and verify stable first reveal.
+Tween tests cover late batches, once-only identity admission, selection/reorder/icon/scroll, retirement,
+reduced/None modes, real paint offsets/opacity and finite idle settling. Header remains58/44DIP with
+original input/focus and unclipped34DIP text.
+Compiled synthetic paint/command boundaries are separate from physical HWND/DPI/user acceptance.
+### 7. Wrong vs Correct
+Wrong: every selected index means deliberate choice, and pending removes selection paint.
+Correct: explicit intent controls identity preservation; pending controls execution, not text opacity.
+
+## Scenario: Asynchronous download batches and destination conflict actions
+### 1. Scope / Trigger
+Download list batch/menu actions, existing delete confirmation and failed task windows. Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/batch.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/conflict.rs`, `repo:rust/apps/nxtools-desktop/src/main_window/download_page.rs`.
+### 2. Signatures
+`DownloadApplication::{batch_action,batch_busy,batch_loading,resolve_destination_conflict}`; `DownloadApplicationEvent::SelectBatchFailures { task_ids }`; `BATCH_DESTRUCTIVE_CONFIRMATION_THRESHOLD=20`; engine `request_batch_background` and `RetryWithAutoRename` are the only new dispatch seams.
+### 3. Contracts
+Install one correlated pending batch before original runtime blocking dispatch; duplicate submissions are ignored until actual completion. Completion crosses cx.defer, validates operation ID, clears busy, refreshes the authoritative list and defers one NotificationCenter summary. Failed-only action defers an application event, then MainWindow defers mutation of the original selected-ID set. No banner or extra notification manager.
+Official Small icon Buttons keep ToolbarGroup.content composition and loading/disabled; related PopupMenuItems use official disabled semantics. Multi-selection exposes separate list-only Remove and file-deleting RemoveWithArtifact entries in the original toolbar/menu; the file-deleting entry follows task_removal_deletes_file. Cancel and RemoveWithArtifact at least20 deduplicated targets reuse DeleteDownloadView and its keyed native-close lifecycle with a quantity-labelled title. Closing/cancelling confirms nothing; list-only Remove never confirms. A batch confirmation cannot reuse a single-file action payload. Native close releases busy and notifies the original owner.
+Before opening a destructive batch confirmation, close every target's existing single-item confirmation, not only the first target's window. Preserve unrelated single-item confirmations and the existing keyed native-close identity checks. Cancelling or completing the batch leaves no target-bound single-item confirmation behind. `batch_feedback_retires_every_target_confirmation_but_keeps_unrelated_window` drives actual Cancel/Confirm buttons with first/nonfirst target windows and one unrelated window.
+Typed destination conflicts display explicit same-name reason and a separately truncated/full-semantic filename. Original failed440x196 client, fixed footer, keyed generation, placement and activation owners remain. Official Small primary numbered retry and outlined Cancel are deferred to the engine; ordinary nonconflict failure actions remain. Conflict presentation/choice/result share task-derived correlation identity with the retry command; diagnostics exclude names, paths and request payloads.
+The user-approved2026-11-01 final U2 scope is numbered retry and Cancel; it supersedes the proposal's overwrite recommendation. The current conflict flow never replaces existing destination bytes.
+### 4. Validation & Error Matrix
+Busy/duplicate -> no second dispatch.19destructive targets -> no batch confirmation;20 -> one existing confirmation. Cancel/X -> no task mutation and busy released. Partial result -> successes retained, exact failed count and failed-only action. Worker/dispatch failure -> terminal busy cleanup, every original deduplicated target remains selectable through the existing notification ingress. Long filename/error -> body truncation/scroll, footer never displaced. Late batch result cannot retire a different operation.
+### 5. Good/Base/Bad Cases
+Good:300 actual removals await SQLite off UI while the next production window turn runs; final list equals engine. Base: one list-only removal has no confirmation. Bad: async syntax around blocking GPUI work, notify/update another leased owner synchronously, or label queue acceptance as completed file publication.
+### 6. Tests Required
+`downloads::batch_tests` covers real-store wait/production window, duplicate actual work,19/20confirmation cancellation and partial-result feedback; `downloads::batch::tests` covers whole-batch rejection/invalid-result failed-only actions. `main_window::download_page` checks official busy controls, production file-deleting toolbar/menu and failed-notification selection on original rows. `downloads::conflict_tests` exercises Light/Dark440x196 real view bounds, long filename semantics and actual persisted-conflict retry/cancel clicks without network. Compiled/TestApp results are not screenshots, physical input, native DPI, installed or user visual acceptance.
+### 7. Wrong vs Correct
+Wrong: UI `handle_command(Batch)` followed by synchronous toast/entity updates. Correct: pending ID -> original spawn_blocking -> next-turn matching result -> original refresh and deferred NotificationCenter/selection action.
+
+## Scenario: Quick Launch observable keyboard-hook recovery
+### 1. Scope / Trigger
+PlatformHost observes hook install failure, owned-thread exit or reinstall; Quick Launch displays
+the new status without changing its original summon/recording/persistence controller.
+### 2. Signatures
+`QuickLaunchKeyboardHealthChanged {correlation_id,state,native_error_code}`;
+`QuickLaunchApplication::{keyboard_health_warning,reenable_keyboard_hotkey}`;
+`PlatformBridge::quick_launch_panel_hotkey_available`; `Settings -> SettingPage -> SettingGroup -> SettingItem::render`.
+### 3. Contracts
+Only enabled double-Control outside recording shows warning; one deferred NotificationCenter
+notice belongs to each unavailable episode. If a fault arrives during recording, retain it
+without notifying; when the native recording-stop ACK makes double-Control relevant again,
+show Alert and notify once. Repeated failures do not restart that notice; recovery resets
+eligibility. Original ConfigureQuickLaunch builder/pending owner registers caller ID before
+enqueue, matches receipt before clearing. No hook-loss polling. Released Component0.8.0
+`Alert::warning(id,reason).title("双击 Ctrl 已失效")` uses Small size and numeric native code,
+not arbitrary exception payload. Direct child of layout div
+`Button::new(id).label("重新启用").outline().with_size(Size::Medium)` stays outlined, official
+32-DIP tier. `.loading(bool).disabled(bool)` matches actual retry admission while either the
+automatic ConfigureQuickLaunch or a manual retry is pending. No Toolbar.child ghost adaptation.
+### 4. Validation & Error Matrix
+`reinstalled`/matching successful retry hides Alert; an intervening health event advances the
+revision and an older retry result cannot clear its later failure. A successful ordinary
+ConfigureQuickLaunch clears a stale Hello capability warning only, never a newer concrete
+native failure. Failure keeps retryable warning; wrong ID is ignored. Disconnect takes an
+in-flight retry before retiring state and emits one `quick_launch.keyboard_reenable.completed`
+terminal with its original correlation ID, `success=false`, `failure_kind=disconnected` and
+elapsed milliseconds (no native code exists for disconnection). A completed result must not
+produce a second terminal. Reconnect uses Hello capability snapshot, not guessed hook state.
+Older desktop rejects unknown event and closes that pipe; host emits the additive event only
+after HelloAck accepts `quick_launch_keyboard_health_v1`.
+### 5. Good/Base/Bad Cases
+Good: actual Button click enqueues one ConfigureQuickLaunch and matching success hides Alert.
+Base: original hotkey reset/recording and custom/disabled settings remain authoritative.
+Bad: pretend the hook is healthy from a nonzero handle, infer silent removal, or enqueue twice.
+### 6. Tests Required
+Protocol roundtrip/unknown event rejection, IPC negotiation and generation-scoped Hello snapshot,
+production GPUI/TestApp Alert/real click/duplicate/wrong/failure/reconnect lifecycle, plus
+automatic-configuration busy-button parity, recording fault -> native-stop ACK -> Alert and
+one notice, and captured correlated single disconnect terminal. Owner tests also cover
+Reinstalled -> ThreadExited -> delayed success and ordinary auto configuration recovering
+Hello-unavailable without overwriting a newer native failure. Evidence:
+`repo:rust/crates/nxtools-protocol/src/lib.rs#QuickLaunchKeyboardHealthChanged`,
+`repo:rust/crates/nxtools-ipc/src/lib.rs#handle_connection`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch.rs#reenable_keyboard_hotkey`,
+`repo:rust/apps/nxtools-desktop/src/main_window/quick_launch_page.rs#render_quick_find_control`,
+`repo:rust/apps/nxtools-desktop/src/main_window/tests.rs#quick_launch_keyboard_health_auto_configuration_busy_matches_retry_button`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/tests.rs#u3_followup_recording_fault_notifies_once_when_double_control_resumes`.
+### 7. Wrong vs Correct
+Wrong: second hotkey controller, synchronous cross-entity notice, stale ACK clears new state,
+or a clickable button whose owner rejects a pending automatic configuration.
+Correct: existing owner + next-turn episode notification + matching visible busy state and
+original caller-owned pending ID closed by either result or disconnect.
+
+## Scenario: Per-volume index maintenance in Settings
+### 1. Scope / Trigger
+Optional index maintenance projection in Quick Launch Settings → Index. Popup620×410, placement, focus, show/hide and ranking remain unchanged.
+### 2. Signatures
+`volume_scope_row(theme,cx,selector,title,metadata,VolumeScopeRowState,on_click)` uses the original row/selection/save owner. `VolumeScopeRowState` carries maintenance, checked and show_divider; maintenance is the protocol's optional typed value.
+### 3. Contracts
+Official Component0.8.0 Small `Tag::info/warning/success` owns status visuals; its public child contains official Label with matching official semantic foreground,10DIPtype/14DIPline height. Layout wrappers expose the same drawn text via Label role/aria_label/TestSupportExt. Status labels are 首次建立/正在重建/就绪. Rebuild detail includes 正在重建，搜索结果可能不完整 and the typed readable reason; tooltip retains full detail. Original40DIProw, checkbox, focusable single action and deferred save remain. Missing maintenance retains196DIPlegacy metadata rail; present state shares title/count/Tag plus optional detail. Ready empty volumes show0项 rather than 尚未建立索引.
+### 4. Validation & Error Matrix
+None -> legacy copy/layout; InitialBuilding -> informational Tag; Rebuilding -> warning Tag plus reason, never error treatment; Ready -> success Tag including empty snapshot. Actual faults retain the original error presentation. Long detail truncates inside its row with full tooltip.
+### 5. Good / Base / Bad Cases
+Good: wrapped journal shows 正在重建，搜索结果可能不完整 · 日志已覆盖 while last-good remains available. Base: old omitted-field status keeps original geometry. Bad: custom painted badge, new popup strip, or inferred Ready from item count.
+### 6. Tests Required
+`u4_index_settings_renders_per_volume_maintenance_within_minimum_width` renders real MainWindow Index Settings at920×480 in Light/Dark, asserts mounted Tag/description containment and actual text snapshots, scrolls the original viewport and pointer-toggles one original volume command. Seed a temporary config file so the original durable section-save can admit synchronization. Retain automatic/explicit selection, keyboard and ordinary-rem gates. Native DPI/accessibility/user visual acceptance is separate.
+### 7. Wrong vs Correct
+Wrong: call a controller directly and call it a production-page interaction test. Correct: render the original page, expose the row inside the actual window, send pointer input, and assert exactly one original saved settings command.
+
+OPT-07 browser presentation follows [browser workflows](archive-browser-workflows.md): original Root Dialog child and fixed DialogFooter, stable query InputState, Checkbox::on_click, official virtual ListItem and Medium outlined actions. Query/RowId/final-submit and preview/readiness transition caches preserve the original lifecycle above. Unified batch/details/password decisions follow [batch consent](archive-batches.md#scenario-opt-07-unified-surface-and-protected-consent); controlled bounds/callback evidence remains distinct from physical/user acceptance.
+
+## Scenario: Compact new-download intake and one-shot clipboard prefill
+### 1. Scope / Trigger
+User-approved2026-11-05 URL-only Add Download window. ABDM EnterNewURLPage -> BaseEnterNewURLComponent.onPageOpen is the first-open/single-link reference; legacy retains explicit Continue/probe and confirmation. See [download reference](../../../../docs/reference-code/download.md).
+### 2. Signatures
+`PlatformCommand::ReadClipboardText` encodes `{"command":"read_clipboard_text"}` with no payload. C# `ClipboardTextReader.ReadOnSta(CancellationToken,Func<string>?)` runs on the original BoundedStaOperationRunner; standard CommandResult carries success/error/native_error_code/data. `DownloadApplication::{request_new_download_clipboard,handle_new_download_clipboard}` and `NewDownloadView::{clipboard_prefill_eligible,prefill_clipboard_url}` retain the original owners.
+Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/clipboard_prefill.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/new_download_view.rs`, `repo:csharp/NxTools.PlatformHost/Windows/ClipboardTextReader.cs`.
+### 3. Contracts
+Initial client560x136 supersedes compact560x176 only. One official0.8.0 Medium InputGroup/default32px frame contains the retained URL InputState, leading official Link Icon and trailing XSmall ghost InputGroupButton24px. Idle guidance and separate label rail are absent; actual probing/error state retains bounded body scrolling and the original fixed44px footer. Continue/Cancel are adjacent on the right. Confirmed Form/Field, ordinary/media clients, native hidden-target handoff, placement, activation and deferred focus remain unchanged.
+
+The leading Link uses the complete official assets enum but is not in Kit0.8.0's default component asset subset. Compose the selected released `icon_assets!` source with NxToolsAssets/default Assets; do not embed the full catalog, alias another glyph or delete the official addon inset to conceal a missing SVG. The production loader and prefix-click/Home insertion regression must both pass; enum compilation and geometry alone do not prove icon visibility.
+
+Only creation of a manual blank window requests one read; reuse merely activates it. Install pending caller ID before dispatch. Native reads Unicode text on one bounded STA with2second logical wait; maximum65536UTF16code units keeps worst-case JSON escaping within the existing1MiB envelope. No truncation, watcher, history lookup, setting dependency, clipboard writes or automatic retry. Rust waits at most3seconds and retires the matching request only. Read failure is quiet; manual entry/paste remains available.
+Rust chooses exactly one valid HTTP/HTTPS candidate, preserving its text; no link or multiple links leave the input untouched. Prefill never probes/submits/downloads. URL InputEvent::Change increments an edit revision, including edit-then-clear. Deferred result application checks the original window/weak view, zero edit/probe generation, blank URL, no external source/probe and no active handoff/probe/submit. Closed/reopened/replaced drafts and disconnected commands cannot receive stale text.
+Diagnostics share the caller ID: Rust download.clipboard_prefill.started/finished records fixed outcome and elapsed; original C# command.received/completed retains native error/elapsed/has_data. No clipboard text, URL or request context is logged.
+### 4. Validation & Error Matrix
+Single link -> fill once/no work; empty/nonlink/unsupported scheme/multiple links -> no fill. Native busy/failure/too-large/cancel, queue refusal, timeout and disconnect -> retire/quiet/manual input intact. Changed revision, probe/handoff or original-window retirement -> no write. Repeated Open -> same window/no second read. Browser/Blob supplied source -> no automatic clipboard read and original source/context preserved.
+### 5. Good / Base / Bad Cases
+Good: copied link fills the original focused input while Continue remains explicit. Base: unavailable clipboard leaves a compact blank form. Bad: select an arbitrary link, overwrite an edited-then-cleared draft, read capture history instead of current clipboard, or auto-submit from a clipboard result.
+### 6. Tests Required
+`repo:rust/apps/nxtools-desktop/src/downloads/new_download_intake_tests.rs` drives original Open, typed request/result, stable Input entity, reuse, close/reopen, actual edits and failure/disconnect with zero task/probe effects; production bounds assert136px, absent idle guidance and adjacent right-side actions. Existing14/16/18Root, keyboard/IME, manual paste, spinner/reduced-motion, confirmation/media and fixed-footer tests remain. `repo:csharp/NxTools.PlatformHost.Tests/ClipboardTextTests.cs` injects synthetic text on the actual bounded STA and checks cancellation, HRESULT/privacy, empty and maximum/over-maximum text plus detached command-reader behavior. Protocol roundtrip checks the no-payload command. Controlled fixtures do not establish live clipboard/DPI/provider/installed or user visual acceptance.
+### 7. Wrong vs Correct
+Wrong: read on every render/activation and call begin_probe after filling. Correct: one original-window creation -> pending ID -> C# read -> next-turn eligible original InputState update, with explicit Continue unchanged.
+
+Continuous-frame assertions advance the official InputGroup `duration_fast` on the TestApp executor before sampling; its border/background state transition uses `background_executor().now()`. Reduced motion remains immediate, inactive surfaces must settle, and only the active probe Spinner may sustain frames. Product motion tokens and vendor code remain unchanged.
+
+## Scenario: Download-category extension pills
+### 1. Scope / Trigger
+User-provided removable wrapping extension-rule reference; existing selected-category editor only.
+### 2. Signatures
+`DownloadCategoryEditor::{extension_input,extension_editing,extension_values}`;
+`DownloadSettingsView::{category_extension_field,subscribe_category_extensions,defer_extension_edit}`.
+Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/category_extensions.rs` and
+`repo:rust/apps/nxtools-desktop/src/downloads/settings_view.rs`.
+### 3. Contracts
+Existing Settings/Form/Field owns the surface. Public0.8.0 secondary outlined rounded Tag/Medium
+hosts an official XSmall ghost removal Button; Small outlined Add and32DIP Input retain their
+official focus/actions. Tags wrap/scroll in a bounded area; category action/footer remains reachable.
+Original unsaved extension InputState remains authoritative; pending new input is a stable entity.
+Enter/button confirmation strips leading dots/folds ASCII/deduplicates and retains compound suffixes.
+Escape/Cancel discards only pending text and returns Add focus. Explicit Apply includes pending text;
+close does not write. Deferred input writes run outside the leased settings owner, bound to current
+category ID/value and saving state. URL-rule AND semantics, category order/directories and future-task
+classification remain unchanged. Local edits do not introduce IPC or payload diagnostics.
+### 4. Validation & Error Matrix
+Duplicate/empty -> no duplicate or empty rule. Removed/deselected category or saving -> no stale
+mutation. Save failure -> original retained draft/error; no new persistence owner. Many rules ->
+real bounded scroll, not an enlarged window or clipped actions.
+### 5. Good / Base / Bad Cases
+Good: .ZIP and zip add once; tar.gz remains one rule; remove changes only the unsaved category.
+Base: original explicit Save/Cancel and rule matching. Bad: custom painted close control, mutation
+inside an input callback that reenters its entity, or tag edit immediately persisting settings.
+### 6. Tests Required
+Production category_extension_* tests cover pointer removal/no autosave, real scroll-to-Add,
+Enter/dedup/compound suffix/pending Apply projection, Escape and saving-disabled removal. Original
+category layout/search and settings picker/Apply/Cancel/failed-persistence/sort preservation remain.
+Compiled scene assertions do not certify installed, physical/DPI or user visual acceptance.
+### 7. Wrong vs Correct
+Wrong: a debug rectangle means an actionable visible button. Correct: ensure the actual control
+lies in both the form viewport and window content above its fixed footer, then click/type and verify
+the original draft without disk effects. Reference: [download](../../../../docs/reference-code/download.md).
+
+## Scenario: Link-panel current settings govern ordinary activation (B1 REF-01)
+### 1. Scope / Trigger
+User-approved ordinary-row routing supersedes the historical settings-independent row action. Explicit named Copy/open and local target behavior retain their original owners.
+### 2. Signatures
+`ClipboardApplication::dispatch_link_panel_route(route,target,target_kind,value_length,ordinary,cx)` reads current `config.clipboard.link_panel_copy_only` / `link_panel_auto_open_browser` only for ordinary activation. `forget_link_panel_if_current(window)` guards deferred callbacks. Existing setters and clipboard-section persistence remain authoritative.
+### 3. Contracts
+Copy-only wins for Web/file/directory. Otherwise ordinary Web activation with auto-open disabled copies without a Shell/browser command; enabled Web uses original Shell boundary. Local file reveal/directory open remain unchanged when copy-only is false. Explicit Copy always copies; named 打开链接/打开文件位置/打开文件夹 bypass automatic settings and do not write the clipboard. Production official ListItem pointer and Enter/Space use the same route, not a render-time settings snapshot. Close the owning window locally, then defer cross-entity application dispatch; no synchronous leased-view reentry or direct native launch in GPUI. A retired window's callback cannot clear a reopened panel. Reuse, focus, timers, IME guards, placement and generation retirement remain original owners.
+
+Composition stays locked Kit0.8.0 ListItem/Label/StatusBar with official XSmall ghost Copy/open Buttons, distinct accessible names, flex-shrinking text and original420DIP panel/28DIP row. No Toolbar child adaptation, download action or painted ordinary-control substitute. Low-frequency copy/open lifecycle events retain correlation, target kind/length, fixed state/reason and elapsed/native result code without clipboard text, URL or path.
+
+Explicit Copy emits copy_started before local close, then exactly one same-correlation terminal in the original deferred callback. Current or ownerless Copy writes once and emits copy_completed; an upgraded owner's stale window guard leaves clipboard/window/platform commands untouched and emits copy_cancelled with fixed reason=panel_replaced and elapsed_ms. No payload, extra deferred turn, retry or synchronous cross-entity update.
+### 4. Validation & Error Matrix
+copy_only=true -> clipboard bytes, zero open commands. copy_only=false + Web auto_open=false -> clipboard bytes, zero browser commands. Local targets -> original typed Shell action. Explicit named open -> original action independent of automatic flags. Stale deferred close/action -> no replacement mutation. Failed settings persistence -> existing error owner, no storage replacement.
+### 5. Good/Base/Bad Cases
+Good: settings change while the panel is open is honored at the actual click. Base: non-copy-only local file reveals and directory opens. Bad: row captures stale booleans during render, auto_open=false still launches a browser, or an old callback clears a new panel.
+### 6. Tests Required
+Production ListItem pointer and Enter/Space matrix asserts actual GPUI clipboard bytes and typed platform commands, not source tokens. Explicit actions, local targets, focus/reuse, persisted current settings and stale close/reopen are covered by ref01_ and existing clipboard/link-panel lifecycle tests. Ordinary-row and explicit Copy regressions establish the replacement in the real window-closed observer before deferred copying; assert sentinel clipboard, replacement window/application handle and no platform command afterward. `clipboard_link_copy_tests.rs` captures actual tracing for normal/stale/ownerless explicit Copy: three starts, exactly one same-ID completed/cancelled terminal per start, numeric elapsed, fixed stale reason and no synthetic payload. Do not assume simulate_click returns before deferred work drains. Source Kit/editor gates and compiled fixtures do not certify physical Windows clipboard, actual browser/Shell, IME/mixed-DPI or user visual acceptance.
+### 7. Wrong vs Correct
+Wrong: row kind alone determines browser launch; rendering leases update ClipboardApplication synchronously.
+Correct: next-turn current owner settings select copy/open after current-window validation; explicit actions remain separate.
+
+## Scenario: Compact download progress and category header
+### 1. Scope / Trigger
+User-approved filename hierarchy, primary transfer information, short colored response timing and
+one-row category selection/rules actions. Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/task_window.rs`,
+`repo:rust/apps/nxtools-desktop/src/downloads/settings_view.rs`,
+`repo:docs/reference-code/download.md` and [server information](../../nxtools-download/backend/server-information.md).
+### 2. Signatures
+`task_window_filename`, `server_information_value`, original `details_expanded`;
+`DownloadSettingsView::{sync_category_select,current_draft}`, official `SelectState`/`SelectEvent`.
+### 3. Contracts
+Keep440×184 collapsed/440×280 expanded,34DIP title and44DIP fixed footer. Filename14/20 exceeds12/16
+body metrics; bounded full-name Tooltip remains. Official XSmall Progress/Small DescriptionList shows
+bytes/speed/ETA without duplicate status. Host plus short route and `{N} ms` show the existing HTTP
+request-to-response-headers observation:0–100success,101–300warning,301+danger. Missing observation
+has no time. No peer IP in visible/accessibility/Tooltip/diagnostic output and no new network probe.
+Resume/limit/connections/segments live in the original disclosure above its Table, not the collapsed
+body. Original task-ID entity/HWND/generation, cancellation, completion transform and focus stay.
+Category heading/help/real Medium32DIP Select/Small outlined Add share one wrapping header;260DIP
+menu width/220DIP maximum height. Stable IDs mirror selected_category, never become another owner.
+Input-driven synchronization defers beyond current entity lease; current_draft/Apply/Cancel remain.
+### 4. Validation & Error Matrix
+Unknown time -> no time element. Boundary100/101/300/301 -> exact semantic role. Long filename ->
+bounded title/Tooltip and reachable footer. Narrow settings -> wrap/no clipped actions. Rename/order/
+delete -> current stable-ID choice; Cancel/close -> no persistence; failed Apply -> retained draft.
+### 5. Good/Base/Bad Cases
+Good: filename stands above readable bytes/speed/ETA and one click exposes all part details.
+Base: one original keyed progress window. Bad: permanent technical wall, raw IP, fake Ping, dropdown
+substitute instead of Select, second saver or synchronous input-entity reentry.
+### 6. Tests Required
+download_layout_/server_info_ and original audit06_aux_task_details_last_segment cover actual render
+bounds, typography, timing/no-IP, Select popup/scroll/draft,14/16/18Root, disclosure/cancel and footer.
+Native/physical/mixed-DPI/user visual acceptance remains separate from controlled fixtures.
+### 7. Wrong vs Correct
+Wrong: enlarge whole window or discard technical data. Correct: fixed budget, primary hierarchy,
+original disclosure and durable settings owner.
+
+## Scenario: Selection-named archive creation and aligned settings
+### 1. Scope / Trigger
+User-approved ZIP/7z quick creation, separate editable New Archive, compact sources and Download-like
+settings composition. Evidence: `repo:docs/reference-code/archive-polish.md`,
+`repo:rust/apps/nxtools-desktop/src/archive/forms_layout.rs`,
+`repo:rust/apps/nxtools-desktop/src/main_window/archive_page.rs`.
+### 2. Signatures
+`ArchiveMenuCommand::{CreateZip,CreateSevenZ,Create}`; ExplorerCommandHandler GetTitle/Invoke;
+original Desktop archive intent, CreateDraft and creation Job.
+### 3. Contracts
+Fresh/missing fields recommend all three commands; explicit empty/custom/historical five-item arrays
+remain exact. Integration stays disabled until explicit apply. Ordered selection supplies first-file
+stem or folder name plus fixed extension; complete sources enter one original Job with fixed ZIP/7z,
+no editable form. Editable Create remains separate. Correlation crosses helper/intent/native Job;
+events carry count/state/elapsed/native codes, not paths. Existing validation/confirmation/cancel/
+publication owners stay. Source rows scroll independently within144DIP; summary/output/footer remain.
+Official Settings/Page/Group/Item use Download's filled groups and shared aligned rows,200-design-pixel
+ordinary control lane/164-design-pixel sidebar seed. Original page/callback/section-save owners remain.
+### 4. Validation & Error Matrix
+Explicit selections -> preserved. Partial unreadable/retired selection -> no Job/form. Multi-source ->
+one ordered job. Saved different format -> quick command fixed format. Long source list -> bounded
+scroll/remove/footer. Settings failure -> original error owner and previous durable configuration.
+### 5. Good/Base/Bad Cases
+Good: selected sources create selection-name.zip without opening a form. Base: New Archive remains
+editable. Bad: static Registry text masquerades as a dynamic title, selection is truncated, saved
+choices are overwritten or only settings labels change while grouping/alignment stays inconsistent.
+### 6. Tests Required
+archive_polish_ Core/Protocol/Desktop and C# fixtures exercise defaults, parser, actual GetTitle/Invoke,
+whole selection, original Job correlation, real source removal/footer and settings row bounds/callback.
+Real Explorer/Registry/installed/physical/DPI/user acceptance requires separate evidence.
+### 7. Wrong vs Correct
+Wrong: parallel creation engine or ordinary painted settings controls. Correct: original Job/draft/save
+owners with released official compounds and selection-aware Explorer commands.
+
+## Scenario: Explicit link-panel download intake (B2 REF-04)
+### 1. Scope / Trigger
+Named 使用 NxTools 下载 for admitted HTTP(S) links. This extends B1's two-action panel, not its ordinary-row copy-only/auto-open routing or independent Copy/Open.
+### 2. Signatures
+`ClipboardApplication::{bind_downloads,take_link_panel_download_owner}`; `DownloadApplication::{admits_link_download,open_link_download,open_new_download_window_with_request}`; `NewDownloadInitialSource::Url`; original `NewDownloadView::{clipboard_prefill_eligible,prefill_clipboard_url}`. Evidence: `repo:rust/apps/nxtools-desktop/src/tools/link_panel.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/new_download_view.rs`.
+### 3. Contracts
+Keep420DIP panel/28DIP rows, released ListItem/Label/StatusBar and XSmall ghost named Buttons with real name/action hit bounds. Local close precedes deferred original-panel validation and original DownloadApplication update; no synchronous leased-owner bounce. URL-only source fills the original InputState without browser auto-probe, clipboard read, task or HTTP work. Original Continue/confirmation, placement, focus/IME/paste and fixed handoff remain. Reuse one original Root/view/window; next-turn fill rechecks current window and pristine blank draft. Populated/edited-then-cleared/external/active drafts are preserved; explicit URL retires the old blank-window clipboard request. Carry original action correlation into native window commands; started/finished diagnostics have fixed outcome/elapsed, never URL/path/text.
+### 4. Validation & Error Matrix
+HTTP(S) -> URL-only intake. Local/unsupported target -> no action/rejected owner input. Duplicate -> activate/reuse, no overwrite of dirty draft. Replaced/closed source or missing owner -> retired terminal/no new intake. Late clipboard reply -> no draft mutation. Window failure -> original notification and fixed failed outcome.
+### 5. Good / Base / Bad Cases
+Good: actual named action fills one original input and awaits Continue. Base: duplicate preserves an existing draft. Bad: route through Download source's auto-probe, replace the original form/controller, or dispatch a retired panel action into another draft.
+### 6. Tests Required
+`repo:rust/apps/nxtools-desktop/src/downloads/new_download_link_tests.rs` drives actual pointer/semantic Tab/Enter/Space, stable input/window, localhost no-HTTP and engine no-task observations, pending clipboard retirement, user edit/clear, close-observer replacement and local/unsupported targets. Keep B1 REF-01/Copy and original intake suites. Current source/owned-fixture results: `repo:.trellis/tasks/11-10-reference-b2-intake-control/ref04-outcomes.md`; native/physical/IME/DPI/provider/visual/installed acceptance is separate.
+### 7. Wrong vs Correct
+Wrong: Some(Download(request)) followed by automatic begin_probe. Correct: Url-only source on the original owner, one deferred identity/draft-guarded fill and explicit Continue.
+
+## Scenario: Deliberate speed-limit editing (B2 REF-06)
+### 1. Scope / Trigger
+Original global settings and expanded task-window limit inputs. Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/speed_limit_edit.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs`.
+### 2. Signatures
+`SpeedLimitEdit::{new,changed,begin,finish}` is presentation-only. Existing `DownloadApplication::set_global_speed_limit` and `DownloadTaskAction::SetSpeedLimit { bytes_per_second: Option<u64> }` remain command owners. Official Base0.8.0 `InputEvent::{Change,PressEnter,Blur,Focus}` and public `input::Escape` use the stable original InputState.
+### 3. Contracts
+Change edits only local draft. Complete Enter/Blur parses trimmed u64 KiB with checked multiplication;0 maps to original None/unlimited. Pending UUID deduplicates Enter followed by Blur. Escape restores applied text after original input overlay/IME handling. Cross-owner submission/result work is deferred; task commands require original task/window/view/generation, and global commands require original settings window. Commit original SQLite intent before original limiter/event publication. Task/global/runtime minimum ceilings and waiter signalling stay unchanged. New task windows seed applied limits through existing full engine.task, because compact summaries omit request-only limits. Official Medium bordered96DIP task Input, Styled Label and explicit units/0-unlimited arrange inside original expanded440×280 geometry; collapsed440×184/title/footer/segments stay original. Diagnostics share the command UUID: edit_started then edit_applied/edit_failed/edit_cancelled, fixed scope/outcome and elapsed; no input/URL/path/credential/raw error.
+Positive-byte command/config limits display ceil-KiB without becoming unlimited. An untouched Settings field preserves exact `SpeedLimitEdit.applied` bytes during unrelated Apply; only explicit edits convert checked KiB back to bytes. Every original task-window update reads current cap/probe from full engine intent outside render while keeping original compact status/progress/artifact and phase ownership. Compact omitted None never clears applied intent; unavailable full reads retain the last applied rate. The effective label and clean stable input follow current applied authority and external typed commands; dirty/pending/error text stays local. Base0.8.0 `InputState::set_value` emits no Change, so clean display synchronization is not a user edit.
+### 4. Validation & Error Matrix
+Empty/noninteger/negative/overflow -> local error, no command/applied change. Unchanged -> no-op. Persistence failure -> previous applied rate, retained draft/error/retry. Retired window -> cancelled terminal, no task mutation. Successful commit -> original durable value and one terminal. Pending -> disabled input, no duplicate command or Escape restoration during commit.
+### 5. Good/Base/Bad Cases
+Good: typing100 applies neither1 nor10; Enter+Blur saves100KiB/s once. Base:0 removes only that manual/task limit, leaving other ceilings intact. Bad: per-keystroke mutation, compact-summary None overwriting persisted intent, stale window mutation, or a replacement limiter/controller.
+### 6. Tests Required
+`repo:rust/apps/nxtools-desktop/src/downloads/settings_task_rem_tests.rs` drives original official inputs, keyboard/blur/Escape, one TaskChanged, stable entities, SQLite failure/retry, reopen and source close. Expanded bounds tests deliver the original resize event. `repo:rust/crates/nxtools-download/tests/engine_contract.rs` exercises same-task HTTP/HLS/DASH waiting and completion after original cap changes; existing rate/runtime contracts retain aggregate budgets and durable failure semantics. Native/physical/IME/DPI/human visual/installed acceptance is separate.
+`ref06_acceptance_global_{one_byte,sub_kib,fractional_kib}_survives_unrelated_apply` drives actual Settings Apply and SQLite reopen for1/1023/1537B/s. `ref06_acceptance_task_compact_refresh_tracks_authoritative_rate` uses typed engine commands and original compact/progress refreshes with no global ceiling and a128KiB/s ceiling; it observes the actual capabilities accessibility label, stable clean input, invalid dirty/error preservation, Escape to latest applied intent and window/SQLite reopen.
+### 7. Wrong vs Correct
+Wrong: per-keystroke mutation, converting an untouched rounded display back to bytes, or replacing current full task intent with compact None. Correct: draft-only Change, deferred identity-scoped Enter/Blur with one pending UUID, exact untouched-byte persistence and current full task projection at the original window update boundary.

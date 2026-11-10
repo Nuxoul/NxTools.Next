@@ -50,12 +50,15 @@ impl Outer {
                     max_entry_bytes: limits.max_output_bytes,
                     ..*limits
                 };
-                let (_, members) = crate::formats::gzip::stream_members(
+                control.record_work(|work| work.outer_decodes += 1);
+                let decoded = crate::formats::gzip::stream_members(
                     &mut source,
                     &outer_limits,
                     control,
                     |bytes| spool.write_all(bytes).map_err(io_error),
-                )?;
+                );
+                crate::formats::tgz::observe_spool(&spool, control);
+                let (_, members) = decoded?;
                 if members != 1 {
                     return Err(ArchiveError::UnsupportedOperation);
                 }
@@ -99,6 +102,37 @@ impl Outer {
                 source.rewind()?;
                 let spool = crate::formats::tgz::decode_xz(&mut source, limits, control)?;
                 Ok((Self::Xz { check }, spool))
+            }
+            _ => Err(ArchiveError::UnsupportedOperation),
+        }
+    }
+    /// Qualification only after this operation's complete outer decode. No payload is decoded
+    /// here; gzip member count is the verified decoder result, XZ retains strict structure checks.
+    pub(crate) fn qualify_verified(
+        source: &mut File,
+        format: &str,
+        gzip_members: Option<u64>,
+        limits: &ResourceLimits,
+        control: &OperationControl,
+    ) -> Result<()> {
+        control.checkpoint()?;
+        source.rewind()?;
+        let mut fixed = [0; 10];
+        source.read_exact(&mut fixed)?;
+        match format {
+            "Tar" if fixed[..2] != [0x1f, 0x8b] && fixed[..6] != *b"\xfd7zXZ\0" => Ok(()),
+            "TarGz" => {
+                if fixed[..3] != [0x1f, 0x8b, 8]
+                    || gzip_members != Some(1)
+                    || fixed[3] & 7 != 0
+                    || !matches!(fixed[8], 0 | 2 | 4)
+                {
+                    return Err(ArchiveError::UnsupportedOperation);
+                }
+                Ok(())
+            }
+            "TarXz" if fixed[..6] == *b"\xfd7zXZ\0" => {
+                crate::formats::xz::edit_preflight(source, limits, control)
             }
             _ => Err(ArchiveError::UnsupportedOperation),
         }

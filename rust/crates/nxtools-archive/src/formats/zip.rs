@@ -1,3 +1,7 @@
+pub(crate) mod parallel;
+mod plan;
+pub(crate) use plan::{ValidatedRecord, ValidatedZip};
+
 use crate::{
     ArchiveEntry, ArchiveError, ArchiveOutcome, ArchiveProgress, ArchiveSnapshot, EntryId,
     EntryKind, EntryWarning, NameEncoding, NameProvenance, OperationControl, ResourceLimits,
@@ -166,7 +170,29 @@ pub(crate) fn list(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Listed> {
-    let central = directory(file, limits)?;
+    list_with_directory(file, selected, limits, control, None)
+}
+
+pub(crate) fn list_with_directory(
+    file: &mut File,
+    selected: NameEncoding,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    mut captured: Option<&mut Option<crate::zip_container::Directory>>,
+) -> Result<Listed> {
+    control.record_work(|work| work.catalog_loads += 1);
+    let mut central = directory(file, limits)?;
+    let mut records = Vec::new();
+    if captured.is_some() {
+        central.retained = central
+            .retained
+            .checked_add(central.size)
+            .and_then(|value| value.checked_add(central.count.checked_mul(128)?))
+            .ok_or(ArchiveError::ResourceLimit)?;
+        if central.retained > limits.max_metadata_bytes {
+            return Err(ArchiveError::ResourceLimit);
+        }
+    }
     file.seek(SeekFrom::Start(central.offset))?;
     let session = Uuid::new_v4();
     let mut entries: Vec<ArchiveEntry> = Vec::new();
@@ -193,7 +219,13 @@ pub(crate) fn list(
         let mut extra = vec![0; extra_length];
         read_exact(file, &mut raw_name)?;
         read_exact(file, &mut extra)?;
-        file.seek(SeekFrom::Current(comment_length as i64))?;
+        let mut raw_comment = Vec::new();
+        if captured.is_some() {
+            raw_comment.resize(comment_length, 0);
+            read_exact(file, &mut raw_comment)?;
+        } else {
+            file.seek(SeekFrom::Current(comment_length as i64))?;
+        }
         let disk = u16_at(&header, 34);
         let (display_path, provenance) = encoding::decode_zip(
             &raw_name,
@@ -270,6 +302,20 @@ pub(crate) fn list(
         if header_offset >= central.offset {
             return Err(ArchiveError::CorruptArchive);
         }
+        if captured.is_some() {
+            let mut raw = Vec::with_capacity(46 + name_length + extra_length + comment_length);
+            raw.extend_from_slice(&header);
+            raw.extend_from_slice(&raw_name);
+            raw.extend_from_slice(&extra);
+            raw.extend_from_slice(&raw_comment);
+            records.push(crate::zip_container::Record {
+                central: raw,
+                local: header_offset,
+                packed,
+                size,
+                disk: 0,
+            });
+        }
         entries.push(ArchiveEntry {
             id: EntryId { session, ordinal },
             raw_name,
@@ -309,6 +355,13 @@ pub(crate) fn list(
     }
     let retained = central.retained;
     crate::path_policy::annotate(&mut entries, control, retained, limits.max_metadata_bytes)?;
+    if let Some(captured) = captured.as_mut() {
+        **captured = Some(crate::zip_container::Directory {
+            records,
+            offset: central.offset,
+            comment: central.comment.clone(),
+        });
+    }
     Ok((
         entries,
         String::from_utf8_lossy(&central.comment).into_owned(),
@@ -397,15 +450,14 @@ pub(crate) fn test(
     control: &OperationControl,
     password: Option<&str>,
 ) -> Result<ArchiveOutcome> {
-    preflight_payloads(&mut file, snapshot, limits, control)?;
+    let mut records = ValidatedZip::new(&mut file, &snapshot.entries, limits, control, false)?;
     let mut outcome = ArchiveOutcome {
         files_verified: 0,
         bytes_verified: 0,
     };
     for entry in snapshot.entries.iter() {
-        let count = stream_entry(
-            &mut file,
-            entry,
+        let count = records.stream(
+            entry.id.ordinal,
             limits,
             control,
             password,
@@ -420,55 +472,22 @@ pub(crate) fn test(
     Ok(outcome)
 }
 
-fn preflight_payloads(
-    file: &mut File,
-    snapshot: &ArchiveSnapshot,
-    limits: &ResourceLimits,
-    control: &OperationControl,
-) -> Result<()> {
-    preflight_created(file, &snapshot.entries, limits, control)
-}
-
 pub(crate) fn preflight_created(
     file: &mut File,
     entries: &[ArchiveEntry],
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<()> {
-    let central = directory(file, limits)?;
-    if central.count != entries.len() as u64 {
-        return Err(ArchiveError::SourceChanged);
-    }
-    let mut extents = std::collections::BTreeMap::new();
-    for entry in entries {
-        control.checkpoint()?;
-        let offset = validate_local(file, entry)?;
-        let location = entry.zip.as_ref().ok_or(ArchiveError::CorruptArchive)?;
-        let end = validate_descriptor(file, entry, offset)?;
-        if extents
-            .range(..=location.header_offset)
-            .next_back()
-            .is_some_and(|(_, &end)| end > location.header_offset)
-            || extents
-                .range(location.header_offset..)
-                .next()
-                .is_some_and(|(&start, _)| start < end)
-        {
-            return Err(ArchiveError::CorruptArchive);
-        }
-        extents.insert(location.header_offset, end);
-        if entry.kind == EntryKind::Directory && entry.size != Some(0) {
-            return Err(ArchiveError::CorruptArchive);
-        }
-    }
-    Ok(())
+    ValidatedZip::new(file, entries, limits, control, false).map(|_| ())
 }
 
 pub(crate) fn validate_descriptor(
     file: &mut File,
     entry: &ArchiveEntry,
     offset: u64,
+    control: &OperationControl,
 ) -> Result<u64> {
+    control.record_work(|work| work.zip_descriptor_checks += 1);
     let location = entry.zip.as_ref().ok_or(ArchiveError::CorruptArchive)?;
     let end = offset
         .checked_add(entry.compressed_size.ok_or(ArchiveError::CorruptArchive)?)
@@ -482,6 +501,7 @@ pub(crate) fn validate_descriptor(
         .checked_sub(end)
         .ok_or(ArchiveError::CorruptArchive)?
         .min(24) as usize;
+    control.record_work(|work| work.zip_record_seeks += 1);
     file.seek(SeekFrom::Start(end))?;
     read_exact(file, &mut bytes[..available])?;
     let size64 = location.zip64_sizes
@@ -522,9 +542,30 @@ pub(crate) fn stream_entry(
     control: &OperationControl,
     password: Option<&str>,
     total: &mut u64,
+    on_chunk: impl FnMut(&[u8]) -> Result<()>,
+) -> Result<u64> {
+    stream_at(
+        file,
+        (entry, None),
+        limits,
+        control,
+        password,
+        total,
+        on_chunk,
+    )
+}
+
+fn stream_at(
+    file: &mut File,
+    (entry, validated_offset): (&ArchiveEntry, Option<u64>),
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    password: Option<&str>,
+    total: &mut u64,
     mut on_chunk: impl FnMut(&[u8]) -> Result<()>,
 ) -> Result<u64> {
     control.checkpoint()?;
+    control.record_work(|work| work.zip_member_decodes += 1);
     let method = compression_method(entry);
     if !matches!(method, 0 | 8 | 9 | 12 | 14 | 93 | 95) {
         return Err(ArchiveError::UnsupportedMethod);
@@ -535,7 +576,10 @@ pub(crate) fn stream_entry(
     if entry.encrypted && limits.max_working_bytes < 1 << 20 {
         return Err(ArchiveError::ResourceLimit);
     }
-    let offset = validate_local(file, entry)?;
+    let offset = match validated_offset {
+        Some(offset) => offset,
+        None => validate_local(file, entry, control)?,
+    };
     let packed = entry.compressed_size.ok_or(ArchiveError::CorruptArchive)?;
     let mut input =
         super::zip_crypto::Reader::new(&mut *file, offset, packed, entry, password, control)?;
@@ -586,19 +630,27 @@ pub(crate) fn stream_entry(
             control.clone(),
         )
         .map_err(authentication)?;
-        loop {
-            control.checkpoint()?;
-            let count = stream
-                .read(&mut buffer)
-                .map_err(payload_error)
-                .map_err(authentication)?;
-            control.checkpoint()?;
-            if count == 0 {
-                break;
+        let mut read_us = 0u64;
+        let streamed = (|| -> Result<u64> {
+            loop {
+                control.checkpoint()?;
+                let started = std::time::Instant::now();
+                let read = stream.read(&mut buffer);
+                read_us = read_us
+                    .saturating_add(started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64);
+                let count = read.map_err(payload_error).map_err(authentication)?;
+                control.checkpoint()?;
+                if count == 0 {
+                    break;
+                }
+                consume(&buffer[..count])?;
             }
-            consume(&buffer[..count])?;
-        }
-        stream.compressed_consumed(payload_length)
+            Ok(stream.compressed_consumed(payload_length))
+        })();
+        control.record_work(|work| {
+            work.zip_payload_read_us = work.zip_payload_read_us.saturating_add(read_us)
+        });
+        streamed?
     };
     if Some(bytes) != entry.size
         || (entry
@@ -630,47 +682,53 @@ pub(crate) fn payload_error(failure: std::io::Error) -> ArchiveError {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ReadContext<'a> {
+    pub password: Option<&'a str>,
+    pub source_lease: Option<&'a crate::worker::NativeReadLease>,
+}
+
 pub(crate) fn extract(
     mut file: File,
     snapshot: &ArchiveSnapshot,
     plan: &crate::planning::ExtractionPlan,
     limits: &ResourceLimits,
     control: &OperationControl,
-    password: Option<&str>,
+    context: ReadContext<'_>,
     output: &mut dyn crate::output::ArchiveOutput,
 ) -> Result<crate::output::ExtractOutcome> {
-    preflight_payloads(&mut file, snapshot, limits, control)?;
-    let mut directory_bytes = 0;
-    for id in &plan.explicit_directories {
-        control.checkpoint()?;
-        let entry = snapshot
-            .entries
-            .get(usize::try_from(id.ordinal).map_err(|_| ArchiveError::ResourceLimit)?)
-            .filter(|entry| entry.id == *id && entry.kind == EntryKind::Directory)
-            .ok_or(ArchiveError::SourceChanged)?;
-        stream_entry(
-            &mut file,
-            entry,
-            limits,
-            control,
-            password,
-            &mut directory_bytes,
-            |_| Ok(()),
-        )?;
+    let mut records = ValidatedZip::new(&mut file, &snapshot.entries, limits, control, false)?;
+    extract_validated(
+        &mut records,
+        snapshot,
+        plan,
+        limits,
+        control,
+        context,
+        output,
+    )
+}
+pub(crate) fn extract_validated(
+    records: &mut ValidatedZip<'_>,
+    snapshot: &ArchiveSnapshot,
+    plan: &crate::planning::ExtractionPlan,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    context: ReadContext<'_>,
+    output: &mut dyn crate::output::ArchiveOutput,
+) -> Result<crate::output::ExtractOutcome> {
+    if !records.matches(&snapshot.entries) {
+        return Err(ArchiveError::SourceChanged);
     }
-    crate::engine::ensure_revision(&mut file, &snapshot.revision, control)?;
+    let password = context.password;
+    let protected = context
+        .source_lease
+        .is_some_and(|lease| lease.protects(snapshot));
+    prepare(records, snapshot, plan, limits, control, context, output)?;
     let relative = |name: &str| {
         plan.subfolder()
             .map_or_else(|| name.to_owned(), |root| format!("{root}/{name}"))
     };
-    if let Some(root) = plan.subfolder() {
-        control.checkpoint()?;
-        output.ensure_directory(root)?;
-    }
-    for directory in plan.directories() {
-        control.checkpoint()?;
-        output.ensure_directory(&relative(directory))?;
-    }
     let mut result = crate::output::ExtractOutcome {
         files_committed: 0,
         bytes_committed: 0,
@@ -694,16 +752,17 @@ pub(crate) fn extract(
             continue;
         };
         let operation = (|| {
-            let bytes = stream_entry(
-                &mut file,
-                entry,
+            let bytes = records.stream(
+                entry.id.ordinal,
                 limits,
                 control,
                 password,
                 &mut decoded,
                 |chunk| output.write_file(token, chunk),
             )?;
-            crate::engine::ensure_revision(&mut file, &snapshot.revision, control)?;
+            if !protected {
+                crate::engine::ensure_revision(records.file(), &snapshot.revision, control)?;
+            }
             control.checkpoint()?;
             entry.metadata.validate()?;
             output.set_file_metadata(token, entry.metadata)?;
@@ -727,6 +786,53 @@ pub(crate) fn extract(
         total_bytes: plan.total_bytes(),
     });
     Ok(result)
+}
+
+fn prepare(
+    records: &mut ValidatedZip<'_>,
+    snapshot: &ArchiveSnapshot,
+    plan: &crate::planning::ExtractionPlan,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    context: ReadContext<'_>,
+    output: &mut dyn crate::output::ArchiveOutput,
+) -> Result<()> {
+    let mut directory_bytes = 0;
+    for id in &plan.explicit_directories {
+        control.checkpoint()?;
+        let entry = snapshot
+            .entries
+            .get(usize::try_from(id.ordinal).map_err(|_| ArchiveError::ResourceLimit)?)
+            .filter(|entry| entry.id == *id && entry.kind == EntryKind::Directory)
+            .ok_or(ArchiveError::SourceChanged)?;
+        records.stream(
+            entry.id.ordinal,
+            limits,
+            control,
+            context.password,
+            &mut directory_bytes,
+            |_| Ok(()),
+        )?;
+    }
+    if !context
+        .source_lease
+        .is_some_and(|lease| lease.protects(snapshot))
+    {
+        crate::engine::ensure_revision(records.file(), &snapshot.revision, control)?;
+    }
+    if let Some(root) = plan.subfolder() {
+        control.checkpoint()?;
+        output.ensure_directory(root)?;
+    }
+    for directory in plan.directories() {
+        control.checkpoint()?;
+        let relative = plan.subfolder().map_or_else(
+            || directory.to_owned(),
+            |root| format!("{root}/{directory}"),
+        );
+        output.ensure_directory(&relative)?;
+    }
+    Ok(())
 }
 
 enum Payload<R: Read> {
@@ -775,6 +881,8 @@ impl<R: Read> Payload<R> {
                 start: 0,
                 end: 0,
                 finished: false,
+                inflate_us: 0,
+                inflate_calls: 0,
                 control,
             }))
         })
@@ -807,8 +915,18 @@ struct Deflated<R: Read> {
     buffer: [u8; 8192],
     start: usize,
     end: usize,
+    inflate_us: u64,
+    inflate_calls: u64,
     finished: bool,
     control: OperationControl,
+}
+impl<R: Read> Drop for Deflated<R> {
+    fn drop(&mut self) {
+        self.control.record_work(|work| {
+            work.zip_inflate_us = work.zip_inflate_us.saturating_add(self.inflate_us);
+            work.zip_inflate_calls = work.zip_inflate_calls.saturating_add(self.inflate_calls);
+        });
+    }
 }
 impl<R: Read> Read for Deflated<R> {
     fn read(&mut self, output: &mut [u8]) -> std::io::Result<usize> {
@@ -828,10 +946,16 @@ impl<R: Read> Read for Deflated<R> {
             } else {
                 flate2::FlushDecompress::None
             };
-            let status = self
-                .decoder
-                .decompress(&self.buffer[self.start..self.end], output, flush)
-                .map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))?;
+            let started = std::time::Instant::now();
+            let decoded =
+                self.decoder
+                    .decompress(&self.buffer[self.start..self.end], output, flush);
+            self.inflate_us = self
+                .inflate_us
+                .saturating_add(started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64);
+            self.inflate_calls += 1;
+            let status =
+                decoded.map_err(|_| std::io::Error::from(std::io::ErrorKind::InvalidData))?;
             let consumed = (self.decoder.total_in() - before_in) as usize;
             let produced = (self.decoder.total_out() - before_out) as usize;
             self.start += consumed;
@@ -848,7 +972,24 @@ impl<R: Read> Read for Deflated<R> {
     }
 }
 
-pub(crate) fn validate_local(file: &mut File, entry: &ArchiveEntry) -> Result<u64> {
+pub(crate) fn validate_local(
+    file: &mut File,
+    entry: &ArchiveEntry,
+    control: &OperationControl,
+) -> Result<u64> {
+    local_record(file, entry, control, None).map(|(offset, _)| offset)
+}
+
+fn local_record(
+    file: &mut File,
+    entry: &ArchiveEntry,
+    control: &OperationControl,
+    header_credit: Option<(u64, bool)>,
+) -> Result<(u64, Vec<u8>)> {
+    control.record_work(|work| {
+        work.zip_local_checks += 1;
+        work.zip_record_seeks += 1;
+    });
     let location = entry.zip.as_ref().ok_or(ArchiveError::CorruptArchive)?;
     file.seek(SeekFrom::Start(location.header_offset))?;
     let mut local = [0u8; 30];
@@ -862,6 +1003,12 @@ pub(crate) fn validate_local(file: &mut File, entry: &ArchiveEntry) -> Result<u6
     }
     let name_size = usize::from(u16_at(&local, 26));
     let extra_size = usize::from(u16_at(&local, 28));
+    let header_size = 30 + name_size + extra_size;
+    if header_credit
+        .is_some_and(|(credit, retain)| (header_size as u64) * if retain { 2 } else { 1 } > credit)
+    {
+        return Err(ArchiveError::ResourceLimit);
+    }
     let data_offset = location
         .header_offset
         .checked_add(30 + name_size as u64 + extra_size as u64)
@@ -910,7 +1057,16 @@ pub(crate) fn validate_local(file: &mut File, entry: &ArchiveEntry) -> Result<u6
     {
         return Err(ArchiveError::CorruptArchive);
     }
-    Ok(data_offset)
+    let header = if header_credit.is_some_and(|(_, retain)| retain) {
+        let mut bytes = Vec::with_capacity(header_size);
+        bytes.extend_from_slice(&local);
+        bytes.extend_from_slice(&name);
+        bytes.extend_from_slice(&extra);
+        bytes
+    } else {
+        Vec::new()
+    };
+    Ok((data_offset, header))
 }
 
 pub(crate) struct ReclamationLayout {
@@ -960,11 +1116,11 @@ pub(crate) fn reclamation_layout(
             return Err(ArchiveError::ReclamationUnsupported);
         }
         entry.metadata.validate()?;
-        let payload = validate_local(file, entry)?;
+        let payload = validate_local(file, entry, control)?;
         let payload_end = payload
             .checked_add(entry.size.ok_or(ArchiveError::CorruptArchive)?)
             .ok_or(ArchiveError::CorruptArchive)?;
-        let end = validate_descriptor(file, entry, payload)?;
+        let end = validate_descriptor(file, entry, payload, control)?;
         file.seek(SeekFrom::Start(location.header_offset))?;
         let mut local = [0u8; 30];
         read_exact(file, &mut local)?;

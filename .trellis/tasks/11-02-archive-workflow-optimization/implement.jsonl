@@ -1,0 +1,23 @@
+{"file":".trellis/tasks/11-02-archive-workflow-optimization/prd.md","reason":"All five required open/extract, drag, Create, Add and task/browser workstreams; later required items and native prerequisites"}
+{"file":".trellis/tasks/11-02-archive-workflow-optimization/design.md","reason":"Original module ownership, member-ready versus Run cleanup, cache, Add namespace and private data contracts"}
+{"file":".trellis/tasks/11-02-archive-workflow-optimization/implement.md","reason":"Canonical OPT package order, dependencies and entry/exit gates"}
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust domain, GPUI rendering, C# Windows and deferred entity ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Correlation, pending-before-send, generation isolation, privacy and bounded lifecycle"}
+{"file":".trellis/spec/shared/verification.md","reason":"Memory/concurrency policy, real-seam regressions and separate evidence levels"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official compound controls, exact variants and Toolbar parent adaptations"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Current exact Kit0.8.0/defaultpre0.3.9 API and patch authority"}
+{"file":".trellis/spec/nxtools-archive/backend/index.md","reason":"Engine, supported formats and required format-specific source/codec/native contracts"}
+{"file":".trellis/spec/nxtools-archive/backend/edit-interactions.md","reason":"Add directory merge, conflict tickets, future-name reservation and one candidate/publication"}
+{"file":".trellis/spec/nxtools-archive/backend/product-read.md","reason":"Original source acquisition, negotiation, metadata credit, cleanup-bound reservations and timeout truth"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Original browser/form/queue/preview/OLE integration and component/source rules"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Original native worker, source/output/cache/STA and effects-aware fixture ownership"}
+{"file":".trellis/spec/nxtools-protocol/backend/index.md","reason":"Symmetric typed contracts, optional fields and original cross-layer authority"}
+{"file":".trellis/spec/nxtools-ipc/backend/index.md","reason":"Original generation/router/pending/cancel transport semantics"}
+{"file":"docs/reference-code/archive-virtual-drag.md","reason":"Current real pressed gesture, async receiver, stream lifetime and complete subtree contracts"}
+{"file":"docs/reference-code/archive-editing.md","reason":"Pinned format-update reference and preservation of stronger native publication"}
+{"file":".trellis/tasks/10-31-archive-research/bandizip-product-reference.md","reason":"Behavioral reference navigation for exact extraction/input/update workstream review"}
+{"file":".trellis/tasks/11-02-archive-workflow-optimization/requirements-map.md","reason":"Every reviewed engine/workflow item and native drag/Add detail maps to required work and acceptance"}
+{"file":".trellis/tasks/11-02-archive-workflow-optimization/review-findings.md","reason":"Concrete current defects, saved raw pseudo-code/assembly/call evidence, source anchors and deliberate reference adaptations"}
+{"file":".trellis/tasks/11-02-archive-workflow-optimization/acceptance.md","reason":"G-00 through G-29: real event ingress, creation/post-Test publication, picker/preview and native prerequisite acceptance"}
+{"file":".trellis/spec/nxtools-archive/backend/source-deletion.md","reason":"Original lifecycle-derived regular-source eligibility; Test success and reopened paths cannot mint source authority"}
+{"file":".trellis/spec/platformhost/archive-source-deletion.md","reason":"Production recycle capability unresolved; preserve strict held objects, refusal and separate outcomes until approved"}

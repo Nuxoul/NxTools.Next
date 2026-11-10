@@ -74,7 +74,7 @@ function shouldCaptureOpaqueBinaryResponse(details, meta) {
     return false;
   }
 
-  const headerSnapshot = resolveHeaderSnapshot(details.url);
+  const headerSnapshot = resolveHeaderSnapshot(details.url, details);
   const headers = headerSnapshot?.headers || {};
   const accept = String(headers.accept || "").toLowerCase();
   const destination = String(headers["sec-fetch-dest"] || "").toLowerCase();
@@ -649,6 +649,7 @@ async function downloadPageMedia(sender, payload = {}) {
         tabId
       }, 10000);
       return sendUrl(explicitUrl, {
+        cookieSource: { ...cookieSourceDetails(sender.tab), tabId },
         fileName: payload.filename || getFileNameFromUrl(explicitUrl),
         referrer: payload.href || sender.tab?.url || "",
         size: Number(payload.size || 0)

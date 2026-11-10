@@ -95,7 +95,7 @@ pub(super) fn estimate(
         return unknown("目标卷分配粒度未知");
     }
     let Some(metadata) = metadata else {
-        return unknown("没有匹配的完整浏览快照；可先打开压缩包再重新检查，不为预检重复扫描归档");
+        return unknown("没有匹配的完整浏览快照；可先打开压缩包再重新检查，不为预检重复扫描压缩包");
     };
     if metadata.entries.len() > 65_536 {
         return unknown("成员数超过原解压计划的有界估算范围");

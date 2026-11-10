@@ -276,6 +276,18 @@ impl NotificationCenter {
             cx,
         );
     }
+    pub(crate) fn dismiss_current(&mut self, id: impl Into<SharedString>, cx: &mut Context<Self>) {
+        let id = id.into();
+        let generation = self
+            .items
+            .iter()
+            .find(|item| item.id == id)
+            .map(|item| item.generation);
+        if let Some(generation) = generation {
+            self.start_dismiss(id, generation, cx);
+        }
+    }
+
     pub(crate) fn dismiss_generation(
         &mut self,
         id: impl Into<SharedString>,

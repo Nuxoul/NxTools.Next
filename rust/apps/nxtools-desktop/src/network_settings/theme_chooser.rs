@@ -3,15 +3,13 @@ use super::*;
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use nxtools_core::ThemePreference;
 
-const LIGHT_CHOICES: [ThemePreference; 4] = [
+const LIGHT_CHOICES: [ThemePreference; 3] = [
     ThemePreference::Light,
-    ThemePreference::CatppuccinLatte,
     ThemePreference::GruvboxLight,
     ThemePreference::SolarizedLight,
 ];
-const DARK_CHOICES: [ThemePreference; 6] = [
+const DARK_CHOICES: [ThemePreference; 5] = [
     ThemePreference::Dark,
-    ThemePreference::CatppuccinFrappe,
     ThemePreference::CatppuccinMacchiato,
     ThemePreference::CatppuccinMocha,
     ThemePreference::GruvboxDark,
@@ -125,7 +123,11 @@ fn radio(preference: ThemePreference, cx: &gpui_kit::App) -> Radio {
 
 impl NetworkSettingsView {
     pub(super) fn render_theme_chooser(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
-        let selected = self.theme_preference;
+        let selected = match self.theme_preference {
+            ThemePreference::CatppuccinLatte => ThemePreference::Light,
+            ThemePreference::CatppuccinFrappe => ThemePreference::Dark,
+            other => other,
+        };
         let owner = cx.entity().downgrade();
         let system_owner = owner.clone();
         let mut columns = div().flex().items_start().gap_3().w_full().min_w_0();
@@ -203,15 +205,7 @@ impl NetworkSettingsView {
                         });
                     }),
             )
-            .child(
-                div()
-                    .id("global-theme-preview-scroll")
-                    .debug_selector(|| "global-theme-preview-scroll".into())
-                    .w_full()
-                    .h(px(244.0))
-                    .min_h_0()
-                    .child(div().size_full().child(columns).overflow_y_scrollbar()),
-            )
+            .child(columns)
             .into_any_element()
     }
 }

@@ -324,8 +324,9 @@ fn audit08_delete_confirmation_cancel_keeps_task_and_file(cx: &mut TestAppContex
 }
 
 #[gpui_kit::test]
-fn audit08_list_removal_and_task_cancel_name_distinct_results(cx: &mut TestAppContext) {
-    let (_application, engine, task, directory, mut surface) = menu_fixture(cx, false);
+async fn audit08_list_removal_and_task_cancel_name_distinct_results(cx: &mut TestAppContext) {
+    cx.executor().allow_parking();
+    let (application, engine, task, directory, mut surface) = menu_fixture(cx, false);
     let path = directory.path().join("保留的合成文件.bin");
     let before = std::fs::read(&path).expect("owned file");
     click(&mut surface, "audit08-menu-trigger");
@@ -335,6 +336,7 @@ fn audit08_list_removal_and_task_cancel_name_distinct_results(cx: &mut TestAppCo
     );
     let windows = surface.read(|cx| cx.windows());
     click(&mut surface, "download-menu-delete-file");
+    cx.condition(&application, |app, _| !app.batch_busy()).await;
     assert!(engine.task(task).expect("list removal result").is_none());
     assert_eq!(
         std::fs::read(&path).expect("list removal preserves final file"),
@@ -359,6 +361,7 @@ fn audit08_list_removal_and_task_cancel_name_distinct_results(cx: &mut TestAppCo
         Some("取消任务")
     );
     click(&mut cancel_surface, "download-menu-cancel");
+    cx.condition(&cancel_app, |app, _| !app.batch_busy()).await;
     assert_eq!(
         cancel_engine
             .task(cancel_task)

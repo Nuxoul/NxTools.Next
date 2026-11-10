@@ -4,13 +4,16 @@
 // Classic script sharing the background global scope; loaded by background.js
 // (Chrome importScripts) and manifest background.scripts (Firefox).
 
-async function checkApiStatus() {
+async function checkApiStatus(explicitRetry = false) {
+  if (popupPortOwners > 0 && !explicitRetry && !desktopPort && !desktopConnectPromise) {
+    return { ok: false, transport: "native_messaging", message: "NxTools 未运行", data: lastSnapshot };
+  }
   try {
     const response = await sendDesktopRequest("get_snapshot", {}, 2500);
     lastSnapshot = response.data || lastSnapshot;
     return {
       ok: true,
-      message: connectionMessage || "Native Messaging 已连接 NxTools",
+      message: "已连接",
       transport: "native_messaging",
       data: response.data || lastSnapshot
     };
@@ -18,7 +21,7 @@ async function checkApiStatus() {
     return {
       ok: false,
       transport: "native_messaging",
-      message: error instanceof Error ? error.message : "无法连接 NxTools Native Messaging",
+      message: "NxTools 未运行",
       data: lastSnapshot
     };
   }
@@ -27,7 +30,7 @@ async function checkApiStatus() {
 function resourcesForPopup(activeTabId) {
   pruneResources();
   const current = activeTabId
-    ? NxToolsCapturePolicy.uniqueCapturedResources([...(resourcesByTab.get(activeTabId)?.values() || [])])
+    ? NxToolsCapturePolicy.uniqueCapturedResources([...(resourcesByTab.get(activeTabId)?.values() || [])].filter(resource => !NxToolsCapturePolicy.discoveryCandidateReason(resource)))
     : [];
   const other = [];
   for (const [tabId, bucket] of resourcesByTab) {
@@ -52,7 +55,7 @@ function resourcesForPopup(activeTabId) {
     return Number(right.capturedAt || 0) - Number(left.capturedAt || 0);
   };
 
-  const uniqueOther = NxToolsCapturePolicy.uniqueCapturedResources(other);
+  const uniqueOther = NxToolsCapturePolicy.uniqueCapturedResources(other.filter(resource => !NxToolsCapturePolicy.discoveryCandidateReason(resource)));
   const currentResources = current.sort(bySizeThenTime).map(enrich);
   const otherResources = uniqueOther.sort(bySizeThenTime).map(enrich);
   const allResources = [...currentResources, ...otherResources];
@@ -124,8 +127,11 @@ async function buildPopupState(preferredMediaIndex = null, currentView = "tasks"
   const activeHost = siteHostKey(tab?.url || "");
   return {
     settings,
+    capturePaused: await getCapturePaused(),
+    capturePauseAvailable,
     status,
     tasks: Array.isArray(status.data?.tasks) ? status.data.tasks : [],
+    lastHandoff: lastHandoff ? { ...lastHandoff } : null,
     featureStates: featureStatesForTab(tabId, settings),
     siteControl: {
       host: activeHost,
@@ -138,7 +144,8 @@ async function buildPopupState(preferredMediaIndex = null, currentView = "tasks"
           id: tab.id,
           title: tab.title || "",
           url: tab.url || "",
-          domain: domainFromUrl(tab.url || "")
+          domain: domainFromUrl(tab.url || ""),
+          thumbnail: pageThumbnailByTab.get(tab.id) || ""
         }
       : null,
     ...resources

@@ -368,7 +368,7 @@ fn queue06_storage_actions_busy_cancel_and_error_never_run_data_operations(
     let fixture = fixture(cx);
     fixture.endpoint.set_connected_for_contract_test(true);
     let mut surface = VisualTestContext::from_window(fixture.window, cx);
-    search(&mut surface, "归档");
+    search(&mut surface, "压缩包");
     let export = button_bounds(&mut surface, "clipboard-export-archive");
     surface.simulate_click(export.center(), Modifiers::default());
     surface.run_until_parked();
@@ -407,7 +407,7 @@ fn queue06_storage_actions_busy_cancel_and_error_never_run_data_operations(
             .application
             .read_with(cx, |app, _| app.clipboard_management_busy())
     );
-    search(&mut surface, "历史归档");
+    search(&mut surface, "历史压缩包");
     let import = button_bounds(&mut surface, "clipboard-import-archive");
     surface.simulate_click(import.center(), Modifiers::default());
     surface.run_until_parked();
@@ -782,7 +782,7 @@ fn audit08_clipboard_command_labels_match_picker_or_immediate_result(cx: &mut Te
     let mut surface = VisualTestContext::from_window(fixture.window, cx);
     for (query, expected) in [
         (
-            "历史归档",
+            "历史压缩包",
             vec![
                 ("clipboard-export-archive", "导出…"),
                 ("clipboard-import-archive", "导入…"),
@@ -827,8 +827,8 @@ fn audit08_clipboard_picker_pointer_keyboard_once_and_cancel_preserve_data(
     let database = fixture.worker.database_path();
     let mut surface = VisualTestContext::from_window(fixture.window, cx);
     for (index, (query, id)) in [
-        ("历史归档", "clipboard-export-archive"),
-        ("历史归档", "clipboard-import-archive"),
+        ("历史压缩包", "clipboard-export-archive"),
+        ("历史压缩包", "clipboard-import-archive"),
         ("存储位置", "clipboard-storage-migrate"),
     ]
     .into_iter()

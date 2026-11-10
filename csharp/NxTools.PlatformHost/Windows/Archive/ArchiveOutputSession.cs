@@ -28,14 +28,17 @@ internal sealed partial class ArchiveOutputSession : IDisposable
     private readonly List<SafeFileHandle> directories = [];
     private string[] pendingRootParts = [];
     private readonly Dictionary<Guid, Partial> entries = [];
+    private readonly object extractionGate = new();
+    private int pendingExtractionBegins;
     private readonly List<Partial> transactions = [];
     private sealed record OutputDirectory(SafeFileHandle Handle, bool Owned) { internal bool Finalized; internal bool Completed; }
     private readonly Dictionary<string, OutputDirectory> outputDirectories = new(StringComparer.OrdinalIgnoreCase);
     private bool directoryMetadataStarted;
     private bool directoryPublished, directoryPublicationUnknown;
     // Read-only history after real cleanup; never authorizes commit/rollback or replaces the file journal.
-    internal bool? OutputPublished() => directoryPublished || transactions.Any(entry => entry.Journaled && entry.Committed) ? true
-        : !disposed || directoryPublicationUnknown || transactions.Any(entry => entry.Journaled && entry.State is ArchiveCommitState.CommitInFlight or ArchiveCommitState.CommitOutcomeUnknown) ? null : false;
+    internal bool? OutputPublished() { lock (extractionGate) return directoryPublished || transactions.Any(entry => entry.Journaled && entry.Committed) ? true
+        : !disposed || directoryPublicationUnknown || transactions.Any(entry => entry.DirectExtraction && entry.Cleanup == "cleanup_failed") ||
+            transactions.Any(entry => entry.Journaled && entry.State is ArchiveCommitState.CommitInFlight or ArchiveCommitState.CommitOutcomeUnknown) ? null : false; }
     private void MarkDirectoryPublished() => directoryPublished = true;
     private SafeFileHandle OpenOutputDirectory(SafeFileHandle parent, string name, out bool created)
     {
@@ -50,6 +53,18 @@ internal sealed partial class ArchiveOutputSession : IDisposable
     private bool disposed;
     private bool metadataStarted;
     internal Action<string>? CommitCheckpointProbe { get; set; }
+    internal Action<string>? BeginCheckpointProbe { get; set; }  // Passive fixture observation before native final-name open.
+    internal ArchiveNativeReadObservation ReadObservation { get; } = new();
+    private long nativeWriteTicks, fingerprintTicks, postpublicationTicks;
+    internal double NativeWriteMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref nativeWriteTicks)).TotalMilliseconds;
+    internal double FingerprintMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref fingerprintTicks)).TotalMilliseconds;
+    internal double PostpublicationMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref postpublicationTicks)).TotalMilliseconds;
+    private long parentResolutionTicks, finalOpenTicks;
+    internal double ParentResolutionMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref parentResolutionTicks)).TotalMilliseconds;
+    internal double FinalOpenMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref finalOpenTicks)).TotalMilliseconds;
+    private readonly OutputNative.OpenObservation extractionOpenObservation = new();
+    internal double NativeCreateMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref extractionOpenObservation.CreateTicks)).TotalMilliseconds;
+    internal double NativeOpenInspectionMs => Stopwatch.GetElapsedTime(0, Interlocked.Read(ref extractionOpenObservation.InspectionTicks)).TotalMilliseconds;
     internal Func<bool, uint, uint>? NamedStreamsFlagsProbe { get; set; }
     private sealed class Partial(SafeFileHandle parent, string name, SafeFileHandle file)
     {
@@ -57,6 +72,7 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         internal readonly string Name = name;
         internal string Relative = "";
         internal SafeFileHandle? File = file;
+        internal bool DirectExtraction;
         internal SafeFileHandle? Retained;
         internal string PartialName = "";
         internal bool ReclamationReady;
@@ -74,6 +90,9 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         internal bool Replaced;
         internal uint? EditAttributes;
         internal bool CandidateVerified;
+        // SHA-256 of exactly the bytes appended through Write. The partial is opened without any
+        // sharing, so for a new-file publication this equals a full read of the closed candidate.
+        internal IncrementalHash? Digest;
         internal bool Journaled = true;
         internal string? NativeIdentity;
         internal string Cleanup = "not_requested";
@@ -81,9 +100,10 @@ internal sealed partial class ArchiveOutputSession : IDisposable
     private ArchiveOutputSession(SafeFileHandle drive, Guid id, IPlatformLog? log)
     { this.drive = drive; operationId = id; this.log = log; }
     // Historical transactions survive exact-token cleanup; safe to read after disposal.
-    internal IReadOnlyList<Protocol.ArchiveJobCommit> CommitJournal() => transactions.Where(entry=>entry.Journaled).Select((entry,index) =>
-        new Protocol.ArchiveJobCommit((ulong)index,entry.State.ToString(),entry.Replaced,(ulong)Math.Max(0,entry.Count),
-            entry.NativeIdentity,entry.State is ArchiveCommitState.CommitInFlight or ArchiveCommitState.CommitOutcomeUnknown ? null : entry.Committed,entry.Cleanup)).ToArray();
+    internal IReadOnlyList<Protocol.ArchiveJobCommit> CommitJournal(int maximum = int.MaxValue) { lock (extractionGate) return maximum == int.MaxValue
+        ? JournalFacts().ToArray()
+        : JournalFacts().Where(fact => !OrdinaryCommit(fact)).Concat(JournalFacts().Where(OrdinaryCommit))
+            .Take(maximum).OrderBy(fact => fact.Ordinal).ToArray(); }
     internal void ExcludeEncoderSpool(Guid token) => Entry(token).Journaled = false;
 
     internal static ArchiveOutputSession Open(string absoluteRoot, Guid operationId, IPlatformLog? log = null)
@@ -158,6 +178,29 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             $"v1:{before.Volume:X}:{before.IdHigh:X16}{before.IdLow:X16}:{suffix}",volume,checked((uint)pendingRootParts.Length));
     }
     private void Check() { if (disposed) throw new ArchiveOutputException("session_closed"); }
+    // Observe the held namespace only; a missing suffix does not authorize creating it.
+    internal (bool Missing, string[] Names) ObserveCreateNames(CancellationToken cancellation = default)
+    {
+        Check();
+        cancellation.ThrowIfCancellationRequested();
+        if (root is null) { OutputNative.VerifyDirectory(directories.LastOrDefault() ?? drive); return (true, []); }
+        var before = OutputNative.Identity(root);
+        var names = new List<string>();
+        long bytes = 0;
+        foreach (var entry in Directory.EnumerateFileSystemEntries(OutputNative.StableDirectoryPath(root)))
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (names.Count == 16384) throw new ArchiveOutputException("destination_limit");
+            var name = Path.GetFileName(entry);
+            bytes += Encoding.UTF8.GetByteCount(name);
+            if (bytes > 262144) throw new ArchiveOutputException("destination_limit");
+            names.Add(name);
+        }
+        var after = OutputNative.Identity(root);
+        if (before.Volume != after.Volume || before.IdLow != after.IdLow || before.IdHigh != after.IdHigh)
+            throw new ArchiveOutputException("destination_unavailable");
+        return (false, names.ToArray());
+    }
     internal void RequireNewVolumeFamily(string name, bool sevenz)
     {
         Check(); Validate(name);
@@ -252,6 +295,12 @@ internal sealed partial class ArchiveOutputSession : IDisposable
     }
     private (SafeFileHandle Parent, string Name) ResolveParent(string relative)
     {
+        var started = Stopwatch.GetTimestamp();
+        try { lock (extractionGate) return ResolveParentCore(relative); }
+        finally { Interlocked.Add(ref parentResolutionTicks, Stopwatch.GetTimestamp() - started); }
+    }
+    private (SafeFileHandle Parent, string Name) ResolveParentCore(string relative)
+    {
         Check();
         if (string.IsNullOrEmpty(relative)) throw new ArchiveOutputException("invalid_component");
         var parts=relative.Split('/');
@@ -261,11 +310,11 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         for (var index = 0; index < parts.Length - 1; index++) parent = TrackDirectory(parent, parts[index], string.Join('/', parts.Take(index + 1)));
         return(parent,parts[^1]);
     }
-    internal string CaptureTargetIdentity(string relative)
+    internal string CaptureTargetIdentity(string relative, CancellationToken cancellationToken = default)
     {
         var target=ResolveParent(relative);
         using var handle=OutputNative.Open(target.Parent,target.Name,directory:false,readOnly:true,anyKind:true);
-        return TargetSignature(handle);
+        return TargetSignature(handle, cancellationToken);
     }
     internal (string Signature, long Size)? ObservePreparedCreateTarget(string name, CancellationToken cancellationToken)
     {
@@ -286,21 +335,28 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             return (TargetSignature(handle, cancellationToken), OutputNative.Identity(handle).Size);
         } catch (ArchiveOutputException failure) when (failure.NativeCode is 2 or 3) { return null; }
     }
-    internal static string TargetIdentity(SafeFileHandle handle, CancellationToken cancellationToken = default)
+    internal static string TargetIdentity(SafeFileHandle handle, CancellationToken cancellationToken = default,
+        ArchiveNativeReadObservation? observation = null, ArchiveNativeReadStage stage = ArchiveNativeReadStage.TargetAdmission,
+        ArchiveNativeReadKind kind = ArchiveNativeReadKind.Target)
     {
         var stamp=OutputNative.Identity(handle);
         using var borrowed=new SafeFileHandle(handle.DangerousGetHandle(),false);
         using var stream=new FileStream(borrowed,FileAccess.Read,65536,false);
         stream.Position=0;
-        using var digest=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer=new byte[65536];
-        while(true) { cancellationToken.ThrowIfCancellationRequested(); var count=stream.Read(buffer); if(count==0)break; digest.AppendData(buffer,0,count); }
-        var hash=Convert.ToHexString(digest.GetHashAndReset());
+        var hash=Convert.ToHexString((observation ?? new ArchiveNativeReadObservation()).Hash(stream, stage, kind, cancellationToken));
         return $"v2:{stamp.Volume:X}:{stamp.IdHigh:X16}{stamp.IdLow:X16}:{stamp.Size:X}:{stamp.Modified:X}:{hash}";
     }
-    private static string TargetSignature(SafeFileHandle handle, CancellationToken cancellationToken = default) =>
-        TargetIdentity(handle, cancellationToken);
-    internal Guid BeginFile(string relative, string? expectedTargetIdentity = null, bool overwrite = false)
+    private string TargetSignature(SafeFileHandle handle, CancellationToken cancellationToken = default,
+        ArchiveNativeReadStage stage = ArchiveNativeReadStage.TargetAdmission, ArchiveNativeReadKind kind = ArchiveNativeReadKind.Target)
+    {
+        if (stage != ArchiveNativeReadStage.OutputPostpublication)
+            return TargetIdentity(handle, cancellationToken, ReadObservation, stage, kind);
+        var started = Stopwatch.GetTimestamp();
+        try { return TargetIdentity(handle, cancellationToken, ReadObservation, stage, kind); }
+        finally { Interlocked.Add(ref postpublicationTicks, Stopwatch.GetTimestamp() - started); }
+    }
+    internal Guid BeginFile(string relative, string? expectedTargetIdentity = null, bool overwrite = false,
+        CancellationToken cancellationToken = default)
     {
         Check();
         Reclamation?.ValidateBegin(relative, overwrite);
@@ -309,7 +365,7 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         var parts = relative.Split('/');
         if (parts.Length > 64 || directories.Count > 16384 - parts.Length) throw new ArchiveOutputException("session_entry_limit");
         foreach (var part in parts) Validate(part);
-        if (transactions.Count >= 4096) throw new ArchiveOutputException("session_entry_limit");
+        AdmitTransaction(relative, expectedTargetIdentity);
         var parent = Root;
         // Child directory handles remain live until session disposal; their parents cannot be renamed.
         for (var i = 0; i < parts.Length - 1; i++)
@@ -317,7 +373,7 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             parent = TrackDirectory(parent, parts[i], string.Join('/', parts.Take(i + 1)));
         }
         if (Reclamation is not null && ObserveOrdinaryTarget(relative) is not null) throw new ArchiveOutputException("reclamation_target_exists");
-        if (overwrite) RecheckTarget(parent, parts[^1], expectedTargetIdentity!);
+        if (overwrite) RecheckTarget(parent, parts[^1], expectedTargetIdentity!, cancellationToken: cancellationToken);
         var token = Guid.NewGuid();
         SafeFileHandle? partial = null;
         string partialName = "";
@@ -329,25 +385,29 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         }
         if (partial is null) throw new ArchiveOutputException("partial_collision");
         var entry = new Partial(parent, parts[^1], partial) {Expected=expectedTargetIdentity, Relative=relative, PartialName=partialName};
-        entries.Add(token, entry); transactions.Add(entry); // Cleanup ownership precedes fallible identity query.
+        entries.Add(token, entry); transactions.Add(entry); activeFiles++; // Cleanup ownership precedes fallible identity query.
         var stamp = OutputNative.Identity(partial);
         entry.NativeIdentity=$"v1:{stamp.Volume:X}:{stamp.IdHigh:X16}{stamp.IdLow:X16}";
         Reclamation?.PartialCreated(relative, partialName, parent, partial);
         Diagnostic("started", "started", null);
         return token;
     }
-    private Partial Entry(Guid token) => entries.TryGetValue(token, out var entry) ? entry : throw new ArchiveOutputException("unknown_token");
-    internal bool Write(Guid token, ReadOnlyMemory<byte> chunk)
+    private Partial Entry(Guid token) { lock (extractionGate) return entries.TryGetValue(token, out var entry) ? entry : throw new ArchiveOutputException("unknown_token"); }
+    internal bool Write(Guid token, ReadOnlyMemory<byte> chunk) { var entry = Entry(token); lock (entry) return WriteCore(token, chunk, entry); }
+    private bool WriteCore(Guid token, ReadOnlyMemory<byte> chunk, Partial entry)
     {
-        Check(); var entry = Entry(token);
+        Check();
         if (entry.Committed || entry.File is null || entry.State != ArchiveCommitState.Preparing || entry.CandidateVerified ||
             chunk.Length is < 1 or > 65536 || entry.Count > 34359738368L - chunk.Length)
             throw new ArchiveOutputException("write_limit");
         Reclamation?.ValidateWrite(entry.Relative, entry.Count, chunk.Length);
+        if (entry.DirectExtraction) return WriteExtractedFile(token, entry, chunk);
         try
         {
             entry.Stream ??= new FileStream(entry.File, FileAccess.ReadWrite, 65536, false);
-            entry.Stream.Write(chunk.Span);
+            var started = Stopwatch.GetTimestamp();
+            try { entry.Stream.Write(chunk.Span); (entry.Digest ??= IncrementalHash.CreateHash(HashAlgorithmName.SHA256)).AppendData(chunk.Span); }
+            finally { Interlocked.Add(ref nativeWriteTicks, Stopwatch.GetTimestamp() - started); }
             entry.Count += chunk.Length;
             return true;
         }
@@ -361,6 +421,7 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         entry.Stream?.Flush();
         var buffer = new byte[(int)Math.Min(length, entry.Count - offset)];
         var count = RandomAccess.Read(entry.Stream?.SafeFileHandle ?? entry.File, buffer, offset);
+        ReadObservation.PartialRead(count);
         if (count != buffer.Length) throw new ArchiveOutputException("read_partial");
         return buffer;
     }
@@ -373,30 +434,39 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         OutputNative.Flush(entry.Stream?.SafeFileHandle ?? entry.File);
         entry.CandidateVerified = true;
     }
-    private static void RecheckTarget(SafeFileHandle parent, string name, string expected)
+    private void RecheckTarget(SafeFileHandle parent, string name, string expected,
+        ArchiveNativeReadStage stage = ArchiveNativeReadStage.TargetBegin, CancellationToken cancellationToken = default,
+        ArchiveSourceLease? editSource = null, string? expectedSourceTargetIdentity = null)
     {
         try
         {
             using var target = OutputNative.Open(parent, name, directory: false, readOnly: true, anyKind: true);
-            if (TargetSignature(target) != expected) throw new ArchiveOutputException("target_changed");
+            if (editSource is not null)
+                editSource.VerifyEditSource(expectedSourceTargetIdentity ?? expected, stage, cancellationToken, target, expected);
+            else if (TargetSignature(target, cancellationToken, stage) != expected) throw new ArchiveOutputException("target_changed");
         }
         catch (ArchiveOutputException failure)
         {
-            var stage = failure.Stage == "reparse_component" ? "target_reparse" : failure.Stage == "wrong_kind" ? "target_directory" :
+            var failureStage = failure.Stage == "reparse_component" ? "target_reparse" : failure.Stage == "wrong_kind" ? "target_directory" :
                 failure.NativeCode is 2 or 3 ? "target_missing" : failure.NativeCode is 32 or 33 ? "target_busy" :
                 failure.NativeCode == 5 ? "target_denied" : failure.Stage;
-            throw new ArchiveOutputException(stage, failure.NativeCode);
+            throw new ArchiveOutputException(failureStage, failure.NativeCode);
         }
     }
-    private static void CloseOutput(Partial entry)
+    private void CloseOutput(Partial entry)
     {
+        if (entry.File is null) return;
         try { entry.Stream?.Dispose(); }
-        finally { entry.Stream = null; entry.File?.Dispose(); entry.File = null; }
+        finally {
+            try { entry.Stream = null; entry.File?.Dispose(); entry.File = null; }
+            finally { lock (extractionGate) activeFiles--; }
+        }
     }
     internal void BindZoneIdentifier(ReadOnlyMemory<byte>? value) { Check(); zoneIdentifier = value; }
-    internal void SetMetadata(Guid token, ArchiveOutputMetadata metadata)
+    internal void SetMetadata(Guid token, ArchiveOutputMetadata metadata) { var entry = Entry(token); lock (entry) SetMetadataCore(entry, metadata); }
+    private void SetMetadataCore(Partial entry, ArchiveOutputMetadata metadata)
     {
-        Check(); var entry = Entry(token);
+        Check();
         if (entry.Committed || entry.File is null || entry.State != ArchiveCommitState.Preparing || entry.Metadata is not null || entry.CandidateVerified)
             throw new ArchiveOutputException("metadata_invalid_state");
         entry.Metadata = metadata;
@@ -416,18 +486,15 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         if (cancellationToken.IsCancellationRequested)
             return CancelBeforeCommit(token);
         var targetIdentity = expectedSourceTargetIdentity ?? entry.Expected;
-        source.VerifyEditSource(targetIdentity);
-        RecheckTarget(entry.Parent, entry.Name, entry.Expected);
+        try { RecheckTarget(entry.Parent, entry.Name, entry.Expected, ArchiveNativeReadStage.EditHandoff,
+            cancellationToken, source, targetIdentity); }
+        catch (OperationCanceledException) { return CancelBeforeCommit(token); }
         CommitCheckpointProbe?.Invoke("edit_source_rechecked");
         if (cancellationToken.IsCancellationRequested)
             return CancelBeforeCommit(token);
         zoneIdentifier = source.EditZoneIdentifier;
         entry.EditAttributes = source.EditAttributes;
-        return CommitCore(token, cancellationToken, () => {
-            source.VerifyEditSource(targetIdentity);
-            cancellationToken.ThrowIfCancellationRequested();
-            source.ReleaseEditFile(readCompletion);
-        });
+        return CommitCore(token, cancellationToken, source, readCompletion, targetIdentity);
     }
     private ArchiveOutputResult CancelBeforeCommit(Guid token)
     {
@@ -436,9 +503,13 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         var cleanup = Cancel(token);
         return new("cancelled", cleanup.NativeCode, ArchiveCommitState.FailedBeforeCommit);
     }
-    internal ArchiveOutputResult Commit(Guid token, CancellationToken cancellationToken = default) =>
-        CommitCore(token, cancellationToken, null);
-    private ArchiveOutputResult CommitCore(Guid token, CancellationToken cancellationToken, Action? beforeCommitInFlight)
+    internal ArchiveOutputResult Commit(Guid token, CancellationToken cancellationToken = default)
+    {
+        var entry = Entry(token);
+        lock (entry) return entry.DirectExtraction ? CommitExtractedFile(token, entry, cancellationToken) : CommitCore(token, cancellationToken);
+    }
+    private ArchiveOutputResult CommitCore(Guid token, CancellationToken cancellationToken, ArchiveSourceLease? editSource = null,
+        ArchiveSourceLease.EditReadCompletion? readCompletion = null, string? expectedSourceTargetIdentity = null)
     {
         Check(); var entry = Entry(token);
         if (entry.Committed || entry.File is null || entry.State != ArchiveCommitState.Preparing)
@@ -469,7 +540,13 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             OutputNative.Flush(file);
             OutputNative.VerifyDirectory(entry.Parent);
             var stamp = OutputNative.Identity(file);
-            var fingerprint = Fingerprint(entry);
+            // New-file publication renames the exclusively held partial without replacement; its
+            // written-bytes digest is the content fingerprint. Replacement, edit and reclamation
+            // commits keep their independent full reads.
+            var streamed = entry.Expected is null && editSource is null && Reclamation is null;
+            var fingerprint = streamed && stamp.Size == entry.Count
+                ? StreamedFingerprint(entry)
+                : Fingerprint(entry, cancellationToken);
             var attributes = ArchiveMetadataNative.Attributes(file);
             var motwHash = zoneIdentifier is { } readyMark ? SHA256.HashData(readyMark.Span) : null;
             if (Reclamation is not null) {
@@ -478,11 +555,12 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             }
             entry.State = ArchiveCommitState.Verified;
             CommitCheckpointProbe?.Invoke("before_recheck");
-            if (entry.Expected is not null) RecheckTarget(entry.Parent, entry.Name, entry.Expected);
+            if (entry.Expected is not null) RecheckTarget(entry.Parent, entry.Name, entry.Expected, ArchiveNativeReadStage.Prepublication,
+                cancellationToken, editSource, expectedSourceTargetIdentity);
             // RecheckTarget disposed ONLY its target handle. Parents/source/temp remain protected.
             CommitCheckpointProbe?.Invoke("target_rechecked");
             cancellationToken.ThrowIfCancellationRequested();
-            beforeCommitInFlight?.Invoke();
+            if (editSource is not null) editSource.ReleaseEditFile(readCompletion!);
             entry.State = ArchiveCommitState.CommitInFlight;
             CommitCheckpointProbe?.Invoke("commit_in_flight");
             if (entry.Expected is null) OutputNative.RenameNoReplace(file, entry.Parent, entry.Name);
@@ -499,10 +577,13 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             if (Reclamation is not null) OutputNative.Flush(file);
             CloseOutput(entry);
             CommitCheckpointProbe?.Invoke("native_committed");
+            // Publication is a native fact. Complete the independent postpublication observation
+            // even if the original token was cancelled after rename; it cannot undo that fact.
             using var observed = OutputNative.Open(entry.Parent, entry.Name, directory: false, readOnly: true, anyKind: true);
             var current = OutputNative.Identity(observed);
+            // A new file is identified by volume/file ID/size of the object we wrote and renamed.
             if (current.Volume != stamp.Volume || current.IdLow != stamp.IdLow || current.IdHigh != stamp.IdHigh || current.Size != stamp.Size ||
-                TargetSignature(observed) != $"v2:{current.Volume:X}:{current.IdHigh:X16}{current.IdLow:X16}:{current.Size:X}:{current.Modified:X}:{Convert.ToHexString(fingerprint)}")
+                !streamed && TargetSignature(observed, stage: ArchiveNativeReadStage.OutputPostpublication, kind: ArchiveNativeReadKind.Output) != $"v2:{current.Volume:X}:{current.IdHigh:X16}{current.IdLow:X16}:{current.Size:X}:{current.Modified:X}:{Convert.ToHexString(fingerprint)}")
             {
                 entry.State = ArchiveCommitState.TargetChangedAfterCommit;
                 Diagnostic("failed", "target_changed_after_commit", null);
@@ -548,19 +629,28 @@ internal sealed partial class ArchiveOutputSession : IDisposable
         Diagnostic("failed", category, native);
         return new(category, native, entry.State);
     }
-    private static byte[] Fingerprint(Partial entry)
+    private static byte[] StreamedFingerprint(Partial entry)
+    {
+        if (entry.Digest is not {} digest) return SHA256.HashData(ReadOnlySpan<byte>.Empty);
+        try { return digest.GetHashAndReset(); }
+        finally { digest.Dispose(); entry.Digest = null; }
+    }
+    private byte[] Fingerprint(Partial entry, CancellationToken cancellationToken)
     {
         var handle = entry.Stream?.SafeFileHandle ?? entry.File!;
         using var borrowed = new SafeFileHandle(handle.DangerousGetHandle(), false);
         using var reader = new FileStream(borrowed, FileAccess.Read, 65536, false);
         reader.Position = 0;
-        return SHA256.HashData(reader);
+        var started = Stopwatch.GetTimestamp();
+        try { return ReadObservation.Hash(reader, ArchiveNativeReadStage.OutputFingerprint, ArchiveNativeReadKind.Output, cancellationToken); }
+        finally { Interlocked.Add(ref fingerprintTicks, Stopwatch.GetTimestamp() - started); }
     }
     // Optional cleanup is strictly per-file. Partial deletion uses the held handle. Committed
     // cleanup reacquires exclusive file access and verifies identity, size, mtime AND hash first.
-    internal ArchiveOutputResult Cancel(Guid token, bool cleanupNewOutput = false)
+    internal ArchiveOutputResult Cancel(Guid token, bool cleanupNewOutput = false) { var entry = Entry(token); lock (entry) return CancelCore(token, entry, cleanupNewOutput); }
+    private ArchiveOutputResult CancelCore(Guid token, Partial entry, bool cleanupNewOutput)
     {
-        Check(); var entry = Entry(token);
+        Check();
         ArchiveOutputResult Finish(string category, int? native = null) {
             entry.Cleanup = category;
             return new(category, native, entry.State);
@@ -570,6 +660,8 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             return Finish("retained_uncertain");
         if (entry.State is ArchiveCommitState.CommittedButVerificationFailed or ArchiveCommitState.TargetChangedAfterCommit)
             return Finish("retained_published");
+        if (entry.DirectExtraction && entry.Committed) return Finish("retained");
+        if (entry.DirectExtraction && !entry.Committed) entry.State = ArchiveCommitState.FailedBeforeCommit;
         if (!entry.Committed)
         {
             try
@@ -577,10 +669,8 @@ internal sealed partial class ArchiveOutputSession : IDisposable
                 var handle = entry.Stream?.SafeFileHandle ?? entry.File!;
                 ArchiveMetadataNative.ClearOwnedReadOnly(handle);
                 OutputNative.DeleteHandle(handle);
-                entry.Stream?.Dispose(); entry.File?.Dispose();
-                // Exact unpublished handle only; source and parent protection are untouched.
-                entry.Stream = null; entry.File = null;
-                entries.Remove(token);
+                CloseOutput(entry);
+                lock (extractionGate) entries.Remove(token);
                 Diagnostic("cancelled", "partial_removed", null); return Finish("partial_removed");
             }
             catch (ArchiveOutputException e) { entry.Cleanup="cleanup_failed"; Diagnostic("failed", e.Stage, e.NativeCode); return new(e.Stage, e.NativeCode); }
@@ -599,17 +689,30 @@ internal sealed partial class ArchiveOutputSession : IDisposable
                 !ArchiveMotw.Matches(current, entry.ZoneIdentifierHash)) return Finish("changed_retained");
             ArchiveMetadataNative.ClearOwnedReadOnly(current);
             OutputNative.DeleteHandle(current);
-            entries.Remove(token);
+            lock (extractionGate) entries.Remove(token);
             Diagnostic("cancelled", "new_output_removed", null); return Finish("new_output_removed");
         }
         catch (ArchiveOutputException e) { Diagnostic("failed", e.Stage, e.NativeCode); return Finish("changed_retained", e.NativeCode); }
         catch (IOException) { return Finish("changed_retained"); }
     }
     // Called before disposal, after worker drainage. Never reconstruct Name/Smart from the request.
-    internal Protocol.ArchiveJobResultLocation? ResultLocation()
+    internal Protocol.ArchiveJobResultLocation? ResultLocation(string? preferredCommittedName = null)
     {
         Check();
         var committed = transactions.Where(entry=>entry.Journaled && entry.Committed).ToArray();
+        if (preferredCommittedName is not null)
+        {
+            var primary = committed.FirstOrDefault(entry => entry.State == ArchiveCommitState.Committed &&
+                entry.Name == preferredCommittedName && entry.Relative == preferredCommittedName && ReferenceEquals(entry.Parent, root));
+            if (primary is null) return null;
+            if (primary.DirectExtraction)
+                return new(Path.Combine(OutputNative.DisplayDirectoryPath(primary.Parent), primary.Name), "select_in_explorer");
+            using var observed = OutputNative.Open(primary.Parent, primary.Name, directory: false, readOnly: true, anyKind: true);
+            var identity = OutputNative.Identity(observed);
+            if (identity.Volume != primary.Volume || identity.IdLow != primary.FileIdLow || identity.IdHigh != primary.FileIdHigh)
+                return null;
+            return new(Path.Combine(OutputNative.DisplayDirectoryPath(primary.Parent), primary.Name), "select_in_explorer");
+        }
         if (root is null) return null;
         var completedDirectories = outputDirectories.Where(pair=>pair.Value.Completed).ToArray();
         if (committed.Length == 0 && completedDirectories.Length == 0) return null;
@@ -632,16 +735,24 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             try { Cancel(token); }
             catch (Exception) { entries[token].Cleanup = "cleanup_failed"; /* Never delete by path. */ }
         }
-        foreach(var entry in entries.Values){entry.Stream?.Dispose();entry.File?.Dispose();entry.Retained?.Dispose();}
+        foreach(var entry in entries.Values){CloseOutput(entry);entry.Retained?.Dispose();entry.Digest?.Dispose();entry.Digest=null;}
         disposed = true;
         foreach (var item in directories) item.Dispose();
         drive.Dispose();
     }
     private void Diagnostic(string phase, string stage, int? native)
     {
+        if (compactJournal && phase is "started" or "completed" or "cancelled") {
+            int count;
+            if (phase == "started") { lock (extractionGate) count = transactions.Count; }
+            else count = Interlocked.Increment(ref diagnosticCompletions);
+            if (count != 1 && (count < 8192 || count % 8192 != 0)) return;
+        }
         try { log?.Write("info", "archive.output." + phase, operationId,
             new Dictionary<string, object?> { ["stage"] = stage, ["native_error_code"] = native,
-                ["elapsed_ms"] = clock.ElapsedMilliseconds }); }
+                ["elapsed_ms"] = clock.ElapsedMilliseconds,
+                ["native_full_reads"] = ReadObservation.FullReads, ["native_read_bytes"] = ReadObservation.BytesRead,
+                ["partial_read_calls"] = ReadObservation.PartialReadCalls, ["partial_read_bytes"] = ReadObservation.PartialReadBytes }); }
         catch (Exception) { /* Never change the file result for diagnostic failure. */ }
     }
 }
@@ -651,6 +762,8 @@ internal sealed partial class ArchiveOutputSession : IDisposable
 // NtCreateFile with RootDirectory and one component is the filesystem security boundary.
 internal static partial class OutputNative
 {
+    internal sealed class OpenObservation { internal long CreateTicks, InspectionTicks; }
+    [ThreadStatic] internal static Action<string>? OperationProbe;
     [StructLayout(LayoutKind.Sequential)] private struct UnicodeString
     { internal ushort Length, MaximumLength; internal IntPtr Buffer; }
     [StructLayout(LayoutKind.Sequential)] private struct ObjectAttributes
@@ -736,14 +849,18 @@ internal static partial class OutputNative
         }
     }
     internal static SafeFileHandle Open(SafeFileHandle? parent, string name, bool directory, bool create = false,
-        bool exclusive = false, bool readOnly = false, bool anyKind = false, bool metadataCleanup = false, bool zoneStream = false, bool retireDirectory = false,bool requireWrite=false, Action? createdCheckpoint=null, bool reclamationWrite=false)
+        bool exclusive = false, bool readOnly = false, bool anyKind = false, bool metadataCleanup = false, bool zoneStream = false, bool retireDirectory = false,bool requireWrite=false, Action? createdCheckpoint=null, bool reclamationWrite=false,
+        Func<int, IntPtr>? nativeAllocate = null, Action<IntPtr>? nativeFree = null, bool directCreate = false,
+        OpenObservation? observation = null)
     {
         var bytes = Encoding.Unicode.GetBytes(name);
         if (bytes.Length > ushort.MaxValue - 2) throw new ArchiveOutputException("invalid_component");
-        var str = Marshal.AllocHGlobal(bytes.Length + 2);
-        var unicode = Marshal.AllocHGlobal(Marshal.SizeOf<UnicodeString>());
+        var str = IntPtr.Zero;
+        var unicode = IntPtr.Zero;
         try
         {
+            str = nativeAllocate is null ? Marshal.AllocHGlobal(bytes.Length + 2) : nativeAllocate(bytes.Length + 2);
+            unicode = nativeAllocate is null ? Marshal.AllocHGlobal(Marshal.SizeOf<UnicodeString>()) : nativeAllocate(Marshal.SizeOf<UnicodeString>());
             Marshal.Copy(bytes, 0, str, bytes.Length); Marshal.WriteInt16(str, bytes.Length, 0);
             Marshal.StructureToPtr(new UnicodeString { Length = (ushort)bytes.Length,
                 MaximumLength = (ushort)(bytes.Length + 2), Buffer = str }, unicode, false);
@@ -755,10 +872,12 @@ internal static partial class OutputNative
             // Directory: SYNCHRONIZE | READ_ATTRIBUTES | LIST_DIRECTORY plus FILE_WRITE_DATA when creating;
             // file: SYNCHRONIZE | DELETE | READ_ATTRIBUTES | READ_DATA | WRITE_DATA | APPEND_DATA.
             var access = reclamationWrite ? 0x100183u : zoneStream ? readOnly ? 0x100081u : 0x100183u : directory ? 0x100081u | (create ? 0x102u : 0u) | (requireWrite ? 0x6u : 0u) | (retireDirectory ? 0x10000u : 0u) : readOnly ? 0x100081u : metadataCleanup ? 0x110181u : 0x110183u;
+            var createStarted = observation is null ? 0 : Stopwatch.GetTimestamp();
             var status = NtCreateFile(out var handle, access, ref attrs,
-                out _, IntPtr.Zero, 0x80, reclamationWrite ? 1u : zoneStream ? readOnly && !metadataCleanup ? 1u : 7u : directory ? 3u : readOnly ? 1u : 0u,
+                out _, IntPtr.Zero, 0x80, directCreate ? 7u : reclamationWrite ? 1u : zoneStream ? readOnly && !metadataCleanup ? 1u : 7u : directory ? 3u : readOnly ? 1u : 0u,
                 exclusive ? 2u : create ? 3u : 1u, options | (directory ? 0x1u : anyKind ? 0u : 0x40u),
                 IntPtr.Zero, 0);
+            if (observation is not null) Interlocked.Add(ref observation.CreateTicks, Stopwatch.GetTimestamp() - createStarted);
             if (status < 0)
             {
                 handle?.Dispose();
@@ -768,12 +887,24 @@ internal static partial class OutputNative
             try
             {
                 if (directory && create && exclusive) createdCheckpoint?.Invoke(); // Native success precedes fallible inspection.
-                Inspect(handle, directory);
+                OperationProbe?.Invoke(directory ? "open_directory" : "open_file");
+                var inspectionStarted = observation is null ? 0 : Stopwatch.GetTimestamp();
+                try { Inspect(handle, directory); }
+                finally { if (observation is not null) Interlocked.Add(ref observation.InspectionTicks, Stopwatch.GetTimestamp() - inspectionStarted); }
                 return handle;
             }
-            catch { handle.Dispose(); throw; }
+            catch
+            {
+                try { if (directCreate) DeleteHandle(handle); }
+                finally { handle.Dispose(); }
+                throw;
+            }
         }
-        finally { Marshal.FreeHGlobal(unicode); Marshal.FreeHGlobal(str); }
+        finally
+        {
+            if (unicode != IntPtr.Zero) { if (nativeFree is null) Marshal.FreeHGlobal(unicode); else nativeFree(unicode); }
+            if (str != IntPtr.Zero) { if (nativeFree is null) Marshal.FreeHGlobal(str); else nativeFree(str); }
+        }
     }
     internal static SafeFileHandle OpenZoneIdentifier(SafeFileHandle file, bool create, bool shareDelete = false)
     {
@@ -794,9 +925,10 @@ internal static partial class OutputNative
         if (((tag.Attributes & 0x10) != 0) != directory) throw new ArchiveOutputException("wrong_kind");
         _ = Identity(handle);
     }
-    internal static void VerifyDirectory(SafeFileHandle handle) => Inspect(handle, true);
+    internal static void VerifyDirectory(SafeFileHandle handle) { OperationProbe?.Invoke("verify_directory"); Inspect(handle, true); }
     internal static (ulong Volume, ulong IdLow, ulong IdHigh, long Size, long Modified) Identity(SafeFileHandle handle)
     {
+        OperationProbe?.Invoke("identity");
         if (!FileInfo(handle, out var info)) throw new ArchiveOutputException("inspect_identity", Marshal.GetLastWin32Error());
         if (!FullFileId(handle, FileInfoClass.FileIdInfo, out var id, (uint)Marshal.SizeOf<FileIdInfo>()))
             throw new ArchiveOutputException("inspect_full_identity", Marshal.GetLastWin32Error());
@@ -804,9 +936,10 @@ internal static partial class OutputNative
             ((long)info.SizeHigh << 32) | info.SizeLow, ((long)info.Write.dwHighDateTime << 32) | (uint)info.Write.dwLowDateTime);
     }
     internal static void Flush(SafeFileHandle handle)
-    { if (!FlushBuffers(handle)) throw new ArchiveOutputException("flush_file", Marshal.GetLastWin32Error()); }
+    { OperationProbe?.Invoke("flush"); if (!FlushBuffers(handle)) throw new ArchiveOutputException("flush_file", Marshal.GetLastWin32Error()); }
     internal static void RenameNoReplace(SafeFileHandle source, SafeFileHandle parent, string name)
     {
+        OperationProbe?.Invoke("rename");
         var bytes = Encoding.Unicode.GetBytes(name);
         // FILE_RENAME_INFORMATION: BOOLEAN ReplaceIfExists, 7 pad, HANDLE RootDirectory,
         // ULONG FileNameLength, WCHAR FileName[1]. NtSetInformationFile class10.
@@ -849,6 +982,7 @@ internal static partial class OutputNative
     }
     internal static void RenameReplace(SafeFileHandle source, SafeFileHandle parent, string name)
     {
+        OperationProbe?.Invoke("rename");
         // Win32 wrapper on this workstation rejects relative RootDirectory with87.
         var bytes = Encoding.Unicode.GetBytes(StableDirectoryPath(parent).TrimEnd('\\') + "\\" + name);
         var nameOffset = Marshal.OffsetOf<RenameInfo>(nameof(RenameInfo.FileName)).ToInt32();

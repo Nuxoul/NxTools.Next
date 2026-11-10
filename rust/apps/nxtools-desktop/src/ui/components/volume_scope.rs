@@ -1,7 +1,10 @@
+use gpui_kit::base::TestSupportExt as _;
 use std::rc::Rc;
 
 use gpui_kit::component::checkbox::Checkbox;
+use gpui_kit::component::label::Label;
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::tag::Tag;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Sizable, Size};
 use gpui_kit::{AnyElement, App, IntoElement, SharedString, Window, div, prelude::*, px};
@@ -14,6 +17,7 @@ use crate::ui::typography::{
     LINE_HEIGHT_WORKBENCH_SUPPORT as LINE_HEIGHT_LABEL, TEXT_WORKBENCH_BODY as TEXT_BODY,
     TEXT_WORKBENCH_SUPPORT as TEXT_LABEL,
 };
+use nxtools_protocol::{IndexDriveMaintenance, IndexRebuildReason};
 
 const VOLUME_SCOPE_AUTOMATIC_ROW_HEIGHT: f32 = 48.0;
 const VOLUME_SCOPE_ROW_HEIGHT: f32 = 40.0;
@@ -127,15 +131,26 @@ pub(crate) fn automatic_volume_scope_row(
     )
 }
 
+pub(crate) struct VolumeScopeRowState {
+    pub maintenance: Option<IndexDriveMaintenance>,
+    pub checked: bool,
+    pub show_divider: bool,
+}
+
 pub(crate) fn volume_scope_row(
     theme: Theme,
+    cx: &App,
     selector: impl Into<SharedString>,
     title: impl Into<SharedString>,
     metadata: impl Into<SharedString>,
-    checked: bool,
-    show_divider: bool,
+    state: VolumeScopeRowState,
     on_click: impl Fn(&bool, &mut Window, &mut App) + 'static,
 ) -> AnyElement {
+    let VolumeScopeRowState {
+        maintenance,
+        checked,
+        show_divider,
+    } = state;
     let on_click = Rc::new(on_click);
     let selector = selector.into();
     let title: SharedString = title.into();
@@ -150,6 +165,68 @@ pub(crate) fn volume_scope_row(
         if checked { "checked" } else { "unchecked" }
     );
     let action_id = SharedString::from(format!("{selector}-action"));
+    let status = maintenance.map(|state| {
+        let colors = gpui_kit::component::Theme::global(cx).colors;
+        let (tag, label, foreground, description) = match state {
+            IndexDriveMaintenance::InitialBuilding => {
+                (Tag::info(), "首次建立", colors.info_foreground, None)
+            }
+            IndexDriveMaintenance::Rebuilding { reason } => {
+                let reason = match reason {
+                    IndexRebuildReason::JournalWrapped => "日志已覆盖",
+                    IndexRebuildReason::BulkChanges => "变更过多",
+                    IndexRebuildReason::CursorInvalid => "日志游标无效",
+                    IndexRebuildReason::Requested => "手动请求",
+                };
+                (
+                    Tag::warning(),
+                    "正在重建",
+                    colors.warning_foreground,
+                    Some(format!("正在重建，搜索结果可能不完整 · {reason}")),
+                )
+            }
+            IndexDriveMaintenance::Ready => {
+                (Tag::success(), "就绪", colors.success_foreground, None)
+            }
+        };
+        let tag_selector = format!("{selector}-maintenance-tag");
+        let tag = div()
+            .id(SharedString::from(format!(
+                "{selector}-maintenance-tag-label"
+            )))
+            .role(gpui_kit::Role::Label)
+            .aria_label(label)
+            .test_support()
+            .debug_selector(move || tag_selector.clone())
+            .flex_none()
+            .child(
+                tag.with_size(Size::Small).child(
+                    Label::new(label)
+                        .text_size(ordinary_rem(10.0))
+                        .line_height(ordinary_rem(14.0))
+                        .text_color(foreground),
+                ),
+            );
+        let description = description.map(|text| {
+            let description_selector = format!("{selector}-maintenance-description");
+            let tooltip_text = text.clone();
+            div()
+                .id(SharedString::from(format!("{selector}-maintenance-detail")))
+                .role(gpui_kit::Role::Label)
+                .aria_label(text.clone())
+                .test_support()
+                .debug_selector(move || description_selector.clone())
+                .w_full()
+                .min_w_0()
+                .truncate()
+                .text_size(ordinary_rem(10.0))
+                .line_height(ordinary_rem(14.0))
+                .text_color(theme.text_secondary)
+                .tooltip(move |window, cx| Tooltip::new(tooltip_text.clone()).build(window, cx))
+                .child(text)
+        });
+        (tag.into_any_element(), description)
+    });
     let content = ListItem::new(selector.clone())
         .debug_selector(move || row_selector.clone())
         .accessibility_label(title.clone())
@@ -173,35 +250,86 @@ pub(crate) fn volume_scope_row(
                         .tab_stop(false)
                         .with_size(Size::Small),
                 )
-                .child(
+                .child(if let Some((tag, description)) = status {
                     div()
-                        .debug_selector(move || title_selector.clone())
-                        .h(ordinary_rem(LINE_HEIGHT_BODY))
                         .min_w_0()
                         .flex_1()
-                        .truncate()
-                        .text_size(ordinary_rem(TEXT_BODY))
-                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
-                        .text_color(theme.text)
-                        .child(title),
-                )
-                .child(
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .w_full()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .debug_selector(move || title_selector.clone())
+                                        .min_w_0()
+                                        .flex_1()
+                                        .truncate()
+                                        .text_size(ordinary_rem(TEXT_BODY))
+                                        .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                        .text_color(theme.text)
+                                        .child(title),
+                                )
+                                .child(
+                                    div()
+                                        .id(SharedString::from(format!("{selector}-status")))
+                                        .debug_selector(move || metadata_selector.clone())
+                                        .w(ordinary_rem(100.0))
+                                        .flex_none()
+                                        .truncate()
+                                        .text_size(ordinary_rem(TEXT_LABEL))
+                                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                        .text_color(theme.text_muted)
+                                        .tooltip(move |window, cx| {
+                                            Tooltip::new(metadata_tooltip.clone()).build(window, cx)
+                                        })
+                                        .child(metadata),
+                                )
+                                .child(tag),
+                        )
+                        .when_some(description, |row, description| row.child(description))
+                        .into_any_element()
+                } else {
                     div()
-                        .id(SharedString::from(format!("{selector}-status")))
-                        .debug_selector(move || metadata_selector.clone())
-                        .h(ordinary_rem(LINE_HEIGHT_LABEL))
-                        .w(ordinary_rem(196.0))
                         .min_w_0()
-                        .flex_none()
-                        .truncate()
-                        .text_size(ordinary_rem(TEXT_LABEL))
-                        .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
-                        .text_color(theme.text_muted)
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(metadata_tooltip.clone()).build(window, cx)
-                        })
-                        .child(metadata),
-                ),
+                        .flex_1()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(
+                            div()
+                                .debug_selector(move || title_selector.clone())
+                                .h(ordinary_rem(LINE_HEIGHT_BODY))
+                                .min_w_0()
+                                .flex_1()
+                                .truncate()
+                                .text_size(ordinary_rem(TEXT_BODY))
+                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                .text_color(theme.text)
+                                .child(title),
+                        )
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("{selector}-status")))
+                                .debug_selector(move || metadata_selector.clone())
+                                .h(ordinary_rem(LINE_HEIGHT_LABEL))
+                                .w(ordinary_rem(196.0))
+                                .min_w_0()
+                                .flex_none()
+                                .truncate()
+                                .text_size(ordinary_rem(TEXT_LABEL))
+                                .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                                .text_color(theme.text_muted)
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(metadata_tooltip.clone()).build(window, cx)
+                                })
+                                .child(metadata),
+                        )
+                        .into_any_element()
+                }),
         )
         .into_any_element();
     focusable_content(action_id, theme, false, content, move |_, window, cx| {
@@ -233,7 +361,7 @@ mod tests {
         pub(super) volume: Rc<Cell<bool>>,
     }
     impl gpui_kit::Render for VolumeFixture {
-        fn render(&mut self, _: &mut Window, _: &mut gpui_kit::Context<Self>) -> impl IntoElement {
+        fn render(&mut self, _: &mut Window, cx: &mut gpui_kit::Context<Self>) -> impl IntoElement {
             let automatic = self.automatic.clone();
             let volume = self.volume.clone();
             div()
@@ -247,11 +375,15 @@ mod tests {
                 ))
                 .child(volume_scope_row(
                     Theme::zed_dark(),
+                    cx,
                     "synthetic-volume",
                     "合成卷",
                     "不读取真实卷",
-                    volume.get(),
-                    false,
+                    VolumeScopeRowState {
+                        maintenance: None,
+                        checked: volume.get(),
+                        show_divider: false,
+                    },
                     move |checked, _, _| volume.set(*checked),
                 ))
         }

@@ -215,7 +215,7 @@ impl ExtensionApplication {
     pub(crate) fn bind_event_control_for_test(&mut self, control: committed_events::EventControl) {
         self.event_control = Some(control);
     }
-    pub(crate) fn pick_manifest(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn pick_manifest(&mut self, source_window_handle: i64, cx: &mut Context<Self>) {
         if self.busy || self.pending_picker.is_some() {
             return;
         }
@@ -235,6 +235,8 @@ impl ExtensionApplication {
             .send_command_with_id(
                 PlatformCommand::PickExtensionManifest(PickExtensionManifestCommand {
                     current_path: String::new(),
+                    source_window_handle,
+                    source_process_id: std::process::id(),
                 }),
                 id,
             )
@@ -247,25 +249,6 @@ impl ExtensionApplication {
                 "无法打开文件选择器，请重试",
                 cx,
             );
-        } else {
-            cx.spawn(async move |this, cx| {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_secs(300))
-                    .await;
-                let _ = this.update(cx, |app, cx| {
-                    if app.pending_picker == Some(id) {
-                        app.pending_picker = None;
-                        app.notify_operation(
-                            format!("extension-picker-{id}"),
-                            NotificationLevel::Error,
-                            "文件选择已超时，请重试",
-                            cx,
-                        );
-                        cx.notify();
-                    }
-                });
-            })
-            .detach();
         }
         cx.notify();
     }
@@ -1354,7 +1337,7 @@ mod tests {
             )
         });
         for disconnected in [false, true] {
-            app.update(cx, |app, cx| app.pick_manifest(cx));
+            app.update(cx, |app, cx| app.pick_manifest(0, cx));
             let command = endpoint
                 .try_receive_command_for_contract_test()
                 .expect("picker queued");
@@ -1365,6 +1348,14 @@ mod tests {
                     "pending before command observation"
                 )
             });
+            cx.executor()
+                .advance_clock(std::time::Duration::from_secs(601));
+            cx.run_until_parked();
+            assert_eq!(
+                app.read_with(cx, |app, _| app.pending_picker),
+                Some(command.id),
+                "waiting for a person must not expire the manifest picker"
+            );
             app.update(cx, |app, cx| {
                 if disconnected {
                     app.handle_platform_notification(

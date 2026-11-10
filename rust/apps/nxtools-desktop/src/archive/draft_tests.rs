@@ -120,9 +120,13 @@ fn separately_streams_keep_every_input_and_omit_hidden_directory_options() {
         request.validate().expect("exact public protocol");
     }
     draft.sources[1].path = r"C:\other\a.txt".into();
-    assert!(
-        draft.requests(&settings).is_err(),
-        "never silently overwrite duplicate batch output"
+    let duplicate_outputs = draft
+        .requests(&settings)
+        .expect("planner resolves duplicate outputs");
+    assert_eq!(duplicate_outputs.len(), 2);
+    assert_eq!(
+        duplicate_outputs[0].create.as_ref().expect("first").name,
+        duplicate_outputs[1].create.as_ref().expect("second").name
     );
     draft.sources[1].directory = true;
     assert!(
@@ -245,7 +249,10 @@ fn split_create_draft_maps_checked_mib_to_wire_and_rejects_other_formats() {
     assert!(draft.requests(&settings).is_err());
     draft.volume_mib = "64".into();
     draft.set_format(ArchiveCreateFormat::Tar);
+    assert_eq!(draft.volume_mib, "64");
     assert!(draft.requests(&settings).is_err());
+    draft.volume_mib.clear();
+    assert!(draft.requests(&settings).is_ok());
 }
 #[test]
 fn immutable_modify_draft_maps_all_actions_to_same_job_contract() {

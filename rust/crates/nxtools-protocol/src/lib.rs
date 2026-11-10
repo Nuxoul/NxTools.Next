@@ -1,4 +1,6 @@
 pub mod archive_browser;
+pub mod archive_clipboard;
+pub mod archive_create_destination;
 pub mod archive_job;
 pub mod archive_password;
 pub mod archive_picker;
@@ -10,6 +12,7 @@ pub mod archive_virtual_drag;
 pub mod desktop_archive_intent;
 pub mod floating_assistant;
 pub mod main_window;
+pub mod raw_numbered_join;
 pub mod system_proxy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -133,6 +136,7 @@ pub enum PlatformEvent {
     ClipboardCaptured(ClipboardCapture),
     ClipboardPanelRequested(ClipboardPanelRequest),
     QuickLaunchPanelRequested(QuickLaunchPanelRequest),
+    QuickLaunchKeyboardHealthChanged(QuickLaunchKeyboardHealthChanged),
     QuickLaunchDirectoryContextResolved(QuickLaunchDirectoryContextResolution),
     QuickLaunchAutoSwitchRequested(QuickLaunchAutoSwitchRequest),
     QuickLaunchFileDialogSearchHostChanged(QuickLaunchFileDialogSearchHost),
@@ -247,6 +251,22 @@ pub struct QuickLaunchPanelRequest {
     pub correlation_id: Option<uuid::Uuid>,
 }
 
+/// Observable hook installation and owned-thread lifecycle; not silent hook removal detection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QuickLaunchKeyboardHealthChanged {
+    pub correlation_id: Uuid,
+    pub state: QuickLaunchKeyboardHealthState,
+    pub native_error_code: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuickLaunchKeyboardHealthState {
+    InstallFailed,
+    ThreadExited,
+    Reinstalled,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct QuickLaunchDirectoryContextResolution {
     pub target_window_handle: i64,
@@ -312,6 +332,7 @@ pub enum DirectoryNavigationHost {
 #[serde(tag = "command", content = "data", rename_all = "snake_case")]
 pub enum IndexerCommand {
     Search(IndexSearchRequest),
+    CancelSearch(IndexSearchCancel),
     UpdateSettings(IndexSettings),
     RefreshVolumes,
     RebuildIndex,
@@ -370,6 +391,42 @@ pub struct IndexDriveStatus {
     pub indexed_items: u64,
     pub journal_id: Option<u64>,
     pub next_usn: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub maintenance: Option<IndexDriveMaintenance>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum IndexDriveMaintenance {
+    InitialBuilding,
+    Rebuilding { reason: IndexRebuildReason },
+    Ready,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexRebuildReason {
+    JournalWrapped,
+    BulkChanges,
+    CursorInvalid,
+    Requested,
+}
+
+impl IndexRebuildReason {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::JournalWrapped => "journal_wrapped",
+            Self::BulkChanges => "bulk_changes",
+            Self::CursorInvalid => "cursor_invalid",
+            Self::Requested => "requested",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct IndexSearchCancel {
+    pub request_id: Uuid,
+    pub generation: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -425,11 +482,15 @@ pub enum PlatformCommand {
     ArchiveBrowserRead(archive_read::ArchiveReadCommand),
     ArchivePasswordReply(archive_password::ArchivePasswordReply),
     ArchiveJob(Box<archive_job::ArchiveJobCommand>),
+    RawNumberedJoin(raw_numbered_join::RawNumberedJoinCommand),
     ArchivePicker(archive_picker::ArchivePickerCommand),
+    ReadClipboardFileDrop(archive_clipboard::ArchiveClipboardCommand),
+    ArchiveCreateDestination(archive_create_destination::ArchiveCreateDestinationCommand),
     ArchiveSpace(archive_space::ArchiveSpaceCommand),
     ArchiveRecoveryInspect(archive_recovery::ArchiveRecoveryInspectCommand),
     PrepareMainWindow(main_window::PrepareMainWindowCommand),
     ConfigureDesktopShell(ConfigureDesktopShellCommand),
+    ReadClipboardText,
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
     PasteImage(PasteImageCommand),
@@ -470,6 +531,7 @@ pub enum PlatformCommand {
     OpenDefaultAppsSettings(OpenDefaultAppsSettingsCommand),
     ShutdownSystem(ShutdownSystemCommand),
     ExportBrowserExtension(ExportBrowserExtensionCommand),
+    PickBrowserExtensionExportPath(PickBrowserExtensionExportPathCommand),
     LaunchProcess(LaunchProcessCommand),
     NavigateDirectory(NavigateDirectoryCommand),
     OpenFileInDialog(OpenFileInDialogCommand),
@@ -624,28 +686,38 @@ pub struct OpenFileInDialogCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickClipboardStorageDirectoryCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
     pub current_directory: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickDirectoryCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
     pub current_directory: String,
     pub title: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickProgramCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
     pub current_path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickExtensionManifestCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
     pub current_path: String,
 }
 
 /// Opens an EXE-only picker; selecting a path does not execute or trust it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickExtensionRuntimeCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
     pub program: String,
     pub current_path: String,
 }
@@ -933,9 +1005,17 @@ pub struct ShutdownSystemCommand {
 pub struct ExportBrowserExtensionCommand {
     /// "chrome" packages a signed CRX3; "firefox" packages an XPI.
     pub format: String,
-    /// Absolute output file path; the empty string asks the host to choose
-    /// the desktop with its timestamped default name.
+    /// Absolute output file path, selected by a separate human-modal command.
+    /// Machine-only export rejects empty destinations.
     pub destination: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PickBrowserExtensionExportPathCommand {
+    pub format: String,
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1006,6 +1086,8 @@ pub struct ExtractShellIconCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PickClipboardArchivePathCommand {
+    pub source_window_handle: i64,
+    pub source_process_id: u32,
     pub mode: ClipboardArchivePickerMode,
     pub suggested_file_name: String,
 }
@@ -1072,6 +1154,17 @@ pub enum ProtocolError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn clipboard_text_read_is_an_additive_no_payload_command() {
+        let value =
+            serde_json::to_value(PlatformCommand::ReadClipboardText).expect("encode text read");
+        assert_eq!(value, serde_json::json!({"command": "read_clipboard_text"}));
+        assert_eq!(
+            serde_json::from_value::<PlatformCommand>(value).expect("decode text read"),
+            PlatformCommand::ReadClipboardText
+        );
+    }
 
     fn fixture_context() -> ForegroundContext {
         ForegroundContext {
@@ -1656,6 +1749,57 @@ mod tests {
     }
 
     #[test]
+    fn quick_launch_keyboard_health_round_trip_and_unknown_event_rejection() {
+        for (state, code, name) in [
+            (
+                QuickLaunchKeyboardHealthState::InstallFailed,
+                5,
+                "install_failed",
+            ),
+            (
+                QuickLaunchKeyboardHealthState::ThreadExited,
+                0,
+                "thread_exited",
+            ),
+            (
+                QuickLaunchKeyboardHealthState::Reinstalled,
+                0,
+                "reinstalled",
+            ),
+        ] {
+            let correlation_id = Uuid::new_v4();
+            let mut event = Envelope::new(Message::PlatformEvent(
+                PlatformEvent::QuickLaunchKeyboardHealthChanged(QuickLaunchKeyboardHealthChanged {
+                    correlation_id,
+                    state,
+                    native_error_code: code,
+                }),
+            ));
+            event.correlation_id = Some(correlation_id);
+            let encoded = event.encode_line().expect("health event encodes");
+            assert!(encoded.contains("quick_launch_keyboard_health_changed"));
+            assert!(encoded.contains(&format!("\"state\":\"{name}\"")));
+            assert_eq!(
+                Envelope::decode_line(&encoded).expect("health event decodes"),
+                event
+            );
+        }
+        let unknown = Envelope::new(Message::PlatformEvent(PlatformEvent::TrayActionRequested(
+            TrayActionRequest {
+                correlation_id: Uuid::new_v4(),
+                action: TrayAction::Open,
+            },
+        )))
+        .encode_line()
+        .expect("encode existing event")
+        .replace("tray_action_requested", "newer_unknown_event");
+        assert!(matches!(
+            Envelope::decode_line(&unknown),
+            Err(ProtocolError::InvalidJson(_))
+        ));
+    }
+
+    #[test]
     fn quick_launch_hotkey_and_panel_request_round_trip() {
         let configuration = Envelope::new(Message::PlatformCommand(
             PlatformCommand::ConfigureQuickLaunch(ConfigureQuickLaunchCommand {
@@ -1926,6 +2070,7 @@ mod tests {
             phase: IndexPhase::DiscoveringVolumes,
             indexed_items: 0,
             drives: vec![IndexDriveStatus {
+                maintenance: None,
                 mount_point: r"C:\".into(),
                 file_system: "NTFS".into(),
                 indexed_items: 0,
@@ -2012,9 +2157,43 @@ mod tests {
     }
 
     #[test]
+    fn export_destination_picker_requires_source_identity_and_keeps_export_machine_only() {
+        let chooser = PlatformCommand::PickBrowserExtensionExportPath(
+            PickBrowserExtensionExportPathCommand {
+                format: "chrome_store".into(),
+                source_window_handle: 123,
+                source_process_id: 42,
+            },
+        );
+        let envelope = Envelope::new(Message::PlatformCommand(chooser));
+        let encoded = envelope.encode_line().expect("encode chooser");
+        let data: serde_json::Value = serde_json::from_str(&encoded).expect("JSON chooser");
+        assert_eq!(
+            data["payload"]["command"],
+            "pick_browser_extension_export_path"
+        );
+        assert_eq!(data["payload"]["data"]["source_process_id"], 42);
+        assert_eq!(
+            Envelope::decode_line(&encoded).expect("decode chooser"),
+            envelope
+        );
+        let mut missing = data;
+        missing["payload"]["data"]
+            .as_object_mut()
+            .expect("picker data")
+            .remove("source_process_id");
+        assert!(
+            Envelope::decode_line(&serde_json::to_string(&missing).expect("missing field JSON"))
+                .is_err()
+        );
+    }
+
+    #[test]
     fn clipboard_archive_picker_round_trips_its_mode_and_suggested_name() {
         let envelope = Envelope::new(Message::PlatformCommand(
             PlatformCommand::PickClipboardArchivePath(PickClipboardArchivePathCommand {
+                source_window_handle: 42,
+                source_process_id: 7,
                 mode: ClipboardArchivePickerMode::Export,
                 suggested_file_name: "NxTools-clipboard.nxtclip".into(),
             }),
@@ -2029,6 +2208,8 @@ mod tests {
     fn clipboard_storage_directory_picker_round_trips_the_current_directory() {
         let envelope = Envelope::new(Message::PlatformCommand(
             PlatformCommand::PickClipboardStorageDirectory(PickClipboardStorageDirectoryCommand {
+                source_window_handle: 42,
+                source_process_id: 7,
                 current_directory: r"D:\NxToolsData\Clipboard".into(),
             }),
         ));
@@ -2042,6 +2223,8 @@ mod tests {
     fn generic_directory_picker_round_trips_title_and_initial_directory() {
         let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::PickDirectory(
             PickDirectoryCommand {
+                source_window_handle: 42,
+                source_process_id: 7,
                 current_directory: r"D:\Cache".into(),
                 title: "选择要排除的目录".into(),
             },
@@ -2056,6 +2239,8 @@ mod tests {
     fn program_picker_round_trips_the_current_path() {
         let envelope = Envelope::new(Message::PlatformCommand(PlatformCommand::PickProgram(
             PickProgramCommand {
+                source_window_handle: 42,
+                source_process_id: 7,
                 current_path: r"C:\Tools\runner.exe".into(),
             },
         )));
@@ -2070,6 +2255,8 @@ mod tests {
         for current_path in ["", r"C:\Packages\扩展.json"] {
             let envelope = Envelope::new(Message::PlatformCommand(
                 PlatformCommand::PickExtensionManifest(PickExtensionManifestCommand {
+                    source_window_handle: 42,
+                    source_process_id: 7,
                     current_path: current_path.into(),
                 }),
             ));
@@ -2091,6 +2278,8 @@ mod tests {
             let commands = [
                 (
                     PlatformCommand::PickExtensionRuntime(PickExtensionRuntimeCommand {
+                        source_window_handle: 42,
+                        source_process_id: 7,
                         program: program.into(),
                         current_path: String::new(),
                     }),
@@ -2364,5 +2553,86 @@ mod default_apps_command_tests {
                 .is_err()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod index_maintenance_tests {
+    use super::*;
+
+    #[test]
+    fn u4_drive_maintenance_roundtrip_and_legacy_default() {
+        let legacy = serde_json::json!({
+            "mount_point": "C:\\", "file_system": "NTFS", "indexed_items": 12,
+            "journal_id": 17, "next_usn": 100
+        });
+        let decoded: IndexDriveStatus =
+            serde_json::from_value(legacy.clone()).expect("legacy drive");
+        assert_eq!(
+            serde_json::to_value(decoded).expect("legacy projection"),
+            legacy
+        );
+        for maintenance in [
+            serde_json::json!({"state": "initial_building"}),
+            serde_json::json!({"state": "rebuilding", "reason": "journal_wrapped"}),
+            serde_json::json!({"state": "ready"}),
+        ] {
+            let mut current = legacy.clone();
+            current["maintenance"] = maintenance;
+            let decoded: IndexDriveStatus =
+                serde_json::from_value(current.clone()).expect("maintenance drive");
+            assert_eq!(
+                serde_json::to_value(decoded).expect("maintenance projection"),
+                current,
+                "per-drive maintenance must survive the current wire projection"
+            );
+            #[derive(Deserialize)]
+            struct LegacyDrive {
+                mount_point: String,
+                file_system: String,
+                indexed_items: u64,
+                journal_id: Option<u64>,
+                next_usn: Option<i64>,
+            }
+            let old: LegacyDrive =
+                serde_json::from_value(current).expect("old DTO ignores new optional field");
+            assert_eq!(old.mount_point, "C:\\");
+            assert_eq!(old.file_system, "NTFS");
+            assert_eq!(
+                (old.indexed_items, old.journal_id, old.next_usn),
+                (12, Some(17), Some(100))
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod search_cancel_tests {
+    use super::*;
+
+    #[test]
+    fn search_retirement_cancel_roundtrip_preserves_original_request_and_generation() {
+        let request_id = Uuid::new_v4();
+        let cancel = IndexSearchCancel {
+            request_id,
+            generation: 17,
+        };
+        let mut envelope = Envelope::new(Message::IndexerCommand(IndexerCommand::CancelSearch(
+            cancel,
+        )));
+        envelope.correlation_id = Some(request_id);
+        let encoded = envelope.encode_line().expect("cancel frame");
+        let value: serde_json::Value = serde_json::from_str(&encoded).expect("cancel JSON");
+        assert_eq!(value["payload"]["command"], "cancel_search");
+        assert_eq!(
+            value["payload"]["data"]["request_id"],
+            request_id.to_string()
+        );
+        assert_eq!(value["payload"]["data"]["generation"], 17);
+        assert_eq!(
+            Envelope::decode_line(&encoded).expect("cancel decode"),
+            envelope
+        );
+        assert_ne!(envelope.id, request_id);
     }
 }

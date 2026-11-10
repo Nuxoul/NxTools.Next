@@ -13,7 +13,7 @@ function bucketForTab(tabId) {
 }
 
 // Both maps are lookup indexes; aliases do not own another resource.
-function removeCachedResource(tabId, resource) {
+function removeCachedResource(tabId, resource, preserveBucket = false) {
   const bucket = resourcesByTab.get(tabId);
   if (!bucket) {
     return;
@@ -27,7 +27,7 @@ function removeCachedResource(tabId, resource) {
       resourcesById.delete(key);
     }
   }
-  if (bucket.size === 0) {
+  if (bucket.size === 0 && !preserveBucket) {
     resourcesByTab.delete(tabId);
   }
 }
@@ -35,7 +35,7 @@ function removeCachedResource(tabId, resource) {
 function indexCachedResource(resource) {
   const previous = resourcesByTab.get(resource.tabId)?.get(resource.id);
   if (previous && previous !== resource && previous.id === resource.id) {
-    removeCachedResource(resource.tabId, previous);
+    removeCachedResource(resource.tabId, previous, true);
   }
   const bucket = bucketForTab(resource.tabId);
   bucket.set(resource.id, resource);
@@ -52,13 +52,15 @@ function indexCachedResource(resource) {
 function enforceResourceCapacity(tabId) {
   const bucket = resourcesByTab.get(tabId);
   const sorted = [...new Set(bucket?.values() || [])]
-    .sort((left, right) => right.capturedAt - left.capturedAt);
+    .sort((left, right) => Number(Boolean(NxToolsCapturePolicy.discoveryCandidateReason(left))) -
+      Number(Boolean(NxToolsCapturePolicy.discoveryCandidateReason(right))) || right.capturedAt - left.capturedAt);
   for (const stale of sorted.slice(RESOURCE_LIMIT_PER_TAB)) {
     removeCachedResource(tabId, stale);
   }
 }
 
-function cacheResource(resource) {
+function cacheResource(resource, expectedBucket = null) {
+  if (expectedBucket && resourcesByTab.get(resource?.tabId) !== expectedBucket) return;
   const url = boundedCapturedUrl(resource?.url);
   if (!resource || !resource.id || !url) {
     return;
@@ -86,6 +88,8 @@ function cacheResource(resource) {
     size: boundedCapturedNumber(resource.size),
     width: boundedCapturedNumber(resource.width),
     height: boundedCapturedNumber(resource.height),
+    discovery: NxToolsCapturePolicy.normalizeDiscovery(resource.discovery),
+    mediaElement: NxToolsCapturePolicy.normalizeMediaElement(resource.mediaElement),
     requestHeaders: sanitizeCapturedHeaderObject(resource.requestHeaders),
     pendingBatchHandoffId: NxToolsBatchHandoffPolicy.normalizeHandoffId(resource.pendingBatchHandoffId),
     capturedAt: boundedCapturedNumber(resource.capturedAt) || Date.now()
@@ -103,7 +107,7 @@ function cacheResource(resource) {
   const merged = NxToolsCapturePolicy.mergeCapturedResource(existing, resource);
   const cachedResource = existing || merged;
   if (existing) {
-    removeCachedResource(existing.tabId, existing);
+    removeCachedResource(existing.tabId, existing, true);
     Object.assign(existing, merged);
   }
   indexCachedResource(cachedResource);
@@ -124,8 +128,13 @@ function cacheResource(resource) {
       }
       const metadata = NxToolsCapturePolicy.mergeCapturedResource(cached, merged);
       // Sharing metadata must not move another capture's identity or handoff.
-      for (const field of ["id", "tabId", "url", "capturedAt", "pendingBatchHandoffId", "sentToDesktopAt"]) {
+      for (const field of ["id", "tabId", "frameId", "pageKey", "source", "url", "capturedAt", "pendingBatchHandoffId", "sentToDesktopAt", "discovery", "mediaElement"]) {
         delete metadata[field];
+      }
+      if (cached.tabId !== merged.tabId) {
+        for (const field of ["requestHeaders", "headerSource", "referer", "referrerSource", "pageUrl", "pageTitle", "cookieContext"]) {
+          delete metadata[field];
+        }
       }
       Object.assign(cached, metadata);
     }
@@ -138,12 +147,13 @@ function cacheResource(resource) {
 function pruneResources() {
   const now = Date.now();
   for (const [tabId, bucket] of resourcesByTab) {
+    const hadResources = bucket.size > 0;
     for (const resource of new Set(bucket.values())) {
       if (now - resource.capturedAt > RESOURCE_TTL_MS || !isUsableGoogleVideoUrl(resource.url)) {
         removeCachedResource(tabId, resource);
       }
     }
-    if (bucket.size === 0) {
+    if (hadResources && bucket.size === 0) {
       resourcesByTab.delete(tabId);
     }
   }
@@ -227,11 +237,15 @@ async function loadPersistentResources() {
 }
 
 function clearTabResources(tabId) {
+  pageThumbnailByTab.delete(tabId);
+  lastFrameScanByTab.delete(tabId);
+  selectedMediaIndexByTab.delete(tabId);
   const bucket = resourcesByTab.get(tabId);
   if (bucket) {
     for (const resource of new Set(bucket.values())) {
       removeCachedResource(tabId, resource);
     }
+    resourcesByTab.delete(tabId);
     schedulePersistResources();
   }
 }

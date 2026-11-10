@@ -28,6 +28,7 @@
     <main id="mainContent" class="workspace" tabindex="-1">
       <section id="tasksView" class="view active" role="tabpanel" aria-labelledby="tasksTab" aria-hidden="false">
         <label class="switch-row site-toggle" id="siteToggleRow"><span><strong>接管当前网站的下载</strong><small id="siteToggleHint">正在读取网站策略</small></span><input id="siteEnabledToggle" type="checkbox" aria-label="切换当前网站接管"></label>
+        <p id="handoffStatus" class="handoff-status" role="status" aria-live="polite" hidden></p>
         <div class="section-head"><h2>桌面任务 <small id="taskCountText" class="count">0</small></h2><small>最近 8 项 · 由桌面端管理</small></div>
         <div id="taskList" class="list task-list" aria-label="桌面下载任务"></div>
       </section>
@@ -63,9 +64,17 @@
         <p class="settings-policy">更改会自动保存。保存失败时保留当前选择，可用底部按钮重试。</p>
         <section class="settings-group"><h2 class="group-label">下载接管</h2>
           <label class="switch-row"><span><strong>拦截浏览器下载</strong><small>仅在 NxTools 明确接受后取消浏览器原下载</small></span><input id="interceptDownloads" type="checkbox"></label>
+          <div class="switch-row"><span><strong>本次浏览器会话</strong><small id="capturePauseHint">临时暂停自动接管，不更改启用设置；重启浏览器后恢复</small></span><button id="capturePauseButton" aria-pressed="false" aria-describedby="capturePauseHint">临时暂停</button></div>
           <label class="switch-row"><span><strong>弹出下载确认窗口</strong><small>预填地址、文件名和请求上下文，确认后开始</small></span><input id="openDialog" type="checkbox"></label>
           <label class="switch-row"><span><strong>页面资源捕获</strong><small>事件驱动捕获媒体与常见文件资源</small></span><input id="captureResources" type="checkbox"></label>
           <label class="switch-row"><span><strong>清理浏览器下载记录</strong><small>只移除已成功交接的取消项</small></span><input id="eraseBrowserHistory" type="checkbox"></label>
+        </section>
+        <section class="settings-group capture-rules"><h2 class="group-label">自动接管规则</h2>
+          <label class="field"><span>文件扩展名（逗号分隔，留空接管全部类型）</span><input id="captureFileTypes" type="text" maxlength="1024" placeholder="zip, pdf, mp4"></label>
+          <label class="field"><span>最小已知大小 KiB（0 不限制；未知大小继续原确认流程）</span><input id="captureMinimumKiB" type="text" inputmode="numeric"></label>
+          <label class="field"><span>排除网站（精确主机名，每行一项）</span><textarea id="captureExcludedSites" rows="2" maxlength="1024" placeholder="example.com"></textarea></label>
+          <label class="field"><span>排除地址包含（不区分大小写，每行一项）</span><textarea id="captureExcludedAddresses" rows="2" maxlength="1024" placeholder="/preview/"></textarea></label>
+          <small>暂停和排除优先于类型、大小规则；手动拖放、菜单及面板发送不受自动规则限制。</small>
         </section>
         <section class="settings-group"><h2 class="group-label">网页入口</h2>
           <label class="switch-row"><span><strong>媒体悬浮入口</strong><small>在当前媒体旁显示下载动作</small></span><input id="mediaOverlayEnabled" type="checkbox"></label>

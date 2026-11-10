@@ -5,6 +5,7 @@
 // (Chrome importScripts) and manifest background.scripts (Firefox).
 
 async function captureNetworkResource(details) {
+  let owner = details.tabId > 0 ? bucketForTab(details.tabId) : null;
   const settings = await getSettings();
   if (!settings.captureResources || !isHttpUrl(details.url) || !isUsableGoogleVideoUrl(details.url)) {
     return;
@@ -46,9 +47,14 @@ async function captureNetworkResource(details) {
     }, 30000);
     return;
   }
+  owner ||= bucketForTab(resolvedTabId);
 
-  const tab = await tabInfo(resolvedTabId);
-  const headerSnapshot = resolveHeaderSnapshot(details.url);
+  let tab = await tabInfo(resolvedTabId);
+  const headerSnapshot = resolveHeaderSnapshot(details.url, details);
+  const source = { ...redirectHint, ...headerSnapshot, ...details };
+  if (tab && !matchesRequestContext({ ...cookieSourceDetails(tab), tabId: resolvedTabId, tabIdObserved: true }, source)) {
+    tab = null;
+  }
   const headers = {
     ...(redirectHint?.headers || {}),
     ...(headerSnapshot?.headers || {})
@@ -73,6 +79,7 @@ async function captureNetworkResource(details) {
       ? NxToolsCapturePolicy.Sources.filename.contentDisposition
       : NxToolsCapturePolicy.Sources.filename.url,
     metadataSource: NxToolsCapturePolicy.Sources.metadata.response,
+    discovery: meta.discovery,
     headerSource: NxToolsCapturePolicy.Sources.header.browser,
     referrerSource: NxToolsCapturePolicy.Sources.referrer.browser,
     mime: meta.mime,
@@ -81,9 +88,10 @@ async function captureNetworkResource(details) {
     supportsRange: meta.supportsRange || details.statusCode === 206 || Boolean(headerSnapshot?.supportsRange),
     referer,
     requestHeaders: headers,
+    cookieContext: await cookieContextForCapture(source, tab, settings),
     source: "webRequest-response",
     capturedAt: Date.now()
-  });
+  }, owner);
 }
 
 function shouldCaptureRequestResource(details) {
@@ -116,6 +124,7 @@ function shouldCaptureRequestResource(details) {
 }
 
 async function captureRequestResource(details) {
+  let owner = details.tabId > 0 ? bucketForTab(details.tabId) : null;
   const settings = await getSettings();
   if (!settings.captureResources || !shouldCaptureRequestResource(details)) {
     return;
@@ -133,9 +142,14 @@ async function captureRequestResource(details) {
     }, 30000);
     return;
   }
+  owner ||= bucketForTab(tabId);
 
-  const tab = await tabInfo(tabId);
-  const headerSnapshot = resolveHeaderSnapshot(details.url);
+  let tab = await tabInfo(tabId);
+  const headerSnapshot = resolveHeaderSnapshot(details.url, details);
+  const source = { ...headerSnapshot, ...details };
+  if (tab && !matchesRequestContext({ ...cookieSourceDetails(tab), tabId, tabIdObserved: true }, source)) {
+    tab = null;
+  }
   const headers = { ...(headerSnapshot?.headers || {}) };
   const referer = headers.referer || (details.initiator && details.initiator !== "null" ? details.initiator : tab?.url) || "";
   if (referer) {
@@ -160,12 +174,15 @@ async function captureRequestResource(details) {
     supportsRange: Boolean(headerSnapshot?.supportsRange),
     referer,
     requestHeaders: headers,
+    cookieContext: await cookieContextForCapture(source, tab, settings),
     source: "webRequest-request",
     capturedAt: Date.now()
-  });
+  }, owner);
 }
 
 async function capturePageResource(sender, payload) {
+  const tabId = sender.tab?.id || lastActiveTabId || 0;
+  const owner = tabId > 0 ? bucketForTab(tabId) : null;
   const payloadUrl = boundedCapturedUrl(payload?.url);
   const settings = await getSettings();
   if (!settings.captureResources || !payloadUrl || !/^(https?:|blob:)/i.test(payloadUrl)) {
@@ -175,13 +192,12 @@ async function capturePageResource(sender, payload) {
     return;
   }
 
-  const tabId = sender.tab?.id || lastActiveTabId || 0;
   if (!tabId) {
     return;
   }
 
   const tab = await tabInfo(tabId);
-  const headerSnapshot = isHttpUrl(payloadUrl) ? resolveHeaderSnapshot(payloadUrl) : null;
+  const headerSnapshot = isHttpUrl(payloadUrl) ? resolveHeaderSnapshot(payloadUrl, { tabId }) : null;
   const pageContext = NxToolsCapturePolicy.buildPageCaptureContext(
     sanitizeCapturedHeaderObject(headerSnapshot?.headers || {}),
     boundedCapturedUrl(tab?.url),
@@ -193,6 +209,8 @@ async function capturePageResource(sender, payload) {
   const sourceUrl = boundedCapturedUrl(payload.sourceUrl);
   const sourceMime = String(payload.sourceMime || elementKindMime || "").toLowerCase();
   const primaryUrl = sourceUrl && isHttpUrl(sourceUrl) ? sourceUrl : payloadUrl;
+  const posterUrl = boundedCapturedUrl(payload.poster);
+  const poster = isHttpUrl(posterUrl) ? posterUrl : "";
   const frameId = Number.isInteger(sender.frameId) ? sender.frameId : Number(payload.frameId || 0);
   const rawFileName = cleanFileName(payload.filename) || getFileNameFromUrl(primaryUrl) || (extension ? `resource.${extension}` : "");
   const filename = ensureFileNameForUrl(
@@ -215,21 +233,25 @@ async function capturePageResource(sender, payload) {
         ? NxToolsCapturePolicy.Sources.filename.url
         : NxToolsCapturePolicy.Sources.filename.inferred),
     metadataSource: NxToolsCapturePolicy.Sources.metadata.page,
+    discovery: NxToolsCapturePolicy.normalizeDiscovery(null, payloadMime),
+    mediaElement: NxToolsCapturePolicy.normalizeMediaElement(payload.mediaElement),
     headerSource: pageContext.headerSource,
     referrerSource: pageContext.referrerSource,
     mime: payloadMime,
     size: Number(payload.size || 0),
     width: Number(payload.width || 0),
     height: Number(payload.height || 0),
+    poster,
     supportsRange: Boolean(headerSnapshot?.supportsRange),
     referer: pageContext.referer,
     requestHeaders: pageContext.headers,
+    cookieContext: await cookieContextForCapture({ ...cookieSourceDetails(sender.tab), tabId }, tab, settings),
     source: String(payload.source || "content"),
     capturedAt: Date.now()
-  });
+  }, owner);
 
   if (sourceUrl && isHttpUrl(sourceUrl)) {
-    const sourceHeaderSnapshot = resolveHeaderSnapshot(sourceUrl);
+    const sourceHeaderSnapshot = resolveHeaderSnapshot(sourceUrl, { tabId });
     const sourcePageContext = NxToolsCapturePolicy.buildPageCaptureContext(
       sanitizeCapturedHeaderObject(sourceHeaderSnapshot?.headers || {}),
       boundedCapturedUrl(tab?.url),
@@ -250,17 +272,20 @@ async function capturePageResource(sender, payload) {
           ? NxToolsCapturePolicy.Sources.filename.url
           : NxToolsCapturePolicy.Sources.filename.inferred),
       metadataSource: NxToolsCapturePolicy.Sources.metadata.page,
+      discovery: NxToolsCapturePolicy.normalizeDiscovery(null, sourceMime || payloadMime),
       headerSource: sourcePageContext.headerSource,
       referrerSource: sourcePageContext.referrerSource,
       mime: sourceMime || payloadMime,
       size: Number(payload.sourceSize || payload.size || 0),
       width: Number(payload.width || 0),
       height: Number(payload.height || 0),
+      poster,
       supportsRange: Boolean(sourceHeaderSnapshot?.supportsRange),
       referer: sourcePageContext.referer,
       requestHeaders: sourcePageContext.headers,
+      cookieContext: await cookieContextForCapture({ ...cookieSourceDetails(sender.tab), tabId }, tab, settings),
       source: `${String(payload.source || "content")}-source-url`,
       capturedAt: Date.now()
-    });
+    }, owner);
   }
 }

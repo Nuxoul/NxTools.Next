@@ -99,6 +99,40 @@ async function run() {
     const name = row.querySelector('.resource-title strong').getBoundingClientRect();
     return Math.abs(send.top - name.top) < 24; })()`), 'row-actions-share-the-title-line');
 
+  // Thumbnails: source order, real load, node reuse across refresh, fallback.
+  const order = await evaluate(`(() => { const pick = (list) => list.map((c) => c.type + ':' + c.src.split('/').pop());
+    return {
+      video: pick(thumbnailCandidates({ url: 'https://a.test/v.mp4', poster: 'https://a.test/p.jpg', description: { kind: 'video' } }, 'https://a.test/page.jpg')),
+      stream: pick(thumbnailCandidates({ url: 'https://a.test/s.m3u8', description: { kind: 'streaming' } }, 'https://a.test/page.jpg')),
+      image: pick(thumbnailCandidates({ url: 'https://a.test/i.png', mime: 'image/png', description: { kind: 'image' } }, 'https://a.test/page.jpg')),
+      file: pick(thumbnailCandidates({ url: 'https://a.test/f.zip', description: { kind: 'download' } }, 'https://a.test/page.jpg')) }; })()`);
+  check(JSON.stringify(order) === JSON.stringify({ video: ['img:p.jpg', 'video:v.mp4', 'img:page.jpg'], stream: ['img:page.jpg'], image: ['img:i.png'], file: [] }),
+    'thumbnail-source-order', order);
+  await evaluate(`(() => { isHttpSource = (value) => /^(https?:|data:)/i.test(String(value || ''));
+    const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 18;
+    const g = canvas.getContext('2d'); g.fillStyle = '#c33'; g.fillRect(0, 0, 32, 18);
+    const s = __fixture.state; window.__thumbPng = canvas.toDataURL('image/png');
+    s.currentResources[0].poster = window.__thumbPng;
+    s.currentResources[1].poster = 'data:image/png;base64,AAAA';
+    s.activeTab.thumbnail = window.__thumbPng.replace('data:image/png;', 'data:image/png;x=page;');
+    document.querySelector('.workspace').scrollTop = 0; render(s); })()`);
+  await evaluate('new Promise((r) => setTimeout(r, 400))');
+  const loaded = await evaluate(`(() => { const thumbs = [...document.querySelectorAll('#currentResourceList .resource-thumb')];
+    const media = (t) => t.querySelector('.resource-thumb-media');
+    window.__thumbNode = media(thumbs[0]);
+    return { first: thumbs[0].classList.contains('has-media') && media(thumbs[0])?.naturalWidth === 32,
+      firstOpacity: getComputedStyle(media(thumbs[0])).opacity, iconHidden: getComputedStyle(thumbs[0].querySelector('svg')).visibility,
+      fallback: thumbs[1].classList.contains('has-media') && /x=page/.test(media(thumbs[1])?.getAttribute('src') || ''),
+      file: !media(thumbs[2]) && !thumbs[2].classList.contains('has-media'),
+      size: [thumbs[0].getBoundingClientRect().width, thumbs[0].getBoundingClientRect().height] }; })()`);
+  check(loaded.first && loaded.firstOpacity === '1' && loaded.iconHidden === 'hidden', 'thumbnail-poster-loads-over-icon', loaded);
+  check(loaded.fallback, 'failed-thumbnail-falls-back-to-page-thumbnail', loaded);
+  check(loaded.file, 'file-resource-keeps-type-icon', loaded);
+  check(loaded.size[0] === 64 && loaded.size[1] === 36, 'thumbnail-slot-64x36', loaded.size);
+  await evaluate('render(__fixture.state)');
+  check(await evaluate(`document.querySelector('#currentResourceList .resource-thumb .resource-thumb-media') === window.__thumbNode &&
+    document.querySelector('#currentResourceList .resource-thumb').classList.contains('has-media')`), 'thumbnail-node-reused-across-refresh');
+
   await evaluate(`setView('tasks')`);
   check(await evaluate(`(() => { const item = document.querySelector('#taskList .item'); const bar = item.querySelector('progress').getBoundingClientRect();
     const act = item.querySelector('[data-action]').getBoundingClientRect(); return Math.abs((bar.top + bar.bottom) / 2 - (act.top + act.bottom) / 2) < 14; })()`),

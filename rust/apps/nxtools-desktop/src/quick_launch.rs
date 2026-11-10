@@ -41,10 +41,10 @@ use nxtools_protocol::{
     InvokeShellActionCommand, LaunchProcessCommand, NavigateDirectoryCommand,
     OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand, PickProgramCommand,
     PlatformCommand, PlatformCommandResult, PlatformEvent, QueryShellActionsCommand,
-    QueryShellSubmenuCommand, QuickLaunchPanelRequest, SetQuickLaunchHotKeyRecordingCommand,
-    SetWindowBoundsCommand, SetWindowNoActivateCommand, SetWindowPositionCommand,
-    SetWindowTopmostCommand, SetWindowVisibilityCommand, ShellActionItem, ShellActionMenu,
-    ShellOpenAction,
+    QueryShellSubmenuCommand, QuickLaunchKeyboardHealthChanged, QuickLaunchKeyboardHealthState,
+    QuickLaunchPanelRequest, SetQuickLaunchHotKeyRecordingCommand, SetWindowBoundsCommand,
+    SetWindowNoActivateCommand, SetWindowPositionCommand, SetWindowTopmostCommand,
+    SetWindowVisibilityCommand, ShellActionItem, ShellActionMenu, ShellOpenAction,
 };
 use tracing::{error, info, warn};
 
@@ -110,8 +110,19 @@ pub(crate) fn should_log_index_status_change(
 }
 
 const PANEL_WIDTH: f32 = 620.0;
-const PANEL_HEIGHT: f32 = 410.0;
-const SEARCH_HEADER_HEIGHT: f32 = 42.0;
+const LAUNCHER_LIST_MAX_HEIGHT: f32 = 470.0;
+const LAUNCHER_RESULT_ROW_HEIGHT: f32 = 52.0;
+const LAUNCHER_RESULT_ICON_SIZE: f32 = 32.0;
+const LAUNCHER_APPLICATION_TITLE_SIZE: f32 = 16.0;
+const LAUNCHER_FILE_TITLE_SIZE: f32 = 15.0;
+const LAUNCHER_TITLE_LINE_HEIGHT: f32 = 20.0;
+const LAUNCHER_SUBTITLE_LINE_HEIGHT: f32 = 24.0;
+const LAUNCHER_STATE_MIN_HEIGHT: f32 = 96.0;
+const LAUNCHER_STATUS_FOOTER_HEIGHT: f32 = 36.0;
+const PANEL_HEIGHT: f32 = COLLAPSED_PANEL_HEIGHT + LAUNCHER_LIST_MAX_HEIGHT;
+const SEARCH_HEADER_HEIGHT: f32 = 58.0;
+const SEARCH_INPUT_TEXT_SIZE: f32 = 26.0;
+const SEARCH_INPUT_LINE_HEIGHT: f32 = 34.0;
 const COLLAPSED_PANEL_HEIGHT: f32 = SEARCH_HEADER_HEIGHT + 2.0;
 const RESULT_LIMIT: usize = 200;
 const RECENT_DIRECTORY_LIMIT: usize = 64;
@@ -155,6 +166,7 @@ mod extension_providers;
 mod floating_assistant;
 mod icon;
 mod panel;
+mod result_motion;
 mod retained_text;
 use retained_text::QuickLaunchResults;
 pub(crate) mod preview;
@@ -172,6 +184,12 @@ struct QuickLaunchWindow {
     panel: WeakEntity<QuickLaunchPanel>,
     native_window_handle: i64,
 }
+
+struct PendingPopupResize {
+    command_id: uuid::Uuid,
+    started_at: Instant,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum QuickLaunchApplicationEvent {
     CustomCommandProgramPicked {
@@ -217,6 +235,11 @@ pub(crate) struct QuickLaunchApplication {
     pending_configuration: HashSet<uuid::Uuid>,
     pending_hotkey: Option<(uuid::Uuid, ClipboardHotKey)>,
     hotkey_error: Option<String>,
+    keyboard_health: Option<(QuickLaunchKeyboardHealthState, i32)>,
+    keyboard_health_revision: u64,
+    keyboard_capability_unavailable: bool,
+    keyboard_health_notified: bool,
+    pending_keyboard_reenable: Option<(uuid::Uuid, Instant, u64)>,
     pending_recording: Option<(uuid::Uuid, bool)>,
     recording_active: bool,
     recording_desired: bool,
@@ -229,6 +252,8 @@ pub(crate) struct QuickLaunchApplication {
     pending_shell_queries: HashMap<uuid::Uuid, PendingShellQuery>,
     pending_window_activation: HashMap<uuid::Uuid, PendingWindowActivation>,
     pending_panel_hides: HashMap<uuid::Uuid, PendingPanelHide>,
+    pending_popup_resize: Option<PendingPopupResize>,
+    popup_origin_device_pixels: Option<(i32, i32)>,
     icon_resources: IconResourceCache,
     pending_icons: HashMap<uuid::Uuid, PendingIconResource>,
     pending_icon_resources: HashMap<String, uuid::Uuid>,
@@ -243,6 +268,7 @@ pub(crate) struct QuickLaunchApplication {
     configuration_status: String,
     index_status: Option<IndexStatus>,
     index_search: IndexSearchSession,
+    pending_index_search: Option<nxtools_protocol::IndexSearchCancel>,
     last_local_search_us: Option<u64>,
     last_count_status_log: Option<Instant>,
     extension_providers: extension_providers::ExtensionProviders,
@@ -359,6 +385,11 @@ impl QuickLaunchApplication {
             pending_configuration: HashSet::new(),
             pending_hotkey: None,
             hotkey_error: None,
+            keyboard_health: None,
+            keyboard_health_revision: 0,
+            pending_keyboard_reenable: None,
+            keyboard_capability_unavailable: false,
+            keyboard_health_notified: false,
             pending_recording: None,
             recording_active: false,
             recording_desired: false,
@@ -371,6 +402,8 @@ impl QuickLaunchApplication {
             pending_shell_queries: HashMap::new(),
             pending_window_activation: HashMap::new(),
             pending_panel_hides: HashMap::new(),
+            pending_popup_resize: None,
+            popup_origin_device_pixels: None,
             icon_resources: IconResourceCache::bounded(ICON_RESOURCE_CACHE_LIMIT),
             pending_icons: HashMap::new(),
             pending_icon_resources: HashMap::new(),
@@ -385,6 +418,7 @@ impl QuickLaunchApplication {
             configuration_status: "等待 Windows 适配器".into(),
             index_status: None,
             index_search: IndexSearchSession::default(),
+            pending_index_search: None,
             last_local_search_us: None,
             last_count_status_log: None,
             extension_providers: Default::default(),
@@ -814,7 +848,11 @@ impl QuickLaunchApplication {
         self.persist_and_sync_index_settings(cx);
     }
 
-    pub(crate) fn request_index_exclusion_directory(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn request_index_exclusion_directory(
+        &mut self,
+        source_window_handle: i64,
+        cx: &mut Context<Self>,
+    ) {
         if self.pending_exclusion_picker.is_some() {
             return;
         }
@@ -832,6 +870,8 @@ impl QuickLaunchApplication {
             .send_command(PlatformCommand::PickDirectory(PickDirectoryCommand {
                 current_directory,
                 title: "选择要从速启搜索中排除的目录".into(),
+                source_window_handle,
+                source_process_id: std::process::id(),
             })) {
             Ok(command_id) => {
                 info!(
@@ -871,6 +911,7 @@ impl QuickLaunchApplication {
         &mut self,
         index: usize,
         current_path: String,
+        source_window_handle: i64,
         cx: &mut Context<Self>,
     ) -> Option<uuid::Uuid> {
         if self.pending_program_picker.is_some()
@@ -884,6 +925,8 @@ impl QuickLaunchApplication {
             .platform
             .send_command(PlatformCommand::PickProgram(PickProgramCommand {
                 current_path,
+                source_window_handle,
+                source_process_id: std::process::id(),
             })) {
             Ok(command_id) => {
                 info!(
@@ -964,6 +1007,22 @@ impl QuickLaunchApplication {
         notification: IndexerNotification,
         cx: &mut Context<Self>,
     ) {
+        let finished_generation = match &notification {
+            IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) if batch.complete => {
+                Some(batch.generation)
+            }
+            IndexerNotification::Event(IndexerEvent::SearchFailed(failure)) => {
+                Some(failure.generation)
+            }
+            _ => None,
+        };
+        if self
+            .pending_index_search
+            .as_ref()
+            .is_some_and(|pending| Some(pending.generation) == finished_generation)
+        {
+            self.pending_index_search = None;
+        }
         if let IndexerNotification::Event(IndexerEvent::SearchFailed(failure)) = &notification {
             if failure.generation == self.index_search.generation {
                 self.index_search.complete = true;
@@ -984,6 +1043,7 @@ impl QuickLaunchApplication {
             return;
         }
         if matches!(&notification, IndexerNotification::Disconnected) {
+            self.pending_index_search = None;
             self.handle_file_dialog_search_disconnect(cx);
         }
         match &notification {
@@ -1012,14 +1072,20 @@ impl QuickLaunchApplication {
             }
             IndexerNotification::Event(IndexerEvent::Status(_)) => {}
             IndexerNotification::Event(IndexerEvent::SearchFailed(_)) => {}
-            IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) => info!(
-                batch_generation = batch.generation,
-                active_generation = self.index_search.generation,
-                item_count = batch.items.len(),
-                complete = batch.complete,
-                accepted = batch.generation == self.index_search.generation,
-                "quick-launch index provider batch received"
-            ),
+            IndexerNotification::Event(IndexerEvent::SearchBatch(batch)) => {
+                if batch.generation == self.index_search.generation
+                    && (self.index_search.items.is_empty() || batch.complete)
+                {
+                    info!(
+                        generation = batch.generation,
+                        first = self.index_search.items.is_empty() && !batch.items.is_empty(),
+                        complete = batch.complete,
+                        item_count = batch.items.len(),
+                        provider_elapsed_us = batch.elapsed_us,
+                        "quick-launch index provider milestone received"
+                    );
+                }
+            }
             IndexerNotification::Event(IndexerEvent::ElevatedDirectoryHelper(status)) => {
                 if status.launched {
                     info!("elevated directory helper launch was accepted");
@@ -1157,6 +1223,99 @@ impl QuickLaunchApplication {
         QuickLaunchHotkeyLifecycle::Applied
     }
 
+    pub(crate) fn keyboard_health_warning(&self) -> Option<(String, bool)> {
+        let health = self.keyboard_health;
+        let settings = &self.config.quick_launch;
+        if !settings.enabled
+            || !settings.hotkey.modifiers.is_empty()
+            || !settings.hotkey.key.eq_ignore_ascii_case("Control")
+            || self.hotkey_recording_active()
+        {
+            return None;
+        }
+        let reason = match health {
+            Some((QuickLaunchKeyboardHealthState::InstallFailed, code)) => {
+                format!("Windows 键盘钩子安装失败（系统错误码 {code}）。可尝试重新启用。")
+            }
+            Some((QuickLaunchKeyboardHealthState::ThreadExited, code)) => {
+                format!("Windows 键盘钩子线程已退出（系统错误码 {code}）。可尝试重新启用。")
+            }
+            _ if self.keyboard_capability_unavailable => {
+                "Windows 适配器未提供双击 Ctrl 热键能力。可尝试重新启用。".to_owned()
+            }
+            _ => return None,
+        };
+        Some((
+            reason,
+            self.pending_keyboard_reenable.is_some() || !self.pending_configuration.is_empty(),
+        ))
+    }
+
+    pub(crate) fn reenable_keyboard_hotkey(&mut self, cx: &mut Context<Self>) {
+        if self.keyboard_health_warning().is_none()
+            || self.pending_keyboard_reenable.is_some()
+            || !self.pending_configuration.is_empty()
+            || !self.platform.is_connected()
+        {
+            return;
+        }
+        let id = uuid::Uuid::new_v4();
+        let started = Instant::now();
+        self.pending_keyboard_reenable = Some((id, started, self.keyboard_health_revision));
+        info!(event = "quick_launch.keyboard_reenable.started", correlation_id = %id,
+            "requested Quick Launch keyboard hook reinstallation");
+        let settings = self.config.quick_launch.clone();
+        if self.send_configuration_for_with_id(&settings, id).is_none() {
+            self.pending_keyboard_reenable = None;
+            warn!(event = "quick_launch.keyboard_reenable.completed", correlation_id = %id,
+                success = false, failure_kind = "enqueue_failed", elapsed_ms = started.elapsed().as_millis() as u64,
+                "Quick Launch keyboard re-enable was not queued");
+        }
+        cx.notify();
+    }
+
+    fn handle_keyboard_health(
+        &mut self,
+        event: QuickLaunchKeyboardHealthChanged,
+        cx: &mut Context<Self>,
+    ) {
+        self.keyboard_health_revision = self.keyboard_health_revision.wrapping_add(1);
+        let unavailable = event.state != QuickLaunchKeyboardHealthState::Reinstalled;
+        self.keyboard_health = unavailable.then_some((event.state, event.native_error_code));
+        if !unavailable {
+            self.keyboard_capability_unavailable = false;
+        }
+        info!(event = "quick_launch.keyboard_health.changed", correlation_id = %event.correlation_id,
+            state = ?event.state, native_error_code = event.native_error_code,
+            "observed Quick Launch keyboard hook lifecycle");
+        if !unavailable {
+            self.keyboard_health_notified = false;
+        }
+        self.notify_keyboard_health_if_visible(cx);
+        cx.notify();
+    }
+
+    fn notify_keyboard_health_if_visible(&mut self, cx: &mut Context<Self>) {
+        if self.keyboard_health_notified {
+            return;
+        }
+        let Some((reason, _)) = self.keyboard_health_warning() else {
+            return;
+        };
+        self.keyboard_health_notified = true;
+        let notifications = self.notifications.clone();
+        cx.defer(move |cx| {
+            notifications.update(cx, |notifications, cx| {
+                notifications.show_error(
+                    "quick-launch-keyboard-health",
+                    "双击 Ctrl 已失效",
+                    reason,
+                    cx,
+                );
+            });
+        });
+    }
+
     pub(crate) fn hotkey_recording_ready(&self) -> bool {
         self.recording_active && self.pending_recording.is_none()
     }
@@ -1226,6 +1385,18 @@ impl QuickLaunchApplication {
     ) {
         match notification {
             PlatformNotification::Connected => {
+                if let Some(popup) = &self.popup {
+                    let _ = popup.panel.update(cx, |panel, cx| {
+                        panel.result_motion_available = true;
+                        cx.notify();
+                    });
+                }
+                self.pending_keyboard_reenable = None;
+                self.keyboard_health = None;
+                self.keyboard_capability_unavailable =
+                    self.platform.quick_launch_panel_hotkey_available() == Some(false);
+                self.keyboard_health_notified = false;
+                self.notify_keyboard_health_if_visible(cx);
                 let prepare_indexer = self.indexer_service_bootstrap.on_platform_connected();
                 self.send_configuration();
                 if prepare_indexer && should_manage_indexer_service() {
@@ -1242,8 +1413,26 @@ impl QuickLaunchApplication {
                     pending_command_count = pending_command_ids.len(),
                     "quick-launch invalidated commands from the disconnected PlatformHost session"
                 );
+                if let Some(popup) = &self.popup {
+                    let _ = popup.panel.update(cx, |panel, cx| {
+                        panel.result_motion_available = false;
+                        panel.finish_result_entrances("disconnected", cx);
+                        cx.notify();
+                    });
+                }
                 self.pending_configuration.clear();
                 self.pending_hotkey = None;
+                if let Some((correlation_id, started, _revision)) =
+                    self.pending_keyboard_reenable.take()
+                {
+                    warn!(event = "quick_launch.keyboard_reenable.completed", %correlation_id,
+                        success = false, failure_kind = "disconnected",
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        "Quick Launch keyboard re-enable ended with PlatformHost session");
+                }
+                self.keyboard_health = None;
+                self.keyboard_capability_unavailable = false;
+                self.keyboard_health_notified = false;
                 self.pending_recording = None;
                 self.recording_active = false;
                 self.recording_desired = false;
@@ -1308,6 +1497,11 @@ impl QuickLaunchApplication {
                 self.pending_shell_queries.clear();
                 self.pending_window_activation.clear();
                 self.pending_panel_hides.clear();
+                if let Some(pending) = self.pending_popup_resize.take() {
+                    warn!(event = "quick_launch.popup.resize.completed", correlation_id = %pending.command_id,
+                        outcome = "disconnected", elapsed_ms = pending.started_at.elapsed().as_millis() as u64,
+                        "quick-launch content resize interrupted");
+                }
                 self.pending_icons.clear();
                 self.pending_icon_resources.clear();
                 self.pending_exclusion_picker = None;
@@ -1337,6 +1531,9 @@ impl QuickLaunchApplication {
                 self.pending_elevated_helper = None;
                 self.acknowledged_elevated_helper_pipe = None;
                 self.sync_elevated_directory_helper();
+            }
+            PlatformEvent::QuickLaunchKeyboardHealthChanged(event) => {
+                self.handle_keyboard_health(event, cx);
             }
             PlatformEvent::QuickLaunchPanelRequested(request) => {
                 let age = nxtools_ipc::unix_time_ms().saturating_sub(request.requested_at_unix_ms);
@@ -1550,12 +1747,101 @@ impl QuickLaunchApplication {
         }
     }
 
+    fn resize_popup_content(&mut self, cx: &mut Context<Self>) {
+        if self.pending_popup_resize.is_some() {
+            return;
+        }
+        let Some(popup) = self.popup.clone() else {
+            return;
+        };
+        let Some((x, y)) = self.popup_origin_device_pixels else {
+            return;
+        };
+        let command = popup
+            .window
+            .update(cx, |_, window, cx| {
+                let panel = popup.panel.upgrade()?;
+                let panel = panel.read(cx);
+                if !panel.is_open {
+                    return None;
+                }
+                let desired = panel.desired_content_size(window, cx);
+                if window.bounds().size == desired {
+                    return None;
+                }
+                let bounds = Bounds::new(window.bounds().origin, desired)
+                    .to_device_pixels(window.scale_factor());
+                Some(SetWindowBoundsCommand {
+                    window_handle: popup.native_window_handle,
+                    x,
+                    y,
+                    width: bounds.size.width.into(),
+                    height: bounds.size.height.into(),
+                })
+            })
+            .ok()
+            .flatten();
+        let Some(command) = command else {
+            return;
+        };
+        let command_id = uuid::Uuid::new_v4();
+        let started_at = Instant::now();
+        self.pending_popup_resize = Some(PendingPopupResize {
+            command_id,
+            started_at,
+        });
+        match self
+            .platform
+            .send_command_with_id(PlatformCommand::SetWindowBounds(command), command_id)
+        {
+            Ok(_) => info!(
+                event = "quick_launch.popup.resize.accepted",
+                correlation_id = %command_id,
+                "quick-launch content resize accepted"
+            ),
+            Err(error) => {
+                self.pending_popup_resize = None;
+                warn!(
+                    event = "quick_launch.popup.resize.rejected",
+                    correlation_id = %command_id,
+                    elapsed_ms = started_at.elapsed().as_millis() as u64,
+                    %error,
+                    "quick-launch content resize rejected"
+                );
+            }
+        }
+    }
+
     fn handle_command_result(
         &mut self,
         correlation_id: uuid::Uuid,
         result: PlatformCommandResult,
         cx: &mut Context<Self>,
     ) {
+        if self
+            .pending_popup_resize
+            .as_ref()
+            .is_some_and(|pending| pending.command_id == correlation_id)
+        {
+            let pending = self
+                .pending_popup_resize
+                .take()
+                .expect("matching popup resize");
+            info!(
+                event = "quick_launch.popup.resize.completed",
+                correlation_id = %correlation_id,
+                success = result.success,
+                elapsed_ms = pending.started_at.elapsed().as_millis() as u64,
+                native_error_code = ?result.native_error_code,
+                "quick-launch content resize completed"
+            );
+            if result.success {
+                // A provider may have published again while Windows applied the
+                // previous size. Re-read the live surface, never replay old bounds.
+                self.resize_popup_content(cx);
+            }
+            return;
+        }
         if let Some(pending) = self.pending_panel_hides.remove(&correlation_id) {
             let elapsed_ms = pending.requested_at.elapsed().as_millis() as u64;
             if result.success {
@@ -1842,7 +2128,35 @@ impl QuickLaunchApplication {
             }
             return;
         }
+        if self
+            .pending_keyboard_reenable
+            .as_ref()
+            .is_some_and(|(id, _, _)| *id == correlation_id)
+        {
+            let (_, started, revision) = self
+                .pending_keyboard_reenable
+                .take()
+                .expect("matching retry");
+            if revision == self.keyboard_health_revision {
+                if result.success {
+                    self.keyboard_health = None;
+                    self.keyboard_capability_unavailable = false;
+                    self.keyboard_health_notified = false;
+                } else if let Some((_, code)) = &mut self.keyboard_health {
+                    *code = result.native_error_code.unwrap_or(*code);
+                }
+            }
+            info!(event = "quick_launch.keyboard_reenable.completed", %correlation_id,
+                success = result.success, native_error_code = result.native_error_code,
+                elapsed_ms = started.elapsed().as_millis() as u64,
+                "matching Quick Launch keyboard re-enable result");
+            cx.notify();
+        }
         if self.pending_configuration.remove(&correlation_id) {
+            if result.success && self.keyboard_health.is_none() {
+                self.keyboard_capability_unavailable = false;
+                self.keyboard_health_notified = false;
+            }
             self.configuration_status = if result.success {
                 "已启用".into()
             } else {
@@ -1871,6 +2185,7 @@ impl QuickLaunchApplication {
                 self.hotkey_error = Some(self.configuration_status.clone());
             }
             self.drive_hotkey_recording();
+            self.notify_keyboard_health_if_visible(cx);
             cx.notify();
         }
         if self
@@ -1899,6 +2214,7 @@ impl QuickLaunchApplication {
                     result.error.as_deref().unwrap_or("未知错误")
                 ));
             }
+            self.notify_keyboard_health_if_visible(cx);
             cx.notify();
         }
         let Some(pending_action) = self.pending_actions.remove(&correlation_id) else {
@@ -2148,6 +2464,14 @@ impl QuickLaunchApplication {
     }
 
     fn send_configuration_for(&mut self, settings: &QuickLaunchSettings) -> Option<uuid::Uuid> {
+        self.send_configuration_for_with_id(settings, uuid::Uuid::new_v4())
+    }
+
+    fn send_configuration_for_with_id(
+        &mut self,
+        settings: &QuickLaunchSettings,
+        command_id: uuid::Uuid,
+    ) -> Option<uuid::Uuid> {
         let command = ConfigureQuickLaunchCommand {
             enabled: settings.enabled,
             auto_quick_switch_enabled: settings.auto_quick_switch,
@@ -2168,21 +2492,21 @@ impl QuickLaunchApplication {
             hotkey_key: settings.hotkey.key.clone(),
             hotkey_display: settings.hotkey.display.clone(),
         };
+        self.pending_configuration.insert(command_id);
         match self
             .platform
-            .send_command(PlatformCommand::ConfigureQuickLaunch(command))
+            .send_command_with_id(PlatformCommand::ConfigureQuickLaunch(command), command_id)
         {
-            Ok(command_id) => {
-                self.pending_configuration.insert(command_id);
+            Ok(_) => {
                 self.configuration_status = "正在应用".into();
                 Some(command_id)
             }
-            Err(PlatformBridgeError::Disconnected) => {
-                self.configuration_status = "等待 Windows 适配器".into();
-                None
-            }
             Err(error) => {
-                self.configuration_status = format!("应用失败：{error}");
+                self.pending_configuration.remove(&command_id);
+                self.configuration_status = match error {
+                    PlatformBridgeError::Disconnected => "等待 Windows 适配器".into(),
+                    other => format!("应用失败：{other}"),
+                };
                 None
             }
         }
@@ -2240,6 +2564,22 @@ impl QuickLaunchApplication {
         }))
     }
 
+    fn cancel_index_search(&mut self, reason: &'static str, cx: &mut Context<Self>) {
+        let Some(cancel) = self.pending_index_search.take() else {
+            return;
+        };
+        let indexer = Rc::clone(&self.indexer);
+        info!(event = "quick_launch.search.cancel_requested", correlation_id = %cancel.request_id,
+            generation = cancel.generation, reason, "indexed search retired locally");
+        cx.spawn(async move |_, _| {
+            let started = Instant::now();
+            let queued = indexer.cancel_search(cancel).await.is_ok();
+            info!(event = "quick_launch.search.cancel_dispatched", correlation_id = %cancel.request_id,
+                generation = cancel.generation, reason, queued,
+                elapsed_us = started.elapsed().as_micros() as u64, "indexed search cancellation dispatch ended");
+        }).detach();
+    }
+
     fn search_and_request_icons(
         &mut self,
         query: &str,
@@ -2281,14 +2621,30 @@ impl QuickLaunchApplication {
                     &self.config.quick_launch.custom_commands,
                 ));
         let search_queued = if query.trim().is_empty() || !search_indexer {
+            self.cancel_index_search(
+                if query.trim().is_empty() {
+                    "cleared"
+                } else {
+                    "provider_not_requested"
+                },
+                cx,
+            );
             false
         } else {
+            let request_id = uuid::Uuid::new_v4();
+            let previous = self.pending_index_search.take();
+            self.pending_index_search = Some(nxtools_protocol::IndexSearchCancel {
+                request_id,
+                generation,
+            });
             match self
                 .indexer
-                .send_command(IndexerCommand::Search(index_request))
+                .send_command_with_id(IndexerCommand::Search(index_request), request_id)
             {
                 Ok(_) => true,
                 Err(error) => {
+                    self.pending_index_search = previous;
+                    self.cancel_index_search("dispatch_failed", cx);
                     warn!(%error, "could not queue indexed-file search");
                     false
                 }
@@ -3505,6 +3861,7 @@ impl QuickLaunchApplication {
         let scale = request.cursor_monitor_dpi.max(96) as f32 / 96.0;
         let target_x = (bounds.origin.x.as_f32() * scale).round() as i32;
         let target_y = (bounds.origin.y.as_f32() * scale).round() as i32;
+        self.popup_origin_device_pixels = Some((target_x, target_y));
         let collapsed_width = (PANEL_WIDTH * scale).round() as i32;
         let collapsed_height = (COLLAPSED_PANEL_HEIGHT * scale).round() as i32;
         let _ = self
@@ -3533,6 +3890,7 @@ impl QuickLaunchApplication {
                 },
             ));
         let row_style = self.config.quick_launch.row_style;
+        let result_entrance = self.config.quick_launch.result_entrance;
         let _ = popup.window.update(cx, |_, window, app| {
             window.resize(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT)));
             let _ = popup.panel.update(app, |panel, cx| {
@@ -3545,6 +3903,7 @@ impl QuickLaunchApplication {
                     cx,
                 );
                 panel.row_style = row_style;
+                panel.result_entrance = result_entrance;
             });
         });
         self.schedule_popup_reveal(popup.clone(), target_x, target_y, cx);
@@ -3636,6 +3995,7 @@ impl QuickLaunchApplication {
         let panel_slot = Rc::new(RefCell::new(None));
         let native_slot = Rc::new(RefCell::new(0_i64));
         let row_style = self.config.quick_launch.row_style;
+        let result_entrance = self.config.quick_launch.result_entrance;
         let opened_panel_slot = Rc::clone(&panel_slot);
         let opened_native_slot = Rc::clone(&native_slot);
         let opened = cx.open_window(
@@ -3689,6 +4049,7 @@ impl QuickLaunchApplication {
                         cx,
                     );
                     panel.row_style = row_style;
+                    panel.result_entrance = result_entrance;
                     panel
                 });
                 *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
@@ -3709,6 +4070,7 @@ impl QuickLaunchApplication {
                 let target_scale = request.cursor_monitor_dpi.max(96) as f32 / 96.0;
                 let target_x = (bounds.origin.x.as_f32() * target_scale).round() as i32;
                 let target_y = (bounds.origin.y.as_f32() * target_scale).round() as i32;
+                self.popup_origin_device_pixels = Some((target_x, target_y));
                 self.popup = Some(popup.clone());
                 self.schedule_popup_reveal(popup, target_x, target_y, cx);
                 self.schedule_captured_directory_record(captured_navigation_context.as_ref(), cx);
@@ -3806,6 +4168,8 @@ impl QuickLaunchApplication {
         restore_window_handle: Option<i64>,
         cx: &mut Context<Self>,
     ) {
+        self.index_search.invalidate();
+        self.cancel_index_search("hidden", cx);
         self.popup_session_id = uuid::Uuid::new_v4();
         self.active_summon = None;
         self.navigation_foreground_guard = None;
@@ -3975,6 +4339,53 @@ mod retained_text_tests;
 mod tests;
 
 impl QuickLaunchApplication {
+    pub(crate) fn set_result_entrance(
+        &mut self,
+        mode: nxtools_core::QuickLaunchResultEntrance,
+        cx: &mut Context<Self>,
+    ) {
+        let correlation_id = uuid::Uuid::new_v4();
+        let started = Instant::now();
+        info!(event = "quick_launch.result_entrance.save_started", %correlation_id,
+            category = ?mode, "quick-launch result entrance save started");
+        match AppConfig::update_section(&self.config_path, |config| {
+            config.quick_launch.result_entrance = mode;
+        }) {
+            Ok(merged) => {
+                self.config = merged;
+                if let Some(popup) = self.popup.clone() {
+                    cx.defer(move |cx| {
+                        let _ = popup.panel.update(cx, |panel, cx| {
+                            panel.result_entrance = mode;
+                            panel.finish_result_entrances("setting", cx);
+                            cx.notify();
+                        });
+                    });
+                }
+                info!(event = "quick_launch.result_entrance.saved", %correlation_id,
+                    category = ?mode, elapsed_ms = started.elapsed().as_millis() as u64,
+                    "quick-launch result entrance saved");
+            }
+            Err(_) => {
+                warn!(event = "quick_launch.result_entrance.save_failed", %correlation_id,
+                    category = "config_commit", elapsed_ms = started.elapsed().as_millis() as u64,
+                    "quick-launch result entrance save failed");
+                let notices = self.notifications.clone();
+                cx.defer(move |cx| {
+                    notices.update(cx, |notices, cx| {
+                        notices.show_error(
+                            "quick-launch-result-entrance",
+                            "速启结果动画",
+                            "保存失败，仍使用原来的结果动画。",
+                            cx,
+                        )
+                    });
+                });
+            }
+        }
+        cx.notify();
+    }
+
     pub(crate) fn set_row_style(
         &mut self,
         style: nxtools_core::QuickLaunchRowStyle,

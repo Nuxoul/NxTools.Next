@@ -18,7 +18,7 @@ internal static class ArchiveLongPathTests
     private static readonly DateTime Stamp = new(2020, 2, 3, 4, 5, 6, DateTimeKind.Unspecified);
     private static readonly string MemberDirectory = string.Join('/', Enumerable.Range(0, 7).Select(i => "成员目录" + i + new string('m', 42)));
     private static readonly string Member = MemberDirectory + "/内容.bin";
-    private static readonly string[] Modes = ["new", "overwrite", "unapproved", "target_changed", "cancel_before", "native_denied", "cancel_during", "postcheck"];
+    private static readonly string[] CandidateModes = ["new", "overwrite", "unapproved", "target_changed", "cancel_before", "native_denied", "cancel_during", "postcheck"];
     private static object Limits => new { max_entries = 100, max_metadata_bytes = 16777216, max_working_bytes = 67108864, max_entry_bytes = 1048576, max_output_bytes = 4194304 };
     private static void Require(bool value, string detail) { if (!value) throw new InvalidOperationException(detail); }
     private static string LongDirectory(string root, string kind)
@@ -77,11 +77,13 @@ internal static class ArchiveLongPathTests
             Records.Enqueue((name, correlationId, new Dictionary<string, object?>(fields ?? new Dictionary<string, object?>())));
     }
     private static async Task<ArchiveWorkerEvent> Run(ArchiveWorkerRequest request, List<object> evidence, string mode,
-        int memberLength, Action<ArchiveWorkerRunner>? setup = null)
+        int memberLength, Action<ArchiveWorkerRunner>? setup = null,
+        Func<ArchiveWorkerRunner, ConcurrentQueue<ArchiveWorkerEvent>, Task>? afterStart = null)
     {
         var events = new ConcurrentQueue<ArchiveWorkerEvent>(); var log = new CaptureLog();
         using var runner = ArchiveWorkerRunner.ForPackage(events.Enqueue, log); setup?.Invoke(runner);
         Require(runner.Start(request), "long-path real runner admission");
+        if (afterStart is not null) await afterStart(runner, events);
         var clock = Stopwatch.StartNew();
         while (!events.Any(item => item.Kind == "exited")) { Require(clock.ElapsedMilliseconds < 20000, "long-path operation deadline"); await Task.Delay(10); }
         Require(await runner.DrainAsync() && runner.ActiveCount == 0, "actual worker/pumps/Job/slot cleanup");
@@ -99,6 +101,8 @@ internal static class ArchiveLongPathTests
             !value.Contains("内容.bin", StringComparison.Ordinal) && !value.Contains("independent content", StringComparison.Ordinal)), "unescaped diagnostic payload leak");
         if (mode.StartsWith("unsafe-", StringComparison.Ordinal))
             Require(events.Single(item => item.Frame is { } frame && frame.GetProperty("op").GetString() == "failure").Frame!.Value.GetProperty("error_code").GetString() == "UnsafePath", "dangerous member precise rejection");
+        if (mode == "direct_unapproved")
+            Require(events.Single(item => item.Frame is { } frame && frame.GetProperty("op").GetString() == "failure").Frame!.Value.GetProperty("error_code").GetString() == "OutputCollision", "existing target without a Rust conflict policy must be refused");
         evidence.Add(new { operation_id = request.OperationId, operation = request.Operation, mode,
             source_utf16 = request.Path.Length, source_utf8 = Encoding.UTF8.GetByteCount(request.Path),
             output_root_utf16 = request.OutputRoot?.Length, member_utf16 = memberLength,
@@ -159,29 +163,98 @@ internal static class ArchiveLongPathTests
     private static void PublicationResult(ArchiveWorkerEvent terminal, string mode, int reached, int published, string final)
     {
         var category = mode switch { "new" or "overwrite" => "success", "unapproved" => "worker_failure", "target_changed" => "target_changed",
-            "cancel_before" => "cancelled", "native_denied" => "worker_failure", "cancel_during" => "cancelled_with_committed_output", _ => "committed_but_verification_failed" };
+            "cancel_before" => "cancelled", "native_denied" => "flush_file", "cancel_during" => "cancelled_with_committed_output", _ => "committed_but_verification_failed" };
         Require(terminal.Category == category && terminal.FilesCommitted == (Published(mode) ? 1 : 0) && published == (Published(mode) ? 1 : 0), "long-path truthful publication: " + mode + "/" + terminal.Category);
         if (mode is not ("new" or "overwrite" or "unapproved")) Require(reached == 1, "deterministic original boundary not reached");
         if (Published(mode)) Require(terminal.CommitState == (mode == "postcheck" ? "CommittedButVerificationFailed" : "Committed"), "published native state lost");
-        if (mode == "postcheck") Require(terminal.NativeErrorCode == 5, "injected postcheck native code lost");
+        if (mode is "native_denied" or "postcheck") Require(terminal.NativeErrorCode == 5, "injected native code lost");
         if (!Published(mode)) Require(File.ReadAllBytes(final).SequenceEqual(mode == "target_changed" ? "external changed target"u8.ToArray() : OldTarget), "precommit failure changed previous target");
     }
     public static Task ExtractionPublication() => WithWorker(async (owned, evidence) => {
         var source = Path.Combine(LongDirectory(owned, "archive"), "源归档.zip"); Zip(source, new Dictionary<string, byte[]> { [Member] = Payload });
         var sourceHash = SHA256.HashData(File.ReadAllBytes(source));
-        foreach (var mode in Modes) {
+        foreach (var mode in new[] { "new", "direct_unapproved", "ask_overwrite", "overwrite", "skip", "auto_rename", "cancel_open", "cancel_closed", "write_failure" }) {
             var output = LongDirectory(owned, "extract-" + mode); var final = Path.Combine(output, Member.Replace('/', '\\'));
-            Directory.CreateDirectory(Path.GetDirectoryName(final)!);
-            if (mode != "new") File.WriteAllBytes(final, OldTarget);
-            var external = Path.Combine(Path.GetDirectoryName(final)!, ".nxpart-external"); File.WriteAllText(external, "external partial");
-            var confirmation = Confirmation(output, Member, mode); var id = Guid.NewGuid(); var reached = 0; var published = 0;
-            var terminal = await Run(new(id, "extract", source, 0, Limits, OutputRoot: output, ConfirmedOverwrites: confirmation), evidence, mode, Member.Length,
-                PublicationProbe(id, mode, () => reached++, () => published++, final));
-            PublicationResult(terminal, mode, reached, published, final);
-            if (Published(mode)) Require(File.ReadAllBytes(final).SequenceEqual(Payload), "published long member bytes lost");
+            var parent = Path.GetDirectoryName(final)!; Directory.CreateDirectory(parent);
+            var conflict = mode switch { "ask_overwrite" => "ask", "overwrite" => "overwrite", "skip" => "skip", "auto_rename" => "auto_rename", _ => null };
+            var existing = mode is "direct_unapproved" or "ask_overwrite" or "overwrite" or "skip" or "auto_rename";
+            if (existing) File.WriteAllBytes(final, OldTarget);
+            var external = Path.Combine(parent, ".nxpart-external"); File.WriteAllText(external, "external partial");
+            var id = Guid.NewGuid(); var reached = 0;
+            Action<ArchiveWorkerRunner> setup = runner => {
+                runner.OutputCommitCheckpointProbe = stage => {
+                    if (mode == "cancel_open" && stage == "before_metadata") {
+                        Require(Interlocked.Increment(ref reached) == 1, "cancel-before-close boundary repeated");
+                        Require(runner.Cancel(id), "cancel current incomplete long-path output");
+                    }
+                    if (mode == "cancel_closed" && stage == "native_closed") {
+                        Require(Interlocked.Increment(ref reached) == 1, "closed-output boundary repeated");
+                        Require(runner.Cancel(id), "cancel after ordinary output close");
+                    }
+                };
+                if (mode == "write_failure") runner.OutputWriteCheckpointProbe = _ => {
+                    Require(Interlocked.Increment(ref reached) == 1, "write-failure boundary repeated");
+                    throw new ArchiveOutputException("write_file", 112);
+                };
+            };
+            Func<ArchiveWorkerRunner, ConcurrentQueue<ArchiveWorkerEvent>, Task>? answer = null;
+            if (mode == "ask_overwrite") answer = async (runner, events) => {
+                var clock = Stopwatch.StartNew();
+                while (!events.Any(item => item.Frame is { } frame && frame.GetProperty("op").GetString() == "conflict_prompt") &&
+                    !events.Any(item => item.Kind == "exited")) {
+                    Require(clock.ElapsedMilliseconds < 10000, "long-path conflict prompt deadline"); await Task.Delay(10);
+                }
+                var prompt = events.Single(item => item.Frame is { } frame && frame.GetProperty("op").GetString() == "conflict_prompt").Frame!.Value.GetProperty("conflict_prompt");
+                Require(prompt.GetProperty("existing_bytes").GetUInt64() == (ulong)OldTarget.Length, "long-path conflict existing bytes");
+                var ticket = prompt.GetProperty("ticket").Deserialize<ArchivePasswordTicket>()!;
+                Require(runner.RespondConflict(id, ticket, "overwrite"), "long-path Ask overwrite decision");
+                Interlocked.Increment(ref reached);
+            };
+            var terminal = await Run(new(id, "extract", source, 0, Limits, OutputRoot: output, ConflictPolicy: conflict),
+                evidence, mode, Member.Length, setup, answer);
+            Require(terminal.CleanupComplete, "long-path direct output cleanup: " + mode);
+            var renamed = Path.Combine(parent, Path.GetFileNameWithoutExtension(final) + " (2)" + Path.GetExtension(final));
+            switch (mode) {
+                case "new":
+                case "overwrite":
+                    Require(terminal.Category == "success" && terminal.FilesCommitted == 1 && terminal.CommitState == "Committed" &&
+                        File.ReadAllBytes(final).SequenceEqual(Payload), "long-path direct success: " + mode);
+                    break;
+                case "direct_unapproved":
+                    Require(terminal.Category == "worker_failure" && terminal.FilesCommitted == 0 && File.ReadAllBytes(final).SequenceEqual(OldTarget), "unapproved long-path overwrite changed target");
+                    break;
+                case "ask_overwrite":
+                    Require(reached == 1 && terminal.Category == "success" && terminal.FilesCommitted == 1 &&
+                        File.ReadAllBytes(final).SequenceEqual(Payload), "Ask overwrite did not directly truncate the approved final name");
+                    break;
+                case "skip":
+                    Require(terminal.Category == "succeeded_with_warnings" && terminal.FilesCommitted == 0 && terminal.FilesSkipped == 1 &&
+                        File.ReadAllBytes(final).SequenceEqual(OldTarget), "Skip changed existing long-path target");
+                    break;
+                case "auto_rename":
+                    Require(terminal.Category == "success" && terminal.FilesCommitted == 1 && File.ReadAllBytes(final).SequenceEqual(OldTarget) &&
+                        File.ReadAllBytes(renamed).SequenceEqual(Payload), "AutoRename did not use a new final long-path name");
+                    break;
+                case "cancel_open":
+                    Require(reached == 1 && terminal.Category == "cancelled" && terminal.FilesCommitted == 0 &&
+                        terminal.CommitState == "FailedBeforeCommit" && !File.Exists(final), "open-output cancellation did not delete the incomplete final name");
+                    break;
+                case "cancel_closed":
+                    Require(reached == 1 && terminal.Category == "cancelled_with_committed_output" && terminal.FilesCommitted == 1 &&
+                        terminal.CommitState == "Committed" && File.ReadAllBytes(final).SequenceEqual(Payload), "closed-output cancellation did not retain the completed result");
+                    break;
+                case "write_failure":
+                    Require(reached == 1 && terminal.Category == "write_file" && terminal.NativeErrorCode == 112 && terminal.FilesCommitted == 0 &&
+                        terminal.CommitState == "FailedBeforeCommit" && !File.Exists(final), "native write failure did not delete the incomplete final name");
+                    break;
+            }
+            var completedPath = mode == "auto_rename" ? renamed : final;
+            if (File.Exists(completedPath) && File.ReadAllBytes(completedPath).SequenceEqual(Payload))
+                Require(final.Length > 700 && File.GetLastWriteTime(completedPath) == Stamp, "direct long-path metadata lost: " + mode);
             NoOwnedPartial(output, external);
-            Require(SHA256.HashData(File.ReadAllBytes(source)).SequenceEqual(sourceHash), "source preserved across publication outcomes");
-            evidence.Add(new { mode, final_utf16 = final.Length, reached, native_publications = published, external_partial_retained = true, injected_native_code = mode is "native_denied" or "postcheck" ? 5 : (int?)null });
+            Require(SHA256.HashData(File.ReadAllBytes(source)).SequenceEqual(sourceHash), "source preserved across direct output outcomes");
+            evidence.Add(new { mode, final_utf16 = final.Length, reached, terminal.Category, terminal.FilesCommitted, terminal.FilesSkipped,
+                terminal.CommitState, terminal.NativeErrorCode, external_partial_retained = true });
         }
         using var released = new FileStream(source, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
     });
@@ -190,7 +263,7 @@ internal static class ArchiveLongPathTests
         File.WriteAllBytes(Path.Combine(child, "内容.bin"), Payload); File.WriteAllBytes(Path.Combine(child, "空文件.bin"), []); Directory.CreateDirectory(Path.Combine(child, "空目录"));
         var expected = new Dictionary<string, byte[]> { [Member] = Payload, [MemberDirectory + "/空文件.bin"] = [], [MemberDirectory + "/空目录/"] = [] };
         var parts = MemberDirectory.Split('/'); for (var i = 1; i <= parts.Length; i++) expected.Add(string.Join('/', parts.Take(i)) + "/", []);
-        foreach (var mode in Modes) {
+        foreach (var mode in CandidateModes) {
             var output = LongDirectory(owned, "create-" + mode); const string name = "创建输出.zip"; var final = Path.Combine(output, name);
             if (mode != "new") File.WriteAllBytes(final, OldTarget);
             var external = Path.Combine(output, ".nxpart-external"); File.WriteAllText(external, "external partial");

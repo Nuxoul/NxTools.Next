@@ -117,6 +117,7 @@ fn auxiliary_delete_confirmation_rethemes_without_changing_target(cx: &mut TestA
         application: app,
         task_id,
         path: "synthetic.bin".into(),
+        batch: None,
     });
     window.simulate_resize(size(px(440.0), px(200.0)));
     window.refresh().expect("dark delete confirmation");

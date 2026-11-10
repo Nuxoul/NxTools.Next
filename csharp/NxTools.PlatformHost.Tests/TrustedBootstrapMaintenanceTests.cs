@@ -16,10 +16,12 @@ internal static class TrustedBootstrapMaintenanceTests
         Require(File.ReadAllBytes(fixture.Bootstrap).SequenceEqual(fixture.NewBytes), "signed bootstrap replaced");
         Require(File.ReadAllBytes(fixture.StatePath).SequenceEqual(before), "release state never reset or advanced by maintenance");
         Require(fixture.Service.Events.SequenceEqual(new[] { "validate", "stop", "gate", "set", "start", "ready" }), "validate before mutation and ready before commit");
-        Require(string.Equals(fixture.Service.Hash, Hash(fixture.NewBytes), StringComparison.OrdinalIgnoreCase) && fixture.Service.Running, "new service identity running");
+        Require(string.Equals(fixture.Service.Hash, Hash(fixture.NewBytes), StringComparison.OrdinalIgnoreCase) && !fixture.Service.Running, "new service identity finishes its readiness probe and stops");
         Require(!File.Exists(Path.Combine(fixture.Root, "bootstrap-maintenance.json")), "completed journal retired");
         fixture.Maintenance().Apply(fixture.Package, Guid.NewGuid());
-        Require(fixture.Service.Events.Count(value => value == "stop") == 1, "same maintenance idempotent");
+        Require(fixture.Service.Events.Count(value => value == "stop") == 1 &&
+            fixture.Service.Events.Count(value => value == "ready") == 2 && !fixture.Service.Running,
+            "same maintenance starts a new one-shot probe without product replacement");
         return Task.CompletedTask;
     }
 
@@ -34,7 +36,7 @@ internal static class TrustedBootstrapMaintenanceTests
         Require(File.ReadAllBytes(fixture.Bootstrap).SequenceEqual(fixture.OldBytes), "failed maintenance restores original bytes");
         Require(File.ReadAllBytes(fixture.StatePath).SequenceEqual(before), "failed maintenance preserves sequence");
         Require(File.ReadAllBytes(Path.Combine(fixture.Root, "enrollment.json")).SequenceEqual(enrollment), "exact enrollment restored");
-        Require(fixture.Service.Running && fixture.Service.Hash == Hash(fixture.OldBytes), "old service restored");
+        Require(!fixture.Service.Running && fixture.Service.Hash == Hash(fixture.OldBytes), "old identity restored without a resident service");
         Require(!File.Exists(Path.Combine(fixture.Root, "bootstrap-maintenance.json")), "successful rollback retires journal");
         fixture.Service.FailReady = false;
         fixture.Maintenance().Apply(fixture.Package, Guid.NewGuid());
@@ -75,7 +77,7 @@ internal static class TrustedBootstrapMaintenanceTests
         fixture.Service.FailReady = false;
         fixture.Service.FailStopAt = 0;
         fixture.Maintenance().Apply(fixture.Package, Guid.NewGuid());
-        Require(File.ReadAllBytes(fixture.Bootstrap).SequenceEqual(fixture.NewBytes) && fixture.Service.Running, "next maintenance recovers then applies");
+        Require(File.ReadAllBytes(fixture.Bootstrap).SequenceEqual(fixture.NewBytes) && !fixture.Service.Running, "next maintenance recovers then stops after readiness");
         Require(!File.Exists(Path.Combine(fixture.Root, "bootstrap-maintenance.json")), "retry retires journal");
         return Task.CompletedTask;
     }
@@ -144,6 +146,7 @@ internal static class TrustedBootstrapMaintenanceTests
                 Require(blocked, "normal update admission remains blocked during maintenance readiness");
             }
             if (FailReady) throw new IOException("fixture readiness failed");
+            Running = false;
         }
     }
     internal static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));

@@ -44,6 +44,7 @@ function sendMessage(message, timeoutMs = 10000) {
 
 function messageTone(text) {
   if (/失败|超时|错误|拒绝|无法|未接受|不可用|重试/.test(text || "")) return "error";
+  if (text === "确认窗口已打开，尚未创建任务") return "status";
   if (/^正在|中…?$|…$/.test(text || "")) return "status";
   return "success";
 }
@@ -124,7 +125,7 @@ async function sendResourceFromButton(button, resourceId) {
       resourceId
     }, 14000);
     setMessage(result.message || (result.ok ? "已发送到 NxTools" : "发送失败"));
-    if (result.ok !== false && !isQueuedDesktopResult(result)) {
+    if (result.ok !== false && result.data?.handoffState !== "awaiting_confirmation" && !isQueuedDesktopResult(result)) {
       closePopupSoon();
       return;
     }
@@ -145,11 +146,13 @@ async function refresh(options = {}) {
     return refreshInFlight;
   }
 
+  const revision = renderRevision;
   refreshInFlight = sendMessage({
     type: "popup_get_state",
     mediaIndex: selectedMediaIndex,
     currentView
   }, 9000).then((state) => {
+    if (revision !== renderRevision) return currentState;
     render(state);
     return state;
   }).catch((error) => {
@@ -219,9 +222,14 @@ async function saveSettings(button, progressText, doneText, failureText) {
   beginBusy(button, "保存中");
   setMessage(progressText);
   try {
-    const state = await sendMessage({ type: "popup_save_settings", settings: collectSettings(), currentView }, 12000);
+    const settings = collectSettings();
+    const submittedRules = Object.fromEntries(captureRuleKeys.map(key => [key, elements[key].value]));
+    const state = await sendMessage({ type: "popup_save_settings", settings, currentView }, 12000);
     if (state?.ok === false) {
       throw new Error(state.message || failureText);
+    }
+    for (const key of captureRuleKeys) {
+      if (elements[key].value === submittedRules[key]) captureRuleDrafts.delete(key);
     }
     render(state);
     setMessage(doneText);
@@ -233,6 +241,29 @@ async function saveSettings(button, progressText, doneText, failureText) {
 }
 
 function bindPopupEvents() {
+  elements.capturePauseButton.addEventListener("click", async () => {
+    if (elements.capturePauseButton.disabled) return;
+    const paused = !currentState?.capturePaused;
+    beginBusy(elements.capturePauseButton, "更新中");
+    try {
+      if (currentState?.capturePauseAvailable === false) {
+        const state = await refresh({ force: true });
+        if (state.capturePauseAvailable === false) throw new Error("会话状态不可用，请重试");
+        setMessage("会话状态已恢复");
+        return;
+      }
+      const result = await sendMessage({ type: "popup_set_capture_paused", paused }, 12000);
+      if (result?.ok !== true) throw new Error(result?.message || "更新会话暂停失败，请重试");
+      currentState = { ...currentState, capturePaused: result.capturePaused, capturePauseAvailable: true };
+      renderRevision += 1;
+      setMessage(result.capturePaused ? "本次会话已暂停自动接管" : "已恢复自动接管");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "更新会话暂停失败，请重试");
+    } finally {
+      endBusy(elements.capturePauseButton);
+      renderCapturePause(currentState || {});
+    }
+  });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && previewResourceId && currentView === "resources") {
       event.preventDefault();
@@ -299,7 +330,7 @@ function bindPopupEvents() {
       setMessage("正在发送当前页面");
       const result = await sendMessage({ type: "popup_send_active_tab" }, 14000);
       setMessage(result.message || (result.ok ? "已发送" : "发送失败"));
-      if (result.ok !== false && !isQueuedDesktopResult(result)) {
+      if (result.ok !== false && result.data?.handoffState !== "awaiting_confirmation" && !isQueuedDesktopResult(result)) {
         closePopupSoon();
       }
     } catch (error) {
@@ -428,8 +459,16 @@ function bindPopupEvents() {
   });
 
   // Original auto-save on change; the explicit Save button remains the retry path.
+  for (const key of captureRuleKeys) {
+    elements[key].addEventListener("input", () => captureRuleDrafts.add(key));
+    elements[key].addEventListener("change", () => captureRuleDrafts.add(key));
+  }
   for (const input of [
     elements.interceptDownloads,
+    elements.captureFileTypes,
+    elements.captureMinimumKiB,
+    elements.captureExcludedSites,
+    elements.captureExcludedAddresses,
     elements.openDialog,
     elements.captureResources,
     elements.mediaOverlayEnabled,

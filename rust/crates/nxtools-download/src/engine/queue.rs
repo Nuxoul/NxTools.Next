@@ -466,7 +466,9 @@ impl DownloadEngine {
                     DownloadStatus::Waiting
                 };
                 committed.task.transition_to(next, now_unix_ms())?;
-                committed.transfer.downloaded_bytes = restored_segment_bytes.unwrap_or(0);
+                if committed.transfer.prepared_size_bytes.is_none() {
+                    committed.transfer.downloaded_bytes = restored_segment_bytes.unwrap_or(0);
+                }
                 committed.transfer.error = None;
                 committed.control = Some(DownloadTransferControl::with_rate_limiters(
                     self.inner.global_rate_limiter.clone(),

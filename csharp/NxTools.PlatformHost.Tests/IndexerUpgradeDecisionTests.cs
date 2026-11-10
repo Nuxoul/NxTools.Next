@@ -8,6 +8,12 @@ internal static class IndexerUpgradeDecisionTests
 {
     public static Task ProtectedTupleUpgradeDecisions()
     {
+        var registration = IndexerServiceInstaller.RegistrationArguments(false, @"C:\owned\NxTools.Indexer.exe");
+        Assert(registration[Array.IndexOf(registration, "start=") + 1] == "demand",
+            "indexer installation must not create an automatic background service");
+        var reconfiguration = IndexerServiceInstaller.RegistrationArguments(true, @"C:\owned\NxTools.Indexer.exe");
+        Assert(reconfiguration[0] == "config" && reconfiguration[Array.IndexOf(reconfiguration, "start=") + 1] == "demand",
+            "upgrades migrate existing service registration to demand start");
         var current = Tuple('A', 'B', 'C');
         Assert(Decide(false, false, null, current) == IndexerServiceInstaller.ServiceDeploymentDecision.Install,
             "absent service requests initial explicit UAC");
@@ -104,6 +110,29 @@ internal static class IndexerUpgradeDecisionTests
         log.ThrowOnWrite = true;
         Assert((await IndexerServiceInstaller.EnsureCoreAsync(reuse, log, correlation, CancellationToken.None)).Success,
             "diagnostic failure cannot change service result");
+        await DemandStartMigrationUsesOnlyTheOriginalAuthorizationBoundary();
+    }
+
+    public static async Task DemandStartMigrationUsesOnlyTheOriginalAuthorizationBoundary()
+    {
+        var current = Tuple('A', 'B', 'C');
+        var platform = new DeploymentFixture(new(true, true, current, current)) { LifetimeMigrationNeeded = true };
+        var correlation = Guid.NewGuid();
+        var pending = IndexerServiceInstaller.EnsureCoreAsync(platform, new LogFixture(), correlation, CancellationToken.None);
+        Assert(!pending.IsCompleted && platform.LifetimeConfigurations == 1 && platform.Starts == 0 && platform.Installs == 0,
+            "legacy auto service requires one explicit configuration operation, not normal start or redeployment");
+        platform.Completion.SetResult(new WindowsCommandResult(true, Data: "lifetime_configured"));
+        Assert((await pending).Success && platform.Correlation == correlation && platform.Starts == 1, "same correlated configuration and service start");
+        platform.LifetimeMigrationNeeded = false;
+        var started = await IndexerServiceInstaller.EnsureCoreAsync(platform, new LogFixture(), correlation, CancellationToken.None);
+        Assert(started.Success && platform.Starts == 2 && platform.LifetimeConfigurations == 1, "later starts do not repeat authorization");
+        var damaged = new DeploymentFixture(new(true, false, current, current)) { LifetimeMigrationNeeded = true };
+        Assert(!(await IndexerServiceInstaller.EnsureCoreAsync(damaged, new LogFixture(), correlation, CancellationToken.None)).Success
+            && damaged.LifetimeConfigurations == 0, "unhealthy ownership cannot authorize configuration");
+        var declined = new DeploymentFixture(new(true, true, current, current)) { LifetimeMigrationNeeded = true };
+        pending = IndexerServiceInstaller.EnsureCoreAsync(declined, new LogFixture(), correlation, CancellationToken.None);
+        declined.Completion.SetException(new Win32Exception(1223));
+        Assert((await pending).Data == "authorization_cancelled" && declined.Starts == 0, "cancelled configuration cannot start or redeploy");
     }
 
     private sealed class DeploymentFixture(IndexerServiceInstaller.DeploymentState state) : IndexerServiceInstaller.IDeploymentPlatform
@@ -112,6 +141,11 @@ internal static class IndexerUpgradeDecisionTests
         public int Starts { get; private set; }
         public int Installs { get; private set; }
         public Guid Correlation { get; private set; }
+        public bool LifetimeMigrationNeeded { get; set; }
+        public int LifetimeConfigurations { get; private set; }
+        public bool NeedsLifetimeMigration() => LifetimeMigrationNeeded;
+        public Task<WindowsCommandResult> ConfigureLifetimeAsync(Guid correlationId, CancellationToken cancellationToken)
+        { LifetimeConfigurations++; Correlation = correlationId; return Completion.Task; }
         public TaskCompletionSource<WindowsCommandResult> Completion { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public IndexerServiceInstaller.DeploymentState ReadState() { Reads++; return state; }
         public bool StartService() { Starts++; return true; }

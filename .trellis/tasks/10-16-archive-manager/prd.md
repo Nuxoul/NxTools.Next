@@ -134,8 +134,8 @@ Detailed executable scenarios: [acceptance.md](acceptance.md). Read [handoff ind
   - reject traversal: `..`, absolute paths, drive and UNC prefixes, ADS `:`, reserved device names
   - links never escape the destination, and symlinks are not created by default
   - enforce entry-count, memory, actual expanded-byte and ratio budgets, with explicit finite budget escalation rather than misclassifying legitimate data as unsupported
-  - write each file to a unique exclusively-created sibling partial file, then commit only after validation; never clobber a predictable user `.nxpart` file
-  - on cancel/failure remove current owned partials. Optional cleanup removes only newly-created unchanged job-owned outputs, never pre-existing/replaced files or another process's edits; extraction is not a whole-job rollback.
+  - ordinary extraction opens each validated final relative name under the C# held no-reparse parent with `CREATE_NEW`; there is no sibling `.nxpart`, final rename, `FlushFileBuffers`, per-write hash, output fingerprint, per-file `VerifyDirectory` or published-file reopen
+  - Ask/Overwrite/Skip/AutoRename and current-attempt ApplyAll remain Rust-owned. An existing `CREATE_NEW` result reports `target_exists` plus existing bytes; overwrite directly truncates the same observed path, AutoRename retries `CREATE_NEW`, and cancel/failure deletes only current incomplete owned output(s), never successfully closed files/directories, skipped pre-existing targets or outputs not owned by the attempt
 - Restore modification times. Restore the read-only/hidden attributes when the archive provides them.
 - Optionally copy `Zone.Identifier` from the archive to the extracted files (default on). This is the Mark-of-the-Web, a security setting.
 - Preserve source archive on any failed/skipped entry or selected-only extraction. Delete-after-extract requires full successful extraction and explicit per-job consent, then C# Recycle Bin with per-path outcomes.
@@ -160,7 +160,7 @@ Detailed executable scenarios: [acceptance.md](acceptance.md). Read [handoff ind
   - Link storage is optional opt-in capability work, never implicit symlink following or creation.
 - GZ/XZ cannot take a folder or several items. The dialog says so and offers 分别压缩 (one archive per item).
 - Turning on 压缩后删除原文件 while 测试 is off asks whether to enable 测试. Source deletion happens only after a successful test and moves files to the Recycle Bin through C#, never deleting them permanently.
-- Output uses a unique exclusive sibling partial and a verified commit. Cancel/failure preserves the prior target. Confirm overwrite; reject source/output self-inclusion, source changes and recursion through links.
+- Archive creation output, unlike ordinary extraction output, retains a unique exclusive sibling candidate, complete verification/readback and verified replacement. Cancel/failure preserves the prior target. Confirm overwrite; reject source/output self-inclusion, source changes and recursion through links.
 - **Name rules:** a single folder named X becomes `X.zip`. Several items take the first item's name, or the parent folder's name when no first-item name exists. "只压缩单个文件夹时不创建根文件夹" (default off) strips the root.
 - ZIP names are written as UTF-8 with the language-encoding flag set. Thumbs.db/desktop.ini exclusion is on by default, and an exclude filter accepts glob patterns.
 
@@ -212,7 +212,7 @@ Detailed executable scenarios: [acceptance.md](acceptance.md). Read [handoff ind
   - case collision
   - extreme expansion, actual-byte overflow and metadata allocation limits, with typed risk/limit handling
   - entry-count overflow
-- Cooperative cancellation target≤200ms on bounded1GiB synthetic I/O; paused/prompt waits wake on cancel and owned partials are cleaned. Record backend limitations honestly.
+- Cooperative cancellation target≤200ms on bounded1GiB synthetic I/O; paused/prompt waits wake on cancel and only current incomplete owned ordinary outputs are deleted. Record backend limitations honestly.
 - Explicit GBK/Shift-JIS/CP437 fixtures round-trip names. Auto cases include both detectable and ambiguous input; authoritative Unicode cannot be re-decoded, ambiguous input must retain manual selection.
 - Benchmark100k-entry ZIP listing (target≤1.5s on recorded workstation/warm-cache conditions), metadata RSS, first-paint and cancel latency. This target is not an observed result or permission to write a tautological timing test; enforce finite metadata budgets.
 

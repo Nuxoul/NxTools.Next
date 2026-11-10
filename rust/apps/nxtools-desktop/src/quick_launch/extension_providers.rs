@@ -11,9 +11,11 @@ pub(super) struct ExtensionProviders {
     cancels: Vec<tokio::sync::watch::Sender<bool>>,
     rows: HashMap<String, (InvocationIdentity, ProviderItem, SearchResult)>,
     order: Vec<String>,
+    running: usize,
 }
 impl QuickLaunchApplication {
     pub(crate) fn cancel_extension_providers(&mut self) {
+        self.extension_providers.running = 0;
         for cancel in self.extension_providers.cancels.drain(..) {
             let _ = cancel.send(true);
         }
@@ -87,6 +89,7 @@ impl QuickLaunchApplication {
         for (package_id, handler_id, input) in handlers {
             let (cancel, cancellation) = tokio::sync::watch::channel(false);
             self.extension_providers.cancels.push(cancel);
+            self.extension_providers.running += 1;
             let (batches, mut receiver) = tokio::sync::mpsc::channel(16);
             let service = service.clone();
             let query = query.clone();
@@ -120,9 +123,27 @@ impl QuickLaunchApplication {
                     }
                 }
                 let _ = task.await;
+                let _ = this.update(cx, |app, cx| {
+                    app.finish_extension_provider(&query, generation, cx);
+                });
             })
             .detach();
         }
+    }
+
+    #[cfg(test)]
+    pub(super) fn extension_search_in_progress(&self, query: &str) -> bool {
+        self.extension_providers.query == query && self.extension_providers.running > 0
+    }
+
+    fn finish_extension_provider(&mut self, query: &str, generation: u64, cx: &mut Context<Self>) {
+        if self.extension_providers.generation != generation
+            || self.extension_providers.query != query
+        {
+            return;
+        }
+        self.extension_providers.running -= 1;
+        self.resize_popup_content(cx);
     }
     pub(super) fn apply_extension_batch(
         &mut self,
@@ -248,13 +269,6 @@ impl QuickLaunchApplication {
                 self.extension_providers.order.push(row.entry.id.clone());
             }
         }
-        let selected_id = merge.selected_id().map(|id| {
-            if results.iter().any(|row| row.entry.id == id) {
-                id.to_owned()
-            } else {
-                id.replace("extension:", "extension-script:")
-            }
-        });
         if pending && results.is_empty() {
             return;
         }
@@ -262,11 +276,6 @@ impl QuickLaunchApplication {
         let _ = popup.panel.update(cx, |panel, cx| {
             panel.replace_results(results, cx);
             panel.search_pending = false;
-            if let Some(id) = selected_id
-                && let Some(index) = panel.results.iter().position(|row| row.entry.id == id)
-            {
-                panel.selected = index;
-            }
             cx.notify();
         });
     }
@@ -549,10 +558,10 @@ mod tests {
                 )
             })
         });
-        panel.update_in(window, |panel, _, _| {
+        panel.update_in(window, |panel, _, cx| {
             assert_eq!(panel.results[panel.selected].entry.id, "normal");
             assert_eq!(panel.results.len(), 2);
-            panel.selected = 1;
+            panel.select_result(1, cx);
         });
         let mut updated = item.clone();
         updated.title = "Updated".into();
@@ -658,5 +667,32 @@ mod tests {
             endpoint.try_receive_command_for_contract_test().is_err(),
             "retired result cannot dispatch"
         );
+    }
+}
+
+#[cfg(test)]
+mod height_settling_tests {
+    #[gpui_kit::test]
+    fn provider_completion_keeps_height_wait_generation_scoped(cx: &mut gpui_kit::TestAppContext) {
+        cx.update(gpui_kit::init);
+        let (_temporary, application, _endpoint) =
+            super::super::tests::quick_launch_application_fixture(cx);
+        application.update(cx, |application, cx| {
+            application.extension_providers.query = "shape".into();
+            application.extension_providers.generation = 4;
+            application.extension_providers.running = 2;
+            assert!(application.extension_search_in_progress("shape"));
+            assert!(!application.extension_search_in_progress("other"));
+            application.finish_extension_provider("shape", 3, cx);
+            assert_eq!(application.extension_providers.running, 2);
+            application.finish_extension_provider("shape", 4, cx);
+            assert!(application.extension_search_in_progress("shape"));
+            application.finish_extension_provider("shape", 4, cx);
+            assert!(!application.extension_search_in_progress("shape"));
+            application.extension_providers.running = 1;
+            application.cancel_extension_providers();
+            application.finish_extension_provider("shape", 4, cx);
+            assert_eq!(application.extension_providers.running, 0);
+        });
     }
 }

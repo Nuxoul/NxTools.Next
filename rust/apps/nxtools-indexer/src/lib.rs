@@ -12,17 +12,25 @@ use anyhow::{Context, Result, bail};
 use nxtools_finder::FileQuery;
 use nxtools_ipc::{read_bounded_sync_frame, write_envelope_sync};
 use nxtools_protocol::{
-    Envelope, HelloAck, IndexDriveStatus, IndexPhase, IndexSearchBatch, IndexSearchItem,
-    IndexSearchRequest, IndexSettings, IndexStatus, IndexerCommand, IndexerEvent, Message, Pong,
-    ProtocolFault,
+    Envelope, HelloAck, IndexDriveStatus, IndexPhase, IndexRebuildReason, IndexSearchBatch,
+    IndexSearchItem, IndexSearchRequest, IndexSettings, IndexStatus, IndexerCommand, IndexerEvent,
+    Message, Pong, ProtocolFault,
 };
 use rayon::prelude::*;
 use sysinfo::Disks;
 use tracing::{info, warn};
 
+mod maintenance;
+use maintenance::VolumeMaintenance;
+#[cfg(test)]
+mod maintenance_tests;
 mod mft;
 mod recent;
 mod search_data;
+mod session_runtime;
+
+pub use session_runtime::SharedIndexerRuntime;
+use session_runtime::{RuntimeOutput, SessionEndpoint, pump_requests};
 mod settings;
 mod usn;
 
@@ -30,6 +38,7 @@ use mft::{MftEntryRef, MftSnapshot};
 
 type SnapshotScanner = dyn Fn(&str) -> Result<MftSnapshot> + Send + Sync;
 type JournalPoller = dyn Fn(&MftSnapshot) -> Result<usn::JournalPoll> + Send + Sync;
+type SnapshotCompactor = dyn Fn(&MftSnapshot) -> Result<MftSnapshot> + Send + Sync;
 pub type ServiceCommandHandler = dyn Fn(&Envelope) -> Option<Vec<Envelope>> + Send + Sync;
 const RUNTIME_QUEUE_CAPACITY: usize = 64;
 const MAX_SEARCH_RESULTS: usize = 200;
@@ -45,7 +54,7 @@ struct BuildOutcome {
     status: IndexStatus,
     snapshots: Vec<MftSnapshot>,
     attempted_mount_points: Vec<String>,
-    errors: Vec<(String, String)>,
+    errors: Vec<(String, String, Option<i32>)>,
 }
 
 struct PendingBuild {
@@ -82,7 +91,6 @@ enum JournalMaintenance {
     RebuildRequired {
         mount_points: Vec<String>,
         compaction_mount_points: Vec<String>,
-        reason: String,
     },
 }
 
@@ -148,12 +156,30 @@ impl JournalPollSchedule {
 }
 
 enum RuntimeEvent {
-    Request(Envelope),
-    ReaderClosed,
-    ReaderFailed(anyhow::Error),
-    BuildCompleted {
+    Attach {
+        endpoint: SessionEndpoint,
+        handshake: Envelope,
+        registered: mpsc::SyncSender<u64>,
+    },
+    Request {
+        lease: u64,
+        request: Envelope,
+    },
+    ReaderClosed {
+        lease: u64,
+    },
+    ReaderFailed {
+        lease: u64,
+        error: anyhow::Error,
+    },
+    BuildVolume {
         generation: u64,
         outcome: BuildOutcome,
+    },
+    BuildFinished {
+        generation: u64,
+        elapsed_ms: u64,
+        volume_count: usize,
     },
     BuildFailed {
         generation: u64,
@@ -161,6 +187,7 @@ enum RuntimeEvent {
         message: String,
     },
     SearchCompleted {
+        lease: u64,
         task_id: u64,
         response: Envelope,
     },
@@ -177,16 +204,28 @@ enum RuntimeEvent {
 }
 
 struct SearchJob {
+    lease: u64,
     task_id: u64,
     request: Envelope,
     snapshots: Arc<Vec<MftSnapshot>>,
     settings: IndexSettings,
 }
 
+#[cfg(test)]
+type SearchObserver = Arc<dyn Fn(&SearchJob) + Send + Sync>;
+
+struct SearchIdentity {
+    lease: u64,
+    request: nxtools_protocol::IndexSearchCancel,
+}
+
 #[derive(Default)]
 struct SearchWorkerState {
+    current: Option<SearchIdentity>,
     pending: Option<SearchJob>,
     closed: bool,
+    #[cfg(test)]
+    observer: Option<SearchObserver>,
 }
 
 struct SearchExecutor {
@@ -213,7 +252,27 @@ impl SearchExecutor {
                     }
                     state.pending.take().expect("pending search job")
                 };
+                #[cfg(test)]
+                {
+                    let observer = worker_state
+                        .0
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .observer
+                        .clone();
+                    if let Some(observer) = observer {
+                        observer(&job);
+                    }
+                }
+                let correlation_id = job.request.id;
+                let task_id = job.task_id;
+                let started = Instant::now();
                 run_snapshot_search(job, &worker_active_task, &events);
+                if worker_active_task.load(Ordering::Acquire) != task_id {
+                    info!(event = "indexer.search.retired", %correlation_id,
+                        elapsed_us = started.elapsed().as_micros() as u64,
+                        reason = "cancelled_or_superseded", "search worker released its job");
+                }
             }
         });
         Self {
@@ -224,10 +283,52 @@ impl SearchExecutor {
     }
 
     fn submit(&self, job: SearchJob) {
+        let Message::IndexerCommand(IndexerCommand::Search(search)) = &job.request.message else {
+            return;
+        };
+        let identity = SearchIdentity {
+            lease: job.lease,
+            request: nxtools_protocol::IndexSearchCancel {
+                request_id: job.request.id,
+                generation: search.generation,
+            },
+        };
         let (lock, ready) = &*self.state;
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
+        self.active_task.store(job.task_id, Ordering::Release);
+        state.current = Some(identity);
         state.pending = Some(job);
         ready.notify_one();
+    }
+
+    fn cancel(&self, lease: u64, request: &nxtools_protocol::IndexSearchCancel) -> bool {
+        let mut state = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if !state
+            .current
+            .as_ref()
+            .is_some_and(|current| current.lease == lease && current.request == *request)
+        {
+            return false;
+        }
+        self.active_task.store(0, Ordering::Release);
+        state.current = None;
+        state.pending = None;
+        true
+    }
+
+    fn retire(&self) {
+        let mut state = self
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.active_task.store(0, Ordering::Release);
+        state.current = None;
+        state.pending = None;
     }
 }
 
@@ -237,6 +338,7 @@ impl Drop for SearchExecutor {
         let (lock, ready) = &*self.state;
         let mut state = lock.lock().unwrap_or_else(|error| error.into_inner());
         state.closed = true;
+        state.current = None;
         state.pending = None;
         ready.notify_one();
         drop(state);
@@ -254,10 +356,15 @@ pub struct IndexerService {
     settings_persistence_error: Option<String>,
     compaction_errors: BTreeMap<String, String>,
     compaction_retries: HashMap<String, CompactionRetry>,
+    maintenance: BTreeMap<String, VolumeMaintenance>,
     active_generation: Option<u64>,
     snapshots: Arc<Vec<MftSnapshot>>,
     settings: IndexSettings,
     persist_settings: bool,
+    #[cfg(test)]
+    search_observer: Option<SearchObserver>,
+    #[cfg(test)]
+    compaction_source: Option<Arc<SnapshotCompactor>>,
 }
 
 fn persistence_native_error(error: &anyhow::Error) -> Option<i32> {
@@ -315,6 +422,7 @@ impl IndexerService {
             .into_iter()
             .filter(|volume| volume.file_system.eq_ignore_ascii_case("ntfs"))
             .map(|volume| IndexDriveStatus {
+                maintenance: None,
                 mount_point: volume.mount_point,
                 file_system: "NTFS".into(),
                 indexed_items: 0,
@@ -336,10 +444,15 @@ impl IndexerService {
             settings_persistence_error: None,
             compaction_errors: BTreeMap::new(),
             compaction_retries: HashMap::new(),
+            maintenance: BTreeMap::new(),
             active_generation: None,
             snapshots: Arc::new(Vec::new()),
             settings: IndexSettings::default(),
             persist_settings: false,
+            #[cfg(test)]
+            search_observer: None,
+            #[cfg(test)]
+            compaction_source: None,
         }
     }
 
@@ -377,6 +490,7 @@ impl IndexerService {
             .map(|drive| drive.indexed_items)
             .sum();
         self.snapshots = Arc::new(snapshots);
+        self.project_maintenance();
         if !missing && !self.status.drives.is_empty() {
             self.status.phase = IndexPhase::Ready;
             trim_working_set_after_snapshot_restore();
@@ -384,7 +498,15 @@ impl IndexerService {
     }
 
     fn rebuild_with(&mut self, scan: impl Fn(&str) -> Result<MftSnapshot>) {
+        self.begin_snapshot_maintenance();
         self.apply_build(build_snapshots(self.status.drives.clone(), scan));
+        self.cleanup_published_caches();
+    }
+
+    fn cleanup_published_caches(&self) {
+        for snapshot in self.snapshots.iter() {
+            mft::cleanup_published_snapshot(snapshot);
+        }
     }
 
     fn apply_build(&mut self, outcome: BuildOutcome) {
@@ -435,17 +557,27 @@ impl IndexerService {
             .map(|drive| drive.indexed_items)
             .sum();
         for mount_point in outcome.attempted_mount_points {
+            let failure = outcome
+                .errors
+                .iter()
+                .find(|(mount, _, _)| mount.eq_ignore_ascii_case(&mount_point));
+            self.finish_snapshot_maintenance(
+                &mount_point,
+                failure.is_none(),
+                failure.and_then(|(_, _, code)| *code),
+            );
             let mount_key = normalized_mount_key(&mount_point);
             self.build_errors.remove(&mount_key);
             self.journal_errors.remove(&mount_key);
             self.compaction_errors.remove(&mount_key);
             self.compaction_retries.remove(&mount_key);
         }
-        for (mount_point, error) in outcome.errors {
+        for (mount_point, error, _) in outcome.errors {
             self.build_errors
                 .insert(normalized_mount_key(&mount_point), error);
         }
         self.refresh_last_error();
+        self.project_maintenance();
     }
 
     fn rediscover_from_volume_descriptors(
@@ -548,6 +680,8 @@ impl IndexerService {
             })
             .map(|(mount_point, retry)| (mount_point.clone(), retry.clone()))
             .collect();
+        discovered.maintenance = std::mem::take(&mut self.maintenance);
+        discovered.project_maintenance();
         discovered.refresh_last_error();
         *self = discovered;
     }
@@ -563,17 +697,14 @@ impl IndexerService {
             IndexPhase::Ready
         };
         for mount_point in mount_points {
+            self.finish_snapshot_maintenance(&mount_point, false, None);
             self.build_errors.insert(
                 normalized_mount_key(&mount_point),
                 format!("{mount_point}: MFT snapshot worker failed: {message}"),
             );
         }
         self.refresh_last_error();
-    }
-
-    fn begin_snapshot_maintenance(&mut self) {
-        self.status.phase = IndexPhase::VolumesReady;
-        self.refresh_last_error();
+        self.project_maintenance();
     }
 
     fn refresh_last_error(&mut self) {
@@ -735,6 +866,7 @@ impl IndexerService {
             }
         }
         self.refresh_last_error();
+        self.cancel_unstarted_maintenance();
     }
 
     fn volume_is_enabled(&self, mount_point: &str) -> bool {
@@ -786,7 +918,6 @@ impl IndexerService {
         let mut published = false;
         let mut content_changed = false;
         let mut rebuild_mounts = Vec::new();
-        let mut rebuild_reasons = Vec::new();
         let previous_journal_errors = self.journal_errors.clone();
         let previous_persistence_errors = self.persistence_errors.clone();
         for snapshot in &mut snapshots {
@@ -819,13 +950,14 @@ impl IndexerService {
                     content_changed = true;
                 }
                 Ok(usn::JournalPoll::RebuildRequired(reason)) => {
+                    let drives =
+                        self.build_drives_for_mounts(std::slice::from_ref(&snapshot.mount_point));
+                    self.queue_snapshot_maintenance(
+                        &drives,
+                        reason.reason,
+                        reason.native_error_code,
+                    );
                     rebuild_mounts.push(snapshot.mount_point.clone());
-                    let message = format!("{}: {reason}", snapshot.mount_point);
-                    rebuild_reasons.push(message);
-                    // A rebuild request is a bounded recovery decision, not a failed index. The
-                    // last good snapshot remains searchable while the replacement is built. Keep
-                    // the reason in the maintenance event/log, and reserve last_error for an
-                    // actual poll, compaction, or snapshot-worker failure.
                     self.journal_errors.remove(&mount_key);
                 }
                 Err(error) => {
@@ -875,7 +1007,6 @@ impl IndexerService {
             return JournalMaintenance::RebuildRequired {
                 mount_points: rebuild_mounts,
                 compaction_mount_points: compaction_mounts,
-                reason: rebuild_reasons.join("; "),
             };
         }
         if !compaction_mounts.is_empty() {
@@ -939,6 +1070,7 @@ impl IndexerService {
                     })),
                 )]
             }
+            Message::IndexerCommand(IndexerCommand::CancelSearch(_)) => Vec::new(),
             Message::IndexerCommand(IndexerCommand::UpdateSettings(settings)) => {
                 self.apply_settings(settings.clone());
                 vec![Envelope::reply_to(
@@ -1074,6 +1206,87 @@ fn search_snapshots_while(
     matches.retain(|item| seen.insert(item.path.to_lowercase()));
     matches.truncate(request.limit.min(MAX_SEARCH_RESULTS));
     is_current().then_some(matches)
+}
+
+// The launcher requests independent file/directory headroom. Publish the first
+// completed kind while the other is still being searched; the desktop owns the
+// cross-kind merge and rank. Ordinary single-kind and scoped searches retain
+// their original globally ordered response path.
+fn search_launcher_snapshots_while(
+    snapshots: &[MftSnapshot],
+    settings: &IndexSettings,
+    request: &IndexSearchRequest,
+    is_current: &(impl Fn() -> bool + Sync),
+    mut publish: impl FnMut(Vec<IndexSearchItem>, bool) -> bool,
+) -> bool {
+    let query = FileQuery::parse(&request.query);
+    let mut files = request.clone();
+    files.context.retain_kinds_apart = false;
+    files.context.include_directories = false;
+    let mut directories = files.clone();
+    directories.context.include_files = false;
+    directories.context.include_directories = true;
+    let Some(file_items) =
+        search_snapshots_query_while(snapshots, settings, &files, &query, is_current)
+    else {
+        return false;
+    };
+    let files_found = !file_items.is_empty();
+    if files_found {
+        for batch in file_items.chunks(SEARCH_BATCH_SIZE) {
+            if !is_current() || !publish(batch.to_vec(), false) {
+                return false;
+            }
+        }
+    }
+    let Some(directory_items) =
+        search_snapshots_query_while(snapshots, settings, &directories, &query, is_current)
+    else {
+        return false;
+    };
+    if !is_current() {
+        return false;
+    }
+    if !files_found && directory_items.is_empty() && request.context.allow_homophone_fallback {
+        let mut matches = Vec::new();
+        for variant in query.homophone_variants() {
+            if !is_current() {
+                return false;
+            }
+            let Some(found) =
+                search_snapshots_retained_while(snapshots, settings, request, &variant, is_current)
+            else {
+                return false;
+            };
+            matches.extend(found);
+        }
+        matches.sort_by(|left, right| {
+            right
+                .score
+                .cmp(&left.score)
+                .then_with(|| left.name.cmp(&right.name))
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        let mut seen = HashSet::new();
+        matches.retain(|item| seen.insert(item.path.to_lowercase()));
+        matches.truncate(request.limit.min(MAX_SEARCH_RESULTS));
+        let batches = partition_search_batches(request.generation, matches, 0);
+        return batches
+            .into_iter()
+            .all(|batch| is_current() && publish(batch.items, batch.complete));
+    }
+    if directory_items.is_empty() {
+        return is_current() && publish(Vec::new(), true);
+    }
+    let count = directory_items.len().div_ceil(SEARCH_BATCH_SIZE);
+    let mut chunks = directory_items.into_iter();
+    (0..count).all(|index| {
+        is_current()
+            && publish(
+                chunks.by_ref().take(SEARCH_BATCH_SIZE).collect(),
+                index + 1 == count,
+            )
+    })
 }
 
 fn search_snapshots_retained_while(
@@ -1213,7 +1426,7 @@ fn search_full_path_snapshots_while(
                 break;
             }
             if let Some(item) =
-                match_search_candidate(entry.as_ref(), settings, request, query, directory)
+                match_search_candidate(entry.as_ref().as_ref(), settings, request, query, directory)
             {
                 matches.push(item);
                 prune_search_candidates(&mut matches, result_limit);
@@ -1495,7 +1708,7 @@ fn search_name_only_with_data(
                 break;
             }
             if let Some(item) =
-                match_search_candidate(entry.as_ref(), settings, request, query, None)
+                match_search_candidate(entry.as_ref().as_ref(), settings, request, query, None)
             {
                 matches.push(item);
                 prune_search_candidates(&mut matches, result_limit);
@@ -1724,7 +1937,7 @@ fn build_snapshots(
         .iter()
         .map(|drive| drive.mount_point.clone())
         .collect::<Vec<_>>();
-    let mut errors = Vec::<(String, String)>::new();
+    let mut errors = Vec::<(String, String, Option<i32>)>::new();
     for drive in &mut drives {
         drive.indexed_items = 0;
         drive.journal_id = None;
@@ -1741,6 +1954,7 @@ fn build_snapshots(
                             "{}: snapshot was returned for {}",
                             drive.mount_point, snapshot.mount_point
                         ),
+                        None,
                     ));
                     continue;
                 }
@@ -1752,6 +1966,7 @@ fn build_snapshots(
             Err(error) => errors.push((
                 drive.mount_point.clone(),
                 format!("{}: {error}", drive.mount_point),
+                persistence_native_error(&error),
             )),
         }
     }
@@ -1765,7 +1980,7 @@ fn build_snapshots(
             last_error: (!errors.is_empty()).then(|| {
                 errors
                     .iter()
-                    .map(|(_, error)| error.as_str())
+                    .map(|(_, error, _)| error.as_str())
                     .collect::<Vec<_>>()
                     .join("; ")
             }),
@@ -1826,7 +2041,7 @@ where
     )
 }
 
-/// Service-host entry: Hello is read before acquiring the exclusive indexer state lock.
+/// Standalone admitted-session composition with an already-read Hello.
 pub fn serve_admitted_session<R, W>(
     reader: R,
     writer: W,
@@ -1933,49 +2148,69 @@ where
         bail!("desktop did not begin the indexer session with hello");
     }
     service.begin_client_session();
+    service.queue_snapshot_maintenance(
+        &service.missing_build_drives(),
+        IndexRebuildReason::Requested,
+        None,
+    );
     write_responses(&mut writer, service.handle(handshake))?;
 
     let (events, runtime) = mpsc::sync_channel(RUNTIME_QUEUE_CAPACITY);
     let reader_events = events.clone();
     thread::spawn(move || {
-        loop {
-            match read_bounded_sync_frame(&mut reader) {
-                Ok(Some(frame)) => match Envelope::decode_line(&frame) {
-                    Ok(request) => {
-                        if reader_events.send(RuntimeEvent::Request(request)).is_err() {
-                            break;
-                        }
-                    }
-                    Err(error) => {
-                        let _ = reader_events.send(RuntimeEvent::ReaderFailed(
-                            anyhow::Error::new(error).context("invalid indexer request"),
-                        ));
-                        break;
-                    }
-                },
-                Ok(None) => {
-                    let _ = reader_events.send(RuntimeEvent::ReaderClosed);
-                    break;
-                }
-                Err(error) => {
-                    let _ = reader_events.send(RuntimeEvent::ReaderFailed(error));
-                    break;
-                }
-            }
-        }
+        pump_requests(reader, 0, reader_events, Arc::new(AtomicBool::new(false)))
     });
+    run_coordinator(
+        service,
+        scanner,
+        journal_poller,
+        RuntimeOutput::standalone(writer, command_handler),
+        events,
+        runtime,
+        Arc::new(AtomicBool::new(false)),
+    )
+}
 
+fn run_coordinator<W: Write>(
+    service: &mut IndexerService,
+    scanner: Arc<SnapshotScanner>,
+    journal_poller: Arc<JournalPoller>,
+    mut writer: RuntimeOutput<W>,
+    events: mpsc::SyncSender<RuntimeEvent>,
+    runtime: mpsc::Receiver<RuntimeEvent>,
+    stopping: Arc<AtomicBool>,
+) -> Result<()> {
+    let compactor: Arc<SnapshotCompactor> = Arc::new(mft::compact_system_snapshot);
+    #[cfg(test)]
+    let compactor = service.compaction_source.take().unwrap_or(compactor);
     let mut next_build_generation = 1_u64;
     let initial_build_drives = service.missing_build_drives();
     let mut active_build = (!initial_build_drives.is_empty()).then_some(next_build_generation);
     let mut pending_build = None;
     let active_search_task = Arc::new(AtomicU64::new(0));
     let search_executor = SearchExecutor::start(Arc::clone(&active_search_task), events.clone());
+    #[cfg(test)]
+    {
+        search_executor
+            .state
+            .0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .observer = service.search_observer.take();
+    }
     let mut active_compactions = HashSet::<String>::new();
+    let mut pending_compactions = Vec::new();
     let mut next_search_task = 0_u64;
     if active_build.is_some() {
+        service.queue_snapshot_maintenance(
+            &initial_build_drives,
+            IndexRebuildReason::Requested,
+            None,
+        );
+        service.start_snapshot_maintenance(&initial_build_drives);
         spawn_snapshot_build(
             next_build_generation,
+            service.snapshot_build_correlations(&initial_build_drives),
             initial_build_drives,
             Arc::clone(&scanner),
             events.clone(),
@@ -1985,8 +2220,32 @@ where
     let mut journal_schedule = JournalPollSchedule::new(Instant::now());
 
     loop {
+        if stopping.load(Ordering::Acquire) {
+            writer.retire("service_stopped");
+            return Ok(());
+        }
+        writer.reap_retired();
         if active_build.is_none()
             && active_compactions.is_empty()
+            && !pending_compactions.is_empty()
+        {
+            if let Some(retry_at) = schedule_snapshot_compactions(
+                &mut pending_compactions,
+                service,
+                &mut active_compactions,
+                &events,
+                &compactor,
+            ) {
+                journal_schedule.defer_until(retry_at);
+            }
+            // Standalone EOF drains the discovered batch, not future retries/polls.
+            if reader_closed && active_compactions.is_empty() {
+                return Ok(());
+            }
+        }
+        if active_build.is_none()
+            && active_compactions.is_empty()
+            && !reader_closed
             && journal_schedule.remaining(Instant::now()).is_zero()
         {
             let maintenance = service.poll_journals(journal_poller.as_ref());
@@ -2008,11 +2267,13 @@ where
                             service.status().clone(),
                         )))],
                     )?;
+                    pending_compactions = mount_points;
                     if let Some(retry_at) = schedule_snapshot_compactions(
-                        mount_points,
+                        &mut pending_compactions,
                         service,
                         &mut active_compactions,
                         &events,
+                        &compactor,
                     ) {
                         journal_schedule.defer_until(retry_at);
                     }
@@ -2020,13 +2281,14 @@ where
                 JournalMaintenance::RebuildRequired {
                     mount_points,
                     compaction_mount_points,
-                    reason,
                 } => {
+                    pending_compactions = compaction_mount_points;
                     if let Some(retry_at) = schedule_snapshot_compactions(
-                        compaction_mount_points,
+                        &mut pending_compactions,
                         service,
                         &mut active_compactions,
                         &events,
+                        &compactor,
                     ) {
                         journal_schedule.defer_until(retry_at);
                     }
@@ -2036,8 +2298,7 @@ where
                         continue;
                     }
                     active_build = Some(next_build_generation);
-                    service.begin_snapshot_maintenance();
-                    info!(%reason, "rebuilding MFT snapshot while the last good index remains searchable");
+                    service.start_snapshot_maintenance(&drives);
                     write_responses(
                         &mut writer,
                         vec![Envelope::new(Message::IndexerEvent(IndexerEvent::Status(
@@ -2046,6 +2307,7 @@ where
                     )?;
                     spawn_snapshot_build(
                         next_build_generation,
+                        service.snapshot_build_correlations(&drives),
                         drives,
                         Arc::clone(&scanner),
                         events.clone(),
@@ -2054,7 +2316,7 @@ where
             }
             continue;
         }
-        let wait = if active_build.is_some() {
+        let wait = if active_build.is_some() || !active_compactions.is_empty() {
             JOURNAL_POLL_MIN_DELAY
         } else {
             journal_schedule.remaining(Instant::now())
@@ -2065,19 +2327,47 @@ where
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
         match event {
-            RuntimeEvent::Request(request) => {
-                if let Some(responses) = command_handler
-                    .as_ref()
+            RuntimeEvent::Attach {
+                endpoint,
+                handshake,
+                registered,
+            } => {
+                next_search_task = next_search_task.saturating_add(1);
+                search_executor.retire();
+                let lease = writer.attach(endpoint);
+                service.begin_client_session();
+                write_responses(&mut writer, service.handle(handshake))?;
+                if registered.try_send(lease).is_err() {
+                    writer.retire("registration_closed");
+                }
+            }
+            RuntimeEvent::Request { lease, request } => {
+                if !writer.accepts(lease) {
+                    continue;
+                }
+                if let Some(responses) = writer
+                    .command_handler()
                     .and_then(|handler| handler(&request))
                 {
                     write_responses(&mut writer, responses)?;
                     continue;
                 }
+                if let Message::IndexerCommand(IndexerCommand::CancelSearch(cancel)) =
+                    &request.message
+                {
+                    let started = Instant::now();
+                    let matched = search_executor.cancel(lease, cancel);
+                    info!(event = "indexer.search.cancel_requested", correlation_id = %cancel.request_id,
+                        cancellation_id = %request.id, generation = cancel.generation, lease, matched,
+                        elapsed_us = started.elapsed().as_micros() as u64,
+                        "search cancellation handled");
+                    continue;
+                }
                 if let Message::IndexerCommand(IndexerCommand::Search(search)) = &request.message {
                     if service.accept_search_generation(search.generation) {
                         next_search_task = next_search_task.saturating_add(1);
-                        active_search_task.store(next_search_task, Ordering::Release);
                         search_executor.submit(SearchJob {
+                            lease,
                             task_id: next_search_task,
                             request,
                             snapshots: Arc::clone(&service.snapshots),
@@ -2106,7 +2396,7 @@ where
                 };
                 if refresh {
                     next_search_task = next_search_task.saturating_add(1);
-                    active_search_task.store(next_search_task, Ordering::Release);
+                    search_executor.retire();
                     service.rediscover();
                 }
                 write_responses(&mut writer, service.handle(request))?;
@@ -2123,6 +2413,17 @@ where
                     if drives.is_empty() {
                         continue;
                     }
+                    service.queue_snapshot_maintenance(
+                        &drives,
+                        IndexRebuildReason::Requested,
+                        None,
+                    );
+                    write_responses(
+                        &mut writer,
+                        vec![Envelope::new(Message::IndexerEvent(IndexerEvent::Status(
+                            service.status().clone(),
+                        )))],
+                    )?;
                     let job = PendingBuild {
                         generation: next_build_generation,
                         drives,
@@ -2135,8 +2436,10 @@ where
                         });
                     } else {
                         active_build = Some(job.generation);
+                        service.start_snapshot_maintenance(&job.drives);
                         spawn_snapshot_build(
                             job.generation,
+                            service.snapshot_build_correlations(&job.drives),
                             job.drives,
                             Arc::clone(&scanner),
                             events.clone(),
@@ -2144,27 +2447,94 @@ where
                     }
                 }
             }
-            RuntimeEvent::ReaderClosed => {
+            RuntimeEvent::ReaderClosed { lease } => {
+                if !writer.accepts(lease) {
+                    continue;
+                }
                 next_search_task = next_search_task.saturating_add(1);
-                active_search_task.store(next_search_task, Ordering::Release);
+                search_executor.retire();
+                if writer.persistent() {
+                    writer.retire("reader_closed");
+                    continue;
+                }
                 if active_build.is_none()
                     && pending_build.is_none()
                     && active_compactions.is_empty()
+                    && pending_compactions.is_empty()
                 {
                     return Ok(());
                 }
                 reader_closed = true;
             }
-            RuntimeEvent::ReaderFailed(error) => return Err(error),
-            RuntimeEvent::BuildCompleted {
+            RuntimeEvent::ReaderFailed { lease, error } => {
+                if !writer.accepts(lease) {
+                    continue;
+                }
+                if !writer.persistent() {
+                    return Err(error);
+                }
+                next_search_task = next_search_task.saturating_add(1);
+                search_executor.retire();
+                writer.reader_failed(&error);
+            }
+            RuntimeEvent::BuildVolume {
                 generation,
                 outcome,
             } => {
                 if active_build != Some(generation) {
                     continue;
                 }
-                active_build = None;
+                let building_phase = service.status.phase;
+                let first_search_ready =
+                    service.snapshots.is_empty() && !outcome.snapshots.is_empty();
+                let correlation_id = outcome
+                    .attempted_mount_points
+                    .first()
+                    .and_then(|mount| service.snapshot_build_correlation(mount))
+                    .unwrap_or_default()
+                    .to_owned();
+                let published = Instant::now();
+                let volume_rows = outcome.status.indexed_items;
+                let success = !outcome.snapshots.is_empty();
                 service.apply_build(outcome);
+                service.status.phase = building_phase;
+                info!(event = "indexer.snapshot.volume_published", generation, %correlation_id,
+                    success, rows = volume_rows, elapsed_us = published.elapsed().as_micros() as u64,
+                    "completed volume applied to searchable snapshots");
+                if first_search_ready {
+                    info!(event = "indexer.snapshot.first_search_ready", generation,
+                        %correlation_id, indexed_items = service.status.indexed_items,
+                        "first completed volume is searchable");
+                }
+                write_responses(
+                    &mut writer,
+                    vec![Envelope::new(Message::IndexerEvent(IndexerEvent::Status(
+                        service.status().clone(),
+                    )))],
+                )?;
+            }
+            RuntimeEvent::BuildFinished {
+                generation,
+                elapsed_ms,
+                volume_count,
+            } => {
+                if active_build != Some(generation) {
+                    continue;
+                }
+                active_build = None;
+                service.status.phase = if service.snapshots.is_empty() {
+                    IndexPhase::VolumesReady
+                } else {
+                    IndexPhase::Ready
+                };
+                info!(
+                    event = "indexer.snapshot.all_volumes_complete",
+                    generation,
+                    elapsed_ms,
+                    volume_count,
+                    indexed_items = service.status.indexed_items,
+                    "volume snapshot build finished"
+                );
                 if let Some(mut pending) = pending_build.take() {
                     pending
                         .drives
@@ -2176,16 +2546,30 @@ where
                     }
                     if !pending.drives.is_empty() {
                         active_build = Some(pending.generation);
+                        service.queue_snapshot_maintenance(
+                            &pending.drives,
+                            IndexRebuildReason::Requested,
+                            None,
+                        );
+                        service.start_snapshot_maintenance(&pending.drives);
                         spawn_snapshot_build(
                             pending.generation,
+                            service.snapshot_build_correlations(&pending.drives),
                             pending.drives,
                             Arc::clone(&scanner),
                             events.clone(),
                         );
                     }
                 }
+                if active_build.is_none() && active_compactions.is_empty() {
+                    service.cleanup_published_caches();
+                }
                 journal_schedule.reset(Instant::now());
-                if reader_closed && active_build.is_none() {
+                if reader_closed
+                    && active_build.is_none()
+                    && active_compactions.is_empty()
+                    && pending_compactions.is_empty()
+                {
                     return Ok(());
                 }
                 write_responses(
@@ -2211,15 +2595,29 @@ where
                         .retain(|drive| service.volume_is_enabled(&drive.mount_point));
                     if !pending.drives.is_empty() {
                         active_build = Some(pending.generation);
+                        service.queue_snapshot_maintenance(
+                            &pending.drives,
+                            IndexRebuildReason::Requested,
+                            None,
+                        );
+                        service.start_snapshot_maintenance(&pending.drives);
                         spawn_snapshot_build(
                             pending.generation,
+                            service.snapshot_build_correlations(&pending.drives),
                             pending.drives,
                             Arc::clone(&scanner),
                             events.clone(),
                         );
                     }
                 }
-                if reader_closed && active_build.is_none() {
+                if active_build.is_none() && active_compactions.is_empty() {
+                    service.cleanup_published_caches();
+                }
+                if reader_closed
+                    && active_build.is_none()
+                    && active_compactions.is_empty()
+                    && pending_compactions.is_empty()
+                {
                     return Ok(());
                 }
                 write_responses(
@@ -2229,8 +2627,12 @@ where
                     )))],
                 )?;
             }
-            RuntimeEvent::SearchCompleted { task_id, response } => {
-                if active_search_task.load(Ordering::Acquire) == task_id {
+            RuntimeEvent::SearchCompleted {
+                lease,
+                task_id,
+                response,
+            } => {
+                if writer.accepts(lease) && active_search_task.load(Ordering::Acquire) == task_id {
                     write_responses(&mut writer, vec![response])?;
                 }
             }
@@ -2247,11 +2649,15 @@ where
                     service.clear_compaction_failure(&mount_point);
                     warn!(%mount_point, "discarded stale compacted index snapshot");
                 }
+                if active_build.is_none() && active_compactions.is_empty() {
+                    service.cleanup_published_caches();
+                }
                 journal_schedule.reset(Instant::now());
                 if reader_closed
                     && active_build.is_none()
                     && pending_build.is_none()
                     && active_compactions.is_empty()
+                    && pending_compactions.is_empty()
                 {
                     return Ok(());
                 }
@@ -2262,6 +2668,9 @@ where
             } => {
                 active_compactions.remove(&mount_point.to_ascii_lowercase());
                 service.record_compaction_failure(&mount_point, &message);
+                if active_build.is_none() && active_compactions.is_empty() {
+                    service.cleanup_published_caches();
+                }
                 warn!(%mount_point, %message, "incremental index compaction failed");
                 if let Some(retry_at) = service.compaction_retry_at(&mount_point) {
                     journal_schedule.defer_until(retry_at);
@@ -2278,6 +2687,7 @@ where
                     && active_build.is_none()
                     && pending_build.is_none()
                     && active_compactions.is_empty()
+                    && pending_compactions.is_empty()
                 {
                     return Ok(());
                 }
@@ -2289,24 +2699,52 @@ where
 
 fn spawn_snapshot_build(
     generation: u64,
+    correlation_ids: Vec<String>,
     drives: Vec<IndexDriveStatus>,
     scanner: Arc<SnapshotScanner>,
     events: mpsc::SyncSender<RuntimeEvent>,
 ) {
     thread::spawn(move || {
-        let mount_points = drives
+        let volume_count = drives.len();
+        let build_started = Instant::now();
+        let mut remaining = drives
             .iter()
             .map(|drive| drive.mount_point.clone())
             .collect::<Vec<_>>();
         match catch_unwind(AssertUnwindSafe(|| {
-            build_snapshots(drives, |mount_point| scanner(mount_point))
-        })) {
-            Ok(outcome) => {
-                let _ = events.send(RuntimeEvent::BuildCompleted {
-                    generation,
-                    outcome,
-                });
+            for (drive, correlation_id) in drives.into_iter().zip(correlation_ids) {
+                let span =
+                    tracing::info_span!("indexer_snapshot_volume", %correlation_id, generation);
+                let _entered = span.enter();
+                let started = Instant::now();
+                let outcome = build_snapshots(vec![drive], |mount_point| scanner(mount_point));
+                let row_count = outcome.status.indexed_items;
+                let success = outcome.errors.is_empty();
+                info!(
+                    event = "indexer.snapshot.volume_scanned",
+                    success,
+                    rows = row_count,
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    "volume snapshot scan and exact reopen finished"
+                );
+                if events
+                    .send(RuntimeEvent::BuildVolume {
+                        generation,
+                        outcome,
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+                remaining.remove(0);
             }
+            let _ = events.send(RuntimeEvent::BuildFinished {
+                generation,
+                elapsed_ms: build_started.elapsed().as_millis() as u64,
+                volume_count,
+            });
+        })) {
+            Ok(()) => {}
             Err(payload) => {
                 let message = payload
                     .downcast_ref::<&str>()
@@ -2315,7 +2753,7 @@ fn spawn_snapshot_build(
                     .unwrap_or_else(|| "unknown panic payload".into());
                 let _ = events.send(RuntimeEvent::BuildFailed {
                     generation,
-                    mount_points,
+                    mount_points: remaining,
                     message: format!("panic: {message}"),
                 });
             }
@@ -2324,28 +2762,44 @@ fn spawn_snapshot_build(
 }
 
 fn schedule_snapshot_compactions(
-    mount_points: Vec<String>,
+    mount_points: &mut Vec<String>,
     service: &IndexerService,
     active_compactions: &mut HashSet<String>,
     events: &mpsc::SyncSender<RuntimeEvent>,
+    compactor: &Arc<SnapshotCompactor>,
 ) -> Option<Instant> {
+    // Terminal processing and quiescent retirement precede the next admission.
+    // A held worker keeps the single global slot.
+    if !active_compactions.is_empty() {
+        return None;
+    }
+    mount_points.retain(|mount_point| {
+        service.volume_is_enabled(mount_point)
+            && service.snapshots.iter().any(|snapshot| {
+                snapshot.mount_point.eq_ignore_ascii_case(mount_point)
+                    && usn::overlay_requires_compaction(snapshot)
+            })
+    });
     let now = Instant::now();
     let mut earliest_retry = None::<Instant>;
-    for mount_point in mount_points {
-        if let Some(retry_at) = service.compaction_retry_at(&mount_point)
+    let mut selected = None;
+    for (index, mount_point) in mount_points.iter().enumerate() {
+        if let Some(retry_at) = service.compaction_retry_at(mount_point)
             && retry_at > now
         {
             earliest_retry = Some(earliest_retry.map_or(retry_at, |current| current.min(retry_at)));
             continue;
         }
         let key = mount_point.to_ascii_lowercase();
-        if active_compactions.contains(&key) {
-            continue;
-        }
-        if let Some(snapshot) = service.snapshot_for_mount(&mount_point) {
+        if let Some(snapshot) = service.snapshot_for_mount(mount_point) {
             active_compactions.insert(key);
-            spawn_snapshot_compaction(snapshot, events.clone());
+            spawn_snapshot_compaction(snapshot, events.clone(), Arc::clone(compactor));
+            selected = Some(index);
+            break;
         }
+    }
+    if let Some(index) = selected {
+        mount_points.remove(index);
     }
     earliest_retry
 }
@@ -2365,12 +2819,26 @@ fn trim_working_set_after_snapshot_restore() {
     }
 }
 
-fn spawn_snapshot_compaction(snapshot: MftSnapshot, events: mpsc::SyncSender<RuntimeEvent>) {
+fn spawn_snapshot_compaction(
+    snapshot: MftSnapshot,
+    events: mpsc::SyncSender<RuntimeEvent>,
+    compactor: Arc<SnapshotCompactor>,
+) {
+    spawn_snapshot_compaction_with(snapshot, events, move |snapshot| compactor(snapshot));
+}
+
+fn spawn_snapshot_compaction_with(
+    snapshot: MftSnapshot,
+    events: mpsc::SyncSender<RuntimeEvent>,
+    compact: impl FnOnce(&MftSnapshot) -> Result<MftSnapshot> + Send + 'static,
+) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mount_point = snapshot.mount_point.clone();
         let journal_id = snapshot.journal_id;
         let next_usn = snapshot.next_usn;
-        match mft::compact_system_snapshot(&snapshot) {
+        let outcome = compact(&snapshot);
+        drop(snapshot);
+        match outcome {
             Ok(snapshot) => {
                 let _ = events.send(RuntimeEvent::CompactionCompleted {
                     mount_point,
@@ -2386,7 +2854,7 @@ fn spawn_snapshot_compaction(snapshot: MftSnapshot, events: mpsc::SyncSender<Run
                 });
             }
         }
-    });
+    })
 }
 
 fn run_snapshot_search(
@@ -2434,7 +2902,7 @@ fn run_snapshot_search(
                         &job.request,
                         Message::IndexerEvent(IndexerEvent::SearchBatch(batch)),
                     );
-                    if !send_search_completion(task_id, response, active_task, events) {
+                    if !send_search_completion(job.lease, task_id, response, active_task, events) {
                         return;
                     }
                 }
@@ -2455,9 +2923,49 @@ fn run_snapshot_search(
                         },
                     )),
                 );
-                let _ = send_search_completion(task_id, response, active_task, events);
+                let _ = send_search_completion(job.lease, task_id, response, active_task, events);
             }
             Err(_) => {}
+        }
+        return;
+    }
+    if search.context.retain_kinds_apart
+        && search.context.include_files
+        && search.context.include_directories
+        && search.context.directory.is_none()
+    {
+        let current = || active_task.load(Ordering::Acquire) == task_id;
+        let mut first_batch_sent = false;
+        let mut result_count = 0;
+        let completed = search_launcher_snapshots_while(
+            &job.snapshots,
+            &job.settings,
+            search,
+            &current,
+            |items, complete| {
+                if !first_batch_sent && !items.is_empty() {
+                    info!(event = "indexer.search.first_batch", %correlation_id, generation, mode,
+                        elapsed_us = started.elapsed().as_micros() as u64,
+                        result_count = items.len(), "first provider rows ready");
+                    first_batch_sent = true;
+                }
+                result_count += items.len();
+                let response = Envelope::reply_to(
+                    &job.request,
+                    Message::IndexerEvent(IndexerEvent::SearchBatch(IndexSearchBatch {
+                        generation,
+                        items,
+                        complete,
+                        elapsed_us: started.elapsed().as_micros() as u64,
+                    })),
+                );
+                send_search_completion(job.lease, task_id, response, active_task, events)
+            },
+        );
+        if completed {
+            info!(event = "indexer.search.completed", %correlation_id, generation, mode,
+                result_count, elapsed_us = started.elapsed().as_micros() as u64,
+                "launcher search complete");
         }
         return;
     }
@@ -2480,7 +2988,7 @@ fn run_snapshot_search(
             &job.request,
             Message::IndexerEvent(IndexerEvent::SearchBatch(batch)),
         );
-        if !send_search_completion(task_id, response, active_task, events) {
+        if !send_search_completion(job.lease, task_id, response, active_task, events) {
             return;
         }
     }
@@ -2512,12 +3020,17 @@ fn partition_search_batches(
 }
 
 fn send_search_completion(
+    lease: u64,
     task_id: u64,
     response: Envelope,
     active_task: &AtomicU64,
     events: &mpsc::SyncSender<RuntimeEvent>,
 ) -> bool {
-    let mut completion = RuntimeEvent::SearchCompleted { task_id, response };
+    let mut completion = RuntimeEvent::SearchCompleted {
+        lease,
+        task_id,
+        response,
+    };
     loop {
         match events.try_send(completion) {
             Ok(()) => return true,
@@ -2540,6 +3053,5 @@ fn write_responses(writer: &mut impl Write, responses: Vec<Envelope>) -> Result<
     Ok(())
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests;

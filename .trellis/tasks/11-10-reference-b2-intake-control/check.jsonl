@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Separate source/fixture/native/installed acceptance levels"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Production GPUI controls, bounds and lifecycle tests"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Real background events, Cookie context and handoff ownership"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Real HTTP/media/rate/persistence boundaries"}
+{"file":"docs/reference-improvement-taskbook.md","reason":"B2 RED/GREEN, equivalent-workload performance and acceptance"}

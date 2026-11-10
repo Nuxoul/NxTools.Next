@@ -70,6 +70,12 @@ internal static class BoundedStaOperationRunner
             {
                 try
                 {
+                    if (!TryShutdownCurrentThreadDispatcher(out var dispatcherError)
+                        && capturedError is null)
+                    {
+                        capturedError = new InvalidOperationException(
+                            $"{threadName} Dispatcher cleanup failed: {dispatcherError}");
+                    }
                     lock (ActiveGate)
                     {
                         if (ActiveOperations.TryGetValue(threadName, out var remaining)
@@ -183,6 +189,38 @@ internal static class BoundedStaOperationRunner
             {
                 dispose();
             }
+        }
+    }
+
+    internal static bool TryShutdownCurrentThreadDispatcher(out string? error)
+    {
+        try
+        {
+            var dispatcher = System.Windows.Threading.Dispatcher.FromThread(
+                Thread.CurrentThread);
+            if (dispatcher is null || dispatcher.HasShutdownFinished)
+            {
+                error = null;
+                return true;
+            }
+            if (dispatcher.HasShutdownStarted)
+            {
+                error = "The WPF Dispatcher shutdown had already started but did not finish.";
+                return false;
+            }
+            dispatcher.InvokeShutdown();
+            if (!dispatcher.HasShutdownFinished)
+            {
+                error = "The WPF Dispatcher did not finish shutting down.";
+                return false;
+            }
+            error = null;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            error = exception.Message;
+            return false;
         }
     }
 

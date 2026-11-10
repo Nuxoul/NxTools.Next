@@ -4,6 +4,9 @@ use crate::ui::components::tooltip::bounded_text_tooltip;
 use crate::ui::metrics::ordinary_rem;
 use gpui_kit::component::Selectable as _;
 use gpui_kit::component::form::{Field, Form};
+use gpui_kit::component::input::{
+    InputGroup, InputGroupAddon, InputGroupAddonAlignment, InputGroupButton,
+};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use gpui_kit::component::spinner::Spinner;
@@ -148,6 +151,10 @@ use crate::ui::metrics::ICON_GLYPH_SMALL;
 
 #[derive(Clone)]
 pub(crate) enum NewDownloadInitialSource {
+    Url {
+        url: String,
+        correlation_id: uuid::Uuid,
+    },
     Download(DownloadRequest),
     Blob(BrowserBlobDialogContext),
 }
@@ -269,6 +276,8 @@ pub(crate) struct NewDownloadView {
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
     pub(crate) url: Entity<InputState>,
+    url_edit_generation: u64,
+    _url_subscription: Subscription,
     pub(crate) directory: Entity<InputState>,
     pub(super) directory_picker: DownloadDirectoryDraft,
     pub(crate) save_directory_explicit: bool,
@@ -335,14 +344,14 @@ impl NewDownloadView {
             Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
             _ => None,
         };
-        let initial_url = external_request.as_ref().map_or_else(
-            || {
-                external_blob.as_ref().map_or_else(String::new, |context| {
-                    format!("Blob · 已安全接收 · {} 字节", context.blob.size)
-                })
-            },
-            |request| request.source_url.clone(),
-        );
+        let initial_url = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::Url { url, .. }) => url.clone(),
+            Some(NewDownloadInitialSource::Download(request)) => request.source_url.clone(),
+            Some(NewDownloadInitialSource::Blob(context)) => {
+                format!("Blob · 已安全接收 · {} 字节", context.blob.size)
+            }
+            None => String::new(),
+        };
         let initial_directory = external_request.as_ref().map_or_else(
             || {
                 external_blob.as_ref().map_or_else(
@@ -381,6 +390,11 @@ impl NewDownloadView {
         });
         let category_search =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索分类名称、目录或扩展名"));
+        let url_subscription = cx.subscribe(&url, |this, _, event: &InputEvent, _| {
+            if matches!(event, InputEvent::Change) && !this.hydrating_stage {
+                this.url_edit_generation = this.url_edit_generation.wrapping_add(1);
+            }
+        });
         let file_name_subscription = cx.subscribe(&file_name, |this, _, event: &InputEvent, _| {
             if matches!(event, InputEvent::Change) && !this.hydrating_stage {
                 this.file_name_edit_generation = this.file_name_edit_generation.wrapping_add(1);
@@ -488,6 +502,8 @@ impl NewDownloadView {
             theme: Theme::zed_dark(),
             application,
             url,
+            url_edit_generation: 0,
+            _url_subscription: url_subscription,
             directory,
             directory_picker: DownloadDirectoryDraft::default(),
             save_directory_explicit: external_request
@@ -515,6 +531,7 @@ impl NewDownloadView {
             submission_idempotency_key: uuid::Uuid::new_v4(),
             probe: external_blob.as_ref().map(|context| DownloadProbe {
                 resolution: None,
+                server_observation: None,
                 final_url: "browser-blob://staged".into(),
                 file_name: Some(context.blob.file_name.clone()),
                 total_bytes: Some(context.blob.size),
@@ -540,6 +557,34 @@ impl NewDownloadView {
             _enter_activation_subscription: enter_activation_subscription,
             _bounds_subscription: bounds_subscription,
         }
+    }
+
+    pub(super) fn clipboard_prefill_eligible(&self, cx: &App) -> bool {
+        self.url_edit_generation == 0
+            && self.url.read(cx).value().is_empty()
+            && self.external_request.is_none()
+            && self.external_blob.is_none()
+            && self.probe.is_none()
+            && self.probe_generation == 0
+            && !self.probing
+            && !self.submitting
+            && !self.handoff_pending
+            && !self.handoff_staged
+    }
+
+    pub(super) fn prefill_clipboard_url(
+        &mut self,
+        url: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self.clipboard_prefill_eligible(cx) {
+            return false;
+        }
+        self.url
+            .update(cx, |input, cx| input.set_value(url, window, cx));
+        cx.notify();
+        true
     }
 
     pub(super) fn request_directory(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1794,17 +1839,22 @@ impl Render for NewDownloadView {
                     }),
             )
             .into_any_element();
-        let footer_leading_actions = if confirmed {
-            div()
-                .debug_selector(|| "download-new-footer-leading-actions".into())
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(schedule_control)
-                .child(footer_actions)
-                .into_any_element()
+        let (footer_leading_actions, footer_probe_actions) = if confirmed {
+            (
+                Some(
+                    div()
+                        .debug_selector(|| "download-new-footer-leading-actions".into())
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .child(schedule_control)
+                        .child(footer_actions)
+                        .into_any_element(),
+                ),
+                None,
+            )
         } else {
-            footer_actions
+            (None, Some(footer_actions))
         };
         let footer_submission_actions = confirmed.then(|| {
             div()
@@ -2018,83 +2068,76 @@ impl Render for NewDownloadView {
                 .min_h_0()
                 .overflow_y_scrollbar()
                 .px_4()
-                .py_2()
+                .py_1()
                 .flex()
                 .flex_col()
-                .gap_2()
-                .child(
-                    Form::horizontal()
-                        .small()
-                        .flex_none()
-                        .label_width(ordinary_rem(72.0).to_pixels(window.rem_size()))
-                        .child(new_download_form_field(
-                            "download-new-url-field",
-                            "下载地址",
-                            new_download_url_control(&self.url, self.handoff_pending),
-                        )),
-                )
-                .child(
-                    div()
-                        .debug_selector(|| "download-new-probe-guidance".into())
-                        .when(!compact_error, |line| {
-                            line.h(ordinary_rem(LINE_HEIGHT_BODY))
-                        })
-                        .when(compact_error, |line| {
-                            line.min_h(ordinary_rem(LINE_HEIGHT_BODY))
-                        })
-                        .flex_none()
-                        .min_w_0()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(if self.probing && crate::ui::motion::motion_allowed(cx) {
-                            div()
-                                .debug_selector(|| "download-new-probe-spinner".into())
-                                .flex_none()
-                                .child(Spinner::new().xsmall().color(theme.accent.into()))
-                                .into_any_element()
-                        } else {
-                            Icon::new(if probing {
-                                MaterialIcon::ProgressActivity
-                            } else {
-                                MaterialIcon::Info
+                .gap_0()
+                .child(new_download_compact_url_control(
+                    &self.url,
+                    self.handoff_pending,
+                ))
+                .when(probing || compact_error, |body| {
+                    body.child(
+                        div()
+                            .debug_selector(|| "download-new-probe-guidance".into())
+                            .when(!compact_error, |line| {
+                                line.h(ordinary_rem(LINE_HEIGHT_BODY))
                             })
-                            .size(ordinary_rem(ICON_GLYPH_SMALL))
-                            .text_color(if compact_error {
-                                theme.danger
-                            } else if probing {
-                                theme.accent
-                            } else {
-                                theme.icon_muted
+                            .when(compact_error, |line| {
+                                line.min_h(ordinary_rem(LINE_HEIGHT_BODY))
                             })
-                            .into_any_element()
-                        })
-                        .child(
-                            div()
-                                .min_w_0()
-                                .flex_1()
-                                .when(!compact_error, |text| text.truncate())
-                                .map(|text| {
-                                    #[cfg(test)]
-                                    let text = text.child(rem_tests::type_probe("guidance"));
-                                    text
+                            .flex_none()
+                            .min_w_0()
+                            .flex()
+                            .items_center()
+                            .gap_2()
+                            .child(if self.probing && crate::ui::motion::motion_allowed(cx) {
+                                div()
+                                    .debug_selector(|| "download-new-probe-spinner".into())
+                                    .flex_none()
+                                    .child(Spinner::new().xsmall().color(theme.accent.into()))
+                                    .into_any_element()
+                            } else {
+                                Icon::new(if probing {
+                                    MaterialIcon::ProgressActivity
+                                } else {
+                                    MaterialIcon::Info
                                 })
-                                .text_size(ordinary_rem(TEXT_BODY))
-                                .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                .size(ordinary_rem(ICON_GLYPH_SMALL))
                                 .text_color(if compact_error {
                                     theme.danger
-                                } else {
-                                    theme.text_secondary
-                                })
-                                .child(if compact_error {
-                                    displayed_error.clone().unwrap_or_default()
                                 } else if probing {
-                                    "正在读取远端文件名、大小与续传能力…".into()
+                                    theme.accent
                                 } else {
-                                    "输入 HTTP/HTTPS 链接，继续后自动获取文件信息".into()
-                                }),
-                        ),
-                )
+                                    theme.icon_muted
+                                })
+                                .into_any_element()
+                            })
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .flex_1()
+                                    .when(!compact_error, |text| text.truncate())
+                                    .map(|text| {
+                                        #[cfg(test)]
+                                        let text = text.child(rem_tests::type_probe("guidance"));
+                                        text
+                                    })
+                                    .text_size(ordinary_rem(TEXT_BODY))
+                                    .line_height(ordinary_rem(LINE_HEIGHT_BODY))
+                                    .text_color(if compact_error {
+                                        theme.danger
+                                    } else {
+                                        theme.text_secondary
+                                    })
+                                    .child(if compact_error {
+                                        displayed_error.clone().unwrap_or_default()
+                                    } else {
+                                        "正在读取远端文件名、大小与续传能力…".into()
+                                    }),
+                            ),
+                    )
+                })
                 .when_some(
                     displayed_error.clone().filter(|_| !compact_error),
                     |body, error| {
@@ -2141,8 +2184,13 @@ impl Render for NewDownloadView {
                     .bg(theme.surface)
                     .flex()
                     .items_center()
-                    .child(footer_leading_actions)
+                    .when_some(footer_leading_actions, |footer, actions| {
+                        footer.child(actions)
+                    })
                     .child(div().flex_1())
+                    .when_some(footer_probe_actions, |footer, actions| {
+                        footer.child(actions).child(div().w_2())
+                    })
                     .when_some(footer_submission_actions, |footer, actions| {
                         footer.child(actions).child(div().w_2())
                     })
@@ -2844,7 +2892,7 @@ pub(crate) fn new_download_window_size(confirmed: bool) -> gpui_kit::Size<gpui_k
     if confirmed {
         size(px(560.0), px(NEW_DOWNLOAD_CONFIRMED_HEIGHT))
     } else {
-        size(px(560.0), px(176.0))
+        size(px(560.0), px(136.0))
     }
 }
 
@@ -3143,10 +3191,6 @@ fn new_download_path_picker_shell(
         .into_any_element()
 }
 
-fn new_download_url_control(input: &Entity<InputState>, disabled: bool) -> AnyElement {
-    new_download_url_control_layout(input, disabled, true)
-}
-
 fn new_download_url_control_layout(
     input: &Entity<InputState>,
     disabled: bool,
@@ -3222,3 +3266,58 @@ mod rem_tests;
 #[cfg(test)]
 #[path = "new_download_overlay_rem_tests.rs"]
 mod overlay_rem_tests;
+
+fn new_download_compact_url_control(input: &Entity<InputState>, disabled: bool) -> AnyElement {
+    let url = input.clone();
+    div()
+        .debug_selector(|| "download-new-url-control".into())
+        .w_full()
+        .h_8()
+        .flex_none()
+        .child(
+            div()
+                .debug_selector(|| "download-new-url-field-input".into())
+                .child(
+                    InputGroup::new("download-new-url-group")
+                        .w_full()
+                        .disabled(disabled)
+                        .input(Input::new(input).aria_label("下载地址"))
+                        .addon(
+                            InputGroupAddon::new("download-new-link-icon")
+                                .py_0()
+                                .pl_2()
+                                .child(Icon::new(gpui_kit::assets::IconName::Link).small()),
+                        )
+                        .addon(
+                            InputGroupAddon::new("download-new-paste-addon")
+                                .align(InputGroupAddonAlignment::InlineEnd)
+                                .py_0()
+                                .pr_1()
+                                .child(
+                                    div()
+                                        .debug_selector(|| "download-new-url-paste".into())
+                                        .child(
+                                            InputGroupButton::new("download-paste-url")
+                                                .icon(Icon::new(MaterialIcon::ContentPaste))
+                                                .disabled(disabled)
+                                                .tooltip("粘贴下载地址")
+                                                .accessibility_label("粘贴下载地址")
+                                                .on_click(move |_, window, cx| {
+                                                    let text = cx
+                                                        .read_from_clipboard()
+                                                        .and_then(|item| item.text())
+                                                        .unwrap_or_default();
+                                                    let text = text.trim().to_owned();
+                                                    if !text.is_empty() {
+                                                        url.update(cx, |input, cx| {
+                                                            input.replace_all(text, window, cx)
+                                                        });
+                                                    }
+                                                }),
+                                        ),
+                                ),
+                        ),
+                ),
+        )
+        .into_any_element()
+}

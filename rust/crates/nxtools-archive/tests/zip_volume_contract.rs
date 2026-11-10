@@ -179,3 +179,53 @@ fn numbered_member_uses_platform_case_semantics_and_exact_family_ordinal() {
         );
     }
 }
+
+#[test]
+fn continuous_zip_segments_keep_global_offsets_and_original_source_revision() {
+    let root = tempfile::tempdir().expect("owned segments");
+    let (one, central_one) = record("one.txt", b"continuous-one\n", 0, 0);
+    let (two, central_two) = record("two.txt", b"continuous-two\n", 0, one.len() as u32);
+    let mut encoded = one;
+    encoded.extend(two);
+    let offset = encoded.len() as u32;
+    let size = (central_one.len() + central_two.len()) as u32;
+    encoded.extend(central_one);
+    encoded.extend(central_two);
+    encoded.extend_from_slice(b"PK\x05\x06");
+    for value in [0u16, 0, 2, 2] {
+        encoded.extend_from_slice(&value.to_le_bytes());
+    }
+    encoded.extend_from_slice(&size.to_le_bytes());
+    encoded.extend_from_slice(&offset.to_le_bytes());
+    encoded.extend_from_slice(&0u16.to_le_bytes());
+    for (index, part) in encoded.chunks(41).enumerate() {
+        fs::write(
+            root.path().join(format!("continuous.zip.{:03}", index + 1)),
+            part,
+        )
+        .expect("continuous part");
+    }
+    let first = root.path().join("continuous.zip.001");
+    let engine = ArchiveEngine::default().with_zip_volumes();
+    let control = OperationControl::default();
+    let snapshot = engine
+        .open(OpenRequest::new(&first), &control)
+        .expect("continuous source catalog");
+    assert!(snapshot.capabilities().split_read);
+    assert_eq!(snapshot.entries().len(), 2);
+    let tested = engine
+        .execute(ArchiveRequest::test(snapshot.clone()), &control)
+        .expect("all original continuous payloads");
+    assert_eq!(tested.files_verified(), 2);
+    assert_eq!(tested.bytes_verified(), 30);
+    fs::write(root.path().join("continuous.zip.002"), [0; 41]).expect("replace owned segment");
+    assert_eq!(
+        engine.execute(ArchiveRequest::test(snapshot), &control),
+        Err(ArchiveError::SourceChanged)
+    );
+    fs::remove_file(root.path().join("continuous.zip.002")).expect("remove middle segment");
+    assert!(matches!(
+        engine.open(OpenRequest::new(first), &control),
+        Err(ArchiveError::MissingVolume)
+    ));
+}

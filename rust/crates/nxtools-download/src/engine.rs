@@ -76,6 +76,7 @@ pub(crate) struct DownloadEngineInner {
     schedule_wake_generation: AtomicU64,
     daily_schedule_wake_generation: AtomicU64,
     event_sender: async_channel::Sender<DownloadEventEnvelope>,
+    primary_state_event_lost: AtomicBool,
     event_receiver: Mutex<Option<async_channel::Receiver<DownloadEventEnvelope>>>,
     event_subscribers: Mutex<Vec<async_channel::Sender<DownloadEventEnvelope>>>,
     event_sequencer: DownloadEventSequencer,
@@ -639,6 +640,7 @@ impl DownloadEngine {
                 schedule_wake_generation: AtomicU64::new(0),
                 daily_schedule_wake_generation: AtomicU64::new(0),
                 event_sender,
+                primary_state_event_lost: AtomicBool::new(false),
                 event_receiver: Mutex::new(Some(event_receiver)),
                 event_subscribers: Mutex::new(Vec::new()),
                 event_sequencer: DownloadEventSequencer::new(0),
@@ -682,6 +684,9 @@ impl DownloadEngine {
         }
         engine.refresh_delayed_schedule_wake()?;
         engine.refresh_daily_schedule_wake()?;
+        if let Some(root) = &engine.inner.browser_blob_staging_root {
+            browser::cleanup_pending_browser_blobs(root, correlation_id);
+        }
         Ok(engine)
     }
 
@@ -1283,6 +1288,9 @@ impl DownloadEngine {
                     proxy_mode,
                     proxy_source,
                     certificate_policy = certificate_policy_name(certificate_policy),
+                    route_kind = probe.server_observation.as_ref().map(|value| value.route_kind.diagnostic_name()),
+                    peer_present = probe.server_observation.as_ref().is_some_and(|value| value.peer_ip.is_some()),
+                    response_ms = probe.server_observation.as_ref().map(|value| value.response_ms),
                     media_kind,
                     variant_count,
                     client_reused,
@@ -1333,6 +1341,9 @@ impl DownloadEngine {
                 Ok(task_id)
             }
             DownloadTaskAction::Retry => self.retry_correlated(task_id, correlation_id),
+            DownloadTaskAction::RetryWithAutoRename => {
+                self.retry_with_auto_rename(task_id, correlation_id)
+            }
             DownloadTaskAction::Redownload => self.redownload_correlated(task_id, correlation_id),
             DownloadTaskAction::Cancel => {
                 self.cancel_correlated(task_id, correlation_id)?;
@@ -1356,6 +1367,8 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> DownloadCommandOutcome {
         let started_at = Instant::now();
+        info!(event = "download.batch.started", %correlation_id, ?action,
+            target_count = task_ids.len(), "download batch command started");
         let mut seen = HashSet::new();
         let mut results = Vec::new();
         for task_id in task_ids.into_iter().filter(|task_id| seen.insert(*task_id)) {
@@ -1377,16 +1390,6 @@ impl DownloadEngine {
                     Ok(result_task_id) => (result_task_id, None),
                     Err(error) => (task_id, Some(error.fault())),
                 };
-            info!(
-                event = "download.batch.target_completed",
-                %correlation_id,
-                ?task_id,
-                result_task_id = ?result_task_id,
-                action = ?action,
-                accepted = fault.is_none(),
-                fault_code = ?fault.as_ref().map(|fault| fault.code),
-                "download batch target completed"
-            );
             results.push(DownloadBatchItemResult {
                 task_id: result_task_id,
                 fault,
@@ -1839,10 +1842,9 @@ impl DownloadEngine {
                 true,
             )?;
             *state = committed;
-            self.inner.emit(DownloadEvent::TaskChanged {
-                task: Box::new(state.task.clone()),
-            });
+            let task = Box::new(state.task.clone());
             drop(tasks);
+            self.inner.emit(DownloadEvent::TaskChanged { task });
             drop(_scheduler);
             self.refresh_delayed_schedule_wake()?;
             return Ok(());
@@ -1876,6 +1878,93 @@ impl DownloadEngine {
 
     pub fn resume(&self, task_id: DownloadTaskId) -> Result<(), DownloadEngineError> {
         self.resume_correlated(task_id, uuid::Uuid::new_v4())
+    }
+
+    fn retry_with_auto_rename(
+        &self,
+        task_id: DownloadTaskId,
+        correlation_id: uuid::Uuid,
+    ) -> Result<DownloadTaskId, DownloadEngineError> {
+        let started = Instant::now();
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        let mut tasks = self.inner.lock_tasks()?;
+        let state = tasks
+            .get(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        if state.task.status() != DownloadStatus::Failed
+            || state.transfer.final_committed
+            || state.transfer.error.as_ref().map(|fault| fault.code)
+                != Some(DownloadFaultCode::DestinationExists)
+        {
+            return Err(DownloadEngineError::InvalidAction {
+                task_id,
+                action: "retry_with_auto_rename",
+                status: state.task.status(),
+            });
+        }
+        let mut candidate = state.task.request().clone();
+        let old_path = candidate.save_directory.join(
+            candidate
+                .file_name
+                .as_deref()
+                .ok_or(DownloadRequestError::InvalidFileName)?,
+        );
+        candidate.category_id = None;
+        candidate.save_directory_explicit = true;
+        candidate.duplicate_strategy = crate::DownloadDuplicateStrategy::AddNumbered;
+        self.inner
+            .download_organization_policy
+            .apply_to_request(&mut candidate, |path| {
+                windows_target_key(path) == windows_target_key(&old_path)
+                    || tasks.iter().any(|(id, other)| {
+                        *id != task_id
+                            && !other.transfer.final_committed
+                            && other
+                                .task
+                                .request()
+                                .file_name
+                                .as_deref()
+                                .is_some_and(|name| {
+                                    windows_target_key(
+                                        &other.task.request().save_directory.join(name),
+                                    ) == windows_target_key(path)
+                                })
+                    })
+            })?;
+        let new_name = candidate
+            .file_name
+            .ok_or(DownloadRequestError::InvalidFileName)?;
+        let mut updated = state.clone();
+        let updated_at = now_unix_ms();
+        updated.task.set_file_name(new_name.clone(), updated_at);
+        updated.task.clear_scheduled_start(updated_at);
+        updated.transfer.final_path = Some(updated.task.request().save_directory.join(new_name));
+        self.inner.store.save_task_with_transfer_and_admission(
+            &updated.task,
+            &updated.transfer,
+            true,
+            false,
+        )?;
+        tasks.insert(task_id, updated.clone());
+        drop(tasks);
+        drop(_scheduler);
+        self.inner.emit(DownloadEvent::TaskChanged {
+            task: Box::new(updated.task),
+        });
+        if let Err(error) = self
+            .refresh_delayed_schedule_wake()
+            .and_then(|()| self.schedule_queue("default", correlation_id))
+        {
+            warn!(event = "download.queue.resume_deferred", %correlation_id, ?task_id,
+                error = %error, "resume intent was committed and remains eligible for a later refill");
+        }
+        info!(event = "download.retry_auto_rename.accepted", %correlation_id, ?task_id,
+            elapsed_ms = started.elapsed().as_millis(), "conflicted task destination renumbered");
+        Ok(task_id)
     }
 
     fn retry_correlated(
@@ -2558,6 +2647,24 @@ impl DownloadEngineInner {
     }
 
     fn emit(&self, event: DownloadEvent) {
+        if self.event_sender.len() < 256
+            && self.primary_state_event_lost.swap(false, Ordering::AcqRel)
+        {
+            let observed_sequence = self.event_sequencer.current();
+            let recovery = self.event_sequencer.next_with_generation(
+                self.session_generation,
+                now_unix_ms(),
+                DownloadEvent::SnapshotRequired {
+                    expected_sequence: observed_sequence,
+                    observed_sequence: observed_sequence.saturating_add(1),
+                    expected_generation: Some(self.session_generation),
+                    observed_generation: Some(self.session_generation),
+                },
+            );
+            if recovery.is_ok_and(|recovery| self.event_sender.try_send(recovery).is_err()) {
+                self.primary_state_event_lost.store(true, Ordering::Release);
+            }
+        }
         let Ok(envelope) = self.event_sequencer.next_with_generation(
             self.session_generation,
             now_unix_ms(),
@@ -2569,10 +2676,8 @@ impl DownloadEngineInner {
             if self.event_sender.len() < 192 {
                 let _ = self.event_sender.try_send(envelope.clone());
             }
-        } else {
-            // State events are rare and authoritative. Backpressure is preferable to either
-            // dropping them or moving an unbounded backlog into spawned tasks.
-            let _ = self.event_sender.send_blocking(envelope.clone());
+        } else if self.event_sender.try_send(envelope.clone()).is_err() {
+            self.primary_state_event_lost.store(true, Ordering::Release);
         }
         if let Ok(mut subscribers) = self.event_subscribers.lock() {
             subscribers.retain(|subscriber| {
@@ -2823,9 +2928,9 @@ fn transition_transfer_to_terminal(
     state.task.transition_to(status, now_unix_ms())?;
     inner.persist(state)?;
     state.control = None;
-    inner.emit(DownloadEvent::TaskChanged {
-        task: Box::new(state.task.clone()),
-    });
+    let task = Box::new(state.task.clone());
+    drop(tasks);
+    inner.emit(DownloadEvent::TaskChanged { task });
     Ok(())
 }
 
@@ -2869,6 +2974,7 @@ fn publish_transfer_progress(
                 .transfer_rate
                 .get_or_insert_with(|| TransferRateSampler::new(published_downloaded_bytes, now))
                 .sample(published_downloaded_bytes, now);
+            drop(tasks);
             inner.emit(DownloadEvent::TaskProgress {
                 progress: DownloadProgress {
                     task_id,
@@ -2918,9 +3024,9 @@ fn commit_completed_state(
     committed.control = None;
     inner.persist(&mut committed)?;
     *state = committed;
-    inner.emit(DownloadEvent::TaskChanged {
-        task: Box::new(state.task.clone()),
-    });
+    let task = Box::new(state.task.clone());
+    drop(tasks);
+    inner.emit(DownloadEvent::TaskChanged { task });
     Ok(())
 }
 
@@ -2976,9 +3082,9 @@ fn record_failure(
             "terminal transfer statistics could not be committed");
     }
     state.control = None;
-    inner.emit(DownloadEvent::TaskChanged {
-        task: Box::new(state.task.clone()),
-    });
+    let task = Box::new(state.task.clone());
+    drop(tasks);
+    inner.emit(DownloadEvent::TaskChanged { task });
 }
 
 fn target_reserved_by_tasks(
@@ -2987,10 +3093,7 @@ fn target_reserved_by_tasks(
 ) -> bool {
     let candidate = windows_target_key(candidate);
     tasks.values().any(|state| {
-        if matches!(
-            state.task.status(),
-            DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
-        ) {
+        if state.transfer.final_committed {
             return false;
         }
         let Some(file_name) = state.task.request().file_name.as_deref() else {
@@ -3308,7 +3411,7 @@ impl DownloadEngineError {
                 (DownloadFaultCode::DiskFull, false)
             }
             Self::Http(HttpDownloadError::DestinationExists(_)) => {
-                (DownloadFaultCode::Storage, false)
+                (DownloadFaultCode::DestinationExists, false)
             }
             Self::Http(error) if error.is_retryable_transfer() => {
                 (DownloadFaultCode::Network, true)
@@ -4097,6 +4200,12 @@ mod tests {
         .fault();
         assert_eq!(file_in_use.code, DownloadFaultCode::FileInUse);
         assert!(!file_in_use.retryable);
+        let conflict = DownloadEngineError::Http(HttpDownloadError::DestinationExists(
+            PathBuf::from("existing.bin"),
+        ))
+        .fault();
+        assert_eq!(conflict.code, DownloadFaultCode::DestinationExists);
+        assert!(!conflict.retryable);
     }
 
     #[tokio::test]
@@ -4256,9 +4365,11 @@ mod tests {
                 validator: crate::ResourceValidator::default(),
                 media: None,
                 resolution: None,
+                server_observation: None,
             }),
             downloaded_bytes: 16,
             error: None,
+            prepared_size_bytes: None,
             temporary_path: Some(directory.path().join(".final.part")),
             final_path: Some(directory.path().join("final.bin")),
             final_committed: false,
@@ -4490,6 +4601,508 @@ mod tests {
         (task_id, plan)
     }
 
+    #[test]
+    fn failed_uncommitted_task_reserves_name_for_numbered_and_reject_submissions() {
+        let directory = tempfile::tempdir().expect("create failed-name directory");
+        let engine = DownloadEngine::open_in_memory().expect("open failed-name engine");
+        engine
+            .inner
+            .store
+            .set_queue_running("default", false)
+            .expect("stop queue");
+        let (failed_id, _) = seed_failed_action_task(
+            &engine,
+            action_request(directory.path(), "reserved.bin"),
+            DownloadFault {
+                code: DownloadFaultCode::Protocol,
+                message: "nonretryable fixture".into(),
+                retryable: false,
+            },
+            None,
+        );
+        let mut numbered = action_request(directory.path(), "reserved.bin");
+        numbered.duplicate_strategy = crate::DownloadDuplicateStrategy::AddNumbered;
+        let numbered_id = engine
+            .enqueue(numbered, RequestOrigin::Internal)
+            .expect("numbered admission");
+        assert_ne!(numbered_id, failed_id);
+        assert_eq!(
+            engine
+                .task(numbered_id)
+                .expect("read numbered task")
+                .expect("numbered task")
+                .task
+                .request()
+                .file_name
+                .as_deref(),
+            Some("reserved (1).bin")
+        );
+
+        let mut rejected = action_request(directory.path(), "reserved.bin");
+        rejected.duplicate_strategy = crate::DownloadDuplicateStrategy::Reject;
+        assert!(matches!(
+            engine.enqueue(rejected, RequestOrigin::Internal),
+            Err(DownloadEngineError::DownloadOrganizationPolicy(
+                DownloadOrganizationPolicyError::TargetOccupied
+            ))
+        ));
+    }
+
+    #[test]
+    fn cancelled_uncommitted_task_reserves_name_for_redownload_and_reject() {
+        let directory = tempfile::tempdir().expect("create cancelled-name directory");
+        let engine = DownloadEngine::open_in_memory().expect("open cancelled-name engine");
+        engine
+            .inner
+            .store
+            .set_queue_running("default", false)
+            .expect("stop queue");
+        let task_id = engine
+            .enqueue(
+                action_request(directory.path(), "cancelled.bin"),
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue original");
+        engine.cancel(task_id).expect("cancel original");
+        let mut rejected = action_request(directory.path(), "cancelled.bin");
+        rejected.duplicate_strategy = crate::DownloadDuplicateStrategy::Reject;
+        assert!(matches!(
+            engine.enqueue(rejected, RequestOrigin::Internal),
+            Err(DownloadEngineError::DownloadOrganizationPolicy(
+                DownloadOrganizationPolicyError::TargetOccupied
+            ))
+        ));
+        let result =
+            engine.handle_command(action_envelope(task_id, DownloadTaskAction::Redownload));
+        let DownloadCommandOutcome::Accepted {
+            task_id: Some(new_id),
+        } = result.outcome
+        else {
+            panic!("cancelled task can redownload");
+        };
+        assert_ne!(task_id, new_id);
+        assert_eq!(
+            engine
+                .task(new_id)
+                .expect("read replacement")
+                .expect("replacement")
+                .task
+                .request()
+                .file_name
+                .as_deref(),
+            Some("cancelled (1).bin")
+        );
+    }
+
+    #[test]
+    fn auto_rename_retry_keeps_task_checkpoint_and_staged_bytes() {
+        let directory = tempfile::tempdir().expect("create conflict retry directory");
+        let database = directory.path().join("downloads.sqlite3");
+        let staged = directory.path().join(".conflict.part");
+        let destination = directory.path().join("conflict.bin");
+        std::fs::write(&staged, b"checkpoint bytes").expect("stage checkpoint");
+        let engine = DownloadEngine::open(&database).expect("open engine");
+        engine
+            .inner
+            .store
+            .set_queue_running("default", false)
+            .expect("stop queue");
+        let (task_id, plan) = seed_failed_action_task(
+            &engine,
+            action_request(directory.path(), "conflict.bin"),
+            DownloadFault {
+                code: DownloadFaultCode::DestinationExists,
+                message: "destination already exists".into(),
+                retryable: false,
+            },
+            Some(staged.clone()),
+        );
+        std::fs::write(&destination, b"external bytes").expect("create conflict after admission");
+        let request_id = uuid::Uuid::new_v4();
+        let result = engine.handle_command(DownloadCommandEnvelope {
+            protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+            request_id,
+            origin: RequestOrigin::Ui,
+            command: DownloadCommand::Task {
+                task_id,
+                action: DownloadTaskAction::RetryWithAutoRename,
+            },
+        });
+        assert_eq!(result.request_id, request_id);
+        assert!(
+            matches!(result.outcome, DownloadCommandOutcome::Accepted { task_id: Some(id) } if id == task_id)
+        );
+        let restored = DownloadEngine::open(&database).expect("reopen renamed task");
+        let task = restored
+            .task(task_id)
+            .expect("read task")
+            .expect("task retained");
+        assert_eq!(
+            task.task.request().file_name.as_deref(),
+            Some("conflict (1).bin")
+        );
+        assert_eq!(task.temporary_path.as_deref(), Some(staged.as_path()));
+        assert_eq!(
+            std::fs::read(staged).expect("checkpoint bytes retained"),
+            b"checkpoint bytes"
+        );
+        assert_eq!(
+            std::fs::read(destination).expect("original destination retained"),
+            b"external bytes"
+        );
+        assert_eq!(
+            restored
+                .inner
+                .store
+                .load_transfer_plan(task_id)
+                .expect("load plan")
+                .expect("plan retained"),
+            plan
+        );
+        assert_eq!(restored.tasks().expect("list tasks").len(), 1);
+    }
+
+    #[test]
+    fn auto_rename_retry_admission_failure_rolls_back_name_transfer_and_events() {
+        for scheduled in [false, true] {
+            let directory = tempfile::tempdir().expect("isolated atomic rename fixture");
+            let database = directory.path().join("downloads.sqlite3");
+            let staged = directory.path().join(".conflict.part");
+            std::fs::write(&staged, b"prepared bytes").expect("retained prepared output");
+            let engine = DownloadEngine::open(&database).expect("open atomic rename engine");
+            engine
+                .inner
+                .store
+                .set_queue_running("default", false)
+                .expect("stop queue");
+            let mut request = action_request(directory.path(), "conflict.bin");
+            if scheduled {
+                request.scheduled_at_unix_ms = Some(now_unix_ms() + 3_600_000);
+            }
+            let (task_id, plan) = seed_failed_action_task(
+                &engine,
+                request,
+                DownloadFault {
+                    code: DownloadFaultCode::DestinationExists,
+                    message: "destination already exists".into(),
+                    retryable: false,
+                },
+                Some(staged.clone()),
+            );
+            {
+                let mut tasks = engine.inner.lock_tasks().expect("lock prepared fixture");
+                let state = tasks.get_mut(&task_id).expect("failed task");
+                state.transfer.prepared_size_bytes = Some(14);
+                state.transfer.final_path = Some(directory.path().join("conflict.bin"));
+                engine.inner.persist(state).expect("persist readiness");
+            }
+            engine
+                .inner
+                .store
+                .set_queue_task_admission(task_id, false, true)
+                .expect("paused admission");
+            let before = engine
+                .task(task_id)
+                .expect("snapshot before")
+                .expect("task before");
+            let events = engine.take_event_receiver().expect("event stream");
+            while events.try_recv().is_ok() {}
+            let connection = rusqlite::Connection::open(&database).expect("synthetic database");
+            connection.execute_batch(&format!(
+                "CREATE TRIGGER reject_numbered_retry_admission BEFORE UPDATE ON download_queue_items \
+                 WHEN NEW.task_id = '{}' AND NEW.is_eligible = 1 \
+                 BEGIN SELECT RAISE(ABORT, 'injected admission failure'); END;", task_id.as_uuid()
+            )).expect("reject actual admission write");
+            for _ in 0..2 {
+                let result = engine.handle_command(action_envelope(
+                    task_id,
+                    DownloadTaskAction::RetryWithAutoRename,
+                ));
+                assert!(
+                    matches!(result.outcome, DownloadCommandOutcome::Rejected { fault }
+                    if fault.code == DownloadFaultCode::Storage)
+                );
+                assert_eq!(
+                    engine
+                        .task(task_id)
+                        .expect("unchanged live task")
+                        .expect("same task"),
+                    before,
+                    "a rejected command must not publish a numbered name or path"
+                );
+                assert_eq!(
+                    engine
+                        .inner
+                        .store
+                        .load_task(task_id)
+                        .expect("persisted task"),
+                    Some(before.task.clone())
+                );
+                let transfer = engine
+                    .inner
+                    .store
+                    .load_transfer_state(task_id)
+                    .expect("persisted transfer");
+                assert_eq!(transfer.final_path, before.final_path);
+                assert_eq!(transfer.temporary_path.as_deref(), Some(staged.as_path()));
+                assert_eq!(transfer.prepared_size_bytes, Some(14));
+                assert_eq!(transfer.error, before.error);
+                let admission: (bool, bool) = connection.query_row(
+                    "SELECT is_eligible, is_user_paused FROM download_queue_items WHERE task_id=?1",
+                    [task_id.as_uuid().to_string()], |row| Ok((row.get(0)?, row.get(1)?))
+                ).expect("unchanged admission");
+                assert_eq!(admission, (false, true));
+                let rejection = events.try_recv().expect("command rejection event");
+                assert!(
+                    matches!(rejection.event, DownloadEvent::CommandRejected { request_id, .. }
+                    if request_id == result.request_id)
+                );
+                assert!(
+                    events.try_recv().is_err(),
+                    "rejected transaction must not broadcast a task change"
+                );
+            }
+            connection
+                .execute_batch("DROP TRIGGER reject_numbered_retry_admission;")
+                .expect("allow admission");
+            let result = engine.handle_command(action_envelope(
+                task_id,
+                DownloadTaskAction::RetryWithAutoRename,
+            ));
+            assert!(
+                matches!(result.outcome, DownloadCommandOutcome::Accepted { task_id: Some(id) } if id == task_id)
+            );
+            let renamed = engine
+                .task(task_id)
+                .expect("accepted task")
+                .expect("same identity");
+            assert_eq!(
+                renamed.task.request().file_name.as_deref(),
+                Some("conflict (1).bin")
+            );
+            assert_eq!(renamed.task.request().scheduled_at_unix_ms, None);
+            assert!(renamed.queue_eligible);
+            assert_eq!(
+                engine
+                    .inner
+                    .store
+                    .load_transfer_plan(task_id)
+                    .expect("checkpoint"),
+                Some(plan)
+            );
+            assert_eq!(
+                std::fs::read(&staged).expect("retained output"),
+                b"prepared bytes"
+            );
+            let restored = DownloadEngine::open(&database).expect("reopen committed retry");
+            assert_eq!(
+                restored
+                    .task(task_id)
+                    .expect("restored task")
+                    .expect("durable task"),
+                renamed
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn preallocated_incomplete_conflict_never_publishes_as_prepared() {
+        let directory = tempfile::tempdir().expect("create partial directory");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("reserve offline loopback URL");
+        let address = listener.local_addr().expect("read offline address");
+        drop(listener);
+        let engine = DownloadEngine::open_in_memory().expect("open partial engine");
+        engine
+            .inner
+            .store
+            .set_queue_running("default", false)
+            .expect("stop queue");
+        let mut request = action_request(directory.path(), "partial.bin");
+        request.source_url = format!("http://{address}/partial.bin");
+        let original = engine
+            .enqueue(request, RequestOrigin::Internal)
+            .expect("enqueue partial");
+        let staging = directory
+            .path()
+            .join(".partial.bin.checkpoint.nxtools-part");
+        let mut partial = [0_u8; 16];
+        partial[..4].copy_from_slice(b"part");
+        std::fs::write(&staging, partial).expect("preallocate partial artifact");
+        {
+            let mut tasks = engine.inner.lock_tasks().expect("lock fixture");
+            let state = tasks.get_mut(&original).expect("original state");
+            state
+                .task
+                .transition_to(DownloadStatus::Probing, now_unix_ms())
+                .expect("probe");
+            state
+                .task
+                .transition_to(DownloadStatus::Failed, now_unix_ms())
+                .expect("fail");
+            state.transfer.error = Some(DownloadFault {
+                code: DownloadFaultCode::DestinationExists,
+                message: "pre-transfer conflict".into(),
+                retryable: false,
+            });
+            state.transfer.temporary_path = Some(staging.clone());
+            state.transfer.downloaded_bytes = 4;
+            engine
+                .inner
+                .persist(state)
+                .expect("persist incomplete state");
+        }
+        std::fs::write(directory.path().join("partial.bin"), b"external").expect("create conflict");
+        engine
+            .inner
+            .store
+            .set_queue_running("default", true)
+            .expect("start queue");
+        let result = engine.handle_command(action_envelope(
+            original,
+            DownloadTaskAction::RetryWithAutoRename,
+        ));
+        assert!(
+            matches!(result.outcome, DownloadCommandOutcome::Accepted { task_id: Some(id) } if id == original)
+        );
+        let failed = engine
+            .wait_for_terminal(original, Duration::from_secs(8))
+            .await
+            .expect("offline task terminates");
+        assert_eq!(failed.task.status(), DownloadStatus::Failed);
+        assert!(!directory.path().join("partial (1).bin").exists());
+        assert_eq!(
+            std::fs::read(staging).expect("partial artifact retained"),
+            partial
+        );
+    }
+
+    #[tokio::test]
+    async fn completed_transfer_conflict_auto_renames_without_refetching_offline_source() {
+        let directory = tempfile::tempdir().expect("create publication fixture");
+        let database = directory.path().join("downloads.sqlite3");
+        let destination = directory.path().join("fixture.bin");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind loopback fixture");
+        let address = listener.local_addr().expect("fixture address");
+        listener.set_nonblocking(true).expect("bounded accept");
+        let conflict_path = destination.clone();
+        let server = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut transfer_gets = 0;
+            loop {
+                assert!(Instant::now() < deadline, "fixture transfer did not arrive");
+                let (mut stream, _) = match listener.accept() {
+                    Ok(connection) => connection,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(2));
+                        continue;
+                    }
+                    Err(error) => panic!("accept fixture: {error}"),
+                };
+                stream
+                    .set_nonblocking(false)
+                    .expect("blocking fixture connection");
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .expect("bounded fixture read");
+                let mut request = [0_u8; 4096];
+                let count = stream.read(&mut request).expect("read fixture request");
+                let request = String::from_utf8_lossy(&request[..count]);
+                let is_head = request.starts_with("HEAD ");
+                let is_range = request.to_ascii_lowercase().contains("\r\nrange:");
+                if !is_head && !is_range {
+                    transfer_gets += 1;
+                    std::fs::write(&conflict_path, b"external owner")
+                        .expect("create last-minute conflict");
+                }
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\nConnection: close\r\n\r\n",
+                    )
+                    .expect("write response");
+                if !is_head {
+                    stream
+                        .write_all(b"0123456789abcdef")
+                        .expect("write fixture bytes");
+                }
+                if transfer_gets == 1 {
+                    return transfer_gets;
+                }
+            }
+        });
+        let engine = DownloadEngine::open(&database).expect("open download engine");
+        let mut request = action_request(directory.path(), "fixture.bin");
+        request.source_url = format!("http://{address}/fixture.bin");
+        let task_id = engine
+            .submit(request, RequestOrigin::Internal)
+            .expect("submit real transfer");
+        let failed = engine
+            .wait_for_terminal(task_id, Duration::from_secs(12))
+            .await
+            .expect("wait for publication conflict");
+        assert_eq!(failed.task.status(), DownloadStatus::Failed);
+        assert_eq!(
+            failed.error.as_ref().map(|fault| fault.code),
+            Some(DownloadFaultCode::DestinationExists)
+        );
+        let staged = failed.temporary_path.expect("preserved prepared artifact");
+        assert_eq!(
+            std::fs::read(&staged).expect("read prepared artifact"),
+            b"0123456789abcdef"
+        );
+        assert_eq!(server.join().expect("join offline fixture"), 1);
+        drop(engine);
+        let engine = DownloadEngine::open(&database).expect("reopen failed transfer");
+        let result = engine.handle_command(action_envelope(
+            task_id,
+            DownloadTaskAction::RetryWithAutoRename,
+        ));
+        assert!(
+            matches!(result.outcome, DownloadCommandOutcome::Accepted { task_id: Some(id) } if id == task_id)
+        );
+        let completed = engine
+            .wait_for_terminal(task_id, Duration::from_secs(5))
+            .await
+            .expect("complete without source");
+        assert_eq!(completed.task.status(), DownloadStatus::Completed);
+        assert_eq!(
+            std::fs::read(directory.path().join("fixture (1).bin")).expect("read numbered output"),
+            b"0123456789abcdef"
+        );
+        assert_eq!(
+            std::fs::read(destination).expect("read original owner"),
+            b"external owner"
+        );
+        assert!(!staged.exists(), "staged artifact consumed on commit");
+    }
+
+    #[test]
+    fn background_batch_uses_the_original_correlated_command() {
+        let directory = tempfile::tempdir().expect("create batch directory");
+        let engine = DownloadEngine::open_in_memory().expect("open batch engine");
+        engine
+            .inner
+            .store
+            .set_queue_running("default", false)
+            .expect("stop queue");
+        let task_id = engine
+            .enqueue(
+                action_request(directory.path(), "batch.bin"),
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue task");
+        let receiver = engine
+            .request_batch_background(
+                vec![task_id],
+                DownloadBatchAction::Remove,
+                uuid::Uuid::new_v4(),
+            )
+            .expect("dispatch batch");
+        assert!(
+            matches!(receiver.recv_blocking().expect("receive outcome"), DownloadCommandOutcome::Batch { results } if results.len() == 1 && results[0].task_id == task_id && results[0].fault.is_none())
+        );
+        assert!(engine.task(task_id).expect("read removed task").is_none());
+    }
+
     fn seed_completed_action_task(
         engine: &DownloadEngine,
         request: DownloadRequest,
@@ -4538,6 +5151,65 @@ mod tests {
                 .expect("persist completed action");
         }
         task_id
+    }
+
+    #[test]
+    fn batch_remove_without_event_consumer_returns_and_requests_snapshot() {
+        let directory = tempfile::tempdir().expect("batch backpressure directory");
+        let engine = DownloadEngine::open_in_memory().expect("batch backpressure engine");
+        let events = engine
+            .take_event_receiver()
+            .expect("primary event receiver");
+        let mut task_ids = Vec::new();
+        for index in 0..300 {
+            task_ids.push(
+                engine
+                    .enqueue(
+                        action_request(directory.path(), &format!("batch-{index}.bin")),
+                        RequestOrigin::Internal,
+                    )
+                    .expect("enqueue dormant batch task"),
+            );
+            while events.try_recv().is_ok() {}
+        }
+        let worker_engine = engine.clone();
+        let (completed, completion) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let result =
+                worker_engine.handle_command(batch_envelope(task_ids, DownloadBatchAction::Remove));
+            let _ = completed.send(result);
+        });
+        let result = completion.recv_timeout(Duration::from_secs(3));
+        if result.is_err() {
+            events.close();
+        }
+        worker
+            .join()
+            .expect("batch worker exits after receiver close");
+        let result = result.expect("300 removals must return without a primary consumer");
+        assert!(
+            matches!(result.outcome, DownloadCommandOutcome::Batch { results }
+            if results.len() == 300 && results.iter().all(|result| result.fault.is_none()))
+        );
+        assert!(engine.tasks().expect("authoritative tasks").is_empty());
+        while events.try_recv().is_ok() {}
+        engine
+            .enqueue(
+                action_request(directory.path(), "after-batch.bin"),
+                RequestOrigin::Internal,
+            )
+            .expect("next state event after consumer frees capacity");
+        let snapshot = events
+            .try_recv()
+            .expect("snapshot recovery precedes next state");
+        assert!(matches!(
+            snapshot.event,
+            DownloadEvent::SnapshotRequired { .. }
+        ));
+        let next = events.try_recv().expect("next authoritative state event");
+        assert_eq!(next.generation, snapshot.generation);
+        assert!(next.sequence > snapshot.sequence);
+        assert!(matches!(next.event, DownloadEvent::TaskChanged { .. }));
     }
 
     #[test]

@@ -12,6 +12,7 @@ function Assert-NativeSuccess([string]$Step) {
 $originalWorkerFixture = $env:NXTOOLS_ARCHIVE_WORKER_FIXTURE
 $originalLifecycleEvidence = $env:NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT
 $originalVolumeEvidence = $env:NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT
+$fixtureBuildRoot = $null
 Push-Location $root
 try {
     if ($Configuration -eq 'Release') {
@@ -33,10 +34,13 @@ try {
             "-p:ShellSelectionIdentityPath=$(Join-Path $fixtureBuildRoot 'generated\DesktopIdentity.g.cs')"
         Assert-NativeSuccess 'matching Debug bound fixture host'
     }
-    $fixtureEvidence = Join-Path $HostBuildRoot 'fixture-evidence'
-    New-Item -ItemType Directory -Path $fixtureEvidence | Out-Null
+    $fixtureEvidence = Join-Path $root ('.diagnostics\verification\fixtures-' + [Guid]::NewGuid().ToString('N'))
+    if (-not $env:NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT -or -not $env:NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT) {
+        New-Item -ItemType Directory -Path $fixtureEvidence | Out-Null
+    }
     if (-not $env:NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT) { $env:NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT = $fixtureEvidence }
     if (-not $env:NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT) { $env:NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT = $fixtureEvidence }
+    Write-Host "Fixture evidence retained: $env:NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT; $env:NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT"
     $env:NXTOOLS_ARCHIVE_WORKER_FIXTURE = Join-Path $root 'target\debug\nxtools-archive-worker.exe'
     dotnet run `
         --project '.\csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj' `
@@ -48,5 +52,12 @@ finally {
     $env:NXTOOLS_ARCHIVE_WORKER_FIXTURE = $originalWorkerFixture
     $env:NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT = $originalLifecycleEvidence
     $env:NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT = $originalVolumeEvidence
-    Pop-Location
+    try {
+        if ($fixtureBuildRoot -and (Test-Path -LiteralPath $fixtureBuildRoot)) {
+            Remove-Item -LiteralPath $fixtureBuildRoot -Recurse -Force
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }

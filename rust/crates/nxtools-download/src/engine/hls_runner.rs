@@ -60,22 +60,23 @@ pub(crate) async fn run_hls_task(
         );
         return Err(HttpDownloadError::HlsResourceChanged.into());
     }
-    let playlist = match http.load_hls_media_playlist(request, playlist_url).await {
-        Ok(playlist) => playlist,
-        Err(error) => {
-            warn!(
-                event = "download.hls_playlist.failed",
-                %correlation_id,
-                ?task_id,
-                source = playlist_source,
-                error_kind = error.kind(),
-                retryable = error.is_retryable_transfer(),
-                elapsed_ms = started_at.elapsed().as_millis(),
-                "HLS media playlist resolution failed"
-            );
-            return Err(error.into());
-        }
-    };
+    let (playlist, server_observation) =
+        match http.load_hls_media_playlist(request, playlist_url).await {
+            Ok(result) => result,
+            Err(error) => {
+                warn!(
+                    event = "download.hls_playlist.failed",
+                    %correlation_id,
+                    ?task_id,
+                    source = playlist_source,
+                    error_kind = error.kind(),
+                    retryable = error.is_retryable_transfer(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "HLS media playlist resolution failed"
+                );
+                return Err(error.into());
+            }
+        };
     let source = if let Some(plan) = stored_plan.as_ref() {
         if !hls_plan_is_compatible(plan, &playlist) {
             warn!(
@@ -133,6 +134,9 @@ pub(crate) async fn run_hls_task(
         ?task_id,
         source,
         segment_count = playlist.segments.len(),
+        route_kind = server_observation.route_kind.diagnostic_name(),
+        peer_present = server_observation.peer_ip.is_some(),
+        response_ms = server_observation.response_ms,
         elapsed_ms = started_at.elapsed().as_millis(),
         "HLS media playlist resolved and persisted"
     );
@@ -199,9 +203,18 @@ pub(crate) async fn run_hls_task(
             variants: Vec::new(),
         })),
         resolution: None,
+        server_observation: Some(server_observation),
     };
-    let (temporary_path, final_path) =
+    let (derived_temporary, final_path) =
         HttpDownloadClient::artifact_paths(request, &probe, task_id)?;
+    let temporary_path = inner
+        .lock_tasks()?
+        .get(&task_id)
+        .ok_or(DownloadEngineError::TaskNotFound(task_id))?
+        .transfer
+        .temporary_path
+        .clone()
+        .unwrap_or(derived_temporary);
     tokio::fs::create_dir_all(&request.save_directory).await?;
     if tokio::fs::try_exists(&final_path).await? {
         return Err(HttpDownloadError::DestinationExists(final_path).into());
@@ -587,6 +600,16 @@ pub(crate) async fn run_hls_task(
     output.flush().await?;
     output.sync_all().await?;
     drop(output);
+    {
+        let prepared_bytes = tokio::fs::metadata(&temporary_path).await?.len();
+        let mut tasks = inner.lock_tasks()?;
+        let state = tasks
+            .get_mut(&task_id)
+            .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.transfer.prepared_size_bytes = Some(prepared_bytes);
+        inner.persist(state)?;
+    }
+
     http.commit_prepared(PreparedDownload {
         temporary_path,
         final_path,

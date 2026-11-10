@@ -412,7 +412,8 @@ fn push_target(
     }
 }
 
-fn extract_web_urls(text: &str) -> Vec<String> {
+/// Extract web-link candidates without reading the clipboard or opening any target.
+pub fn extract_web_urls(text: &str) -> Vec<String> {
     let mut urls = Vec::new();
     let mut offset = 0;
     while offset < text.len() {

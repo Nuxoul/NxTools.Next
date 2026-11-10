@@ -316,9 +316,9 @@ internal static class ArchiveMetadataTests
             using var runner = ArchiveWorkerRunner.ForPackage(events.Enqueue, log); var reached = false;
             runner.OutputCommitCheckpointProbe = stage => {
                 var target = mode is "time_denied" or "attrs_denied" ? "before_metadata" : mode is "ads_unsupported" or "ads_denied" ? "before_motw" :
-                    mode == "cancel_metadata" ? "metadata_applied" : mode is "directory_denied" or "directory_cancel" ? "before_directory_metadata" : mode == "postcommit" ? "native_committed" : "unused";
+                    mode == "cancel_metadata" ? "metadata_applied" : mode is "directory_denied" or "directory_cancel" ? "before_directory_metadata" : mode == "postcommit" ? "native_closed" : "unused";
                 if (stage != target) return; reached = true;
-                if (mode is "cancel_metadata" or "directory_cancel") { Require(runner.Cancel(id), "metadata cancellation admission"); return; }
+                if (mode is "cancel_metadata" or "directory_cancel" or "postcommit") { Require(runner.Cancel(id), "metadata cancellation admission"); return; }
                 throw new ArchiveOutputException(mode == "time_denied" || mode == "directory_denied" ? "metadata_time_failed" : mode == "attrs_denied" ? "metadata_attributes_failed" :
                     mode == "ads_unsupported" ? "motw_not_supported" : mode == "ads_denied" ? "motw_write_failed" : "inspect_identity", mode == "ads_unsupported" ? 50 : 5);
             };
@@ -328,11 +328,11 @@ internal static class ArchiveMetadataTests
             var published = mode is "directory_denied" or "directory_cancel" or "postcommit" or "reject_log" or "overwrite";
             var category = mode is "time_denied" or "directory_denied" ? "metadata_time_failed" : mode == "attrs_denied" ? "metadata_attributes_failed" :
                 mode == "ads_unsupported" ? "motw_not_supported" : mode == "ads_denied" ? "motw_write_failed" : mode == "cancel_metadata" ? "cancelled" :
-                mode == "directory_cancel" ? "cancelled_with_committed_output" : mode == "postcommit" ? "committed_but_verification_failed" : mode == "no_replace" ? "worker_failure" : "success";
+                mode is "directory_cancel" or "postcommit" ? "cancelled_with_committed_output" : mode == "no_replace" ? "worker_failure" : "success";
             Require(terminal.Category == category && terminal.FilesCommitted == (published ? 1 : 0) && terminal.CleanupComplete, "metadata lifecycle " + mode + ": " + terminal.Category);
             if (mode is not ("reject_log" or "overwrite" or "no_replace")) Require(reached, "metadata boundary not reached: " + mode);
             if (isDirectory) Require(terminal.CommitState == "Committed", "directory terminal erased published state: " + terminal.CommitState);
-            if (mode.EndsWith("denied", StringComparison.Ordinal) || mode is "ads_unsupported" or "postcommit") Require(terminal.NativeErrorCode == (mode == "ads_unsupported" ? 50 : 5), "first metadata native code lost");
+            if (mode.EndsWith("denied", StringComparison.Ordinal) || mode == "ads_unsupported") Require(terminal.NativeErrorCode == (mode == "ads_unsupported" ? 50 : 5), "first metadata native code lost");
             Require(File.ReadAllText(external) == "external sentinel" && Directory.EnumerateFiles(output, ".nxpart-*", SearchOption.AllDirectories).SequenceEqual(new[] { external }), "metadata partial ownership");
             if (published) Require(File.ReadAllText(path) == "x" && File.ReadAllBytes(path + ":Zone.Identifier").SequenceEqual(mark), "published metadata output lost");
             else if (mode == "no_replace") Require(File.ReadAllText(path) == "old target", "no-replace target changed");

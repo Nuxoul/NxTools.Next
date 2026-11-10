@@ -7,6 +7,7 @@ use super::*;
 
 impl DownloadApplication {
     pub(crate) fn request_task_window(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        self.observe_opened_destination_conflict(task_id);
         let phase = self
             .task(task_id)
             .map_or(DownloadWindowPhase::Progress, |task| {
@@ -175,15 +176,24 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         let application = cx.entity();
-        let snapshot = self.task(task_id).cloned().map(|snapshot| {
-            if snapshot.has_final_artifact {
-                load_download_task_detail(&self.engine, task_id)
-                    .map(|detail| detail.task)
-                    .unwrap_or(snapshot)
-            } else {
-                snapshot
-            }
-        });
+        let snapshot = self
+            .engine
+            .task(task_id)
+            .ok()
+            .flatten()
+            .or_else(|| self.task(task_id).cloned())
+            .map(|mut snapshot| {
+                if snapshot.has_final_artifact {
+                    load_download_task_detail(&self.engine, task_id)
+                        .map(|detail| detail.task)
+                        .unwrap_or(snapshot)
+                } else {
+                    if snapshot.probe.is_none() {
+                        snapshot.probe = self.engine.task_probe(task_id).ok().flatten();
+                    }
+                    snapshot
+                }
+            });
         let progress = self.progress(task_id).cloned();
         let shutdown_armed = self.is_shutdown_armed(task_id);
         let effective_global_speed_limit = self.engine.effective_global_speed_limit();
@@ -336,7 +346,19 @@ impl DownloadApplication {
         let Some(entry) = self.task_windows.get(&task_id) else {
             return false;
         };
-        let snapshot = self.task(task_id).cloned();
+        let authoritative = self.engine.task(task_id).ok().flatten();
+        let applied_task_limit = authoritative
+            .as_ref()
+            .map(|task| task.task.request().speed_limit_bytes_per_second);
+        let mut snapshot = self.task(task_id).cloned();
+        if let Some(snapshot) = snapshot.as_mut()
+            && snapshot.probe.is_none()
+        {
+            snapshot.probe = match authoritative.as_ref() {
+                Some(task) => task.probe.clone(),
+                None => self.engine.task_probe(task_id).ok().flatten(),
+            };
+        }
         let progress = self.progress(task_id).cloned();
         let shutdown_armed = self.is_shutdown_armed(task_id);
         let effective_global_speed_limit = self.engine.effective_global_speed_limit();
@@ -361,6 +383,9 @@ impl DownloadApplication {
                 )
             });
             view.replace_snapshot(snapshot, progress, shutdown_armed, cx);
+            if let Some(limit) = applied_task_limit {
+                view.speed_limit_edit.applied = limit;
+            }
             view.effective_global_speed_limit = effective_global_speed_limit;
             if reset_details_expanded {
                 view.reset_details_expanded();
@@ -373,7 +398,8 @@ impl DownloadApplication {
             }
         });
         let updated = window_handle
-            .update(cx, move |_, window, _| {
+            .update(cx, move |_, window, cx| {
+                view.update(cx, |view, cx| view.sync_task_speed_input(window, cx));
                 if let Some(new_size) = resize_size {
                     let scale = window.scale_factor();
                     if native_window_handle != 0 {

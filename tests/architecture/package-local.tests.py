@@ -31,10 +31,10 @@ class PackageLocalTests(unittest.TestCase):
             encoding="ascii",
         )
         (scripts / "package.ps1").write_text(
-            "param([string]$Configuration,[string]$SigningKeyPath,[long]$ReleaseSequence,[switch]$SkipVerification)\n"
+            "param([string]$Configuration,[string]$SigningKeyPath,[long]$ReleaseSequence,[switch]$SkipVerification,[switch]$CreateDistributionArchive)\n"
             "$ErrorActionPreference='Stop'\n"
             "$r=Split-Path -Parent $PSScriptRoot\n"
-            "@{configuration=$Configuration;sequence=$ReleaseSequence;skip=[bool]$SkipVerification;key=$SigningKeyPath}|ConvertTo-Json|Set-Content (Join-Path $r 'called.json')\n"
+            "@{configuration=$Configuration;sequence=$ReleaseSequence;skip=[bool]$SkipVerification;distribution=[bool]$CreateDistributionArchive;key=$SigningKeyPath}|ConvertTo-Json|Set-Content (Join-Path $r 'called.json')\n"
             "if ($env:FIXTURE_STDERR -eq '1') { [Console]::Error.WriteLine('Compiling fixture stderr - not a failure') }\n"
             "if ($env:FIXTURE_FAIL -eq '1') { exit 7 }\n"
             "$p=Join-Path $r 'artifacts\\win-x64';New-Item -ItemType Directory -Force $p|Out-Null\n"
@@ -137,6 +137,7 @@ class PackageLocalTests(unittest.TestCase):
         self.assertEqual(called["sequence"], 30)
         self.assertEqual(called["configuration"], "Release")
         self.assertFalse(called["skip"])
+        self.assertFalse(called["distribution"])
         status = self.status()
         self.assertEqual(status["state"], "Completed")
         self.assertFalse(status["installation_executed"])
@@ -150,6 +151,14 @@ class PackageLocalTests(unittest.TestCase):
         result = self.run_entry("-SkipVerification")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads((self.root / "called.json").read_text("utf-8-sig"))["skip"])
+
+    def test_distribution_archive_requires_explicit_request(self):
+        result = self.run_entry("-SkipVerification", "-CreateDistributionArchive")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        called = json.loads((self.root / "called.json").read_text("utf-8-sig"))
+        self.assertTrue(called["distribution"])
+        self.assertTrue(called["skip"])
+        self.assertTrue(self.status()["create_distribution_archive"])
 
     def test_failed_packager_is_not_success(self):
         self.env["FIXTURE_FAIL"] = "1"

@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.IO.Pipes;
 using System.Diagnostics;
@@ -69,6 +70,7 @@ internal sealed class PlatformPipeClient(
     internal static string DisconnectLogLevel(Exception error) =>
         error is EndOfStreamException ? "info" : "error";
 
+    private static bool IsPickerCommand(string name) => name.StartsWith("pick_", StringComparison.Ordinal);
     internal static bool ShouldLogCommandLifecycle(string commandName) =>
         !string.Equals(
             commandName,
@@ -132,7 +134,11 @@ internal sealed class PlatformPipeClient(
             throw new InvalidDataException("Desktop returned an invalid handshake acknowledgement.");
         }
 
+        var keyboardHealthAccepted = AcceptsKeyboardHealth(acknowledgement);
         platformAdapter.DiscardQueuedEventsForNewSession();
+        var keyboardHealthSnapshot = platformAdapter.QuickLaunchKeyboardHealthSnapshot;
+        if (CreateKeyboardHealthSnapshotEnvelope(keyboardHealthSnapshot, keyboardHealthAccepted) is { } keyboardSnapshot)
+            await WriteAsync(writer, keyboardSnapshot, cancellationToken);
         // The bounded event queue above was discarded: every handshake gets a fresh state
         // snapshot before normal event forwarding, even when no user setting changed.
         var motionSnapshot = platformAdapter.SystemMotionSnapshot;
@@ -195,6 +201,7 @@ internal sealed class PlatformPipeClient(
         using var floatingAssistant = new FloatingAssistantCoordinator(desktopProcessId,
             envelope => outgoing.Writer.TryWrite(envelope), log);
         await using var archiveEntry = new ArchiveEntrySession(log);
+        await using var rawJoin = new RawNumberedJoinSession(log);
         await using var archiveVirtualDrag = new NxTools.PlatformHost.Windows.Archive.ArchiveVirtualDragSession(archiveEntry,log);
         // One original drag session callback, no queue/extractor manager. Running snapshots are
         // expendable; terminal delivery uses a bounded forwarder, never blocks the OLE apartment.
@@ -209,7 +216,7 @@ internal sealed class PlatformPipeClient(
             await foreach(var item in dragTerminals.Reader.ReadAllAsync(session.Token))
                 await outgoing.Writer.WriteAsync(item,session.Token);
         });
-        await using var archiveJob = new ArchiveJobSession(log);
+        await using var archiveJob = new ArchiveJobSession(log, largeCount:AcceptsArchiveJobLargeCount(acknowledgement));
         var archiveJobProgress = Task.Run(async () => {
             await foreach (var item in archiveJob.Progress.ReadAllAsync(session.Token))
                 outgoing.Writer.TryWrite(item); // Latest-only progress never backpressures prompt/terminal.
@@ -233,6 +240,8 @@ internal sealed class PlatformPipeClient(
         var eventTask = ForwardEventsAsync(
             outgoing.Writer,
             pendingClipboardEvents,
+            keyboardHealthAccepted,
+            keyboardHealthSnapshot,
             session.Token);
         var readTask = ReadLoopAsync(
             reader,
@@ -240,7 +249,7 @@ internal sealed class PlatformPipeClient(
             session.Token,
             commandDispatcher,
             desktopProcessId,
-            archiveRead, archiveEntry, archiveJob, archiveVirtualDrag, floatingAssistant);
+            archiveRead, archiveEntry, archiveJob, archiveVirtualDrag, floatingAssistant, rawJoin);
         var tasks = new[] { writeTask, eventTask, readTask, archiveEvents, archiveJobEvents, archiveJobProgress, archiveDragEvents };
 
         var completed = await Task.WhenAny(tasks);
@@ -250,6 +259,7 @@ internal sealed class PlatformPipeClient(
         floatingAssistant.Stop();
         archiveEntry.Stop();
         archiveJob.Stop();
+        rawJoin.Stop();
         platformAdapter.CancelCurrentShellContextWork();
         commandDispatcher.BeginDrain();
         try
@@ -277,7 +287,7 @@ internal sealed class PlatformPipeClient(
         uint desktopProcessId,
         ArchiveReadSession archiveRead, ArchiveEntrySession archiveEntry, ArchiveJobSession archiveJob,
         NxTools.PlatformHost.Windows.Archive.ArchiveVirtualDragSession archiveVirtualDrag,
-        FloatingAssistantCoordinator floatingAssistant)
+        FloatingAssistantCoordinator floatingAssistant, RawNumberedJoinSession rawJoin)
     {
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -310,6 +320,17 @@ internal sealed class PlatformPipeClient(
                     continue;
                 }
 
+                if (commandName == "raw_numbered_join")
+                {
+                    var result = rawJoin.Dispatch(envelope);
+                    await commandDispatcher.DispatchAsync("raw_numbered_join", async commandToken =>
+                    {
+                        var terminal = await result;
+                        if (!commandToken.IsCancellationRequested)
+                            await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, terminal), commandToken);
+                    }, cancellationToken);
+                    continue;
+                }
                 if (commandName == "floating_assistant")
                 {
                     // Admission installs the exact peer lease before any later retire/update arrives.
@@ -329,12 +350,30 @@ internal sealed class PlatformPipeClient(
                     if(!outgoing.TryWrite(jobReceipt))throw new InvalidDataException("Archive job receipt transport full.");
                     continue;
                 }
+                if (commandName == "read_clipboard_file_drop") {
+                    ArchiveClipboardCommand request;
+                    try { request = PlatformCommandParser.ParseReadClipboardFileDrop(envelope); }
+                    catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "invalid_clipboard_data")), cancellationToken); continue; }
+                    await commandDispatcher.DispatchAsync("read_clipboard_file_drop", async token => {
+                        var result = await platformAdapter.ReadClipboardFileDropAsync(request, token);
+                        if (!token.IsCancellationRequested) await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, result), token);
+                    }, cancellationToken);
+                    continue;
+                }
                 if(commandName=="archive_space") {
                     ArchiveSpaceCommand space;
                     try { space=ArchiveSpaceCommand.Parse(envelope); }
                     catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(false,"invalid_request")),cancellationToken);continue; }
                     await Windows.Archive.ArchiveSpacePreflight.DispatchAsync(commandDispatcher,space,log,cancellationToken,
                         (result,commandToken)=>outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,result),commandToken).AsTask());
+                    continue;
+                }
+                if (commandName == "archive_create_destination") {
+                    ArchiveCreateDestinationCommand request;
+                    try { request = ArchiveCreateDestinationCommand.Parse(envelope); }
+                    catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "invalid_request")), cancellationToken); continue; }
+                    await Windows.Archive.ArchiveCreateDestination.DispatchAsync(commandDispatcher, request, log, cancellationToken,
+                        (result, token) => outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, result), token).AsTask());
                     continue;
                 }
                 if(commandName=="archive_recovery_inspect") {
@@ -350,7 +389,7 @@ internal sealed class PlatformPipeClient(
                     try { picker=ArchivePickerCommand.Parse(envelope); }
                     catch { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(false,"invalid_request")),cancellationToken);continue; }
                     await commandDispatcher.DispatchAsync("pick_archive_path",async commandToken => {
-                        var picked=ArchiveJobPicker.Pick(picker,desktopProcessId,commandToken);
+                        var picked=ArchiveJobPicker.Pick(picker,desktopProcessId,commandToken,log:log);
                         await outgoing.WriteAsync(picked.Envelope(),commandToken);
                         await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope,new WindowsCommandResult(picked.Code is null,picked.Code,NativeErrorCode:picked.NativeErrorCode)),commandToken);
                     },cancellationToken);
@@ -384,9 +423,16 @@ internal sealed class PlatformPipeClient(
                     await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, archiveRead.Dispatch(envelope)), cancellationToken);
                     continue;
                 }
-                if (commandName == "pick_extension_setting_path") {
-                    try { var picker = PlatformCommandParser.ParsePickExtensionSettingPath(envelope); if (picker.SourceProcessId != desktopProcessId) throw new InvalidDataException("Invalid picker peer."); }
-                    catch (InvalidDataException) { await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "setting_picker_invalid_peer", NativeErrorCode:87)), cancellationToken); continue; }
+                if (commandName is "pick_extension_setting_path" or "pick_directory" or "pick_program" or
+                    "pick_extension_manifest" or "pick_extension_runtime" or "pick_clipboard_archive_path" or
+                    "pick_clipboard_storage_directory" or "pick_browser_extension_export_path")
+                {
+                    try { ValidatePickerPeer(envelope, desktopProcessId); }
+                    catch (Exception error) when (error is InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
+                    {
+                        await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "picker_invalid_peer", NativeErrorCode: 87)), cancellationToken);
+                        continue;
+                    }
                 }
                 if (commandName == "prepare_main_window") {
                     try {
@@ -435,7 +481,7 @@ internal sealed class PlatformPipeClient(
                             envelope,
                             commandName,
                             outgoing,
-                            commandToken),
+                            commandToken, desktopProcessId),
                         cancellationToken);
                 }
                 catch (Exception error)
@@ -449,6 +495,25 @@ internal sealed class PlatformPipeClient(
                 }
             }
         }
+    }
+
+    internal static void ValidatePickerPeer(ProtocolEnvelope envelope, uint desktopProcessId)
+    {
+        var name = PlatformCommandParser.GetCommandName(envelope);
+        var owner = name switch
+        {
+            "pick_extension_setting_path" => PlatformCommandParser.ParsePickExtensionSettingPath(envelope).SourceProcessId,
+            "pick_directory" => PlatformCommandParser.ParsePickDirectory(envelope).SourceProcessId,
+            "pick_program" => PlatformCommandParser.ParsePickProgram(envelope).SourceProcessId,
+            "pick_extension_manifest" => PlatformCommandParser.ParsePickExtensionManifest(envelope).SourceProcessId,
+            "pick_extension_runtime" => PlatformCommandParser.ParsePickExtensionRuntime(envelope).SourceProcessId,
+            "pick_clipboard_archive_path" => PlatformCommandParser.ParsePickClipboardArchivePath(envelope).SourceProcessId,
+            "pick_clipboard_storage_directory" => PlatformCommandParser.ParsePickClipboardStorageDirectory(envelope).SourceProcessId,
+            "pick_browser_extension_export_path" => PlatformCommandParser.ParsePickBrowserExtensionExportPath(envelope).SourceProcessId,
+            _ => throw new InvalidDataException("Not a picker command.")
+        };
+        if (desktopProcessId == 0 || owner != desktopProcessId)
+            throw new InvalidDataException("Picker source does not match authenticated peer.");
     }
 
     internal static void ValidateMainWindowPeer(ProtocolEnvelope envelope, uint desktopProcessId)
@@ -469,7 +534,7 @@ internal sealed class PlatformPipeClient(
         ProtocolEnvelope envelope,
         string commandName,
         ChannelWriter<ProtocolEnvelope> outgoing,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, uint desktopProcessId)
     {
         var started = Stopwatch.GetTimestamp();
         var logCommandLifecycle = ShouldLogCommandLifecycle(commandName);
@@ -507,7 +572,7 @@ internal sealed class PlatformPipeClient(
                 envelope,
                 commandName,
                 diagnosticCorrelationId,
-                cancellationToken);
+                cancellationToken, desktopProcessId);
         }
         catch (OperationCanceledException error) when (cancellationToken.IsCancellationRequested)
         {
@@ -520,11 +585,11 @@ internal sealed class PlatformPipeClient(
         }
         catch (Exception error)
         {
-            var safeNativeCommand = commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+            var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
             result = safeNativeCommand
-                ? new WindowsCommandResult(false, commandName == "prepare_notification_window"
-                    ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
-                    error is Win32Exception nativeError ? nativeError.NativeErrorCode : null)
+                ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
+                    commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
+                    error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
                 : CreateCommandFailureResult(error);
             WriteCommandDiagnostic("error", "command.failed", diagnosticCorrelationId,
                 new Dictionary<string, object?>
@@ -604,11 +669,11 @@ internal sealed class PlatformPipeClient(
                     ["command"] = commandName
                 });
         }
-        var safeNativeCommand = commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+        var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
         var result = safeNativeCommand
-            ? new WindowsCommandResult(false, commandName == "prepare_notification_window"
-                ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
-                error is Win32Exception nativeError ? nativeError.NativeErrorCode : null)
+            ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
+                commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
+                error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
             : CreateCommandFailureResult(error);
         WriteCommandDiagnostic("error", "command.failed", diagnosticCorrelationId,
             new Dictionary<string, object?>
@@ -784,7 +849,7 @@ internal sealed class PlatformPipeClient(
         ProtocolEnvelope envelope,
         string commandName,
         Guid diagnosticCorrelationId,
-        CancellationToken cancellationToken) =>
+        CancellationToken cancellationToken, uint desktopProcessId) =>
         commandName switch
         {
             "prepare_main_window" => await platformAdapter.PrepareMainWindowAsync(PlatformCommandParser.ParsePrepareMainWindow(envelope), diagnosticCorrelationId, cancellationToken),
@@ -794,6 +859,7 @@ internal sealed class PlatformPipeClient(
                 PlatformCommandParser.ParseShowContextMenu(envelope), envelope.Id, cancellationToken),
             "cancel_context_menu" => platformAdapter.CancelContextMenu(
                 PlatformCommandParser.ParseCancelContextMenu(envelope)),
+            "read_clipboard_text" => await platformAdapter.ReadClipboardTextAsync(cancellationToken),
             "paste_text" => await platformAdapter.PasteTextAsync(
                 PlatformCommandParser.ParsePasteText(envelope),
                 diagnosticCorrelationId,
@@ -894,6 +960,8 @@ internal sealed class PlatformPipeClient(
             "read_system_proxy" => SystemProxySnapshotReader.Read(diagnosticCorrelationId, log),
             "shutdown_system" => platformAdapter.ShutdownSystem(
                 PlatformCommandParser.ParseShutdownSystem(envelope)),
+            "pick_browser_extension_export_path" => platformAdapter.PickBrowserExtensionExportPath(
+                PlatformCommandParser.ParsePickBrowserExtensionExportPath(envelope), diagnosticCorrelationId, cancellationToken),
             "export_browser_extension" => platformAdapter.ExportBrowserExtension(
                 PlatformCommandParser.ParseExportBrowserExtension(envelope),
                 diagnosticCorrelationId,
@@ -920,7 +988,7 @@ internal sealed class PlatformPipeClient(
                 PlatformCommandParser.ParseExtractShellIcon(envelope),
                 diagnosticCorrelationId,
                 cancellationToken),
-            "pick_archive_path" => ArchivePathPicker.Pick(PlatformCommandParser.ParsePickArchivePath(envelope), cancellationToken),
+            "pick_archive_path" => ArchivePathPicker.Pick(PlatformCommandParser.ParsePickArchivePath(envelope), desktopProcessId, cancellationToken),
             "pick_clipboard_archive_path" => platformAdapter.PickClipboardArchivePath(
                 PlatformCommandParser.ParsePickClipboardArchivePath(envelope),
                 cancellationToken),
@@ -1014,12 +1082,57 @@ internal sealed class PlatformPipeClient(
         command.GetString() == "show_context_menu" ? envelope.Id : envelope.CorrelationId ?? envelope.Id;
 
 
+    internal static ProtocolEnvelope? CreateKeyboardHealthSnapshotEnvelope(
+        QuickLaunchKeyboardHealthChangedEvent? snapshot, bool keyboardHealthAccepted) =>
+        keyboardHealthAccepted && snapshot is not null ? PlatformEventEnvelopeFactory.Create(snapshot) : null;
+
+    internal static bool AcceptsKeyboardHealth(ProtocolEnvelope acknowledgement) =>
+        acknowledgement.Payload.TryGetProperty("accepted_capabilities", out var capabilities) &&
+        capabilities.ValueKind == JsonValueKind.Array &&
+        capabilities.EnumerateArray().Any(capability =>
+            capability.ValueKind == JsonValueKind.String &&
+            capability.GetString() == PlatformCapabilities.QuickLaunchKeyboardHealth);
+
+    internal static bool AcceptsArchiveJobLargeCount(ProtocolEnvelope acknowledgement) =>
+        acknowledgement.Payload.TryGetProperty("accepted_capabilities", out var capabilities) &&
+        capabilities.ValueKind == JsonValueKind.Array &&
+        capabilities.EnumerateArray().Any(capability =>
+            capability.ValueKind == JsonValueKind.String &&
+            capability.GetString() == PlatformCapabilities.ArchiveJobLargeCount);
+
+    internal static bool CanForwardEvent(WindowsPlatformEvent platformEvent, bool keyboardHealthAccepted) =>
+        platformEvent is not QuickLaunchKeyboardHealthChangedEvent || keyboardHealthAccepted;
+
+    internal static async IAsyncEnumerable<WindowsPlatformEvent> ReadEventsWithKeyboardHealthSnapshots(
+        ChannelReader<WindowsPlatformEvent> events,
+        Func<QuickLaunchKeyboardHealthChangedEvent?> keyboardHealthSnapshot,
+        bool keyboardHealthAccepted,
+        QuickLaunchKeyboardHealthChangedEvent? lastSent,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var platformEvent in events.ReadAllAsync(cancellationToken))
+        {
+            if (keyboardHealthAccepted && keyboardHealthSnapshot() is { } current && current != lastSent)
+            {
+                lastSent = current;
+                yield return current;
+            }
+            // Queued health is a wake-up; the retained snapshot owns the latest state.
+            if (platformEvent is not QuickLaunchKeyboardHealthChangedEvent)
+                yield return platformEvent;
+        }
+    }
+
     private async Task ForwardEventsAsync(
         ChannelWriter<ProtocolEnvelope> outgoing,
         ConcurrentDictionary<Guid, ClipboardCapturedEvent> pendingClipboardEvents,
+        bool keyboardHealthAccepted,
+        QuickLaunchKeyboardHealthChangedEvent? keyboardHealthSnapshot,
         CancellationToken cancellationToken)
     {
-        await foreach (var platformEvent in platformAdapter.Events.ReadAllAsync(cancellationToken))
+        await foreach (var platformEvent in ReadEventsWithKeyboardHealthSnapshots(
+            platformAdapter.Events, () => platformAdapter.QuickLaunchKeyboardHealthSnapshot,
+            keyboardHealthAccepted, keyboardHealthSnapshot, cancellationToken))
         {
             ProtocolEnvelope envelope;
             int frameBytes;

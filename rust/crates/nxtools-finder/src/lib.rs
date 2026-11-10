@@ -12,6 +12,11 @@ mod environment_variable;
 mod extensions;
 mod pinyin;
 mod query;
+mod ranking;
+
+#[cfg(test)]
+use ranking::unified_search_rank;
+use ranking::{canonical_history_id, merge_usage_record};
 
 pub use calculator::{
     CalculatorAnswer, CalculatorOutput, CalculatorRepresentation, calculator_answer,
@@ -27,13 +32,6 @@ const APPLICATION_EXTENSIONS: [&str; 3] = ["lnk", "url", "exe"];
 type UsageRecord = (u64, Option<i64>);
 type UsageHistory = HashMap<String, UsageRecord>;
 type QueryUsageHistory = HashMap<(String, String), UsageRecord>;
-// A launchable program must outrank every name-prefix directory match even
-// when the program only matched across characters (fuzzy subsequence tier,
-// score < 2_000), because the launcher's primary job is surfacing programs —
-// the user-reported "hum" query must put Helium above the hume/Humanoid
-// directories. 6_500 covers the whole non-launchable prefix tier (6_000).
-const LAUNCHABLE_MATCH_BOOST: i64 = 6_500;
-const GENERATED_PATH_PENALTY: i64 = 2_500;
 const MAX_RECENT_DIRECTORIES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -422,8 +420,7 @@ impl FinderCatalog {
             return Ok(normal);
         }
         let normalized_query = normalize(query);
-        let mut seen = HashSet::new();
-        let mut matches = self
+        let matches = self
             .entries
             .iter()
             .map(|entry| {
@@ -447,9 +444,6 @@ impl FinderCatalog {
                     .iter()
                     .filter_map(|variant| variant.score(name, target))
                     .max()?;
-                if !seen.insert(normalize_target(target)) {
-                    return None;
-                }
                 let usage = self.usage_for(id, &normalized_query);
                 Some(SearchResult {
                     entry: ApplicationEntry {
@@ -468,18 +462,22 @@ impl FinderCatalog {
                 })
             })
             .collect::<Vec<_>>();
-        matches.sort_by(|left, right| {
-            unified_search_rank(right)
-                .cmp(&unified_search_rank(left))
-                .then_with(|| left.entry.name.cmp(&right.entry.name))
-                .then_with(|| left.entry.target.cmp(&right.entry.target))
-        });
-        matches.truncate(limit);
-        Ok(matches)
+        Ok(self.rank_results(matches, &normalized_query, limit))
     }
 
     /// Ordinary provider phase, before all providers have completed.
     pub fn search_with_sources_normal(
+        &self,
+        query: &str,
+        external_entries: &[ExternalSearchEntry],
+        custom_commands: &[nxtools_core::CustomCommandSettings],
+        limit: usize,
+    ) -> Result<Vec<SearchResult>> {
+        let matches = self.search_candidates(query, external_entries, custom_commands, limit)?;
+        Ok(self.rank_results(matches, query, limit))
+    }
+
+    fn search_candidates(
         &self,
         query: &str,
         external_entries: &[ExternalSearchEntry],
@@ -591,15 +589,7 @@ impl FinderCatalog {
                     }),
             );
         }
-        let mut seen_targets = matches
-            .iter()
-            .map(|result| normalize_target(&result.entry.target))
-            .collect::<HashSet<_>>();
         matches.extend(external_entries.iter().filter_map(|entry| {
-            let normalized_target = normalize_target(&entry.target);
-            if !seen_targets.insert(normalized_target) {
-                return None;
-            }
             let textual_score = file_query.score(&entry.name, &entry.target)?;
             let usage = self.usage_for(&entry.id, &query);
             Some(SearchResult {
@@ -620,19 +610,13 @@ impl FinderCatalog {
                 last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
             })
         }));
-        matches.sort_by(|left, right| {
-            unified_search_rank(right)
-                .cmp(&unified_search_rank(left))
-                .then_with(|| left.entry.name.cmp(&right.entry.name))
-                .then_with(|| left.entry.target.cmp(&right.entry.target))
-        });
-        matches.truncate(limit);
         Ok(matches)
     }
 
     fn usage_for(&self, entry_id: &str, query: &str) -> UsageStats {
+        let entry_id = canonical_history_id(entry_id);
         let (activation_count, last_activated_at_unix_ms) =
-            self.usage.get(entry_id).copied().unwrap_or((0, None));
+            self.usage.get(&entry_id).copied().unwrap_or((0, None));
         let query = normalize(query);
         let (query_activation_count, last_query_activation_at_unix_ms) = self
             .query_usage
@@ -653,6 +637,7 @@ impl FinderCatalog {
         query: &str,
         activated_at_unix_ms: i64,
     ) -> Result<()> {
+        let entry_id = canonical_history_id(entry_id);
         let query = normalize(query);
         let transaction = self.history.transaction()?;
         transaction.execute(
@@ -759,7 +744,12 @@ fn load_history(connection: &Connection) -> Result<UsageHistory> {
             ),
         ))
     })?;
-    Ok(rows.filter_map(Result::ok).collect())
+    let mut history = UsageHistory::new();
+    for row in rows {
+        let (id, usage) = row?;
+        merge_usage_record(history.entry(canonical_history_id(&id)).or_default(), usage);
+    }
+    Ok(history)
 }
 
 fn load_query_history(connection: &Connection) -> Result<QueryUsageHistory> {
@@ -776,7 +766,17 @@ fn load_query_history(connection: &Connection) -> Result<QueryUsageHistory> {
             ),
         ))
     })?;
-    Ok(rows.filter_map(Result::ok).collect())
+    let mut history = QueryUsageHistory::new();
+    for row in rows {
+        let ((id, query), usage) = row?;
+        merge_usage_record(
+            history
+                .entry((canonical_history_id(&id), normalize(&query)))
+                .or_default(),
+            usage,
+        );
+    }
+    Ok(history)
 }
 
 fn load_recent_directories(connection: &Connection) -> Result<HashMap<String, RecentDirectory>> {
@@ -1064,7 +1064,7 @@ fn system_entries() -> Vec<ApplicationEntry> {
 }
 
 fn stable_entry_id(target: &str) -> String {
-    format!("app:{}", target.replace('/', "\\").to_ascii_lowercase())
+    format!("app:{}", normalize_target(target))
 }
 
 fn normalize(value: &str) -> String {
@@ -1073,101 +1073,6 @@ fn normalize(value: &str) -> String {
 
 fn normalize_target(value: &str) -> String {
     value.replace('/', "\\").to_lowercase()
-}
-
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct UnifiedSearchRank {
-    is_instant: bool,
-    has_query_history: bool,
-    query_activation_count: u64,
-    match_quality: i64,
-    source_priority: u8,
-    activation_count: u64,
-    last_query_activation_at_unix_ms: i64,
-    last_activated_at_unix_ms: i64,
-    compact_path: i64,
-}
-
-fn unified_search_rank(result: &SearchResult) -> UnifiedSearchRank {
-    UnifiedSearchRank {
-        is_instant: matches!(
-            result.entry.source,
-            ApplicationSource::Calculator
-                | ApplicationSource::EnvironmentVariable
-                | ApplicationSource::CustomCommand
-        ),
-        has_query_history: result.query_activation_count > 0,
-        query_activation_count: result.query_activation_count,
-        match_quality: result.score
-            + if is_launchable_result(&result.entry) {
-                LAUNCHABLE_MATCH_BOOST
-            } else {
-                0
-            }
-            - if is_generated_dependency_path(&result.entry.target) {
-                GENERATED_PATH_PENALTY
-            } else {
-                0
-            },
-        source_priority: match result.entry.source {
-            ApplicationSource::Calculator
-            | ApplicationSource::EnvironmentVariable
-            | ApplicationSource::CustomCommand
-            | ApplicationSource::System
-            | ApplicationSource::StartMenu => 4,
-            ApplicationSource::Desktop => 3,
-            ApplicationSource::IndexedDirectory => 2,
-            ApplicationSource::IndexedFile => 1,
-        },
-        activation_count: result.activation_count,
-        last_query_activation_at_unix_ms: result
-            .last_query_activation_at_unix_ms
-            .unwrap_or_default(),
-        last_activated_at_unix_ms: result.last_activated_at_unix_ms.unwrap_or_default(),
-        compact_path: -(result.entry.target.matches(['\\', '/']).count() as i64),
-    }
-}
-
-fn is_generated_dependency_path(target: &str) -> bool {
-    let normalized = normalize_target(target);
-    if normalized.matches('\\').count() < 4 {
-        return false;
-    }
-    [
-        "\\.cargo\\",
-        "\\.cmd.root\\",
-        "\\registry\\src\\",
-        "\\node_modules\\",
-        "\\appdata\\local\\packages\\",
-        "\\lib\\bundles\\",
-        "\\plugins\\textmate-plugin\\",
-        "\\vendor\\",
-        "\\target\\debug\\",
-        "\\target\\release\\",
-    ]
-    .iter()
-    .any(|segment| normalized.contains(segment))
-}
-
-fn is_launchable_result(entry: &ApplicationEntry) -> bool {
-    if matches!(
-        entry.source,
-        ApplicationSource::StartMenu | ApplicationSource::Desktop | ApplicationSource::System
-    ) {
-        return true;
-    }
-    if entry.source != ApplicationSource::IndexedFile {
-        return false;
-    }
-    let file_name = entry.target.rsplit(['\\', '/']).next().unwrap_or_default();
-    let extension = file_name
-        .rsplit_once('.')
-        .map(|(_, extension)| extension)
-        .unwrap_or_default();
-    matches!(
-        extension.to_ascii_lowercase().as_str(),
-        "exe" | "lnk" | "url" | "appref-ms" | "cmd" | "bat" | "com" | "msc" | "cpl"
-    )
 }
 
 fn application_initialism(value: &str) -> String {
@@ -1316,7 +1221,7 @@ mod tests {
     }
 
     #[test]
-    fn launchable_file_is_not_buried_by_incidental_gram_directories() {
+    fn ordinary_executable_and_directory_rank_by_match_without_extension_bonus() {
         let (_directory, catalog) = catalog_with_files(&[]);
         let external = [
             ExternalSearchEntry {
@@ -1351,11 +1256,11 @@ mod tests {
 
         assert_eq!(
             results.first().map(|result| result.entry.target.as_str()),
-            Some(r"D:\Tools\AyuGram\AyuGram.exe")
+            Some(r"D:\Tools\AyuGram")
         );
         assert_eq!(
             results.get(1).map(|result| result.entry.target.as_str()),
-            Some(r"D:\Tools\AyuGram")
+            Some(r"D:\Tools\AyuGram\AyuGram.exe")
         );
     }
 
@@ -1373,10 +1278,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cross_character_program_match_precedes_prefix_matched_directories() {
-        // The user's reported case: typing "hum" must surface the installed
-        // Helium program — matched across characters H..u..m — above every
-        // directory whose name merely starts with "hum".
+    fn weak_application_match_follows_strong_general_results() {
         let (_directory, catalog) = catalog_with_files(&["Helium.lnk"]);
         let external = [
             ExternalSearchEntry {
@@ -1399,8 +1301,9 @@ mod tests {
 
         assert_eq!(
             results.first().map(|result| result.entry.name.as_str()),
-            Some("Helium")
+            Some("hume")
         );
+        assert!(results.iter().any(|result| result.entry.name == "Helium"));
     }
 
     #[test]

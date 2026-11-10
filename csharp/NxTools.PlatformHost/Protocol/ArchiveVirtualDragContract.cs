@@ -11,11 +11,20 @@ internal sealed record ArchiveVirtualDragItem(string Name,ulong? Size,ArchiveEnt
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveVirtualDragCommand(uint Version,Guid OperationId,Guid SessionId,ulong Generation,
     string Action,long SourceWindowHandle,ArchiveVirtualDragItem[]? Items=null,
-    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] Guid? AuthorizationId=null);
-// Cache progress only. No target path is supplied by this native contract.
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] Guid? AuthorizationId=null)
+{
+    [JsonIgnore] internal ArchiveVirtualPlan? Plan { get; init; }
+}
+// BytesDone counts verified sealed cache bytes; BytesProcessed includes only active decoded bytes.
+// No target path or destination-write measurement is supplied by this native contract.
 internal sealed record ArchiveVirtualDragProgress(uint Version,Guid OperationId,Guid SessionId,ulong Generation,
     string Phase,ulong BytesDone,ulong? BytesTotal,ulong FilesDone,ulong FilesTotal,
-    int? CurrentIndex=null,string? CurrentMember=null,bool? CleanupComplete=null,string? Code=null,int? NativeErrorCode=null)
+    int? CurrentIndex=null,string? CurrentMember=null,bool? CleanupComplete=null,string? Code=null,int? NativeErrorCode=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] Guid? CurrentRequestId=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesDone=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? CurrentBytesTotal=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? BytesProcessed=null,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ulong? Sequence=null)
 {
     internal ProtocolEnvelope Envelope()=>ProtocolEnvelope.Create("platform_event",new{ @event="archive_virtual_drag_progress",data=this },OperationId);
 }
@@ -59,7 +68,11 @@ internal static class ArchiveVirtualDragWire
             if(value.Items is not null||value.SourceWindowHandle!=0||value.AuthorizationId is not null||value.Source is {ValueKind:not JsonValueKind.Null})throw new InvalidDataException();
             return new(value.Version,value.OperationId,value.SessionId,value.Generation,value.Action,0);
         }
-        if(value.Action!="start"||value.SourceWindowHandle<=0||value.Items is not {Length:>=1})throw new InvalidDataException();
+        var locate=value.Action=="locate";
+        if(value.Action is not ("start" or "locate")||value.SourceWindowHandle<=0||value.Items is not {Length:>=1})throw new InvalidDataException();
+        // Destination location carries one descriptor-only wrapper and no member/unlock authority.
+        if(locate&&(value.Items.Length!=1||value.Items[0] is not {Directory:true,Name:{} wrapper}||wrapper.Contains('/')||
+            value.AuthorizationId is not null||value.Source is {ValueKind:not JsonValueKind.Null}))throw new InvalidDataException();
         Source? frozen=null;
         if(value.Source is {ValueKind:not JsonValueKind.Null} shared) {
             if(shared.ValueKind!=JsonValueKind.Object)throw new InvalidDataException();
@@ -89,7 +102,9 @@ internal static class ArchiveVirtualDragWire
             if(item.Size>(ulong)long.MaxValue||item.Name is null||item.Name.Split('/').Any(part=>part.Length>255||part.Any(char.IsControl)))throw new InvalidDataException();
             items[index]=new(item.Name,item.Size,e,item.Directory);first=e;
         }
-        if(!ArchiveVirtualFileDataObject.ValidTree(items.Select(item=>new ArchiveVirtualFile(item.Name,(long?)item.Size,item.Directory)).ToArray()))throw new InvalidDataException();
-        return new(value.Version,value.OperationId,value.SessionId,value.Generation,value.Action,value.SourceWindowHandle,items,value.AuthorizationId);
+        ArchiveVirtualPlan plan;
+        try { plan=ArchiveVirtualPlan.Admit(items); }
+        catch(ArchiveOutputException failure) when(failure.Stage=="invalid_virtual_files") { throw new InvalidDataException(); }
+        return new(value.Version,value.OperationId,value.SessionId,value.Generation,value.Action,value.SourceWindowHandle,items,value.AuthorizationId) { Plan=plan };
     }
 }

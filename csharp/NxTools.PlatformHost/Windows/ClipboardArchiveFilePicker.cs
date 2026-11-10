@@ -5,7 +5,7 @@ namespace NxTools.PlatformHost.Windows;
 
 internal static class ClipboardArchiveFilePicker
 {
-    private const string Filter = "NxTools clipboard archive (*.nxtclip)|*.nxtclip";
+    private const string Filter = "NxTools 剪贴板压缩包 (*.nxtclip)|*.nxtclip";
 
     public static WindowsCommandResult Pick(PickClipboardArchivePathCommand command) =>
         Pick(command, CancellationToken.None);
@@ -13,10 +13,10 @@ internal static class ClipboardArchiveFilePicker
     public static WindowsCommandResult Pick(
         PickClipboardArchivePathCommand command,
         CancellationToken cancellationToken)
-        => StaDialogRunner.Run(
-            "NxTools clipboard archive picker",
-            () => PickOnStaThread(command, cancellationToken),
-            cancellationToken);
+        => BoundedStaOperationRunner.TryRun("NxTools clipboard archive picker", Timeout.InfiniteTimeSpan,
+            token => StaDialogRunner.RunInline(() => PickOnStaThread(command, token), token, command.SourceWindowHandle, command.SourceProcessId),
+            out WindowsCommandResult? result, out _, cancellationToken)
+            ? result ?? new(false, "picker_failed") : new(false, "picker_busy", NativeErrorCode: 170);
 
     private static WindowsCommandResult PickOnStaThread(
         PickClipboardArchivePathCommand command,
@@ -30,8 +30,8 @@ internal static class ClipboardArchiveFilePicker
         {
             var result = command.Mode.ToLowerInvariant() switch
             {
-                "export" => PickExport(command.SuggestedFileName, cancellationToken),
-                "import" => PickImport(cancellationToken),
+                "export" => PickExport(command, cancellationToken),
+                "import" => PickImport(command, cancellationToken),
                 _ => new WindowsCommandResult(false, $"Unsupported clipboard archive picker mode '{command.Mode}'.")
             };
             return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
@@ -42,12 +42,12 @@ internal static class ClipboardArchiveFilePicker
         }
         catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new WindowsCommandResult(false, error.Message);
+            return new WindowsCommandResult(false, "picker_failed", NativeErrorCode: error.HResult);
         }
     }
 
     private static WindowsCommandResult PickExport(
-        string suggestedFileName,
+        PickClipboardArchivePathCommand command,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -60,19 +60,20 @@ internal static class ClipboardArchiveFilePicker
             AutoUpgradeEnabled = true,
             CheckPathExists = true,
             DefaultExt = "nxtclip",
-            FileName = SafeSuggestedName(suggestedFileName),
+            FileName = SafeSuggestedName(command.SuggestedFileName),
             Filter = Filter,
             OverwritePrompt = true,
             RestoreDirectory = true,
-            Title = "导出剪贴板归档"
+            Title = "导出剪贴板压缩包"
         };
-        var result = dialog.ShowDialog() == DialogResult.OK
-            ? new WindowsCommandResult(true, Data: dialog.FileName)
-            : new WindowsCommandResult(true, Data: string.Empty);
+        var result = PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, cancellationToken, owner =>
+            dialog.ShowDialog(owner) == DialogResult.OK
+                ? new WindowsCommandResult(true, Data: dialog.FileName)
+                : new WindowsCommandResult(true, Data: string.Empty));
         return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
     }
 
-    private static WindowsCommandResult PickImport(CancellationToken cancellationToken)
+    private static WindowsCommandResult PickImport(PickClipboardArchivePathCommand command, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
@@ -88,11 +89,12 @@ internal static class ClipboardArchiveFilePicker
             Filter = Filter,
             Multiselect = false,
             RestoreDirectory = true,
-            Title = "导入剪贴板归档"
+            Title = "导入剪贴板压缩包"
         };
-        var result = dialog.ShowDialog() == DialogResult.OK
-            ? new WindowsCommandResult(true, Data: dialog.FileName)
-            : new WindowsCommandResult(true, Data: string.Empty);
+        var result = PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, cancellationToken, owner =>
+            dialog.ShowDialog(owner) == DialogResult.OK
+                ? new WindowsCommandResult(true, Data: dialog.FileName)
+                : new WindowsCommandResult(true, Data: string.Empty));
         return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
     }
 

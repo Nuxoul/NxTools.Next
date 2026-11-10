@@ -291,7 +291,7 @@ pub(crate) fn execute<W: Write + Send>(
     if crate::zip_edit::blocked_container(&snapshot) {
         return Err(ArchiveError::ReclamationUnsupported);
     }
-    let plan = crate::worker_job::plan(request, &snapshot)?;
+    let plan = crate::worker_job::plan(request, &snapshot, control)?;
     if plan.subfolder().is_some() || plan.skipped_special() != 0 || plan.files().is_empty() {
         return Err(ArchiveError::ReclamationUnsupported);
     }

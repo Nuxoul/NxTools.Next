@@ -1,7 +1,9 @@
 //! Real worker protocol and held candidate boundary; Python tarfile supplies the independent input.
 #![cfg(feature = "isolated-codecs")]
 use base64::Engine as _;
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
@@ -43,7 +45,7 @@ fn exercise(format: &str) {
             .stderr(Stdio::piped())
             .spawn()
             .expect("worker");
-        let request = json!({"schema":2,"operation_id":operation,"op":"start","operation":"modify_tar","path":path.to_str().expect("path"),"job_execution":true,"password_interaction":true,"job_modify":{"browser":{"snapshot_id":Uuid::new_v4(),"format":format,"comment":"","source":{"native":"v1:fixture","digest":digest,"size":metadata.len(),"modified_unix_ns":modified}},"action":"rename","ordinals":[0],"value":"renamed.txt"}});
+        let request = json!({"schema":2,"bulk_transfer":1,"operation_id":operation,"op":"start","operation":"modify_tar","path":path.to_str().expect("path"),"job_execution":true,"password_interaction":true,"job_modify":{"browser":{"snapshot_id":Uuid::new_v4(),"format":format,"comment":"","source":{"native":"v1:fixture","digest":digest,"size":metadata.len(),"modified_unix_ns":modified}},"action":"rename","ordinals":[0],"value":"renamed.txt"}});
         write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("start");
         let mut handed = false;
         let mut committed = 0;

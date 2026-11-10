@@ -322,6 +322,29 @@ impl MainWindow {
         let downloads_subscription = downloads
             .upgrade()
             .map(|application| cx.observe(&application, |_, _, cx| cx.notify()));
+        let download_batch_selection = downloads.upgrade().map(|application| {
+            cx.subscribe(
+                &application,
+                |_, _, event: &crate::downloads::DownloadApplicationEvent, cx| {
+                    if let crate::downloads::DownloadApplicationEvent::SelectBatchFailures {
+                        task_ids,
+                    } = event
+                    {
+                        let task_ids = task_ids.clone();
+                        let owner = cx.entity().downgrade();
+                        cx.defer(move |cx| {
+                            let _ = owner.update(cx, |this, cx| {
+                                this.selected_download_tasks = task_ids.iter().copied().collect();
+                                this.selected_download_task = task_ids.first().copied();
+                                this.download_selection_anchor = this.selected_download_task;
+                                this.requested_download_detail = None;
+                                cx.notify();
+                            });
+                        });
+                    }
+                },
+            )
+        });
         let quick_launch_event_subscription = quick_launch.upgrade().map(|application| {
             cx.subscribe_in(
                 &application,
@@ -407,6 +430,7 @@ impl MainWindow {
         subscriptions.extend(clipboard_subscription);
         subscriptions.extend(quick_launch_subscription);
         subscriptions.extend(downloads_subscription);
+        subscriptions.extend(download_batch_selection);
         subscriptions.extend(quick_launch_event_subscription);
         subscriptions.push(notification_subscription);
         subscriptions.push(detail_release);

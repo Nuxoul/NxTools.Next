@@ -134,6 +134,14 @@ function loadBackground(options = {}) {
     }
   }
 
+  async function waitFor(predicate, label = "background event completion") {
+    const deadline = Date.now() + 2000;
+    while (!predicate()) {
+      if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${label}`);
+      await new Promise(resolve => setTimeout(resolve, 2));
+    }
+  }
+
   // Deliver a runtime message the way Chrome does: listener returns true to keep
   // sendResponse alive; resolves with the response (or undefined if none).
   function sendRuntimeMessage(message, sender) {
@@ -164,7 +172,7 @@ function loadBackground(options = {}) {
     return vm.runInContext(expression, context);
   }
 
-  return { chrome, clock, desktop, context, realm, loaded, settle, sendRuntimeMessage, senders, manifest, evaluate };
+  return { chrome, clock, desktop, context, realm, loaded, settle, waitFor, sendRuntimeMessage, senders, manifest, evaluate };
 }
 
 module.exports = { loadBackground, readManifest, EXTENSION_ROOT };

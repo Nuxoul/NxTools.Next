@@ -317,6 +317,7 @@ fn probe_outcome_returns_metadata_without_creating_a_task() {
         },
         media: None,
         resolution: None,
+        server_observation: None,
     });
 
     let value = serde_json::to_value(outcome).expect("serialize probe outcome");

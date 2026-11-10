@@ -23,8 +23,9 @@ use crate::hls::{
 };
 use crate::{
     DownloadCertificatePolicy, DownloadMediaProbe, DownloadProbe, DownloadRateLimitError,
-    DownloadRateLimiter, DownloadRequest, DownloadRequestError, DownloadSegment, DownloadTaskId,
-    ResourceValidator, SegmentedArtifact, SegmentedArtifactError, is_safe_windows_file_name,
+    DownloadRateLimiter, DownloadRequest, DownloadRequestError, DownloadRouteKind, DownloadSegment,
+    DownloadServerObservation, DownloadTaskId, ResourceValidator, SegmentedArtifact,
+    SegmentedArtifactError, is_safe_windows_file_name,
 };
 use crate::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 use nxtools_core::{NetworkProxyMode, NetworkSettings};
@@ -36,6 +37,57 @@ const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 const PROBE_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 /// A usable response may briefly collect complementary headers, never wait a full stalled request.
 const PROBE_COMPANION_GRACE: Duration = Duration::from_millis(350);
+
+/// Publish a completed artifact without replacing a destination created after admission.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+pub(crate) fn move_final_no_replace(
+    source: &Path,
+    destination: &Path,
+) -> Result<(), HttpDownloadError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, ERROR_FILE_EXISTS};
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+
+    let source_wide = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let destination_wide = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // SAFETY: Both nul-terminated UTF-16 buffers stay alive through the synchronous call;
+    // zero flags prohibit MOVEFILE_REPLACE_EXISTING and cross-volume copying.
+    if unsafe { MoveFileExW(source_wide.as_ptr(), destination_wide.as_ptr(), 0) } != 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if matches!(error.raw_os_error(), Some(code) if code == ERROR_ALREADY_EXISTS as i32 || code == ERROR_FILE_EXISTS as i32)
+    {
+        Err(HttpDownloadError::DestinationExists(destination.to_owned()))
+    } else {
+        Err(HttpDownloadError::Io(error))
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn move_final_no_replace(
+    source: &Path,
+    destination: &Path,
+) -> Result<(), HttpDownloadError> {
+    std::fs::hard_link(source, destination).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::AlreadyExists {
+            HttpDownloadError::DestinationExists(destination.to_owned())
+        } else {
+            HttpDownloadError::Io(error)
+        }
+    })?;
+    std::fs::remove_file(source)?;
+    Ok(())
+}
 
 #[derive(Clone)]
 pub struct HttpDownloadClient {
@@ -145,6 +197,22 @@ impl HttpDownloadClient {
             rebuilt.injected_artifact_fault = self.injected_artifact_fault;
         }
         Ok(rebuilt)
+    }
+    fn observe_response(&self, response: &Response, response_ms: u64) -> DownloadServerObservation {
+        DownloadServerObservation {
+            host: response
+                .url()
+                .host_str()
+                .expect("HTTP response host")
+                .to_owned(),
+            peer_ip: response.remote_addr().map(|peer| peer.ip()),
+            route_kind: match self.network_proxy_mode {
+                NetworkProxyMode::Direct => DownloadRouteKind::Direct,
+                NetworkProxyMode::ManualHttp => DownloadRouteKind::ManualProxy,
+                NetworkProxyMode::System => DownloadRouteKind::SystemPolicy,
+            },
+            response_ms,
+        }
     }
 
     pub async fn probe(
@@ -260,15 +328,26 @@ impl HttpDownloadClient {
             .or(fallback.as_ref())
             .or(head.as_ref())
             .expect("probe response");
+        let response_ms = if ranged.is_some() {
+            timings.range_ms
+        } else if fallback.is_some() {
+            timings.fallback_ms
+        } else {
+            timings.head_ms
+        }
+        .expect("selected response timing");
+        let mut server_observation = self.observe_response(response, response_ms);
         let probed_url = response.url().clone();
         let manifest_started = Instant::now();
         let (final_url, media) = if is_hls_candidate(&probed_url, metadata.content_type.as_deref())
         {
-            let (manifest_url, hls) = self.probe_hls_manifest(request).await?;
+            let (manifest_url, hls, observation) = self.probe_hls_manifest(request).await?;
+            server_observation = observation;
             timings.manifest_ms = Some(manifest_started.elapsed().as_millis() as u64);
             (manifest_url, Some(DownloadMediaProbe::Hls(hls)))
         } else if is_dash_candidate(&probed_url, metadata.content_type.as_deref()) {
-            let (manifest_url, dash) = self.probe_dash_manifest(request).await?;
+            let (manifest_url, dash, observation) = self.probe_dash_manifest(request).await?;
+            server_observation = observation;
             timings.manifest_ms = Some(manifest_started.elapsed().as_millis() as u64);
             (manifest_url, Some(DownloadMediaProbe::Dash(dash)))
         } else {
@@ -290,6 +369,7 @@ impl HttpDownloadClient {
             },
             media,
             resolution: None,
+            server_observation: Some(server_observation),
         };
         match probe.media.as_ref() {
             Some(DownloadMediaProbe::Hls(_)) => {
@@ -307,8 +387,10 @@ impl HttpDownloadClient {
     async fn probe_dash_manifest(
         &self,
         request: &DownloadRequest,
-    ) -> Result<(url::Url, crate::DashProbe), HttpDownloadError> {
+    ) -> Result<(url::Url, crate::DashProbe, DownloadServerObservation), HttpDownloadError> {
+        let started = Instant::now();
         let mut response = self.send(Method::GET, request, false).await?;
+        let observation = self.observe_response(&response, started.elapsed().as_millis() as u64);
         if !response.status().is_success() {
             return Err(HttpDownloadError::Status(response.status().as_u16()));
         }
@@ -341,19 +423,21 @@ impl HttpDownloadClient {
         let dash = parse_dash_manifest(&final_url, &manifest)
             .map_err(map_dash_error)?
             .probe();
-        Ok((final_url, dash))
+        Ok((final_url, dash, observation))
     }
 
     pub(crate) async fn load_dash_manifest(
         &self,
         request: &DownloadRequest,
         manifest_url: &str,
-    ) -> Result<crate::dash::DashManifest, HttpDownloadError> {
+    ) -> Result<(crate::dash::DashManifest, DownloadServerObservation), HttpDownloadError> {
         let mut manifest_request = request.clone();
         manifest_request.source_url = manifest_url.to_owned();
         manifest_request.media = None;
         manifest_request.validate()?;
+        let started = Instant::now();
         let mut response = self.send(Method::GET, &manifest_request, false).await?;
+        let observation = self.observe_response(&response, started.elapsed().as_millis() as u64);
         if !response.status().is_success() {
             return Err(HttpDownloadError::Status(response.status().as_u16()));
         }
@@ -383,14 +467,17 @@ impl HttpDownloadClient {
             }
             manifest.extend_from_slice(&chunk);
         }
-        parse_dash_manifest(&final_url, &manifest).map_err(map_dash_error)
+        let manifest = parse_dash_manifest(&final_url, &manifest).map_err(map_dash_error)?;
+        Ok((manifest, observation))
     }
 
     async fn probe_hls_manifest(
         &self,
         request: &DownloadRequest,
-    ) -> Result<(url::Url, crate::HlsProbe), HttpDownloadError> {
+    ) -> Result<(url::Url, crate::HlsProbe, DownloadServerObservation), HttpDownloadError> {
+        let started = Instant::now();
         let mut response = self.send(Method::GET, request, false).await?;
+        let observation = self.observe_response(&response, started.elapsed().as_millis() as u64);
         if !response.status().is_success() {
             return Err(HttpDownloadError::Status(response.status().as_u16()));
         }
@@ -421,19 +508,21 @@ impl HttpDownloadClient {
             manifest.extend_from_slice(&chunk);
         }
         let hls = parse_hls_probe(&final_url, &manifest).map_err(map_hls_probe_error)?;
-        Ok((final_url, hls))
+        Ok((final_url, hls, observation))
     }
 
     pub(crate) async fn load_hls_media_playlist(
         &self,
         request: &DownloadRequest,
         playlist_url: &str,
-    ) -> Result<HlsMediaPlaylist, HttpDownloadError> {
+    ) -> Result<(HlsMediaPlaylist, DownloadServerObservation), HttpDownloadError> {
         let mut playlist_request = request.clone();
         playlist_request.source_url = playlist_url.to_owned();
         playlist_request.media = None;
         playlist_request.validate()?;
+        let started = Instant::now();
         let mut response = self.send(Method::GET, &playlist_request, false).await?;
+        let observation = self.observe_response(&response, started.elapsed().as_millis() as u64);
         if !response.status().is_success() {
             return Err(HttpDownloadError::Status(response.status().as_u16()));
         }
@@ -463,7 +552,9 @@ impl HttpDownloadClient {
             }
             manifest.extend_from_slice(&chunk);
         }
-        parse_hls_media_playlist(&final_url, &manifest).map_err(map_hls_probe_error)
+        let playlist =
+            parse_hls_media_playlist(&final_url, &manifest).map_err(map_hls_probe_error)?;
+        Ok((playlist, observation))
     }
 
     pub(crate) async fn download_hls_segment<F>(
@@ -690,7 +781,7 @@ impl HttpDownloadClient {
         F: FnMut(DownloadTransferProgress),
     {
         match self
-            .prepare_download(request, probe, task_id, control, &mut on_progress)
+            .prepare_download(request, probe, task_id, control, None, &mut on_progress)
             .await?
         {
             PreparedDownloadOutcome::Ready(ready) => {
@@ -967,6 +1058,7 @@ impl HttpDownloadClient {
         probe: &DownloadProbe,
         task_id: DownloadTaskId,
         control: &DownloadTransferControl,
+        existing_temporary_path: Option<&Path>,
         mut on_progress: F,
     ) -> Result<PreparedDownloadOutcome, HttpDownloadError>
     where
@@ -975,7 +1067,8 @@ impl HttpDownloadClient {
         let mut directives = control.subscribe();
         let initial_directive = *directives.borrow_and_update();
         request.validate()?;
-        let (temporary_path, final_path) = Self::artifact_paths(request, probe, task_id)?;
+        let (derived_temporary, final_path) = Self::artifact_paths(request, probe, task_id)?;
+        let temporary_path = existing_temporary_path.map_or(derived_temporary, Path::to_path_buf);
         match initial_directive {
             TransferDirective::Running => {}
             TransferDirective::Pause => {
@@ -1167,8 +1260,11 @@ impl HttpDownloadClient {
         &self,
         prepared: PreparedDownload,
     ) -> Result<(), HttpDownloadError> {
-        tokio::fs::rename(prepared.temporary_path, prepared.final_path).await?;
-        Ok(())
+        tokio::task::spawn_blocking(move || {
+            move_final_no_replace(&prepared.temporary_path, &prepared.final_path)
+        })
+        .await
+        .map_err(|error| HttpDownloadError::Io(std::io::Error::other(error)))?
     }
 
     pub(crate) fn artifact_paths(
@@ -1804,6 +1900,35 @@ mod tests {
         assert_eq!(
             std::fs::read(final_path).expect("read committed artifact"),
             b"complete bytes"
+        );
+    }
+
+    #[tokio::test]
+    async fn final_commit_never_replaces_an_existing_destination() {
+        let directory = tempfile::tempdir().expect("create commit directory");
+        let temporary_path = directory.path().join(".ready.part");
+        let final_path = directory.path().join("existing.bin");
+        std::fs::write(&temporary_path, b"new bytes").expect("stage bytes");
+        std::fs::write(&final_path, b"existing bytes").expect("create destination");
+        let client = HttpDownloadClient::new().expect("create client");
+        let result = client
+            .commit_prepared(PreparedDownload {
+                temporary_path: temporary_path.clone(),
+                final_path: final_path.clone(),
+                downloaded_bytes: 9,
+            })
+            .await;
+        assert!(matches!(
+            result,
+            Err(HttpDownloadError::DestinationExists(_))
+        ));
+        assert_eq!(
+            std::fs::read(&temporary_path).expect("staging retained"),
+            b"new bytes"
+        );
+        assert_eq!(
+            std::fs::read(&final_path).expect("destination retained"),
+            b"existing bytes"
         );
     }
 

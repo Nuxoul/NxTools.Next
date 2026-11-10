@@ -4,6 +4,10 @@ Evidence: `repo:rust/crates/nxtools-archive/src/error.rs#ArchiveError`, `repo:ru
 
 ArchiveError Display/Debug contains fixed categories, never raw backend messages/names/paths. Missing password is derived from read encryption flags, not matched error prose. Uncertain/ambiguous authentication must not become a guessed WrongPassword. Actual CRC/header/payload mismatch is CorruptArchive; finite admission/actual-byte overflow is ResourceLimit; stale source is SourceChanged; cooperative cancel is Cancelled, not empty success.
 
+Private native results preserve explicit budget categories: `worker_output::PrivateOutput::call_payload` maps `resource_limit`, `write_limit`, `read_limit` and `session_entry_limit` to ResourceLimit. The original C# `ArchiveVolumeSources.CheckEncoded` can return `resource_limit` during `source_acquire`, before decoding or any output, including non-readmission7z with a deficient encoded allowance. Do not collapse that refusal into IoFailure or raise the allowance; `source_unavailable` and unclassified I/O failures retain IoFailure. `worker_extraction_contract::sevenz_native_source_admission_preserves_resource_limit_before_output` drives the real worker/native-reply boundary and asserts exact terminal, zero subsequent native calls and no shortfall/retry. `ArchiveExtractionWorkerTests.ActualSevenzToHandleSession` retains the actual low-budget ResourceLimit assertion plus later collision/corruption, sentinel and cleanup cases.
+
+Browser-selected member output has a distinct fixed `SelectedOutputLimit` / `selected_output_limit` category at known-size selected admission and the original native cumulative output quota. Its general decoder entry/output work ceilings remain finite and independent; source acquisition, metadata, compound spool, solid work and working-memory exhaustion remain ResourceLimit. Preview maps only SelectedOutputLimit to its configured member-size message and keeps ResourceLimit as ReadLimit. Ordinary output retains its existing `write_limit` category. See [preview budget contract](../../nxtools-desktop/backend/archive-preview.md).
+
 Keep unsafe/duplicate records visible; no sanitization/IndexMap swallowing. Authoritative UTF8/valid Unicode extra precedes explicit codepage; Auto uncertain names stay manual. Names are not implicitly NFC-normalized by native output; any requested normalization must rerun collision validation. Lexical policy is not junction safety: C# handle-relative no-reparse fixture and real ZIP output chain provide only their scoped evidence. WrongPassword is used only for native UnRAR's explicit code24; older RAR/7z ambiguous auth/data stays AuthenticationOrDataError. Native replacement32 is preserved as an in-scope failure, never pretend success or unsafe retry.
 
 ## Creation-verifier I/O provenance
@@ -109,72 +113,81 @@ Wrong: allow extract in the retry loop,then republish earlier outputs after a pa
 Correct: existing finite InteractionPort loop runs read-only preparation; one original-ID extraction
 returns its native outcome without any password retry or new runtime.
 
-## Scenario: Extraction ordinary-target conflicts
+## Scenario: Extraction ordinary-target conflicts and direct final-name output
 ### 1. Scope / Trigger
 Opt-in ZIP,7z,RAR4/5,TAR and supported compressed TAR,plus standalone Gzip/XZ/BZip2/Zstd
-extract after original source/path/plan preflight. Internal duplicate/case/file-prefix/unsafe
-entries reject BEFORE prompts. No ArchiveRead write/UI/password/risk/readmission expansion.
+ordinary extraction after original source/path/plan preflight. This includes known-destination
+button/dialog/context,Smart/Here/Name/Desktop/custom and destination-directory drag. Internal
+duplicate/case/file-prefix/unsafe entries reject BEFORE native begin or prompts. Virtual cache,
+archive Create/Edit,HZ5 and ArchiveRead retain separate contracts.
 ### 2. Signatures
-Private schema2 `WorkerRequest.conflict_policy: Option<ConflictPolicy>` = ask/overwrite/skip/
-auto_rename, absent by default. Shared ExtractionConflict uses existing InteractionPort/ticket/
-conflict_prompt/conflict_reply; C#RespondConflict only forwards typed input. `PrivateOutput::conflicts`
-installs task-local strategy; `ArchiveOutput::begin_extracted_file -> Option<token>` defaults to
-old begin_file. `extraction_conflict_v1` negotiated; retain zip_conflict_v1 compatibility marker.
+Private schema2 `WorkerRequest.conflict_policy: Option<ConflictPolicy>` remains ask/overwrite/skip/
+auto_rename,absent by default. Shared ExtractionConflict uses the existing InteractionPort/ticket/
+conflict_prompt/conflict_reply; C# RespondConflict forwards typed input only.
+`ArchiveOutput::begin_extracted_file -> Option<token>` starts final-name `CREATE_NEW`.
+An existing target returns `success:false,error_code:target_exists,existing_bytes` without a token.
+`begin_overwrite` directly opens/truncates the same relative path. Ordinary `commit` carries
+`OutputMetadata` and closes. Require `extraction_conflict_v1` plus private
+`extraction_output_v1` inside bulk v1; retain the old ZIP compatibility marker only as wire history.
 ### 3. Contracts
-Rust owns strategy, task-local remembered decision and skipped count. C# original output bridge
-keeps ONE latest observation token/path/full target signature; observe_target closes target
-handle before waiting. begin_overwrite consumes matching observation and calls original
-BeginFile(expected,true), then original verified-partial/flush/recheck-close/single publication.
-Target change yields existing typed failure, never blind re-prompt/retry/CAS/delete/truncate.
-AutoRename tries2..4097 `name (N).ext` in same directory, existing path rules, avoids original
-archive names/implicit parents via shared entries, observes availability and always no-replace
-publishes. A racing name fails OutputCollision, never overwrites or silently retries publication.
-Skip never begins a file partial; original engine completion marks members_skipped/source-delete
-ineligible. Rust extraction_summary carries exact files_skipped/all_members_written; original
-C#terminal exposes FilesSkipped/succeeded_with_warnings plus true native FilesCommitted.
-Cancel wakes original wait, no later member; prior publications remain, no whole-job rollback.
-7z always reads skipped members through bounded per-file input/actual counters/CRC/size; RAR
-always uses RAR_TEST+null destinations and callback counters even when output token=None. Never
-RAR_SKIP for skipped extraction: solid/sequential dictionary and integrity must remain valid.
-Both retain ALL pending tokens until full decode/source recheck,then original metadata/commit;
-first error aborts only owned unpublished tokens. TAR copies skipped payload to sink with same
-limits; compressed TAR full-outer verified spool still precedes inner outputs. No TAR checksum
-claim. Shared entries Arc reserves archive names without copying another full name collection.
-Native commit counts and summary count actual writes/skips,not decoded discarded members. Source
-eligibility uses explicit skipped_files -> members_skipped; existing links/special/coverage rules stay.
-Standalone streams use the SAME begin_extracted_file/strategy/summary: token=None consumes the
-entire stream to sink with original member/end/CRC/checksum/actual-byte limits and source revision
-checks. Skip does NOT mean integrity verified without decoding; damaged/over-budget Skip fails.
-Only present tokens receive writes/metadata/commit/abort. Successful Skip returns0publishedfiles/
-bytes,files_skipped1/all_members_writtenfalse/succeeded_with_warnings and members_skipped; no partial.
-Unknown expanded size remains None in prompt; single output needs no separate apply-all state.
+Rust owns strategy,current-attempt ApplyAll,numbered-name selection,skipped count,metadata and
+format integrity. C# owns held no-reparse parents/components,final file handles,writes,metadata APIs,
+close/delete and native codes. Initial begin uses `CREATE_NEW` on the final validated component.
+There is no sibling `.nxpart`,rename/replacement,`observe_target`,target signature/CAS,per-write hash,
+output content/file-ID fingerprint,per-file VerifyDirectory,published reopen or FlushFileBuffers.
+
+The target-exists response supplies existing bytes for the prompt. Overwrite consumes the current
+decision and directly truncates that same observed relative path; a path-kind/reparse/access failure
+is the owning native result,not a blind retry or replacement candidate. AutoRename tries bounded
+`name (N).ext` final names with `CREATE_NEW`; target_exists advances to the next candidate and never overwrites.
+Skip never begins a handle and makes source deletion/recycling ineligible. Stale/duplicate tickets,
+retired attempts and cross-job ApplyAll cannot act.
+
+Rust sends <=32KiB coalesced records through the original anonymous pipe without per-record ACK;
+the single Host stdout pump consumes sequentially and retains the first native write failure/code.
+The next synchronous commit drains prior records,returns that sticky failure if present,applies
+mtime/readonly/hidden/MOTW from Rust and closes. This is an ordering barrier,not durability flush.
+An uncontended new file has exactly begin+commit synchronous JSON calls.
+
+7z still decodes skipped members through bounded per-file counters/CRC/size; RAR still uses
+RAR_TEST/null destinations and callback counters when token=None. Never RAR_SKIP: solid/sequential
+state and integrity remain valid. TAR copies skipped payload to sink under the same limits; compound
+TAR still verifies its full outer spool. Standalone streams use the same begin/strategy/summary and
+fully decode Skip for end/checksum/actual-byte truth.
+
+Only outputs whose required codec/source integrity is complete may commit/close. ZIP/independent
+members can complete at their member boundary; solid RAR/7z or delayed format integrity keeps a
+bounded set of owned final-name handles incomplete. First failure/cancel closes and deletes only
+those incomplete owned outputs. Earlier successfully closed files and finalized directories remain;
+there is no fingerprint scan or whole-job rollback. Native journal/summary counts actual closed,
+skipped and deleted-incomplete outcomes,not decoded discarded members.
 ### 4. Validation & Error Matrix
-schema1/nonextract/read_contract option -> reject. Existing supported standalone stream opt-in is admitted.
-Changed approved target -> native target_changed; internal/raced name -> OutputCollision.
-Stale/duplicate ticket -> original port ignores; retired task -> no new dispatch. Cancel ->
-cancelled or cancelled_with_committed_output from actual native publication count.
+schema1/nonextract/read-contract option or missing capability -> reject before output effects.
+Unsafe/reparse/invalid name -> original typed refusal. Existing target -> target_exists+bytes,
+then one Rust decision. Overwrite access/kind failure -> exact native code; no target observation retry.
+AutoRename target_exists -> next bounded candidate; exhaustion -> OutputCollision. Cancel before close -> delete current incomplete owned output(s);
+cancel after prior closes -> cancelled_with_committed_output/current completed journal preserved.
+Sticky write failure -> reported at commit with first native code; later cancellation cannot replace it.
+Successful Skip returns0closedfiles/bytes,files_skipped1/all_members_writtenfalse,
+succeeded_with_warnings and members_skipped. Unknown expanded size remains None in prompt.
 ### 5. Good/Base/Bad Cases
-Good: Ask+bound observation+typed decision; apply-all only later same-task ordinary files.
-Base: old no-replace/preconfirmed path unchanged. Bad: internal collision shown as overwrite,
-caller identity used as authority, cross-job decision cache or source-delete after Skip.
+Good: Ask receives target_exists bytes,ApplyAll remains current attempt,and chosen overwrite directly
+truncates the same safe relative path. Base: absent target uses CREATE_NEW then metadata+close.
+Bad: C# chooses ApplyAll,Rust dictates a Windows target signature,per-file observe+CAS returns,
+or cancel hashes/deletes earlier closed output.
 ### 6. Tests Required
-`repo:csharp/NxTools.PlatformHost.Tests/ArchiveConflictTests.cs` runs actual runner/Job/worker/
-native overwrite/Skip/numberedrename, all3apply-all choices, task/ticket isolation, changed target,
-cancel before/after commit, raced no-replace and internal collision refusal. Domain transaction
-test verifies no partial/commit and members_skipped; worker_wire preserves opt-in/read boundary.
-Use exact LIST/RUN with no SKIP; existing rechecked publication and operation-isolation regressions.
-`repo:csharp/NxTools.PlatformHost.Tests/ArchiveFormatConflictTests.cs` additionally uses original
-runner/Job/worker/native: solid Skip/apply-all2+following member, RAR4/5AskOverwrite/Skip,TAR/TGZ
-numbered rename,raced no-replace,waitcancel,internal paths/tickets/counts/eligibility. Exact small
-collection,not old ZIP16matrix. `stream_contract` checks TAR Skip0partials/bytes/members_skipped;
-`worker_wire` protects shared capability/legacy omission and actual standalone Skip/read-only boundary.
-`repo:csharp/NxTools.PlatformHost.Tests/ArchiveStreamConflictTests.cs` drives original runner/Job/
-worker/native for four streams with distributed policies,Ask+typedanswer,waitCancel,SkipCRC/actual
-budget failure and truthful counts/qualification/cleanup. Reuse targetchange/numberedrace/ticket
-publication regressions; do not duplicate everyformat×strategy×failure matrix.
+Original runner/Job/worker/native tests must cover all shared formats,Ask/Overwrite/Skip/AutoRename,
+all ApplyAll choices,task/ticket isolation,target bytes,direct truncate,raced no-replace,wait cancel,
+internal collision refusal,standalone Skip integrity and exact journal/source-delete qualification.
+New regressions must assert final names/no `.nxpart` or rename,no observe_target/fingerprint/reopen/
+durability flush,two JSON calls for uncontended files,<=32KiB records,zero write-ACK frames,sticky
+native failure at close,commit metadata and incomplete-only cleanup while prior closed outputs remain.
+Use exact LIST/RUN with no SKIP when native execution is authorized; existing Create/Edit,HZ5,cache,
+readmission,path/source and operation-isolation regressions remain.
 ### 7. Wrong vs Correct
-Wrong: Rust dictates Windows target identity or C# decides apply-all. Correct: Rust decides;
-same-session C#observations and original native recheck/publish retain authority.
+Wrong: `observe target -> verified partial -> flush -> rename -> reopen/hash` for ordinary extraction.
+Correct: held safe parent -> final-name CREATE_NEW/direct decided overwrite -> bounded pipe writes ->
+codec/source integrity -> metadata+drain+close -> delete only incomplete owned output on failure.
 
 Phase D amendment: the two ZIP-only scenarios below retain their original acceptance scope.
 Current product jobs additionally reuse these SAME owners for other known formats and selected
@@ -198,23 +211,23 @@ member/task/ticket scoped: approved_limit must equal ORIGINAL admitted entry lim
 declared member. Smaller/larger, stale or duplicate answers do not approve. No request/Job limit
 mutation, new attempt, automatic retry or expanded-budget support in this slice. Original actual
 entry/total counters, codec dictionary/work limits, CRC/size/end/source/native checks remain live.
-No current-member partial before approval. Cancel/reject stops later members; original cleanup
-removes only owned unpublished partials; prior publications/count remain, no whole-job rollback.
+No current-member file begin before approval. Cancel/reject stops later members; original cleanup
+deletes only incomplete owned final-name output(s); prior successfully closed counts remain,no rollback.
 Original source/worker/Job/timeout remain owners. Correlated awaiting_risk/risk_confirmed/terminal
 events log fixed state/count/elapsed only, never names/paths/payload/tickets as prose.
 ### 4. Validation & Error Matrix
 Risk+no interaction adapter -> ResourceLimit, not implicit approval/unsupported format. Correct
 finite answer -> decode under SAME limits; actual limit overflow -> ResourceLimit/no current
-publication. Corrupt/unsafe/collision categories unchanged. Cancel -> cancelled or real
-cancelled_with_committed_output. Larger-budget approval is rejected, not silently granted.
+successful close. Corrupt/unsafe/collision categories unchanged. Cancel -> cancelled or real
+cancelled_with_committed_output. Larger-budget approval is rejected,not silently granted.
 ### 5. Good/Base/Bad Cases
-Good: legal high ratio confirms per member and verifies full data before publication. Base:
-ordinary ZIP no prompt. Bad: unknown packed treated as0, floating ratio, trusted declaration,
-answer disables counters, or enlarged budget changes an already admitted Job.
+Good: legal high ratio confirms per member and verifies full data before close. Base:
+ordinary ZIP no prompt. Bad: unknown packed treated as0,floating ratio,trusted declaration,
+answer disables counters,or enlarged budget changes an already admitted Job.
 ### 6. Tests Required
 `repo:csharp/NxTools.PlatformHost.Tests/ArchiveRiskTests.cs` uses tiny .NET ZIPs and actual original
-runner/Job/worker/native publication: production-threshold declaration pending, confirmation,
-reject/cancel, current-member zero writes, old targets/foreign files, prior commits, stale scope,
+runner/Job/worker/native output: production-threshold declaration pending,confirmation,
+reject/cancel,current-member zero begins,old targets/foreign files,prior closes,stale scope,
 larger-answer refusal, actual member/total overflow and corruption/path/collision refusal.
 `repo:rust/crates/nxtools-archive/src/zip_risk.rs` tests exact production boundaries and unknown/
 zero packed values. DEBUG-only private fixture thresholds may ONLY lower positive warning
@@ -237,22 +250,22 @@ accepts `PromptResponse::OutputBudget {approved}` or Cancel; Risk matching stays
 Private schema2 extract opts in with `output_readmission {logical_id,expected_source?}`; negotiate
 `zip_output_readmission_v1`. `output_budget_shortfall` carries current/required entry_bytes+output_bytes
 and source binding. Original plan/path/local-record checks precede report. Native output uses existing
-Prepare; only `output_ready` creates target root. Shortage has zero target directories/partials/commits.
-First attempt must have matching ID/current budgets, ResourceLimit, zero native commits and actual
+Prepare; only `output_ready` creates target root. Shortage has zero target directories/file begins/completed files.
+First attempt must have matching ID/current budgets,ResourceLimit,zero successfully closed files and actual
 cleanup_complete. Larger finite approval covers both current and required, is positive and within
 existing32GiB/file and2^50total native bounds. Only two output fields change; fresh attempt control/ID
 shares cancellation, logical_id links original. Preserve supported path/codepage/password/conflict/
 MOTW/private options and host-owned destination; current worker selection remains all entries.
 New callback re-enters original admission/runner/Job/source acquisition. Expected native volume/full
 fileID/size/mtime and Rust SHA256 snapshot digest are verified before output_ready. Actual counters,
-CRC/size/path/source/native publication checks remain unchanged. At most one approved new attempt;
-second failure is terminal, never another prompt. Correlated fixed lifecycle/elapsed diagnostics only.
+CRC/size/path/source and ordinary metadata+drain+close checks remain unchanged. At most one approved
+new attempt; second failure is terminal,never another prompt. Correlated fixed lifecycle/elapsed diagnostics only.
 ### 4. Validation & Error Matrix
 schema1/nonextract/read/delete option -> reject; nonZIP -> UnsupportedOperation. Over native hard
 bound -> ResourceLimit without approval. Stale/duplicate/under-required/unlimited answer -> ignored.
-Cancel -> no new attempt. Incomplete cleanup, wrong ID/current or commit-bearing shortage -> IoFailure,
-no prompt/new attempt. Changed native identity/revision or digest -> SourceChanged, no target effects.
-Actual overflow -> ResourceLimit, no current publication or third attempt; prior outputs not rolled back.
+Cancel -> no new attempt. Incomplete cleanup,wrong ID/current or completed-output shortage -> IoFailure,
+no prompt/new attempt. Changed native identity/revision or digest -> SourceChanged,no target effects.
+Actual overflow -> ResourceLimit,no current successful close or third attempt; prior closes remain.
 ### 5. Good/Base/Bad Cases
 Good: tiny ZIP low quota -> cleaned shortage -> explicit finite approval -> new native operation.
 Base: no shortage completes once. Bad: mutate admitted request/Job, larger Risk answer, auto-retry,

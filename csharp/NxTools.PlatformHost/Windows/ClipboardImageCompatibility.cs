@@ -34,25 +34,18 @@ internal static class ClipboardImageCompatibility
         try
         {
             using var stream = new MemoryStream(pngData, writable: false);
+            var size = ClipboardImageEncoding.ReadDimensions(stream);
+            var sourcePixelBytes = checked((long)size.Width * size.Height * 4L);
+            if (size.Width <= 0 || size.Height <= 0 || sourcePixelBytes <= 0 ||
+                sourcePixelBytes > MaximumCanonicalBitmapBytes) return false;
             using var source = Image.FromStream(
-                stream,
-                useEmbeddedColorManagement: false,
-                validateImageData: true);
-            var sourcePixelBytes = (long)source.Width * source.Height * 4L;
-            if (source.Width <= 0 ||
-                source.Height <= 0 ||
-                sourcePixelBytes <= 0 ||
-                sourcePixelBytes > MaximumCanonicalBitmapBytes ||
-                sourcePixelBytes > int.MaxValue)
-            {
-                return false;
-            }
+                stream, useEmbeddedColorManagement: false, validateImageData: true);
 
-            var rowBytes = checked((int)(source.Width * 4L));
+            var rowBytes = checked((int)(size.Width * 4L));
             var pixelBytes = checked((int)sourcePixelBytes);
             using var bitmap = new Bitmap(
-                source.Width,
-                source.Height,
+                size.Width,
+                size.Height,
                 PixelFormat.Format32bppArgb);
             using (var graphics = Graphics.FromImage(bitmap))
             {
@@ -60,8 +53,10 @@ internal static class ClipboardImageCompatibility
             }
 
             var pixels = ReadBgraPixels(bitmap, rowBytes, pixelBytes);
-            dibV5Data = CreateDibV5(bitmap.Width, bitmap.Height, pixels);
-            dibData = CreateDib(bitmap.Width, bitmap.Height, pixels);
+            var dibV5 = CreateDibV5(bitmap.Width, bitmap.Height, pixels);
+            var dib = CreateDib(bitmap.Width, bitmap.Height, pixels);
+            dibV5Data = dibV5;
+            dibData = dib;
             return true;
         }
         catch (ArgumentException)

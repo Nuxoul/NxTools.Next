@@ -18,5 +18,8 @@ internal sealed record ArchivePickerCommand {
     }
 }
 internal sealed record ArchiveOwnedPickerResult(uint Version,Guid OperationId,Guid SessionId,ulong Generation,string[] Paths,bool Cancelled,string? Code=null,int? NativeErrorCode=null) {
+    internal const int MaxPaths=32;
+    internal const int MaxPathBytes=131072;
+    internal static bool SelectionValid(string[] paths)=>paths.Length<=MaxPaths && paths.All(ArchiveJobWire.PathValid) && paths.Sum(System.Text.Encoding.UTF8.GetByteCount)<=MaxPathBytes;
     internal ProtocolEnvelope Envelope()=>ProtocolEnvelope.Create("platform_event",new{@event="archive_picker",data=this},OperationId);
 }

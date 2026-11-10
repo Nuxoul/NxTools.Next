@@ -290,6 +290,7 @@ async fn run_job(
         generation: 1,
         action: ArchiveJobAction::Start,
         reply: None,
+        batch_id: None,
         request: Some(ArchiveJobRequest {
             kind: ArchiveJobKind::Extract,
             paths: vec![command.source.to_string_lossy().into_owned()],
@@ -454,6 +455,7 @@ impl JobConsumer {
                         decision: Some(ArchiveJobConflictDecision::Overwrite),
                         apply_to_all: false,
                         approved_limit: None,
+                        remember_batch_password: false,
                     }),
                 ))));
             }

@@ -345,6 +345,9 @@ fn run(
                     cx,
                 )
             });
+            clipboard.update(cx, |clipboard, _| {
+                clipboard.bind_downloads(downloads.downgrade());
+            });
             downloads.update(cx, |downloads, cx| {
                 downloads.open_taskbar_overlay(cx);
             });
@@ -536,9 +539,10 @@ fn run(
             });
             cx.set_global(PlatformEventDispatcherGlobal::new(dispatcher));
         });
-    worker_shutdown
-        .shutdown()
-        .context("failed to flush clipboard history worker during shutdown")?;
+    let extension_shutdown = runtime.extension_service.shutdown_and_wait();
+    let clipboard_shutdown = worker_shutdown.shutdown();
+    extension_shutdown.context("failed to drain extension resources during shutdown")?;
+    clipboard_shutdown.context("failed to flush clipboard history worker during shutdown")?;
 
     drop(runtime);
     Ok(())

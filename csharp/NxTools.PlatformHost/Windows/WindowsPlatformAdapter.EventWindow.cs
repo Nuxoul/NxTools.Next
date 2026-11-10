@@ -37,6 +37,7 @@ internal sealed partial class WindowsPlatformAdapter
         private const int WmDisplayChange = 0x007E;
         private const int WmFlushContextMenuPointer = 0x800F;
         private const int WmClipboardPause = 0x8010;
+        private const int WmReadClipboardFileDrop = 0x8011;
         private const uint EventSystemForeground = 0x0003;
         private const uint EventSystemMoveSizeEnd = 0x000B;
         private const uint EventObjectCreate = 0x8000;
@@ -65,6 +66,9 @@ internal sealed partial class WindowsPlatformAdapter
         private const int DirectorySourceRecognitionMaxAttempts = 20;
         private const int MaxClipboardReadAttempts = 5;
         private const int MaxClipboardPublishTail = 64;
+        internal const long DefaultClipboardPublicationBytes = 32L * 1024 * 1024;
+        private readonly long _clipboardPublicationByteLimit = DefaultClipboardPublicationBytes;
+        internal long ClipboardPublicationByteLimit => _clipboardPublicationByteLimit;
         private const int ClipboardHotKeyId = 1;
         private const int QuickLaunchHotKeyId = 2;
         private const uint ModAlt = 0x0001;
@@ -136,6 +140,13 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly System.Collections.Concurrent.ConcurrentQueue<(IntPtr Root, CenteredResizeReplayResult Replay)> _resizeCompletions = new();
         private Task _capturePublishTail = Task.CompletedTask;
         private int _capturePublishPending;
+        private readonly object _clipboardPublicationGate = new();
+        private long _capturePublishRetainedBytes;
+        private static readonly ForegroundContext EmptyClipboardCaptureSource = new(0, 0, 0, "", "");
+        internal (int Pending, long RetainedBytes) ClipboardPublicationState
+        {
+            get { lock (_clipboardPublicationGate) return (_capturePublishPending, _capturePublishRetainedBytes); }
+        }
         private int _clipboardReadAttempts;
         private bool _suppressNextClipboardUpdate;
         private bool _primaryPointerDown;
@@ -150,14 +161,9 @@ internal sealed partial class WindowsPlatformAdapter
         private ClipboardHotKeyRegistration _hotKeyRegistration = null!;
         private ClipboardHotKeyRegistration _quickLaunchHotKeyRegistration = null!;
         private readonly ClipboardHotKeyDebouncer _clipboardHotKeyDebouncer = new();
-        // The measured interval spans FIRST press to SECOND press, which
-        // includes how long the first Ctrl is held. A deliberate user tap
-        // easily exceeds 500 ms of combined hold+gap, so use Listary-grade
-        // bounds: relaxed minimum for distinct presses, generous maximum.
-        private readonly ModifierDoubleTapDetector _leftControlDoubleTap =
-            new(VkLeftControl, 60, 800);
-        private readonly ModifierDoubleTapDetector _rightControlDoubleTap =
-            new(VkRightControl, 60, 800);
+        private readonly QuickLaunchKeyboardGesture _quickLaunchKeyboardGesture = new();
+        private readonly IntPtr _quickLaunchGestureWindow;
+        private long _quickLaunchGestureResetGeneration;
         private LowLevelKeyboardMonitor? _quickLaunchKeyboardMonitor;
         private QuickLaunchTriggerBinding _quickLaunchTrigger = new(
             QuickLaunchTriggerKind.DoubleControl,
@@ -182,8 +188,12 @@ internal sealed partial class WindowsPlatformAdapter
             ["KeePass.exe", "1Password.exe", "Bitwarden.exe"]);
         private readonly DesktopTrayController _desktopTray = new();
         private ClipboardCaptureLimits _captureLimits = ClipboardCaptureLimits.Default;
+        private readonly ClipboardContentOperations _clipboardContent = ClipboardContentOperations.Windows(new ForegroundContextProvider());
+        private readonly Lazy<ClipboardStagingDirectory> _clipboardStaging = new(() => ClipboardStagingDirectory.Create(ClipboardStagingDirectory.DefaultRoot));
+        internal Task ClipboardPublication => _capturePublishTail;
 
         public bool ClipboardHotKeyAvailable => _hotKeyRegistration?.IsAvailable == true;
+        public QuickLaunchKeyboardHealthChangedEvent? QuickLaunchKeyboardHealthSnapshot => _quickLaunchKeyboardMonitor?.HealthSnapshot;
         public bool QuickLaunchHotKeyAvailable => _quickLaunchTriggerEnabled && !_quickLaunchRecording &&
             (_quickLaunchTrigger.Kind == QuickLaunchTriggerKind.DoubleControl
                 ? _quickLaunchKeyboardMonitor?.IsInstalled == true
@@ -197,7 +207,7 @@ internal sealed partial class WindowsPlatformAdapter
             IElevatedDirectoryNavigationChannel elevatedDirectoryNavigation,
             IPlatformLog log,
             ClipboardCaptureDropDiagnosticGate clipboardCaptureDropDiagnosticGate,
-            NativeContextMenuCoordinator? contextMenus = null)
+            NativeContextMenuCoordinator? contextMenus = null, int? clipboardConsumerProcessId = null)
         {
             _events = events;
             _foregroundContextProvider = foregroundContextProvider;
@@ -208,6 +218,9 @@ internal sealed partial class WindowsPlatformAdapter
             _foregroundCallback = OnForegroundChanged;
             _fileDialogWindowCallback = OnFileDialogWindowChanged;
             _clipboardCapture = CreateClipboardCaptureOperations();
+            _clipboardContent = ClipboardContentOperations.Windows(foregroundContextProvider);
+            _clipboardStaging = new(() => ClipboardStagingDirectory.Create(ClipboardStagingDirectory.DefaultRoot, clipboardConsumerProcessId));
+            ClipboardStagingDirectory.Recover(ClipboardStagingDirectory.DefaultRoot, log);
             _deferExplorerDelivery = delivery =>
             {
                 _ = NativeMethods.PostMessage(Handle, WmDirectorySourceResolved, IntPtr.Zero, IntPtr.Zero);
@@ -258,22 +271,13 @@ internal sealed partial class WindowsPlatformAdapter
             _quickLaunchHotKeyRegistration = new ClipboardHotKeyRegistration(
                 new NativeClipboardHotKeyRegistrar(() => Handle, QuickLaunchHotKeyId),
                 new ClipboardHotKeyBinding(ModAlt, VkSpace, "Alt+Space"));
-            try
-            {
-                _quickLaunchKeyboardMonitor = new LowLevelKeyboardMonitor(
-                    OnGlobalKeyDown,
-                    OnGlobalKeyUp);
-            }
-            catch (Win32Exception error)
-            {
-                _quickLaunchTriggerEnabled = false;
-                _log.Write("error", "quick_launch.keyboard_hook_failed", null,
-                    new Dictionary<string, object?>
-                    {
-                        ["win32_error"] = error.NativeErrorCode,
-                        ["message"] = error.Message
-                    });
-            }
+            _quickLaunchGestureWindow = Handle;
+            ResetQuickLaunchGesture();
+            _quickLaunchKeyboardMonitor = new LowLevelKeyboardMonitor(
+                OnGlobalKeyDown,
+                OnGlobalKeyUp,
+                healthChanged: health => _events.TryWrite(health),
+                log: _log);
 
             _ = NativeMethods.SetTimer(
                 Handle,
@@ -406,6 +410,7 @@ internal sealed partial class WindowsPlatformAdapter
         public void RequestStop()
         {
             CancelClipboardPauseRequests();
+            StopFileDropReads();
             _ = NativeMethods.PostMessage(Handle, WmClose, IntPtr.Zero, IntPtr.Zero);
         }
 
@@ -558,6 +563,9 @@ internal sealed partial class WindowsPlatformAdapter
                     return;
                 case WmConfigureClipboard:
                     DrainClipboardConfigurationRequests();
+                    return;
+                case WmReadClipboardFileDrop:
+                    DrainFileDropReads();
                     return;
                 case WmClipboardPause:
                     DrainClipboardPauseRequests();
@@ -869,56 +877,60 @@ internal sealed partial class WindowsPlatformAdapter
             paths.Count > 0 ||
             !string.IsNullOrWhiteSpace(text);
 
-        private void ReadClipboardContent(ForegroundContext source, uint sequenceBefore)
+        internal void ReadClipboardContent(ForegroundContext source, uint sequenceBefore)
         {
             // Keep the gate at the actual native read boundary as well as update/retry dispatch.
             if (Volatile.Read(ref _clipboardCaptureStopped) || !_clipboardPause.MayReadSequence(sequenceBefore)) return;
+            using var files = new ClipboardCaptureFiles(_log);
             var capturedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var nativeFormats = NativeClipboardFormats.Capture(Handle).ToList();
-            var paths = Clipboard.ContainsFileDropList()
-                ? Clipboard.GetFileDropList()
-                    .Cast<string>()
-                    .Where(static path => !string.IsNullOrWhiteSpace(path))
-                    .Take(1024)
-                    .ToArray()
-                : [];
-            string? promotedFilePath = paths.Length == 1 ? paths[0] : null;
+            var nativeFormats = _clipboardContent.Formats(Handle).ToList();
+            var paths = _clipboardContent.Files();
             ClipboardImageData? imageData = null;
-            var stagingDirectory = Path.Combine(
-                Path.GetTempPath(), "NxTools.Next", "clipboard-staging");
-            var promoted = ClipboardImagePromotion.TryPromote(paths, text: null, stagingDirectory);
-            if (promoted is not null)
+            string? pendingImagePath = null;
+            var imageRejected = false;
+            var stagingDirectory = _clipboardStaging.Value.DirectoryPath;
+            void RejectImage(ClipboardImageBudgetExceededException budget)
             {
-                imageData = promoted.Image;
-                paths = promoted.RemainingPaths;
+                imageRejected = true;
+                if (pendingImagePath is not null) files.Remove(pendingImagePath);
+                LogCaptureLimitSkip("image", budget.Reason, budget.Observed, budget.Maximum);
             }
-            else if (Clipboard.ContainsImage())
+            try
             {
-                using var image = Clipboard.GetImage();
-                if (image is not null)
-                {
-                    Directory.CreateDirectory(stagingDirectory);
-                    var path = Path.Combine(stagingDirectory, $"{Guid.NewGuid():N}.png");
-                    image.Save(path, System.Drawing.Imaging.ImageFormat.Png);
-                    imageData = new ClipboardImageData(
-                        path,
-                        checked((uint)image.Width),
-                        checked((uint)image.Height));
-                }
-            }
-            string? text = null;
-            if (Clipboard.ContainsText(TextDataFormat.UnicodeText))
-            {
-                text = Clipboard.GetText(TextDataFormat.UnicodeText);
-            }
-            if (imageData is null)
-            {
-                promoted = ClipboardImagePromotion.TryPromote(paths, text, stagingDirectory);
+                var promoted = ClipboardImagePromotion.TryPromote(paths, text: null, stagingDirectory,
+                    _clipboardContent.SaveImage, files, _captureLimits);
                 if (promoted is not null)
                 {
                     imageData = promoted.Image;
                     paths = promoted.RemainingPaths;
                 }
+                else
+                {
+                    using var image = _clipboardContent.Image();
+                    if (image is not null)
+                    {
+                        ClipboardImageEncoding.CheckPixels(image.Width, image.Height, _captureLimits.MaxImagePixels);
+                        pendingImagePath = files.CreatePath(stagingDirectory, ".png");
+                        _clipboardContent.SaveImage(image, pendingImagePath, _captureLimits.MaxImageBytes);
+                        imageData = new(pendingImagePath, checked((uint)image.Width), checked((uint)image.Height));
+                    }
+                }
+            }
+            catch (ClipboardImageBudgetExceededException budget) { RejectImage(budget); }
+            var text = _clipboardContent.Text();
+            if (imageData is null && !imageRejected)
+            {
+                try
+                {
+                    var promoted = ClipboardImagePromotion.TryPromote(paths, text, stagingDirectory,
+                        _clipboardContent.SaveImage, files, _captureLimits);
+                    if (promoted is not null)
+                    {
+                        imageData = promoted.Image;
+                        paths = promoted.RemainingPaths;
+                    }
+                }
+                catch (ClipboardImageBudgetExceededException budget) { RejectImage(budget); }
             }
             if (!string.IsNullOrEmpty(text))
             {
@@ -927,32 +939,6 @@ internal sealed partial class WindowsPlatformAdapter
                 {
                     LogCaptureLimitSkip("text", "max_text_bytes", textBytes, _captureLimits.MaxTextBytes);
                     text = null;
-                }
-            }
-            if (imageData is not null)
-            {
-                var outputBytes = File.Exists(imageData.StagingPath)
-                    ? (ulong)new FileInfo(imageData.StagingPath).Length
-                    : 0;
-                var reason = _captureLimits.ImageRejectionReason(
-                    imageData.Width, imageData.Height, outputBytes);
-                if (reason is not null)
-                {
-                    LogCaptureLimitSkip(
-                        "image",
-                        reason,
-                        reason == "max_image_pixels"
-                            ? checked((ulong)imageData.Width * imageData.Height)
-                            : outputBytes,
-                        reason == "max_image_pixels"
-                            ? _captureLimits.MaxImagePixels
-                            : _captureLimits.MaxImageBytes);
-                    if (promotedFilePath is not null && paths.Length == 0)
-                    {
-                        paths = [promotedFilePath];
-                    }
-                    TryDeleteStagedImage(imageData.StagingPath);
-                    imageData = null;
                 }
             }
 
@@ -969,7 +955,7 @@ internal sealed partial class WindowsPlatformAdapter
                     new Dictionary<string, object?>
                     {
                         ["sequence_before"] = sequenceBefore,
-                        ["sequence_after"] = NativeMethods.GetClipboardSequenceNumber(),
+                        ["sequence_after"] = _clipboardCapture.Sequence(),
                         ["image_compatibility_fallback_added"] = compatibilityFallbackAdded,
                         ["native_format_count"] = nativeFormats.Count,
                         ["has_image"] = imageData is not null,
@@ -977,7 +963,7 @@ internal sealed partial class WindowsPlatformAdapter
                         ["has_text"] = !string.IsNullOrEmpty(text),
                         ["source_process_name"] = source.ProcessName
                     });
-                QueueCapturedEvent(text, imageData, paths, nativeFormats, source, capturedAt);
+                QueueCapturedEvent(text, imageData, paths, nativeFormats, source, capturedAt, files);
             }
             else
             {
@@ -1000,24 +986,6 @@ internal sealed partial class WindowsPlatformAdapter
                     ["limit"] = limit
                 });
         }
-
-        private static void TryDeleteStagedImage(string path)
-        {
-            try
-            {
-                if (File.Exists(path))
-                {
-                    File.Delete(path);
-                }
-            }
-            catch (IOException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-        }
-
 
         private bool TryAddImageCompatibilityFallbacks(
             uint expectedSequence,
@@ -1098,132 +1066,156 @@ internal sealed partial class WindowsPlatformAdapter
             return false;
         }
 
-        private void QueueCapturedEvent(
-            string? text,
-            ClipboardImageData? imageData,
-            string[] paths,
-            IReadOnlyList<CapturedClipboardNativeFormat> nativeFormats,
-            ForegroundContext source,
-            long capturedAt)
+        private bool MayPublishClipboardCapture(long epoch) =>
+            !Volatile.Read(ref _clipboardCaptureStopped) && _clipboardPause.MayRead && _clipboardPause.PublicationEpoch == epoch;
+
+        private static long ClipboardPublicationPayloadBytes(string? text, ClipboardImageData? image,
+            IReadOnlyList<string> paths, IReadOnlyList<CapturedClipboardNativeFormat> formats, ForegroundContext source)
         {
-            var pending = Interlocked.Increment(ref _capturePublishPending);
-            if (pending > MaxClipboardPublishTail)
+            static long StringBytes(string? value) => (long)(value?.Length ?? 0) * sizeof(char);
+            var bytes = StringBytes(text) + StringBytes(image?.StagingPath) +
+                StringBytes(source.ProcessName) + StringBytes(source.WindowTitle);
+            foreach (var path in paths) bytes += StringBytes(path);
+            foreach (var format in formats) bytes += format.Data.LongLength + StringBytes(format.FormatName);
+            return bytes;
+        }
+
+        private bool TryReserveClipboardPublication(long bytes, out string reason, out long retainedBytes)
+        {
+            lock (_clipboardPublicationGate)
             {
-                Interlocked.Decrement(ref _capturePublishPending);
-                if (imageData is not null)
-                {
-                    TryDeleteStagedImage(imageData.StagingPath);
-                }
+                retainedBytes = _capturePublishRetainedBytes;
+                if (_capturePublishPending >= MaxClipboardPublishTail) { reason = "publication_tail_full"; return false; }
+                // Preserve one admitted large capture, but never stack other captures behind it.
+                if (_capturePublishPending != 0 && (bytes > _clipboardPublicationByteLimit ||
+                    _capturePublishRetainedBytes > _clipboardPublicationByteLimit - bytes))
+                { reason = "publication_byte_budget_full"; return false; }
+                _capturePublishPending++;
+                _capturePublishRetainedBytes += bytes;
+                reason = "";
+                return true;
+            }
+        }
+
+        private void ReleaseClipboardPublication(long bytes)
+        {
+            lock (_clipboardPublicationGate)
+            {
+                _capturePublishPending--;
+                _capturePublishRetainedBytes -= bytes;
+            }
+        }
+
+        internal void QueueCapturedEvent(
+            string? text, ClipboardImageData? imageData, string[] paths,
+            IReadOnlyList<CapturedClipboardNativeFormat> nativeFormats,
+            ForegroundContext source, long capturedAt, ClipboardCaptureFiles? captureFiles = null)
+        {
+            using var files = captureFiles?.Detach() ?? new ClipboardCaptureFiles(_log);
+            if (imageData is not null) files.Own(imageData.StagingPath);
+            var epoch = _clipboardPause.PublicationEpoch;
+            if (!MayPublishClipboardCapture(epoch)) return;
+            var payloadBytes = ClipboardPublicationPayloadBytes(text, imageData, paths, nativeFormats, source);
+            if (!TryReserveClipboardPublication(payloadBytes, out var reason, out var retainedBytes))
+            {
                 if (_clipboardCaptureDropDiagnosticGate.TryAcquire(out var suppressedDropCount))
                 {
-                    _log.Write("warning", "clipboard.capture_event_dropped", null,
-                        new Dictionary<string, object?>
-                        {
-                            ["reason"] = "publication_tail_full",
-                            ["suppressed_drop_count"] = suppressedDropCount
-                        });
+                    try
+                    {
+                        _log.Write("warning", "clipboard.capture_event_dropped", null,
+                            new Dictionary<string, object?> { ["reason"] = reason, ["suppressed_drop_count"] = suppressedDropCount,
+                                ["payload_bytes"] = payloadBytes, ["retained_payload_bytes"] = retainedBytes,
+                                ["payload_byte_limit"] = _clipboardPublicationByteLimit });
+                    }
+                    catch { /* Drop diagnostics cannot change admission or staging cleanup. */ }
                 }
                 return;
             }
-            _capturePublishTail = _capturePublishTail.ContinueWith(
-                _ =>
+            void RetirePayload()
+            {
+                nativeFormats = [];
+                text = null;
+                paths = [];
+                imageData = null;
+                source = EmptyClipboardCaptureSource;
+                ReleaseClipboardPublication(payloadBytes);
+            }
+            ClipboardCaptureFiles? scheduledOwnership = null;
+            try
+            {
+                var owned = files.Detach();
+                scheduledOwnership = owned;
+                _capturePublishTail = _capturePublishTail.ContinueWith(_ =>
                 {
-                    string? sourceIconPath = null;
-                    ClipboardCapturedEvent? captured = null;
                     try
                     {
-                        sourceIconPath = _foregroundContextProvider.TryStageProcessIcon(
-                            source.ProcessId,
-                            out var iconError);
-                        if (iconError is not null)
+                        using (owned)
                         {
-                            _log.Write("warning", "clipboard.source_icon_failed", null,
-                                new Dictionary<string, object?>
+                            try
+                            {
+                                if (!MayPublishClipboardCapture(epoch)) return;
+                                var borrowedIcon = _clipboardContent.SourceIcon(source.ProcessId, out var iconError);
+                                string? sourceIconPath = null;
+                                if (borrowedIcon is not null)
                                 {
-                                    ["source_process_id"] = source.ProcessId,
-                                    ["source_process_name"] = source.ProcessName,
-                                    ["reason"] = "source_icon_stage_failed"
-                                });
-                        }
-                        var stagedFormats = StageNativeFormats(nativeFormats);
-                        captured = new ClipboardCapturedEvent(
-                            text,
-                            imageData,
-                            paths,
-                            sourceIconPath,
-                            source,
-                            capturedAt,
-                            stagedFormats);
-                        WindowsPlatformAdapter.TryPublishClipboardCapturedEvent(
-                            _events,
-                            captured,
-                            _log,
-                            _clipboardCaptureDropDiagnosticGate);
-                    }
-                    catch (Exception error)
-                    {
-                        if (captured is not null)
-                        {
-                            WindowsPlatformAdapter.CleanupClipboardCapturedStaging(captured);
-                        }
-                        else
-                        {
-                            if (imageData is not null)
-                            {
-                                TryDeleteStagedImage(imageData.StagingPath);
+                                    sourceIconPath = owned.CreatePath(_clipboardStaging.Value.DirectoryPath, ".png");
+                                    File.Copy(borrowedIcon, sourceIconPath);
+                                }
+                                if (iconError is not null)
+                                    _log.Write("warning", "clipboard.source_icon_failed", null,
+                                        new Dictionary<string, object?> { ["reason"] = "source_icon_stage_failed" });
+                                var stagedFormats = StageNativeFormats(nativeFormats, ownership: owned);
+                                var captured = new ClipboardCapturedEvent(text, imageData, paths, sourceIconPath, source, capturedAt, stagedFormats);
+                                if (MayPublishClipboardCapture(epoch) && WindowsPlatformAdapter.TryPublishClipboardCapturedEvent(
+                                        _events, captured, _log, _clipboardCaptureDropDiagnosticGate))
+                                {
+                                    if (imageData is not null) owned.Transfer([imageData.StagingPath]);
+                                    if (sourceIconPath is not null) owned.Transfer([sourceIconPath]);
+                                    owned.Transfer(stagedFormats.Select(format => format.DataPath));
+                                }
                             }
-                            if (!string.IsNullOrWhiteSpace(sourceIconPath))
+                            catch (Exception error)
                             {
-                                TryDeleteStagedImage(sourceIconPath);
+                                PlatformExceptionDiagnostics.Record(_log, "clipboard.capture_publish_failed", error);
                             }
                         }
-                        PlatformExceptionDiagnostics.Record(
-                            _log,
-                            "clipboard.capture_publish_failed",
-                            error);
                     }
-                    finally
-                    {
-                        Interlocked.Decrement(ref _capturePublishPending);
-                    }
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.None,
-                TaskScheduler.Default);
+                    finally { RetirePayload(); }
+                }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            }
+            catch
+            {
+                try { scheduledOwnership?.Dispose(); files.Dispose(); }
+                finally { RetirePayload(); }
+                throw;
+            }
         }
 
-        private IReadOnlyList<ClipboardNativeFormatData> StageNativeFormats(
-            IReadOnlyList<CapturedClipboardNativeFormat> formats)
+        internal IReadOnlyList<ClipboardNativeFormatData> StageNativeFormats(
+            IReadOnlyList<CapturedClipboardNativeFormat> formats, string? stagingDirectory = null,
+            Action<string, byte[]>? write = null, ClipboardCaptureFiles? ownership = null)
         {
+            using var files = new ClipboardCaptureFiles(_log);
             var staged = new List<ClipboardNativeFormatData>(formats.Count);
-            var directory = Path.Combine(
-                Path.GetTempPath(), "NxTools.Next", "clipboard-format-staging");
-            Directory.CreateDirectory(directory);
+            var directory = stagingDirectory ?? _clipboardStaging.Value.DirectoryPath;
             foreach (var format in formats)
             {
+                var path = files.CreatePath(directory, ".bin");
+                ownership?.Own(path);
                 try
                 {
-                    var path = Path.Combine(directory, $"{Guid.NewGuid():N}.bin");
-                    File.WriteAllBytes(path, format.Data);
-                    staged.Add(new ClipboardNativeFormatData(
-                        format.FormatId,
-                        format.FormatName,
-                        path,
-                        checked((ulong)format.Data.LongLength),
-                        format.SortOrder));
+                    (write ?? _clipboardContent.WriteFormat)(path, format.Data);
+                    staged.Add(new(format.FormatId, format.FormatName, path, checked((ulong)format.Data.LongLength), format.SortOrder));
                 }
                 catch (Exception error)
                 {
+                    files.Remove(path);
                     _log.Write("warning", "clipboard.native_format_stage_failed", null,
-                        new Dictionary<string, object?>
-                        {
-                            ["format_id"] = format.FormatId,
-                            ["size_bytes"] = format.Data.LongLength,
-                            ["exception_type"] = error.GetType().FullName,
-                            ["hresult"] = $"0x{error.HResult:X8}"
-                        });
+                        new Dictionary<string, object?> { ["format_id"] = format.FormatId, ["size_bytes"] = format.Data.LongLength,
+                            ["exception_type"] = error.GetType().FullName, ["hresult"] = $"0x{error.HResult:X8}" });
                 }
             }
+            files.Transfer(staged.Select(format => format.DataPath));
             return staged;
         }
 
@@ -2604,54 +2596,23 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void OnGlobalKeyDown(int virtualKey, uint timestamp)
         {
-            if (!_quickLaunchTriggerEnabled || _quickLaunchRecording ||
-                _quickLaunchTrigger.Kind != QuickLaunchTriggerKind.DoubleControl)
-            {
-                return;
-            }
-
-            bool triggered;
-            if (virtualKey == VkLeftControl)
-            {
-                _rightControlDoubleTap.Reset();
-                triggered = _leftControlDoubleTap.OnKeyDown(virtualKey, timestamp);
-            }
-            else if (virtualKey == VkRightControl)
-            {
-                _leftControlDoubleTap.Reset();
-                triggered = _rightControlDoubleTap.OnKeyDown(virtualKey, timestamp);
-            }
-            else
-            {
-                _leftControlDoubleTap.Reset();
-                _rightControlDoubleTap.Reset();
-                return;
-            }
-
-            if (triggered)
-            {
-                // A low-level hook must return quickly. Defer foreground capture and IPC publication
-                // to the existing Windows message loop instead of doing either inside the callback.
-                _ = NativeMethods.PostMessage(Handle, WmQuickLaunchGesture, IntPtr.Zero, IntPtr.Zero);
-            }
+            if (_quickLaunchKeyboardGesture.OnKeyDown(virtualKey, timestamp))
+                _ = NativeMethods.PostMessage(_quickLaunchGestureWindow, WmQuickLaunchGesture, IntPtr.Zero, IntPtr.Zero);
         }
 
         private void OnGlobalKeyUp(int virtualKey)
         {
-            var triggered = _leftControlDoubleTap.OnKeyUp(virtualKey) |
-                            _rightControlDoubleTap.OnKeyUp(virtualKey);
-            if (triggered)
-            {
-                // The complete gesture has ended, so the new GPUI window will not inherit an
-                // unmatched Ctrl key-up as its first input event.
-                _ = NativeMethods.PostMessage(Handle, WmQuickLaunchGesture, IntPtr.Zero, IntPtr.Zero);
-            }
+            if (_quickLaunchKeyboardGesture.OnKeyUp(virtualKey))
+                _ = NativeMethods.PostMessage(_quickLaunchGestureWindow, WmQuickLaunchGesture, IntPtr.Zero, IntPtr.Zero);
         }
 
         private void ResetQuickLaunchGesture()
         {
-            _leftControlDoubleTap.Reset();
-            _rightControlDoubleTap.Reset();
+            _quickLaunchKeyboardGesture.Publish(new(
+                _quickLaunchTriggerEnabled,
+                _quickLaunchRecording,
+                _quickLaunchTrigger.Kind,
+                ++_quickLaunchGestureResetGeneration));
         }
 
 
@@ -2717,7 +2678,7 @@ internal sealed partial class WindowsPlatformAdapter
                         ["stage"] = "windows_apply",
                         ["suppress_in_exclusive_fullscreen"] = request.Command.SuppressInExclusiveFullscreen
                     });
-                var result = ApplyQuickLaunchConfiguration(request.Command);
+                var result = ApplyQuickLaunchConfiguration(request.Command, request.CorrelationId);
                 if (result.Success)
                 {
                     _quickLaunchSuppressInExclusiveFullscreen = request.Command.Enabled &&
@@ -2937,7 +2898,7 @@ internal sealed partial class WindowsPlatformAdapter
                 () => _events.TryWrite(new TrayActionRequestedEvent(Guid.NewGuid(), "exit")));
         }
 
-        private WindowsCommandResult ApplyQuickLaunchConfiguration(ConfigureQuickLaunchCommand command)
+        private WindowsCommandResult ApplyQuickLaunchConfiguration(ConfigureQuickLaunchCommand command, Guid correlationId)
         {
             CancelExplorerDirectoryCapture("configuration_changed");
             _autoQuickSwitchEnabled = command.Enabled && command.AutoQuickSwitchEnabled;
@@ -2977,11 +2938,13 @@ internal sealed partial class WindowsPlatformAdapter
             WindowsCommandResult registration;
             if (binding.Kind == QuickLaunchTriggerKind.DoubleControl)
             {
-                if (_quickLaunchKeyboardMonitor?.IsInstalled != true)
+                ResetQuickLaunchGesture();
+                if (_quickLaunchKeyboardMonitor?.TryInstall(correlationId) != true)
                 {
                     return new WindowsCommandResult(
                         false,
-                        "The global keyboard monitor required by double Ctrl is unavailable.");
+                        "The global keyboard monitor required by double Ctrl is unavailable.",
+                        NativeErrorCode: _quickLaunchKeyboardMonitor?.LastNativeErrorCode ?? 0);
                 }
                 if (previous.Kind == QuickLaunchTriggerKind.HotKey)
                 {
@@ -3010,11 +2973,7 @@ internal sealed partial class WindowsPlatformAdapter
                     _quickLaunchTriggerEnabled = previousEnabled;
                 }
             }
-            if (registration.Success)
-            {
-                _log.Write("info", "quick_launch.configuration_applied", null,
-                    new Dictionary<string, object?> { ["hotkey"] = binding.Display });
-            }
+            ResetQuickLaunchGesture();
             return registration;
         }
 
@@ -3176,6 +3135,7 @@ internal sealed partial class WindowsPlatformAdapter
         private void Stop()
         {
             StopClipboardCapture();
+            StopFileDropReads();
             CancelExplorerDirectoryCapture("stopped", stop: true);
             ConfigureTrayIcon(false, string.Empty);
             _systemMotionStopped = true;

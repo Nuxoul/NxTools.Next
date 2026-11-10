@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 pub const DOWNLOAD_PIPE_NAME: &str = r"\\.\pipe\nxtools-next-download-v1";
-pub const DOWNLOAD_IPC_PROTOCOL_VERSION: u16 = 1;
+pub const DOWNLOAD_IPC_PROTOCOL_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -522,6 +522,7 @@ mod tests {
         assert_eq!(final_url.len(), MAX_HLS_VARIANT_URL_BYTES);
         let probe = DownloadProbe {
             resolution: None,
+            server_observation: None,
             final_url,
             file_name: Some("master.m3u8".into()),
             total_bytes: Some(2 * 1024 * 1024),
@@ -548,6 +549,38 @@ mod tests {
         write_frame(&mut encoded, &frame).expect("maximum bounded HLS probe fits IPC frame");
 
         assert!(encoded.len() <= nxtools_protocol::MAX_FRAME_BYTES + 1);
+    }
+
+    #[test]
+    fn prior_protocol_hello_is_rejected_before_commands() {
+        let pipe_name = format!(
+            r"\\.\pipe\nxtools-download-version-test-{}",
+            uuid::Uuid::new_v4()
+        );
+        let engine = DownloadEngine::open_in_memory().expect("open engine");
+        let host_name = pipe_name.clone();
+        std::thread::spawn(move || {
+            let _ = run_download_host(&host_name, engine, DownloadHostActivity::default());
+        });
+        let mut connection =
+            connect_local_pipe(&pipe_name, Duration::from_secs(2)).expect("connect client");
+        write_frame(
+            &mut connection.writer,
+            &DownloadIpcFrame::Hello {
+                protocol_version: 1,
+                client_version: "previous".into(),
+                engine_generation: None,
+                engine_sequence: None,
+            },
+        )
+        .expect("send old hello");
+        assert!(matches!(
+            read_frame(&mut connection.reader).expect("read version response"),
+            Some(DownloadIpcFrame::Error {
+                code: DownloadIpcErrorCode::ProtocolIncompatible,
+                ..
+            })
+        ));
     }
 
     #[test]

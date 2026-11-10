@@ -1,0 +1,2621 @@
+{
+  "schema": 1,
+  "scope": "OPT-06 private bounded binary transfer",
+  "provenance": {
+    "before": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\reports\\before.json",
+    "after": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\reports\\after-complete.json"
+  },
+  "comparison": {
+    "completed_trials_per_route_side": 3,
+    "routes": [
+      "create_zip_store",
+      "extract_zip",
+      "modify_zip_add"
+    ],
+    "sample_count": 18,
+    "input_bytes": 1048576,
+    "configuration": "Debug",
+    "execution_path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+    "root": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee",
+    "cache_policy": "no_system_cache_flush_no_best_run_selection",
+    "native_read_and_payload_counts_equal": true,
+    "actual_cleanup_and_single_publication": true
+  },
+  "unavailable": {
+    "total_source_io": null,
+    "internal_io": null,
+    "exclusive_codec_cpu_ms": null,
+    "exclusive_transport_cpu_ms": null,
+    "exact_process_memory_peak": null,
+    "separately_timed_cleanup_ms": null,
+    "before_payload_conversion_input_bytes": null,
+    "before_transport_payload_copy_bytes": null,
+    "before_payload_buffer_high_water": null
+  },
+  "limitations": [
+    "Wall time is dispatch through actual Run drain; independent decode is outside timing.",
+    "Worker CPU is a sampled process interval with coarse resolution; zero is not zero total CPU.",
+    "Memory peaks are maxima among successful 20ms-requested samples, not exact process peaks.",
+    "Raw memory sampling failures/native codes remain in each sample and do not create successful observations.",
+    "Fixed host payload high-water is not exact Rust/process memory; complete/internal I/O remains unavailable.",
+    "Measurements isolate transport after accepted source/plan work; no universal/reference-equivalence claim."
+  ],
+  "summaries": [
+    {
+      "operation": "create_zip_store",
+      "metrics": {
+        "operation_wall_ms": {
+          "before": {
+            "samples": [
+              972.0276,
+              691.3347,
+              601.6677
+            ],
+            "median": 691.3347,
+            "minimum": 601.6677,
+            "maximum": 972.0276
+          },
+          "after": {
+            "samples": [
+              335.04,
+              183.6812,
+              183.2778
+            ],
+            "median": 183.6812,
+            "minimum": 183.2778,
+            "maximum": 335.04
+          }
+        },
+        "wire": {
+          "before": {
+            "samples": [
+              6789760,
+              6789553,
+              6789334
+            ],
+            "median": 6789553,
+            "minimum": 6789334,
+            "maximum": 6789760
+          },
+          "after": {
+            "samples": [
+              3172163,
+              3172163,
+              3172163
+            ],
+            "median": 3172163,
+            "minimum": 3172163,
+            "maximum": 3172163
+          }
+        },
+        "json": {
+          "before": {
+            "samples": [
+              6789760,
+              6789553,
+              6789334
+            ],
+            "median": 6789553,
+            "minimum": 6789334,
+            "maximum": 6789760
+          },
+          "after": {
+            "samples": [
+              21615,
+              21615,
+              21615
+            ],
+            "median": 21615,
+            "minimum": 21615,
+            "maximum": 21615
+          }
+        },
+        "cpu": {
+          "before": {
+            "samples": [
+              15.625,
+              78.125,
+              31.25
+            ],
+            "median": 31.25,
+            "minimum": 15.625,
+            "maximum": 78.125
+          },
+          "after": {
+            "samples": [
+              0,
+              0,
+              15.625
+            ],
+            "median": 0,
+            "minimum": 0,
+            "maximum": 15.625
+          }
+        },
+        "worker_PeakWorking": {
+          "before": {
+            "samples": [
+              10285056,
+              9990144,
+              9940992
+            ],
+            "median": 9990144,
+            "minimum": 9940992,
+            "maximum": 10285056
+          },
+          "after": {
+            "samples": [
+              9990144,
+              10051584,
+              10051584
+            ],
+            "median": 10051584,
+            "minimum": 9990144,
+            "maximum": 10051584
+          }
+        },
+        "worker_PeakPrivate": {
+          "before": {
+            "samples": [
+              2121728,
+              2068480,
+              2068480
+            ],
+            "median": 2068480,
+            "minimum": 2068480,
+            "maximum": 2121728
+          },
+          "after": {
+            "samples": [
+              1695744,
+              1691648,
+              1695744
+            ],
+            "median": 1695744,
+            "minimum": 1691648,
+            "maximum": 1695744
+          }
+        },
+        "owner_PeakWorking": {
+          "before": {
+            "samples": [
+              108810240,
+              123555840,
+              129998848
+            ],
+            "median": 123555840,
+            "minimum": 108810240,
+            "maximum": 129998848
+          },
+          "after": {
+            "samples": [
+              87638016,
+              96935936,
+              104054784
+            ],
+            "median": 96935936,
+            "minimum": 87638016,
+            "maximum": 104054784
+          }
+        },
+        "owner_PeakPrivate": {
+          "before": {
+            "samples": [
+              87285760,
+              98631680,
+              102731776
+            ],
+            "median": 98631680,
+            "minimum": 87285760,
+            "maximum": 102731776
+          },
+          "after": {
+            "samples": [
+              58650624,
+              66748416,
+              73674752
+            ],
+            "median": 66748416,
+            "minimum": 58650624,
+            "maximum": 73674752
+          }
+        }
+      }
+    },
+    {
+      "operation": "extract_zip",
+      "metrics": {
+        "operation_wall_ms": {
+          "before": {
+            "samples": [
+              571.7844,
+              542.5443,
+              517.3128
+            ],
+            "median": 542.5443,
+            "minimum": 517.3128,
+            "maximum": 571.7844
+          },
+          "after": {
+            "samples": [
+              279.8124,
+              246.6095,
+              244.5238
+            ],
+            "median": 246.6095,
+            "minimum": 244.5238,
+            "maximum": 279.8124
+          }
+        },
+        "wire": {
+          "before": {
+            "samples": [
+              3755912,
+              3755971,
+              3755971
+            ],
+            "median": 3755971,
+            "minimum": 3755912,
+            "maximum": 3755971
+          },
+          "after": {
+            "samples": [
+              1059461,
+              1059473,
+              1059473
+            ],
+            "median": 1059473,
+            "minimum": 1059461,
+            "maximum": 1059473
+          }
+        },
+        "json": {
+          "before": {
+            "samples": [
+              3755912,
+              3755971,
+              3755971
+            ],
+            "median": 3755971,
+            "minimum": 3755912,
+            "maximum": 3755971
+          },
+          "after": {
+            "samples": [
+              9605,
+              9617,
+              9617
+            ],
+            "median": 9617,
+            "minimum": 9605,
+            "maximum": 9617
+          }
+        },
+        "cpu": {
+          "before": {
+            "samples": [
+              0,
+              31.25,
+              62.5
+            ],
+            "median": 31.25,
+            "minimum": 0,
+            "maximum": 62.5
+          },
+          "after": {
+            "samples": [
+              0,
+              31.25,
+              15.625
+            ],
+            "median": 15.625,
+            "minimum": 0,
+            "maximum": 31.25
+          }
+        },
+        "worker_PeakWorking": {
+          "before": {
+            "samples": [
+              10055680,
+              9875456,
+              10059776
+            ],
+            "median": 10055680,
+            "minimum": 9875456,
+            "maximum": 10059776
+          },
+          "after": {
+            "samples": [
+              10129408,
+              9703424,
+              9703424
+            ],
+            "median": 9703424,
+            "minimum": 9703424,
+            "maximum": 10129408
+          }
+        },
+        "worker_PeakPrivate": {
+          "before": {
+            "samples": [
+              2080768,
+              2093056,
+              2080768
+            ],
+            "median": 2080768,
+            "minimum": 2080768,
+            "maximum": 2093056
+          },
+          "after": {
+            "samples": [
+              1642496,
+              1630208,
+              1638400
+            ],
+            "median": 1638400,
+            "minimum": 1630208,
+            "maximum": 1642496
+          }
+        },
+        "owner_PeakWorking": {
+          "before": {
+            "samples": [
+              141201408,
+              153116672,
+              159244288
+            ],
+            "median": 153116672,
+            "minimum": 141201408,
+            "maximum": 159244288
+          },
+          "after": {
+            "samples": [
+              109858816,
+              121360384,
+              128000000
+            ],
+            "median": 121360384,
+            "minimum": 109858816,
+            "maximum": 128000000
+          }
+        },
+        "owner_PeakPrivate": {
+          "before": {
+            "samples": [
+              113213440,
+              124522496,
+              130793472
+            ],
+            "median": 124522496,
+            "minimum": 113213440,
+            "maximum": 130793472
+          },
+          "after": {
+            "samples": [
+              79233024,
+              90390528,
+              95678464
+            ],
+            "median": 90390528,
+            "minimum": 79233024,
+            "maximum": 95678464
+          }
+        }
+      }
+    },
+    {
+      "operation": "modify_zip_add",
+      "metrics": {
+        "operation_wall_ms": {
+          "before": {
+            "samples": [
+              1315.5706,
+              1260.2969,
+              1209.6464
+            ],
+            "median": 1260.2969,
+            "minimum": 1209.6464,
+            "maximum": 1315.5706
+          },
+          "after": {
+            "samples": [
+              495.964,
+              498.7456,
+              494.1148
+            ],
+            "median": 495.964,
+            "minimum": 494.1148,
+            "maximum": 498.7456
+          }
+        },
+        "wire": {
+          "before": {
+            "samples": [
+              12054701,
+              12054485,
+              12054485
+            ],
+            "median": 12054485,
+            "minimum": 12054485,
+            "maximum": 12054701
+          },
+          "after": {
+            "samples": [
+              5280000,
+              5280000,
+              5280000
+            ],
+            "median": 5280000,
+            "minimum": 5280000,
+            "maximum": 5280000
+          }
+        },
+        "json": {
+          "before": {
+            "samples": [
+              12054701,
+              12054485,
+              12054485
+            ],
+            "median": 12054485,
+            "minimum": 12054485,
+            "maximum": 12054701
+          },
+          "after": {
+            "samples": [
+              29322,
+              29322,
+              29322
+            ],
+            "median": 29322,
+            "minimum": 29322,
+            "maximum": 29322
+          }
+        },
+        "cpu": {
+          "before": {
+            "samples": [
+              140.625,
+              218.75,
+              203.125
+            ],
+            "median": 203.125,
+            "minimum": 140.625,
+            "maximum": 218.75
+          },
+          "after": {
+            "samples": [
+              31.25,
+              46.875,
+              31.25
+            ],
+            "median": 31.25,
+            "minimum": 31.25,
+            "maximum": 46.875
+          }
+        },
+        "worker_PeakWorking": {
+          "before": {
+            "samples": [
+              11190272,
+              11190272,
+              11120640
+            ],
+            "median": 11190272,
+            "minimum": 11120640,
+            "maximum": 11190272
+          },
+          "after": {
+            "samples": [
+              10874880,
+              11251712,
+              11251712
+            ],
+            "median": 11251712,
+            "minimum": 10874880,
+            "maximum": 11251712
+          }
+        },
+        "worker_PeakPrivate": {
+          "before": {
+            "samples": [
+              2412544,
+              2318336,
+              2412544
+            ],
+            "median": 2412544,
+            "minimum": 2318336,
+            "maximum": 2412544
+          },
+          "after": {
+            "samples": [
+              2027520,
+              2027520,
+              2023424
+            ],
+            "median": 2027520,
+            "minimum": 2023424,
+            "maximum": 2027520
+          }
+        },
+        "owner_PeakWorking": {
+          "before": {
+            "samples": [
+              183087104,
+              163598336,
+              174899200
+            ],
+            "median": 174899200,
+            "minimum": 163598336,
+            "maximum": 183087104
+          },
+          "after": {
+            "samples": [
+              129490944,
+              136515584,
+              135323648
+            ],
+            "median": 135323648,
+            "minimum": 129490944,
+            "maximum": 136515584
+          }
+        },
+        "owner_PeakPrivate": {
+          "before": {
+            "samples": [
+              154021888,
+              133955584,
+              144855040
+            ],
+            "median": 144855040,
+            "minimum": 133955584,
+            "maximum": 154021888
+          },
+          "after": {
+            "samples": [
+              95813632,
+              102432768,
+              98516992
+            ],
+            "median": 98516992,
+            "minimum": 95813632,
+            "maximum": 102432768
+          }
+        }
+      }
+    }
+  ],
+  "raw": {
+    "before": {
+      "schema": 1,
+      "route": "original_job_runner_native",
+      "configuration": "Debug",
+      "host": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.dll",
+      "tests": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.dll",
+      "worker_execution_path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+      "worker_sha256": "BF2968F19474ED32EA3F4C71BBAD9B9F55FF5E7D354B9833EF74A4D4E27B68BF",
+      "root": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee",
+      "run": "c457822c-0ed4-4163-97f3-527bb9328929",
+      "input_bytes": 1048576,
+      "disk": "D:\\",
+      "cache_policy": "first_measured_use_then_reused_source_no_cache_flush",
+      "complete": true,
+      "failure_type": null,
+      "results": [
+        {
+          "operation": "create_zip_store",
+          "trial": 0,
+          "OperationId": "0d48cd6b-6f42-454b-bdf7-f87cea810f19",
+          "operation_wall_ms": 972.0276,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048706,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 852,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 3027423,
+              "transport_stdout_json_bytes": 3762337,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097412,
+              "native_output_completed_bytes": 2097412,
+              "partial_read_calls": 18,
+              "partial_read_bytes": 1048706,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 22,
+              "output_payload_write_bytes": 1048706
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 79032320,
+              "BaselinePrivate": 50761728,
+              "PeakWorking": 108810240,
+              "PeakPrivate": 87285760,
+              "LastWorking": 108810240,
+              "LastPrivate": 87285760,
+              "Count": 16,
+              "attempts": 16,
+              "failures": 0,
+              "successes": 16,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 59.119899999999916,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 19432,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 6873088,
+              "BaselinePrivate": 1372160,
+              "PeakWorking": 10285056,
+              "PeakPrivate": 2121728,
+              "LastWorking": 10285056,
+              "LastPrivate": 1712128,
+              "Count": 15,
+              "attempts": 16,
+              "failures": 1,
+              "successes": 15,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 58.33770000000001,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 15.625,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "create_zip_store",
+          "trial": 1,
+          "OperationId": "b4056c6b-ad6f-47f0-a434-279558ff855c",
+          "operation_wall_ms": 691.3347,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048706,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 690,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 3027423,
+              "transport_stdout_json_bytes": 3762130,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097412,
+              "native_output_completed_bytes": 2097412,
+              "partial_read_calls": 18,
+              "partial_read_bytes": 1048706,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 22,
+              "output_payload_write_bytes": 1048706
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 114745344,
+              "BaselinePrivate": 92815360,
+              "PeakWorking": 123555840,
+              "PeakPrivate": 98631680,
+              "LastWorking": 123555840,
+              "LastPrivate": 98631680,
+              "Count": 15,
+              "attempts": 15,
+              "failures": 0,
+              "successes": 15,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 53.851000000000006,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 19796,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 3928064,
+              "BaselinePrivate": 1093632,
+              "PeakWorking": 9990144,
+              "PeakPrivate": 2068480,
+              "LastWorking": 9990144,
+              "LastPrivate": 1667072,
+              "Count": 13,
+              "attempts": 15,
+              "failures": 2,
+              "successes": 13,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                },
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 54.389100000000006,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 78.125,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "create_zip_store",
+          "trial": 2,
+          "OperationId": "f03eb68e-3b6b-4450-9a40-34e2bc89afc7",
+          "operation_wall_ms": 601.6677,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048706,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 600,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 3027423,
+              "transport_stdout_json_bytes": 3761911,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097412,
+              "native_output_completed_bytes": 2097412,
+              "partial_read_calls": 18,
+              "partial_read_bytes": 1048706,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 22,
+              "output_payload_write_bytes": 1048706
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 124133376,
+              "BaselinePrivate": 98648064,
+              "PeakWorking": 129998848,
+              "PeakPrivate": 102731776,
+              "LastWorking": 129998848,
+              "LastPrivate": 102731776,
+              "Count": 13,
+              "attempts": 13,
+              "failures": 0,
+              "successes": 13,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 51.4914,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 67232,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2838528,
+              "BaselinePrivate": 610304,
+              "PeakWorking": 9940992,
+              "PeakPrivate": 2068480,
+              "LastWorking": 9940992,
+              "LastPrivate": 1597440,
+              "Count": 11,
+              "attempts": 13,
+              "failures": 2,
+              "successes": 11,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                },
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 51.4937,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 31.25,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "extract_zip",
+          "trial": 0,
+          "OperationId": "238f1528-d786-470c-9314-a92587d85b2a",
+          "operation_wall_ms": 571.7844,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048576,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 563,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 5266,
+              "transport_stdout_json_bytes": 3750646,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097152,
+              "native_output_completed_bytes": 2097152,
+              "partial_read_calls": 0,
+              "partial_read_bytes": 0,
+              "source_payload_read_calls": 0,
+              "source_payload_read_bytes": 0,
+              "output_payload_write_calls": 16,
+              "output_payload_write_bytes": 1048576
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 130084864,
+              "BaselinePrivate": 102739968,
+              "PeakWorking": 141201408,
+              "PeakPrivate": 113213440,
+              "LastWorking": 141201408,
+              "LastPrivate": 113213440,
+              "Count": 12,
+              "attempts": 12,
+              "failures": 0,
+              "successes": 12,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 60.4961,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 93480,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2605056,
+              "BaselinePrivate": 520192,
+              "PeakWorking": 10055680,
+              "PeakPrivate": 2080768,
+              "LastWorking": 9568256,
+              "LastPrivate": 1560576,
+              "Count": 10,
+              "attempts": 12,
+              "failures": 2,
+              "successes": 10,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                },
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 55.4513,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 0,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "extract_zip",
+          "trial": 1,
+          "OperationId": "4f761612-24d6-406b-b5b3-dceb076cd7fd",
+          "operation_wall_ms": 542.5443,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048576,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 540,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 5266,
+              "transport_stdout_json_bytes": 3750705,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097152,
+              "native_output_completed_bytes": 2097152,
+              "partial_read_calls": 0,
+              "partial_read_bytes": 0,
+              "source_payload_read_calls": 0,
+              "source_payload_read_bytes": 0,
+              "output_payload_write_calls": 16,
+              "output_payload_write_bytes": 1048576
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 141307904,
+              "BaselinePrivate": 113410048,
+              "PeakWorking": 153116672,
+              "PeakPrivate": 124522496,
+              "LastWorking": 153116672,
+              "LastPrivate": 124522496,
+              "Count": 12,
+              "attempts": 12,
+              "failures": 0,
+              "successes": 12,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 50.52769999999998,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 4576,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 5476352,
+              "BaselinePrivate": 1212416,
+              "PeakWorking": 9875456,
+              "PeakPrivate": 2093056,
+              "LastWorking": 9580544,
+              "LastPrivate": 1572864,
+              "Count": 10,
+              "attempts": 12,
+              "failures": 2,
+              "successes": 10,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                },
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 48.57249999999999,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 31.25,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "extract_zip",
+          "trial": 2,
+          "OperationId": "e147b0f8-16cd-4560-bf59-53c844dd51e9",
+          "operation_wall_ms": 517.3128,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048576,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 514,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 5266,
+              "transport_stdout_json_bytes": 3750705,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097152,
+              "native_output_completed_bytes": 2097152,
+              "partial_read_calls": 0,
+              "partial_read_bytes": 0,
+              "source_payload_read_calls": 0,
+              "source_payload_read_bytes": 0,
+              "output_payload_write_calls": 16,
+              "output_payload_write_bytes": 1048576
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 153116672,
+              "BaselinePrivate": 124522496,
+              "PeakWorking": 159244288,
+              "PeakPrivate": 130793472,
+              "LastWorking": 159244288,
+              "LastPrivate": 130793472,
+              "Count": 11,
+              "attempts": 11,
+              "failures": 0,
+              "successes": 11,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 47.7025,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 44112,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2322432,
+              "BaselinePrivate": 512000,
+              "PeakWorking": 10059776,
+              "PeakPrivate": 2080768,
+              "LastWorking": 9973760,
+              "LastPrivate": 1642496,
+              "Count": 10,
+              "attempts": 11,
+              "failures": 1,
+              "successes": 10,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 50.11449999999999,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 62.5,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "modify_zip_add",
+          "trial": 0,
+          "OperationId": "612cf27b-7845-464e-9b03-388631e88866",
+          "operation_wall_ms": 1315.5706,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 2097691,
+          "FilesVerified": 1,
+          "BytesVerified": 2097691,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": true
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 1308,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 4541144,
+              "transport_stdout_json_bytes": 7513557,
+              "native_source_attempts": 5,
+              "native_source_full_reads": 5,
+              "native_source_read_bytes": 5243450,
+              "native_source_completed_bytes": 5243450,
+              "native_target_attempts": 2,
+              "native_target_full_reads": 2,
+              "native_target_read_bytes": 2097380,
+              "native_target_completed_bytes": 2097380,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 4195382,
+              "native_output_completed_bytes": 4195382,
+              "partial_read_calls": 34,
+              "partial_read_bytes": 2097691,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 33,
+              "output_payload_write_bytes": 2097691
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 165306368,
+              "BaselinePrivate": 136105984,
+              "PeakWorking": 183087104,
+              "PeakPrivate": 154021888,
+              "LastWorking": 162254848,
+              "LastPrivate": 132714496,
+              "Count": 28,
+              "attempts": 28,
+              "failures": 0,
+              "successes": 28,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 58.606500000000004,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 78800,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 3366912,
+              "BaselinePrivate": 884736,
+              "PeakWorking": 11190272,
+              "PeakPrivate": 2412544,
+              "LastWorking": 11190272,
+              "LastPrivate": 1732608,
+              "Count": 27,
+              "attempts": 28,
+              "failures": 1,
+              "successes": 27,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 60.18670000000001,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 140.625,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "modify_zip_add",
+          "trial": 1,
+          "OperationId": "4d9a0089-2f8d-461a-b09f-b52613ed7647",
+          "operation_wall_ms": 1260.2969,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 2097691,
+          "FilesVerified": 1,
+          "BytesVerified": 2097691,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": true
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 1258,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 4541144,
+              "transport_stdout_json_bytes": 7513341,
+              "native_source_attempts": 5,
+              "native_source_full_reads": 5,
+              "native_source_read_bytes": 5243450,
+              "native_source_completed_bytes": 5243450,
+              "native_target_attempts": 2,
+              "native_target_full_reads": 2,
+              "native_target_read_bytes": 2097380,
+              "native_target_completed_bytes": 2097380,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 4195382,
+              "native_output_completed_bytes": 4195382,
+              "partial_read_calls": 34,
+              "partial_read_bytes": 2097691,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 33,
+              "output_payload_write_bytes": 2097691
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 163598336,
+              "BaselinePrivate": 133951488,
+              "PeakWorking": 163598336,
+              "PeakPrivate": 133955584,
+              "LastWorking": 162959360,
+              "LastPrivate": 133083136,
+              "Count": 27,
+              "attempts": 27,
+              "failures": 0,
+              "successes": 27,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 49.89530000000002,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 59112,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 4083712,
+              "BaselinePrivate": 1118208,
+              "PeakWorking": 11190272,
+              "PeakPrivate": 2318336,
+              "LastWorking": 11190272,
+              "LastPrivate": 1732608,
+              "Count": 26,
+              "attempts": 27,
+              "failures": 1,
+              "successes": 26,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 53.06449999999995,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 218.75,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "modify_zip_add",
+          "trial": 2,
+          "OperationId": "192e147b-a7d4-43ac-8281-84c1fed93247",
+          "operation_wall_ms": 1209.6464,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 2097691,
+          "FilesVerified": 1,
+          "BytesVerified": 2097691,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": true
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 1207,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 4541144,
+              "transport_stdout_json_bytes": 7513341,
+              "native_source_attempts": 5,
+              "native_source_full_reads": 5,
+              "native_source_read_bytes": 5243450,
+              "native_source_completed_bytes": 5243450,
+              "native_target_attempts": 2,
+              "native_target_full_reads": 2,
+              "native_target_read_bytes": 2097380,
+              "native_target_completed_bytes": 2097380,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 4195382,
+              "native_output_completed_bytes": 4195382,
+              "partial_read_calls": 34,
+              "partial_read_bytes": 2097691,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 33,
+              "output_payload_write_bytes": 2097691
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 20472,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 163123200,
+              "BaselinePrivate": 133304320,
+              "PeakWorking": 174899200,
+              "PeakPrivate": 144855040,
+              "LastWorking": 174899200,
+              "LastPrivate": 144855040,
+              "Count": 26,
+              "attempts": 26,
+              "failures": 0,
+              "successes": 26,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 57.756399999999985,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 92688,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 3047424,
+              "BaselinePrivate": 741376,
+              "PeakWorking": 11120640,
+              "PeakPrivate": 2412544,
+              "LastWorking": 10866688,
+              "LastPrivate": 1720320,
+              "Count": 25,
+              "attempts": 26,
+              "failures": 1,
+              "successes": 25,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 55.33009999999996,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 203.125,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        }
+      ]
+    },
+    "after": {
+      "schema": 1,
+      "route": "original_job_runner_native",
+      "configuration": "Debug",
+      "host": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.dll",
+      "tests": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.dll",
+      "worker_execution_path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+      "worker_sha256": "85892352B07449FD92D95712CBCC8A67FB361D59CC9F597134F0CF21DAA5BD4A",
+      "root": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee",
+      "run": "cac5282f-248a-45c9-9cb2-a2819c34f8aa",
+      "input_bytes": 1048576,
+      "disk": "D:\\",
+      "cache_policy": "first_measured_use_then_reused_source_no_cache_flush",
+      "complete": true,
+      "failure_type": null,
+      "results": [
+        {
+          "operation": "create_zip_store",
+          "trial": 0,
+          "OperationId": "07d02504-43ae-4f31-a2e8-f53b73366786",
+          "operation_wall_ms": 335.04,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048706,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 246,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 8815,
+              "transport_stdout_json_bytes": 12800,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097412,
+              "native_output_completed_bytes": 2097412,
+              "partial_read_calls": 18,
+              "partial_read_bytes": 1048706,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 22,
+              "output_payload_write_bytes": 1048706,
+              "transport_stdin_json_frames": 36,
+              "transport_stdout_json_frames": 50,
+              "transport_stdin_binary_bytes": 2100082,
+              "transport_stdout_binary_bytes": 1050466,
+              "transport_stdin_binary_frames": 35,
+              "transport_stdout_binary_frames": 22,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 2097282,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 2,
+              "transport_payload_buffer_bytes_high_water": 131072
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 79089664,
+              "BaselinePrivate": 51302400,
+              "PeakWorking": 87638016,
+              "PeakPrivate": 58650624,
+              "LastWorking": 87638016,
+              "LastPrivate": 58650624,
+              "Count": 5,
+              "attempts": 5,
+              "failures": 0,
+              "successes": 5,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 41.062200000000004,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 86436,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 6553600,
+              "BaselinePrivate": 1323008,
+              "PeakWorking": 9990144,
+              "PeakPrivate": 1695744,
+              "LastWorking": 9990144,
+              "LastPrivate": 1695744,
+              "Count": 4,
+              "attempts": 5,
+              "failures": 1,
+              "successes": 4,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 36.64350000000001,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 0,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "create_zip_store",
+          "trial": 1,
+          "OperationId": "4c48b005-93b1-4884-8ccc-a63240c5cd7c",
+          "operation_wall_ms": 183.6812,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048706,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 182,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 8815,
+              "transport_stdout_json_bytes": 12800,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097412,
+              "native_output_completed_bytes": 2097412,
+              "partial_read_calls": 18,
+              "partial_read_bytes": 1048706,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 22,
+              "output_payload_write_bytes": 1048706,
+              "transport_stdin_json_frames": 36,
+              "transport_stdout_json_frames": 50,
+              "transport_stdin_binary_bytes": 2100082,
+              "transport_stdout_binary_bytes": 1050466,
+              "transport_stdin_binary_frames": 35,
+              "transport_stdout_binary_frames": 22,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 2097282,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 2,
+              "transport_payload_buffer_bytes_high_water": 131072
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 93863936,
+              "BaselinePrivate": 64249856,
+              "PeakWorking": 96935936,
+              "PeakPrivate": 66748416,
+              "LastWorking": 96935936,
+              "LastPrivate": 66748416,
+              "Count": 4,
+              "attempts": 4,
+              "failures": 0,
+              "successes": 4,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 47.533100000000005,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 13008,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 5500928,
+              "BaselinePrivate": 1216512,
+              "PeakWorking": 10051584,
+              "PeakPrivate": 1691648,
+              "LastWorking": 10051584,
+              "LastPrivate": 1691648,
+              "Count": 3,
+              "attempts": 4,
+              "failures": 1,
+              "successes": 3,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 40.34179999999999,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 0,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "create_zip_store",
+          "trial": 2,
+          "OperationId": "977b84ba-d02f-4bc2-b8e1-0453eb2a3c34",
+          "operation_wall_ms": 183.2778,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048706,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 182,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 8815,
+              "transport_stdout_json_bytes": 12800,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097412,
+              "native_output_completed_bytes": 2097412,
+              "partial_read_calls": 18,
+              "partial_read_bytes": 1048706,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 22,
+              "output_payload_write_bytes": 1048706,
+              "transport_stdin_json_frames": 36,
+              "transport_stdout_json_frames": 50,
+              "transport_stdin_binary_bytes": 2100082,
+              "transport_stdout_binary_bytes": 1050466,
+              "transport_stdin_binary_frames": 35,
+              "transport_stdout_binary_frames": 22,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 2097282,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 2,
+              "transport_payload_buffer_bytes_high_water": 131072
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 102199296,
+              "BaselinePrivate": 72011776,
+              "PeakWorking": 104054784,
+              "PeakPrivate": 73674752,
+              "LastWorking": 104054784,
+              "LastPrivate": 73674752,
+              "Count": 4,
+              "attempts": 4,
+              "failures": 0,
+              "successes": 4,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 46.7154,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 49008,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 520192,
+              "PeakWorking": 10051584,
+              "PeakPrivate": 1695744,
+              "LastWorking": 10051584,
+              "LastPrivate": 1695744,
+              "Count": 3,
+              "attempts": 4,
+              "failures": 1,
+              "successes": 3,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 46.7852,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 15.625,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "extract_zip",
+          "trial": 0,
+          "OperationId": "6bd76dab-d3da-4130-9f4a-3e287d41e0a8",
+          "operation_wall_ms": 279.8124,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048576,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 275,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 6533,
+              "transport_stdout_json_bytes": 3072,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097152,
+              "native_output_completed_bytes": 2097152,
+              "partial_read_calls": 0,
+              "partial_read_bytes": 0,
+              "source_payload_read_calls": 0,
+              "source_payload_read_bytes": 0,
+              "output_payload_write_calls": 16,
+              "output_payload_write_bytes": 1048576,
+              "transport_stdin_json_frames": 23,
+              "transport_stdout_json_frames": 10,
+              "transport_stdin_binary_bytes": 0,
+              "transport_stdout_binary_bytes": 1049856,
+              "transport_stdin_binary_frames": 0,
+              "transport_stdout_binary_frames": 16,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 0,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 1,
+              "transport_payload_buffer_bytes_high_water": 65536
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 109383680,
+              "BaselinePrivate": 79220736,
+              "PeakWorking": 109858816,
+              "PeakPrivate": 79233024,
+              "LastWorking": 109858816,
+              "LastPrivate": 79233024,
+              "Count": 6,
+              "attempts": 6,
+              "failures": 0,
+              "successes": 6,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 47.408800000000014,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 64944,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 528384,
+              "PeakWorking": 10129408,
+              "PeakPrivate": 1642496,
+              "LastWorking": 10129408,
+              "LastPrivate": 1642496,
+              "Count": 5,
+              "attempts": 6,
+              "failures": 1,
+              "successes": 5,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 46.3759,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 0,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "extract_zip",
+          "trial": 1,
+          "OperationId": "f8ce7cfb-d59b-424d-a4f0-0bdeb1425f17",
+          "operation_wall_ms": 246.6095,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048576,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 244,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 6533,
+              "transport_stdout_json_bytes": 3084,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097152,
+              "native_output_completed_bytes": 2097152,
+              "partial_read_calls": 0,
+              "partial_read_bytes": 0,
+              "source_payload_read_calls": 0,
+              "source_payload_read_bytes": 0,
+              "output_payload_write_calls": 16,
+              "output_payload_write_bytes": 1048576,
+              "transport_stdin_json_frames": 23,
+              "transport_stdout_json_frames": 10,
+              "transport_stdin_binary_bytes": 0,
+              "transport_stdout_binary_bytes": 1049856,
+              "transport_stdin_binary_frames": 0,
+              "transport_stdout_binary_frames": 16,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 0,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 1,
+              "transport_payload_buffer_bytes_high_water": 65536
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 115171328,
+              "BaselinePrivate": 84484096,
+              "PeakWorking": 121360384,
+              "PeakPrivate": 90390528,
+              "LastWorking": 121360384,
+              "LastPrivate": 90390528,
+              "Count": 6,
+              "attempts": 6,
+              "failures": 0,
+              "successes": 6,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 49.9242,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 3940,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 524288,
+              "PeakWorking": 9703424,
+              "PeakPrivate": 1630208,
+              "LastWorking": 9703424,
+              "LastPrivate": 1630208,
+              "Count": 4,
+              "attempts": 6,
+              "failures": 2,
+              "successes": 4,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                },
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 50.510200000000005,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 31.25,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "extract_zip",
+          "trial": 2,
+          "OperationId": "f185b09d-a94e-4f9c-9415-445a542b6b2c",
+          "operation_wall_ms": 244.5238,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 1048576,
+          "FilesVerified": 1,
+          "BytesVerified": 1048576,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": false
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 242,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 6533,
+              "transport_stdout_json_bytes": 3084,
+              "native_source_attempts": 0,
+              "native_source_full_reads": 0,
+              "native_source_read_bytes": 0,
+              "native_source_completed_bytes": 0,
+              "native_target_attempts": 0,
+              "native_target_full_reads": 0,
+              "native_target_read_bytes": 0,
+              "native_target_completed_bytes": 0,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 2097152,
+              "native_output_completed_bytes": 2097152,
+              "partial_read_calls": 0,
+              "partial_read_bytes": 0,
+              "source_payload_read_calls": 0,
+              "source_payload_read_bytes": 0,
+              "output_payload_write_calls": 16,
+              "output_payload_write_bytes": 1048576,
+              "transport_stdin_json_frames": 23,
+              "transport_stdout_json_frames": 10,
+              "transport_stdin_binary_bytes": 0,
+              "transport_stdout_binary_bytes": 1049856,
+              "transport_stdin_binary_frames": 0,
+              "transport_stdout_binary_frames": 16,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 0,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 1,
+              "transport_payload_buffer_bytes_high_water": 65536
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 121360384,
+              "BaselinePrivate": 90390528,
+              "PeakWorking": 128000000,
+              "PeakPrivate": 95678464,
+              "LastWorking": 128000000,
+              "LastPrivate": 95678464,
+              "Count": 6,
+              "attempts": 6,
+              "failures": 0,
+              "successes": 6,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 46.74789999999999,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 51044,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 520192,
+              "PeakWorking": 9703424,
+              "PeakPrivate": 1638400,
+              "LastWorking": 9703424,
+              "LastPrivate": 1638400,
+              "Count": 4,
+              "attempts": 6,
+              "failures": 2,
+              "successes": 4,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                },
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 46.27590000000001,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 15.625,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "modify_zip_add",
+          "trial": 0,
+          "OperationId": "33237cb0-07ac-4ba6-9f3a-046737fffeb8",
+          "operation_wall_ms": 495.964,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 2097691,
+          "FilesVerified": 1,
+          "BytesVerified": 2097691,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": true
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 489,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 12075,
+              "transport_stdout_json_bytes": 17247,
+              "native_source_attempts": 5,
+              "native_source_full_reads": 5,
+              "native_source_read_bytes": 5243450,
+              "native_source_completed_bytes": 5243450,
+              "native_target_attempts": 2,
+              "native_target_full_reads": 2,
+              "native_target_read_bytes": 2097380,
+              "native_target_completed_bytes": 2097380,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 4195382,
+              "native_output_completed_bytes": 4195382,
+              "partial_read_calls": 34,
+              "partial_read_bytes": 2097691,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 33,
+              "output_payload_write_bytes": 2097691,
+              "transport_stdin_json_frames": 46,
+              "transport_stdout_json_frames": 67,
+              "transport_stdin_binary_bytes": 3150347,
+              "transport_stdout_binary_bytes": 2100331,
+              "transport_stdin_binary_frames": 51,
+              "transport_stdout_binary_frames": 33,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 3146267,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 2,
+              "transport_payload_buffer_bytes_high_water": 131072
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 128802816,
+              "BaselinePrivate": 95756288,
+              "PeakWorking": 129490944,
+              "PeakPrivate": 95813632,
+              "LastWorking": 129490944,
+              "LastPrivate": 95813632,
+              "Count": 11,
+              "attempts": 11,
+              "failures": 0,
+              "successes": 11,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 47.59530000000004,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 63984,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 516096,
+              "PeakWorking": 10874880,
+              "PeakPrivate": 2027520,
+              "LastWorking": 10809344,
+              "LastPrivate": 1617920,
+              "Count": 10,
+              "attempts": 11,
+              "failures": 1,
+              "successes": 10,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 48.30520000000001,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 31.25,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "modify_zip_add",
+          "trial": 1,
+          "OperationId": "29724e6a-886b-4621-b89e-47029316c10b",
+          "operation_wall_ms": 498.7456,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 2097691,
+          "FilesVerified": 1,
+          "BytesVerified": 2097691,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": true
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 496,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 12075,
+              "transport_stdout_json_bytes": 17247,
+              "native_source_attempts": 5,
+              "native_source_full_reads": 5,
+              "native_source_read_bytes": 5243450,
+              "native_source_completed_bytes": 5243450,
+              "native_target_attempts": 2,
+              "native_target_full_reads": 2,
+              "native_target_read_bytes": 2097380,
+              "native_target_completed_bytes": 2097380,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 4195382,
+              "native_output_completed_bytes": 4195382,
+              "partial_read_calls": 34,
+              "partial_read_bytes": 2097691,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 33,
+              "output_payload_write_bytes": 2097691,
+              "transport_stdin_json_frames": 46,
+              "transport_stdout_json_frames": 67,
+              "transport_stdin_binary_bytes": 3150347,
+              "transport_stdout_binary_bytes": 2100331,
+              "transport_stdin_binary_frames": 51,
+              "transport_stdout_binary_frames": 33,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 3146267,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 2,
+              "transport_payload_buffer_bytes_high_water": 131072
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 136081408,
+              "BaselinePrivate": 102420480,
+              "PeakWorking": 136515584,
+              "PeakPrivate": 102432768,
+              "LastWorking": 133918720,
+              "LastPrivate": 98500608,
+              "Count": 11,
+              "attempts": 11,
+              "failures": 0,
+              "successes": 11,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 47.8614,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 8556,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 524288,
+              "PeakWorking": 11251712,
+              "PeakPrivate": 2027520,
+              "LastWorking": 11251712,
+              "LastPrivate": 1732608,
+              "Count": 10,
+              "attempts": 11,
+              "failures": 1,
+              "successes": 10,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 48.46980000000002,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 46.875,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        },
+        {
+          "operation": "modify_zip_add",
+          "trial": 2,
+          "OperationId": "80810318-4e37-4a90-a492-64a87922848b",
+          "operation_wall_ms": 494.1148,
+          "cleanup_ms": null,
+          "cleanup_semantics": "included_in_operation_wall_not_separately_timed",
+          "Outcome": "succeeded",
+          "Code": null,
+          "FilesCommitted": 1,
+          "BytesCommitted": 2097691,
+          "FilesVerified": 1,
+          "BytesVerified": 2097691,
+          "NativeErrorCode": null,
+          "CommitState": "Committed",
+          "OutputPublished": true,
+          "CleanupComplete": true,
+          "journal": {
+            "count": 1,
+            "State": "Committed",
+            "Published": true,
+            "Replaced": true
+          },
+          "publications": 1,
+          "observation": {
+            "terminal_event": "archive.worker.completed",
+            "terminal_fields": {
+              "elapsed_ms": 492,
+              "category": "success",
+              "native_error_code": null,
+              "files_committed": 1,
+              "files_skipped": 0,
+              "commit_state": "Committed",
+              "cleanup_complete": true,
+              "transport_stdin_json_bytes": 12075,
+              "transport_stdout_json_bytes": 17247,
+              "native_source_attempts": 5,
+              "native_source_full_reads": 5,
+              "native_source_read_bytes": 5243450,
+              "native_source_completed_bytes": 5243450,
+              "native_target_attempts": 2,
+              "native_target_full_reads": 2,
+              "native_target_read_bytes": 2097380,
+              "native_target_completed_bytes": 2097380,
+              "native_output_attempts": 2,
+              "native_output_full_reads": 2,
+              "native_output_read_bytes": 4195382,
+              "native_output_completed_bytes": 4195382,
+              "partial_read_calls": 34,
+              "partial_read_bytes": 2097691,
+              "source_payload_read_calls": 17,
+              "source_payload_read_bytes": 1048576,
+              "output_payload_write_calls": 33,
+              "output_payload_write_bytes": 2097691,
+              "transport_stdin_json_frames": 46,
+              "transport_stdout_json_frames": 67,
+              "transport_stdin_binary_bytes": 3150347,
+              "transport_stdout_binary_bytes": 2100331,
+              "transport_stdin_binary_frames": 51,
+              "transport_stdout_binary_frames": 33,
+              "payload_conversion_input_bytes": 0,
+              "transport_payload_copy_bytes": 3146267,
+              "transport_reserved_bytes": 1048576,
+              "transport_payload_buffers_high_water": 2,
+              "transport_payload_buffer_bytes_high_water": 131072
+            },
+            "owner_memory": {
+              "Role": "probe_owner",
+              "ProcessId": 64300,
+              "Path": "D:\\Code\\NxTools.Next-main\\csharp\\NxTools.PlatformHost.Tests\\bin\\Debug\\net8.0-windows\\NxTools.PlatformHost.Tests.exe",
+              "status": "Complete",
+              "BaselineWorking": 134676480,
+              "BaselinePrivate": 98504704,
+              "PeakWorking": 135323648,
+              "PeakPrivate": 98516992,
+              "LastWorking": 135323648,
+              "LastPrivate": 98516992,
+              "Count": 11,
+              "attempts": 11,
+              "failures": 0,
+              "successes": 11,
+              "errors": [],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 47.9138,
+              "possible_missed_peaks": true
+            },
+            "worker_memory": {
+              "Role": "actual_worker",
+              "ProcessId": 12972,
+              "Path": "D:\\.pi-desktop\\data\\scratch\\a2072588-1f47-4232-be7a-3951a25df615\\archive-product-opt06-82039bbc-817a-4c87-b80e-2ab73d6f14ee\\NxTools.ArchiveWorker.exe",
+              "status": "Complete",
+              "BaselineWorking": 2318336,
+              "BaselinePrivate": 516096,
+              "PeakWorking": 11251712,
+              "PeakPrivate": 2023424,
+              "LastWorking": 11251712,
+              "LastPrivate": 1724416,
+              "Count": 10,
+              "attempts": 11,
+              "failures": 1,
+              "successes": 10,
+              "errors": [
+                {
+                  "message": "memory_counters_unavailable",
+                  "native_code": 5385
+                }
+              ],
+              "requested_interval_ms": 20,
+              "MaxIntervalMs": 48.5931,
+              "possible_missed_peaks": true
+            },
+            "worker_cpu_sampled_ms": 31.25,
+            "cpu_semantics": "sampled_worker_process_interval_not_exclusive_codec_cpu"
+          }
+        }
+      ]
+    }
+  }
+}

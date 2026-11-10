@@ -8,7 +8,7 @@ namespace NxTools.PlatformHost.Tests;
 
 // Effects audit: GUID-owned package/ZIP/source fixtures, explicit current frozen worker/hash,
 // original Job/browser/native one-shot publication only. No GUI/Shell/Registry/service/user files.
-internal static class EditInteractionTests
+internal static partial class EditInteractionTests
 {
     private static void Check(bool condition,string message){if(!condition)throw new InvalidOperationException(message);}
     private static ProtocolEnvelope Wire(ArchiveJobCommand command)=>ProtocolEnvelope.Create("platform_command",new{command="archive_job",data=command},command.OperationId);

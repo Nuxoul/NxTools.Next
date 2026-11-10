@@ -272,3 +272,70 @@ Live userHWND evidence now captured in task10-24-runtime-interaction-feedback/r5
 
 ## R5 repair result (2026-10-24, later than investigation)
 The original ownedCW_USEDEFAULThidden -> nativeShowNoActivate regression ran red with1904x990clientat96DPI vsintended1060x650. Production `PrepareMainWindow` now stageshiddenprimary/readsDPI/appliesexactclientwithliveinsets/verifieshiddenclient before returning typedreadback; samefixture green, later1200x700userresize surviveshide/show. Original PlatformEventDispatcher optionalstartupbarrier recordspendingbeforeenqueue, buffers<=128notifications, exactACK+readback then nextturncallback outsidelease publisheshint/notificationhost/floatingentrypoint and replaysoriginalnotifications. Deadline8s/native5s, disconnect/invalid/stale/queuefailure failhidden; normalshownstartup unchanged; originaltray/summon/floating show/activate remains afteronceprepare. No per-showreset, GPUIactivationworkaround, framepolicychange or vendorpatch. Native3/3/Ruststartup6/6/Protocol77/77/strictlint/workspacepass; finalDesktop1123pass/1unchangeddateassertionfailure, notfullgreen. Exactsource/evidence limits in taskr5-repair-outcomes.md. Installedreboot/mixedDPI/useracceptance notperformed; nodeployment.
+
+## STA dispatcher and OneCommander focus lifecycle
+
+Production entry chains:
+
+- `ShellIconExtractor.ExtractOnSta` enters `BoundedStaOperationRunner.TryRun` under the existing
+  `NxTools.ShellIconExtraction` name/max-8 admission, then `Extract` reaches WPF
+  `Imaging.CreateBitmapSourceFromHIcon`/`PngBitmapEncoder`. Those WPF objects can associate a
+  Dispatcher with the otherwise short-lived STA even though NxTools never runs a Dispatcher loop.
+- `ShellContextMenuSessionManager.QueryActions` acquires `ShellContextMenuSessionWorker`; its owned
+  STA `Run` performs OLE initialization and drains requests. Menu enumeration reaches
+  `ShellMenuIconStager.Stage`, whose `CreateBitmapSourceFromHBitmap`/PNG path can associate the same
+  WPF Dispatcher with this independently owned worker thread.
+- `UiaOneCommanderWindowOperations.WarmUpFocusTracker` starts one MTA tracker. `Run` installs the
+  global UIA focus-change handler and immediately samples current focus; `RememberFocus` reads the
+  sender `ProcessId` and rejects non-OneCommander processes before `FindTopLevelWindowHandle` can
+  walk up to 64 raw-view ancestors.
+
+Reference behavior:
+
+- `D:\Code\SwiftList-main\Plugins\OneCommander\OneCommanderPathCollector.cs:27-40` rejects a
+  non-OneCommander process before its UIA lookup and snapshots focus while the host still owns it.
+- `D:\Code\SwiftList-main\Plugins\OneCommander\OneCommanderInlineSearchAdapter.cs:53-60` refreshes
+  the same active-pane anchor before the search surface steals focus; execution later reuses that
+  pane rather than searching the newly focused overlay.
+- `D:\Code\SwiftList-main\Plugins\OneCommander\Automation\UiaPathAccessor.cs:22-26,33-45,78-105`
+  keeps a per-window last-focus element and walks upward from it to the nearest
+  `CurrentPathGet`/`CurrentPathSet` pair. A focused WPF child need not expose a native HWND.
+- `D:\Code\SwiftList-main\Core\Hook\Commands\InlineAdapterCommandHandler.cs:16-23,103-120`
+  runs UIA adapter writes on owned STA threads so blocked native/COM work does not stall the shared
+  tracker. NxTools keeps its stricter named bounded admission instead of adopting SwiftList's
+  unbounded replacement-thread shape.
+- The searched `D:\Code\NxTools` checkout contains no OneCommander entry. Listary evidence remains
+  its managed plugin/host boundary only; no Listary native engine implementation was available.
+
+Lifecycle contract:
+
+1. **Lifecycle**: a thread owner shuts down only an already-associated WPF Dispatcher, on that same
+   thread, before publishing completion or releasing its named admission. The check uses
+   `Dispatcher.FromThread`; `Dispatcher.CurrentDispatcher` is forbidden in cleanup because it would
+   create the resource being tested for. The Shell context-menu owner disposes its native session,
+   shuts down the existing Dispatcher, then uninitializes OLE and returns from the thread.
+2. **Cancellation**: icon extraction keeps its 5-second logical wait and max-8 admission. Shell menu
+   requests keep their 5-second wait, cancellation and warm-session cache. Timeout/cancellation does
+   not terminate an uncooperative Shell/UIA/native call; the active name/worker remains owned until
+   that call really exits and thread-final cleanup runs.
+3. **Focus**: the global subscription and per-window last-focus history remain. The sender UIA
+   `ProcessId` rejects unrelated applications before any raw-tree ascent. OneCommander elements with
+   `NativeWindowHandle == 0` remain valid anchors because process identity comes from the element and
+   the existing ascent can still resolve the OneCommander top-level ancestor. Capture after summon
+   continues to reuse this saved element and successful navigation/explicit close keeps the existing
+   host-focus restoration chain.
+4. **Placement/layout**: C# thread and focus ownership does not change window placement, panel
+   selection, menu layout or GPUI rendering.
+5. **Failure**: dispatcher cleanup failure is contained at the owning thread boundary and cannot be
+   reported as a successful early thread release. Existing typed timeout/cancel/native failures stay
+   unchanged; no result claims a blocked third-party call was forcibly stopped.
+
+## Demand service lifetime — 2026-11-06
+
+The user explicitly rejects background file tracking and a resident updater after product Exit. This supersedes the earlier persistent service policy, not close-to-tray behavior or privilege separation. Old NxTools `MainWindow.axaml.cs` retains ordinary Hide versus explicit Close; it has no equivalent protected index/update service to copy. SwiftList Service/Program.cs and Service/UsnService.cs establish the service/native ownership and stop/dispose boundary only; its automatic registration is not adopted for this requested lifetime. Listary service observations remain managed/system metadata, not native engine source.
+
+Current implementation: IndexerServiceInstaller registers Demand and the normal verified startup starts it. Existing same-release Auto registration uses a separately authorized configuration-only helper; unhealthy tuples cannot use that path. Rust windows_service_host admits a desktop process-object lease only after the original native identity/session and Hello checks. It initializes the shared index runtime after admission, restores the original base/delta/USN state, retains the lease across pipe reconnect, and stops after the last desktop process exits. An unclaimed start has a15second deadline and performs no indexing work. Close to tray leaves the desktop alive and therefore retains its service owner.
+
+TrustedUpdateBroker remains a protected executor, but is not resident: normal requests validate enrollment/package before demand start. One accepted update, rejection, maintenance probe, EOF or finite handshake timeout ends its invocation. BrokerService then reports a normal Stop and exits; an already accepted transaction settles or rolls back before stopping. Registration does not start it. Existing approved Auto updater registrations enter the original installer confirmation/same-key bootstrap-maintenance path; ordinary Request cannot replace the protected bootstrap or grant itself configuration rights. No service registration is deleted and no trust/recovery ledger is reset.
+
+Source owners: `repo:rust/apps/nxtools-indexer/src/windows_service_host.rs`, `repo:rust/apps/nxtools-indexer/src/desktop_lifetime.rs`, `repo:csharp/NxTools.PlatformHost/Windows/IndexerServiceInstaller.Lifetime.cs`, `repo:csharp/NxTools.PlatformHost/Windows/TrustedUpdateBroker.cs`, `repo:installer/bootstrap-migration.ps1`. Task: `.trellis/tasks/11-06-demand-service-lifetime/`. Owned-process/pipe tests are distinct from packaged LocalSystem exit/restart/search acceptance.

@@ -1,5 +1,6 @@
 //! Private inherited-pipe protocol for the C#-admitted archive worker.
 //! This is not the desktop PlatformHost protocol and is never a diagnostic sink.
+pub use crate::worker_drag::{DragMaterialization, DragMember, DragMemberReady};
 use crate::{
     ArchiveEngine, ArchiveError, ArchiveRequest, NameEncoding, OpenRequest, OperationControl,
     ResourceLimits,
@@ -55,15 +56,23 @@ pub struct WorkerRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_authorize: Option<nxtools_protocol::archive_browser::ArchiveBrowserContext>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drag_materialization: Option<DragMaterialization>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser_password: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_extract: Option<nxtools_protocol::archive_job::ArchiveJobExtract>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_execution: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_large_count: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub job_modify: Option<nxtools_protocol::archive_job::ArchiveJobModify>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub volume_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bulk_transfer: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parallel_extraction: Option<bool>,
     /// Filled ONLY from the authenticated original native source-acquire reply, never input JSON.
     #[serde(skip)]
     pub volume_paths: Vec<String>,
@@ -183,17 +192,70 @@ impl WorkerRequest {
             output_readmission: None,
             browser_entry: None,
             browser_authorize: None,
+            drag_materialization: None,
             browser_password: None,
             job_extract: None,
             job_execution: None,
+            job_large_count: None,
             job_modify: None,
             volume_bytes: None,
+            bulk_transfer: None,
+            parallel_extraction: None,
             volume_paths: Vec::new(),
             #[cfg(debug_assertions)]
             zip_risk_fixture: None,
         }
     }
+    pub(crate) fn output_file_limit(&self) -> u64 {
+        if self.job_large_count == Some(true) {
+            self.limits
+                .max_entries
+                .min(self.limits.max_metadata_bytes / 2048)
+        } else {
+            4096
+        }
+    }
+    pub(crate) fn ordinary_extraction(&self) -> bool {
+        self.operation == "extract"
+            && self.requires_bulk()
+            && self.browser_entry.is_none()
+            && self.drag_materialization.is_none()
+    }
+    fn requires_bulk(&self) -> bool {
+        self.version == 2
+            && (self.operation == "extract"
+                || self.operation.starts_with("create_")
+                || self.operation.starts_with("modify_"))
+            && self
+                .extract_options
+                .as_ref()
+                .is_none_or(|options| options.reclamation.is_none())
+    }
     pub fn validate(&self) -> io::Result<()> {
+        if self.parallel_extraction == Some(true) && !self.ordinary_extraction() {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        if self.requires_bulk() != (self.bulk_transfer == Some(1))
+            || self.bulk_transfer.is_some_and(|version| version != 1)
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        if self.job_large_count.is_some()
+            && (self.job_large_count != Some(true)
+                || self.version != 2
+                || self.operation != "extract"
+                || self.job_execution != Some(true)
+                || self.job_extract.is_none()
+                || self
+                    .extract_options
+                    .as_ref()
+                    .is_some_and(|options| options.reclamation.is_some())
+                || self.browser_entry.is_some()
+                || self.read_contract.is_some()
+                || self.delete_source.is_some())
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
         if matches!(
             self.operation.as_str(),
             "modify_zip" | "modify_7z" | "modify_tar"
@@ -286,6 +348,33 @@ impl WorkerRequest {
                 || self.limits.max_entries > 100_000
                 || self.limits.max_metadata_bytes > 128 << 20
                 || browser.expected.validate().is_err())
+        {
+            return Err(io::ErrorKind::InvalidData.into());
+        }
+        if let Some(drag) = &self.drag_materialization
+            && (self.version != 2
+                || self.operation != "extract"
+                || self.browser_entry.is_none()
+                || self.job_execution.is_some()
+                || self.job_extract.is_some()
+                || self.read_contract.is_some()
+                || self.password_interaction.is_some()
+                || self.browser_authorize.is_some()
+                || self.password.is_some()
+                || self.delete_source.is_some()
+                || self.output_readmission.is_some()
+                || self.conflict_policy.is_some()
+                || self
+                    .extract_options
+                    .as_ref()
+                    .is_some_and(|options| options.reclamation.is_some())
+                || drag.members.len() as u64 > self.limits.max_entries
+                || self.volume_bytes.is_some()
+                || self.job_modify.is_some()
+                || self.tree_options.is_some()
+                || self.zip_options.is_some()
+                || self.sevenz_options.is_some()
+                || !drag.valid(self.browser_entry.as_ref().map(|entry| entry.ordinal)))
         {
             return Err(io::ErrorKind::InvalidData.into());
         }
@@ -503,8 +592,15 @@ impl WorkerRequest {
         if self.extract_options.is_some() && (self.version != 2 || self.operation != "extract") {
             return Err(io::ErrorKind::InvalidData.into());
         }
-        if let Some(intent) = self.extract_options.as_ref().and_then(|options| options.reclamation) {
-            let options = self.job_extract.as_ref().ok_or(io::ErrorKind::InvalidData)?;
+        if let Some(intent) = self
+            .extract_options
+            .as_ref()
+            .and_then(|options| options.reclamation)
+        {
+            let options = self
+                .job_extract
+                .as_ref()
+                .ok_or(io::ErrorKind::InvalidData)?;
             if intent.recovery_id.is_nil()
                 || options.reclamation != Some(intent)
                 || options.validate().is_err()
@@ -517,7 +613,11 @@ impl WorkerRequest {
             {
                 return Err(io::ErrorKind::InvalidData.into());
             }
-        } else if self.job_extract.as_ref().is_some_and(|options| options.reclamation.is_some()) {
+        } else if self
+            .job_extract
+            .as_ref()
+            .is_some_and(|options| options.reclamation.is_some())
+        {
             return Err(io::ErrorKind::InvalidData.into());
         }
         self.encoding()?;
@@ -570,6 +670,14 @@ struct ControlFrame {
     existing_bytes: Option<u64>,
     #[serde(default)]
     risk_reply: Option<crate::zip_risk::RiskReply>,
+    #[serde(default)]
+    demand: Option<crate::worker_drag::DragDemand>,
+    #[serde(default)]
+    sequence: Option<u64>,
+    #[serde(default)]
+    offset: Option<u64>,
+    #[serde(default)]
+    length: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -630,17 +738,23 @@ pub struct WorkerFrame {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) cancellation: Option<crate::control::CancellationObservation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work: Option<crate::ArchiveWorkObservation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub password_state: Option<crate::worker_password::PasswordState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conflict_prompt: Option<crate::worker_conflict::ConflictPrompt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extraction_summary: Option<crate::worker_conflict::ExtractionSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub add_result: Option<nxtools_protocol::archive_job::ArchiveJobAddResult>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub risk_prompt: Option<crate::zip_risk::RiskPrompt>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_budget_shortfall: Option<crate::output_readmission::OutputShortfall>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub browser: Option<nxtools_protocol::archive_browser::ArchiveBrowserContext>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub member_ready: Option<DragMemberReady>,
 }
 impl WorkerFrame {
     pub(crate) fn state(operation_id: Uuid, op: &str) -> Self {
@@ -650,6 +764,7 @@ impl WorkerFrame {
             op: op.into(),
             output_budget_shortfall: None,
             browser: None,
+            member_ready: None,
             format: None,
             entries: Vec::new(),
             files_verified: None,
@@ -657,6 +772,7 @@ impl WorkerFrame {
             error_code: None,
             conflict_prompt: None,
             extraction_summary: None,
+            add_result: None,
             risk_prompt: None,
             native: None,
             capabilities: Vec::new(),
@@ -667,6 +783,7 @@ impl WorkerFrame {
             entry_count: None,
             batch_count: None,
             cancellation: None,
+            work: None,
             password_state: None,
         }
     }
@@ -695,7 +812,7 @@ pub fn read_frame<R: Read, T: DeserializeOwned>(input: &mut R) -> io::Result<Opt
         .map(Some)
         .map_err(|_| io::ErrorKind::InvalidData.into())
 }
-pub fn write_frame<W: Write, T: Serialize>(output: &mut W, value: &T) -> io::Result<()> {
+pub fn write_frame<W: Write + ?Sized, T: Serialize>(output: &mut W, value: &T) -> io::Result<()> {
     let bytes = Zeroizing::new(serde_json::to_vec(value).map_err(|_| io::ErrorKind::InvalidData)?);
     if bytes.is_empty() || bytes.len() > MAX_FRAME_BYTES {
         return Err(io::ErrorKind::InvalidData.into());
@@ -703,6 +820,27 @@ pub fn write_frame<W: Write, T: Serialize>(output: &mut W, value: &T) -> io::Res
     output.write_all(&(bytes.len() as u32).to_le_bytes())?;
     output.write_all(&bytes)?;
     output.flush()
+}
+
+fn read_control(
+    input: &mut impl Read,
+    replies: &crate::worker_output::ReplyPort,
+) -> io::Result<Option<ControlFrame>> {
+    loop {
+        match crate::worker_bulk::read(input)? {
+            None => return Ok(None),
+            Some(crate::worker_bulk::Packet::Json(body)) => {
+                return serde_json::from_slice(&body)
+                    .map(Some)
+                    .map_err(|_| io::ErrorKind::InvalidData.into());
+            }
+            Some(crate::worker_bulk::Packet::Binary(binding, data)) => {
+                if !replies.deliver_binary(binding, data) {
+                    return Err(io::ErrorKind::InvalidData.into());
+                }
+            }
+        }
+    }
 }
 
 /// One worker owns exactly one request and one control reader until process exit.
@@ -717,6 +855,8 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
     let control = OperationControl::with_operation_id(operation_id);
     let reader_control = control.clone();
     let replies = crate::worker_output::ReplyPort::new();
+    replies.configure_bulk(request.bulk_transfer == Some(1));
+    replies.configure_parallel(request.parallel_extraction == Some(true));
     let reader_replies = replies.clone();
     let metadata = crate::worker_metadata::MetadataCredit::new();
     let reader_metadata = metadata.clone();
@@ -726,13 +866,36 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
     let password_interaction = request.password_interaction == Some(true);
     let conflict_enabled = request.conflict_policy.is_some();
     let risk_enabled = request.version == 2 && request.operation == "extract";
+    let drag = request
+        .drag_materialization
+        .as_ref()
+        .map(|value| crate::worker_drag::DragPort::new(value, request.limits.max_output_bytes));
+    let reader_drag = drag.clone();
     std::thread::Builder::new()
         .name("archive-worker-control".into())
         .spawn(move || {
             loop {
-                match read_frame::<_, ControlFrame>(&mut input) {
+                match read_control(&mut input, &reader_replies) {
                     Ok(Some(frame)) if frame.version == 1 && frame.operation_id == operation_id => {
                         match frame.op.as_str() {
+                            "drag_demand" if reader_drag.is_some() => {
+                                if !frame.demand.is_some_and(|demand| {
+                                    reader_drag.as_ref().is_some_and(|port| port.accept(demand))
+                                }) {
+                                    reader_control.cancel();
+                                    break;
+                                }
+                            }
+                            "drag_end" if reader_drag.is_some() => {
+                                if frame.demand.is_some()
+                                    || !reader_drag
+                                        .as_ref()
+                                        .is_some_and(crate::worker_drag::DragPort::end)
+                                {
+                                    reader_control.cancel();
+                                    break;
+                                }
+                            }
                             "cancel" => {
                                 reader_control.receive_cancel();
                                 break;
@@ -821,26 +984,54 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
                                 if let (Some(call_id), Some(success)) =
                                     (frame.call_id, frame.success)
                                 {
-                                    reader_replies.deliver(crate::worker_output::NativeReply {
+                                    if !reader_replies.deliver(crate::worker_output::NativeReply {
                                         call_id,
                                         success,
                                         token: frame.token,
                                         error_code: frame.error_code,
                                         read_data: frame.read_data,
                                         existing_bytes: frame.existing_bytes,
-                                    });
+                                        sequence: frame.sequence,
+                                        offset: frame.offset,
+                                        length: frame.length,
+                                        binary: None,
+                                        payload: None,
+                                    }) && reader_replies.bulk_enabled()
+                                    {
+                                        reader_replies.fail(ArchiveError::IoFailure);
+                                        reader_control.cancel();
+                                        break;
+                                    }
                                 } else {
+                                    if reader_replies.bulk_enabled() {
+                                        reader_replies.fail(ArchiveError::IoFailure);
+                                    }
                                     reader_control.cancel();
                                     break;
                                 }
                             }
                             _ => {
+                                if reader_replies.bulk_enabled() {
+                                    reader_replies.fail(ArchiveError::IoFailure);
+                                }
                                 reader_control.cancel();
                                 break;
                             }
                         }
                     }
-                    _ => {
+                    Err(_) => {
+                        reader_replies.fail(ArchiveError::IoFailure);
+                        reader_control.cancel();
+                        break;
+                    }
+                    Ok(Some(_)) => {
+                        if reader_replies.bulk_enabled() {
+                            reader_replies.fail(ArchiveError::IoFailure);
+                        }
+                        reader_control.cancel();
+                        break;
+                    }
+                    Ok(None) => {
                         reader_control.cancel();
                         break;
                     }
@@ -850,8 +1041,20 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
     let mut accepted = WorkerFrame::state(operation_id, "accepted");
     if request.version == 2 {
         accepted.capabilities = vec!["source_lease_v1".into(), "budget_reservations_v1".into()];
+        if request.bulk_transfer == Some(1) {
+            accepted.capabilities.push("binary_bulk_v1".into());
+            if request.ordinary_extraction() {
+                accepted.capabilities.push("extraction_output_v1".into());
+                if request.parallel_extraction == Some(true) {
+                    accepted.capabilities.push("parallel_extraction_v1".into());
+                }
+            }
+        }
         if request.job_execution == Some(true) {
             accepted.capabilities.push("product_job_v1".into());
+            if request.job_large_count == Some(true) {
+                accepted.capabilities.push("job_large_count_v1".into());
+            }
         }
         if request.read_contract.is_some() || request.browser_entry.is_some() {
             accepted.capabilities.push("browser_entry_v1".into());
@@ -940,9 +1143,18 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
         accepted
             .capabilities
             .push("zip_output_readmission_v1".into());
+        if request.drag_materialization.is_some() {
+            accepted.capabilities.push("drag_materialization_v1".into());
+        }
         accepted.capabilities.push("zip_risk_v1".into());
-        if request.extract_options.as_ref().is_some_and(|options| options.reclamation.is_some()) {
-            accepted.capabilities.push("stored_zip_reclamation_v1".into());
+        if request
+            .extract_options
+            .as_ref()
+            .is_some_and(|options| options.reclamation.is_some())
+        {
+            accepted
+                .capabilities
+                .push("stored_zip_reclamation_v1".into());
         }
     }
     if password_interaction {
@@ -969,7 +1181,8 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
         &mut output,
         &control,
         request.job_execution == Some(true),
-    );
+    )
+    .with_drag(drag.clone());
     let result = execute(
         &mut request,
         &control,
@@ -977,6 +1190,7 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
         replies,
         &metadata,
         &interaction,
+        drag,
     );
     interaction.close();
     let mut terminal = match result {
@@ -987,6 +1201,7 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
             frame
         }
     };
+    terminal.work = Some(control.work_observation());
     if terminal.error_code.as_deref() == Some("Cancelled") {
         terminal.cancellation = control.cancellation_observation();
     }
@@ -1001,6 +1216,21 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
     write_frame(&mut output, &terminal)
 }
 
+/// Borrowed only while the original native runner retains its acquired ordinary source.
+pub(crate) struct NativeReadLease {
+    path: std::path::PathBuf,
+}
+impl NativeReadLease {
+    pub(crate) fn protects(&self, snapshot: &crate::ArchiveSnapshot) -> bool {
+        snapshot.revision.volumes.is_empty() && snapshot.revision.path == self.path
+    }
+}
+
+struct OpenedAttempt<'a> {
+    source_lease: Option<&'a NativeReadLease>,
+    catalog: Option<(crate::ArchiveSnapshot, crate::engine::RetainedCatalog)>,
+}
+
 fn execute<W: Write + Send>(
     request: &mut WorkerRequest,
     control: &OperationControl,
@@ -1008,6 +1238,7 @@ fn execute<W: Write + Send>(
     replies: crate::worker_output::ReplyPort,
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
+    drag: Option<crate::worker_drag::DragPort>,
 ) -> crate::Result<(u64, u64)> {
     // Only original inherited private control can carry preauthorized bytes; never enables prompts.
     if let Some(mut bytes) = request.browser_password.take() {
@@ -1052,12 +1283,33 @@ fn execute<W: Write + Send>(
         }
         // General jobs permit unencrypted TAR/stream operations without pretending they support passwords.
     }
-    if request.extract_options.as_ref().is_some_and(|options| options.reclamation.is_some()) {
+    let source_lease = (request.version == 2
+        && matches!(request.operation.as_str(), "open" | "test" | "extract")
+        && request.volume_paths.len() <= 1
+        && request
+            .extract_options
+            .as_ref()
+            .is_none_or(|options| options.reclamation.is_none()))
+    .then(|| NativeReadLease {
+        path: std::path::PathBuf::from(&request.path),
+    });
+    if let Some(lease) = &source_lease {
+        control.protect_source(lease.path.clone());
+    }
+    if request
+        .extract_options
+        .as_ref()
+        .is_some_and(|options| options.reclamation.is_some())
+    {
         return crate::reclamation::execute(request, control, output, replies);
     }
+    let mut opened = OpenedAttempt {
+        source_lease: source_lease.as_ref(),
+        catalog: None,
+    };
     if request.password_interaction == Some(true)
         && (!(request.job_execution == Some(true) || request.output_readmission.is_some())
-            || job_password_format(request, control)?)
+            || job_password_format(request, control, &mut opened)?)
     {
         return crate::worker_password::execute(
             request,
@@ -1066,11 +1318,34 @@ fn execute<W: Write + Send>(
             replies,
             metadata,
             interaction,
+            source_lease.as_ref(),
         );
     }
-    execute_attempt(request, control, output, replies, metadata, interaction)
+    if let Some(drag) = drag {
+        return crate::worker_drag::execute(
+            request,
+            control,
+            output,
+            replies,
+            &drag,
+            source_lease.as_ref(),
+        );
+    }
+    execute_opened_attempt(
+        request,
+        control,
+        output,
+        replies,
+        metadata,
+        interaction,
+        opened,
+    )
 }
-fn job_password_format(request: &WorkerRequest, control: &OperationControl) -> crate::Result<bool> {
+fn job_password_format(
+    request: &WorkerRequest,
+    control: &OperationControl,
+    opened: &mut OpenedAttempt<'_>,
+) -> crate::Result<bool> {
     let mut bytes = [0u8; 8];
     let count = std::fs::File::open(&request.path)?.read(&mut bytes)?;
     if count >= 4 && &bytes[..2] == b"PK" {
@@ -1080,13 +1355,20 @@ fn job_password_format(request: &WorkerRequest, control: &OperationControl) -> c
             .map_err(|_| ArchiveError::UnsupportedOperation)?;
         let engine = ArchiveEngine::with_limits(request.limits.into());
         let engine = if request.volume_paths.len() > 1 {
-            engine.with_zip_volumes()
+            engine.with_held_zip_volumes(&request.volume_paths)
         } else {
             engine
         };
-        return engine
-            .open(open, control)
-            .map(|snapshot| snapshot.entries().iter().any(|entry| entry.encrypted()));
+        let (snapshot, retained) = engine.open_attempt_catalog(open, control, false)?;
+        let encrypted = snapshot.entries().iter().any(|entry| entry.encrypted());
+        if !encrypted
+            && opened
+                .source_lease
+                .is_some_and(|lease| lease.protects(&snapshot))
+        {
+            opened.catalog = Some((snapshot, retained));
+        }
+        return Ok(encrypted);
     }
     Ok(count >= 6 && &bytes[..6] == b"7z\xbc\xaf\x27\x1c" || count >= 7 && &bytes[..4] == b"Rar!")
 }
@@ -1098,7 +1380,35 @@ pub(crate) fn execute_attempt<W: Write + Send>(
     replies: crate::worker_output::ReplyPort,
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
+    source_lease: Option<&NativeReadLease>,
 ) -> crate::Result<(u64, u64)> {
+    execute_opened_attempt(
+        request,
+        control,
+        output,
+        replies,
+        metadata,
+        interaction,
+        OpenedAttempt {
+            source_lease,
+            catalog: None,
+        },
+    )
+}
+
+fn execute_opened_attempt<W: Write + Send>(
+    request: &mut WorkerRequest,
+    control: &OperationControl,
+    output: &mut W,
+    replies: crate::worker_output::ReplyPort,
+    metadata: &crate::worker_metadata::MetadataCredit,
+    interaction: &crate::interaction::InteractionPort,
+    opened: OpenedAttempt<'_>,
+) -> crate::Result<(u64, u64)> {
+    let OpenedAttempt {
+        source_lease,
+        catalog,
+    } = opened;
     if request.operation == "modify_tar" {
         return crate::worker_tar_edit::execute(request, control, output, replies, interaction);
     }
@@ -1120,7 +1430,7 @@ pub(crate) fn execute_attempt<W: Write + Send>(
             .encoding()
             .map_err(|_| ArchiveError::UnsupportedOperation)?;
         let snapshot = ArchiveEngine::with_limits(request.limits.into())
-            .open(open, control)
+            .open_catalog(open, control)
             .map_err(|error| match error {
                 ArchiveError::UnsupportedFormat => ArchiveError::UnsupportedOperation,
                 other => other,
@@ -1166,18 +1476,34 @@ pub(crate) fn execute_attempt<W: Write + Send>(
     ) {
         return result;
     }
+    #[cfg(feature = "isolated-codecs")]
+    if let Some(result) = crate::worker_formats::try_execute(
+        request,
+        control,
+        output,
+        replies.clone(),
+        metadata,
+        interaction,
+    ) {
+        return result;
+    }
     let limits: crate::ResourceLimits = request.limits.into();
     // A selected member still needs the complete verified outer TAR spool for discovery.
     // Charge that intermediate spool to finite metadata credit, not the selected output cap.
     let compound = (request.output_readmission.is_some() || request.browser_entry.is_some())
         && crate::worker_job::compound(&request.path).is_some();
-    let discovery_limits = if compound {
+    let mut discovery_limits = if compound {
         crate::worker_job::spool_limits(limits)
+    } else if request.browser_entry.is_some() {
+        crate::worker_browser::decode_limits(request)
     } else {
         limits
     };
+    if request.browser_entry.is_some() && request.volume_paths.len() > 1 {
+        discovery_limits.max_output_bytes = ResourceLimits::default().max_output_bytes;
+    }
     let engine = if request.volume_paths.len() > 1 {
-        ArchiveEngine::with_limits(discovery_limits).with_zip_volumes()
+        ArchiveEngine::with_limits(discovery_limits).with_held_zip_volumes(&request.volume_paths)
     } else {
         ArchiveEngine::with_limits(discovery_limits)
     };
@@ -1190,10 +1516,19 @@ pub(crate) fn execute_attempt<W: Write + Send>(
     open.encoding = request
         .encoding()
         .map_err(|_| ArchiveError::UnsupportedOperation)?;
-    let snapshot = if request.operation == "extract" && request.output_readmission.is_some() {
-        engine.open_for_output_readmission(open, control)?
+    let (snapshot, retained) = if let Some(catalog) = catalog {
+        catalog
+    } else if request.operation == "open" {
+        (
+            engine.open(open, control)?,
+            crate::engine::RetainedCatalog::default(),
+        )
     } else {
-        engine.open(open, control)?
+        engine.open_attempt_catalog(
+            open,
+            control,
+            request.operation == "extract" && request.output_readmission.is_some(),
+        )?
     };
     let compound = compound
         && matches!(
@@ -1250,20 +1585,33 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         return Err(ArchiveError::SourceChanged);
     }
     if request.operation == "extract" {
-        let mut plan = crate::worker_job::plan(request, &snapshot)?;
-        if request.job_execution == Some(true) && plan.files().len() > 4096 {
+        let mut plan = crate::worker_job::plan(request, &snapshot, control)?;
+        if request.job_execution == Some(true)
+            && plan.files().len() as u64 > request.output_file_limit()
+        {
             return Err(ArchiveError::ResourceLimit);
         }
-        if request.output_readmission.is_some() {
-            if snapshot.format() == crate::ArchiveFormat::Zip {
-                let mut source = crate::engine::open_snapshot(&snapshot, &limits, control)?;
-                crate::formats::zip::preflight_created(
-                    &mut source,
+        let mut zip_source = if (request.output_readmission.is_some()
+            || request.parallel_extraction == Some(true))
+            && snapshot.format() == crate::ArchiveFormat::Zip
+        {
+            Some(crate::engine::open_snapshot(&snapshot, &limits, control)?)
+        } else {
+            None
+        };
+        let mut zip_plan = zip_source
+            .as_mut()
+            .map(|source| {
+                crate::formats::zip::ValidatedZip::new(
+                    source,
                     snapshot.entries(),
                     &limits,
                     control,
-                )?;
-            }
+                    false,
+                )
+            })
+            .transpose()?;
+        if request.output_readmission.is_some() {
             let mut source = crate::engine::open_snapshot(&snapshot, &limits, control)?;
             crate::engine::ensure_revision(&mut source, &snapshot.revision, control)?;
             crate::worker_output::PrivateOutput::new(output, control, replies.clone())
@@ -1275,6 +1623,7 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         }
         control.configure_extraction_progress(plan.total_bytes(), plan.files().len() as u64);
         let mut native = crate::worker_output::PrivateOutput::new(output, control, replies)
+            .ordinary_extraction(request.ordinary_extraction())
             .extraction_metadata(request.extract_options.is_some())
             .conflicts(
                 request.conflict_policy,
@@ -1295,23 +1644,63 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         }
         let special_skips = plan.skipped_special();
         let outcome = if compound {
-            crate::worker_job::extract_compound(request, &snapshot, &plan, control, &mut native)
+            crate::worker_job::extract_compound(
+                request,
+                &snapshot,
+                &plan,
+                &retained,
+                control,
+                &mut native,
+            )
         } else {
+            let extraction_limits = crate::worker_browser::decode_limits(request);
             let extraction = if request.volume_paths.len() > 1 {
-                ArchiveEngine::with_limits(limits).with_zip_volumes()
+                ArchiveEngine::with_limits(extraction_limits)
+                    .with_held_zip_volumes(&request.volume_paths)
             } else {
-                ArchiveEngine::with_limits(limits)
+                ArchiveEngine::with_limits(extraction_limits)
             };
             let extraction = if let Some(password) = request.password.as_deref() {
                 extraction.with_password(password)
             } else {
                 extraction
             };
-            extraction.extract(
-                crate::output::ExtractRequest::new(snapshot, plan),
-                control,
-                &mut native,
-            )
+            if let Some(records) = zip_plan.as_mut() {
+                if request.parallel_extraction == Some(true) {
+                    native.with_parallel(|factory| {
+                        extraction.extract_with_zip_parallel(
+                            crate::output::ExtractRequest::new(snapshot.clone(), plan),
+                            control,
+                            source_lease,
+                            records,
+                            factory,
+                        )
+                    })
+                } else {
+                    extraction.extract_with_zip_plan(
+                        crate::output::ExtractRequest::new(snapshot.clone(), plan),
+                        control,
+                        &mut native,
+                        source_lease,
+                        records,
+                    )
+                }
+            } else if retained.tar_plan.is_some() {
+                extraction.extract_retained(
+                    crate::output::ExtractRequest::new(snapshot.clone(), plan),
+                    control,
+                    &mut native,
+                    source_lease,
+                    &retained,
+                )
+            } else {
+                extraction.extract_with_source_lease(
+                    crate::output::ExtractRequest::new(snapshot.clone(), plan),
+                    control,
+                    &mut native,
+                    source_lease,
+                )
+            }
         };
         native.extraction_summary(
             outcome
@@ -1324,7 +1713,7 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         return Ok((outcome.files_committed, outcome.bytes_committed));
     }
     if request.operation == "test" {
-        let result = engine.execute(ArchiveRequest::test(snapshot), control)?;
+        let result = engine.execute_retained(ArchiveRequest::test(snapshot), control, &retained)?;
         return Ok((result.files_verified(), result.bytes_verified()));
     }
     crate::worker_metadata::emit_entries(
@@ -1337,4 +1726,111 @@ pub(crate) fn execute_attempt<W: Write + Send>(
         metadata,
     )?;
     Ok((snapshot.entries().len() as u64, 0))
+}
+
+#[cfg(test)]
+mod drag_wire_tests {
+    use super::*;
+
+    #[test]
+    fn drag_control_and_ready_frames_keep_original_operation_and_member_ids() {
+        let operation_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+        let demand: ControlFrame = serde_json::from_value(serde_json::json!({
+            "version": 1, "operation_id": operation_id, "op": "drag_demand",
+            "demand": { "request_id": request_id, "index": 9, "ordinal": 13, "output_limit": 4096 }
+        }))
+        .expect("demand frame");
+        assert_eq!(demand.operation_id, operation_id);
+        assert_eq!(demand.demand.expect("payload").ordinal, 13);
+        let end: ControlFrame = serde_json::from_value(serde_json::json!({
+            "version": 1, "operation_id": operation_id, "op": "drag_end"
+        }))
+        .expect("end frame");
+        assert!(end.demand.is_none());
+        let mut ready = WorkerFrame::state(operation_id, "drag_member_ready");
+        ready.member_ready = Some(DragMemberReady {
+            request_id,
+            index: 9,
+            ordinal: 13,
+            bytes: 7,
+        });
+        let mut frame = Vec::new();
+        write_frame(&mut frame, &ready).expect("bounded wire");
+        let received: WorkerFrame = read_frame(&mut frame.as_slice())
+            .expect("frame")
+            .expect("present");
+        assert_eq!(received.member_ready.expect("ready").request_id, request_id);
+        assert_eq!(received.operation_id, operation_id);
+        assert_eq!(received.op, "drag_member_ready");
+    }
+
+    #[test]
+    fn absent_drag_field_preserves_old_request_wire() {
+        let mut request = WorkerRequest::open(Uuid::new_v4(), "example.zip".into());
+        assert!(request.validate().is_ok());
+        assert!(
+            serde_json::to_value(&request)
+                .expect("request")
+                .get("drag_materialization")
+                .is_none()
+        );
+        request.drag_materialization = Some(DragMaterialization {
+            version: 1,
+            members: vec![DragMember {
+                index: 0,
+                ordinal: 0,
+            }],
+        });
+        assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn retained_start_binds_browser_source_and_unique_ordinals() {
+        use nxtools_protocol::archive_browser::{ArchiveBrowserContext, ArchiveSourceBinding};
+        let mut request = WorkerRequest::open(Uuid::new_v4(), "example.zip".into());
+        request.version = 2;
+        request.limits.max_entries = 100_000;
+        request.limits.max_metadata_bytes = 128 << 20;
+        request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
+        request.browser_entry = Some(crate::worker_browser::BrowserEntry {
+            ordinal: 17,
+            expected: ArchiveBrowserContext {
+                snapshot_id: Uuid::new_v4(),
+                format: "Zip".into(),
+                comment: String::new(),
+                source: ArchiveSourceBinding {
+                    native: "v1:example".into(),
+                    digest: [0; 32],
+                    size: 1,
+                    modified_unix_ns: 0,
+                },
+                sevenz_edit: None,
+                tar_edit: None,
+            },
+        });
+        request.drag_materialization = Some(DragMaterialization {
+            version: 1,
+            members: vec![
+                DragMember {
+                    index: 2,
+                    ordinal: 17,
+                },
+                DragMember {
+                    index: 0,
+                    ordinal: 9,
+                },
+            ],
+        });
+        assert!(request.validate().is_ok());
+        let value = serde_json::to_value(&request).expect("start");
+        let decoded: WorkerRequest = serde_json::from_value(value).expect("roundtrip");
+        assert!(decoded.validate().is_ok());
+        request.drag_materialization.as_mut().expect("plan").members[1].ordinal = 17;
+        assert!(request.validate().is_err());
+        request.drag_materialization.as_mut().expect("plan").members[1].ordinal = 9;
+        request.password_interaction = Some(true);
+        assert!(request.validate().is_err());
+    }
 }

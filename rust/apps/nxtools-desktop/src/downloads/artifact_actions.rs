@@ -430,26 +430,42 @@ impl DownloadApplication {
         task_id: DownloadTaskId,
         cx: &mut Context<Self>,
     ) {
+        if self.batch_busy() {
+            return;
+        }
         // The user-configurable contract for "删除文件": when the file delete
         // is disabled, the menu item degenerates to a list-only removal.
         if !self.config.download.task_removal_deletes_file {
             let _ = self.remove(task_id, false, cx);
             return;
         }
-        if let Some(window) = self.delete_confirmation_windows.get(&task_id).cloned() {
-            if window
-                .update(cx, |_, window, _| window.activate_window())
-                .is_ok()
-            {
-                return;
-            }
-            self.delete_confirmation_windows.remove(&task_id);
-        }
-        let application = cx.entity();
         let path = self
             .task(task_id)
             .and_then(|task| task.final_path.as_ref())
             .map_or_else(|| "最终文件".into(), |path| path.display().to_string());
+        self.open_delete_confirmation(task_id, path, None, cx);
+    }
+
+    pub(super) fn open_delete_confirmation(
+        &mut self,
+        task_id: DownloadTaskId,
+        path: String,
+        batch: Option<BatchConfirmation>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(window) = self.delete_confirmation_windows.get(&task_id).cloned() {
+            if batch.is_none()
+                && window
+                    .update(cx, |_, window, _| window.activate_window())
+                    .is_ok()
+            {
+                return;
+            }
+            let _ = window.update(cx, |_, window, _| window.remove_window());
+            self.delete_confirmation_windows.remove(&task_id);
+        }
+        let application = cx.entity();
+        let is_batch = batch.is_some();
         let window_size = size(px(380.0), px(178.0));
         let window_bounds = WindowBounds::centered(window_size, cx);
         let opened = cx.open_window(
@@ -476,9 +492,10 @@ impl DownloadApplication {
                 window.on_window_should_close(cx, move |_, cx| {
                     let application = close_application.clone();
                     cx.defer(move |cx| {
-                        application.update(cx, |application, _| {
+                        application.update(cx, |application, cx| {
                             application
                                 .handle_native_delete_confirmation_close(task_id, closing_window);
+                            cx.notify();
                         });
                     });
                     true
@@ -488,6 +505,7 @@ impl DownloadApplication {
                     application,
                     task_id,
                     path,
+                    batch,
                 });
                 cx.new(|cx| Root::new(view, window, cx))
             },
@@ -496,6 +514,10 @@ impl DownloadApplication {
             Ok(window) => {
                 self.delete_confirmation_windows
                     .insert(task_id, window.into());
+                if is_batch {
+                    self.pending_batch_confirmation = Some(task_id);
+                    cx.notify();
+                }
             }
             Err(error) => {
                 self.notifications.update(cx, |notifications, cx| {
@@ -516,6 +538,10 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         if let Some(window) = self.delete_confirmation_windows.remove(&task_id) {
+            if self.pending_batch_confirmation == Some(task_id) {
+                self.pending_batch_confirmation = None;
+                cx.notify();
+            }
             let _ = window.update(cx, |_, window, _| window.remove_window());
         }
     }
@@ -527,6 +553,9 @@ impl DownloadApplication {
     ) {
         if self.delete_confirmation_windows.get(&task_id) == Some(&closing_window) {
             self.delete_confirmation_windows.remove(&task_id);
+            if self.pending_batch_confirmation == Some(task_id) {
+                self.pending_batch_confirmation = None;
+            }
         }
     }
 
@@ -535,6 +564,9 @@ impl DownloadApplication {
         task_id: DownloadTaskId,
         cx: &mut Context<Self>,
     ) {
+        if self.batch_busy() {
+            return;
+        }
         if self.remove(task_id, true, cx).is_ok() {
             self.close_delete_confirmation(task_id, cx);
         }

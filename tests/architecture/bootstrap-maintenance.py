@@ -22,4 +22,15 @@ assert 'RecoveryOnly' in manifest and 'ValidateApplicationRelease' in manifest
 assert 'MaintenanceProbe' in broker and 'RemoveSupersededArchiveFiles' in broker
 assert 'RemoveSupersededArchiveFiles' in manifest and 'SetFileInformationByHandle' in manifest
 assert 'TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(15)' in win
+repair=read('csharp/NxTools.PlatformHost/Windows/TrustedMissingBootstrapRepair.cs')
+assert '--repair-missing-trusted-bootstrap' in program
+assert 'TrustedUpdateBroker.EnrollMissingRoot(package, sink, id)' in repair
+repair_enrollment=broker.split('internal static void EnrollMissingRoot(',1)[1].split('private static void ProvisionEnrollment(',1)[0]
+assert 'IsEnrolled()' not in repair_enrollment
+assert 'RequireMissingRoot(Root)' in repair_enrollment and 'VerifyPackage(package, publicKey, 0)' in repair_enrollment
+assert 'ProvisionEnrollment(package, publicKey, verified, log, correlationId, requireInitialDeployment: true)' in repair_enrollment
+assert 'RequireMissingRoot(root)' in repair and 'operations.Stop()' in repair and 'operations.EnterDeploymentGate()' in repair
+assert 'operations.CompleteDeployment(package, log, correlation)' in repair and 'TrustedUpdateBroker.RequestAsync(package, id' in repair
+transaction=read('csharp/NxTools.PlatformHost/Windows/TrustedUpdateTransaction.cs')
+assert 'previous.DeploymentPending' in transaction and 'initial_deployment_committed' in transaction
 print('PASS explicit same-key bootstrap maintenance wiring / strict new admission / exact legacy recovery; source only')

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NxTools.PlatformHost.Windows.Archive;
 
 namespace NxTools.PlatformHost.Tests;
@@ -102,8 +103,25 @@ internal static class ArchiveCacheRetirementTests
                 Check(!cache.Release(lease.Id) && !File.Exists(output), "nested obstruction must not report retirement");
                 Check(File.Exists(nestedRoot + ".retire.json"), "nested obstruction lost fixed-parent recovery authority");
             }
+            using (var retirement = JsonDocument.Parse(File.ReadAllBytes(nestedRoot + ".retire.json"))) {
+                Check(retirement.RootElement.GetProperty("Retired").GetBoolean() &&
+                    !retirement.RootElement.GetProperty("OutputRemoved").GetBoolean(),
+                    "retirement must reuse its durable retired stamp without a second output-removed flush");
+            }
             File.Delete(Path.Combine(nestedRoot, "files", "unknown.txt"));
             using (var restart = ArchiveEntryCache.ForOwnedTestCache(root, clock)) { await restart.StartupCleanup; Check(!Directory.Exists(nestedRoot), "nested retirement restart recovery"); }
+            string removedRoot;
+            using (var cache = ArchiveEntryCache.ForOwnedTestCache(root, clock)) {
+                var lease = cache.Create(Guid.NewGuid(), Guid.NewGuid(), 1); removedRoot = lease.Root;
+                var output = Path.Combine(removedRoot, "files", "selected.txt"); File.WriteAllText(output, "baseline"); lease.Seal(output);
+                File.WriteAllText(Path.Combine(removedRoot, "unknown.txt"), "unknown");
+                Check(!cache.Release(lease.Id) && !File.Exists(output), "root obstruction must retain its retired record");
+            }
+            File.Delete(Path.Combine(removedRoot, "unknown.txt")); Directory.Delete(removedRoot);
+            using (var restart = ArchiveEntryCache.ForOwnedTestCache(root, clock)) {
+                await restart.StartupCleanup;
+                Check(!File.Exists(removedRoot + ".retire.json"), "restart must retire a pending record after its owned root is already gone");
+            }
             string legacyManifest, nullManifest, eligibleOutput;
             using (var cache = ArchiveEntryCache.ForOwnedTestCache(root, clock)) {
                 var legacy = cache.Create(Guid.NewGuid(), Guid.NewGuid(), 1); legacyManifest = Path.Combine(legacy.Root, "manifest.json");

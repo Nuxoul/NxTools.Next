@@ -37,6 +37,37 @@ internal static class ArchiveJobTests {
         Check(display.Valid("conflict") && !(oldPrompt with{Display=display}).ToString().Contains("sentinel"),"typed display redaction");
         Check(!new ArchiveJobPromptDisplay(null,"x").Valid("conflict") && !new ArchiveJobPromptDisplay("x","line\nbreak").Valid("conflict"),"invalid display bounds/shape");
         try{JsonSerializer.Deserialize<ArchiveJobPromptDisplay>("{\"incoming_member\":\"x\",\"target\":\"y\",\"authority\":true}",ArchiveJobWire.Strict);throw new InvalidOperationException("unknown display authority accepted");}catch(JsonException){}
+        var oldTerminal=new ArchiveJobTerminal("succeeded",Journal:[]);
+        Check(!JsonSerializer.SerializeToElement(oldTerminal,JsonDefaults.Options).TryGetProperty("journal_summary",out _),"legacy terminal omits summary");
+        var outcomes=new ArchiveJobCommitOutcome[] {
+            new("Committed",true,"retained",1,3),
+            new("FailedBeforeCommit",false,"partial_removed",1,0),
+            new("CommitOutcomeUnknown",null,"retained_uncertain",1,0)
+        };
+        var detail=new ArchiveJobCommit(2,"CommitOutcomeUnknown",false,0,Published:null,Cleanup:"retained_uncertain");
+        var terminal=new ArchiveJobTerminal("cancelled",FilesCommitted:1,BytesCommitted:3,Journal:[detail],
+            JournalSummary:new(3,false,outcomes));
+        var frame=new ArchiveJobEvent(1,Guid.NewGuid(),Guid.NewGuid(),1,"terminal",Terminal:terminal).Envelope();
+        var encoded=JsonSerializer.SerializeToUtf8Bytes(frame,JsonDefaults.Options);
+        Check(encoded.Length<ProtocolConstants.MaxFrameBytes,"partial terminal fits ordinary 1MiB frame");
+        var decoded=frame.Payload.GetProperty("data").Deserialize<ArchiveJobEvent>(ArchiveJobWire.Strict)!;
+        Check(decoded.Terminal?.JournalSummary?.TotalRecords==3 && decoded.Terminal.JournalSummary.Outcomes[2].Published is null &&
+            decoded.Terminal.Journal is { Count:1 } && !decoded.Terminal.JournalSummary.DetailComplete,"unknown/failed/committed partial summary roundtrip");
+        var oldDecoded=JsonSerializer.Deserialize<ArchiveJobTerminal>(JsonSerializer.Serialize(oldTerminal,JsonDefaults.Options),ArchiveJobWire.Strict)!;
+        var malformed=terminal with{JournalSummary=terminal.JournalSummary! with{TotalRecords=2}};
+        Check(JsonSerializer.SerializeToElement(malformed,JsonDefaults.Options).GetProperty("journal_summary").GetProperty("total_records").GetUInt64()==2,
+            "malformed native totals remain visible to Rust wire validation");
+        var maxDetail=Enumerable.Range(0,256).Select(i=>new ArchiveJobCommit((ulong)i,"Committed",false,1,
+            NativeIdentity:"v1:"+new string('a',60),Published:true,Cleanup:"retained")).ToArray();
+        var bounded=new ArchiveJobEvent(1,Guid.NewGuid(),Guid.NewGuid(),1,"terminal",Terminal:
+            new ArchiveJobTerminal("succeeded",FilesCommitted:256,BytesCommitted:256,Journal:maxDetail,
+                JournalSummary:new(256,true,[new("Committed",true,"retained",256,256)]))).Envelope();
+        Check(JsonSerializer.SerializeToUtf8Bytes(bounded,JsonDefaults.Options).Length<ProtocolConstants.MaxFrameBytes,
+            "maximum bounded detail fits the original frame");
+        Check(oldDecoded.JournalSummary is null,"old terminal decodes without summary");
+        var oldAck=ProtocolEnvelope.Create("hello_ack",new{accepted_capabilities=Array.Empty<string>()});
+        var newAck=ProtocolEnvelope.Create("hello_ack",new{accepted_capabilities=new[]{PlatformCapabilities.ArchiveJobLargeCount}});
+        Check(!PlatformPipeClient.AcceptsArchiveJobLargeCount(oldAck) && PlatformPipeClient.AcceptsArchiveJobLargeCount(newAck),"large-count capability requires HelloAck");
         var picker=new ArchivePickerCommand{Version=1,OperationId=Guid.NewGuid(),SessionId=Guid.NewGuid(),Generation=7,OwnerWindowHandle=1,Purpose="files"};
         using var cancelled=new CancellationTokenSource();cancelled.Cancel();var result=ArchiveJobPicker.Pick(picker,0,cancelled.Token);Check(result.Cancelled && result.Paths.Length==0 && result.Generation==7,"pre-cancel must not create dialog");
         return Task.CompletedTask;
@@ -130,14 +161,14 @@ internal static class ArchiveJobTests {
             var answer=new ArchiveJobReply{Ticket=current.Prompt.Ticket,Kind="password",ApplyToAll=false,Password=System.Text.Encoding.UTF8.GetBytes("synthetic-private-ZIP-secret")};Check(jobs.Dispatch(Wire(Control(retry,"reply",answer))).Success,"actual private password reply");var verified=await Finish(jobs);Check(verified.Outcome=="succeeded" && verified.FilesCommitted>0 && verified.CleanupComplete,"private encrypted extraction "+verified.Code);
             Check(log.Records.All(r=>!r.Contains("synthetic-private-ZIP-secret")),"secret leaked to production diagnostics");
             Check(log.Records.Count(r=>r.StartsWith("archive.job.terminal "))==2 && log.Records.Any(r=>r.StartsWith("archive.job.accepted ")) && log.Records.Any(r=>r.StartsWith("archive.job.started ")) && log.Records.All(r=>!r.Contains(root) && !r.Contains("private-sentinel") && !r.Contains("资料")),"correlated low-noise diagnostics privacy");
-            log.Throw=true;var missing=Start(new(){Kind="test",Paths=[Path.Combine(root,"absent-sentinel.zip")]});Check(jobs.Dispatch(Wire(missing)).Success,"native failure admission");var denied=await Finish(jobs);Check(denied.Outcome=="failed" && denied.Code=="source_unavailable" && denied.NativeErrorCode==2 && denied.CleanupComplete,"native owner code survives worker failure and throwing sink "+denied.Code);
+            log.Throw=true;var missing=Start(new(){Kind="test",Paths=[Path.Combine(root,"absent-sentinel.zip")]});Check(!jobs.Dispatch(Wire(missing)).Success,"missing source rejected during native admission");var denied=await Finish(jobs);Check(denied.Outcome=="rejected" && denied.Code=="source_unavailable" && denied.NativeErrorCode==2 && denied.CleanupComplete,"native owner code survives admission rejection and throwing sink "+denied.Code);
         }finally{Directory.Delete(root,true);}
     }
     public static async Task ActualCancelAfterPublicationRetainsNativeFacts(){
         var root=Package();try {
             var archive=Path.Combine(root,"publication.zip");using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){var e=zip.CreateEntry("a.txt");using var w=new StreamWriter(e.Open());w.Write("published");}
             var destination=Path.Combine(root,"out");Directory.CreateDirectory(destination);await using var jobs=ArchiveJobSession.ForOwnedTestPackage(root);var start=Start(Extract(archive,destination));var cancel=false;
-            jobs.ProbeOutputCommitForFixture(stage=>{if(stage=="native_published"&&!cancel){cancel=true;Check(jobs.Dispatch(Wire(Control(start,"cancel"))).Success,"late cancel accepted");}});
+            jobs.ProbeOutputCommitForFixture(stage=>{if(stage=="native_closed"&&!cancel){cancel=true;Check(jobs.Dispatch(Wire(Control(start,"cancel"))).Success,"late cancel accepted");}});
             Check(jobs.Dispatch(Wire(start)).Success,"publication admission");var terminal=await Finish(jobs);Check(cancel && terminal.Outcome=="cancelled" && terminal.Code=="cancelled_with_committed_output" && terminal.FilesCommitted==1 && terminal.BytesCommitted==9 && terminal.CleanupComplete,"native committed truth outranks cancellation "+terminal.Code);Check(File.ReadAllText(Path.Combine(destination,"a.txt"))=="published","publication retained");
         }finally{Directory.Delete(root,true);}
     }

@@ -73,3 +73,34 @@ re-sampling, a sufficient paging-file limit and refusal before Cargo when headro
 The checked-in `.zed/settings.json` keeps Rust `target` trees, C# `bin`/`obj`, diagnostics and packaged
 artifacts out of Zed's file scanner. This prevents a Release build's high-volume file changes from
 adding editor indexing pressure on top of Cargo's commit usage.
+
+## Temporary .NET build trees
+
+`build.ps1` owns its unique `vh-*` directory, Release fixture verification owns `vf-*`, and
+`package.ps1` owns `package-build-*`. The creating wrapper removes only that exact directory in
+its outermost `finally`, on success or failure. `PI_SCRATCH_DIR` selects the temporary parent;
+otherwise Windows Temp is used. Package ownership includes setup failures before verification
+and failures after package copying during installer preparation. No whole-Temp cleanup is performed.
+
+`publish-release-hosts.ps1` borrows the caller's build/generated directories. It leaves generated
+identity inputs and published hosts available until the caller's test builds or package copies
+finish. Packaged binaries, manifests, installer/source-distribution outputs and packaging logs are
+retained outside the temporary build tree. Publisher PEM/sequence ledger and service recovery
+remain governed by [the original handoff](../PACKAGING.md).
+
+Default C# fixture evidence is retained in `.diagnostics/verification/fixtures-<unique-id>/`, not
+inside `vh-*`. Explicit lifecycle/volume evidence roots remain in effect, and the wrapper reports
+the actual evidence paths and restores the caller's fixture environment on exit.
+
+IsolatedStaging retains the four public generated C# inputs in `<output>.generated-inputs/`.
+The current managed Host assembly is retained as `<output>.TEST-PlatformHost.dll` for the original
+`ArchiveReleaseTests.StagedActualIdentities` metadata/identity checks. `<output>.build-inputs.json`
+references the retained `generated_directory` and `host_assembly`, never a temporary `build_directory`.
+The existing `<output>.TEST-public-trust.g.cs` remains available; no private PEM is copied. These
+sidecars are test evidence outside the installable payload, not production-trusted installation inputs.
+
+`python tests/architecture/build-tree-cleanup.tests.py` runs unchanged wrapper copies against
+tool stubs and self-owned temporary roots. It covers both parent locations, success, setup and
+downstream failures, native nonzero exits, live-tree assertions at ISCC/final distribution, retained
+evidence/managed-input references, consumer source bindings and borrowed outputs.
+It does not run Cargo, .NET builds, real signing, installers or service/process operations.

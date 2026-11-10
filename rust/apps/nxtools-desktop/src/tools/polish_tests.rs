@@ -375,7 +375,9 @@ fn link_application_fixture(
 }
 
 #[gpui_kit::test]
-fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppContext) {
+fn ref01_production_row_and_copy_pointer_key_release_use_current_preferences(
+    cx: &mut TestAppContext,
+) {
     use gpui_kit::{KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, VisualTestContext};
     use nxtools_protocol::{Message, OpenShellTargetCommand, PlatformCommand, ShellOpenAction};
     cx.update(gpui_kit::init);
@@ -403,7 +405,7 @@ fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppCont
                     ShellOpenAction::Open,
                 ),
             ] {
-                for keyboard in [false, true] {
+                for key in [None, Some("enter"), Some("space")] {
                     for explicit_copy in [false, true] {
                         cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
                             "untouched".into(),
@@ -443,7 +445,7 @@ fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppCont
                             } else {
                                 "复制路径"
                             })));
-                        if keyboard {
+                        if let Some(key) = key {
                             window.update(|window, cx| {
                                 window.activate_window();
                                 window.focus_next(cx);
@@ -453,7 +455,7 @@ fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppCont
                             });
                             window.refresh().expect("focus original row or Kit copy");
                             window.simulate_event(KeyDownEvent {
-                                keystroke: Keystroke::parse("enter").expect("Enter"),
+                                keystroke: Keystroke::parse(key).expect("activation key"),
                                 is_held: false,
                                 prefer_character_input: false,
                             });
@@ -467,7 +469,7 @@ fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppCont
                             );
                             assert!(endpoint.try_receive_command_for_contract_test().is_err());
                             window.simulate_event(KeyUpEvent {
-                                keystroke: Keystroke::parse("enter").expect("release"),
+                                keystroke: Keystroke::parse(key).expect("activation release"),
                             });
                         } else {
                             let target_bounds = if explicit_copy {
@@ -486,9 +488,21 @@ fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppCont
                                 .expect("TestPlatform clipboard")
                                 .text()
                                 .as_deref(),
-                            Some(if explicit_copy { target } else { "untouched" })
+                            Some(
+                                if explicit_copy
+                                    || copy_only
+                                    || (kind == DetectedLinkKind::Web && !auto_open_browser)
+                                {
+                                    target
+                                } else {
+                                    "untouched"
+                                }
+                            )
                         );
-                        if explicit_copy {
+                        if explicit_copy
+                            || copy_only
+                            || (kind == DetectedLinkKind::Web && !auto_open_browser)
+                        {
                             assert!(
                                 endpoint.try_receive_command_for_contract_test().is_err(),
                                 "copy must not bubble into open"
@@ -530,6 +544,118 @@ fn r6_open_and_copy_pointer_key_release_ignore_legacy_flags(cx: &mut TestAppCont
     }
 }
 
+#[gpui_kit::test]
+fn ref01_named_open_action_bypasses_ordinary_settings_without_copy(cx: &mut TestAppContext) {
+    use gpui_kit::{KeyDownEvent, KeyUpEvent, Keystroke, Modifiers, VisualTestContext};
+    use nxtools_protocol::{Message, OpenShellTargetCommand, PlatformCommand, ShellOpenAction};
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    cx.executor().allow_parking();
+    for copy_only in [false, true] {
+        for auto_open_browser in [false, true] {
+            let (_temporary, worker, application, endpoint) =
+                link_application_fixture(cx, copy_only, auto_open_browser);
+            endpoint.set_connected_for_contract_test(true);
+            for (kind, target, action) in [
+                (
+                    DetectedLinkKind::Web,
+                    "https://explicit.invalid",
+                    ShellOpenAction::Open,
+                ),
+                (
+                    DetectedLinkKind::LocalFile,
+                    r"C:\synthetic\explicit.txt",
+                    ShellOpenAction::SelectInExplorer,
+                ),
+                (
+                    DetectedLinkKind::LocalDirectory,
+                    r"C:\synthetic",
+                    ShellOpenAction::Open,
+                ),
+            ] {
+                for keyboard in [false, true] {
+                    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string("untouched".into()));
+                    application.update(cx, |application, cx| {
+                        application.show_link_panel(
+                            vec![DetectedLink {
+                                display: "合成目标".into(),
+                                copy_value: target.into(),
+                                kind,
+                            }],
+                            cx,
+                        );
+                    });
+                    let mut window = VisualTestContext::from_window(
+                        *cx.windows().last().expect("production link window"),
+                        cx,
+                    );
+                    window.simulate_resize(size(px(420.0), px(link_panel_height(1, false))));
+                    window.refresh().expect("named open action rendered");
+                    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+                        assert!(!matches!(
+                            envelope.message,
+                            Message::PlatformCommand(PlatformCommand::OpenShellTarget(_))
+                        ));
+                    }
+                    let open = window
+                        .debug_bounds("link-panel-open-0")
+                        .expect("named open action");
+                    let copy = window
+                        .debug_bounds("link-panel-copy-0")
+                        .expect("named copy action");
+                    assert!(open.left() >= copy.right() && open.right() <= px(420.0));
+                    if keyboard {
+                        window.update(|window, cx| {
+                            window.activate_window();
+                            window.focus_next(cx);
+                            window.focus_next(cx);
+                            window.focus_next(cx);
+                        });
+                        window.refresh().expect("Tab reaches named open action");
+                        window.simulate_event(KeyDownEvent {
+                            keystroke: Keystroke::parse("enter").expect("Enter"),
+                            is_held: false,
+                            prefer_character_input: false,
+                        });
+                        assert_eq!(cx.windows().len(), 1, "no action on press");
+                        window.simulate_event(KeyUpEvent {
+                            keystroke: Keystroke::parse("enter").expect("release"),
+                        });
+                    } else {
+                        window.simulate_click(open.center(), Modifiers::default());
+                    }
+                    window.run_until_parked();
+                    assert!(cx.windows().is_empty(), "named action closes its own panel");
+                    assert_eq!(
+                        cx.read_from_clipboard()
+                            .expect("clipboard")
+                            .text()
+                            .as_deref(),
+                        Some("untouched")
+                    );
+                    let envelope = endpoint
+                        .try_receive_command_for_contract_test()
+                        .expect("typed explicit open");
+                    assert!(envelope.correlation_id.is_some());
+                    assert_eq!(
+                        envelope.message,
+                        Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                            OpenShellTargetCommand {
+                                target: target.into(),
+                                action,
+                            }
+                        ))
+                    );
+                    assert!(
+                        endpoint.try_receive_command_for_contract_test().is_err(),
+                        "one explicit action"
+                    );
+                }
+            }
+            worker.shutdown().expect("flush synthetic link history");
+        }
+    }
+}
 #[gpui_kit::test]
 fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut TestAppContext) {
     use gpui_kit::VisualTestContext;
@@ -628,7 +754,7 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
 }
 
 #[gpui_kit::test]
-fn r6_disconnected_open_closes_without_copy_fallback(cx: &mut TestAppContext) {
+fn r6_disconnected_explicit_open_closes_without_copy_fallback(cx: &mut TestAppContext) {
     use gpui_kit::VisualTestContext;
     cx.update(gpui_kit::init);
     cx.executor().allow_parking();
@@ -648,7 +774,7 @@ fn r6_disconnected_open_closes_without_copy_fallback(cx: &mut TestAppContext) {
         VisualTestContext::from_window(*cx.windows().last().expect("disconnected panel"), cx);
     window.refresh().expect("disconnected production panel");
     let name = window
-        .debug_bounds("link-panel-name-0")
+        .debug_bounds("link-panel-open-0")
         .expect("opening action");
     window.simulate_click(name.center(), gpui_kit::Modifiers::default());
     window.run_until_parked();

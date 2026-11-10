@@ -134,6 +134,11 @@ impl Write for Native {
             error_code: None,
             read_data: None,
             existing_bytes: None,
+            sequence: None,
+            offset: None,
+            length: None,
+            binary: None,
+            payload: None,
         };
         match call["action"].as_str().expect("native action") {
             "creation_planning" | "source_validated" | "creation_encoding" | "creation_verifying" | "source_precommit" | "source_check" => {},
@@ -211,6 +216,7 @@ fn transaction(fault: Fault, expected: Result<(u64, u64)>, existing: bool, encry
     let mut request = WorkerRequest::open(Uuid::new_v4(), "no ordinary source authority".into());
     request.version = 2;
     request.operation = "create_7z".into();
+    request.bulk_transfer = Some(1);
     request.create_name = Some("created.7z".into());
     request.compression_level = Some("fast".into());
     request.tree_options = Some(crate::creation::CreationOptions::default());

@@ -79,3 +79,19 @@ Such a recovery VerifiedRelease cannot be used as a new update request. Original
 the old package using its own verified deployment child, then exact-hash removes only failed-new archive
 members absent from the old signed set; foreign bytes reject cleanup and preserve recovery evidence.
 Source fixtures and offline real-snapshot checks do not certify actual SCM/admin/installed acceptance.
+
+## Explicit missing-root enrollment repair (2026-11-06)
+
+User-approved repair distinguishes a genuinely new machine from a surviving approved service
+registration whose entire Updater tree is missing. The normal installer offers one explained
+administrator recovery only for the latter, using `--repair-missing-trusted-bootstrap <GUID>`
+from the complete same-publisher signed payload. Fixed path, LocalSystem, pinned key and valid
+registered bootstrap hash are checked before the service is stopped, and again under the original
+deployment gate. The original protected enrollment initialization/register/start/validation path
+is reused without its ordinary-mode already-registered early return. Actual file, completion
+record and compatible protocol marker must agree before normal installation proceeds.
+
+This is not a key rotation, downgrade, arbitrary damaged-tree repair or permission to delete
+remaining records. Existing roots, unknown ownership and access denial still refuse. Diagnostics
+now preserve detection stage and actual process launch/exit before early failure. No real service
+or installed-product recovery is authorized by the implementation fixtures themselves.

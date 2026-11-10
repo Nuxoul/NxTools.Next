@@ -677,6 +677,9 @@ fn cleanup_stale_staging_files(staging_root: &Path) {
 }
 
 #[cfg(test)]
+mod ownership_tests;
+
+#[cfg(test)]
 mod tests {
     use std::io::{Read, Write};
     use std::net::TcpStream;

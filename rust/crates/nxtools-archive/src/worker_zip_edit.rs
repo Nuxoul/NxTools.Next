@@ -1,11 +1,11 @@
 //! ZIP mutation through the original worker/native output rendezvous, never a final path write.
 use crate::{
     ArchiveEngine, ArchiveError, OperationControl, Result,
-    creation::{CreationOptions, CreationPlan, CreationSource},
-    interaction::{ConflictDecision, InteractionPort, Prompt, PromptResponse},
+    creation::{CreationSource, IncomingPlan},
+    interaction::InteractionPort,
     output::ArchiveOutput,
     worker::WorkerRequest,
-    worker_conflict::{ConflictPolicy, ConflictPrompt},
+    worker_conflict::add::{self, ExistingMember},
     worker_output::{PrivateOutput, ReplyPort},
     worker_sources::Sources,
     zip_edit::ZipEdit,
@@ -19,186 +19,63 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+fn addition_options(directory: bool, size: u64) -> zip::write::SimpleFileOptions {
+    let large = size
+        .checked_add(size / 1000)
+        .and_then(|value| value.checked_add(65536))
+        .is_none_or(|value| value >= u32::MAX as u64);
+    zip::write::SimpleFileOptions::default()
+        .compression_method(if directory {
+            zip::CompressionMethod::Stored
+        } else {
+            zip::CompressionMethod::Deflated
+        })
+        .large_file(large)
+}
+
+type AdditionPlan = (
+    Option<File>,
+    Vec<ZipEdit>,
+    u64,
+    Option<nxtools_protocol::archive_job::ArchiveJobAddResult>,
+);
+
 fn additions<W: Write + Send>(
     request: &WorkerRequest,
     native: &mut PrivateOutput<'_, W>,
     control: &OperationControl,
     snapshot: &crate::ArchiveSnapshot,
     interaction: &InteractionPort,
-) -> Result<(Option<File>, Vec<ZipEdit>, u64)> {
+) -> Result<AdditionPlan> {
     let shared = RefCell::new(native);
     let mut source = Sources::new(&shared);
     let limits = request.limits.into();
-    let plan = CreationPlan::build(
-        &mut source,
-        &CreationOptions {
-            strip_single_root: false,
-            exclude_patterns: Vec::new(),
-        },
-        &limits,
-        control,
-    )?;
+    let plan = IncomingPlan::build(&mut source, &limits, control)?;
     let prefix = request
         .job_modify
         .as_ref()
         .and_then(|value| value.value.as_deref())
         .unwrap_or("");
-    let mut metadata = 0u64;
-    for entry in snapshot.entries() {
-        control.checkpoint()?;
-        metadata = metadata
-            .checked_add(256 + entry.display_path().len() as u64 * 8)
-            .ok_or(ArchiveError::ResourceLimit)?;
-        if metadata > limits.max_metadata_bytes {
-            return Err(ArchiveError::ResourceLimit);
-        }
-    }
-    for entry in plan.entries() {
-        control.checkpoint()?;
-        metadata = metadata
-            .checked_add(512 + (prefix.len() + entry.relative_path().len()) as u64 * 16)
-            .ok_or(ArchiveError::ResourceLimit)?;
-        if metadata > limits.max_metadata_bytes {
-            return Err(ArchiveError::ResourceLimit);
-        }
-    }
-    let mut selected = Vec::new();
-    let mut deleted = Vec::new();
-    let mut skipped = 0u64;
-    let mut remembered = None;
-    let mut reserved = snapshot
-        .entries()
+    let (selected, skipped) = add::resolve(
+        &plan.entries,
+        snapshot.entries().iter().map(|entry| ExistingMember {
+            name: entry.display_path(),
+            directory: entry.kind() == crate::EntryKind::Directory,
+            size: entry.size(),
+        }),
+        prefix,
+        request.conflict_policy,
+        &mut shared.borrow_mut(),
+        interaction,
+        &limits,
+    )?;
+    let deleted: Vec<_> = selected
         .iter()
-        .map(|entry| {
-            (
-                entry.display_path().trim_end_matches('/').to_uppercase(),
-                entry.kind() == crate::EntryKind::Directory,
-            )
-        })
-        .collect::<Vec<_>>();
-    // AutoRename must not consume a later source's original planned destination.
-    reserved.extend(plan.entries().iter().map(|item| {
-        (
-            format!("{prefix}{}", item.relative_path().trim_end_matches('/')).to_uppercase(),
-            item.is_directory(),
-        )
-    }));
-    for item in plan.entries() {
-        control.checkpoint()?;
-        let mut name = format!(
-            "{prefix}{}{}",
-            item.relative_path().trim_end_matches('/'),
-            if item.is_directory() { "/" } else { "" }
-        );
-        let key = name.trim_end_matches('/').to_uppercase();
-        let existing = snapshot
-            .entries()
-            .iter()
-            .find(|entry| entry.display_path().trim_end_matches('/').to_uppercase() == key);
-        // A descendant already establishes this directory even without a ZIP directory record.
-        // Merge only against the ORIGINAL snapshot, never the incoming/reserved source plan.
-        if item.is_directory()
-            && existing.is_none()
-            && snapshot.entries().iter().any(|entry| {
-                entry
-                    .display_path()
-                    .to_uppercase()
-                    .starts_with(&format!("{key}/"))
-            })
-        {
-            continue;
-        }
-        if let Some(existing) = existing {
-            if existing.kind() == crate::EntryKind::Directory && item.is_directory() {
-                continue;
-            }
-            if existing.kind() != crate::EntryKind::File || item.is_directory() {
-                return Err(ArchiveError::OutputCollision);
-            }
-            let decision = if let Some(decision) = remembered {
-                decision
-            } else {
-                match request.conflict_policy {
-                    Some(ConflictPolicy::Overwrite) => ConflictDecision::Overwrite,
-                    Some(ConflictPolicy::Skip) => ConflictDecision::Skip,
-                    Some(ConflictPolicy::AutoRename) => ConflictDecision::AutoRename,
-                    Some(ConflictPolicy::Ask) => {
-                        let response = interaction.request_notified(
-                            Prompt::Conflict {
-                                existing_bytes: existing.size(),
-                                incoming_bytes: Some(item.size()),
-                            },
-                            control,
-                            |pending| {
-                                shared.borrow_mut().conflict_prompt(&ConflictPrompt {
-                                    ticket: pending.ticket,
-                                    existing_bytes: existing.size(),
-                                    incoming_bytes: Some(item.size()),
-                                    display: crate::worker_conflict::edit_display(
-                                        &name,
-                                        existing.display_path(),
-                                    ),
-                                })
-                            },
-                        )?;
-                        let PromptResponse::Conflict {
-                            decision,
-                            apply_to_all,
-                        } = response
-                        else {
-                            return Err(ArchiveError::Cancelled);
-                        };
-                        if apply_to_all {
-                            remembered = Some(decision);
-                        }
-                        decision
-                    }
-                    None => return Err(ArchiveError::OutputCollision),
-                }
-            };
-            match decision {
-                ConflictDecision::Skip => {
-                    skipped += 1;
-                    continue;
-                }
-                ConflictDecision::Overwrite => {
-                    if deleted.len() >= 4096 {
-                        return Err(ArchiveError::ResourceLimit);
-                    }
-                    deleted.push(existing.id());
-                }
-                ConflictDecision::AutoRename => {
-                    let mut found = false;
-                    for number in 2..=4097 {
-                        control.checkpoint()?;
-                        let candidate = crate::worker_conflict::numbered(&name, number)?;
-                        let candidate_key = candidate.to_uppercase();
-                        if !reserved.iter().any(|(old, directory)| {
-                            old == &candidate_key
-                                || old.starts_with(&format!("{candidate_key}/"))
-                                || !directory && candidate_key.starts_with(&format!("{old}/"))
-                        }) {
-                            name = candidate;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if !found {
-                        return Err(ArchiveError::OutputCollision);
-                    }
-                }
-            }
-        } else if reserved.iter().any(|(old, directory)| {
-            (!item.is_directory() && old.starts_with(&format!("{key}/")))
-                || !directory && key.starts_with(&format!("{old}/"))
-        }) {
-            return Err(ArchiveError::OutputCollision);
-        }
-        reserved.push((
-            name.trim_end_matches('/').to_uppercase(),
-            item.is_directory(),
-        ));
-        selected.push((item, name));
+        .filter_map(|item| item.replaces)
+        .map(|index| snapshot.entries()[index].id())
+        .collect();
+    if deleted.len() > 4096 {
+        return Err(ArchiveError::ResourceLimit);
     }
     let edits = if deleted.is_empty() {
         Vec::new()
@@ -207,22 +84,19 @@ fn additions<W: Write + Send>(
     };
     if selected.is_empty() {
         source.revalidate()?;
-        return Ok((None, edits, skipped));
+        return Ok((None, edits, skipped, None));
     }
+    let add_result = add::display_result(&plan.entries, prefix, &selected);
     let failure = Cell::new(None);
     let mut encoded =
         crate::worker_tree_io::Spool::new(limits.max_output_bytes, control, &failure)?;
     {
         let mut zip = zip::ZipWriter::new(&mut encoded);
-        for (item, name) in selected {
+        for selected in selected {
+            let item = &plan.entries[selected.input];
+            let name = selected.name;
             control.checkpoint()?;
-            let options = zip::write::SimpleFileOptions::default().compression_method(
-                if item.is_directory() {
-                    zip::CompressionMethod::Stored
-                } else {
-                    zip::CompressionMethod::Deflated
-                },
-            );
+            let options = addition_options(item.is_directory(), item.size());
             zip.start_file(&name, options).map_err(ArchiveError::from)?;
             if !item.is_directory() {
                 source.open_file(item.source.id)?;
@@ -260,7 +134,7 @@ fn additions<W: Write + Send>(
     }
     source.revalidate()?;
     encoded.file.rewind()?;
-    Ok((Some(encoded.file), edits, skipped))
+    Ok((Some(encoded.file), edits, skipped, Some(add_result)))
 }
 pub(crate) fn execute<W: Write + Send>(
     request: &WorkerRequest,
@@ -302,18 +176,13 @@ pub(crate) fn execute<W: Write + Send>(
     {
         return Err(ArchiveError::SourceChanged);
     }
-    snapshot
-        .capabilities()
-        .admit(intent.operation())
-        .map_err(|reason| match reason {
-            crate::ArchiveModificationRefusal::SourceChanged => ArchiveError::SourceChanged,
-            crate::ArchiveModificationRefusal::Corrupt => ArchiveError::CorruptArchive,
-            crate::ArchiveModificationRefusal::UnsupportedEncryption => {
-                ArchiveError::UnsupportedEncryption
-            }
-            crate::ArchiveModificationRefusal::SourceUnavailable => ArchiveError::IoFailure,
-            _ => ArchiveError::UnsupportedOperation,
-        })?;
+    // The intent-aware candidate owns structural edit admission, not browse capabilities.
+    if !snapshot.revision.volumes.is_empty() || crate::zip_edit::blocked_container(&snapshot) {
+        return Err(ArchiveError::UnsupportedOperation);
+    }
+    if !snapshot.backend_safe {
+        return Err(ArchiveError::OutputCollision);
+    }
     let ids = intent
         .ordinals
         .iter()
@@ -367,13 +236,25 @@ pub(crate) fn execute<W: Write + Send>(
                 .ok_or(ArchiveError::UnsupportedOperation)?,
         }],
     };
-    let (mut added, addition_edits, skipped) = if intent.action == ArchiveJobModifyAction::Add {
-        additions(request, &mut native, control, &snapshot, interaction)?
-    } else {
-        (None, Vec::new(), 0)
-    };
+    let (mut added, addition_edits, skipped, add_result) =
+        if intent.action == ArchiveJobModifyAction::Add {
+            additions(request, &mut native, control, &snapshot, interaction)?
+        } else {
+            (None, Vec::new(), 0, None)
+        };
     edits.extend(addition_edits);
     if intent.action == ArchiveJobModifyAction::Add && added.is_none() {
+        engine
+            .modification_eligibility(&snapshot, control)
+            .map_err(|reason| match reason {
+                crate::ArchiveModificationRefusal::SourceChanged => ArchiveError::SourceChanged,
+                crate::ArchiveModificationRefusal::Corrupt => ArchiveError::CorruptArchive,
+                crate::ArchiveModificationRefusal::UnsupportedEncryption => {
+                    ArchiveError::UnsupportedEncryption
+                }
+                crate::ArchiveModificationRefusal::SourceUnavailable => ArchiveError::IoFailure,
+                _ => ArchiveError::UnsupportedOperation,
+            })?;
         let mut source = File::open(&request.path)?;
         crate::engine::ensure_revision(&mut source, &snapshot.revision, control)?;
         drop(source);
@@ -449,8 +330,55 @@ pub(crate) fn execute<W: Write + Send>(
     if result.is_err() {
         native.abort_file(token);
     }
-    if result.is_ok() && skipped > 0 {
-        native.member_summary(skipped, false)?;
+    if result.is_ok() {
+        if skipped > 0 {
+            native.member_summary(skipped, false)?;
+        }
+        if let Some(add_result) = add_result {
+            native.add_result(add_result)?;
+        }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::addition_options;
+    use std::io::{Cursor, Write};
+
+    #[test]
+    fn add_zip64_reserves_local_header_before_payload() {
+        for (size, zip64) in [
+            (0, false),
+            (1024, false),
+            (u32::MAX as u64 - 1, true),
+            (u32::MAX as u64, true),
+            (32 << 30, true),
+            (u64::MAX, true),
+        ] {
+            let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            writer
+                .start_file("incoming.txt", addition_options(false, size))
+                .expect("start incoming ZIP record");
+            writer.write_all(b"x").expect("write tiny boundary payload");
+            let bytes = writer
+                .finish()
+                .expect("finish boundary archive")
+                .into_inner();
+            let name_len = u16::from_le_bytes([bytes[26], bytes[27]]) as usize;
+            let extra_len = u16::from_le_bytes([bytes[28], bytes[29]]) as usize;
+            let extra = &bytes[30 + name_len..30 + name_len + extra_len];
+            assert_eq!(
+                extra.starts_with(&[1, 0, 16, 0]),
+                zip64,
+                "ZIP64 local extra reservation for declared size {size}"
+            );
+            let mut archive =
+                zip::ZipArchive::new(Cursor::new(bytes)).expect("read boundary archive");
+            assert_eq!(
+                archive.by_index(0).expect("incoming member").compression(),
+                zip::CompressionMethod::Deflated
+            );
+        }
+    }
 }

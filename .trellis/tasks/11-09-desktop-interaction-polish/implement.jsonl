@@ -1,0 +1,7 @@
+{"file":".trellis/spec/shared/engineering.md","reason":"Original state, persistence and cross-entity contracts"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Released component-first composition"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop ownership and real-boundary regressions"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Pinned released APIs and parent adaptations"}
+{"file":"docs/reference-code/download.md","reason":"ABDM then legacy download behavior"}
+{"file":"docs/reference-code/archive-shell.md","reason":"Selection and integration lifecycle"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Original Quick Launch lifecycle"}

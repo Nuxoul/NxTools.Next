@@ -1,4 +1,5 @@
 use super::*;
+use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::dialog::{DialogContent, DialogFooter};
 
@@ -7,6 +8,7 @@ pub(crate) struct DeleteDownloadView {
     pub(crate) application: Entity<DownloadApplication>,
     pub(crate) task_id: DownloadTaskId,
     pub(crate) path: String,
+    pub(super) batch: Option<BatchConfirmation>,
 }
 
 impl Render for DeleteDownloadView {
@@ -19,11 +21,33 @@ impl Render for DeleteDownloadView {
         let cancel_application = self.application.clone();
         let confirm_application = self.application.clone();
         let path = self.path.clone();
+        let batch = self.batch.clone();
+        let cancelling = batch
+            .as_ref()
+            .is_some_and(|batch| batch.action == DownloadBatchAction::Cancel);
+        let title = batch.as_ref().map_or_else(
+            || "删除本地文件".to_string(),
+            |batch| {
+                format!(
+                    "{} {} 个下载任务",
+                    if cancelling { "取消" } else { "删除" },
+                    batch.task_ids.len()
+                )
+            },
+        );
+        let consequence = if cancelling {
+            "将停止所选任务并清理未完成的数据，且无法撤销。"
+        } else {
+            "将同时移除任务记录，且无法撤销。"
+        };
+        let path = batch.as_ref().map_or(path, |batch| {
+            format!("所选 {} 个下载任务", batch.task_ids.len())
+        });
         let titlebar = client_titlebar(
             theme,
             "download-delete-titlebar",
             "download-delete-close",
-            "删除本地文件",
+            title.clone(),
             move |_, _, cx| {
                 let application = close_application.clone();
                 cx.defer(move |cx| {
@@ -33,6 +57,14 @@ impl Render for DeleteDownloadView {
                 });
             },
         );
+        let titlebar = div()
+            .id("download-delete-labelled-titlebar")
+            .role(gpui_kit::Role::Group)
+            .aria_label(title)
+            .test_support()
+            .size_full()
+            .child(titlebar)
+            .into_any_element();
         let body = DialogContent::new()
             .size_full()
             .min_w_0()
@@ -43,7 +75,7 @@ impl Render for DeleteDownloadView {
                 div()
                     .debug_selector(|| "download-delete-consequence".into())
                     .child(
-                        Alert::error("download-delete-risk", "将同时移除任务记录，且无法撤销。")
+                        Alert::error("download-delete-risk", consequence)
                             .icon(Icon::new(MaterialIcon::Delete))
                             .xsmall(),
                     ),
@@ -82,18 +114,30 @@ impl Render for DeleteDownloadView {
                         }),
                 )
                 .child(
-                    action_button("download-delete-confirm", "删除文件")
-                        .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
-                        .debug_selector(|| "download-delete-danger-confirm-action".into())
-                        .custom(danger_hover_button_variant(theme, cx))
-                        .on_click(move |_, _, cx| {
-                            let application = confirm_application.clone();
-                            cx.defer(move |cx| {
-                                application.update(cx, |application, cx| {
+                    action_button(
+                        "download-delete-confirm",
+                        if cancelling {
+                            "取消任务"
+                        } else {
+                            "删除文件"
+                        },
+                    )
+                    .icon(Icon::new(MaterialIcon::Delete).size(px(14.0)))
+                    .debug_selector(|| "download-delete-danger-confirm-action".into())
+                    .custom(danger_hover_button_variant(theme, cx))
+                    .on_click(move |_, _, cx| {
+                        let application = confirm_application.clone();
+                        let batch = batch.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                if let Some(batch) = batch {
+                                    application.confirm_batch_action(task_id, batch, cx);
+                                } else {
                                     application.confirm_delete_artifact(task_id, cx);
-                                });
+                                }
                             });
-                        }),
+                        });
+                    }),
                 )
                 .into_any_element(),
         );

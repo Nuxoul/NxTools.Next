@@ -456,11 +456,11 @@ fn clipboard_settings_keep_busy_and_deferred_immediate_action_boundaries() {
     let source = include_str!("../main_window/clipboard_page.rs");
     assert_eq!(source.matches(".disabled(management_busy)").count(), 5);
     for action in [
-        "request_clipboard_export(cx)",
-        "request_clipboard_import(cx)",
+        "request_clipboard_export(source_window_handle, cx)",
+        "request_clipboard_import(source_window_handle, cx)",
         "request_clipboard_database_backup(cx)",
         "request_clipboard_database_compaction(cx)",
-        "request_clipboard_storage_migration(cx)",
+        "request_clipboard_storage_migration(source_window_handle, cx)",
     ] {
         assert!(source.contains(action), "preserve existing action {action}");
     }
@@ -520,11 +520,11 @@ impl Render for AdvancedSettingsFixture {
                         automatic_volume_scope_row(theme, self.empty, |_, _, _| {}),
                         volume_scope_row(
                             theme,
+                            cx,
                             "advanced-volume",
                             "D: 合成的长卷名称不会挤占状态槽",
                             "NTFS · 尚未建立索引 · 合成失败状态需要完整保留",
-                            !self.empty,
-                            false,
+                            VolumeScopeRowState { maintenance: None, checked: !self.empty, show_divider: false },
                             |_, _, _| {},
                         ),
                     ],

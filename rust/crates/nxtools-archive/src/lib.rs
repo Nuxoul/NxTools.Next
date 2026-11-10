@@ -7,8 +7,11 @@ mod engine;
 mod error;
 mod formats;
 pub mod interaction;
+pub mod member_query;
 pub mod metadata;
 mod model;
+#[cfg(test)]
+mod opt05_edit_selection_fixture;
 pub mod output;
 pub mod output_readmission;
 mod path_policy;
@@ -25,10 +28,14 @@ mod tar_edit;
 mod tar_edit_outer;
 pub mod worker;
 pub mod worker_browser;
+mod worker_bulk;
 #[cfg(feature = "isolated-codecs")]
 mod worker_codecs;
 mod worker_conflict;
 mod worker_create;
+mod worker_drag;
+#[cfg(feature = "isolated-codecs")]
+mod worker_formats;
 mod worker_job;
 mod worker_metadata;
 mod worker_output;
@@ -48,7 +55,7 @@ mod zip_container;
 pub mod zip_edit;
 mod zip_risk;
 
-pub use control::{ArchiveProgress, OperationControl};
+pub use control::{ArchiveProgress, ArchiveWorkObservation, OperationControl};
 pub use engine::ArchiveEngine;
 pub use error::{ArchiveError, Result};
 pub use model::{

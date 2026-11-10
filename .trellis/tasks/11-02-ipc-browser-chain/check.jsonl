@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Behavioral red/green and safe effects boundaries"}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"Transport and retirement regression acceptance"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Real background modules and passive startup"}
+{"file":".trellis/spec/nxtools-browser-host/backend/quality-guidelines.md","reason":"Temporary Blob data-plane acceptance"}
+{"file":".trellis/tasks/11-02-ipc-browser-chain/reference-evidence.md","reason":"Verified finite run budgets, explicit unlimited control and owner chains"}

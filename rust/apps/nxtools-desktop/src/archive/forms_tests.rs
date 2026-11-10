@@ -348,19 +348,30 @@ fn metadata_worker_is_bounded_cancellable_and_does_not_recurse() {
     std::fs::create_dir(&root).expect("unique isolated source root");
     let file = root.join("source.txt");
     std::fs::write(&file, b"fixture").expect("tiny isolated source");
+    let directory = root.join("directory");
+    std::fs::create_dir(&directory).expect("owned directory source");
     let cancel = AtomicBool::new(false);
     let paths = vec![
-        root.to_str().expect("Unicode fixture").to_owned(),
+        directory.to_str().expect("Unicode fixture").to_owned(),
         file.to_str().expect("Unicode file").to_owned(),
     ];
     let sources = source_metadata(paths.clone(), &cancel).expect("root metadata only");
     assert_eq!(sources.len(), 2);
     assert!(sources[0].directory && sources[0].bytes.is_none());
     assert_eq!(sources[1].bytes, Some(7));
+    assert!(
+        source_metadata(
+            vec![root.to_str().expect("root").to_owned(), paths[1].clone()],
+            &cancel
+        )
+        .is_err(),
+        "overlapping roots refused atomically"
+    );
     assert!(source_metadata(vec![paths[1].clone(); 33], &cancel).is_err());
     cancel.store(true, Ordering::Release);
     assert!(source_metadata(paths, &cancel).is_err());
     std::fs::remove_file(file).expect("owned fixture file cleanup");
+    std::fs::remove_dir(directory).expect("owned source directory cleanup");
     std::fs::remove_dir(root).expect("owned empty fixture root cleanup");
 }
 #[gpui_kit::test]
@@ -386,8 +397,85 @@ fn production_split_field_stable_entity_and_checked_wire(cx: &mut TestAppContext
     assert!(surface.update(|window, _| {
         gpui_kit::base::test_support::snapshots(window)
             .iter()
-            .any(|node| node.label() == Some("分卷大小 MiB"))
+            .any(|node| node.label() == Some("分卷大小数值"))
     }));
+}
+#[gpui_kit::test]
+fn create_invalid_options_are_disabled_and_format_switch_preserves_volume(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, ArchiveSettings::default());
+    click(&mut surface, "archive-options-toggle");
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            form.format
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("7Z"))));
+        });
+    });
+    draw(&mut surface);
+    let header_disabled = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.label() == Some("加密文件名（需要密码）"))
+            .and_then(|node| node.disabled())
+    });
+    assert_eq!(header_disabled, Some(true));
+    surface.update(|window, cx| {
+        view.update(cx, |form, cx| {
+            for input in [&form.password, &form.confirm] {
+                input.update(cx, |input, cx| input.set_value("confirmed", window, cx));
+            }
+        });
+    });
+    draw(&mut surface);
+    let header_disabled = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.label() == Some("加密文件名（需要密码）"))
+            .expect("rendered filename-encryption checkbox")
+            .disabled()
+            .unwrap_or(false)
+    });
+    assert!(!header_disabled);
+    surface.update(|window, cx| {
+        view.update(cx, |form, cx| {
+            for input in [&form.password, &form.confirm] {
+                input.update(cx, |input, cx| input.set_value("", window, cx));
+            }
+            form.volume
+                .update(cx, |input, cx| input.set_value("128", window, cx));
+            form.format
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("TAR"))));
+        });
+    });
+    draw(&mut surface);
+    view.read_with(&surface, |form, cx| {
+        assert_eq!(form.volume.read(cx).value().as_ref(), "128");
+        assert!(matches!(&form.draft, Draft::Create(draft) if draft.format == ArchiveCreateFormat::Tar && draft.volume_mib == "128"));
+    });
+    assert!(surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .iter()
+            .any(|node| node.label() == Some("分卷大小数值"))
+    }));
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            assert!(
+                form.capture(cx).is_err(),
+                "unsupported retained split requires explicit none"
+            );
+            form.volume_preset
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("不分卷"))));
+        });
+    });
+    draw(&mut surface);
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            let (requests, _) = form.capture(cx).expect("TAR after explicit no split");
+            assert_eq!(
+                requests[0].create.as_ref().expect("create").volume_bytes,
+                None
+            );
+        })
+    });
 }
 #[gpui_kit::test]
 fn production_modify_form_retains_draft_on_failure_and_retires_old_picker(cx: &mut TestAppContext) {
@@ -1977,4 +2065,682 @@ fn picker_receipt_failure_and_disconnect_release_busy_form(cx: &mut TestAppConte
             assert!(form.error.is_some());
         });
     });
+}
+
+#[gpui_kit::test]
+fn opt03_add_remove_uses_real_rows_and_original_picker_lifecycle(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, ArchiveSettings::default());
+    let sources: Vec<String> = ["a", "b", "c", "d"]
+        .map(|name| format!(r"C:\synthetic\{name}.txt"))
+        .into();
+    view.update_in(&mut surface, |form, window, cx| {
+        let mut draft = audit05_modify_draft(ArchiveJobModifyAction::Add);
+        draft.ordinals.clear();
+        draft.value = Some("folder/".into());
+        draft.added = sources.clone();
+        *form = OperationForm::modify(
+            ArchiveSettings::default(),
+            draft,
+            WeakEntity::new_invalid(),
+            window,
+            cx,
+        );
+    });
+    draw(&mut surface);
+    let frozen = view.read_with(&surface, |form, _| match &form.draft {
+        Draft::Modify(draft) => draft.browser.clone(),
+        _ => panic!("Add form"),
+    });
+    click(&mut surface, "archive-edit-remove-1");
+    view.read_with(&surface, |form, _| {
+        assert!(matches!(&form.draft, Draft::Modify(draft) if draft.added == [sources[0].clone(), sources[2].clone(), sources[3].clone()]));
+    });
+    click(&mut surface, "archive-edit-remove-0");
+    click(&mut surface, "archive-edit-remove-1");
+    view.read_with(&surface, |form, _| {
+        assert!(matches!(&form.draft, Draft::Modify(draft) if draft.added == [sources[2].clone()]));
+    });
+    let operation = Uuid::new_v4();
+    view.update_in(&mut surface, |form, _, cx| {
+        form.pending_picker = Some(PendingPicker {
+            operation: Some(operation),
+            purpose: ArchivePickerPurpose::Files,
+        });
+        cx.notify();
+    });
+    click(&mut surface, "archive-edit-remove-0");
+    view.read_with(&surface, |form, _| {
+        assert!(matches!(&form.draft, Draft::Modify(draft) if draft.added.len() == 1));
+    });
+    view.update_in(&mut surface, |form, window, cx| {
+        form.picker_result(
+            ArchivePickerResult {
+                version: 1,
+                operation_id: operation,
+                session_id: form.id,
+                generation: form.generation,
+                paths: vec![],
+                cancelled: true,
+                code: None,
+                native_error_code: None,
+            },
+            window,
+            cx,
+        );
+    });
+    click(&mut surface, "archive-edit-remove-0");
+    assert!(surface.debug_bounds("archive-edit-sources-empty").is_some());
+    view.update_in(&mut surface, |form, _, cx| {
+        assert!(form.capture(cx).is_err());
+        assert!(form.validation.is_some());
+        assert!(!form.submitted);
+        let Draft::Modify(draft) = &form.draft else {
+            panic!("Add form")
+        };
+        assert!(draft.added.is_empty());
+        assert_eq!(draft.browser, frozen);
+        assert_eq!(draft.value.as_deref(), Some("folder/"));
+    });
+    view.update_in(&mut surface, |form, window, cx| {
+        let operation = Uuid::new_v4();
+        form.pending_picker = Some(PendingPicker {
+            operation: Some(operation),
+            purpose: ArchivePickerPurpose::Files,
+        });
+        form.picker_result(
+            ArchivePickerResult {
+                version: 1,
+                operation_id: operation,
+                session_id: form.id,
+                generation: form.generation,
+                paths: vec![sources[1].clone()],
+                cancelled: false,
+                code: None,
+                native_error_code: None,
+            },
+            window,
+            cx,
+        );
+        let (requests, _) = form.capture(cx).expect("re-added source");
+        assert_eq!(
+            requests[0].paths,
+            vec![r"C:\synthetic\fixture.zip".to_owned(), sources[1].clone()]
+        );
+        assert_eq!(
+            requests[0].modify.as_ref().expect("Add").value.as_deref(),
+            Some("folder/")
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn opt03_ctrl_v_preserves_text_input_focus(cx: &mut TestAppContext) {
+    let (form, mut surface) = mount(cx, ArchiveSettings::default());
+    surface.update(|window, cx| {
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
+            "text-only-name.zip".into(),
+        ));
+        let input = form.read(cx).name.clone();
+        input.focus_handle(cx).focus(window, cx);
+    });
+    surface.simulate_keystrokes("ctrl-a ctrl-v");
+    draw(&mut surface);
+    form.read_with(&surface, |form, cx| {
+        assert_eq!(form.name.read(cx).value().as_ref(), "text-only-name.zip");
+        assert!(
+            form.pending_clipboard.is_none(),
+            "text paste never requests file intake"
+        );
+        let Draft::Create(draft) = &form.draft else {
+            panic!("Create draft")
+        };
+        assert_eq!(draft.sources.len(), 1);
+        assert_eq!(draft.sources[0].path, source().path);
+    });
+}
+
+#[gpui_kit::test]
+fn archive_polish_sources_have_bounded_viewport_and_removal(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, ArchiveSettings::default());
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            if let Draft::Create(draft) = &mut form.draft {
+                draft.sources = (0..32)
+                    .map(|index| DraftSource {
+                        path: format!(r"C:\synthetic\deep\source-{index}.txt").into(),
+                        directory: false,
+                        bytes: Some(12),
+                    })
+                    .collect();
+            }
+            form.revalidate(cx);
+        })
+    });
+    draw(&mut surface);
+    let sources = surface
+        .debug_bounds("archive-create-source-viewport")
+        .expect("independent source viewport");
+    assert!(sources.size.height <= px(144.));
+    let footer = surface
+        .debug_bounds("archive-form-submit")
+        .expect("fixed footer");
+    assert!(sources.bottom() < footer.top());
+    click(&mut surface, "archive-create-remove-source-0");
+    view.read_with(&surface, |form, _| {
+        let Draft::Create(draft) = &form.draft else {
+            panic!("create draft")
+        };
+        assert_eq!(draft.sources.len(), 31);
+        assert!(draft.sources[0].path.ends_with("source-1.txt"));
+    });
+}
+
+#[gpui_kit::test]
+fn ref17_format_change_preserves_split_input_until_explicit_none(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, ArchiveSettings::default());
+    surface.update(|window, cx| {
+        view.update(cx, |form, cx| {
+            form.volume
+                .update(cx, |input, cx| input.set_value("128", window, cx));
+            form.format
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("TAR"))));
+        });
+    });
+    draw(&mut surface);
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            assert_eq!(
+                form.volume.read(cx).value().as_ref(),
+                "128",
+                "unsupported format must not erase the intended split size"
+            );
+            assert!(
+                form.capture(cx).is_err(),
+                "TAR with retained split must require an explicit decision"
+            );
+        });
+    });
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            form.format
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("ZIP"))))
+        });
+    });
+    draw(&mut surface);
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            let (requests, _) = form.capture(cx).expect("restored ZIP split");
+            assert_eq!(
+                requests[0].create.as_ref().expect("create").volume_bytes,
+                Some(134_217_728)
+            );
+        });
+    });
+}
+
+#[gpui_kit::test]
+fn ref17_presets_units_checked_bytes_and_reopen_use_original_form(cx: &mut TestAppContext) {
+    use nxtools_core::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
+    let (view, mut surface) = mount(cx, ArchiveSettings::default());
+    let identity = view.read_with(&surface, |form, _| form.volume.entity_id());
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            form.volume_preset
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("2 GiB"))));
+        })
+    });
+    draw(&mut surface);
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            let (requests, _) = form.capture(cx).expect("preset");
+            assert_eq!(
+                requests[0].create.as_ref().expect("create").volume_bytes,
+                Some(2_147_483_648)
+            );
+            form.volume_unit
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("KiB"))));
+        })
+    });
+    draw(&mut surface);
+    surface.update(|window, cx| {
+        view.update(cx, |form, cx| {
+            assert_eq!(form.volume.read(cx).value().as_ref(), "2097152");
+            assert_eq!(form.volume.entity_id(), identity);
+            form.volume.update(cx, |input, cx| {
+                input.set_value("1536", window, cx);
+                cx.emit(InputEvent::Change);
+            });
+            form.volume_unit
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("MiB"))));
+        })
+    });
+    draw(&mut surface);
+    let remembered = surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            assert_eq!(
+                form.volume.read(cx).value().as_ref(),
+                "1536",
+                "inexact unit choice must not round"
+            );
+            assert!(form.error.is_some());
+            assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"KiB"));
+            form.remember = true;
+            let (requests, completion) = form.capture(cx).expect("retained exact custom");
+            assert_eq!(
+                requests[0].create.as_ref().expect("create").volume_bytes,
+                Some(1_572_864)
+            );
+            let remembered = completion.remember.expect("explicit remember");
+            assert_eq!(
+                remembered.create_volume_size,
+                Some(ArchiveVolumeSize {
+                    value: 1536,
+                    unit: ArchiveVolumeUnit::KiB
+                })
+            );
+            remembered
+        })
+    });
+    let (reopened, mut reopened_surface) = mount(cx, remembered);
+    draw(&mut reopened_surface);
+    reopened_surface.update(|_, cx| {
+        reopened.update(cx, |form, cx| {
+            assert_eq!(form.volume.read(cx).value().as_ref(), "1536");
+            assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"KiB"));
+            assert_eq!(
+                form.capture(cx).expect("reopened exact size").0[0]
+                    .create
+                    .as_ref()
+                    .expect("create")
+                    .volume_bytes,
+                Some(1_572_864)
+            );
+        })
+    });
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            form.volume_preset
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("不分卷"))));
+        })
+    });
+    draw(&mut surface);
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            assert_eq!(
+                form.capture(cx).expect("explicit none").0[0]
+                    .create
+                    .as_ref()
+                    .expect("create")
+                    .volume_bytes,
+                None
+            );
+        })
+    });
+}
+
+#[gpui_kit::test]
+fn ref17_positive_integer_limits_stay_at_production_submit(cx: &mut TestAppContext) {
+    let (view, mut surface) = mount(cx, ArchiveSettings::default());
+    surface.update(|_, cx| {
+        view.update(cx, |form, cx| {
+            form.volume_unit
+                .update(cx, |_, cx| cx.emit(SelectEvent::Confirm(Some("KiB"))));
+        })
+    });
+    draw(&mut surface);
+    for (value, expected) in [
+        ("64", Some(65_536)),
+        ("65", Some(66_560)),
+        ("0", None),
+        ("63", None),
+        ("1.5", None),
+        ("-1", None),
+        ("18446744073709551615", None),
+        ("18446744073709551616", None),
+    ] {
+        surface.update(|window, cx| {
+            view.update(cx, |form, cx| {
+                form.volume
+                    .update(cx, |input, cx| input.set_value(value, window, cx));
+                match expected {
+                    Some(bytes) => assert_eq!(
+                        form.capture(cx).expect("valid integer size").0[0]
+                            .create
+                            .as_ref()
+                            .expect("create")
+                            .volume_bytes,
+                        Some(bytes)
+                    ),
+                    None => {
+                        form.submit(window, cx);
+                        assert!(!form.submitted);
+                        assert!(form.error.is_some(), "invalid value {value}");
+                    }
+                }
+            })
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn ref17_actual_number_input_unit_keyboard_and_fixed_footer(cx: &mut TestAppContext) {
+    for dimensions in [size(px(680.), px(600.)), size(px(480.), px(360.))] {
+        let (view, mut surface) = mount(cx, ArchiveSettings::default());
+        surface.simulate_resize(dimensions);
+        draw(&mut surface);
+        let viewport = surface
+            .debug_bounds("archive-form-body")
+            .expect("original scroll body");
+        for _ in 0..60 {
+            let target = surface.debug_bounds("archive-options-toggle");
+            if target.is_some_and(|bounds| {
+                bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
+            }) {
+                break;
+            }
+            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                position: viewport.center(),
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., -2.)),
+                ..Default::default()
+            });
+            draw(&mut surface);
+        }
+        click(&mut surface, "archive-options-toggle");
+        assert!(
+            view.read_with(&surface, |form, _| form.space.options_open),
+            "actual disclosure click"
+        );
+        for _ in 0..60 {
+            draw(&mut surface);
+            let bounds = surface.debug_bounds("archive-volume-number");
+            if bounds.is_some_and(|bounds| {
+                bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
+            }) {
+                break;
+            }
+            let direction = bounds.map_or(-2., |bounds| {
+                if bounds.top() < viewport.top() {
+                    2.
+                } else {
+                    -2.
+                }
+            });
+            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
+                ..Default::default()
+            });
+        }
+        for selector in [
+            "archive-volume-preset",
+            "archive-volume-number",
+            "archive-volume-unit",
+        ] {
+            let bounds = surface
+                .debug_bounds(selector)
+                .expect("actual control wrapper");
+            assert!(bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom());
+            assert_eq!(bounds.size.height, px(32.));
+        }
+        for selector in ["archive-form-submit", "archive-form-cancel"] {
+            let bounds = surface
+                .debug_bounds(selector)
+                .expect("nonshrinking official footer");
+            assert!(bounds.bottom() <= dimensions.height);
+            assert_eq!(bounds.size.height, px(32.));
+        }
+        click(&mut surface, "archive-volume-number");
+        surface.simulate_input("2048");
+        draw(&mut surface);
+        surface.update(|_, cx| {
+            view.update(cx, |form, cx| {
+                assert_eq!(form.volume.read(cx).value().as_ref(), "2048");
+                assert_eq!(
+                    form.capture(cx).expect("actual typed MiB").0[0]
+                        .create
+                        .as_ref()
+                        .expect("create")
+                        .volume_bytes,
+                    Some(2_147_483_648)
+                );
+            })
+        });
+        view.update_in(&mut surface, |form, window, cx| {
+            form.volume_unit.focus_handle(cx).focus(window, cx)
+        });
+        surface.simulate_keystrokes("enter down enter");
+        draw(&mut surface);
+        surface.update(|_, cx| {
+            view.update(cx, |form, cx| {
+                assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"GiB"));
+                assert_eq!(form.volume.read(cx).value().as_ref(), "2");
+                assert_eq!(
+                    form.submit_count, 0,
+                    "Select Enter must not submit the outer form"
+                );
+                assert_eq!(
+                    form.capture(cx)
+                        .expect("same bytes after actual unit confirmation")
+                        .0[0]
+                        .create
+                        .as_ref()
+                        .expect("create")
+                        .volume_bytes,
+                    Some(2_147_483_648)
+                );
+            })
+        });
+    }
+}
+
+fn reveal_form_control(surface: &mut VisualTestContext, selector: &'static str) {
+    for _ in 0..60 {
+        draw(surface);
+        let viewport = surface
+            .debug_bounds("archive-form-body")
+            .expect("original form viewport");
+        let bounds = surface.debug_bounds(selector);
+        if bounds.is_some_and(|bounds| {
+            bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
+        }) {
+            return;
+        }
+        let direction = if bounds.is_some_and(|bounds| bounds.top() < viewport.top()) {
+            2.
+        } else {
+            -2.
+        };
+        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
+            delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
+            ..Default::default()
+        });
+    }
+    panic!("production form control {selector} was not reachable");
+}
+
+fn reveal_volume_controls(view: &Entity<OperationForm>, surface: &mut VisualTestContext) {
+    if !view.read_with(surface, |form, _| form.space.options_open) {
+        reveal_form_control(surface, "archive-options-toggle");
+        click(surface, "archive-options-toggle");
+        assert!(view.read_with(surface, |form, _| form.space.options_open));
+    }
+    reveal_form_control(surface, "archive-volume-number");
+}
+
+#[gpui_kit::test]
+fn ref17_b3_01_actual_invalid_unit_switch_preserves_reason_and_correction(cx: &mut TestAppContext) {
+    use nxtools_core::archive::{ArchiveVolumeSize, ArchiveVolumeUnit};
+    for (value, reason) in [
+        ("0", "分卷大小至少为 64 KiB，且必须是正整数。"),
+        ("63", "分卷大小至少为 64 KiB，且必须是正整数。"),
+        ("1.5", "分卷大小必须是正整数；请选择 KiB、MiB 或 GiB。"),
+        ("18446744073709551615", "分卷大小超出可表示范围。"),
+        ("18446744073709551616", "分卷大小超出可表示范围。"),
+        (
+            "65",
+            "当前大小不能用所选单位的正整数精确表示。已保留原值；请保留单位或明确修改大小。",
+        ),
+    ] {
+        let settings = ArchiveSettings {
+            create_volume_size: Some(ArchiveVolumeSize {
+                value: 64,
+                unit: ArchiveVolumeUnit::KiB,
+            }),
+            ..Default::default()
+        };
+        let (view, mut surface) = mount(cx, settings);
+        surface.simulate_resize(size(px(680.), px(600.)));
+        reveal_volume_controls(&view, &mut surface);
+        let input_id = view.read_with(&surface, |form, _| form.volume.entity_id());
+        click(&mut surface, "archive-volume-number");
+        surface.simulate_keystrokes("ctrl-a");
+        surface.simulate_input(value);
+        draw(&mut surface);
+        view.update_in(&mut surface, |form, window, cx| {
+            form.volume_unit.focus_handle(cx).focus(window, cx)
+        });
+        surface.simulate_keystrokes("enter down enter");
+        draw(&mut surface);
+        view.read_with(&surface, |form, cx| {
+            assert_eq!(
+                form.volume.read(cx).value().as_ref(),
+                value,
+                "rejected switch retains actual text"
+            );
+            assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"KiB"));
+            assert_eq!(form.volume.entity_id(), input_id);
+            assert_eq!(
+                form.error.as_deref(),
+                Some(reason),
+                "unit switch must preserve the real validation reason for {value}"
+            );
+            assert_eq!(form.submit_count, 0);
+            assert!(!form.submitted);
+        });
+        reveal_form_control(&mut surface, "archive-volume-number");
+        click(&mut surface, "archive-volume-number");
+        surface.simulate_keystrokes("ctrl-a");
+        surface.simulate_input("2048");
+        draw(&mut surface);
+        view.update_in(&mut surface, |form, window, cx| {
+            form.volume_unit.focus_handle(cx).focus(window, cx)
+        });
+        surface.simulate_keystrokes("enter down enter");
+        draw(&mut surface);
+        surface.update(|_, cx| {
+            view.update(cx, |form, cx| {
+                assert_eq!(form.volume.read(cx).value().as_ref(), "2");
+                assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"MiB"));
+                assert_eq!(form.volume.entity_id(), input_id);
+                assert!(
+                    form.error.is_none(),
+                    "corrected exact input clears the error"
+                );
+                assert_eq!(
+                    form.capture(cx).expect("corrected production form").0[0]
+                        .create
+                        .as_ref()
+                        .expect("create")
+                        .volume_bytes,
+                    Some(2_097_152)
+                );
+                assert_eq!(form.submit_count, 0);
+            })
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn ref17_b3_e1_actual_preset_and_step_controls_preserve_bytes_and_focus(cx: &mut TestAppContext) {
+    for dimensions in [size(px(680.), px(600.)), size(px(480.), px(360.))] {
+        let (view, mut surface) = mount(cx, ArchiveSettings::default());
+        surface.simulate_resize(dimensions);
+        reveal_volume_controls(&view, &mut surface);
+        let input_id = view.read_with(&surface, |form, _| form.volume.entity_id());
+        view.update_in(&mut surface, |form, window, cx| {
+            form.volume_preset.focus_handle(cx).focus(window, cx)
+        });
+        surface.simulate_keystrokes("enter down down enter");
+        draw(&mut surface);
+        view.read_with(&surface, |form, cx| {
+            assert_eq!(
+                form.volume_preset.read(cx).selected_value(),
+                Some(&"100 MiB")
+            );
+            assert_eq!(form.volume.read(cx).value().as_ref(), "100");
+            assert_eq!(form.volume_unit.read(cx).selected_value(), Some(&"MiB"));
+            assert_eq!(form.volume.entity_id(), input_id);
+            assert_eq!(form.submit_count, 0);
+        });
+        for (button, value, bytes) in [
+            (None, "100", 104_857_600),
+            (Some("increment"), "101", 105_906_176),
+            (Some("decrement"), "100", 104_857_600),
+        ] {
+            if let Some(button) = button {
+                reveal_form_control(&mut surface, "archive-volume-number");
+                let wrapper = surface
+                    .debug_bounds("archive-volume-number")
+                    .expect("number wrapper");
+                let bounds = surface.update(|window, _| {
+                    gpui_kit::base::test_support::snapshots(window)
+                        .into_iter()
+                        .find(|node| {
+                            node.role() == Some(gpui_kit::Role::Button)
+                                && node.path().last() == Some(&gpui_kit::ElementId::from(button))
+                                && wrapper.contains(&node.bounds().center())
+                        })
+                        .expect("official NumberInput step button inside original wrapper")
+                        .bounds()
+                });
+                surface.simulate_event(gpui_kit::MouseDownEvent {
+                    position: bounds.center(),
+                    button: gpui_kit::MouseButton::Left,
+                    ..Default::default()
+                });
+                surface.simulate_event(gpui_kit::MouseUpEvent {
+                    position: bounds.center(),
+                    button: gpui_kit::MouseButton::Left,
+                    modifiers: Default::default(),
+                    click_count: 1,
+                });
+                draw(&mut surface);
+                assert!(
+                    surface.update(|window, cx| {
+                        view.read(cx).volume.focus_handle(cx).is_focused(window)
+                    }),
+                    "step buttons keep focus on the original numeric input"
+                );
+            }
+            surface.update(|_, cx| {
+                view.update(cx, |form, cx| {
+                    assert_eq!(form.volume.read(cx).value().as_ref(), value);
+                    assert_eq!(form.volume.entity_id(), input_id);
+                    assert_eq!(form.submit_count, 0);
+                    assert!(!form.submitted);
+                    assert_eq!(
+                        form.capture(cx).expect("actual preset and deferred step").0[0]
+                            .create
+                            .as_ref()
+                            .expect("create")
+                            .volume_bytes,
+                        Some(bytes)
+                    );
+                })
+            });
+        }
+        let viewport = surface
+            .debug_bounds("archive-form-body")
+            .expect("scroll body");
+        let number = surface
+            .debug_bounds("archive-volume-number")
+            .expect("reachable numeric row");
+        assert!(number.top() >= viewport.top() && number.bottom() <= viewport.bottom());
+        for selector in ["archive-form-submit", "archive-form-cancel"] {
+            let footer = surface.debug_bounds(selector).expect("fixed footer action");
+            assert_eq!(footer.size.height, px(32.));
+            assert!(footer.top() >= viewport.bottom() && footer.bottom() <= dimensions.height);
+        }
+    }
 }

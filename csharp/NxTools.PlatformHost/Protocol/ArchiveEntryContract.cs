@@ -18,7 +18,7 @@ internal sealed record ArchiveBrowserContext(Guid SnapshotId, string Format, str
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveTarEditEligibility? TarEdit=null)
 {
     internal bool Valid => SnapshotId != Guid.Empty && Comment is not null && System.Text.Encoding.UTF8.GetByteCount(Comment) <= 65536 &&
-        Format is "Zip" or "SevenZ" or "Rar4" or "Rar5" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" &&
+        Format is "Zip" or "SevenZ" or "Rar4" or "Rar5" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" or "Cab" or "Iso" or "Udf" or "Wim" or "Ar" or "Cpio" or "Lzma" or "Lz4" or "Lz4Block" or "Brotli" &&
         Source is { Native: { Length: > 3 and <= 256 }, Digest: { Length: 32 } } && Source.Native.StartsWith("v1:", StringComparison.Ordinal) &&
         Source.Native.All(c => c < 128 && !char.IsControl(c)) && Source.Digest.All(b => b <= 255);
 }
@@ -41,6 +41,8 @@ internal sealed record ArchiveTempPolicy(string BaseDirectory, uint RetentionHou
     internal string SessionsRoot => System.IO.Path.Combine(BaseDirectory, "NxTools.Next", "archive", "sessions");
 }
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+internal sealed record ArchivePreviewOptions(ulong MaxBytes, uint TimeoutMs);
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveEntryCommand
 {
     public required uint Version { get; init; }
@@ -59,6 +61,8 @@ internal sealed record ArchiveEntryCommand
     public bool PasswordInteraction { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public ArchiveTempPolicy? TempPolicy { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ArchivePreviewOptions? PreviewOptions { get; init; }
 }
 internal sealed record ArchiveEntryResult(uint Version, Guid OperationId, Guid SessionId, ulong Generation, bool Success,
     Guid? LeaseId, string? Path, string? Code, int? NativeErrorCode = null, bool CleanupComplete = true, bool Retained = false);
@@ -81,10 +85,17 @@ internal static class ArchiveEntryWire
             Require(browser, "snapshot_id", "format", "comment", "source");
             Require(browser.GetProperty("source"), "native", "digest", "size", "modified_unix_ns");
         }
+        if (raw.TryGetProperty("preview_options", out var previewOptions) && previewOptions.ValueKind != JsonValueKind.Null)
+            Require(previewOptions, "max_bytes", "timeout_ms");
         if (raw.TryGetProperty("temp_policy", out var policy)) Require(policy, "base_directory", "retention_hours", "cleanup_on_child_exit");
-        var command = envelope.Payload.GetProperty("data").Deserialize<ArchiveEntryCommand>(Strict) ?? throw new InvalidDataException();
+        var command = raw.Deserialize<ArchiveEntryCommand>(Strict) ?? throw new InvalidDataException();
         if (command.Version != 1 || command.OperationId == Guid.Empty || command.SessionId == Guid.Empty || command.Generation == 0 || envelope.CorrelationId != command.OperationId || envelope.Id == command.OperationId || command.LeaseId == Guid.Empty) throw new InvalidDataException();
         if (command.TempPolicy is { } temp) { if (command.Action is not ("materialize" or "preview" or "preview_text")) throw new InvalidDataException(); temp.Validate(); }
+        if (command.PreviewOptions is { } preview) {
+            if (command.Action is not ("preview" or "preview_text")) throw new InvalidDataException();
+            var maximum = command.Action == "preview_text" ? 8ul << 20 : 128ul << 20;
+            if (preview.MaxBytes is 0 || preview.MaxBytes > maximum || preview.TimeoutMs is < 200 or > 120000) throw new InvalidDataException();
+        }
         if (command.Action is "materialize" or "preview" or "preview_text" or "authorize") {
             var path = command.Path;
             if (path is null || path.Length is < 4 or > 32767 || !char.IsAsciiLetter(path[0]) || path[1] != ':' || path[2] != '\\' || path.Contains('/') || path.Any(char.IsControl) ||

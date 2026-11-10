@@ -94,7 +94,8 @@ internal sealed class IconCache
     internal bool TryGetOrCreate(
         IconCacheKey key,
         Func<string, bool> generate,
-        out string path)
+        out string path,
+        Func<string, bool>? validate = null)
     {
         var fingerprint = key.Fingerprint();
         path = GetPath(key);
@@ -108,20 +109,12 @@ internal sealed class IconCache
         }
 
         Directory.CreateDirectory(_directory);
-        if (File.Exists(path))
-        {
-            lock (_gate)
-            {
-                Remember(fingerprint, path);
-            }
-            return true;
-        }
 
         var generatedPath = path;
         var generation = _inFlight.GetOrAdd(
             fingerprint,
             _ => new Lazy<bool>(
-                () => Generate(generatedPath, generate),
+                () => Generate(generatedPath, generate, validate),
                 LazyThreadSafetyMode.ExecutionAndPublication));
         try
         {
@@ -148,16 +141,21 @@ internal sealed class IconCache
         }
     }
 
-    private static bool Generate(string path, Func<string, bool> generate)
+    private static bool Generate(string path, Func<string, bool> generate, Func<string, bool>? validate)
     {
         try
         {
+            if (File.Exists(path))
+            {
+                if (validate is null || validate(path)) return true;
+                TryDelete(path);
+            }
             if (!generate(path))
             {
                 TryDelete(path);
                 return false;
             }
-            return File.Exists(path);
+            return File.Exists(path) && (validate is null || validate(path));
         }
         catch
         {

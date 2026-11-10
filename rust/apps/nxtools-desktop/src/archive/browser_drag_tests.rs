@@ -822,10 +822,12 @@ fn production_tree_drag_icon_and_label_preserve_directory_without_list_navigatio
     }
 }
 #[gpui_kit::test]
-fn production_tree_root_drag_adds_safe_archive_stem_and_preserves_original_ordinals(
+fn production_tree_root_drag_locates_receiver_folder_named_by_archive_stem(
     cx: &mut TestAppContext,
 ) {
     let (view, mut surface, endpoint) = mount(cx);
+    let center = cx.new(|_| crate::notifications::NotificationCenter::default());
+    cx.update(|cx| crate::notifications::register(&center, cx));
     install_tree(&view, &mut surface);
     view.update(&mut surface, |view, _| {
         view.path = PathBuf::from(r"C:\owned\Project.TAR.GZ")
@@ -833,30 +835,52 @@ fn production_tree_root_drag_adds_safe_archive_stem_and_preserves_original_ordin
     draw(&mut surface);
     let origin = tree_down(&mut surface, "archive-tree-icon-");
     tree_move(&mut surface, origin, 12., true);
-    let (_, command) = take_drag(&endpoint);
+    let (receipt, command) = take_drag(&endpoint);
     command.validate().expect("same v1 wire");
+    assert_eq!(command.action, "locate");
+    assert!(command.authorization_id.is_none());
     let items = command.items.expect("root wrapper");
-    assert_eq!(
-        items
-            .iter()
-            .map(|item| item.name.as_str())
-            .collect::<Vec<_>>(),
-        vec![
-            "Project",
-            "Project/other.txt",
-            "Project/tree",
-            "Project/tree/empty",
-            "Project/tree/sub",
-            "Project/tree/sub/deep.txt"
-        ]
-    );
-    assert!(items[0].directory && items[0].entry.ordinal.is_none());
-    assert_eq!(items[1].entry.ordinal, Some(13));
-    assert_eq!(items[5].entry.ordinal, Some(12));
+    assert_eq!(items.len(), 1, "no member is frozen or materialized for Root");
+    assert!(items[0].directory && items[0].name == "Project" && items[0].entry.ordinal.is_none());
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+    let located = nxtools_protocol::PlatformCommandResult {
+        success: true,
+        error: None,
+        native_error_code: None,
+        data: Some(
+            r#"{"status":"located","drop_effect":1,"destination":"D:\\Downloads\\Project"}"#.into(),
+        ),
+    };
+    endpoint
+        .send_notification_for_contract_test(nxtools_ipc::PlatformNotification::CommandResult {
+            correlation_id: receipt,
+            result: located.clone(),
+        })
+        .expect("original transport observes native terminal");
+    let drop = view
+        .update(&mut surface, |view, cx| view.drag_result(receipt, &located, cx))
+        .expect("receiver-created folder starts the ordinary extraction");
+    assert_eq!(drop.destination, r"D:\Downloads\Project");
+    assert_eq!(drop.source, PathBuf::from(r"C:\owned\Project.TAR.GZ"));
+    view.read_with(&surface, |view, _| assert!(!view.native_drag_active()));
+
+    let origin = tree_down(&mut surface, "archive-tree-icon-");
+    tree_move(&mut surface, origin, 12., true);
+    let (receipt, _) = take_drag(&endpoint);
+    let unknown = nxtools_protocol::PlatformCommandResult {
+        success: false,
+        error: Some("drop_location_unknown".into()),
+        native_error_code: None,
+        data: None,
+    };
     assert!(
-        endpoint.try_receive_command_for_contract_test().is_err(),
-        "descriptor names only, no materialization"
+        view.update(&mut surface, |view, cx| view.drag_result(receipt, &unknown, cx))
+            .is_none()
     );
+    draw(&mut surface);
+    center.read_with(&surface, |center, _| {
+        assert_eq!(center.items().len(), 1, "unlocated drop is reported")
+    });
 }
 #[gpui_kit::test]
 fn production_tree_drag_disclosure_click_release_and_unheld_move_never_start(
@@ -902,7 +926,9 @@ fn production_tree_drag_disclosure_click_release_and_unheld_move_never_start(
     });
 }
 #[gpui_kit::test]
-fn production_tree_root_drag_empty_unsafe_and_over_budget_reject_whole(cx: &mut TestAppContext) {
+fn production_tree_root_drag_rejects_empty_or_unsafe_and_locates_any_size_or_encryption(
+    cx: &mut TestAppContext,
+) {
     for mode in [
         "empty",
         "unsafe",
@@ -931,23 +957,18 @@ fn production_tree_root_drag_empty_unsafe_and_over_budget_reject_whole(cx: &mut 
         draw(&mut surface);
         let origin = tree_down(&mut surface, "archive-tree-label-");
         tree_move(&mut surface, origin, 12., true);
-        if matches!(mode, "files" | "roots" | "descriptors" | "bytes") {
+        if matches!(
+            mode,
+            "files" | "roots" | "descriptors" | "bytes" | "encrypted"
+        ) {
+            // Root size/encryption never changes the gesture: the ordinary job owns the payload,
+            // limits and any password prompt after the receiver reports its folder.
             let (_, command) = take_drag(&endpoint);
-            command.validate().expect("complete representable tree");
-            let items = command.items.expect("whole tree");
-            assert_eq!(
-                items
-                    .iter()
-                    .filter(|item| item.entry.ordinal.is_some())
-                    .count(),
-                if mode == "descriptors" {
-                    128
-                } else if mode == "bytes" {
-                    1
-                } else {
-                    33
-                }
-            );
+            command.validate().expect("locate wrapper");
+            assert_eq!(command.action, "locate", "{mode}");
+            assert!(command.authorization_id.is_none(), "{mode}");
+            let items = command.items.expect("wrapper");
+            assert!(items.len() == 1 && items[0].directory, "{mode}");
         } else {
             assert!(
                 endpoint.try_receive_command_for_contract_test().is_err(),
@@ -1029,7 +1050,23 @@ fn production_tree_drag_empty_directory_and_authorized_root_use_original_session
     view.update(&mut surface, |view, _| {
         view.model.as_mut().expect("model").entries[2].encrypted = Some(true)
     });
-    let origin = tree_down(&mut surface, "archive-tree-label-");
+    // Encrypted Root still locates at once; the ordinary extraction job asks for the password.
+    let root_origin = tree_down(&mut surface, "archive-tree-label-");
+    tree_move(&mut surface, root_origin, 12., true);
+    let (root_receipt, root) = take_drag(&endpoint);
+    assert_eq!(root.action, "locate");
+    assert!(root.authorization_id.is_none());
+    endpoint
+        .send_notification_for_contract_test(nxtools_ipc::PlatformNotification::CommandResult {
+            correlation_id: root_receipt,
+            result: success(),
+        })
+        .expect("original transport observes native terminal");
+    view.update(&mut surface, |view, cx| {
+        assert!(view.drag_result(root_receipt, &success(), cx).is_none())
+    });
+    // A member subtree with encrypted content keeps the unlock-then-fresh-gesture contract.
+    let origin = tree_down(&mut surface, "archive-tree-label-tree");
     tree_move(&mut surface, origin, 12., true);
     assert!(endpoint.try_receive_command_for_contract_test().is_err());
     view.update(&mut surface, |view, cx| view.unlock_drag(cx));
@@ -1047,13 +1084,15 @@ fn production_tree_drag_empty_directory_and_authorized_root_use_original_session
         endpoint.try_receive_command_for_contract_test().is_err(),
         "unlock never resumes prior gesture"
     );
-    let fresh = tree_down(&mut surface, "archive-tree-icon-");
+    let fresh = tree_down(&mut surface, "archive-tree-icon-tree");
     tree_move(&mut surface, fresh, 12., true);
-    let (_, root) = take_drag(&endpoint);
-    assert_eq!(root.authorization_id, Some(authorize.operation_id));
+    let (_, subtree) = take_drag(&endpoint);
+    assert_eq!(subtree.action, "start");
+    assert_eq!(subtree.authorization_id, Some(authorize.operation_id));
     assert!(
-        root.items
-            .expect("complete root")
+        subtree
+            .items
+            .expect("complete subtree")
             .iter()
             .all(|item| !item.entry.password_interaction)
     );

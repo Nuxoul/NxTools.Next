@@ -8,6 +8,10 @@
 不能用全量测试数、历史同一错误码的修复或安装器编译成功替代真实安装结果。
 空闲状态安装成功不代表运行中升级成功。更改进程关闭边界后，应在另行明确授权下验证已安装 Desktop 正在运行时的升级；
 记录实际 PID、原生 API、提权状态及安装后文件读回。UAC取消不算 helper 执行失败或安装成功，不自动重复。
+首次安装/新账号报“无法检查更新组件”时，先核对本次 `bootstrap-detection.jsonl` 与 Setup 日志。
+无更新服务应直接跳过；固定同公钥服务登记存在但整个 Updater 目录缺失时，安装器可在明确确认/UAC后
+调用限定恢复入口。不得把访问拒绝或仍有恢复记录的目录当成缺失，不手动删服务/目录来强行安装。
+源码/隔离验证与真实安装修复接受分开，见 [缺失更新组件修复](.trellis/tasks/10-16-archive-manager/installer-missing-bootstrap-repair.md)。
 
 ## 1. 直接使用
 
@@ -22,6 +26,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.
 
 # 仅在已有相关验证、明确允许复用时使用；仍会重新构建 Release 和安装器
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.ps1 -SkipVerification
+
+# 仅显式需要完整分发 ZIP 时追加；普通打包不生成外层 ZIP
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.ps1 -SkipVerification -CreateDistributionArchive
 ```
 同一产品源码已有相关验收、用户明确要求只重新打包或不重复全量测试时，使用上述 `-SkipVerification`
 复用既有结果；不要再调用 `build.ps1` 重跑全量集合。交付中记录验证出处、源码一致性和复用标记，
@@ -109,6 +116,8 @@ $env:RUSTFLAGS='-C codegen-units=256'
 - 安装包：`artifacts/installer/NxTools.Next-setup-0.7.0.exe`
 - 散装包：`artifacts/win-x64/`
 - 签名清单：`NxTools.release.json` / `NxTools.release.sig`
+- 对应源码材料：`artifacts/installer/third_party/archive-worker/` 下的 LGPL 许可证、对应源码及离线重构建说明，仍由原入口生成；不改变受信任安装清单或生产身份校验。Python 要求 3.11+；材料生成失败不得交付缺材料的包。
+- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.0.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
 - SHA256：安装包旁 `.sha256`
 - 统一入口的本地 `status.json`：序号、实际成功／失败、安装包哈希、大小、文件核验计数及 Authenticode。
 - 同目录 `package.log`（stdout）、`package.stderr.log`（原生 stderr）和 `previous-package` / `previous-installer` 保留原始过程和旧包。
@@ -126,6 +135,18 @@ $env:RUSTFLAGS='-C codegen-units=256'
 低阈值 Risk/暂停场景依赖 DEBUG 注入，不能让 Release 注入生效来强行通过测试。
 两个配置的测试宿主均使用当前实际二进制生成的身份清单，不使用默认空发布身份；调用者的 fixture 环境在退出时恢复。
 结果仍分别披露 PASS/SKIP/FAIL/not_run；原有可选环境导致的 SKIP 不计作通过。参数回归为 `tests/architecture/build-host-bindings.tests.py`。
+
+临时 .NET 构建树由创建该次精确路径的脚本在最外层 `finally` 删除：`build.ps1` 的 `vh-*`、
+Release fixture 验证的 `vf-*`、`package.ps1` 的 `package-build-*`，成功与失败相同。
+有 `PI_SCRATCH_DIR` 时使用该目录，否则使用系统 Temp；不扫描或删除其他调用的临时树。
+`publish-release-hosts.ps1` 借用调用方目录，生成输入和发布文件一直保留到测试构建／包复制消费结束。
+fixture 默认证据保留在 `.diagnostics/verification/fixtures-<唯一ID>/`，自定义证据目录继续生效，
+退出时恢复调用方 fixture 环境。IsolatedStaging 的公开生成输入保留在输出旁 `.generated-inputs/`，
+本次 managed Host DLL 另保留为 `<输出>.TEST-PlatformHost.dll`，供原 staging 身份测试读取实际程序集。
+`.build-inputs.json` 的 `generated_directory` / `host_assembly` 只引用这些保留输入，不引用已删除的构建树；
+原 TEST 公钥旁文件保留，私钥不复制。旁文件均为验证证据，不加入生产安装成员。
+这些 staging 材料仍不具备生产安装／发布身份。脚本回归使用工具桩，不授权真实构建或服务操作。
+
 `artifacts/installer/INSTALL.md` / `evidence.json` 是人工交付摘要；统一入口不自动更新这两份文字，
 后续 AI 应按本次 `status.json` 更新，不能沿用旧序号／旧哈希。
 
@@ -137,6 +158,7 @@ $env:RUSTFLAGS='-C codegen-units=256'
 | 序号不递增 | 重新检查账本与包清单；保留失败占号，不重置 |
 | Cargo 正忙 | 等原任务结束；不杀、不复制构建 |
 | 提交内存不足 | 等压力下降／用户调整分页文件；不做全系统内存清理或擅自降门槛 |
+| 安装器已生成但包装状态停在 Building | `Start-Process -Wait` 等待整个后代进程树，可能包含常驻 C# 编译器。先核对本次打包子进程的真实退出状态；不能以安装器存在推断成功，不结束共享编译器或重复构建。若需独立收尾，保留原状态、控制器结果和原打包进程退出证据，按原规则完成签名、成员和安装器核验后再交付 |
 | 编译 / lint 失败 | 保留具体错误和现有改动；不屏蔽或修无关代码来伪造通过 |
 | 签名 / 身份验证失败 | 停止发布，保留日志；不 unsigned fallback、不单换二进制 |
 

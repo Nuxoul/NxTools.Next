@@ -31,7 +31,13 @@ const DELTA_MAGIC: u64 = 0x0041_544C_4544_4D4E; // "NMDELTA\0"
 const DELTA_HEADER_SIZE: usize = 64;
 const DELTA_RECORD_SIZE: usize = 56;
 
+#[cfg(test)]
+mod compaction_schedule_tests;
 mod journal;
+#[cfg(all(test, windows))]
+mod measurements;
+#[cfg(test)]
+mod publication_tests;
 pub(super) use journal::DeltaCheckpoint;
 
 pub(super) struct MappedSnapshot {
@@ -488,6 +494,38 @@ pub(crate) fn persist_system_snapshot(snapshot: &mut MftSnapshot) -> Result<()> 
     Ok(())
 }
 
+pub(super) fn reopen_persisted_snapshot(snapshot: MftSnapshot) -> Result<MftSnapshot> {
+    let path = snapshot
+        .cache_path()
+        .context("completed snapshot has no persisted base")?
+        .to_owned();
+    let mount_point = snapshot.mount_point.clone();
+    // Release build rows and their row-indexed auxiliaries before building mapped search data.
+    // Existing service/search leases own independent snapshots and remain untouched.
+    drop(snapshot);
+    let (mapped, journal_id, next_usn, visible_count) =
+        MappedSnapshot::open(&path, &mount_point).context("reopen persisted MFT base")?;
+    Ok(MftSnapshot::from_mapped(
+        mount_point,
+        journal_id,
+        next_usn,
+        visible_count,
+        mapped,
+        path,
+    ))
+}
+
+pub(crate) fn cleanup_published_snapshot(snapshot: &MftSnapshot) {
+    let Some(path) = snapshot.cache_path() else {
+        return;
+    };
+    let Some(directory) = path.parent() else {
+        return;
+    };
+    let (_, prefix) = system_cache_location(&snapshot.mount_point);
+    cleanup_obsolete_cache_files(directory, &prefix, path);
+}
+
 pub(crate) fn persist_system_delta(snapshot: &MftSnapshot) -> Result<()> {
     let cache_path = snapshot
         .cache_path()
@@ -542,6 +580,10 @@ fn cache_candidates(directory: &Path, prefix: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn cleanup_obsolete_cache_files(directory: &Path, prefix: &str, keep: &Path) {
+    let started = Instant::now();
+    let mut removed = 0_usize;
+    let mut deferred = 0_usize;
+    let mut native_error_code = None;
     let keep_delta = delta_path(keep);
     let legacy = format!("{prefix}.idx");
     let legacy_delta = format!("{prefix}.delta");
@@ -567,9 +609,24 @@ fn cleanup_obsolete_cache_files(directory: &Path, prefix: &str, keep: &Path) {
                             || name.ends_with(".delta")
                             || name.contains(".tmp-")))
             });
-        if removable && let Err(error) = fs::remove_file(&path) {
-            warn!(cache = %path.display(), %error, "failed to remove obsolete index cache file");
+        if removable {
+            match fs::remove_file(&path) {
+                Ok(()) => removed += 1,
+                Err(error) => {
+                    deferred += 1;
+                    native_error_code = error.raw_os_error();
+                }
+            }
         }
+    }
+    if removed != 0 || deferred != 0 {
+        let correlation_id = nxtools_protocol::Envelope::new(nxtools_protocol::Message::Pong(
+            nxtools_protocol::Pong { sent_at_unix_ms: 0 },
+        ))
+        .id;
+        info!(event = "indexer.cache.retired", %correlation_id, removed, deferred,
+            native_error_code, elapsed_ms = started.elapsed().as_millis() as u64,
+            "obsolete index cache retirement completed");
     }
 }
 
@@ -617,6 +674,18 @@ fn load_delta(path: &Path, expected_journal_id: Option<u64>) -> Result<Persisted
         replacement_count <= u32::MAX as usize && deleted_count <= u32::MAX as usize,
         "index delta row count was invalid"
     );
+    let minimum_payload = replacement_count
+        .checked_mul(DELTA_RECORD_SIZE)
+        .and_then(|records| {
+            deleted_count
+                .checked_mul(8)
+                .and_then(|deletes| records.checked_add(deletes))
+        })
+        .context("index delta table size overflow")?;
+    ensure!(
+        minimum_payload <= bytes.len() - DELTA_HEADER_SIZE,
+        "index delta declared tables exceeded payload"
+    );
 
     let mut cursor = DELTA_HEADER_SIZE;
     let mut replacements = HashMap::with_capacity(replacement_count);
@@ -663,7 +732,8 @@ fn load_delta(path: &Path, expected_journal_id: Option<u64>) -> Result<Persisted
                     let value = read_i64(record, 24)?;
                     (value != NONE_I64).then_some(value)
                 },
-            },
+            }
+            .into(),
         );
     }
     let deleted_bytes = deleted_count
@@ -996,10 +1066,267 @@ fn put_i64(bytes: &mut [u8], offset: usize, value: i64) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     use super::*;
     use crate::mft::{MftEntry, MftIdentity};
+
+    fn persisted_publication_fixture(directory: &Path, version: usize) -> MftSnapshot {
+        let path = directory.join(format!("volume-433a5c-{version}.idx"));
+        let mut snapshot = MftSnapshot::from_entries(
+            r"C:\",
+            Some(17),
+            Some(100 + version as i64),
+            vec![MftEntry {
+                identity: Some(MftIdentity {
+                    file_reference: 11,
+                    parent_reference: 5,
+                }),
+                path: r"C:\retained.txt".into(),
+                name: "retained.txt".into(),
+                is_directory: false,
+                size_bytes: None,
+                modified_at_unix_ms: None,
+            }],
+        );
+        persist_snapshot(&snapshot, &path).expect("temporary durable base");
+        snapshot.set_cache_path(path.clone());
+        persist_system_delta(&snapshot).expect("temporary paired delta");
+        let (mapped, journal, cursor, visible) =
+            MappedSnapshot::open(&path, r"C:\").expect("mapped base");
+        MftSnapshot::from_mapped(r"C:\".into(), journal, cursor, visible, mapped, path)
+    }
+
+    fn assert_compaction_worker_releases_input_before_event(fail: bool) {
+        use std::sync::mpsc;
+        use std::time::{Duration, Instant};
+
+        let directory = tempdir().expect("isolated compaction worker cache");
+        let input = persisted_publication_fixture(directory.path(), 1);
+        let input_mapping = match &input.base {
+            super::super::MftBase::Mapped(mapped) => Arc::downgrade(mapped),
+            _ => panic!("fixture must own a real mapping"),
+        };
+        let new_path = directory.path().join("volume-433a5c-2.idx");
+        let output_path = new_path.clone();
+        let (events, completed) = mpsc::sync_channel(0);
+        let (computed, computation) = mpsc::channel();
+        let worker = crate::spawn_snapshot_compaction_with(input, events, move |snapshot| {
+            let outcome = if fail {
+                Err(std::io::Error::from_raw_os_error(112).into())
+            } else {
+                let mut compacted = super::super::compact_snapshot(snapshot);
+                persist_snapshot(&compacted, &output_path).expect("temporary compacted base");
+                compacted.set_cache_path(output_path);
+                persist_system_delta(&compacted).expect("temporary compacted delta");
+                Ok(compacted)
+            };
+            computed
+                .send(())
+                .expect("computation reached event handoff");
+            outcome
+        });
+        computation
+            .recv_timeout(Duration::from_secs(2))
+            .expect("compaction computed");
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while input_mapping.strong_count() != 0 && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let released_before_receive = input_mapping.strong_count() == 0;
+        let event = completed
+            .recv_timeout(Duration::from_secs(2))
+            .expect("worker terminal event");
+        worker.join().expect("compaction worker exits");
+        assert!(
+            released_before_receive,
+            "compaction worker must release its mapped input before the completion event can reach cleanup (failure={fail})"
+        );
+        match (fail, event) {
+            (
+                false,
+                crate::RuntimeEvent::CompactionCompleted {
+                    mount_point,
+                    journal_id,
+                    next_usn,
+                    snapshot,
+                },
+            ) => {
+                assert_eq!(mount_point, r"C:\");
+                assert_eq!(journal_id, Some(17));
+                assert_eq!(next_usn, Some(101));
+                assert_eq!(snapshot.cache_path(), Some(new_path.as_path()));
+                assert!(snapshot.visible_entry(11).is_some());
+                assert!(load_delta_for_base(&new_path, r"C:\", Some(17), Some(101), 1).is_ok());
+            }
+            (true, crate::RuntimeEvent::CompactionFailed { mount_point, .. }) => {
+                assert_eq!(mount_point, r"C:\");
+            }
+            _ => panic!("matching compaction terminal event required"),
+        }
+    }
+
+    #[test]
+    fn m3_compaction_worker_releases_mapped_input_before_success_event() {
+        assert_compaction_worker_releases_input_before_event(false);
+    }
+
+    #[test]
+    fn m3_compaction_worker_releases_mapped_input_before_failure_event() {
+        assert_compaction_worker_releases_input_before_event(true);
+    }
+
+    #[test]
+    fn m3_successive_service_build_publications_retire_released_cache_pairs() {
+        let directory = tempdir().expect("isolated publication cache");
+        let mut service =
+            crate::IndexerService::from_volume_descriptors([crate::VolumeDescriptor::new(
+                r"C:\", "NTFS",
+            )]);
+        for version in 1..=3 {
+            let snapshot = persisted_publication_fixture(directory.path(), version);
+            service.rebuild_with(move |_| Ok(snapshot.clone()));
+            let mut remaining = fs::read_dir(directory.path())
+                .expect("current cache")
+                .map(|entry| {
+                    entry
+                        .expect("cache entry")
+                        .file_name()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect::<Vec<_>>();
+            remaining.sort();
+            assert_eq!(
+                remaining,
+                vec![
+                    format!("volume-433a5c-{version}.delta"),
+                    format!("volume-433a5c-{version}.idx"),
+                ],
+                "successful service publication must retire the released previous pair"
+            );
+            let current = &service.snapshots[0];
+            assert!(current.visible_entry(11).is_some());
+            assert!(
+                load_delta_for_base(
+                    current.cache_path().expect("persisted base"),
+                    r"C:\",
+                    Some(17),
+                    current.next_usn,
+                    1
+                )
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn l11_legacy_delta_rejects_impossible_counts_before_preallocation() {
+        let directory = tempdir().expect("isolated corrupt delta");
+        let path = directory.path().join("volume.delta");
+        let empty = MftSnapshot::from_entries(r"C:\", Some(17), Some(100), Vec::new());
+        persist_delta(&empty, &path).expect("valid legacy header");
+        let mut bytes = fs::read(&path).expect("legacy header");
+        put_u64(&mut bytes, 40, 4_096);
+        fs::write(&path, bytes).expect("small impossible-count fixture");
+        let (result, allocations) =
+            crate::mft::allocation_probe::measure(|| load_delta(&path, Some(17)));
+        assert!(result.is_err(), "truncated legacy table must be rejected");
+        assert!(
+            allocations.largest_request < 16 * 1_024,
+            "impossible table must be rejected before capacity allocation: {allocations:?}"
+        );
+    }
+
+    #[test]
+    fn m3_compaction_retirement_tolerates_leased_files_and_preserves_unpublished_pairs() {
+        let directory = tempdir().expect("isolated compaction cache");
+        let mut service =
+            crate::IndexerService::from_volume_descriptors([crate::VolumeDescriptor::new(
+                r"C:\", "NTFS",
+            )]);
+        service.rebuild_with(|_| Ok(persisted_publication_fixture(directory.path(), 1)));
+        let search_snapshot = Arc::clone(&service.snapshots);
+        #[cfg(windows)]
+        let delete_lease = {
+            use std::os::windows::fs::OpenOptionsExt;
+            fs::OpenOptions::new()
+                .read(true)
+                .share_mode(1)
+                .open(search_snapshot[0].cache_path().expect("leased base"))
+                .expect("temporary reader denies deletion")
+        };
+        let mut compacted = super::super::compact_snapshot(&search_snapshot[0]);
+        let new_path = directory.path().join("volume-433a5c-2.idx");
+        persist_snapshot(&compacted, &new_path).expect("durable compacted base");
+        compacted.set_cache_path(new_path.clone());
+        persist_system_delta(&compacted).expect("durable compacted delta");
+        let unpublished = persisted_publication_fixture(directory.path(), 3);
+        assert!(service.apply_compaction(r"C:\", Some(17), Some(101), compacted));
+        assert!(
+            unpublished.cache_path().expect("worker base").exists(),
+            "publication itself must not sweep another worker's unpublished pair"
+        );
+        drop(unpublished);
+        service.cleanup_published_caches();
+        assert!(new_path.exists());
+        assert!(delta_path(&new_path).exists());
+        assert!(
+            search_snapshot[0].visible_entry(11).is_some(),
+            "leased search remains valid"
+        );
+        #[cfg(windows)]
+        assert!(
+            directory.path().join("volume-433a5c-1.idx").exists(),
+            "sharing violation defers old-base retirement"
+        );
+        drop(search_snapshot);
+        #[cfg(windows)]
+        drop(delete_lease);
+        service.cleanup_published_caches();
+        assert!(!directory.path().join("volume-433a5c-1.idx").exists());
+        assert!(!directory.path().join("volume-433a5c-3.idx").exists());
+        let restored = load_cached_snapshot(directory.path(), "volume-433a5c", r"C:\")
+            .expect("current pair recovers")
+            .expect("published base");
+        assert_eq!(restored.cache_path(), Some(new_path.as_path()));
+        assert!(restored.visible_entry(11).is_some());
+    }
+
+    #[test]
+    fn l11_maximal_legacy_counts_reject_without_allocation_and_restore_the_base() {
+        let directory = tempdir().expect("isolated legacy recovery");
+        let snapshot = persisted_publication_fixture(directory.path(), 1);
+        let base_path = snapshot.cache_path().expect("temporary base").to_owned();
+        let path = delta_path(&base_path);
+        let empty = MftSnapshot::from_entries(r"C:\", Some(17), Some(101), Vec::new());
+        persist_delta(&empty, &path).expect("legacy header");
+        let header = fs::read(&path).expect("header bytes");
+        for (replacements, deleted) in [
+            (u32::MAX as u64, 0),
+            (0, u32::MAX as u64),
+            (u64::MAX, u64::MAX),
+        ] {
+            let mut bytes = header.clone();
+            put_u64(&mut bytes, 40, replacements);
+            put_u64(&mut bytes, 48, deleted);
+            fs::write(&path, bytes).expect("corrupt count header");
+            let (result, allocations) =
+                crate::mft::allocation_probe::measure(|| load_delta(&path, Some(17)));
+            assert!(result.is_err());
+            assert!(
+                allocations.largest_request < 16 * 1024,
+                "count-bound rejection allocates no row table: {allocations:?}"
+            );
+            let restored = load_cached_snapshot(directory.path(), "volume-433a5c", r"C:\")
+                .expect("invalid delta does not prevent recovery")
+                .expect("last-good base");
+            assert_eq!(restored.next_usn, Some(101));
+            assert!(restored.visible_entry(11).is_some());
+            assert!(restored.overlay.replacements.is_empty());
+        }
+    }
 
     #[test]
     fn persisted_snapshot_opens_without_materializing_rows_and_preserves_children() {
@@ -1157,7 +1484,8 @@ mod tests {
                 is_directory: false,
                 size_bytes: Some(8),
                 modified_at_unix_ms: Some(9),
-            },
+            }
+            .into(),
         );
 
         persist_delta(&snapshot, &path).expect("persist delta");
@@ -1348,7 +1676,8 @@ mod idle_io_tests {
                     is_directory: false,
                     size_bytes: None,
                     modified_at_unix_ms: Some(1),
-                },
+                }
+                .into(),
             );
         }
         persist_system_delta(&snapshot).expect("initial durable overlay");
@@ -1359,12 +1688,14 @@ mod idle_io_tests {
         let before = written_bytes();
         for tick in 1..=3 {
             snapshot.next_usn = Some(100 + tick);
-            snapshot
-                .overlay
-                .replacements
-                .get_mut(&11)
-                .expect("one changed row")
-                .modified_at_unix_ms = Some(tick + 1);
+            std::sync::Arc::make_mut(
+                snapshot
+                    .overlay
+                    .replacements
+                    .get_mut(&11)
+                    .expect("one changed row"),
+            )
+            .modified_at_unix_ms = Some(tick + 1);
             persist_system_delta(&snapshot).expect("small incremental commit");
         }
         let written = written_bytes() - before;

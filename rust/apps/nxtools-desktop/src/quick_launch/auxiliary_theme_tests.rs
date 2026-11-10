@@ -29,7 +29,7 @@ fn auxiliary_quick_panel_rethemes_without_replacing_search_or_selection(cx: &mut
         *slot.borrow_mut() = Some(view.clone());
         Root::new(view, window, cx)
     });
-    window.simulate_resize(size(px(620.0), px(44.0)));
+    window.simulate_resize(size(px(PANEL_WIDTH), px(COLLAPSED_PANEL_HEIGHT)));
     window.refresh().expect("dark production search");
     let panel = retained.borrow().clone().expect("retained panel");
     let original_input = panel.read_with(window, |view, _| view.search_input.entity_id());

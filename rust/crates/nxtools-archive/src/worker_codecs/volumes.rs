@@ -15,19 +15,9 @@ impl SourceSet {
     pub(super) fn open_rar(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
         // RAR metadata must be reachable with a deficient output allowance. Reuse the
         // original finite default for encoded input only, never for actual decode/output.
-        let encoded_limit =
-            if request.operation == "extract" && request.output_readmission.is_some() {
-                request
-                    .limits
-                    .max_output_bytes
-                    .max(ResourceLimits::default().max_output_bytes)
-            } else {
-                request.limits.max_output_bytes
-            };
-        Self::open_bounded(request, control, encoded_limit)
-    }
-    pub(super) fn open_sevenz(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
-        let encoded_limit = if request.output_readmission.is_some() {
+        let encoded_limit = if request.operation == "extract"
+            && (request.output_readmission.is_some() || request.browser_entry.is_some())
+        {
             request
                 .limits
                 .max_output_bytes
@@ -35,6 +25,18 @@ impl SourceSet {
         } else {
             request.limits.max_output_bytes
         };
+        Self::open_bounded(request, control, encoded_limit)
+    }
+    pub(super) fn open_sevenz(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
+        let encoded_limit =
+            if request.output_readmission.is_some() || request.browser_entry.is_some() {
+                request
+                    .limits
+                    .max_output_bytes
+                    .max(ResourceLimits::default().max_output_bytes)
+            } else {
+                request.limits.max_output_bytes
+            };
         Self::open_bounded(request, control, encoded_limit)
     }
     fn open_bounded(

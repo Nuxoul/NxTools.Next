@@ -54,5 +54,17 @@ summary and bounded relationship retirement; no new scheduler/stop-on-error/pers
 Release38 drag/preview follow-up: [automatic preview and complete selection](ui-experience-contracts.md#scenario-automatic-archive-preview-and-complete-drag-selections)
 removes preview enablement state, keeps descriptor renaming separate from original ordinal content,
 and distinguishes read/decode resource stages. Original OLE/controller/cache/focus owners remain.
+OPT-04 visible Ready retains its exact original native lease in BrowserSlot until original preview retirement; failed/stale/owner-lost decode releases once. See the same [preview contract](ui-experience-contracts.md#scenario-automatic-archive-preview-and-complete-drag-selections) and [retained native runtime](../../nxtools-archive/backend/product-read.md#scenario-drag-scoped-retained-materialization).
 
 HZ5 extraction changes read [Stored ZIP reclamation](../../nxtools-archive/backend/reclamation.md): default-off official controls, irreversible consent, fresh Start continuation, ordinary-only readmission/retry and deferred source-snapshot retirement.
+
+OPT-07 changes also read [browser/Find/atomic intake](archive-browser-workflows.md) and [unified batch/consent](archive-batches.md#scenario-opt-07-unified-surface-and-protected-consent): snapshot/query/connection identity, transition-cached rendering, current reply eligibility, single original surface and actual pending-location retirement. Native secrets/picker remain in [PlatformHost](../../platformhost/archive-workflows.md).
+
+Configurable archive preview follows [one frozen preview budget](archive-preview.md): Core leaf-wise
+settings merge, official six-field page, preview-only optional wire, original native purpose limits,
+actual-length read/decode and budget-aware shared document rendering. Clipboard/Quick Launch defaults
+and original source/slot/lease/cancellation owners remain independent.
+
+Download progress Server information follows [original response observation](../../nxtools-download/backend/server-information.md): original task/entity/window and compact dimensions, official Small DescriptionList slots/Tooltip, same-response probe provenance and memory-only selected metadata. Time is 探测响应, not Ping/RTT.
+
+Explicit Other Tools numbered-file joining follows [its cross-layer contract](../../platformhost/raw-numbered-join.md): official ListItem tile, stable Form inputs, explicit Dialog consent, deferred weak/window routing including cache-hit activation, and actual terminal-bound close/cancel ownership.

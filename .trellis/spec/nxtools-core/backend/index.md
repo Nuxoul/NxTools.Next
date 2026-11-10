@@ -15,3 +15,7 @@ Read [shared architecture](../../shared/architecture.md), [engineering](../../sh
 
 ## Quality Check
 Follow [verification](../../shared/verification.md); `cargo test -p nxtools-core --lib`, scoped Clippy/check/fmt when code changes. Docs-only use spec-contracts. Test stale/missing/corrupt config, mixed-case blacklist and instance hints. No product/service launch. [Standards entry](../../index.md).
+
+ArchiveSettings.preview uses the [frozen preview budget contract](../../nxtools-desktop/backend/archive-preview.md):
+strict additive defaults, bounded six-field validation, no opening rewrite and changed-leaf merge
+within the original section transaction. It does not alter shared Clipboard/Quick Launch defaults.

@@ -56,7 +56,7 @@ async function run(){
  await send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
  const motion=await evaluate(`parseFloat(getComputedStyle(document.querySelector('.view.active')).animationDuration)<=0.001`);results.push({pass:motion,label:'popup-reduced-motion'});
  await evaluate(`document.querySelectorAll('body>div').forEach(e=>{if(e.shadowRoot)e.remove();});`);
- const outputDir=path.join(root,'..','..','artifacts/ui-layout-quality/remaining-browser');fs.mkdirSync(outputDir,{recursive:true});
+ const outputDir=path.join(scratch,'nxtools-extension-layout');fs.mkdirSync(outputDir,{recursive:true});
  for(const page of ['tasks','resources','advanced','settings']){await evaluate(`document.querySelectorAll('.view').forEach(e=>e.classList.toggle('active',e.id==='${page}View'));document.querySelector('.workspace').scrollTop=0;`);const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true,clip:{x:0,y:0,width:456,height:Math.min(900,await evaluate('document.body.scrollHeight')),scale:1}});fs.writeFileSync(path.join(outputDir,page+'.png'),Buffer.from(shot.data,'base64'));}
  const failures=results.filter(r=>!r.pass);fs.writeFileSync(path.join(scratch,'remaining-extension-layout.json'),JSON.stringify({checks:results.length,failures,results},null,2));console.log(JSON.stringify({checks:results.length,failures,outputDir},null,2));process.exitCode=failures.length?1:0;
 }

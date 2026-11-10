@@ -1,4 +1,5 @@
 //! Existing-target extraction decisions; native output remains the original session owner.
+pub(crate) mod add;
 use crate::{
     ArchiveError, OperationControl, Result,
     interaction::{ConflictDecision, InteractionPort, Prompt, PromptResponse, PromptTicket},
@@ -62,6 +63,35 @@ pub struct ExtractionSummary {
     pub all_members_written: bool,
 }
 
+pub(crate) trait NativeTarget {
+    fn call(
+        &mut self,
+        action: &str,
+        path: Option<&str>,
+        token: Option<Uuid>,
+        data: &[u8],
+    ) -> Result<crate::worker_output::NativeReply>;
+    fn control(&self) -> &OperationControl;
+    fn conflict_prompt(&mut self, prompt: &ConflictPrompt) -> Result<()>;
+}
+impl<W: Write> NativeTarget for PrivateOutput<'_, W> {
+    fn call(
+        &mut self,
+        action: &str,
+        path: Option<&str>,
+        token: Option<Uuid>,
+        data: &[u8],
+    ) -> Result<crate::worker_output::NativeReply> {
+        self.call(action, path, token, data)
+    }
+    fn control(&self) -> &OperationControl {
+        self.control()
+    }
+    fn conflict_prompt(&mut self, prompt: &ConflictPrompt) -> Result<()> {
+        self.conflict_prompt(prompt)
+    }
+}
+
 pub(crate) struct ExtractionConflict<'a> {
     policy: ConflictPolicy,
     port: &'a InteractionPort,
@@ -90,14 +120,20 @@ impl<'a> ExtractionConflict<'a> {
         member_path: &str,
         incoming: Option<u64>,
     ) -> Result<Option<Uuid>> {
-        let observed = native.call("observe_target", Some(path), None, &[])?;
-        let Some(target) = observed.token else {
-            return native
-                .call("begin", Some(path), None, &[])?
-                .token
-                .ok_or(ArchiveError::IoFailure)
-                .map(Some);
-        };
+        let observed = native.call("begin", Some(path), None, &[])?;
+        if observed.success {
+            return observed.token.ok_or(ArchiveError::IoFailure).map(Some);
+        }
+        self.resolve(native, observed, path, member_path, incoming)
+    }
+    pub(crate) fn resolve(
+        &mut self,
+        native: &mut dyn NativeTarget,
+        observed: crate::worker_output::NativeReply,
+        path: &str,
+        member_path: &str,
+        incoming: Option<u64>,
+    ) -> Result<Option<Uuid>> {
         let decision = if let Some(decision) = self.remembered {
             decision
         } else {
@@ -163,7 +199,7 @@ impl<'a> ExtractionConflict<'a> {
                 Ok(None)
             }
             ConflictDecision::Overwrite => native
-                .call("begin_overwrite", Some(path), Some(target), &[])?
+                .call("begin_overwrite", Some(path), None, &[])?
                 .token
                 .ok_or(ArchiveError::IoFailure)
                 .map(Some),
@@ -182,18 +218,11 @@ impl<'a> ExtractionConflict<'a> {
                     }) {
                         continue;
                     }
-                    if native
-                        .call("observe_target", Some(&candidate), None, &[])?
-                        .token
-                        .is_some()
-                    {
+                    let begun = native.call("begin", Some(&candidate), None, &[])?;
+                    if !begun.success {
                         continue;
                     }
-                    return native
-                        .call("begin", Some(&candidate), None, &[])?
-                        .token
-                        .ok_or(ArchiveError::IoFailure)
-                        .map(Some);
+                    return begun.token.ok_or(ArchiveError::IoFailure).map(Some);
                 }
                 Err(ArchiveError::OutputCollision)
             }

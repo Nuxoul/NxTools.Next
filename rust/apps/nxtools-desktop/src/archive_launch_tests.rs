@@ -237,3 +237,39 @@ fn shell_settings_double_click_modes_require_confirming_intent() {
         assert_eq!(wire, serde_json::json!(mode.replace('-', "_")));
     }
 }
+
+#[test]
+fn archive_polish_quick_parser_preserves_selection_and_fixed_action() {
+    for (argument, action) in [
+        ("--archive-compress-zip", "compress_zip"),
+        ("--archive-compress-7z", "compress_7z"),
+    ] {
+        let intent = parse(&[argument, "report.txt", "other.bin"])
+            .expect("quick command accepted")
+            .expect("intent");
+        assert_eq!(
+            serde_json::to_value(&intent).expect("wire")["action"],
+            action
+        );
+        assert_eq!(
+            intent.paths,
+            [r"C:\sender\report.txt", r"C:\sender\other.bin"]
+        );
+        assert!(intent.mode.is_none());
+        let correlation_id = Uuid::new_v4();
+        let correlated = parse(&[
+            "--archive-correlation-id",
+            &correlation_id.to_string(),
+            argument,
+            "report.txt",
+            "other.bin",
+        ])
+        .expect("correlated quick command")
+        .expect("intent");
+        assert_eq!(correlated.request_id, correlation_id);
+        assert_eq!(correlated.paths, intent.paths);
+        assert!(parse(&["--archive-correlation-id", "not-a-uuid", argument, "a"]).is_err());
+        assert!(parse(&[argument]).is_err());
+        assert!(parse(&[argument, "a", "--archive-compress"]).is_err());
+    }
+}

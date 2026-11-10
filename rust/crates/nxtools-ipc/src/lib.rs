@@ -3,6 +3,8 @@ pub mod archive_job;
 pub mod archive_read;
 mod archive_virtual_drag;
 pub mod desktop_archive_intent;
+mod floating_cleanup;
+pub mod raw_numbered_join;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::{
@@ -28,18 +30,17 @@ use tracing::{info, warn};
 mod local_pipe;
 #[cfg(windows)]
 pub use local_pipe::{
-    INDEXER_PIPE_NAME, LocalPipeConnection, accept_current_user_pipe, accept_local_indexer_pipe,
-    connect_local_indexer_pipe, connect_local_pipe,
+    INDEXER_PIPE_NAME, LocalPipeConnection, PipeRetirement, accept_current_user_pipe,
+    accept_local_indexer_pipe, connect_local_indexer_pipe, connect_local_pipe,
 };
 
 const PENDING_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
-const ARCHIVE_PICKER_TIMEOUT: Duration = Duration::from_secs(120);
 const PENDING_COMMAND_SWEEP: Duration = Duration::from_secs(1);
 
 struct PendingCommand {
     generation: u64,
     accepted_at: Instant,
-    timeout: Duration,
+    timeout: Option<Duration>,
     summon_reply: Option<Sender<PlatformCommandResult>>,
 }
 
@@ -51,14 +52,18 @@ struct PendingTerminal {
 
 struct ActiveConnection {
     generation: u64,
+    quick_launch_panel_hotkey_available: Option<bool>,
+    archive_multi_folder_picker_available: Option<bool>,
     commands: Sender<Envelope>,
     command_wake: Sender<()>,
     archive_reads: Vec<archive_read::ReadReservation>,
     archive_jobs: Vec<archive_job::JobReservation>,
+    raw_join: Option<raw_numbered_join::JoinReservation>,
     archive_drag: Option<archive_virtual_drag::DragReservation>,
     archive_authorizations: Vec<archive_authorization::AuthorizationReservation>,
     cancel_turn: bool,
     commands_paused: bool,
+    floating_cleanup: Option<Envelope>,
 }
 
 /// Original-connection command consumer with bounded, fair cancellation delivery.
@@ -89,15 +94,17 @@ impl PlatformCommandReceiver {
             && let Some(cancel) = active
                 .take_archive_cancel()
                 .or_else(|| active.take_job_cancel())
+                .or_else(|| active.take_join_cancel())
                 .or_else(|| active.take_drag_cancel())
                 .or_else(|| active.take_authorization_revoke())
         {
             return Ok(cancel);
         }
-        match self.commands.try_recv() {
+        let result = match self.commands.try_recv() {
             Ok(envelope) => {
                 active.note_archive_start(envelope.id);
                 active.note_job_start(envelope.id);
+                active.note_join_start(envelope.id);
                 active.note_drag_start(envelope.id);
                 active.note_authorization_start(envelope.id);
                 active.cancel_turn = true;
@@ -106,10 +113,15 @@ impl PlatformCommandReceiver {
             Err(error) => active
                 .take_archive_cancel()
                 .or_else(|| active.take_job_cancel())
+                .or_else(|| active.take_join_cancel())
                 .or_else(|| active.take_drag_cancel())
                 .or_else(|| active.take_authorization_revoke())
                 .ok_or(error),
+        };
+        if result.is_ok() {
+            router.flush_floating_cleanup();
         }
+        result
     }
     pub async fn recv(&self) -> Result<Envelope, async_channel::RecvError> {
         loop {
@@ -168,13 +180,27 @@ impl CommandRouter {
         summon_reply: Option<Sender<PlatformCommandResult>>,
     ) -> std::result::Result<uuid::Uuid, QueueAdmissionError> {
         let command_id = envelope.id;
-        let timeout = if matches!(
-            &envelope.message,
-            Message::PlatformCommand(PlatformCommand::ArchivePicker(_))
-        ) {
-            ARCHIVE_PICKER_TIMEOUT
-        } else {
-            PENDING_COMMAND_TIMEOUT
+        let timeout = match &envelope.message {
+            Message::PlatformCommand(PlatformCommand::FloatingAssistant(command))
+                if command.operation
+                    == nxtools_protocol::floating_assistant::FloatingAssistantOperation::Retire =>
+            {
+                None
+            }
+            Message::PlatformCommand(PlatformCommand::RawNumberedJoin(_)) => None,
+            Message::PlatformCommand(
+                PlatformCommand::ArchivePicker(_)
+                | PlatformCommand::PickArchivePath(_)
+                | PlatformCommand::PickClipboardArchivePath(_)
+                | PlatformCommand::PickClipboardStorageDirectory(_)
+                | PlatformCommand::PickDirectory(_)
+                | PlatformCommand::PickProgram(_)
+                | PlatformCommand::PickExtensionManifest(_)
+                | PlatformCommand::PickExtensionRuntime(_)
+                | PlatformCommand::PickExtensionSettingPath(_)
+                | PlatformCommand::PickBrowserExtensionExportPath(_),
+            ) => None,
+            _ => Some(PENDING_COMMAND_TIMEOUT),
         };
         let active = self
             .active
@@ -238,6 +264,25 @@ impl PlatformBridge {
             connected: Arc::clone(&self.connected),
             archive: Arc::clone(&self.archive),
         })
+    }
+}
+impl PlatformBridge {
+    /// The active PlatformHost Hello capability snapshot, absent for synthetic test connections.
+    pub fn quick_launch_panel_hotkey_available(&self) -> Option<bool> {
+        self.router
+            .lock()
+            .ok()?
+            .active
+            .as_ref()?
+            .quick_launch_panel_hotkey_available
+    }
+    pub fn archive_multi_folder_picker_available(&self) -> Option<bool> {
+        self.router
+            .lock()
+            .ok()?
+            .active
+            .as_ref()?
+            .archive_multi_folder_picker_available
     }
 }
 
@@ -334,6 +379,18 @@ impl PlatformServerEndpoint {
         }
     }
 
+    /// Publishes a fixture Hello capability on the current test connection.
+    #[doc(hidden)]
+    pub fn set_quick_launch_panel_hotkey_available_for_contract_test(&self, available: bool) {
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        self.record_quick_launch_panel_hotkey(generation, available);
+    }
+    #[doc(hidden)]
+    pub fn set_archive_multi_folder_picker_available_for_contract_test(&self, available: bool) {
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        self.record_archive_multi_folder_picker(generation, available);
+    }
+
     /// Opens an isolated command queue for a contract test or a live pipe connection.
     #[doc(hidden)]
     pub fn open_connection_for_contract_test(&self) -> PlatformCommandReceiver {
@@ -372,6 +429,7 @@ impl PlatformServerEndpoint {
     ) -> Result<(), String> {
         self.observe_archive_cleanup(&notification);
         self.observe_job_cleanup(&notification);
+        self.observe_join_cleanup(&notification);
         self.observe_virtual_drag_cleanup(&notification);
         self.observe_authorization_cleanup(&notification);
         if self.archive.intercept(&notification) {
@@ -422,13 +480,17 @@ impl PlatformServerEndpoint {
         router.active = Some(ActiveConnection {
             generation,
             commands_paused: false,
+            floating_cleanup: None,
             commands: sender,
             command_wake,
             archive_reads: Vec::new(),
             archive_jobs: Vec::new(),
+            raw_join: None,
             archive_drag: None,
             archive_authorizations: Vec::new(),
             cancel_turn: true,
+            quick_launch_panel_hotkey_available: None,
+            archive_multi_folder_picker_available: None,
         });
         let receiver = PlatformCommandReceiver {
             commands: receiver,
@@ -443,6 +505,27 @@ impl PlatformServerEndpoint {
             *contract_receiver = Some(receiver.clone());
         }
         (generation, receiver, replaced)
+    }
+
+    fn record_quick_launch_panel_hotkey(&self, generation: u64, available: bool) {
+        if let Ok(mut router) = self.router.lock()
+            && let Some(active) = router
+                .active
+                .as_mut()
+                .filter(|active| active.generation == generation)
+        {
+            active.quick_launch_panel_hotkey_available = Some(available);
+        }
+    }
+    fn record_archive_multi_folder_picker(&self, generation: u64, available: bool) {
+        if let Ok(mut router) = self.router.lock()
+            && let Some(active) = router
+                .active
+                .as_mut()
+                .filter(|active| active.generation == generation)
+        {
+            active.archive_multi_folder_picker_available = Some(available);
+        }
     }
 
     fn try_send_disconnected(&self, disconnected: ReplacedConnection) {
@@ -469,6 +552,7 @@ impl PlatformServerEndpoint {
     async fn send_notification(&self, notification: PlatformNotification) -> Result<()> {
         self.observe_archive_cleanup(&notification);
         self.observe_job_cleanup(&notification);
+        self.observe_join_cleanup(&notification);
         self.observe_virtual_drag_cleanup(&notification);
         self.observe_authorization_cleanup(&notification);
         if self.archive.intercept(&notification) {
@@ -594,7 +678,9 @@ impl PlatformServerEndpoint {
                     .extract_if(|id, pending| {
                         pending.generation == generation
                             && !held_drag_ids.contains(id)
-                            && now.duration_since(pending.accepted_at) >= pending.timeout
+                            && pending.timeout.is_some_and(|timeout| {
+                                now.duration_since(pending.accepted_at) >= timeout
+                            })
                     })
                     .map(|(id, pending)| PendingTerminal {
                         id,
@@ -733,6 +819,12 @@ impl PlatformBridge {
         })
     }
     fn send_command_envelope(&self, envelope: Envelope) -> Result<uuid::Uuid, PlatformBridgeError> {
+        if matches!(
+            &envelope.message,
+            Message::PlatformCommand(PlatformCommand::RawNumberedJoin(_))
+        ) {
+            return Err(PlatformBridgeError::Disconnected);
+        }
         if matches!(&envelope.message,Message::PlatformCommand(PlatformCommand::ArchiveEntry(command)) if matches!(command.action,nxtools_protocol::archive_browser::ArchiveEntryAction::Authorize|nxtools_protocol::archive_browser::ArchiveEntryAction::Revoke))
         {
             return Err(PlatformBridgeError::Disconnected); // Preparation/revoke require captured origin.
@@ -791,8 +883,12 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 31] = [
+            const SUPPORTED_CAPABILITIES: [&str; 36] = [
                 "archive_read_v1",
+                "archive_job_large_count_v1",
+                "clipboard_file_drop_read_v1",
+                "archive_create_destination_v1",
+                nxtools_protocol::archive_picker::ARCHIVE_MULTI_FOLDER_PICKER_CAPABILITY,
                 "foreground_context",
                 "clipboard_text_capture",
                 "clipboard_image_capture",
@@ -804,6 +900,7 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
                 "clipboard_panel_hotkey",
                 "clipboard_configuration",
                 "quick_launch_panel_hotkey",
+                "quick_launch_keyboard_health_v1",
                 "quick_launch_configuration",
                 "clipboard_archive_picker",
                 "clipboard_storage_picker",
@@ -865,11 +962,28 @@ pub async fn run_platform_server(pipe_name: &str, endpoint: PlatformServerEndpoi
     // One primary plus a finite number of short-lived secondary/handshake connections.
     let slots = Arc::new(tokio::sync::Semaphore::new(40));
     let mut server = local_pipe::create_current_user_async_pipe(&pipe_path, true)?;
+    let mut retry_delay = Duration::from_millis(10);
+    let mut last_transient_log = std::time::Instant::now() - Duration::from_secs(1);
     loop {
-        server
-            .connect()
-            .await
-            .context("platform pipe accept failed")?;
+        if let Err(error) = server.connect().await {
+            if !local_pipe::transient_accept_error(&error) {
+                return Err(error).context("platform pipe accept failed");
+            }
+            if last_transient_log.elapsed() >= Duration::from_secs(1) {
+                warn!(
+                    event = "platform.pipe.accept.transient",
+                    native_code = error.raw_os_error(),
+                    "transient platform accept; recreating instance"
+                );
+                last_transient_log = std::time::Instant::now();
+            }
+            drop(server);
+            tokio::time::sleep(retry_delay).await;
+            retry_delay = (retry_delay * 2).min(Duration::from_millis(100));
+            server = local_pipe::create_current_user_async_pipe(&pipe_path, false)?;
+            continue;
+        }
+        retry_delay = Duration::from_millis(10);
         let next = local_pipe::create_current_user_async_pipe(&pipe_path, false)?;
         let connection = std::mem::replace(&mut server, next);
         let Ok(slot) = slots.clone().try_acquire_owned() else {
@@ -949,6 +1063,19 @@ async fn handle_connection(
     .context("platform primary connection admission expired")?;
 
     let (generation, command_receiver, replaced) = endpoint.open_connection();
+    endpoint.record_quick_launch_panel_hotkey(
+        generation,
+        hello
+            .capabilities
+            .iter()
+            .any(|capability| capability == "quick_launch_panel_hotkey"),
+    );
+    endpoint.record_archive_multi_folder_picker(
+        generation,
+        hello.capabilities.iter().any(|capability| {
+            capability == nxtools_protocol::archive_picker::ARCHIVE_MULTI_FOLDER_PICKER_CAPABILITY
+        }),
+    );
     if let Some((old_generation, pending)) = replaced
         && let Err(error) = endpoint
             .send_disconnected_terminals(old_generation, pending)
@@ -1177,6 +1304,159 @@ mod tests {
         )))
     }
 
+    #[test]
+    fn human_pickers_outlive_machine_deadlines_and_obey_generation() {
+        use nxtools_protocol::{
+            ClipboardArchivePickerMode, ExportBrowserExtensionCommand, PickArchivePathCommand,
+            PickBrowserExtensionExportPathCommand, PickClipboardArchivePathCommand,
+            PickClipboardStorageDirectoryCommand, PickDirectoryCommand,
+            PickExtensionManifestCommand, PickExtensionRuntimeCommand,
+            PickExtensionSettingPathCommand, PickProgramCommand,
+        };
+        let pickers = [
+            PlatformCommand::PickDirectory(PickDirectoryCommand {
+                current_directory: String::new(),
+                title: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickProgram(PickProgramCommand {
+                current_path: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickExtensionManifest(PickExtensionManifestCommand {
+                current_path: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickExtensionRuntime(PickExtensionRuntimeCommand {
+                program: "node".into(),
+                current_path: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickExtensionSettingPath(PickExtensionSettingPathCommand {
+                kind: "file".into(),
+                current_path: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickClipboardStorageDirectory(PickClipboardStorageDirectoryCommand {
+                current_directory: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickClipboardArchivePath(PickClipboardArchivePathCommand {
+                mode: ClipboardArchivePickerMode::Export,
+                suggested_file_name: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickArchivePath(PickArchivePathCommand { source_hwnd: 1 }),
+            PlatformCommand::PickBrowserExtensionExportPath(
+                PickBrowserExtensionExportPathCommand {
+                    format: "firefox".into(),
+                    source_window_handle: 1,
+                    source_process_id: 2,
+                },
+            ),
+            PlatformCommand::ArchivePicker(
+                nxtools_protocol::archive_picker::ArchivePickerCommand {
+                    version: 1,
+                    operation_id: uuid::Uuid::new_v4(),
+                    session_id: uuid::Uuid::new_v4(),
+                    generation: 1,
+                    owner_window_handle: 1,
+                    purpose: nxtools_protocol::archive_picker::ArchivePickerPurpose::Files,
+                    current_directory: None,
+                    suggested_name: None,
+                },
+            ),
+        ];
+        for command in pickers {
+            let (bridge, server) = platform_bridge(4);
+            server.set_connected_for_contract_test(true);
+            let id = bridge.send_command(command).expect("queue human picker");
+            let generation = server.connection_generation.load(Ordering::Acquire);
+            let accepted = server.router.lock().expect("router").pending[&id].accepted_at;
+            for seconds in [11, 121, 601] {
+                assert!(
+                    server
+                        .expire_pending_commands(
+                            generation,
+                            accepted + Duration::from_secs(seconds)
+                        )
+                        .is_empty()
+                );
+            }
+            assert!(server.complete_command(generation, id).is_some());
+            assert!(server.complete_command(generation, id).is_none());
+        }
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let machine = bridge
+            .send_command(PlatformCommand::ExportBrowserExtension(
+                ExportBrowserExtensionCommand {
+                    format: "firefox".into(),
+                    destination: "C:/fixture.xpi".into(),
+                },
+            ))
+            .expect("machine");
+        let generation = server.connection_generation.load(Ordering::Acquire);
+        let accepted = server.router.lock().expect("router").pending[&machine].accepted_at;
+        assert_eq!(
+            server
+                .expire_pending_commands(generation, accepted + Duration::from_secs(11))
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn delayed_picker_completion_cannot_cross_a_replaced_pipe_generation() {
+        use nxtools_protocol::{PickBrowserExtensionExportPathCommand, PickDirectoryCommand};
+        let (bridge, server) = platform_bridge(4);
+        server.set_connected_for_contract_test(true);
+        let old_id = bridge
+            .send_command(PlatformCommand::PickDirectory(PickDirectoryCommand {
+                current_directory: String::new(),
+                title: String::new(),
+                source_window_handle: 1,
+                source_process_id: 2,
+            }))
+            .expect("old picker");
+        let old_generation = server.connection_generation.load(Ordering::Acquire);
+        server.open_connection_for_contract_test();
+        assert!(server.complete_command(old_generation, old_id).is_none());
+        assert!(!server.command_pending_for_contract_test(old_id));
+        let id = bridge
+            .send_command(PlatformCommand::PickBrowserExtensionExportPath(
+                PickBrowserExtensionExportPathCommand {
+                    format: "firefox".into(),
+                    source_window_handle: 3,
+                    source_process_id: 2,
+                },
+            ))
+            .expect("new picker");
+        let current = server.connection_generation.load(Ordering::Acquire);
+        assert!(server.complete_command(old_generation, id).is_none());
+        assert!(server.complete_command(current, id).is_some());
+        assert!(server.complete_command(current, id).is_none());
+        let disconnected = bridge
+            .send_command(PlatformCommand::PickBrowserExtensionExportPath(
+                PickBrowserExtensionExportPathCommand {
+                    format: "chrome_store".into(),
+                    source_window_handle: 3,
+                    source_process_id: 2,
+                },
+            ))
+            .expect("disconnect picker");
+        server.set_connected_for_contract_test(false);
+        assert!(!server.command_pending_for_contract_test(disconnected));
+        assert!(server.complete_command(current, disconnected).is_none());
+    }
+
     #[tokio::test]
     async fn summon_pending_routes_the_actual_result_with_original_request_id() {
         let (bridge, server) = platform_bridge(4);
@@ -1316,12 +1596,14 @@ mod tests {
             client_name: "platform_host".into(),
             client_version: "0.1.0".into(),
             capabilities: vec![
+                "archive_job_large_count_v1".into(),
                 "clipboard_text_capture".into(),
                 "unknown".into(),
                 "paste_text".into(),
                 "clipboard_panel_hotkey".into(),
                 "clipboard_configuration".into(),
                 "quick_launch_panel_hotkey".into(),
+                "quick_launch_keyboard_health_v1".into(),
                 "quick_launch_configuration".into(),
                 "foreground_context".into(),
                 "window_topmost".into(),
@@ -1341,11 +1623,13 @@ mod tests {
         assert_eq!(
             ack.accepted_capabilities,
             vec![
+                "archive_job_large_count_v1",
                 "clipboard_text_capture",
                 "paste_text",
                 "clipboard_panel_hotkey",
                 "clipboard_configuration",
                 "quick_launch_panel_hotkey",
+                "quick_launch_keyboard_health_v1",
                 "quick_launch_configuration",
                 "foreground_context",
                 "window_topmost",
@@ -1358,6 +1642,24 @@ mod tests {
             ]
         );
         assert_eq!(response.correlation_id, Some(request.id));
+    }
+    #[test]
+    fn quick_launch_hello_hotkey_snapshot_is_generation_scoped() {
+        let (bridge, endpoint) = platform_bridge(4);
+        assert_eq!(bridge.quick_launch_panel_hotkey_available(), None);
+        endpoint.set_connected_for_contract_test(true);
+        let generation = endpoint.connection_generation.load(Ordering::Acquire);
+        endpoint.record_quick_launch_panel_hotkey(generation, false);
+        assert_eq!(bridge.quick_launch_panel_hotkey_available(), Some(false));
+        endpoint.open_connection_for_contract_test();
+        assert_eq!(bridge.quick_launch_panel_hotkey_available(), None);
+        endpoint.record_quick_launch_panel_hotkey(generation, false);
+        assert_eq!(bridge.quick_launch_panel_hotkey_available(), None);
+        let new_generation = endpoint.connection_generation.load(Ordering::Acquire);
+        endpoint.record_quick_launch_panel_hotkey(new_generation, true);
+        assert_eq!(bridge.quick_launch_panel_hotkey_available(), Some(true));
+        endpoint.set_connected_for_contract_test(false);
+        assert_eq!(bridge.quick_launch_panel_hotkey_available(), None);
     }
 
     #[test]
@@ -1615,7 +1917,7 @@ mod tests {
     }
 
     #[test]
-    fn archive_picker_keeps_native_dialog_receipt_for_two_minutes_only() {
+    fn archive_picker_waits_for_real_modal_completion() {
         use nxtools_protocol::archive_picker::{ArchivePickerCommand, ArchivePickerPurpose};
         let (bridge, server) = platform_bridge(4);
         server.set_connected_for_contract_test(true);
@@ -1653,17 +1955,13 @@ mod tests {
                 )
                 .is_empty()
         );
-        assert_eq!(
+        assert!(
             server
-                .expire_pending_commands(
-                    generation,
-                    Instant::now() + ARCHIVE_PICKER_TIMEOUT + Duration::from_millis(1),
-                )
-                .iter()
-                .map(|entry| entry.id)
-                .collect::<Vec<_>>(),
-            vec![operation]
+                .expire_pending_commands(generation, Instant::now() + Duration::from_secs(601))
+                .is_empty()
         );
+        assert!(server.complete_command(generation, operation).is_some());
+        assert!(server.complete_command(generation, operation).is_none());
     }
     #[test]
     fn timeout_sweep_is_scoped_to_the_connection_generation() {
@@ -1933,5 +2231,47 @@ mod default_apps_command_tests {
         assert!(
             matches!(result,PlatformNotification::CommandResult{correlation_id,result} if correlation_id==id && !result.success)
         );
+    }
+}
+
+#[cfg(test)]
+mod opt03_tests {
+    use super::*;
+    #[test]
+    fn opt03_hello_retains_native_intake_capabilities() {
+        let capabilities = vec![
+            "clipboard_file_drop_read_v1".to_owned(),
+            "archive_create_destination_v1".to_owned(),
+            nxtools_protocol::archive_picker::ARCHIVE_MULTI_FOLDER_PICKER_CAPABILITY.to_owned(),
+        ];
+        let request = Envelope::new(Message::Hello(nxtools_protocol::Hello {
+            client_name: "platform_host".into(),
+            client_version: "0.1.0".into(),
+            capabilities: capabilities.clone(),
+        }));
+        let Message::HelloAck(ack) = dispatch(&request).expect("original dispatch").message else {
+            panic!("hello ack")
+        };
+        assert_eq!(ack.accepted_capabilities, capabilities);
+    }
+}
+
+#[cfg(test)]
+mod opt07_tests {
+    use super::*;
+    #[test]
+    fn opt07_folder_capability_retires_with_original_connection() {
+        let (bridge, endpoint) = platform_bridge(8);
+        let (generation, _, _) = endpoint.open_connection();
+        endpoint.record_archive_multi_folder_picker(generation, true);
+        assert_eq!(bridge.archive_multi_folder_picker_available(), Some(true));
+        let (replacement, _, _) = endpoint.open_connection();
+        assert_eq!(bridge.archive_multi_folder_picker_available(), None);
+        endpoint.record_archive_multi_folder_picker(generation, true);
+        assert_eq!(bridge.archive_multi_folder_picker_available(), None);
+        endpoint.record_archive_multi_folder_picker(replacement, false);
+        assert_eq!(bridge.archive_multi_folder_picker_available(), Some(false));
+        endpoint.set_connected_for_contract_test(false);
+        assert_eq!(bridge.archive_multi_folder_picker_available(), None);
     }
 }

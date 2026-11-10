@@ -2,17 +2,20 @@
 
 use std::ffi::c_void;
 use std::fs::File;
-use std::io::{BufReader, ErrorKind, Read};
+use std::io::{BufReader, ErrorKind, Read, Write};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::os::windows::io::{AsRawHandle, FromRawHandle, IntoRawHandle};
 use std::ptr;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 use windows_sys::Win32::Foundation::{
     CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_BROKEN_PIPE,
-    ERROR_INSUFFICIENT_BUFFER, ERROR_NO_DATA, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED,
-    GetLastError, INVALID_HANDLE_VALUE, LocalFree,
+    ERROR_INSUFFICIENT_BUFFER, ERROR_IO_PENDING, ERROR_NO_DATA, ERROR_OPERATION_ABORTED,
+    ERROR_PIPE_BUSY, ERROR_PIPE_CONNECTED, ERROR_PIPE_NOT_CONNECTED, GetLastError,
+    INVALID_HANDLE_VALUE, LocalFree, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -22,17 +25,20 @@ use windows_sys::Win32::Security::{
     TokenUser,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_ATTRIBUTE_NORMAL, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OVERLAPPED, OPEN_EXISTING, PIPE_ACCESS_DUPLEX,
+    ReadFile, WriteFile,
 };
+use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, GetNamedPipeClientProcessId, GetNamedPipeServerProcessId,
     PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
-    PIPE_WAIT, PeekNamedPipe, WaitNamedPipeW,
+    PIPE_WAIT, WaitNamedPipeW,
 };
 use windows_sys::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows_sys::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_QUERY_LIMITED_INFORMATION,
-    QueryFullProcessImageNameW,
+    CreateEventW, GetCurrentProcess, OpenProcess, OpenProcessToken,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, SetEvent,
+    WaitForMultipleObjects,
 };
 
 pub const INDEXER_PIPE_NAME: &str = r"\\.\pipe\nxtools-next-indexer-v1";
@@ -41,22 +47,128 @@ const SDDL_REVISION_1: u32 = 1;
 // SYSTEM and Administrators: full access. Authenticated users: read/write/synchronize only.
 const CLIENT_PIPE_ACCESS: u32 = 0x0012_019B;
 const PIPE_SDDL: &str = "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;0x12019b;;;AU)";
+#[cfg(test)]
+static MISSING_PIPE_ATTEMPTS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 pub struct LocalPipeConnection {
     pub reader: BufReader<LocalPipeReader>,
-    pub writer: File,
+    pub writer: LocalPipeWriter,
     pub client_process_id: Option<u32>,
     pub client_session_id: Option<u32>,
+}
+
+/// A single signalled kernel event accompanies the existing service lease flag.
+#[derive(Clone)]
+pub struct PipeRetirement(Arc<PipeRetirementInner>);
+
+struct PipeRetirementInner {
+    flag: Arc<AtomicBool>,
+    event: OwnedHandle,
+}
+
+impl PipeRetirement {
+    fn new(flag: Arc<AtomicBool>) -> std::io::Result<Self> {
+        let event = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
+        if event.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        Ok(Self(Arc::new(PipeRetirementInner {
+            flag,
+            event: OwnedHandle(event),
+        })))
+    }
+
+    pub fn retire(&self) {
+        self.0.flag.store(true, Ordering::Release);
+        unsafe { SetEvent(self.0.event.0) };
+    }
+
+    fn is_retired(&self) -> bool {
+        self.0.flag.load(Ordering::Acquire)
+    }
+
+    fn event(&self) -> *mut c_void {
+        self.0.event.0
+    }
+}
+
+impl LocalPipeConnection {
+    pub fn into_retiring(
+        mut self,
+        retired: Arc<AtomicBool>,
+        write_timeout: Duration,
+    ) -> std::io::Result<(
+        BufReader<LocalPipeReader>,
+        impl Write + Send + 'static,
+        PipeRetirement,
+    )> {
+        let signal = PipeRetirement::new(retired)?;
+        self.reader.get_mut().retired = Some(signal.clone());
+        Ok((
+            self.reader,
+            RetiringPipeWriter {
+                file: self.writer,
+                retired: signal.clone(),
+                write_timeout,
+            },
+            signal,
+        ))
+    }
+}
+
+pub struct LocalPipeWriter {
+    file: File,
+}
+
+impl AsRawHandle for LocalPipeWriter {
+    fn as_raw_handle(&self) -> std::os::windows::io::RawHandle {
+        self.file.as_raw_handle()
+    }
+}
+
+impl Write for LocalPipeWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        overlapped_write(&self.file, bytes, None, None)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+struct RetiringPipeWriter {
+    file: LocalPipeWriter,
+    retired: PipeRetirement,
+    write_timeout: Duration,
+}
+
+impl Write for RetiringPipeWriter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        write_pipe_frame(
+            &mut self.file,
+            bytes,
+            self.write_timeout,
+            Some(&self.retired),
+        )?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 pub struct LocalPipeReader {
     file: File,
     initial_frame_deadline: Option<Instant>,
+    retired: Option<PipeRetirement>,
+    #[cfg(test)]
+    wait_wakeups: Option<Arc<std::sync::atomic::AtomicUsize>>,
 }
 
 impl LocalPipeReader {
-    /// Bounds an untrusted initial newline-framed handshake, not a healthy
-    /// long-lived session. Partial trickle reads do not reset this deadline.
+    /// Bounds only the initial newline-framed handshake; trickle reads never extend it.
     pub fn set_initial_frame_timeout(&mut self, timeout: Duration) {
         self.initial_frame_deadline = Some(Instant::now() + timeout);
     }
@@ -67,51 +179,174 @@ impl Read for LocalPipeReader {
         if buffer.is_empty() {
             return Ok(0);
         }
-        let mut idle_wait = Duration::from_millis(1);
-        loop {
-            if self
-                .initial_frame_deadline
-                .is_some_and(|deadline| Instant::now() >= deadline)
-            {
-                return Err(std::io::Error::new(
-                    ErrorKind::TimedOut,
-                    "local pipe handshake expired",
-                ));
-            }
-            let mut available = 0_u32;
-            let peeked = unsafe {
-                PeekNamedPipe(
-                    self.file.as_raw_handle(),
-                    ptr::null_mut(),
-                    0,
-                    ptr::null_mut(),
-                    &raw mut available,
-                    ptr::null_mut(),
-                )
-            };
-            if peeked == 0 {
-                let error = unsafe { GetLastError() };
-                if matches!(
-                    error,
-                    ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED
-                ) {
-                    return Ok(0);
-                }
-                return Err(std::io::Error::from_raw_os_error(error as i32));
-            }
-            if available == 0 {
-                std::thread::sleep(idle_wait);
-                idle_wait = (idle_wait * 2).min(Duration::from_millis(8));
-                continue;
-            }
-            let bytes = (available as usize).min(buffer.len());
-            let read = self.file.read(&mut buffer[..bytes])?;
-            if buffer[..read].contains(&b'\n') {
-                self.initial_frame_deadline = None;
-            }
-            return Ok(read);
+        if self
+            .retired
+            .as_ref()
+            .is_some_and(PipeRetirement::is_retired)
+        {
+            return Ok(0);
         }
+        if self
+            .initial_frame_deadline
+            .is_some_and(|deadline| Instant::now() >= deadline)
+        {
+            return Err(std::io::Error::new(
+                ErrorKind::TimedOut,
+                "local pipe handshake expired",
+            ));
+        }
+        let read = match overlapped_read(
+            &self.file,
+            buffer,
+            self.initial_frame_deadline,
+            self.retired.as_ref(),
+            #[cfg(test)]
+            self.wait_wakeups.as_deref(),
+        ) {
+            Err(_)
+                if self
+                    .retired
+                    .as_ref()
+                    .is_some_and(PipeRetirement::is_retired) =>
+            {
+                return Ok(0);
+            }
+            Err(error) if matches!(error.raw_os_error(), Some(code) if matches!(code as u32, ERROR_BROKEN_PIPE | ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED)) =>
+            {
+                return Ok(0);
+            }
+            result => result?,
+        };
+        if buffer[..read].contains(&b'\n') {
+            self.initial_frame_deadline = None;
+        }
+        Ok(read)
     }
+}
+
+fn operation_event() -> std::io::Result<OwnedHandle> {
+    let event = unsafe { CreateEventW(ptr::null(), 1, 0, ptr::null()) };
+    if event.is_null() {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(OwnedHandle(event))
+    }
+}
+
+/// Never release the OVERLAPPED or caller buffer before cancellation completion is drained.
+fn complete_io(
+    file: &File,
+    overlap: &mut OVERLAPPED,
+    deadline: Option<Instant>,
+    retired: Option<&PipeRetirement>,
+) -> std::io::Result<u32> {
+    let handles = [
+        overlap.hEvent,
+        retired.map_or(ptr::null_mut(), PipeRetirement::event),
+    ];
+    let wait_ms = deadline.map_or(u32::MAX, |end| {
+        let remaining = end.saturating_duration_since(Instant::now());
+        remaining.as_millis().min((u32::MAX - 1) as u128) as u32
+    });
+    let waited = unsafe {
+        WaitForMultipleObjects(
+            if retired.is_some() { 2 } else { 1 },
+            handles.as_ptr(),
+            0,
+            wait_ms,
+        )
+    };
+    if waited != WAIT_OBJECT_0 {
+        let failure = if waited == WAIT_TIMEOUT {
+            std::io::Error::new(ErrorKind::TimedOut, "local pipe operation expired")
+        } else if retired.is_some() && waited == WAIT_OBJECT_0 + 1 {
+            std::io::Error::new(ErrorKind::BrokenPipe, "local pipe session retired")
+        } else {
+            std::io::Error::last_os_error()
+        };
+        unsafe { CancelIoEx(file.as_raw_handle(), overlap) };
+        let mut drained = 0;
+        unsafe { GetOverlappedResult(file.as_raw_handle(), overlap, &mut drained, 1) };
+        return Err(failure);
+    }
+    let mut completed = 0;
+    if unsafe { GetOverlappedResult(file.as_raw_handle(), overlap, &mut completed, 0) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(completed)
+}
+
+fn overlapped_read(
+    file: &File,
+    buffer: &mut [u8],
+    deadline: Option<Instant>,
+    retired: Option<&PipeRetirement>,
+    #[cfg(test)] wakeups: Option<&std::sync::atomic::AtomicUsize>,
+) -> std::io::Result<usize> {
+    let event = operation_event()?;
+    let mut overlap: OVERLAPPED = unsafe { std::mem::zeroed() };
+    overlap.hEvent = event.0;
+    let mut count = 0;
+    let result = unsafe {
+        ReadFile(
+            file.as_raw_handle(),
+            buffer.as_mut_ptr().cast(),
+            buffer.len().min(u32::MAX as usize) as u32,
+            &mut count,
+            &mut overlap,
+        )
+    };
+    if result != 0 {
+        return Ok(count as usize);
+    }
+    let error = unsafe { GetLastError() };
+    if error != ERROR_IO_PENDING {
+        return Err(std::io::Error::from_raw_os_error(error as i32));
+    }
+    let result = complete_io(file, &mut overlap, deadline, retired);
+    #[cfg(test)]
+    if let Some(wakeups) = wakeups {
+        wakeups.fetch_add(1, Ordering::Relaxed);
+    }
+    result.map(|count| count as usize)
+}
+
+fn overlapped_write(
+    file: &File,
+    buffer: &[u8],
+    deadline: Option<Instant>,
+    retired: Option<&PipeRetirement>,
+) -> std::io::Result<usize> {
+    if buffer.is_empty() {
+        return Ok(0);
+    }
+    if retired.is_some_and(PipeRetirement::is_retired) {
+        return Err(std::io::Error::new(
+            ErrorKind::BrokenPipe,
+            "local pipe session retired",
+        ));
+    }
+    let event = operation_event()?;
+    let mut overlap: OVERLAPPED = unsafe { std::mem::zeroed() };
+    overlap.hEvent = event.0;
+    let mut count = 0;
+    let result = unsafe {
+        WriteFile(
+            file.as_raw_handle(),
+            buffer.as_ptr().cast(),
+            buffer.len().min(u32::MAX as usize) as u32,
+            &mut count,
+            &mut overlap,
+        )
+    };
+    if result != 0 {
+        return Ok(count as usize);
+    }
+    let error = unsafe { GetLastError() };
+    if error != ERROR_IO_PENDING {
+        return Err(std::io::Error::from_raw_os_error(error as i32));
+    }
+    complete_io(file, &mut overlap, deadline, retired).map(|count| count as usize)
 }
 
 pub fn accept_local_indexer_pipe(pipe_name: &str) -> Result<LocalPipeConnection> {
@@ -124,10 +359,24 @@ pub fn accept_current_user_pipe(pipe_name: &str) -> Result<LocalPipeConnection> 
     accept_pipe_with_sddl(pipe_name, &sddl, "current-user")
 }
 
+pub(crate) fn transient_accept_error(error: &std::io::Error) -> bool {
+    matches!(error.raw_os_error(), Some(code) if matches!(code as u32,
+        ERROR_NO_DATA | ERROR_PIPE_NOT_CONNECTED | ERROR_BROKEN_PIPE | ERROR_OPERATION_ABORTED))
+}
+
 fn accept_pipe_with_sddl(
     pipe_name: &str,
     pipe_sddl: &str,
     pipe_kind: &str,
+) -> Result<LocalPipeConnection> {
+    accept_pipe_with_sddl_after_create(pipe_name, pipe_sddl, pipe_kind, || {})
+}
+
+fn accept_pipe_with_sddl_after_create(
+    pipe_name: &str,
+    pipe_sddl: &str,
+    pipe_kind: &str,
+    after_create: impl FnOnce(),
 ) -> Result<LocalPipeConnection> {
     let pipe_name = wide(pipe_name);
     let sddl = wide(pipe_sddl);
@@ -149,31 +398,81 @@ fn accept_pipe_with_sddl(
         lpSecurityDescriptor: descriptor,
         bInheritHandle: 0,
     };
-    let handle = unsafe {
-        CreateNamedPipeW(
-            pipe_name.as_ptr(),
-            PIPE_ACCESS_DUPLEX,
-            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
-            PIPE_UNLIMITED_INSTANCES,
-            PIPE_BUFFER_BYTES,
-            PIPE_BUFFER_BYTES,
-            500,
-            &attributes,
-        )
-    };
-    unsafe { LocalFree(descriptor.cast()) };
-    if handle == INVALID_HANDLE_VALUE {
-        return Err(std::io::Error::last_os_error())
-            .with_context(|| format!("failed to create {pipe_kind} named pipe"));
+    let mut after_create = Some(after_create);
+    let mut backoff = Duration::from_millis(10);
+    let mut last_log = Instant::now() - Duration::from_secs(1);
+    loop {
+        let handle = unsafe {
+            CreateNamedPipeW(
+                pipe_name.as_ptr(),
+                PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED,
+                PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+                PIPE_UNLIMITED_INSTANCES,
+                PIPE_BUFFER_BYTES,
+                PIPE_BUFFER_BYTES,
+                500,
+                &attributes,
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            let error = std::io::Error::last_os_error();
+            unsafe { LocalFree(descriptor.cast()) };
+            return Err(error).with_context(|| format!("failed to create {pipe_kind} named pipe"));
+        }
+        if let Some(hook) = after_create.take() {
+            hook();
+        }
+        let file = unsafe { File::from_raw_handle(handle) };
+        let event = match operation_event() {
+            Ok(event) => event,
+            Err(error) => {
+                unsafe { LocalFree(descriptor.cast()) };
+                return Err(error)
+                    .with_context(|| format!("failed to create {pipe_kind} accept event"));
+            }
+        };
+        let mut overlap: OVERLAPPED = unsafe { std::mem::zeroed() };
+        overlap.hEvent = event.0;
+        let connected = unsafe { ConnectNamedPipe(handle, &mut overlap) };
+        let error = if connected != 0 {
+            0
+        } else {
+            unsafe { GetLastError() }
+        };
+        let outcome = if error == ERROR_IO_PENDING {
+            complete_io(&file, &mut overlap, None, None).map(|_| ())
+        } else if error == 0 || error == ERROR_PIPE_CONNECTED {
+            Ok(())
+        } else {
+            Err(std::io::Error::from_raw_os_error(error as i32))
+        };
+        match outcome {
+            Ok(()) => {
+                unsafe { LocalFree(descriptor.cast()) };
+                let identity = server_client_identity(handle);
+                return connection_from_handle(file.into_raw_handle(), identity);
+            }
+            Err(error) if transient_accept_error(&error) => {
+                if last_log.elapsed() >= Duration::from_secs(1) {
+                    tracing::warn!(
+                        event = "local_pipe.accept.transient",
+                        pipe_kind,
+                        native_code = error.raw_os_error(),
+                        "transient pipe accept; recreating instance"
+                    );
+                    last_log = Instant::now();
+                }
+                drop(file);
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(Duration::from_millis(100));
+            }
+            Err(error) => {
+                unsafe { LocalFree(descriptor.cast()) };
+                return Err(error)
+                    .with_context(|| format!("failed to accept {pipe_kind} pipe client"));
+            }
+        }
     }
-    let connected = unsafe { ConnectNamedPipe(handle, ptr::null_mut()) };
-    if connected == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
-        unsafe { drop(File::from_raw_handle(handle)) };
-        return Err(std::io::Error::last_os_error())
-            .with_context(|| format!("failed to accept {pipe_kind} pipe client"));
-    }
-    let identity = server_client_identity(handle);
-    connection_from_handle(handle, identity)
 }
 
 pub fn connect_local_indexer_pipe(
@@ -186,8 +485,17 @@ pub fn connect_local_indexer_pipe(
 
 pub fn connect_local_pipe(pipe_name: &str, timeout: Duration) -> Result<LocalPipeConnection> {
     let pipe_name = wide(pipe_name);
+    #[cfg(test)]
+    let count_missing_attempts = {
+        let prefix = wide(r"\\.\pipe\nxtools-absent-");
+        pipe_name.starts_with(&prefix[..prefix.len() - 1])
+    };
     let deadline = Instant::now() + timeout;
     loop {
+        #[cfg(test)]
+        if count_missing_attempts {
+            MISSING_PIPE_ATTEMPTS.fetch_add(1, Ordering::Relaxed);
+        }
         let handle = unsafe {
             CreateFileW(
                 pipe_name.as_ptr(),
@@ -195,7 +503,7 @@ pub fn connect_local_pipe(pipe_name: &str, timeout: Duration) -> Result<LocalPip
                 0,
                 ptr::null(),
                 OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL,
+                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
                 ptr::null_mut(),
             )
         };
@@ -212,9 +520,15 @@ pub fn connect_local_pipe(pipe_name: &str, timeout: Duration) -> Result<LocalPip
         if waited == 0 {
             let wait_error = std::io::Error::last_os_error();
             if !matches!(wait_error.kind(), ErrorKind::NotFound | ErrorKind::TimedOut)
-                && wait_error.raw_os_error() != Some(231)
+                && wait_error.raw_os_error() != Some(ERROR_PIPE_BUSY as i32)
             {
-                return Err(wait_error).context("failed waiting for the indexer service pipe");
+                return Err(wait_error).context("failed waiting for the local pipe");
+            }
+            if wait_error.kind() == ErrorKind::NotFound {
+                std::thread::sleep(
+                    Duration::from_millis(25)
+                        .min(deadline.saturating_duration_since(Instant::now())),
+                );
             }
         }
     }
@@ -272,6 +586,9 @@ fn process_user_sid_string(process: *mut c_void) -> Result<String> {
 }
 
 struct OwnedHandle(*mut c_void);
+// A Windows kernel handle is shareable across threads; the owner closes it once.
+unsafe impl Send for OwnedHandle {}
+unsafe impl Sync for OwnedHandle {}
 
 impl Drop for OwnedHandle {
     fn drop(&mut self) {
@@ -319,8 +636,13 @@ fn connection_from_handle(
     let reader = LocalPipeReader {
         file: unsafe { File::from_raw_handle(handle) },
         initial_frame_deadline: None,
+        retired: None,
+        #[cfg(test)]
+        wait_wakeups: None,
     };
-    let writer = unsafe { File::from_raw_handle(writer_handle) };
+    let writer = LocalPipeWriter {
+        file: unsafe { File::from_raw_handle(writer_handle) },
+    };
     Ok(LocalPipeConnection {
         reader: BufReader::new(reader),
         writer,
@@ -341,43 +663,45 @@ fn server_client_identity(handle: *mut c_void) -> Option<(u32, u32)> {
 }
 
 /// Short secondary-client writes must not wait forever on a peer that stops reading.
-pub(crate) fn write_desktop_frame(file: &mut File, bytes: &[u8], timeout: Duration) -> Result<()> {
-    use std::io::Write;
-    use windows_sys::Win32::System::Pipes::{PIPE_NOWAIT, SetNamedPipeHandleState};
-    let mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
-    if unsafe { SetNamedPipeHandleState(file.as_raw_handle(), &mode, ptr::null(), ptr::null()) }
-        == 0
-    {
-        return Err(std::io::Error::last_os_error()).context("desktop pipe write mode failed");
-    }
+pub(crate) fn write_desktop_frame(
+    file: &mut LocalPipeWriter,
+    bytes: &[u8],
+    timeout: Duration,
+) -> Result<()> {
+    write_pipe_frame(file, bytes, timeout, None).context("desktop pipe write failed")
+}
+
+fn write_pipe_frame(
+    file: &mut LocalPipeWriter,
+    bytes: &[u8],
+    timeout: Duration,
+    retired: Option<&PipeRetirement>,
+) -> std::io::Result<()> {
     let deadline = Instant::now() + timeout;
-    let result = (|| -> Result<()> {
-        let mut written = 0;
-        while written < bytes.len() {
-            if Instant::now() >= deadline {
-                bail!("desktop pipe write expired");
-            }
-            match file.write(&bytes[written..]) {
-                Ok(0) => std::thread::sleep(Duration::from_millis(2)),
-                Ok(count) => written += count,
-                Err(error)
-                    if error.kind() == ErrorKind::WouldBlock
-                        || error.raw_os_error() == Some(232) =>
-                {
-                    std::thread::sleep(Duration::from_millis(2))
-                }
-                Err(error) => return Err(error.into()),
-            }
+    let mut written = 0;
+    while written < bytes.len() {
+        if retired.is_some_and(PipeRetirement::is_retired) {
+            return Err(std::io::Error::new(
+                ErrorKind::BrokenPipe,
+                "local pipe session retired",
+            ));
         }
-        Ok(())
-    })();
-    let mode = PIPE_READMODE_BYTE | PIPE_WAIT;
-    if unsafe { SetNamedPipeHandleState(file.as_raw_handle(), &mode, ptr::null(), ptr::null()) }
-        == 0
-    {
-        return Err(std::io::Error::last_os_error()).context("desktop pipe restore mode failed");
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                ErrorKind::TimedOut,
+                "local pipe write expired",
+            ));
+        }
+        let count = overlapped_write(&file.file, &bytes[written..], Some(deadline), retired)?;
+        if count == 0 {
+            return Err(std::io::Error::new(
+                ErrorKind::WriteZero,
+                "local pipe write returned zero",
+            ));
+        }
+        written += count;
     }
-    result
+    Ok(())
 }
 
 /// Security descriptor lives until CreateNamedPipe returns; Windows copies it.
@@ -486,6 +810,149 @@ mod tests {
     use std::io::{BufRead, Write};
 
     use super::*;
+
+    #[test]
+    fn measure_ten_seconds_of_idle_pipe_reader_wakeups() {
+        let name = format!(r"\\.\pipe\nxtools-idle-measure-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let wakeups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let measured_wakeups = Arc::clone(&wakeups);
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let mut connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            connection.reader.get_mut().wait_wakeups = Some(measured_wakeups);
+            ready_tx.send(()).expect("ready");
+            let mut bytes = [0; 64];
+            connection.reader.read(&mut bytes).expect("idle EOF")
+        });
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        ready_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("ready");
+        std::thread::sleep(Duration::from_secs(10));
+        let wakeups = wakeups.load(Ordering::Relaxed);
+        println!("idle_reader_10s_wakeups={wakeups}");
+        drop(client);
+        assert_eq!(server.join().expect("idle worker"), 0);
+    }
+
+    #[test]
+    fn missing_pipe_attempts_are_bounded_by_remaining_deadline() {
+        let name = format!(r"\\.\pipe\nxtools-absent-{}", uuid::Uuid::new_v4());
+        MISSING_PIPE_ATTEMPTS.store(0, Ordering::Relaxed);
+        let began = Instant::now();
+        assert!(connect_local_pipe(&name, Duration::from_millis(180)).is_err());
+        let attempts = MISSING_PIPE_ATTEMPTS.load(Ordering::Relaxed);
+        assert!(began.elapsed() < Duration::from_millis(500));
+        assert!(
+            attempts <= 10,
+            "absent pipe caused {attempts} native retries"
+        );
+    }
+
+    #[test]
+    fn disconnected_before_connect_named_pipe_does_not_end_admission() {
+        let name = format!(r"\\.\pipe\nxtools-preaccept-{}", uuid::Uuid::new_v4());
+        let client_name = name.clone();
+        let client = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(25));
+            let mut connection = connect_local_pipe(&client_name, Duration::from_secs(2))
+                .expect("healthy second client");
+            connection.writer.write_all(b"hello\n").expect("hello");
+        });
+        let user_sid = current_user_sid_string().expect("test SID");
+        let sddl = format!("D:(A;;GA;;;SY)(A;;GA;;;{user_sid})");
+        let preconnect = name.clone();
+        let mut connection =
+            accept_pipe_with_sddl_after_create(&name, &sddl, "current-user", move || {
+                let name = wide(&preconnect);
+                let handle = unsafe {
+                    CreateFileW(
+                        name.as_ptr(),
+                        CLIENT_PIPE_ACCESS,
+                        0,
+                        ptr::null(),
+                        OPEN_EXISTING,
+                        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+                        ptr::null_mut(),
+                    )
+                };
+                assert_ne!(handle, INVALID_HANDLE_VALUE, "preconnect fixture");
+                unsafe { drop(File::from_raw_handle(handle)) };
+            })
+            .expect("transient client must not end admission");
+        let mut line = String::new();
+        connection
+            .reader
+            .read_line(&mut line)
+            .expect("second client's frame");
+        assert_eq!(line, "hello\n");
+        client.join().expect("second client");
+    }
+
+    #[tokio::test]
+    async fn tokio_accept_recreates_after_a_closed_preconnected_client() {
+        let name = format!(r"\\.\pipe\nxtools-tokio-accept-{}", uuid::Uuid::new_v4());
+        let server = create_current_user_async_pipe(&name, true).expect("first instance");
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("preconnect");
+        drop(client);
+        let outcome = tokio::time::timeout(Duration::from_secs(2), server.connect())
+            .await
+            .expect("preconnected accept bound");
+        if let Err(error) = outcome {
+            assert!(
+                transient_accept_error(&error),
+                "unexpected native accept code: {:?}",
+                error.raw_os_error()
+            );
+        }
+        assert!(transient_accept_error(&std::io::Error::from_raw_os_error(
+            ERROR_NO_DATA as i32
+        )));
+        drop(server);
+
+        let mut next = create_current_user_async_pipe(&name, false).expect("replacement instance");
+        let client_name = name.clone();
+        let healthy = tokio::task::spawn_blocking(move || {
+            connect_local_pipe(&client_name, Duration::from_secs(2)).expect("healthy client")
+        });
+        tokio::time::timeout(Duration::from_secs(2), next.connect())
+            .await
+            .expect("healthy accept bound")
+            .expect("healthy Tokio accept");
+        let mut client = healthy.await.expect("client worker");
+        client.writer.write_all(b"healthy\n").expect("frame");
+        let mut line = String::new();
+        tokio::io::AsyncBufReadExt::read_line(&mut tokio::io::BufReader::new(&mut next), &mut line)
+            .await
+            .expect("next client's frame");
+        assert_eq!(line, "healthy\n");
+    }
+
+    #[test]
+    fn idle_reader_has_no_periodic_wakeups() {
+        let name = format!(r"\\.\pipe\nxtools-idle-regression-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let wakeups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let measured_wakeups = Arc::clone(&wakeups);
+        let (started, ready) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let mut connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            connection.reader.get_mut().wait_wakeups = Some(measured_wakeups);
+            started.send(()).expect("ready");
+            let mut buffer = [0; 4];
+            connection.reader.read(&mut buffer).expect("EOF")
+        });
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        ready
+            .recv_timeout(Duration::from_secs(2))
+            .expect("reader entered");
+        std::thread::sleep(Duration::from_millis(200));
+        let wakes = wakeups.load(Ordering::Relaxed);
+        drop(client);
+        assert_eq!(server.join().expect("reader worker"), 0);
+        assert_eq!(wakes, 0, "idle reader woke {wakes} times");
+    }
 
     #[test]
     fn authenticated_local_client_can_use_the_service_pipe_duplex() {
@@ -652,5 +1119,126 @@ mod tests {
         client.writer.write_all(b"ping\n").expect("session ping");
         client.writer.flush().expect("flush ping");
         server.join().expect("join fixture");
+    }
+
+    #[test]
+    fn m4_retirement_releases_an_idle_pipe_reader_while_peer_remains_connected() {
+        let name = format!(r"\\.\pipe\nxtools-m4-idle-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let retired = Arc::new(AtomicBool::new(false));
+        let reader_retired = Arc::clone(&retired);
+        let (started, ready) = std::sync::mpsc::channel();
+        let (finished, done) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            let (mut reader, _writer, signal) = connection
+                .into_retiring(reader_retired, Duration::from_millis(150))
+                .expect("retirement event");
+            started.send(signal).expect("reader ready");
+            let mut frame = String::new();
+            let read = reader.read_line(&mut frame).expect("retired read");
+            finished.send(read).expect("reader finished");
+        });
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        let signal = ready
+            .recv_timeout(Duration::from_secs(2))
+            .expect("reader entered");
+        signal.retire();
+        let outcome = done.recv_timeout(Duration::from_millis(500));
+        drop(client);
+        server.join().expect("reader worker");
+        assert_eq!(outcome.expect("idle retirement bound"), 0);
+    }
+
+    #[test]
+    fn m4_nonreading_pipe_write_expires_and_releases_the_endpoint() {
+        let name = format!(r"\\.\pipe\nxtools-m4-deadline-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let (finished, done) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            let (_reader, mut writer, _signal) = connection
+                .into_retiring(Arc::new(AtomicBool::new(false)), Duration::from_millis(100))
+                .expect("retirement event");
+            let started = Instant::now();
+            let failure = writer
+                .write_all(&vec![b'x'; 1024 * 1024])
+                .expect_err("nonreader fills bounded pipe buffer");
+            finished
+                .send((failure.kind(), started.elapsed()))
+                .expect("write terminal");
+        });
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        let outcome = done.recv_timeout(Duration::from_millis(750));
+        drop(client);
+        server.join().expect("writer worker");
+        let (kind, elapsed) = outcome.expect("native write deadline bound");
+        assert_eq!(kind, ErrorKind::TimedOut);
+        assert!(elapsed < Duration::from_millis(750));
+    }
+
+    #[test]
+    fn m4_retirement_interrupts_a_nonreading_write_before_its_deadline() {
+        let name = format!(r"\\.\pipe\nxtools-m4-retire-write-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let retired = Arc::new(AtomicBool::new(false));
+        let writer_retired = Arc::clone(&retired);
+        let (started, ready) = std::sync::mpsc::channel();
+        let (finished, done) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            let (_reader, mut writer, signal) = connection
+                .into_retiring(writer_retired, Duration::from_secs(5))
+                .expect("retirement event");
+            started.send(signal).expect("writer started");
+            let failure = writer
+                .write_all(&vec![b'x'; 1024 * 1024])
+                .expect_err("retired write");
+            finished.send(failure.kind()).expect("write terminal");
+        });
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        let signal = ready
+            .recv_timeout(Duration::from_secs(2))
+            .expect("writer entered");
+        std::thread::sleep(Duration::from_millis(30));
+        signal.retire();
+        let outcome = done.recv_timeout(Duration::from_millis(500));
+        drop(client);
+        server.join().expect("writer worker");
+        assert_eq!(
+            outcome.expect("write retirement bound"),
+            ErrorKind::BrokenPipe
+        );
+    }
+
+    #[test]
+    fn closed_peer_returns_eof_without_waiting_for_handshake_deadline() {
+        let name = format!(r"\\.\pipe\nxtools-eof-{}", uuid::Uuid::new_v4());
+        let server_name = name.clone();
+        let (started, ready) = std::sync::mpsc::channel();
+        let (finished, done) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let mut connection = accept_current_user_pipe(&server_name).expect("accept fixture");
+            connection
+                .reader
+                .get_mut()
+                .set_initial_frame_timeout(Duration::from_secs(2));
+            started.send(()).expect("reader ready");
+            let result = connection.reader.read(&mut [0_u8; 1]);
+            finished.send(result).expect("read completed");
+        });
+        let client = connect_local_pipe(&name, Duration::from_secs(2)).expect("connect fixture");
+        ready
+            .recv_timeout(Duration::from_secs(2))
+            .expect("accepted reader");
+        drop(client);
+        let outcome = done.recv_timeout(Duration::from_millis(600));
+        server.join().expect("bounded reader worker");
+        assert_eq!(
+            outcome
+                .expect("peer close wakes reader")
+                .expect("native EOF"),
+            0
+        );
     }
 }

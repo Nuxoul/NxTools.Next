@@ -72,6 +72,8 @@ internal static class TrustedBootstrapMaintenanceWindows
         public void Start()
         {
             ValidateFixedRegistration();
+            // This is an explicitly elevated maintenance boundary, never the user Request path.
+            TrustedUpdateBroker.ConfigureDemandStart();
             using var service = new ServiceController(TrustedUpdateBroker.ServiceName);
             service.Refresh();
             if (service.Status != ServiceControllerStatus.Running) { service.Start(); service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(45)); }
@@ -91,6 +93,8 @@ internal static class TrustedBootstrapMaintenanceWindows
             var reply = TrustedUpdateBroker.ReadFrameAsync<System.Text.Json.JsonElement>(pipe, deadline.Token).GetAwaiter().GetResult();
             if (reply.GetProperty("CorrelationId").GetGuid() != id || !reply.GetProperty("Success").GetBoolean() ||
                 reply.GetProperty("Stage").GetString() != "maintenance_ready") throw new InvalidDataException("Maintenance broker readiness rejected.");
+            // Readiness is a complete one-shot handshake, not a resident-service assertion.
+            service.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(45));
         }
         private void ValidateFixedRegistration()
         {

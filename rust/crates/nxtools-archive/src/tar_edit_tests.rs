@@ -56,3 +56,44 @@ fn tar_edit_prefix_cannot_promote_file_to_directory_and_implicit_case_is_ambiguo
         Err(ArchiveError::OutputCollision)
     );
 }
+
+#[test]
+fn opt05_tar_edit_delete_expands_once() {
+    let (snapshot, ids) = crate::opt05_edit_selection_fixture::large();
+    let old = snapshot
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(ordinal, entry)| {
+            let mut member = Member::new(
+                entry.display_path.clone(),
+                entry.kind == crate::EntryKind::Directory,
+                0,
+            )
+            .expect("original member");
+            member.origin = Some(ordinal);
+            member
+        })
+        .collect::<Vec<_>>();
+    let intent = crate::opt05_edit_selection_fixture::delete_intent(
+        ids.iter().map(|id| id.ordinal).collect(),
+    );
+    let control = OperationControl::default();
+    let started = std::time::Instant::now();
+    let result = plan(&old, &intent, &ResourceLimits::default(), &control)
+        .expect("original TAR plan boundary");
+    assert!(result.is_empty());
+    let work = control.work_observation().selection;
+    eprintln!(
+        "OPT05_EDIT_SELECTION {}",
+        serde_json::json!({
+            "boundary":"tar_delete_plan", "elapsed_us":started.elapsed().as_micros(), "work":work,
+        })
+    );
+    assert!(
+        work.catalog_visits <= 65_536
+            && work.path_normalizations + work.root_normalizations <= 65_536
+            && work.prefix_probes <= 65_536 * 16 + 4_096 * 64,
+        "TAR delete expansion is one original catalog pass: {work:?}"
+    );
+}

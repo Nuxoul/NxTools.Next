@@ -5,6 +5,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+/// Adapter availability; version-1 picker commands and complete-vector bounds are unchanged.
+pub const ARCHIVE_MULTI_FOLDER_PICKER_CAPABILITY: &str = "archive_multi_folder_picker_v1";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ArchivePickerPurpose {

@@ -43,14 +43,13 @@ pub(crate) fn selected<'a>(
         .size()
         .is_some_and(|size| size > request.limits.max_entry_bytes)
     {
-        return Err(ArchiveError::ResourceLimit);
+        return Err(ArchiveError::SelectedOutputLimit);
     }
     Ok(Some(entry))
 }
 
 /// Solid blocks may decode unselected bytes, but these are not temporary output.
 /// Retain the engine's original finite decode-work ceilings and the admitted working memory.
-#[cfg(feature = "isolated-codecs")]
 pub(crate) fn decode_limits(request: &WorkerRequest) -> crate::ResourceLimits {
     let mut limits: crate::ResourceLimits = request.limits.into();
     if request.browser_entry.is_some() {
@@ -61,7 +60,6 @@ pub(crate) fn decode_limits(request: &WorkerRequest) -> crate::ResourceLimits {
     limits
 }
 
-#[cfg(feature = "isolated-codecs")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bind<W: Write>(
     request: &WorkerRequest,
@@ -184,6 +182,7 @@ mod tests {
         let mut request = WorkerRequest::open(Uuid::new_v4(), path.to_string_lossy().into_owned());
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.limits.max_entry_bytes = crate::ResourceLimits::default().max_entry_bytes;
         request.limits.max_output_bytes = crate::ResourceLimits::default().max_output_bytes;
         request.limits.max_entries = 100_000;
@@ -208,13 +207,30 @@ mod tests {
         request.password_interaction = Some(true);
         assert!(request.validate().is_ok());
         // Admission-only metadata regression; payload extraction/CRC stays in the real worker fixtures.
+        request.limits.max_entry_bytes = 64 << 10;
+        request.limits.max_output_bytes = 64 << 10;
+        let decoded = decode_limits(&request);
+        assert_eq!(
+            decoded.max_metadata_bytes,
+            request.limits.max_metadata_bytes
+        );
+        assert_eq!(decoded.max_working_bytes, request.limits.max_working_bytes);
+        assert_eq!(
+            (decoded.max_entry_bytes, decoded.max_output_bytes),
+            (
+                crate::ResourceLimits::default().max_entry_bytes,
+                crate::ResourceLimits::default().max_output_bytes
+            )
+        );
+        request.limits.max_entry_bytes = crate::ResourceLimits::default().max_entry_bytes;
+        request.limits.max_output_bytes = crate::ResourceLimits::default().max_output_bytes;
         let mut large = snapshot.entries().to_vec();
         large[encrypted.id().ordinal as usize].size = Some((1u64 << 33) + 17);
         assert!(selected(&request, &large).is_ok());
         request.limits.max_entry_bytes = 512 << 20;
         assert!(matches!(
             selected(&request, &large),
-            Err(ArchiveError::ResourceLimit)
+            Err(ArchiveError::SelectedOutputLimit)
         ));
         request.limits.max_entry_bytes = crate::ResourceLimits::default().max_entry_bytes;
         request.password = Some("must-not-be-in-browser-start".into());

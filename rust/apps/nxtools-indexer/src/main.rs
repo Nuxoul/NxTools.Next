@@ -6,6 +6,8 @@ use nxtools_indexer::{IndexerService, serve};
 use tracing::info;
 
 #[cfg(windows)]
+mod desktop_lifetime;
+#[cfg(windows)]
 mod elevated_helper_broker;
 #[cfg(windows)]
 mod windows_service_host;

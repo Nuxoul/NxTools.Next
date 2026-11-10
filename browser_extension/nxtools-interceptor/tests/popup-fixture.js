@@ -3,7 +3,8 @@
 (() => {
   const resource = (id, kind, filename, size) => ({ id, filename, size, url: `https://synthetic.invalid/${id}`, domain: "synthetic.invalid", mime: kind === "audio" ? "audio/mpeg" : "application/octet-stream", source: "webRequest", description: { kind, resolution: kind === "video" ? "1920×1080" : "", badge: "合成资源" } });
   const initial = {
-    settings: { interceptDownloads: true, openDialog: true, captureResources: true, mediaOverlayEnabled: true, dropTargetEnabled: true, dropTargetPosition: "right-bottom", dropTargetWidth: 188, dropTargetHeight: 86, includeRequestHeaders: true, includeCookies: false, eraseBrowserHistory: false },
+    settings: { interceptDownloads: true, captureFileTypes: "", captureMinimumKiB: 0, captureExcludedSites: "", captureExcludedAddresses: "", openDialog: true, captureResources: true, mediaOverlayEnabled: true, dropTargetEnabled: true, dropTargetPosition: "right-bottom", dropTargetWidth: 188, dropTargetHeight: 86, includeRequestHeaders: true, includeCookies: false, eraseBrowserHistory: false },
+    capturePaused: false, capturePauseAvailable: true,
     status: { ok: true, message: "桌面在线" }, activeTab: { id: 7, title: "设计资料与课程媒体", url: "https://synthetic.invalid/course", domain: "synthetic.invalid" }, siteControl: { supported: true, enabled: true, host: "synthetic.invalid" },
     captureSummary: { currentCount: 3, totalCount: 4, recentCount: 0, latestCapturedAt: Date.now() },
     tasks: [{ id: "task-1", displayFileName: "设计资料与参考图集.zip", status: "Downloading", downloadedBytes: 29360128, totalBytes: 67108864 }, { id: "task-2", displayFileName: "课程讲义.pdf", status: "Paused", downloadedBytes: 1048576, totalBytes: 8388608 }],
@@ -11,14 +12,19 @@
     featureStates: { mediaOverlay: true, deepSearch: false, mobileUserAgent: false }, mediaItems: [{ index: 0, label: "课程演示 · 第一章" }],
     mediaPlaybackState: { available: true, paused: true, muted: false, loop: false, mediaIndex: 0, localMediaIndex: 0, frameId: 0, duration: 240, currentTime: 80, progress: 1 / 3, volume: .8, speed: 1 }
   };
-  const fixture = window.__fixture = { state: structuredClone(initial), messages: [], failure: "", delay: 0, unhandled: [] };
+  const fixture = window.__fixture = { state: structuredClone(initial), messages: [], ports: [], failure: "", delay: 0, unhandled: [] };
   window.addEventListener("unhandledrejection", event => { fixture.unhandled.push(String(event.reason)); event.preventDefault(); });
-  window.chrome = { runtime: { async sendMessage(message) {
+  window.chrome = { runtime: { connect({ name }) {
+    const port = { name, closed: false, disconnect() { this.closed = true; } };
+    fixture.ports.push(port);
+    return port;
+  }, async sendMessage(message) {
     fixture.messages.push(structuredClone(message));
     if (fixture.delay) await new Promise(resolve => setTimeout(resolve, fixture.delay));
     if (fixture.failure === message.type) throw new Error("合成操作失败，请重试");
     const state = fixture.state;
     if (message.type === "popup_save_settings") state.settings = { ...state.settings, ...message.settings };
+    if (message.type === "popup_set_capture_paused") { state.capturePaused = message.paused; return { ok: true, capturePaused: state.capturePaused }; }
     if (message.type === "popup_toggle_feature") state.featureStates[message.feature] = !state.featureStates[message.feature];
     if (message.type === "popup_clear_resources") { state.currentResources = []; state.captureSummary.currentCount = 0; }
     if (message.type === "popup_set_site_enabled") state.siteControl.enabled = message.enabled;

@@ -115,6 +115,7 @@ fn open_fixture(
             if confirmed {
                 view.probe = Some(DownloadProbe {
                     resolution: None,
+                    server_observation: None,
                     final_url: "https://example.test/preview.bin".into(),
                     file_name: Some("preview.bin".into()),
                     total_bytes: Some(64 * 1024 * 1024),
@@ -264,6 +265,7 @@ pub(crate) fn open_gallery(
                 application: owner,
                 task_id: id,
                 path: "仅合成路径 · 不会删除任何文件".repeat(5),
+                batch: None,
             });
             ready("download-delete", 380.0, 178.0, window);
             cx.new(|cx| Root::new(view, window, cx))

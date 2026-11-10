@@ -16,15 +16,15 @@ internal static class ExtensionRuntimeTests
     {
         foreach (var program in new[] { "python", "node", "powershell", "pwsh" })
         {
-            var pick = Request("pick_extension_runtime", new { Program = program, CurrentPath = @"C:\Synthetic\runtime.exe" });
-            Assert(PlatformCommandParser.ParsePickExtensionRuntime(pick) == new PickExtensionRuntimeCommand(program, @"C:\Synthetic\runtime.exe"), "picker wire");
+            var pick = Request("pick_extension_runtime", new { Program = program, CurrentPath = @"C:\Synthetic\runtime.exe", SourceWindowHandle = 1L, SourceProcessId = 1u });
+            Assert(PlatformCommandParser.ParsePickExtensionRuntime(pick) == new PickExtensionRuntimeCommand(program, @"C:\Synthetic\runtime.exe", 1, 1), "picker wire");
             var inspect = Request("inspect_extension_runtime", new { Program = program, Executable = @"C:\Synthetic\runtime.exe" });
             Assert(PlatformCommandParser.ParseInspectExtensionRuntime(inspect).Program == program, "inspect wire");
         }
         foreach (var data in new object[] { new { Program = "exe", CurrentPath = "" }, new { Program = "node" }, new { Program = 4, CurrentPath = "" } })
             Reject(() => PlatformCommandParser.ParsePickExtensionRuntime(Request("pick_extension_runtime", data)));
         Reject(() => PlatformCommandParser.ParseInspectExtensionRuntime(Request("inspect_extension_runtime", new { Program = "exe", Executable = "anything.exe" })));
-        var result = ExtensionRuntimePicker.PickCore(new("python", @"C:\Synthetic\python.exe"), CancellationToken.None,
+        var result = ExtensionRuntimePicker.PickCore(new("python", @"C:\Synthetic\python.exe", 1, 1), CancellationToken.None,
             path => path == @"C:\Synthetic\python.exe", path => path == @"C:\Synthetic", settings =>
             {
                 Assert(settings.InitialDirectory == @"C:\Synthetic" && settings.FileName == "python.exe", "initial path");
@@ -32,22 +32,22 @@ internal static class ExtensionRuntimeTests
                 return @"C:\Synthetic\python.exe";
             });
         Assert(result.Success && result.Data == @"C:\Synthetic\python.exe", "full selected path");
-        result = ExtensionRuntimePicker.PickCore(new("node", ""), CancellationToken.None, _ => true, _ => false, _ => null);
+        result = ExtensionRuntimePicker.PickCore(new("node", "", 1, 1), CancellationToken.None, _ => true, _ => false, _ => null);
         Assert(result.Success && result.Data == "", "dismissal is empty success");
-        result = ExtensionRuntimePicker.PickCore(new("node", ""), CancellationToken.None, _ => true, _ => false, _ => @"C:\Synthetic\run.cmd");
+        result = ExtensionRuntimePicker.PickCore(new("node", "", 1, 1), CancellationToken.None, _ => true, _ => false, _ => @"C:\Synthetic\run.cmd");
         Assert(!result.Success && result.Data is null, "scripts are not runtimes");
-        var nativeFailure = ExtensionRuntimePicker.PickCore(new("node", ""), CancellationToken.None, _ => false, _ => false,
+        var nativeFailure = ExtensionRuntimePicker.PickCore(new("node", "", 1, 1), CancellationToken.None, _ => false, _ => false,
             _ => throw new Win32Exception(5, "PRIVATE executable path"));
         Assert(!nativeFailure.Success && nativeFailure.NativeErrorCode == 5 && !nativeFailure.Error!.Contains("PRIVATE"), "picker native code");
         using var lateCancellation = new CancellationTokenSource();
-        result = ExtensionRuntimePicker.PickCore(new("node", ""), lateCancellation.Token, _ => true, _ => false,
+        result = ExtensionRuntimePicker.PickCore(new("node", "", 1, 1), lateCancellation.Token, _ => true, _ => false,
             _ => { lateCancellation.Cancel(); return @"C:\Synthetic\late.exe"; });
         Assert(!result.Success && result.Data is null && result.NativeErrorCode == 995, "drop late selection");
         using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
-        Assert(ExtensionRuntimePicker.Pick(new("node", ""), cancelled.Token).NativeErrorCode == 995, "pre-cancel never shows UI");
+        Assert(ExtensionRuntimePicker.Pick(new("node", "", 1, 1), cancelled.Token).NativeErrorCode == 995, "pre-cancel never shows UI");
         result = StaDialogRunner.Run("owned failure fixture", () => throw new EntryPointNotFoundException("PRIVATE path stdout"));
         Assert(!result.Success && result.NativeErrorCode != null && !result.Error!.Contains("PRIVATE"), "STA failure is fixed and code-bearing");
-        result = ExtensionManifestPicker.PickCore(new(""), CancellationToken.None, _ => false, _ => false,
+        result = ExtensionManifestPicker.PickCore(new("", 1, 1), CancellationToken.None, _ => false, _ => false,
             _ => throw new Win32Exception(5, "PRIVATE payload"));
         Assert(!result.Success && result.NativeErrorCode == 5 && !result.Error!.Contains("PRIVATE"), "manifest failure privacy");
         return Task.CompletedTask;
@@ -158,20 +158,43 @@ internal static class ExtensionRuntimeTests
 
     public static async Task DetachedCommandsKeepReaderResponsive()
     {
-        foreach (var command in new[] { "pick_extension_runtime", "inspect_extension_runtime" })
+        foreach (var command in new[] { "pick_extension_runtime", "inspect_extension_runtime", "launch_process", "ensure_indexer_service" })
         {
             var dispatcher = new PlatformCommandSequenceDispatcher();
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var later = false;
+            var finished = false;
+            var reader = Task.Run(async () =>
+            {
+                await dispatcher.DispatchAsync(command, () =>
+                {
+                    entered.SetResult();
+                    release.Task.GetAwaiter().GetResult();
+                    finished = true;
+                    return Task.CompletedTask;
+                });
+                await dispatcher.DispatchAsync("set_window_visibility", () => { later = true; return Task.CompletedTask; });
+            });
             try
             {
-                await dispatcher.DispatchAsync(command, () => { entered.SetResult(); release.Task.GetAwaiter().GetResult(); return Task.CompletedTask; });
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(2));
-                var later = false;
-                await dispatcher.DispatchAsync("set_window_visibility", () => { later = true; return Task.CompletedTask; });
-                Assert(later && !release.Task.IsCompleted, "serial reader must not wait for picker/probe");
+                var completed = await Task.WhenAny(reader, Task.Delay(TimeSpan.FromSeconds(1)));
+                Assert(completed == reader && later && !release.Task.IsCompleted,
+                    $"serial reader must not wait for {command}");
+                await reader;
+                var drain = dispatcher.DrainAsync(TimeSpan.FromSeconds(2));
+                Assert(!drain.IsCompleted && !finished, "drain retains the blocked detached operation");
+                release.TrySetResult();
+                await drain.WaitAsync(TimeSpan.FromSeconds(2));
+                Assert(finished, "drain waits for actual detached completion");
             }
-            finally { release.TrySetResult(); await dispatcher.DrainAsync(); }
+            finally
+            {
+                release.TrySetResult();
+                await reader.WaitAsync(TimeSpan.FromSeconds(2));
+                await dispatcher.DrainAsync();
+            }
         }
     }
 

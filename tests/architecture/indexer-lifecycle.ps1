@@ -8,6 +8,9 @@ $indexer = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-ind
 $mft = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\mft.rs')
 $indexerMain = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\main.rs')
 $serviceHost = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\windows_service_host.rs')
+$serviceRuntime = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\session_runtime.rs')
+$desktopLifetime = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-indexer\src\desktop_lifetime.rs')
+$lifetimeInstaller = Get-Content -Raw -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\IndexerServiceInstaller.Lifetime.cs')
 $quickLaunchDir = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch'
 $quickLaunch = (@((Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'))) +
     (Get-ChildItem -LiteralPath $quickLaunchDir -Filter '*.rs' | Sort-Object Name |
@@ -24,10 +27,43 @@ if ($runtime -notmatch 'NxTools\.Indexer\.exe' -or
 if ($indexerMain -match 'println!\s*\(' -or
     $indexerMain -notmatch '--service' -or
     $serviceHost -notmatch 'service_dispatcher::start' -or
-    $serviceHost -notmatch 'serve_session') {
+    $serviceHost -notmatch 'serve_admitted_native') {
     throw 'Indexer service regression: the Rust executable must expose the bounded protocol through a real Windows service entrypoint.'
 }
 
+if ($serviceHost -notmatch 'MAX_PENDING_SESSIONS:\s*usize\s*=\s*4' -or
+    $serviceHost -notmatch 'admitted_desktop_client\(' -or
+    $serviceHost -notmatch 'authorized_packaged_desktop' -or
+    $serviceHost -notmatch 'set_initial_frame_timeout' -or
+    $serviceHost -notmatch 'Message::Hello' -or
+    $serviceHost -notmatch 'owners\.admit\(client_process_id\)' -or
+    $serviceHost -notmatch 'start_admitted_runtime\(' -or
+    $serviceHost -notmatch 'runtime\.shutdown\(\)' -or
+    $serviceHost -notmatch 'ServiceState::Stopped' -or
+    $desktopLifetime -notmatch 'OpenProcess\(PROCESS_SYNCHRONIZE' -or
+    $desktopLifetime -notmatch 'WaitForSingleObject') {
+    throw 'Indexer service ownership regression: authorized Hello, bounded sessions, retained process handles, runtime retirement and SCM Stopped must remain linked.'
+}
+$admissionIndex = $serviceHost.IndexOf('match owners.admit(client_process_id)')
+$lazyIndex = if ($admissionIndex -ge 0) { $serviceHost.IndexOf('let Some(runtime) = start_admitted_runtime(', $admissionIndex) } else { -1 }
+$stopPendingIndex = if ($lazyIndex -ge 0) { $serviceHost.IndexOf('ServiceState::StopPending,', $lazyIndex) } else { -1 }
+$shutdownIndex = if ($stopPendingIndex -ge 0) { $serviceHost.IndexOf('runtime.shutdown();', $stopPendingIndex) } else { -1 }
+$stoppedIndex = if ($shutdownIndex -ge 0) { $serviceHost.IndexOf('ServiceState::Stopped,', $shutdownIndex) } else { -1 }
+if ($admissionIndex -lt 0 -or $lazyIndex -le $admissionIndex -or
+    $shutdownIndex -le $stopPendingIndex -or $stoppedIndex -le $shutdownIndex -or
+    $serviceHost -notmatch 'StopReason::LastOwnerExited' -or
+    $serviceHost -notmatch 'Mutex::new\(None::<SharedIndexerRuntime>\)' -or
+    $serviceHost -match 'SharedIndexerRuntime::start\(IndexerService::discover\(\)\)' -or
+    $serviceHost -notmatch '(?s)let state = discover\(\);\s*if stopping\.load\(Ordering::Acquire\).*?Some\(start\(state\)\)' -or
+    $serviceRuntime -notmatch 'pub fn shutdown\(&self\)') {
+    throw 'Indexer demand lifecycle regression: discovery must be lazy after authenticated process admission, and stop must prevent a subsequent coordinator spawn.'
+}
+if ($lifetimeInstaller -notmatch 'ServiceStartMode = "demand"' -or
+    $lifetimeInstaller -notmatch '"start=", ServiceStartMode' -or
+    $lifetimeInstaller -notmatch 'NeedsLifetimeMigration\(\)' -or
+    $lifetimeInstaller -notmatch 'RunSc\(\["config", ServiceName, "start=", ServiceStartMode\]') {
+    throw 'Indexer installation regression: protected service registration and existing-auto migration must select demand start.'
+}
 if ($localPipe -notmatch 'PIPE_REJECT_REMOTE_CLIENTS' -or
     $localPipe -notmatch 'ConvertStringSecurityDescriptorToSecurityDescriptorW' -or
     $localPipe -notmatch 'AU\)' -or

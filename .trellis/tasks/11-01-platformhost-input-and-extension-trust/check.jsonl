@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/verification.md","reason":"One Cargo, synthetic-only tests and explicit evidence levels"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Custom fixture registration/effect filtering"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Real enum/DTO roundtrip and version tests"}
+{"file":".trellis/spec/browser-extension/index.md","reason":"All Node suites and isolated real DOM gates"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Production TestApp lifecycle and semantic actions"}

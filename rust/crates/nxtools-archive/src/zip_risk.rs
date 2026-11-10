@@ -91,7 +91,7 @@ impl<'a> ZipRisk<'a> {
         }
         self
     }
-    pub(crate) fn confirm<W: Write>(
+    pub(crate) fn confirm<W: Write + ?Sized>(
         &self,
         entry: &ArchiveEntry,
         limits: &ResourceLimits,

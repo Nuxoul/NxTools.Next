@@ -70,6 +70,7 @@ fn fixture(cx: &mut TestAppContext, confirmed: bool) -> (KeyboardFixture, Visual
             view.confirmed_request = Some(view.request(cx).expect("synthetic confirmed request"));
             view.probe = Some(DownloadProbe {
                 resolution: None,
+                server_observation: None,
                 final_url: "https://example.test/keyboard.bin".into(),
                 file_name: Some("keyboard.bin".into()),
                 total_bytes: Some(1024),

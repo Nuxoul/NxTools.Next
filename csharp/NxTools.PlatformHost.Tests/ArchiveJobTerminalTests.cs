@@ -85,6 +85,109 @@ internal static class ArchiveJobTerminalTests
         }
         return terminal!;
     }
+    public static async Task EditingProgressProductionWire()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "archive-product-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try {
+            await using var jobs = ArchiveJobSession.ForOwnedTestPackage(root);
+            var browser = new ArchiveBrowserContext(Guid.NewGuid(), "SevenZ", "", new("v1:fixture", new uint[32], 10, 1), SevenzEdit: new(null));
+            var command = new ArchiveJobCommand { Version = 1, Action = "start", OperationId = Guid.NewGuid(), SessionId = Guid.NewGuid(), Generation = 1,
+                Request = new() { Kind = "modify", Paths = [@"C:\owned\fixture.7z"], Modify = new(browser, "delete", [0], null) } };
+            var operationType = typeof(ArchiveJobSession).GetNestedType("Operation", BindingFlags.NonPublic)!;
+            var operation = Activator.CreateInstance(operationType, Instance, null, [command], null)!;
+            var active = (IDictionary)typeof(ArchiveJobSession).GetField("active", Instance)!.GetValue(jobs)!;
+            active.Add(command.OperationId, operation);
+            var exported = new List<JsonElement>();
+            foreach (var phase in new[] { "running", "edit_planning", "edit_reading", "edit_reencoding", "edit_verifying", "edit_committing" }) {
+                var progress = new ArchiveJobProgress(phase, 3, 10, 1, 2);
+                var frame = JsonSerializer.SerializeToElement(new { op = "progress", progress }, JsonDefaults.Options);
+                var accepted = await (Task<string?>)Invoke(typeof(ArchiveJobSession), jobs, "OnFrame", command.OperationId, frame, CancellationToken.None);
+                Check(accepted is null, "original progress admission");
+                var channel = phase == "running" ? jobs.Progress : jobs.Events;
+                Check(channel.TryRead(out var envelope), "serialized original progress event: " + phase);
+                var data = envelope!.Payload.GetProperty("data");
+                Check(data.Deserialize<ArchiveJobEvent>(JsonDefaults.Options)!.Progress!.Phase == phase, "actual C# phase wire");
+                exported.Add(data.Clone());
+            }
+            var invalid = JsonSerializer.SerializeToElement(new { op = "progress", progress = new ArchiveJobProgress("edit_unknown", 0, null, 0, null) }, JsonDefaults.Options);
+            var rejected = await (Task<string?>)Invoke(typeof(ArchiveJobSession), jobs, "OnFrame", command.OperationId, invalid, CancellationToken.None);
+            Check(rejected == "protocol_violation" && !jobs.Events.TryRead(out _), "illegal worker phase rejected");
+            active.Clear();
+            var destination = Environment.GetEnvironmentVariable("NXTOOLS_ARCHIVE_EDIT_PROGRESS_WIRE");
+            if (destination is not null) {
+                var scratch = Path.GetFullPath(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")!) + Path.DirectorySeparatorChar;
+                Check(Path.GetFullPath(destination).StartsWith(scratch, StringComparison.OrdinalIgnoreCase), "owned event export only");
+                File.WriteAllText(destination, JsonSerializer.Serialize(exported, JsonDefaults.Options));
+            }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    public static async Task RepairProgressProductionWire()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "archive-product-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try {
+            await using var jobs = ArchiveJobSession.ForOwnedTestPackage(root);
+            var operationType = typeof(ArchiveJobSession).GetNestedType("Operation", BindingFlags.NonPublic)!;
+            var active = (IDictionary)typeof(ArchiveJobSession).GetField("active", Instance)!.GetValue(jobs)!;
+            var formats = new List<object>();
+            var reordered = new List<object>();
+            var retries = new List<JsonElement>();
+            foreach (var format in new[] { "SevenZ", "Tar", "TarGz", "TarXz" }) {
+                var browser = new ArchiveBrowserContext(Guid.NewGuid(), format, "", new("v1:fixture", new uint[32], 10, 1),
+                    SevenzEdit: format == "SevenZ" ? new(null) : null, TarEdit: format != "SevenZ" ? new(null) : null);
+                var command = new ArchiveJobCommand { Version = 1, Action = "start", OperationId = Guid.NewGuid(), SessionId = Guid.NewGuid(), Generation = 1,
+                    Request = new() { Kind = "modify", Paths = [@"C:\owned\fixture.archive"], Modify = new(browser, "delete", [0], null) } };
+                var operation = Activator.CreateInstance(operationType, Instance, null, [command], null)!;
+                active.Add(command.OperationId, operation);
+                async Task<JsonElement> Emit(string phase, ulong bytes, bool lossless) {
+                    // Deterministically cross the existing throttle; no clock sleeps or transport substitute.
+                    operationType.GetField("LastProgress", Instance)!.SetValue(operation, 0L);
+                    var frame = JsonSerializer.SerializeToElement(new { op = "progress", progress = new ArchiveJobProgress(phase, bytes, 10, 0, 2) }, JsonDefaults.Options);
+                    var accepted = await (Task<string?>)Invoke(typeof(ArchiveJobSession), jobs, "OnFrame", command.OperationId, frame, CancellationToken.None);
+                    Check(accepted is null, "production progress admission");
+                    var channel = lossless ? jobs.Events : jobs.Progress;
+                    Check(channel.TryRead(out var envelope), "original selected progress channel: " + phase);
+                    return envelope!.Payload.GetProperty("data").Clone();
+                }
+                var phases = new List<JsonElement>();
+                foreach (var phase in new[] { "running", "edit_planning", "edit_reading", "edit_reencoding", "edit_verifying", "edit_committing" })
+                    phases.Add(await Emit(phase, 3, phase != "running"));
+                formats.Add(new { format, events = phases });
+                // A coalesced frame is already held by its reader when the lossless channel wins forwarding.
+                foreach (var phase in new[] { "edit_verifying", "edit_committing" }) {
+                    await Emit("edit_reading", 3, true);
+                    var held = await Emit("edit_reading", 4, false);
+                    var newer = await Emit(phase, 8, true);
+                    reordered.Add(new { format, newer, held });
+                }
+                if (format == "Tar") {
+                    retries.Add(await Emit("edit_reading", 7, true));
+                    retries.Add(await Emit("running", 0, false));
+                    retries.Add(await Emit("running", 1, false));
+                    retries.Add(await Emit("running", 0, false));
+                }
+                active.Remove(command.OperationId);
+            }
+            var destination = Environment.GetEnvironmentVariable("NXTOOLS_ARCHIVE_AC_PROGRESS_WIRE");
+            if (destination is not null) {
+                var scratch = Path.GetFullPath(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")!) + Path.DirectorySeparatorChar;
+                Check(Path.GetFullPath(destination).StartsWith(scratch, StringComparison.OrdinalIgnoreCase), "owned event export only");
+                File.WriteAllText(destination, JsonSerializer.Serialize(new { formats, reordered, retries }, JsonDefaults.Options));
+            }
+            foreach (var item in reordered) {
+                var pair = JsonSerializer.SerializeToElement(item, JsonDefaults.Options);
+                var newer = pair.GetProperty("newer").GetProperty("progress");
+                var held = pair.GetProperty("held").GetProperty("progress");
+                Check(newer.TryGetProperty("sequence", out var next) && held.TryGetProperty("sequence", out var old) && next.GetUInt64() > old.GetUInt64(),
+                    "AC-02 publication order must survive the two original channels");
+            }
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
     public static Task ExtractionProgressWire()
     {
         var legacy = "{\"phase\":\"running\",\"bytes_done\":0,\"bytes_total\":null,\"files_done\":0,\"files_total\":null}";
@@ -92,6 +195,17 @@ internal static class ArchiveJobTerminalTests
         Check(parsed.Valid && parsed.CurrentBytesDone is null && parsed.CurrentBytesTotal is null, "legacy progress remains valid and unknown");
         var wire = JsonSerializer.Serialize(parsed, JsonDefaults.Options);
         Check(!wire.Contains("current_bytes_", StringComparison.Ordinal), "missing member facts omitted");
+        Check(parsed.Sequence is null && !wire.Contains("sequence", StringComparison.Ordinal), "legacy publication sequence is absent");
+        Check(!(parsed with { Sequence = 0 }).Valid, "zero sequence rejected");
+        foreach (var sequence in new[] { 1UL, ulong.MaxValue }) {
+            var ordered = parsed with { Sequence = sequence };
+            Check(ordered.Valid && JsonSerializer.Deserialize<ArchiveJobProgress>(JsonSerializer.Serialize(ordered, JsonDefaults.Options), ArchiveJobWire.Strict) == ordered, "publication sequence roundtrip");
+        }
+        foreach (var malformed in new[] { "-1", "1.5", "\"1\"" }) {
+            try { JsonSerializer.Deserialize<ArchiveJobProgress>(legacy[..^1] + ",\"sequence\":" + malformed + "}", ArchiveJobWire.Strict); }
+            catch (JsonException) { continue; }
+            throw new InvalidOperationException("malformed publication sequence accepted");
+        }
         var measured = parsed with { CurrentMember = "first.txt", CurrentBytesDone = 4, CurrentBytesTotal = 10, BytesDone = 4, BytesTotal = 30, FilesTotal = 2 };
         Check(measured.Valid && JsonSerializer.Deserialize<ArchiveJobProgress>(JsonSerializer.Serialize(measured, JsonDefaults.Options), ArchiveJobWire.Strict) == measured, "dual progress roundtrip");
         Check(!(measured with { CurrentBytesDone = 11 }).Valid && !(measured with { CurrentBytesDone = null }).Valid, "known member total cannot overrun or omit done");

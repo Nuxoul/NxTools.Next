@@ -150,6 +150,7 @@ impl PickerFixture {
             view.confirmed_request = Some(view.request(cx).expect("synthetic confirmed request"));
             view.probe = Some(DownloadProbe {
                 resolution: None,
+                server_observation: None,
                 final_url: "https://example.test/picker.bin".into(),
                 file_name: Some("picker.bin".into()),
                 total_bytes: Some(1024),
@@ -531,6 +532,8 @@ fn directory_picker_dispatch_rejection_releases_original_token_and_can_retry(
             .send_command(PlatformCommand::PickDirectory(PickDirectoryCommand {
                 current_directory: String::new(),
                 title: "synthetic capacity occupant".into(),
+                source_window_handle: 0,
+                source_process_id: std::process::id(),
             }))
             .expect("fill bounded test queue");
     }
@@ -851,4 +854,193 @@ fn directory_picker_fixed_confirmation_replacement_retires_original_view_request
         source_view.read_with(cx, |view, cx| view.directory.read(cx).value().to_string()),
         original
     );
+}
+
+#[gpui_kit::test]
+fn browser_export_owner_close_retires_selection_before_a_reopened_draft(cx: &mut TestAppContext) {
+    let f = PickerFixture::new(cx);
+    let (view, mut surface) = f.settings(cx);
+    let source = f.app.read_with(cx, |app, _| {
+        app.settings_window.expect("source settings window")
+    });
+    let operation = uuid::Uuid::new_v4();
+    f.app
+        .update(cx, |app, _| {
+            app.request_browser_extension_export("chrome", operation, source, view.downgrade(), 0)
+        })
+        .expect("selection accepted");
+    f.drain_commands();
+    f.app.update(cx, |app, cx| {
+        app.handle_native_settings_window_closed(source, cx)
+    });
+    surface.update(|window, _| window.remove_window());
+    let (_replacement, mut replacement_surface) = f.settings(cx);
+    assert!(
+        f.app
+            .read_with(cx, |app, _| app.pending_extension_export.is_none())
+    );
+    f.reply(
+        cx,
+        operation,
+        PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: Some("C:\\must-not-export.zip".into()),
+        },
+    );
+    assert!(
+        !std::iter::from_fn(|| f.endpoint.try_receive_command_for_contract_test().ok()).any(
+            |command| matches!(
+                command.message,
+                nxtools_protocol::Message::PlatformCommand(
+                    PlatformCommand::ExportBrowserExtension(_)
+                )
+            )
+        ),
+        "retired selection cannot start machine work"
+    );
+    replacement_surface.update(|window, _| window.remove_window());
+}
+
+#[gpui_kit::test]
+fn browser_export_selection_wait_has_no_feature_deadline_and_cancel_is_quiet(
+    cx: &mut TestAppContext,
+) {
+    let f = PickerFixture::new(cx);
+    let (view, mut surface) = f.settings(cx);
+    let source = f.app.read_with(cx, |app, _| {
+        app.settings_window.expect("source settings window")
+    });
+    let operation = uuid::Uuid::new_v4();
+    f.app
+        .update(cx, |app, _| {
+            app.request_browser_extension_export("chrome", operation, source, view.downgrade(), 0)
+        })
+        .expect("selection accepted");
+    f.drain_commands();
+    cx.executor().advance_clock(Duration::from_secs(11 * 60));
+    cx.run_until_parked();
+    assert!(f.app.read_with(cx, |app, _| {
+        app.pending_extension_export
+            .as_ref()
+            .is_some_and(|pending| pending.command_id == operation)
+    }));
+    f.reply(
+        cx,
+        operation,
+        PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: Some(String::new()),
+        },
+    );
+    cx.run_until_parked();
+    assert!(f.app.read_with(cx, |app, cx| {
+        app.pending_extension_export.is_none()
+            && app
+                .notifications
+                .read(cx)
+                .items()
+                .iter()
+                .all(|notice| notice.level != crate::notifications::NotificationLevel::Error)
+    }));
+    assert!(
+        !std::iter::from_fn(|| f.endpoint.try_receive_command_for_contract_test().ok()).any(
+            |command| matches!(
+                command.message,
+                nxtools_protocol::Message::PlatformCommand(
+                    PlatformCommand::ExportBrowserExtension(_)
+                )
+            )
+        )
+    );
+    surface.update(|window, _| window.remove_window());
+}
+
+fn request_ffmpeg_picker(f: &PickerFixture, cx: &mut TestAppContext) -> uuid::Uuid {
+    let view = f.app.read_with(cx, |app, _| {
+        app.settings_view.clone().expect("settings draft")
+    });
+    let view_id = view.entity_id();
+    let origin = view.read_with(cx, |view, _| FfmpegPickerOrigin {
+        view_id,
+        edit_generation: view.ffmpeg_discovery_generation,
+    });
+    f.app.update(cx, |app, cx| {
+        app.request_ffmpeg_executable(String::new(), 0, Some(origin), cx);
+        app.ffmpeg_platform_commands
+            .borrow()
+            .last()
+            .expect("FFmpeg picker command")
+            .0
+    })
+}
+
+#[gpui_kit::test]
+fn ffmpeg_picker_late_result_preserves_an_edited_draft(cx: &mut TestAppContext) {
+    let f = PickerFixture::new(cx);
+    let (view, mut surface) = f.settings(cx);
+    let id = request_ffmpeg_picker(&f, cx);
+    let input = view.read_with(cx, |view, _| view.ffmpeg_executable.clone());
+    surface.update(|window, cx| {
+        input.update(cx, |input, cx| {
+            input.set_value("C:\\edited\\ffmpeg.exe", window, cx);
+            cx.emit(gpui_kit::component::input::InputEvent::Change);
+        });
+    });
+    cx.run_until_parked();
+    f.reply(cx, id, picked(&f.root.join("late-ffmpeg.exe")));
+    assert_eq!(
+        input.read_with(cx, |input, _| input.value().to_string()),
+        "C:\\edited\\ffmpeg.exe",
+        "a selection cannot overwrite a newer field edit"
+    );
+    surface.update(|window, _| window.remove_window());
+}
+
+#[gpui_kit::test]
+fn ffmpeg_picker_owner_close_retires_selection_before_a_reopened_draft(cx: &mut TestAppContext) {
+    let f = PickerFixture::new(cx);
+    let (_view, mut surface) = f.settings(cx);
+    let id = request_ffmpeg_picker(&f, cx);
+    let source = f
+        .app
+        .read_with(cx, |app, _| app.settings_window.expect("source settings"));
+    f.app.update(cx, |app, cx| {
+        app.handle_native_settings_window_closed(source, cx)
+    });
+    surface.update(|window, _| window.remove_window());
+    let (replacement, mut replacement_surface) = f.settings(cx);
+    assert!(f.app.read_with(cx, |app, _| {
+        !app.pending_ffmpeg_operations
+            .values()
+            .any(|pending| pending.kind == FfmpegPlatformOperationKind::Picker)
+    }));
+    f.reply(cx, id, picked(&f.root.join("old-draft-ffmpeg.exe")));
+    assert_eq!(
+        replacement.read_with(cx, |view, cx| view
+            .ffmpeg_executable
+            .read(cx)
+            .value()
+            .to_string()),
+        ""
+    );
+    let replacement_id = request_ffmpeg_picker(&f, cx);
+    assert_ne!(
+        replacement_id, id,
+        "a replacement draft can begin its own picker"
+    );
+    let selected = f.root.join("current-ffmpeg.exe");
+    f.reply(cx, replacement_id, picked(&selected));
+    assert_eq!(
+        replacement.read_with(cx, |view, cx| view
+            .ffmpeg_executable
+            .read(cx)
+            .value()
+            .to_string()),
+        selected.to_string_lossy()
+    );
+    replacement_surface.update(|window, _| window.remove_window());
 }

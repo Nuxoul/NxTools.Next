@@ -23,7 +23,7 @@ test("an older single-resource acceptance cannot clear a newer in-flight identit
     sendHandoff: async (handoffId) => {
       assert.equal(handoffId, firstHandoffId);
       resource.pendingBatchHandoffId = secondHandoffId;
-      return { ok: true };
+      return { ok: true, accepted: true, handoffId, taskId: "persisted-task" };
     },
     resolveCurrentResource: () => resource,
     acceptedAt: 1234,

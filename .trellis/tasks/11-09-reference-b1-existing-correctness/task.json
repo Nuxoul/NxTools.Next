@@ -1,0 +1,42 @@
+{
+  "id": "reference-b1-existing-correctness",
+  "name": "reference-b1-existing-correctness",
+  "title": "B1 Existing correctness",
+  "description": "Implement REF-01 link routing, REF-02 originating Cookie store and REF-03 handoff reasons with production-boundary regressions; preserve dirty baseline and existing owners.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-browser-host",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-11-09",
+  "completedAt": "2026-11-09",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "rust/apps/nxtools-desktop/src/tools/link_panel.rs",
+    "rust/apps/nxtools-desktop/src/clipboard.rs",
+    "browser_extension/nxtools-interceptor/bg/request-context.js",
+    "browser_extension/nxtools-interceptor/bg/handoff.js",
+    "rust/apps/nxtools-browser-host/src/lib.rs",
+    "rust/apps/nxtools-browser-host/src/browser_wire_tests.rs",
+    "docs/reference-improvement-taskbook.md",
+    ".trellis/tasks/11-09-reference-b1-existing-correctness/outcomes.md",
+    ".trellis/tasks/11-09-reference-b1-existing-correctness/acceptance-repair.md",
+    "rust/apps/nxtools-desktop/src/clipboard_link_copy_tests.rs",
+    "browser_extension/nxtools-interceptor/tests/manual-confirmation.behavior.test.js"
+  ],
+  "notes": "All three B1 acceptance corrections pass production-boundary regressions: originating Cookie identity, manual confirmation pending and explicit Copy stale diagnostics. Source/fixture completion only; retain documented workspace lint/protocol/source-gate baselines and incomplete supplementary DOM/native acceptance. Existing owners and unrelated changes preserved; no B2/package/install/commit/push.",
+  "meta": {
+    "implementation_status": "completed",
+    "verification_status": "source_fixture_verified_with_workspace_baselines",
+    "outcome": "outcomes.md"
+  }
+}

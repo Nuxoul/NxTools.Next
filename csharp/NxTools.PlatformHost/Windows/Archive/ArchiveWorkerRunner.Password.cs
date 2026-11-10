@@ -84,7 +84,7 @@ internal sealed partial class ArchiveWorkerRunner
     private void DiagnosticPassword(Run run, JsonElement state)
     {
         var phase = state.GetProperty("state").GetString();
-        if (phase is not ("running" or "awaiting_password" or "attempt_finished" or "extracting")) throw new ArchiveFault("stdout_invalid_frame");
+        if (phase is not ("running" or "awaiting_password" or "attempt_finished" or "extracting" or "modifying")) throw new ArchiveFault("stdout_invalid_frame");
         try {
             log?.Write("info", "archive.worker.password." + phase, run.Request.OperationId,
                 new Dictionary<string, object?> { ["attempt_id"] = state.GetProperty("attempt_id").GetGuid(),

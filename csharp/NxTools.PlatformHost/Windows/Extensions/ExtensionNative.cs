@@ -149,15 +149,18 @@ internal static class ExtensionNative
     // Low-level suspended, allowlisted stdio spawn; callers own their executable policy.
     internal static (ExtensionKernelHandle Process, ExtensionKernelHandle Thread, uint Pid) Spawn(
         string executable, IReadOnlyList<string> arguments, string workingDirectory,
-        SafeFileHandle input, SafeFileHandle output, SafeFileHandle error)
+        SafeFileHandle input, SafeFileHandle output, SafeFileHandle error,
+        Func<int, IntPtr>? nativeAllocate = null, Action<IntPtr>? nativeFree = null)
     {
         UIntPtr size = UIntPtr.Zero;
         InitializeAttributes(IntPtr.Zero, 1, 0, ref size);
-        var list = Marshal.AllocHGlobal(checked((int)size.ToUInt64()));
-        var handles = Marshal.AllocHGlobal(IntPtr.Size * 3);
+        var list = IntPtr.Zero;
+        var handles = IntPtr.Zero;
         var initialized = false;
         try
         {
+            list = nativeAllocate is null ? Marshal.AllocHGlobal(checked((int)size.ToUInt64())) : nativeAllocate(checked((int)size.ToUInt64()));
+            handles = nativeAllocate is null ? Marshal.AllocHGlobal(IntPtr.Size * 3) : nativeAllocate(IntPtr.Size * 3);
             Require(InitializeAttributes(list, 1, 0, ref size), "initialize_attributes");
             initialized = true;
             Marshal.WriteIntPtr(handles, input.DangerousGetHandle());
@@ -178,7 +181,8 @@ internal static class ExtensionNative
         finally
         {
             if (initialized) DeleteAttributes(list);
-            Marshal.FreeHGlobal(list); Marshal.FreeHGlobal(handles);
+            if (list != IntPtr.Zero) { if (nativeFree is null) Marshal.FreeHGlobal(list); else nativeFree(list); }
+            if (handles != IntPtr.Zero) { if (nativeFree is null) Marshal.FreeHGlobal(handles); else nativeFree(handles); }
             GC.KeepAlive(input); GC.KeepAlive(output); GC.KeepAlive(error);
         }
     }

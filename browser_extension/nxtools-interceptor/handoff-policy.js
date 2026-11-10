@@ -12,9 +12,32 @@
       response &&
       response.ok === true &&
       response.accepted === true &&
+      (!response.data?.handoffState || response.data.handoffState === "persisted") &&
       expectedHandoffId &&
       response.handoffId === expectedHandoffId
     );
+  }
+
+  function handoffOutcome(response, expectedHandoffId) {
+    const awaitingConfirmation = response?.data?.handoffState === "awaiting_confirmation";
+    if ((response?.handoffId && response.handoffId !== expectedHandoffId) ||
+        ((response?.accepted === true || awaitingConfirmation) && (!expectedHandoffId || !response.handoffId)) ||
+        response?.data?.reason === "identity_mismatch") {
+      return { state: "rejected", reason: "identity_mismatch" };
+    }
+    if (awaitingConfirmation) {
+      return response.ok === true && response.accepted === false && !response.taskId &&
+          response.data.reason === "confirmation_pending" && response.data.queued !== true
+        ? { state: "awaiting_confirmation", reason: "confirmation_pending" }
+        : { state: "rejected", reason: "desktop_refused" };
+    }
+    if (acceptedHandoffResponse(response, expectedHandoffId)) {
+      return { state: "persisted", reason: "desktop_accepted", queued: response.data?.queued === true };
+    }
+    if ((response?.ok === true || response?.data?.handoffState === "queued") && response?.data?.queued === true) {
+      return { state: "queued", reason: "queued_not_accepted" };
+    }
+    return { state: "rejected", reason: "desktop_refused" };
   }
 
   function buildExtensionLogRequest({
@@ -23,6 +46,11 @@
     event,
     message,
     correlationId = "",
+    handoffState,
+    reason,
+    elapsedMs,
+    boundaryCode,
+    compensation,
     allocateRequestId,
     isRequestIdPending = () => false,
   }) {
@@ -38,6 +66,8 @@
             event,
             message,
             correlationId: correlationId || undefined,
+            ...(event === "handoff_state" ? { handoffState, reason, elapsedMs, boundaryCode, compensation } : {}),
+            ...(["capture_pause_started", "capture_pause_applied", "capture_pause_failed"].includes(event) ? { reason, elapsedMs } : {}),
           },
         };
       }
@@ -64,17 +94,22 @@
     try {
       await cancelBrowserDownload();
     } catch (error) {
+      let compensation = "not_available";
       if (response.taskId && typeof rollbackDesktopTask === "function") {
         try {
           await rollbackDesktopTask(response.taskId);
+          compensation = "succeeded";
         } catch {
-          // The browser item is still authoritative. A later idempotent retry uses the same
-          // handoff ID, so rollback failure cannot create a second desktop task.
+          // Retry uses the original handoff ID; the browser item stays authoritative.
+          compensation = "failed";
         }
       }
+      error.handoffReason = "browser_cancel_failed";
+      error.compensation = compensation;
       throw error;
     }
-    await eraseBrowserDownload();
+    // History cleanup does not change ownership after browser cancellation.
+    try { await eraseBrowserDownload(); } catch { /* Browser already canceled. */ }
     return {
       transferred: true,
       taskId: response.taskId || null,
@@ -84,6 +119,7 @@
 
   return Object.freeze({
     acceptedHandoffResponse,
+    handoffOutcome,
     buildExtensionLogRequest,
     completeAcceptedHandoff,
   });

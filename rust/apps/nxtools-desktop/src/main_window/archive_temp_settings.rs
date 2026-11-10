@@ -1,6 +1,22 @@
 //! Temp controls on the original Settings view; no new configuration/lifetime owner.
 use super::*;
 
+fn archive_effective_temp_path(base: &str, local_app_data: &std::path::Path) -> PathBuf {
+    if base.is_empty() {
+        local_app_data
+            .join("NxTools")
+            .join("NxTools.Next")
+            .join("cache")
+            .join("archive")
+            .join("sessions")
+    } else {
+        PathBuf::from(base)
+            .join("NxTools.Next")
+            .join("archive")
+            .join("sessions")
+    }
+}
+
 impl ArchiveSettingsView {
     pub(super) fn save_temp_path(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let requested = self.temp_path.read(cx).value().to_string();
@@ -62,6 +78,7 @@ impl ArchiveSettingsView {
         let source = self.window;
         crate::archive::pick_temp_directory(
             baseline.clone(),
+            source,
             move |result, cx| {
                 let owner = owner.clone();
                 let baseline = baseline.clone();
@@ -97,18 +114,55 @@ impl ArchiveSettingsView {
 
     pub(super) fn temp_items(&self, owner: WeakEntity<Self>) -> Vec<SettingItem> {
         let path = self.temp_path.clone();
+        let temp_policy = self.settings.temp.clone();
         let pending = self.temp_picker_pending;
         let path_owner = owner.clone();
         let hours = self.settings.temp.retention_hours;
         let hours_owner = owner.clone();
         vec![
-            SettingItem::new("临时目录", SettingField::render(move |_, _, _| {
+            SettingItem::new("临时目录", SettingField::render(move |_, _, cx| {
                 let browse_owner = path_owner.clone();
                 let save_owner = path_owner.clone();
                 let default_owner = path_owner.clone();
                 let reload_owner = path_owner.clone();
+                let raw = path.read(cx).value().to_string();
+                let mut candidate_policy = temp_policy.clone();
+                candidate_policy.base_directory = raw.clone();
+                let effective = candidate_policy.validate().is_ok().then(|| {
+                    std::env::var_os("LOCALAPPDATA")
+                        .map(|local| archive_effective_temp_path(&raw, std::path::Path::new(&local)))
+                        .or_else(|| (!raw.is_empty()).then(|| archive_effective_temp_path(&raw, std::path::Path::new(""))))
+                        .filter(|candidate| candidate.is_absolute())
+                }).flatten();
+                let copy_value = effective.as_ref().map(|value| value.display().to_string());
+                let copy_disabled = copy_value.is_none();
                 div().w_full().flex().flex_col().gap_2()
-                    .child(Input::new(&path).aria_label("归档临时目录").w_full())
+                    .child(Input::new(&path).aria_label("压缩包临时目录").w_full())
+                    .child(
+                        div()
+                            .debug_selector(|| "archive-temp-effective-path".into())
+                            .w_full()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .gap_1()
+                            .child(gpui_kit::component::label::Label::new(
+                                if copy_disabled { "当前目录 · 不可用" } else if raw.is_empty() { "当前有效目录 · 默认" } else { "当前有效目录 · 自定义" }
+                            ).text_sm())
+                            .child(gpui_kit::component::label::Label::new(
+                                copy_value.clone().unwrap_or_else(|| "请输入有效绝对目录，或使用默认目录".into())
+                            ).text_sm().w_full())
+                            .child(Button::new("archive-temp-copy-effective")
+                                .label("复制有效路径")
+                                .outline()
+                                .with_size(Size::Small)
+                                .disabled(copy_disabled)
+                                .on_click(move |_, _, cx| {
+                                    if let Some(value) = &copy_value {
+                                        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(value.clone()));
+                                    }
+                                })),
+                    )
                     .child(div().flex().flex_wrap().gap_2()
                         .child(Button::new("archive-temp-browse").debug_selector(|| "archive-temp-browse".into()).label("浏览…").outline().with_size(Size::Small).loading(pending).disabled(pending).on_click(move |_, _, cx| {
                             let owner = browse_owner.clone();
@@ -144,9 +198,28 @@ impl ArchiveSettingsView {
                     let owner = hours_owner.clone();
                     cx.defer(move |cx| { let _ = owner.update(cx, |view, cx| { let mut settings = view.settings.clone(); settings.temp.retention_hours = hours; view.save(settings, cx); }); });
                 },
-            )),
+            ).w(crate::ui::metrics::ordinary_rem(200.))),
             self.switch(owner, "archive-temp-child-exit", "可追踪子进程退出后尝试清理", self.settings.temp.cleanup_on_child_exit, |settings, value| settings.temp.cleanup_on_child_exit = value),
             note("清理范围", "只影响新打开条目的专属缓存。活动租约、被编辑或锁定文件不会强制删除；无可追踪进程时保留原关闭／到期清理。保留期不是删除期限。"),
         ]
+    }
+}
+
+#[cfg(test)]
+mod display_path_tests {
+    use super::archive_effective_temp_path;
+    use std::path::Path;
+
+    #[test]
+    fn archive_temp_display_matches_native_default_and_custom_session_roots() {
+        let local = Path::new(r"C:\Users\Viewer\AppData\Local");
+        assert_eq!(
+            archive_effective_temp_path("", local),
+            Path::new(r"C:\Users\Viewer\AppData\Local\NxTools\NxTools.Next\cache\archive\sessions")
+        );
+        assert_eq!(
+            archive_effective_temp_path(r"B:\ArchiveBase", local),
+            Path::new(r"B:\ArchiveBase\NxTools.Next\archive\sessions")
+        );
     }
 }

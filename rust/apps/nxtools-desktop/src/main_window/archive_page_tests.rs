@@ -101,31 +101,34 @@ fn select_page(window: &mut VisualTestContext, index: usize) {
     panic!("Settings sidebar page not reachable: {index}");
 }
 #[gpui_kit::test]
-fn archive_landing_prioritizes_three_tasks_without_unbound_recovery(cx: &mut TestAppContext) {
+fn archive_landing_keeps_tasks_above_preferences_without_recent_panel(cx: &mut TestAppContext) {
     let directory = tempfile::tempdir().expect("owned config");
     let path = directory.path().join("config.json");
     AppConfig::default().save_to(&path).expect("seed");
     let (_, _, mut window) = mount(cx, path);
-    window.update(|window, cx| window.draw(cx).clear(cx));
-    let tasks = window
-        .debug_bounds("archive-primary-tasks")
-        .expect("task area");
-    let recent = window
-        .debug_bounds("archive-landing-recent")
-        .expect("recent objects");
-    let preferences = window
-        .debug_bounds("archive-settings-viewport")
-        .expect("preferences");
-    assert!(tasks.bottom() <= recent.top() && recent.bottom() <= preferences.top());
-    for selector in ["archive-open", "archive-create", "archive-extract"] {
-        let bounds = window.debug_bounds(selector).expect("official task button");
-        assert!(bounds.top() >= tasks.top() && bounds.bottom() <= tasks.bottom());
+    for dimensions in [size(px(1060.0), px(650.0)), size(px(920.0), px(480.0))] {
+        window.simulate_resize(dimensions);
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(window.debug_bounds("archive-landing-recent").is_none());
+        let tasks = window
+            .debug_bounds("archive-primary-tasks")
+            .expect("task area");
+        let preferences = window
+            .debug_bounds("archive-settings-viewport")
+            .expect("preferences");
+        assert!(tasks.bottom() <= preferences.top());
+        assert!(preferences.top() - tasks.bottom() <= px(40.0));
+        assert!(preferences.bottom() <= dimensions.height);
+        for selector in ["archive-open", "archive-create", "archive-extract"] {
+            let bounds = window.debug_bounds(selector).expect("official task button");
+            assert!(bounds.top() >= tasks.top() && bounds.bottom() <= tasks.bottom());
+        }
+        assert!(
+            window
+                .debug_bounds("archive-reclamation-continue")
+                .is_none()
+        );
     }
-    assert!(
-        window
-            .debug_bounds("archive-reclamation-continue")
-            .is_none()
-    );
 }
 
 #[gpui_kit::test]
@@ -456,9 +459,7 @@ fn archive_integration_page_saves_desired_revision_without_claiming_applied(
 
 fn reveal(window: &mut VisualTestContext, selector: &'static str) {
     window.update(|window, cx| window.draw(cx).clear(cx));
-    let region = if selector.starts_with("archive-landing-") {
-        "archive-landing-recent"
-    } else if ["archive-open", "archive-create", "archive-extract"].contains(&selector) {
+    let region = if ["archive-open", "archive-create", "archive-extract"].contains(&selector) {
         "archive-primary-tasks"
     } else {
         "archive-settings-viewport"
@@ -808,7 +809,15 @@ fn ui_ac01_clean_rule_save_without_other_switch_adopts_newer_rules(cx: &mut Test
 fn shell_settings_completion_controls_are_real_and_save_command_choices(cx: &mut TestAppContext) {
     let temp = tempfile::tempdir().expect("owned integration UI");
     let path = temp.path().join("config.json");
-    AppConfig::default().save_to(&path).expect("seed");
+    let mut config = AppConfig::default();
+    config
+        .archive
+        .shell_integration
+        .menu_commands
+        .retain(|command| *command != nxtools_core::archive::ArchiveMenuCommand::Create);
+    config
+        .save_to(&path)
+        .expect("saved custom menu without Create");
     let (_, view, mut window) = mount(cx, path.clone());
     select_page(&mut window, 4);
     reveal(&mut window, "archive-default-apps");
@@ -847,7 +856,7 @@ fn shell_settings_completion_controls_are_real_and_save_command_choices(cx: &mut
             .shell_integration
             .menu_commands
             .len(),
-        7
+        nxtools_core::archive::ArchiveMenuCommand::ALL.len()
     );
     let (_, reopened, _) = mount(cx, path.clone());
     assert_eq!(
@@ -912,6 +921,16 @@ fn shell_settings_dropdown_keyboard_minimum_themes_and_failed_save(cx: &mut Test
             .any(|node| node.label() == Some("解压到同名文件夹（确认后开始）"))),
         "actual popup options mounted"
     );
+    let first_option = window.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.label() == Some("在 NxTools 中打开"))
+            .expect("first dropdown option")
+            .bounds()
+    });
+    window.simulate_mouse_move(first_option.center(), None, Modifiers::default());
+    window.run_until_parked();
+    window.update(|window, cx| window.draw(cx).clear(cx));
     window.simulate_keystrokes("down down enter");
     window.run_until_parked();
     assert_eq!(
@@ -1207,9 +1226,9 @@ fn ui_remaining_recent_actual_list_opens_original_read_and_clear_is_durable(
     }
     let (_, view, mut window) = mount(cx, config_path);
     window.update(|window, cx| window.draw(cx).clear(cx));
-    reveal(&mut window, "archive-landing-open-0");
-    click(&mut window, "archive-landing-open-0");
+    assert!(window.debug_bounds("archive-landing-recent").is_none());
     select_page(&mut window, 0);
+    click(&mut window, "archive-recent-open-0");
     let mut pending_read = None;
     for _ in 0..200 {
         if let Ok(request) = endpoint.try_receive_command_for_contract_test() {
@@ -1245,4 +1264,27 @@ fn ui_remaining_recent_actual_list_opens_original_read_and_clear_is_durable(
     );
     window.run_until_parked();
     assert!(view.read_with(&window, |view, _| view.error.is_none()));
+}
+
+#[path = "archive_preview_settings_tests.rs"]
+mod preview_settings_tests;
+
+#[gpui_kit::test]
+fn archive_polish_settings_use_download_aligned_rows(cx: &mut TestAppContext) {
+    let directory = tempfile::tempdir().expect("owned config");
+    let path = directory.path().join("config.json");
+    AppConfig::default().save_to(&path).expect("seed");
+    let (_, _, mut window) = mount(cx, path);
+    window.update(|window, cx| window.draw(cx).clear(cx));
+    let row = window
+        .debug_bounds("archive-setting-使用 NxTools 打开压缩包")
+        .expect("shared download row composition");
+    let label = window
+        .debug_bounds("archive-setting-使用 NxTools 打开压缩包-title")
+        .expect("aligned label");
+    let control = window
+        .debug_bounds("archive-open-in-nxtools")
+        .expect("original switch");
+    assert!((label.center().y - control.center().y).abs() <= px(2.));
+    assert!(control.right() <= row.right() && label.right() < control.left());
 }

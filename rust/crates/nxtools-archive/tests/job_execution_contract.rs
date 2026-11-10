@@ -1,4 +1,6 @@
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
@@ -19,7 +21,7 @@ fn general_extract_smart_uses_original_plan_and_exact_native_transaction_paths()
     let id = Uuid::new_v4();
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/deflated.zip");
     write_frame(child.stdin.as_mut().expect("stdin"), &json!({
-        "schema":2,"operation_id":id,"op":"start","operation":"extract","path":path,
+        "schema":2,"bulk_transfer":1,"operation_id":id,"op":"start","operation":"extract","path":path,
         "job_extract":{"strategy":"smart","single_file_folder":false,"conflict":"skip","copy_motw":false,"selection":null}
     })).expect("start");
     let mut paths = BTreeMap::new();
@@ -185,6 +187,8 @@ fn product_readmission_adapter_preserves_original_intent_and_native_terminal() {
                 output_shortfall: shortfall,
                 result_location: None,
                 output_published: None,
+                add_result: None,
+                journal_summary: None,
             })
         },
     )

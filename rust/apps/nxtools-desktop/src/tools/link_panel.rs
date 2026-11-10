@@ -14,6 +14,7 @@ use gpui_kit::component::label::Label;
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::tooltip::Tooltip;
+use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::{
     AnyWindowHandle, Context, InteractiveElement, IntoElement, ParentElement, Render,
     StatefulInteractiveElement, Styled, WeakEntity, Window, div, px,
@@ -24,6 +25,7 @@ pub(crate) type DetectedLinkRow = crate::tools::link_detector::DetectedLink;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LinkPanelRoute {
+    Copy,
     Browser,
     OpenShell {
         action: nxtools_protocol::ShellOpenAction,
@@ -47,6 +49,7 @@ pub(crate) fn link_panel_shell_command(
     target_kind: DetectedLinkKind,
 ) -> Option<nxtools_protocol::PlatformCommand> {
     let (target, action) = match (route, target_kind) {
+        (LinkPanelRoute::Copy, _) => return None,
         (LinkPanelRoute::Browser, DetectedLinkKind::Web) => (
             if target.contains("://") {
                 target.to_owned()
@@ -64,6 +67,11 @@ pub(crate) fn link_panel_shell_command(
     Some(nxtools_protocol::PlatformCommand::OpenShellTarget(
         nxtools_protocol::OpenShellTargetCommand { target, action },
     ))
+}
+
+fn kind_is_download_target(kind: DetectedLinkKind, target: &str) -> bool {
+    kind == DetectedLinkKind::Web
+        && crate::downloads::DownloadApplication::admits_link_download(target)
 }
 
 pub(crate) const LINK_PANEL_WIDTH: f32 = 420.0;
@@ -181,11 +189,17 @@ impl Render for LinkPanelView {
         for (index, link) in self.links.iter().enumerate().take(visible_count) {
             let application = application.clone();
             let copy_application = application.clone();
+            let open_application = application.clone();
+            let download_application = application.clone();
+            let explicit_download_value = link.copy_value.clone();
+            let download_enabled = kind_is_download_target(link.kind, &link.copy_value);
             let explicit_copy_value = link.copy_value.clone();
+            let explicit_open_value = link.copy_value.clone();
             let copy_value = link.copy_value.clone();
             let kind = link.kind;
             let tooltip_value = link.copy_value.clone();
             let route = link_panel_route(kind);
+            let panel_window = window.window_handle();
             let focus = window
                 .use_keyed_state(("link-panel-focus", index), cx, |_, cx| {
                     cx.focus_handle().tab_stop(true)
@@ -278,45 +292,116 @@ impl Render for LinkPanelView {
                                                     "explicit link panel copy accepted");
                                                 window.remove_window();
                                                 cx.defer(move |cx| {
-                                                    if let Some(application) = application.upgrade() {
+                                                    let current = application.upgrade().is_none_or(|application| {
                                                         application.update(cx, |application, _| {
-                                                            application.note_panel_copied(value.clone());
-                                                            application.forget_link_panel();
-                                                        });
+                                                            if application.forget_link_panel_if_current(panel_window) {
+                                                                application.note_panel_copied(value.clone());
+                                                                true
+                                                            } else {
+                                                                false
+                                                            }
+                                                        })
+                                                    });
+                                                    if current {
+                                                        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(value));
+                                                        info!(event = "tools.link_panel.copy_completed", %correlation_id,
+                                                            elapsed_ms = started_at.elapsed().as_millis() as u64,
+                                                            "explicit link panel copy completed");
+                                                    } else {
+                                                        info!(event = "tools.link_panel.copy_cancelled", %correlation_id,
+                                                            reason = "panel_replaced",
+                                                            elapsed_ms = started_at.elapsed().as_millis() as u64,
+                                                            "explicit link panel copy cancelled");
                                                     }
-                                                    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(value));
-                                                    info!(event = "tools.link_panel.copy_completed", %correlation_id,
-                                                        elapsed_ms = started_at.elapsed().as_millis() as u64,
-                                                        "explicit link panel copy completed");
                                                 });
                                             }),
-                                    ),
+                                    )
+                                    .child(
+                                        Button::new(("link-panel-open", index))
+                                            .debug_selector(move || format!("link-panel-open-{index}"))
+                                            .xsmall()
+                                            .ghost()
+                                            .flex_none()
+                                            .label(match kind {
+                                                DetectedLinkKind::Web => "打开链接",
+                                                DetectedLinkKind::LocalFile => "打开文件位置",
+                                                DetectedLinkKind::LocalDirectory => "打开文件夹",
+                                            })
+                                            .on_click(move |_, window, cx| {
+                                                cx.stop_propagation();
+                                                let value = explicit_open_value.clone();
+                                                let application = open_application.clone();
+                                                window.remove_window();
+                                                cx.defer(move |cx| {
+                                                    if let Some(application) = application.upgrade() {
+                                                        application.update(cx, |application, cx| {
+                                                            if application.forget_link_panel_if_current(panel_window) {
+                                                                application.dispatch_link_panel_route(
+                                                                    route, &value, kind, value.len(), false, cx,
+                                                                );
+                                                            }
+                                                        });
+                                                    }
+                                                });
+                                            }),
+                                    )
+                                    .when(download_enabled, |row| row.child(
+                                        Button::new(("link-panel-download", index))
+                                            .debug_selector(move || format!("link-panel-download-{index}"))
+                                            .xsmall()
+                                            .ghost()
+                                            .flex_none()
+                                            .label("使用 NxTools 下载")
+                                            .accessibility_label("使用 NxTools 下载")
+                                            .on_click(move |_, window, cx| {
+                                                cx.stop_propagation();
+                                                let value = explicit_download_value.clone();
+                                                let application = download_application.clone();
+                                                let correlation_id = uuid::Uuid::new_v4();
+                                                let started_at = std::time::Instant::now();
+                                                info!(event = "tools.link_panel.download_started", %correlation_id,
+                                                    "explicit link download intake accepted");
+                                                window.remove_window();
+                                                cx.defer(move |cx| {
+                                                    let downloads = application.upgrade().and_then(|application| {
+                                                        application.update(cx, |application, _| {
+                                                            application.take_link_panel_download_owner(panel_window)
+                                                        })
+                                                    }).and_then(|owner| owner.upgrade());
+                                                    if let Some(downloads) = downloads {
+                                                        downloads.update(cx, |downloads, cx| {
+                                                            downloads.open_link_download(value, correlation_id, started_at, cx);
+                                                        });
+                                                    } else {
+                                                        info!(event = "tools.link_panel.download_finished", %correlation_id,
+                                                            outcome = "source_or_owner_retired",
+                                                            elapsed_ms = started_at.elapsed().as_millis() as u64,
+                                                            "explicit link download intake retired");
+                                                    }
+                                                });
+                                            })
+                                    )),
                             ),
                     )
                     .on_click(move |_event, window, cx| {
-                        let route = route;
                         let copy_value = copy_value.clone();
                         let value_length = copy_value.len();
                         info!(
                             event = "tools.link_panel.row_clicked",
                             target_kind = kind.label(),
                             value_length,
-                            route = ?route,
                             "link panel row clicked"
                         );
-                        // Close FIRST, then cross the application lease boundary.
                         window.remove_window();
                         let application = application.clone();
                         cx.defer(move |cx| {
                             if let Some(application) = application.upgrade() {
-                                application.update(cx, |application, _cx| {
-                                    application.forget_link_panel();
-                                    application.dispatch_link_panel_route(
-                                        route,
-                                        &copy_value,
-                                        kind,
-                                        value_length,
-                                    );
+                                application.update(cx, |application, cx| {
+                                    if application.forget_link_panel_if_current(panel_window) {
+                                        application.dispatch_link_panel_route(
+                                            route, &copy_value, kind, value_length, true, cx,
+                                        );
+                                    }
                                 });
                             }
                         });
@@ -371,7 +456,7 @@ impl Render for LinkPanelView {
                                 .flex()
                                 .items_center()
                                 .gap(px(SPACING_4))
-                                .child(Label::new("点击打开 · 可单独复制"))
+                                .child(Label::new("点击操作 · 可单独复制"))
                                 .child(Label::new("自动消失")),
                         ),
                 ),

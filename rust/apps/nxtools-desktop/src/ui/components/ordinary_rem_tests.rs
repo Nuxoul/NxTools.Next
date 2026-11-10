@@ -290,11 +290,15 @@ impl Render for Rows {
             .flex_col()
             .child(volume_scope::volume_scope_row(
                 Theme::zed_dark(),
+                cx,
                 "shared-rem-volume",
                 "合成卷",
                 "合成状态",
-                false,
-                false,
+                volume_scope::VolumeScopeRowState {
+                    maintenance: None,
+                    checked: false,
+                    show_divider: false,
+                },
                 |_, _, _| {},
             ))
             .child(quick_launch_diagnostics::quick_launch_diagnostics(

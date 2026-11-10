@@ -69,7 +69,7 @@ async function resolveTabIdForRequest(details) {
     return details.tabId;
   }
 
-  const snapshotTabId = resolveHeaderSnapshot(details.url)?.tabId || 0;
+  const snapshotTabId = resolveHeaderSnapshot(details.url, details)?.tabId || 0;
   if (snapshotTabId > 0) {
     return snapshotTabId;
   }
@@ -140,6 +140,7 @@ async function sendMessageToTabFrames(tabId, message) {
 const CONTENT_SCRIPT_FILES = [
   "shadow-styles.js",
   "blob-transfer-policy.js",
+  "capture-policy.js",
   "content/constants.js",
   "content/runtime.js",
   "content/media-info.js",
@@ -182,6 +183,7 @@ async function scanTabForResources(tabId, force = false) {
     return [];
   }
 
+  const owner = bucketForTab(tabId);
   const now = Date.now();
   const lastScanAt = lastFrameScanByTab.get(tabId) || 0;
   if (!force && now - lastScanAt < RESOURCE_SCAN_INTERVAL_MS) {
@@ -190,10 +192,13 @@ async function scanTabForResources(tabId, force = false) {
 
   lastFrameScanByTab.set(tabId, now);
   await injectContentBridge(tabId);
+  if (resourcesByTab.get(tabId) !== owner) return [];
   const frames = await tabFrames(tabId);
   await Promise.all(frames.map((frame) => injectPageHook(tabId, frame.frameId).catch(() => false)));
+  if (resourcesByTab.get(tabId) !== owner) return [];
   const results = await Promise.all(frames.map((frame) => sendMessageToTab(tabId, { type: "content_scan_now" }, frame)
     .then((result) => ({ ...result, frameId: frame.frameId }))));
+  if (resourcesByTab.get(tabId) !== owner) return [];
 
   const okCount = results.filter((result) => result.ok).length;
   if (okCount === 0) {
@@ -202,6 +207,19 @@ async function scanTabForResources(tabId, force = false) {
       tabId,
       frameCount: frames.length
     }, 30000);
+  }
+
+  if (okCount > 0) {
+    // Prefer the top frame; embedded players report from their own frame.
+    const thumbnail = [...results]
+      .sort((left, right) => Number(left.frameId !== 0) - Number(right.frameId !== 0))
+      .map((result) => (result.ok ? boundedCapturedUrl(result.response?.pageThumbnail) : ""))
+      .find(isHttpUrl);
+    if (thumbnail) {
+      pageThumbnailByTab.set(tabId, thumbnail);
+    } else {
+      pageThumbnailByTab.delete(tabId);
+    }
   }
 
   return results;

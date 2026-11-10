@@ -10,6 +10,75 @@ namespace NxTools.PlatformHost.Tests;
 // No CoRegisterClassObject, Registry, CLSID registration, Explorer, process launch or GUI.
 internal static class ArchiveShellSelectionTests
 {
+    internal static Task QuickCreateTitlesAndCompleteSelectionUseExplorerCommand() => OnSta(() =>
+    {
+        foreach (var (name, extension) in new[] { ("CompressZip", "zip"), ("CompressSevenZ", "7z") })
+        {
+            Check(Enum.TryParse<ShellVerb>(name, out var verb), "independent quick-create verb " + name);
+            using var lifetime = new ServerLifetime();
+            var forwarder = new RecordingForwarder();
+            var factory = new ArchiveSelectionClassFactory(verb, forwarder, new RecordingLog(), lifetime);
+            var iid = new Guid("a08ce4d0-fa25-44ab-b57c-c7b1c323e0b9");
+            Check(factory.CreateInstance(IntPtr.Zero, ref iid, out var pointer) == 0, "official IExplorerCommand title entry");
+            var paths = new[] { @"C:\selected\报告.txt", @"C:\selected\second.bin" };
+            var array = new FakeArray(paths.Select(path => new FakeItem(path)).ToArray());
+            var selection = Marshal.GetComInterfaceForObject(array, typeof(IShellItemArray));
+            try
+            {
+                Check(CallExplorerTitle(pointer, selection, out var title) == 0, "selection title succeeds");
+                try { Check(Marshal.PtrToStringUni(title) == $"压缩为“报告.{extension}”", "actual selection filename and fixed format"); }
+                finally { Marshal.FreeCoTaskMem(title); }
+                foreach (var (filename, attributes) in new[] { ("folder.with.dot", 0x20000000u), (".gitignore", 0u) })
+                {
+                    var query = new FakeArray([new FakeItem(@"C:\selected\" + filename) { Attributes = attributes }]);
+                    var queryPointer = Marshal.GetComInterfaceForObject(query, typeof(IShellItemArray));
+                    try
+                    {
+                        Check(CallExplorerTitle(pointer, queryPointer, out var queryTitle) == 0, "current query selection title");
+                        try { Check(Marshal.PtrToStringUni(queryTitle) == $"压缩为“{filename}.{extension}”", "folder and dotfile names match original Rust draft"); }
+                        finally { Marshal.FreeCoTaskMem(queryTitle); }
+                    }
+                    finally { Marshal.Release(queryPointer); }
+                }
+                Check(forwarder.Calls.Count == 0 && lifetime.LiveObjects == 1, "title query never executes or retires invocation");
+                Check(CallExplorerInvoke(pointer, selection) == 0, "same original command executes");
+                Check(forwarder.Calls.Single().Verb == verb && forwarder.Calls.Single().Paths.SequenceEqual(paths), "one complete ordered selection");
+                Check(CallExplorerInvoke(pointer, selection) == ArchiveSelectionCommand.EIllegalMethodCall, "once-only invocation");
+                Check(lifetime.LiveObjects == 0, "original lifetime retired");
+            }
+            finally { Marshal.Release(selection); Marshal.Release(pointer); }
+            Check(factory.CreateInstance(IntPtr.Zero, ref iid, out var abandoned) == 0, "title-only object admitted");
+            Marshal.Release(abandoned);
+            Check(lifetime.LiveObjects == 0, "title-only final release frees original lifetime slot");
+        }
+    });
+
+    internal static Task QuickCreateRecommendationsAndPlans()
+    {
+        Check(ArchiveIntegrationIntent.RecommendedMenuCommands.TakeLast(3).SequenceEqual(["create_zip", "create_7z", "create"]), "three creation recommendations");
+        foreach (var layout in new[] { "cascade", "flat" })
+        {
+            var plan = ArchiveSelectionHandlerPlan.Create(@"C:\NxTools\NxTools.ShellSelectionHelper.exe", 2,
+                new ArchiveIntegrationIntent(true, false, []) { MenuLayout = layout, MenuCommands = ["create_zip", "create_7z", "create"] });
+            Check(plan.Changes.Count(change => change.Target.ValueName == "ExplorerCommandHandler") == 4, "two dynamic quick commands for files and folders");
+            Check(plan.Changes.Count(change => change.Target.ValueName == "DelegateExecute") == 2, "editable form retains original grouped delegate");
+            Check(plan.Changes.Count(change => change.Target.KeyPath.EndsWith(@"\LocalServer32")) == 3, "out-of-process helper classes");
+            Check(plan.Changes.All(change => change.Target.ValueName != "MUIVerb" || !((string)change.Value.Data).Contains("文件名")), "no registration-time filename substitution");
+            Check(plan.Changes.All(change => change.Value.Data is not string value || !value.Contains("%1")), "no per-item invocation");
+        }
+        return Task.CompletedTask;
+    }
+
+    private static unsafe int CallExplorerTitle(IntPtr instance, IntPtr selection, out IntPtr title)
+    {
+        IntPtr result = IntPtr.Zero;
+        var status = ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr*, int>)Marshal.ReadIntPtr(Marshal.ReadIntPtr(instance), 3 * IntPtr.Size))(instance, selection, &result);
+        title = result;
+        return status;
+    }
+    private static unsafe int CallExplorerInvoke(IntPtr instance, IntPtr selection) =>
+        ((delegate* unmanaged[Stdcall]<IntPtr, IntPtr, IntPtr, int>)Marshal.ReadIntPtr(Marshal.ReadIntPtr(instance), 8 * IntPtr.Size))(instance, selection, IntPtr.Zero);
+
     internal static Task OneSelectionForwardsOnceInOrderThroughComVtable() => OnSta(() =>
     {
         var forwarder = new RecordingForwarder();
@@ -126,6 +195,15 @@ internal static class ArchiveShellSelectionTests
             Check(delivered.Status == ForwardStatus.Delivered && launcher.Calls.Count == 1, "approved identity forwards once");
             Check(string.Equals(launcher.Calls[0].Executable, desktop, StringComparison.OrdinalIgnoreCase), "exact sibling desktop");
             Check(launcher.Calls[0].Arguments.SequenceEqual(["--archive-extract", "here", @"C:\x.zip", @"C:\y.zip"]), "existing ingress vocabulary, ordered argv paths");
+            foreach (var verb in new[] { ShellVerb.CompressZip, ShellVerb.CompressSevenZ })
+            {
+                var quickLauncher = new FakeLauncher { ExitCode = 0 };
+                var correlationId = Guid.NewGuid();
+                Check(new DesktopIntentForwarder(new DesktopIdentity(directory, hash), quickLauncher)
+                    .Forward(correlationId, verb, paths, CancellationToken.None).Status == ForwardStatus.Delivered, "quick handoff accepted");
+                Check(quickLauncher.Calls.Single().Arguments.SequenceEqual(new[] { "--archive-correlation-id", correlationId.ToString("D") }
+                    .Concat(HelperIdentity.IntentArguments(verb)).Concat(paths)), "one correlation and complete argv selection");
+            }
 
             foreach (var (exit, status) in new (int?, ForwardStatus)[] { (1, ForwardStatus.Unavailable), (2, ForwardStatus.Rejected), (null, ForwardStatus.HandedToNewOwner) })
             {
@@ -332,6 +410,7 @@ internal static class ArchiveShellSelectionTests
     [ComVisible(true), ClassInterface(ClassInterfaceType.None)]
     private sealed class FakeItem(string? path) : IShellItem
     {
+        internal uint Attributes { get; init; }
         public int BindToHandler(IntPtr bindContext, ref Guid handler, ref Guid iid, out IntPtr result) { result = IntPtr.Zero; return ArchiveSelectionCommand.EFail; }
         public int GetParent(out IShellItem parent) { parent = null!; return ArchiveSelectionCommand.EFail; }
         public int GetDisplayName(uint sigdnName, out IntPtr name)
@@ -342,7 +421,7 @@ internal static class ArchiveShellSelectionTests
             name = Marshal.StringToCoTaskMemUni(path);
             return 0;
         }
-        public int GetAttributes(uint mask, out uint attributes) { attributes = 0; return 0; }
+        public int GetAttributes(uint mask, out uint attributes) { attributes = Attributes & mask; return 0; }
         public int Compare(IShellItem other, uint hint, out int order) { order = 0; return 0; }
     }
 

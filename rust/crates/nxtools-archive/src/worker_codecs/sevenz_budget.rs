@@ -33,6 +33,19 @@ pub(crate) fn blocks(archive: &sevenz_rust2::Archive, limits: &ResourceLimits) -
                     };
                     dict + (4 << 20) // single-thread LZMA2 range/literal state and input buffers
                 }
+                Method::ID_PPMD => {
+                    if properties.len() != 5 {
+                        return Err(ArchiveError::CorruptArchive);
+                    }
+                    let memory = u32::from_le_bytes(
+                        properties[1..5]
+                            .try_into()
+                            .expect("checked PPMd properties"),
+                    );
+                    u64::from(memory) + (1 << 20)
+                }
+                Method::ID_BZIP2 => 8 << 20,
+                Method::ID_DEFLATE | Method::ID_BCJ2 => 1 << 20,
                 Method::ID_COPY
                 | Method::ID_AES256_SHA256
                 | Method::ID_DELTA

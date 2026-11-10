@@ -7,6 +7,47 @@ const MAX_AST_DEPTH: usize = 32;
 const MAX_AST_NODES: usize = 8192;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TextBudget {
+    pub max_bytes: usize,
+    pub max_lines: usize,
+}
+impl Default for TextBudget {
+    fn default() -> Self {
+        Self {
+            max_bytes: MAX_RICH_BYTES,
+            max_lines: MAX_RICH_LINES,
+        }
+    }
+}
+impl TextBudget {
+    pub(crate) fn allows(self, text: &str) -> bool {
+        text.len() <= self.max_bytes && self.allows_lines(text) && !text.contains('\0')
+    }
+    pub(crate) fn allows_lines(self, text: &str) -> bool {
+        let mut remaining = text.as_bytes();
+        for _ in 0..self.max_lines {
+            if remaining.is_empty() {
+                return true;
+            }
+            let Some(index) = remaining
+                .iter()
+                .position(|byte| matches!(byte, b'\r' | b'\n'))
+            else {
+                return true;
+            };
+            let ending_bytes =
+                if remaining[index] == b'\r' && remaining.get(index + 1) == Some(&b'\n') {
+                    2
+                } else {
+                    1
+                };
+            remaining = &remaining[index + ending_bytes..];
+        }
+        remaining.is_empty()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum TextKind {
     Plain,
     Markdown,
@@ -45,9 +86,7 @@ fn code_fence(code: &str, language: Option<&str>) -> String {
 }
 
 pub(super) fn within_budget(text: &str) -> bool {
-    text.len() <= MAX_RICH_BYTES
-        && text.lines().take(MAX_RICH_LINES + 1).count() <= MAX_RICH_LINES
-        && !text.contains('\0')
+    TextBudget::default().allows(text)
 }
 
 pub(super) fn classify(text: &str) -> TextKind {
@@ -195,7 +234,11 @@ pub(super) fn classify(text: &str) -> TextKind {
 
 /// Replace resource-bearing AST nodes before passing text to Kit's renderer. Links stay inert.
 pub(super) fn safe_markdown(text: &str) -> Option<String> {
-    if !within_budget(text) {
+    safe_markdown_with_budget(text, TextBudget::default())
+}
+
+pub(super) fn safe_markdown_with_budget(text: &str, budget: TextBudget) -> Option<String> {
+    if !budget.allows(text) {
         return None;
     }
     // Reject pathological nesting before invoking a recursive parser. False positives safely use source.
@@ -247,7 +290,7 @@ pub(super) fn safe_markdown(text: &str) -> Option<String> {
     for (range, replacement) in edits.into_iter().rev() {
         safe.replace_range(range, &replacement);
     }
-    if !within_budget(&safe) {
+    if !budget.allows(&safe) {
         return None;
     }
     // Verify the projected syntax again; malformed input may expose syntax after replacements.
@@ -370,6 +413,41 @@ mod tests {
             1,
             "projection never mutates source"
         );
+    }
+
+    #[test]
+    fn preview_line_endings_obey_shared_budget_without_raising_defaults() {
+        let budget = TextBudget {
+            max_bytes: 1024,
+            max_lines: 2,
+        };
+        for text in [
+            "",
+            "one",
+            "one\r",
+            "one\n",
+            "one\r\n",
+            "one\rtwo",
+            "one\ntwo\n",
+            "one\r\ntwo\r\n",
+            "\r\n\r",
+        ] {
+            assert!(budget.allows(text), "two-line boundary {text:?}");
+        }
+        for text in [
+            "one\rtwo\rthree",
+            "one\ntwo\nthree",
+            "one\r\ntwo\r\nthree",
+            "one\rtwo\nthree",
+        ] {
+            assert!(
+                !budget.allows(text),
+                "line ending must not bypass the shared budget: {text:?}"
+            );
+        }
+        assert!(within_budget(&"line\r".repeat(MAX_RICH_LINES)));
+        assert!(!within_budget(&"line\r".repeat(MAX_RICH_LINES + 1)));
+        assert!(safe_markdown(&"line\r".repeat(MAX_RICH_LINES + 1)).is_none());
     }
 
     #[test]

@@ -1,0 +1,56 @@
+# Local archive reference evidence
+
+Stable local root: `D:\Code\NxTools.Next-main\.trellis\tasks\10-31-archive-research\evidence`.
+
+`index.json` lists the retained files, exact REA Evidence IDs, operations, target paths and procedure queries. Read the index before rerunning native analysis. Complete successful REA JSON, reusable snapshots and measured runtime/probe artifacts are in `raw/`. This directory is independent of session scratch and is not removed with a conversation. Its `raw/` subtree is ignored by Git; these are local reference artifacts, not product source or a release package.
+
+## Entry points
+
+- Whole product: [functional reference map](../bandizip-product-reference.md).
+- Creation/update/test/repair and each-input compression: [creation workflow](../bandizip-create-edit-repair.md), `raw/ark-create-*`, `raw/bandizip-create-*`.
+- Advanced options→writer effects and SFX form/configuration→shipped-stub extraction/RUN: [advanced creation/SFX](../bandizip-advanced-sfx.md), `raw/bandizip-advanced-*`, `raw/ark-advanced-*`, `raw/sfx-advanced-*`. The x86 `bdzsfx.x86.sfx` is a separate target; no main-program version is inferred for it.
+- Force-ZIP64 archive/member decisions and adaptive Deflate parameter/worker/ordered-output counters: [ZIP writer policy](../bandizip-zip-writer-policy.md), `raw/ark-zippolicy-*`, matching private recipes and the cited existing settings/writer records.
+- SFX active cancel→message-pumped event→extractor termination→close policy→terminal controls and exact RUN process APIs: [SFX cancellation](../bandizip-sfx-cancellation.md), `raw/sfx-cancel-*`; partial-output deletion remains distinct from close.
+- ZIP comment show/edit/encoding/replacement, Save As and whole-archive deletion/window launch: [comments/management](../bandizip-comments-management.md), `raw/bandizip-management-*`, `raw/ark-management-*`; `raw/bandizip-reference-shell-api.json` retains the public Shell result contract, not target execution.
+- Archive-list folder draft→label-edit cancel/validation→directory member→ZIP publication/refresh: [directory commit](../bandizip-folder-commit.md), `raw/bandizip-foldercommit-*`, `raw/ark-foldercommit-*` and matching private recipes/snapshots.
+- Batch/questions/pause/stop/finish: [operation lifecycle](../bandizip-operation-lifecycle.md), `raw/bandizip-operations-*`.
+- Copy/paste/full-path text, incoming drop choices and copy-temp exit cleanup: [input/clipboard](../bandizip-input-clipboard.md), `raw/bandizip-input-*` and cited existing owners; supplemental PE instructions remain static evidence.
+- Explorer ZIP `IPersistFile`/`IDropTarget`→target-bound EXE Add and open-window OLE path-list producer→posted command→drain/clear: [Shell/queued incoming files](../bandizip-shell-incoming.md), `raw/bdzshl-incoming-*`, `raw/bandizip-incoming-*`; `raw/bandizip-reference-incoming-api.json` retains the public ownership/length/result contracts.
+- Cancellation/current-output deletion, preallocation/long paths, capacity checks, error text and first-volume reopen: [failure/cleanup](../bandizip-failure-cleanup.md), `raw/bandizip-failure-*`, `raw/ark-failure-*` and existing direct/buffered output records.
+- Find/encoding/entry-open/preview/settings/Shell: [browser and integration](../bandizip-browser-integration.md), `raw/bandizip-browser-*` and separately target-labelled auxiliary records.
+- Encoding re-read, archive-thumbnail request/cache/close and scan admission: [connected data paths](../bandizip-browser-scan-details.md), the corresponding `raw/bandizip-create-*` EXE records and `raw/arkview-reference-*` helper records. Image-base addresses are not interchangeable across these targets.
+- Browser columns/sorting/view/tree/size/history/snapping and special Shell email/date-name/preview boundaries: [browser/Shell controls](../bandizip-browser-shell-controls.md), `raw/bandizip-viewcontrols-*`, `raw/bdzshl-viewcontrols-*` and cited existing records.
+- Shell custom/date name→real create output and compress/email→Simple MAPI compose request/results/lifetime: [Shell delivery](../bandizip-shell-delivery.md), `raw/bdzshl-delivery-*`, `raw/bandizip-delivery-*`; the public conversion contract is retained separately from static target instructions.
+- Column/view commands, tree notifications, Backspace/Alt path history, F6 and distinct recent-list ownership: [browser navigation](../bandizip-browser-navigation.md), `raw/bandizip-nav-*`; the static resource-routing script retains the accelerator/menu/command-array evidence.
+- Toolbar checkbox immediate commit/save, four style/visibility modes, catalog-node construction/aggregate release and Close/Open/edit-reopen cache lifetime: [toolbar/cache lifecycle](../bandizip-toolbar-cache.md), `raw/bandizip-present-*`; the PE resource parser retains exact dialog controls and vtable slots.
+- Embedded `/aschild` versus standalone/associated viewer, executable warning choices and whole-archive temporary extraction before selected launch: [viewer/execution](../bandizip-viewer-execution.md), `raw/bandizip-execview-*`, separately targeted `raw/arkview-execview-*` and their private snapshots/recipes.
+- Shell preview worker/catalog/result publication, count/deadline/cancel, loaders and thread-handle ownership: [Shell preview lifecycle](../bandizip-shell-preview.md), `raw/bdzshl-preview-*`; explicit CRT exit instruction/import records distinguish its optional handle from the caller-returned preview handle.
+- Password manager/recovery overview and provenance: [tools](../bandizip-tools-security.md), `raw/bandizip-tools-*`.
+- Master unlock/save/cancel/reset and recovery pause/resume/thread controls: [password controls](../bandizip-password-controls.md), `raw/bandizip-passcontrols-*`; static instruction slices and shipped recovery-skin resources remain separate from runtime records.
+- Recovery capability-provider output→dialog field→worker length and batch stop: [length source](../bandizip-recovery-length.md), `raw/bandizip-recoverylimit-*`, separate `raw/lm-recoverylimit-*`; the exact Standard-four-character numeric policy remains unestablished.
+- Nested Open with Bandizip, per-parent writeback, native replacement/restore/backup cleanup: [nested writeback](../bandizip-nested-writeback.md), the original `raw/bandizip-browser-*` completion records and `raw/bandizip-create-*` command/native-helper records.
+- Auxiliary malware scanner mapping/stream/verdict/parent lifetime: [helper protocol](../bandizip-amsi-helper.md), `raw/amsiman-reference-*`, `raw/amsiman-target-metadata.json`. This helper's version7.17.0.4 is distinct from the main program7.32.0.1.
+- Provenance setting→native context→source ADS holder→direct/buffered output and suffix/result conditions: [provenance propagation](../bandizip-provenance.md), `raw/bandizip-provenance-*`, `raw/ark-provenance-*`. Context `+0x80` is the holder pointer, not inline ADS bytes.
+- Other reader families, layered streams, images and split input: [format families](../bandizip-format-families.md), `raw/ark-families-*`.
+- Compressed-WIM classifier→LGPL handler→resource/chunk reconstruction→selected output/integrity/cleanup: [WIM payload](../bandizip-wim-payload.md), `raw/ark-wimfollow-*`; helper `ark.x64.lgpl.dll` has its own subject and address space.
+- Shared extraction priority and core timings: [overall extraction](../overall-extraction.md), `raw/archive_core_timing_probe.rs`, `raw/core-open-timing.json`, `raw/core-open-process-cost.json`.
+- Shared ZIP mechanism: [core pipeline](../bandizip-core-pipeline.md), `raw/ark-core-code-0x1800570c0.json` (catalog), `raw/ark-core-code-0x18007dca0.json` (Deflate/CRC), `raw/ark-core-code-0x180060920.json` and `raw/ark-core-code-0x180023340.json` (output).
+- Parallel ZIP: [configuration and scheduling](../bandizip-parallel-extraction.md), `raw/ark-parallel-*`, the retained `bandizip-create-*` setting/default/checkbox records and `bandizip-provenance-*`/`ark-provenance-*` options-structure boundary. Static application evidence and supplied bz runtime contrasts remain separately attributed.
+- Solid formats and output lifecycle: [RAR/RAR5,7z and output](../bandizip-solid-output.md). RAR admission/dispatch: `raw/ark-rar-asm-0x180032730.json`, `raw/ark-rar-asm-0x180059a90.json`;7z block grouping/write: `raw/ark-7z-code-0x180139760.json`, `raw/ark-7z-code-0x180139580.json`; buffered consumer/close: `raw/ark-output-consumer-thread-0x180023950.json`, `raw/ark-output-consumer-close-0x180023620.json`.
+- Selected extraction: `raw/bz-code-0x1400219a0.json`, `raw/ark-engine-vtable-bytes.json`, `raw/ark-code-0x1800067b0.json`, `raw/ark-code-0x180006a30.json`.
+- Ordinary/fast drag selection: `raw/bandizip-function-0x140147200.json`.
+- OLE boundary and data object: `raw/bandizip-function-0x140053460.json`, plus subsequent drag dossiers listed in the index.
+- Extraction setup: `raw/bandizip-function-0x1401481d0.json`, `raw/bandizip-function-0x14013ce80.json`.
+- Double progress: `raw/bandizip-progress-code-0x140119a40.json`, `raw/bandizip-function-0x140117a10.json`.
+- System Browse: `raw/bandizip-function-0x1400fa3d0.json`, `raw/bandizip-function-0x140024f10.json`, `raw/bandizip-picker-code-0x1400f3e20.json`. The verified owner class is CArchiveDlg, not automatically the extraction-specific folder form.
+- Runtime: `raw/bandizip-single-result.json`, `raw/bandizip-selected-io.json`, `raw/bandizip-selected-io-output-check.json`; repeatable measurement in `raw/measure-bandizip-selected-io.ps1`.
+
+## Reuse
+
+Main Bandizip/bz/ark.x64 targets at `D:\Tool\Bandizip` report version7.32.0.1, as do the separately identified x64 `ark.x64.lgpl.dll` and `data\lm.x64.dll`. Scanner `data\Amsiman.x64.exe` reports7.17.0.4; `bdzsfx.x86.sfx` is a separate x86 stub. Ghidra12.1.4 is at `D:\Tool\ghidra_12.1.4_PUBLIC`. Individual REA records retain exact subjects and limitations: static reconstruction is not original source or observed execution. Updated artifacts require target-matching analysis, not silent address reuse.
+
+Snapshots cache queries and are not complete Ghidra project databases. Complete individual Evidence JSON remains readable without a running provider. Runtime records may mention the original scratch output location; the recorded measurements and byte-comparison results are retained here, while extracted JARs and source binaries are not copied.
+
+Query replay uses the public REA stdio interface: `raw/tools/rea_core_session.py`, `raw/tools/rea_follow_session.py`, `raw/tools/query-7z.py`, `raw/tools/query-reference.py` and `raw/recipes/rea-*.json`. Research directions use independent target-matching snapshots. The reference query helper bounds its own headless heap through process-local `GHIDRA_HEADLESS_MAXMEM`; no installed Ghidra configuration is changed. Recipes and snapshots are local to this workstation; complete individual Evidence records remain the primary portable observations.
+
+`raw/tools/retain-archive-evidence.py` refreshes the index without importing scratch when `ARCHIVE_EVIDENCE_INDEX_ONLY=1`. `raw/tools/verify-bandizip-reference.py` checks report file/ID/target pairs, retained IDs, local links, instruction line ranges, indexed file sizes, Python syntax and recipe snapshots. These checks validate reference integrity, not reconstructed semantics or live product behavior.

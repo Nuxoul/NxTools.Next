@@ -137,11 +137,31 @@ internal static class ExtensionProcessProtocol
 }
 
 // One fixed byte buffer per pipe. EOF without LF is a protocol failure, never silent truncation.
-internal sealed class ExtensionLineReader(Stream stream, int totalLimit, string prefix, Action<int>? observeBytes = null)
+internal sealed class ExtensionLineReader
 {
-    private readonly byte[] chunk = new byte[Math.Min(8192, totalLimit)];
-    private readonly byte[] line = new byte[Math.Min(ExtensionProcessProtocol.FrameLimit, totalLimit)];
-    private int begin, end, length, total;
+    private readonly Stream stream;
+    private readonly int? totalLimit;
+    private readonly string prefix;
+    private readonly Action<int>? observeBytes;
+    private readonly byte[] chunk;
+    private readonly byte[] line;
+    private int begin, end, length, finiteTotal;
+
+    internal ExtensionLineReader(Stream stream, int totalLimit, string prefix, Action<int>? observeBytes = null)
+        : this(stream, (int?)totalLimit, prefix, observeBytes) { }
+
+    private ExtensionLineReader(Stream stream, int? totalLimit, string prefix, Action<int>? observeBytes)
+    {
+        this.stream = stream;
+        this.totalLimit = totalLimit;
+        this.prefix = prefix;
+        this.observeBytes = observeBytes;
+        chunk = new byte[Math.Min(8192, totalLimit ?? 8192)];
+        line = new byte[Math.Min(ExtensionProcessProtocol.FrameLimit, totalLimit ?? ExtensionProcessProtocol.FrameLimit)];
+    }
+
+    internal static ExtensionLineReader Unlimited(Stream stream, string prefix, Action<int>? observeBytes = null) =>
+        new(stream, null, prefix, observeBytes);
 
     internal async ValueTask<string?> ReadAsync(CancellationToken cancellation = default)
     {
@@ -156,20 +176,28 @@ internal sealed class ExtensionLineReader(Stream stream, int totalLimit, string 
                     if (length != 0) throw new ExtensionFailure(prefix + "_truncated_line");
                     return null;
                 }
-                if (end > totalLimit - total) throw new ExtensionFailure(prefix + "_total_limit");
+                if (totalLimit is { } limit && end > limit - finiteTotal)
+                    throw new ExtensionFailure(prefix + "_total_limit");
                 observeBytes?.Invoke(end);
-                total += end;
+                if (totalLimit is not null) finiteTotal += end;
             }
-            var value = chunk[begin++];
-            if (value == 10)
+
+            var newline = Array.IndexOf(chunk, (byte)10, begin, end - begin);
+            var segmentEnd = newline >= 0 ? newline : end;
+            var count = segmentEnd - begin;
+            if (count > line.Length - length) throw new ExtensionFailure(prefix + "_line_limit");
+            if (count != 0)
             {
-                var count = length > 0 && line[length - 1] == 13 ? length - 1 : length;
-                length = 0;
-                try { return ExtensionProcessProtocol.Utf8.GetString(line, 0, count); }
-                catch (DecoderFallbackException) { throw new ExtensionFailure(prefix + "_invalid_utf8"); }
+                chunk.AsSpan(begin, count).CopyTo(line.AsSpan(length));
+                length += count;
             }
-            if (length == line.Length) throw new ExtensionFailure(prefix + "_line_limit");
-            line[length++] = value;
+            begin = newline >= 0 ? newline + 1 : end;
+            if (newline < 0) continue;
+
+            var decodedCount = length > 0 && line[length - 1] == 13 ? length - 1 : length;
+            length = 0;
+            try { return ExtensionProcessProtocol.Utf8.GetString(line, 0, decodedCount); }
+            catch (DecoderFallbackException) { throw new ExtensionFailure(prefix + "_invalid_utf8"); }
         }
     }
 }

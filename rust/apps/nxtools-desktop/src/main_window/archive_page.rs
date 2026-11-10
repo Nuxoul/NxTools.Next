@@ -17,6 +17,8 @@ use nxtools_protocol::archive_shell_integration::{
     ArchiveShellIntegrationAction, ArchiveShellIntegrationState,
 };
 use std::time::Instant;
+#[path = "archive_preview_settings.rs"]
+mod preview_settings;
 #[path = "archive_temp_settings.rs"]
 mod temp_settings;
 
@@ -200,6 +202,9 @@ impl ArchiveSettingsView {
                 strip_single_root,
                 copy_motw
             );
+            current
+                .preview
+                .merge_changed(&previous.preview, &settings.preview);
             if settings.temp.retention_hours != previous.temp.retention_hours {
                 current.temp.retention_hours = settings.temp.retention_hours;
             }
@@ -295,28 +300,35 @@ impl ArchiveSettingsView {
         value: bool,
         apply: fn(&mut ArchiveSettings, bool),
     ) -> SettingItem {
-        SettingItem::new(
-            label,
-            SettingField::render(move |_, _, _| {
-                let owner = owner.clone();
-                div().debug_selector(move || id.into()).child(
-                    Switch::new(id)
-                        .checked(value)
-                        .accessibility_label(label)
-                        .on_change(move |requested, _, cx| {
-                            let requested = *requested;
-                            let owner = owner.clone();
-                            cx.defer(move |cx| {
-                                let _ = owner.update(cx, |view, cx| {
-                                    let mut settings = view.settings.clone();
-                                    apply(&mut settings, requested);
-                                    view.save(settings, cx);
-                                });
+        SettingItem::render(move |options, _, _| {
+            let owner = owner.clone();
+            let control = div().debug_selector(move || id.into()).child(
+                Switch::new(id)
+                    .checked(value)
+                    .disabled(options.is_disabled())
+                    .accessibility_label(label)
+                    .on_change(move |requested, _, cx| {
+                        let requested = *requested;
+                        let owner = owner.clone();
+                        cx.defer(move |cx| {
+                            let _ = owner.update(cx, |view, cx| {
+                                let mut settings = view.settings.clone();
+                                apply(&mut settings, requested);
+                                view.save(settings, cx);
                             });
-                        }),
-                )
-            }),
-        )
+                        });
+                    }),
+            );
+            crate::ui::components::settings::aligned_setting_row(
+                format!("archive-setting-{label}"),
+                label,
+                "",
+                format!("archive-setting-{label}-help"),
+                crate::ui::metrics::ordinary_rem(440.),
+                control.into_any_element(),
+            )
+        })
+        .keywords([label])
     }
     fn choice<T: Copy + PartialEq + 'static>(
         &self,
@@ -358,7 +370,8 @@ impl ArchiveSettingsView {
                         });
                     });
                 },
-            ),
+            )
+            .w(crate::ui::metrics::ordinary_rem(200.)),
         )
     }
     pub(super) fn add_exclusion(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -583,7 +596,8 @@ impl ArchiveSettingsView {
                         });
                     });
                 },
-            ),
+            )
+            .w(crate::ui::metrics::ordinary_rem(200.)),
         )
     }
     fn menu_commands_item(&self, owner: WeakEntity<Self>) -> SettingItem {
@@ -599,7 +613,10 @@ impl ArchiveSettingsView {
                     controls = controls.child(
                         Checkbox::new(id.clone())
                             .debug_selector(move || id.to_string())
-                            .label(command.label())
+                            .label(match command {
+                                ArchiveMenuCommand::Create => "新建压缩包…（普通文件或文件夹）",
+                                _ => command.label(),
+                            })
                             .checked(selected.contains(&command))
                             .on_change(move |requested, _, cx| {
                                 let requested = *requested;
@@ -1025,7 +1042,7 @@ impl ArchiveSettingsView {
                     let owner = number_owner.clone();
                     cx.defer(move |cx| { let _ = owner.update(cx, |view, cx| { let mut settings = view.settings.clone(); settings.recent_limit = value as u8; view.save(settings, cx); }); });
                 },
-            )),
+            ).w(crate::ui::metrics::ordinary_rem(200.))),
             SettingItem::new("最近压缩包", SettingField::render(move |_, _, cx| {
                 let mut content = div().w_full().flex().flex_col().gap_2();
                 match crate::archive::recent_snapshot(cx) {
@@ -1067,7 +1084,7 @@ fn note(label: &'static str, text: &'static str) -> SettingItem {
     .layout(gpui_kit::Axis::Vertical)
 }
 impl Render for ArchiveSettingsView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let owner = cx.entity().downgrade();
         let settings = &self.settings;
         let extract = vec![
@@ -1143,7 +1160,7 @@ impl Render for ArchiveSettingsView {
             ),
             note(
                 "文件名识别",
-                "自动检测可能不确定；归档中有效的 Unicode 文件名优先，不会被手动代码页覆盖。",
+                "自动检测可能不确定；压缩包中有效的 Unicode 文件名优先，不会被手动代码页覆盖。",
             ),
         ];
         let create = vec![
@@ -1223,13 +1240,13 @@ impl Render for ArchiveSettingsView {
                     self.switch(
                         owner.clone(),
                         "archive-escape-closes-window",
-                        "按 Esc 关闭归档窗口",
+                        "按 Esc 关闭压缩包窗口",
                         settings.escape_closes_window,
                         |settings, value| settings.escape_closes_window = value,
                     ),
                     note(
                         "修改后验证",
-                        "添加、删除、重命名及编辑注释后，提交前始终验证归档完整性。",
+                        "添加、删除、重命名及编辑注释后，提交前始终验证压缩包完整性。",
                     ),
                 ]))
                 .group(
@@ -1244,7 +1261,7 @@ impl Render for ArchiveSettingsView {
                 .resettable(false)
                 .group(SettingGroup::new().title("新建默认参数").items(create)),
             SettingPage::new("查看").resettable(false).group(
-                SettingGroup::new().title("归档浏览器").items([
+                SettingGroup::new().title("压缩包浏览器").items([
                     self.switch(
                         owner.clone(),
                         "archive-show-parent-row",
@@ -1321,64 +1338,8 @@ impl Render for ArchiveSettingsView {
                         .title("临时文件")
                         .items(self.temp_items(owner.clone())),
                 ),
+            self.preview_page(owner.clone()),
         ];
-        let recent = match crate::archive::recent_snapshot(cx) {
-            Ok(paths) if paths.is_empty() => div()
-                .child("尚未打开过压缩包。使用“打开压缩包”选择文件。")
-                .into_any_element(),
-            Ok(paths) => div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .children(paths.into_iter().take(2).enumerate().map(|(index, path)| {
-                    let name = path
-                        .file_name()
-                        .unwrap_or_default()
-                        .to_string_lossy()
-                        .into_owned();
-                    let location = path
-                        .parent()
-                        .unwrap_or(path.as_path())
-                        .to_string_lossy()
-                        .into_owned();
-                    gpui_kit::component::list::ListItem::new(("archive-landing-recent-row", index))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .flex()
-                                .flex_col()
-                                .child(div().text_ellipsis().child(name))
-                                .child(div().text_sm().text_ellipsis().child(location)),
-                        )
-                        .suffix(move |_, _| {
-                            let path = path.clone();
-                            Button::new(("archive-landing-open", index))
-                                .debug_selector(move || format!("archive-landing-open-{index}"))
-                                .label("打开")
-                                .outline()
-                                .with_size(Size::Small)
-                                .on_click(move |_, window, cx| {
-                                    crate::archive::open_recent(
-                                        path.clone(),
-                                        window.window_handle(),
-                                        cx,
-                                    )
-                                })
-                        })
-                }))
-                .into_any_element(),
-            Err("loading") => div().child("正在载入最近打开的压缩包…").into_any_element(),
-            Err(_) => div()
-                .child(
-                    Alert::error(
-                        "archive-landing-recent-error",
-                        "无法读取最近打开的压缩包；仍可手动打开文件。",
-                    )
-                    .small(),
-                )
-                .into_any_element(),
-        };
         let mut page = div()
             .id("archive-settings-page")
             .debug_selector(|| "archive-settings-page".into())
@@ -1433,18 +1394,6 @@ impl Render for ArchiveSettingsView {
                             .on_click(|_, _, cx| crate::archive::extract_from_window(cx)),
                     ),
             )
-            .child(
-                div()
-                    .debug_selector(|| "archive-landing-recent".into())
-                    .flex_none()
-                    .px_4()
-                    .py_2()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child("最近打开")
-                    .child(recent),
-            )
             .child(div().flex_none().px_4().pt_2().child("偏好设置"))
             .child(
                 div()
@@ -1454,9 +1403,11 @@ impl Render for ArchiveSettingsView {
                     .w_full()
                     .child(
                         Settings::new("archive-official-settings")
-                            .sidebar_width(px(160.0))
+                            .sidebar_width(
+                                crate::ui::metrics::ordinary_rem(164.).to_pixels(window.rem_size()),
+                            )
                             .sidebar_size_range(px(160.0)..px(208.0))
-                            .with_group_variant(GroupBoxVariant::Normal)
+                            .with_group_variant(GroupBoxVariant::Fill)
                             .pages(pages),
                     ),
             );

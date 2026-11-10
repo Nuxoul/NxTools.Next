@@ -62,14 +62,16 @@ fn polished_new_download_preserves_compact_footer_and_confirmed_budget(cx: &mut 
     let title = surface
         .debug_bounds("download-new-titlebar")
         .expect("titlebar");
-    let guidance = surface
-        .debug_bounds("download-new-probe-guidance")
-        .expect("guidance");
+    assert!(
+        surface
+            .debug_bounds("download-new-probe-guidance")
+            .is_none()
+    );
     let footer = surface.debug_bounds("download-new-footer").expect("footer");
     let cancel = surface
         .debug_bounds("download-new-cancel-action")
         .expect("cancel hit region");
-    assert_eq!(root.size.height, px(176.0));
+    assert_eq!(root.size.height, px(136.0));
     let input = surface
         .debug_bounds("download-new-url-field-input")
         .expect("compact input");
@@ -77,11 +79,10 @@ fn polished_new_download_preserves_compact_footer_and_confirmed_budget(cx: &mut 
         .debug_bounds("download-new-url-paste")
         .expect("compact paste");
     assert_eq!(input.size.height, px(CONTROL_HEIGHT_INPUT));
-    assert_eq!(paste.size.height, input.size.height);
-    assert_eq!(paste.top(), input.top());
-    assert!(paste.bottom() <= guidance.top());
-    assert!(title.bottom() < guidance.top());
-    assert!(guidance.bottom() <= footer.top());
+    assert_eq!(paste.size.height, px(24.0));
+    assert!(paste.top() >= input.top() && paste.bottom() <= input.bottom());
+    assert!(title.bottom() <= input.top());
+    assert!(input.bottom() <= footer.top());
     assert!(cancel.top() >= footer.top() && cancel.bottom() <= footer.bottom());
     assert_eq!(footer.bottom(), root.bottom());
     assert_eq!(
@@ -432,8 +433,7 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
         .expect("progress body");
     assert_eq!(toggle.size, size(px(20.0), px(20.0)));
     assert!(toggle.top() >= body.top() && toggle.bottom() <= body.bottom());
-    // Approved monitor replaces four stacked metrics/path with two compact
-    // label/value columns; this asserts the actual production layout budget.
+    // The compact monitor reserves its collapsed budget for transfer information.
     let filename = surface
         .debug_bounds("download-window-progress-name")
         .expect("readable filename");
@@ -443,15 +443,17 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
     let metrics = surface
         .debug_bounds("download-window-progress-metrics")
         .expect("two-column metrics");
-    let capabilities = surface
-        .debug_bounds("download-window-progress-capabilities")
-        .expect("resume and limit state");
+    assert!(
+        surface
+            .debug_bounds("download-window-progress-capabilities")
+            .is_none()
+    );
     let footer = surface
         .debug_bounds("download-task-window-footer")
         .expect("footer");
     assert!(filename.size.height <= px(32.0));
     assert!(filename.bottom() <= progress.top() && progress.bottom() <= metrics.top());
-    assert!(metrics.bottom() <= capabilities.top() && capabilities.bottom() <= footer.top());
+    assert!(metrics.bottom() <= footer.top());
     for (label_selector, value_selector) in [
         (
             "download-window-metric-已下载-label",
@@ -464,10 +466,6 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
         (
             "download-window-metric-剩余-label",
             "download-window-metric-剩余-value",
-        ),
-        (
-            "download-window-metric-状态-label",
-            "download-window-metric-状态-value",
         ),
     ] {
         let label_bounds = surface.debug_bounds(label_selector).expect("metric label");
@@ -517,6 +515,9 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
     assert_eq!(cx.read(|cx| application.read(cx).task_windows.len()), 1);
     surface.simulate_resize(size(px(440.0), px(280.0)));
     surface.refresh().expect("expanded unchanged budget");
+    let capabilities = surface
+        .debug_bounds("download-window-progress-capabilities")
+        .expect("expanded resume and limit state");
     let table = surface
         .debug_bounds("download-window-segment-table")
         .expect("part table instead of dots");
@@ -524,6 +525,7 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
         .debug_bounds("download-task-window-footer")
         .expect("expanded footer");
     assert!(table.bottom() <= footer.top());
+    assert!(capabilities.bottom() <= table.top());
     assert!(
         surface
             .debug_bounds("download-window-details-source")
@@ -707,6 +709,7 @@ fn stage_fixed_probe(
                 view.selected_dash_audio_track = Some(3);
                 view.probe = Some(DownloadProbe {
                     resolution: None,
+                    server_observation: None,
                     final_url: "https://fixture.invalid/file.bin".into(),
                     file_name: Some("server.bin".into()),
                     total_bytes: Some(8),
@@ -781,7 +784,7 @@ fn fixed_confirmation_failure_disconnect_timeout_retain_probe_and_retry_without_
                 .expect("root")
                 .size
                 .height,
-            px(176.0)
+            px(136.0)
         );
         match terminal {
             "native_result" => fixed_result(cx, &application, id, false),
@@ -1607,15 +1610,15 @@ fn browser_export_completion_uses_center_not_settings_description(cx: &mut TestA
                 matches!(
                     command.message,
                     nxtools_protocol::Message::PlatformCommand(
-                        PlatformCommand::ExportBrowserExtension(_)
+                        PlatformCommand::PickBrowserExtensionExportPath(_)
                     )
                 )
             })
-            .expect("export dispatched");
+            .expect("destination selection dispatched");
         if index == 2 {
             assert!(
                 matches!(&command.message, nxtools_protocol::Message::PlatformCommand(
-                PlatformCommand::ExportBrowserExtension(export)) if export.format == "chrome_store")
+                PlatformCommand::PickBrowserExtensionExportPath(export)) if export.format == "chrome_store")
             );
         }
         let key = format!("download-browser-export-{}", command.id);
@@ -1631,6 +1634,34 @@ fn browser_export_completion_uses_center_not_settings_description(cx: &mut TestA
                 crate::notifications::NotificationLevel::Progress
             );
         });
+        let selection_id = command.id;
+        application.update(&mut surface, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: selection_id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some("C:\\synthetic-extension.zip".into()),
+                    },
+                },
+                cx,
+            )
+        });
+        surface.run_until_parked();
+        let command = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .find(|command| {
+                matches!(
+                    command.message,
+                    nxtools_protocol::Message::PlatformCommand(
+                        PlatformCommand::ExportBrowserExtension(_)
+                    )
+                )
+            })
+            .expect("selected destination starts bounded export");
+        assert_ne!(command.id, selection_id);
+        assert_eq!(command.correlation_id, Some(selection_id));
         application.update(&mut surface, |app, cx| {
             app.handle_platform_notification(
                 PlatformNotification::CommandResult {
@@ -2489,17 +2520,84 @@ fn feedback_schedule_uses_two_real_official_time_fields(cx: &mut TestAppContext)
 }
 
 #[gpui_kit::test]
-fn feedback_download_category_master_uses_real_list_item(cx: &mut TestAppContext) {
-    let (_, directory, mut surface) = queue02_settings_window(cx);
-    surface.refresh().expect("real categorymaster");
-    let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
-    assert!(
-        nodes
-            .iter()
-            .any(|n| n.path().last()
-                == Some(&gpui_kit::ElementId::from("download-settings-category-0"))),
-        "actualListItem row"
+fn feedback_download_category_master_uses_real_official_dropdown(cx: &mut TestAppContext) {
+    let (application, directory, mut surface) = queue02_settings_window(cx);
+    let view = application.read_with(&surface, |app, _| {
+        app.settings_view
+            .clone()
+            .expect("production settings draft")
+    });
+    let (second_name, original_input) = view.read_with(&surface, |view, cx| {
+        (
+            view.categories[1].name.read(cx).value().to_string(),
+            view.directory.entity_id(),
+        )
+    });
+    let content = surface
+        .debug_bounds("download-settings-shell-content")
+        .expect("settings page content");
+    let mut selector = None;
+    for _ in 0..60 {
+        surface.refresh().expect("real category selector frame");
+        selector = surface
+            .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+            .into_iter()
+            .find(|node| {
+                node.role() == Some(gpui_kit::Role::ComboBox)
+                    && node.label() == Some("选择分类")
+                    && node.bounds().top() >= content.top()
+                    && node.bounds().bottom() <= content.bottom()
+            })
+            .map(|node| node.bounds());
+        if selector.is_some() {
+            break;
+        }
+        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: content.center(),
+            delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
+            modifiers: Modifiers::default(),
+            touch_phase: gpui_kit::TouchPhase::Moved,
+        });
+        surface.run_until_parked();
+    }
+    surface.simulate_click(
+        selector.expect("reachable official dropdown").center(),
+        Modifiers::default(),
     );
+    surface.run_until_parked();
+    surface.refresh().expect("official popup menu");
+    cx.executor().advance_clock(Duration::from_millis(180));
+    surface.refresh().expect("settled official category popup");
+    let nodes = surface.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    assert!(nodes.iter().any(|node| {
+        node.role() == Some(gpui_kit::Role::ComboBox)
+            && node.label() == Some("选择分类")
+            && node.expanded() == Some(true)
+    }));
+    let search = nodes
+        .iter()
+        .find(|node| {
+            node.role() == Some(gpui_kit::Role::TextInput) && node.label() == Some("搜索分类")
+        })
+        .expect("official category search field")
+        .bounds();
+    let option = nodes
+        .iter()
+        .find(|node| node.label() == Some(second_name.as_str()))
+        .expect("actual category menu item");
+    assert!(option.visible());
+    let option = option.bounds();
+    let viewport = surface.update(|window, _| window.viewport_size());
+    assert!(option.top() >= search.bottom() && option.bottom() <= viewport.height);
+    surface.simulate_click(option.center(), Modifiers::default());
+    surface.run_until_parked();
+    surface.refresh().expect("selected category draft");
+    view.read_with(&surface, |view, _| {
+        assert_eq!(view.selected_category, Some(1));
+        assert_eq!(view.directory.entity_id(), original_input);
+        assert!(!view.saving);
+    });
+    assert!(!directory.join("config.json").exists());
     let _ = std::fs::remove_dir_all(directory);
 }
 
@@ -2872,6 +2970,13 @@ fn followup_probe_spinner_runs_only_for_motion_allowed_probe_and_keeps_compact_f
         });
         surface.refresh().expect("production probe guidance");
         surface.run_until_parked();
+        // Check continuous motion after the official InputGroup state transition settles.
+        let transition_duration = surface.read(|cx| {
+            gpui_kit::component::Theme::global(cx)
+                .motion_tokens()
+                .duration_fast
+        });
+        surface.executor().advance_clock(transition_duration);
         surface.update(|window, cx| {
             window.blur(cx);
             window.simulate_next_frame(cx);
@@ -2881,17 +2986,23 @@ fn followup_probe_spinner_runs_only_for_motion_allowed_probe_and_keeps_compact_f
         let root = surface
             .debug_bounds("download-new-root")
             .expect("compact root");
-        let guidance = surface
-            .debug_bounds("download-new-probe-guidance")
-            .expect("guidance");
+        let guidance = surface.debug_bounds("download-new-probe-guidance");
+        assert_eq!(
+            guidance.is_some(),
+            probing || handoff_pending,
+            "only busy state retains guidance"
+        );
         let footer = surface
             .debug_bounds("download-new-footer")
             .expect("fixed footer");
         let cancel = surface
             .debug_bounds("download-new-cancel-action")
             .expect("cancel");
-        assert_eq!(root.size.height, px(176.0));
-        assert!(guidance.bottom() <= footer.top() && cancel.bottom() <= footer.bottom());
+        assert_eq!(root.size.height, px(136.0));
+        if let Some(guidance) = guidance {
+            assert!(guidance.bottom() <= footer.top());
+        }
+        assert!(cancel.bottom() <= footer.bottom());
         let frames = surface.update(|window, cx| window.simulate_next_frame(cx));
         assert_eq!(
             frames > 0,
@@ -2899,6 +3010,7 @@ fn followup_probe_spinner_runs_only_for_motion_allowed_probe_and_keeps_compact_f
             "only current pending Spinner requests frames: probing={probing},handoff={handoff_pending},motion={motion}"
         );
         if animate {
+            let guidance = guidance.expect("busy guidance");
             let spinner = surface
                 .debug_bounds("download-new-probe-spinner")
                 .expect("real XSmall Spinner slot");
@@ -2920,7 +3032,7 @@ fn followup_probe_spinner_runs_only_for_motion_allowed_probe_and_keeps_compact_f
             .expect("error root")
             .size
             .height,
-        px(176.0)
+        px(136.0)
     );
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -3404,6 +3516,7 @@ fn accessible_name_new_download_probe_and_refresh_are_actual_buttons(cx: &mut Te
         });
         view.probe = Some(DownloadProbe {
             resolution: None,
+            server_observation: None,
             final_url: "https://synthetic.invalid/file.bin".into(),
             file_name: Some("file.bin".into()),
             total_bytes: Some(8),
@@ -4046,6 +4159,7 @@ fn audit08_new_download_directory_label_keeps_picker_object(cx: &mut TestAppCont
     view.update_in(&mut surface, |view, _, cx| {
         view.probe = Some(DownloadProbe {
             resolution: None,
+            server_observation: None,
             final_url: "https://synthetic.invalid/no-request".into(),
             file_name: Some("合成文件.bin".into()),
             total_bytes: Some(8),
@@ -4093,7 +4207,7 @@ fn audit08_browser_export_pointer_once_and_picker_cancel_keep_data(cx: &mut Test
                 matches!(
                     command.message,
                     nxtools_protocol::Message::PlatformCommand(
-                        PlatformCommand::ExportBrowserExtension(_)
+                        PlatformCommand::PickBrowserExtensionExportPath(_)
                     )
                 )
             })
@@ -4105,7 +4219,7 @@ fn audit08_browser_export_pointer_once_and_picker_cancel_keep_data(cx: &mut Test
         );
         let command = &commands[0];
         assert!(
-            matches!(&command.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExportBrowserExtension(export)) if export.format == format && export.destination.is_empty())
+            matches!(&command.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::PickBrowserExtensionExportPath(picker)) if picker.format == format && picker.source_process_id == std::process::id())
         );
         application.update(&mut surface, |app, cx| {
             app.handle_platform_notification(
@@ -4129,3 +4243,6 @@ fn audit08_browser_export_pointer_once_and_picker_cancel_keep_data(cx: &mut Test
     surface.update(|window, _| window.remove_window());
     std::fs::remove_dir_all(directory).expect("owned export fixture");
 }
+
+#[path = "new_download_intake_tests.rs"]
+mod intake_tests;

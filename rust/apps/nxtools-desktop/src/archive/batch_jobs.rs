@@ -18,7 +18,7 @@ fn retry_shape(record: &JobRecord) -> bool {
                 .is_none_or(|e| e.selection.is_none() && e.reclamation.is_none())
     })
 }
-fn retry_facts(record: &JobRecord) -> bool {
+pub(super) fn retry_facts(record: &JobRecord) -> bool {
     retry_shape(record)
         && record.retry_baseline.is_some()
         && !record.retry_pending
@@ -28,6 +28,7 @@ fn retry_facts(record: &JobRecord) -> bool {
                 ArchiveJobOutcome::Failed | ArchiveJobOutcome::Rejected
             ) && r.cleanup_complete
                 && r.files_committed == 0
+                && r.files_skipped == 0
                 && r.output_published == Some(false)
                 && r.result_location.is_none()
                 && matches!(
@@ -40,6 +41,15 @@ fn retry_facts(record: &JobRecord) -> bool {
                             j.state.as_str(),
                             "Preparing" | "Verified" | "FailedBeforeCommit"
                         )
+                })
+                && r.journal_summary.as_ref().is_none_or(|summary| {
+                    summary.outcomes.iter().all(|outcome| {
+                        outcome.published == Some(false)
+                            && matches!(
+                                outcome.state.as_str(),
+                                "Preparing" | "Verified" | "FailedBeforeCommit"
+                            )
+                    })
                 })
                 && matches!(
                     r.code.as_deref(),
@@ -55,6 +65,29 @@ fn retry_facts(record: &JobRecord) -> bool {
         })
 }
 impl ArchiveApplication {
+    pub(in crate::archive) fn batch_password_eligible(&self, id: Uuid) -> bool {
+        self.jobs.records.get(&id).is_some_and(|record| {
+            record.command.generation == 1
+                && record.terminal.is_none()
+                && record.worker_state != Some(ArchiveJobState::Cancelling)
+                && !record
+                    .controls
+                    .iter()
+                    .any(|c| c.action == ArchiveJobAction::Cancel)
+                && record
+                    .batch
+                    .and_then(|id| self.jobs.batches.get(&id))
+                    .is_some_and(|batch| !batch.password_retired)
+                && record.command.request.as_ref().is_some_and(|request| {
+                    request.paths.len() == 1
+                        && matches!(request.kind, ArchiveJobKind::Test | ArchiveJobKind::Extract)
+                        && request
+                            .extract
+                            .as_ref()
+                            .is_none_or(|e| e.reclamation.is_none())
+                })
+        })
+    }
     pub(in crate::archive) fn bind_batch(
         &mut self,
         members: Vec<Uuid>,
@@ -66,6 +99,7 @@ impl ArchiveApplication {
         for member in &members {
             if let Some(record) = self.jobs.records.get_mut(member) {
                 record.batch = Some(id);
+                record.command.batch_id = Some(id);
             }
         }
         self.jobs.batches.insert(
@@ -77,6 +111,8 @@ impl ArchiveApplication {
                 pending_forms: Vec::new(),
                 terminal_logged: false,
                 cancelled_unstarted: 0,
+                selected: members.first().copied(),
+                password_retired: false,
             },
         );
         self.jobs.batch_order.push_back(id);
@@ -109,7 +145,7 @@ impl ArchiveApplication {
                     MemberState::Paused
                 } else if !self.jobs.queue.is_running(*id) {
                     MemberState::Queued
-                } else if !record.ever_started {
+                } else if record.worker_state.is_none() {
                     MemberState::Admitting
                 } else {
                     MemberState::Running
@@ -119,7 +155,7 @@ impl ArchiveApplication {
                     .request
                     .as_ref()
                     .and_then(|r| r.paths.first())
-                    .map_or_else(|| "归档任务".into(), |p| p.clone());
+                    .map_or_else(|| "压缩包任务".into(), |p| p.clone());
                 let detail = terminal.map_or_else(
                     || record.state.clone(),
                     |result| {
@@ -142,6 +178,8 @@ impl ArchiveApplication {
                 );
                 Some(BatchMember {
                     id: *id,
+                    attempt: record.active_operation,
+                    generation: record.command.generation,
                     label,
                     state,
                     never_started: !record.ever_started,
@@ -226,9 +264,11 @@ impl ArchiveApplication {
             }
         }
         for id in gone {
+            self.retire_batch_password(id);
             if let Some(batch) = self.jobs.batches.remove(&id) {
                 for member in batch.members {
                     if let Some(record) = self.jobs.records.get_mut(&member) {
+                        record.command.batch_id = None;
                         record.batch = None;
                     }
                 }
@@ -272,6 +312,8 @@ impl ArchiveApplication {
                 pending_forms: forms.clone(),
                 cancelled_unstarted: 0,
                 terminal_logged: false,
+                selected: None,
+                password_retired: false,
             },
         );
         self.jobs.batch_order.push_back(batch);
@@ -292,10 +334,14 @@ impl ArchiveApplication {
         if let Some(record) = self.jobs.batches.get_mut(&batch) {
             record.pending_forms.retain(|id| *id != form);
             record.members.extend_from_slice(members);
+            if record.selected.is_none() {
+                record.selected = members.first().copied();
+            }
         }
         for id in members {
             if let Some(record) = self.jobs.records.get_mut(id) {
                 record.batch = Some(batch);
+                record.command.batch_id = Some(batch);
             }
         }
         if let Some(id) = members.first() {
@@ -308,6 +354,8 @@ impl ArchiveApplication {
         {
             record.pending_forms.retain(|id| *id != form);
             record.cancelled_unstarted += 1;
+            self.retire_batch_password(batch);
+            self.finish_batch_if_terminal(batch);
         }
     }
     pub(in crate::archive) fn refresh_all_batch_views(&self, cx: &mut Context<Self>) {
@@ -345,9 +393,9 @@ impl ArchiveApplication {
         }
         if !retry
             && self.jobs.records.get(&id).is_none_or(|r| {
-                r.batch.is_none()
-                    || r.retry_baseline.is_some()
+                r.retry_baseline.is_some()
                     || r.terminal.is_some()
+                    || r.connection != self.platform.connection_generation()
                     || r.active_operation != r.command.operation_id
                     || self.jobs.attempts.get(&r.active_operation) != Some(&id)
             })
@@ -394,7 +442,7 @@ impl ArchiveApplication {
                 .retry_pending = true;
         }
         self.start_job_observation(command, Some((id, attempt, retry)), None, cx);
-        self.refresh_batch_views(id, cx);
+        self.refresh_job(id, cx);
     }
     pub(in crate::archive) fn start_job_observation(
         &mut self,
@@ -516,7 +564,7 @@ impl ArchiveApplication {
             if record.terminal.is_none() && record.retry_baseline.is_none() {
                 record.retry_baseline = observed.ok();
             }
-            self.refresh_batch_views(job, cx);
+            self.refresh_job(job, cx);
             return true;
         }
         record.retry_pending = false;
@@ -563,6 +611,7 @@ impl ArchiveApplication {
         record.progress = None;
         record.prompt = None;
         record.paused = false;
+        record.worker_state = None;
         record.controls.clear();
         record.control_status = None;
         record.connection = None;
@@ -573,8 +622,11 @@ impl ArchiveApplication {
             batch.terminal_logged = false;
         }
         tracing::info!(event="archive.batch.retry_accepted",job_id=%job,attempt=%record.active_operation,generation=record.command.generation,batch_id=?record.batch,"explicit retry revalidated and reentered original queue");
-        self.refresh_job(job, cx);
+        if let Some(batch) = record.batch {
+            self.retire_batch_password(batch);
+        }
         self.pump_jobs(cx);
+        self.refresh_job(job, cx);
         true
     }
 }
@@ -588,23 +640,71 @@ impl ArchiveApplication {
             return;
         };
         tracing::info!(event="archive.batch.member_finished",batch_id=%snapshot.id,job_id=%id,attempt=%record.active_operation,generation=record.command.generation,elapsed_ms=record.terminal.as_ref().map_or(0,|t|t.elapsed_ms),native_error_code=?record.terminal.as_ref().and_then(|t|t.native_error_code),"archive batch logical member terminal observed");
-        let all_terminal = snapshot.pending_forms == 0
-            && snapshot.members.iter().all(|m| {
-                matches!(
-                    m.state,
-                    MemberState::Succeeded
-                        | MemberState::Warnings
-                        | MemberState::Failed
-                        | MemberState::Cancelled
-                )
-            });
-        if all_terminal
-            && let Some(batch) = self.jobs.batches.get_mut(&snapshot.id)
-            && !batch.terminal_logged
+        self.finish_batch_if_terminal(snapshot.id);
+    }
+    fn finish_batch_if_terminal(&mut self, id: Uuid) {
+        let Some(batch) = self.jobs.batches.get(&id) else {
+            return;
+        };
+        if batch.terminal_logged
+            || !batch.pending_forms.is_empty()
+            || !batch.members.iter().all(|id| {
+                self.jobs
+                    .records
+                    .get(id)
+                    .is_some_and(|r| r.terminal.is_some())
+            })
         {
-            batch.terminal_logged = true;
+            return;
+        }
+        if let Some(member) = batch.members.first().copied() {
+            let Some(snapshot) = self.batch_snapshot_for(member) else {
+                return;
+            };
+            self.jobs
+                .batches
+                .get_mut(&id)
+                .expect("current batch")
+                .terminal_logged = true;
+            self.retire_batch_password(id);
             let count = |state| snapshot.members.iter().filter(|m| m.state == state).count();
             tracing::info!(event="archive.batch.finished",batch_id=%snapshot.id,jobs=snapshot.members.len(),succeeded=count(MemberState::Succeeded),warnings=count(MemberState::Warnings),failed=count(MemberState::Failed),cancelled=count(MemberState::Cancelled)+snapshot.cancelled_unstarted,not_started=snapshot.not_admitted+snapshot.cancelled_unstarted+snapshot.members.iter().filter(|m|m.never_started).count(),cleanup_unknown=snapshot.members.iter().filter(|m|m.cleanup_unknown).count(),"archive batch terminal counts, not aggregate success");
+        } else {
+            let batch = self.jobs.batches.get_mut(&id).expect("current batch");
+            batch.terminal_logged = true;
+            let cancelled = batch.cancelled_unstarted;
+            self.retire_batch_password(id);
+            tracing::info!(event="archive.batch.finished",batch_id=%id,jobs=0,succeeded=0,warnings=0,failed=0,cancelled,not_started=cancelled,cleanup_unknown=0,"archive batch terminal counts, not aggregate success");
+        }
+    }
+    fn retire_batch_password(&mut self, batch: Uuid) {
+        let Some(record) = self.jobs.batches.get_mut(&batch) else {
+            return;
+        };
+        if record.password_retired {
+            return;
+        }
+        record.password_retired = true;
+        let command = ArchiveJobCommand {
+            version: 1,
+            operation_id: batch,
+            session_id: batch,
+            generation: 1,
+            action: ArchiveJobAction::RetireBatch,
+            request: None,
+            reply: None,
+            batch_id: Some(batch),
+        };
+        if self
+            .platform
+            .send_command_with_id_correlated(
+                PlatformCommand::ArchiveJob(Box::new(command)),
+                Uuid::new_v4(),
+                batch,
+            )
+            .is_err()
+        {
+            tracing::warn!(event="archive.batch.password_retirement_not_submitted",batch_id=%batch,"batch secret retirement could not be submitted");
         }
     }
 }

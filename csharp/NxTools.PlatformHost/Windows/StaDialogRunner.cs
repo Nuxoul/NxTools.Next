@@ -16,13 +16,33 @@ internal static class StaDialogRunner
         bool Cancelled);
 
     // The caller already owns a bounded STA slot; keep it until the real modal call exits.
-    internal static WindowsCommandResult RunInline(Func<WindowsCommandResult> showDialog, CancellationToken cancellationToken)
+    internal static WindowsCommandResult RunInline(Func<WindowsCommandResult> showDialog, CancellationToken cancellationToken,
+        long ownerWindowHandle = 0, uint ownerProcessId = 0)
     {
         if (cancellationToken.IsCancellationRequested) return CancelledResult();
         var threadId = GetCurrentThreadId();
         using var registration = cancellationToken.Register(() => RequestDialogClose(threadId));
-        try { var result = showDialog(); return cancellationToken.IsCancellationRequested ? CancelledResult() : result; }
+        using var ownerTimer = ownerWindowHandle > 0 && ownerProcessId > 0
+            ? new System.Windows.Forms.Timer { Interval = 250 } : null;
+        if (ownerTimer is not null)
+        {
+            ownerTimer.Tick += (_, _) =>
+            {
+                if (PickerOwner.IsLive(ownerWindowHandle, ownerProcessId)) return;
+                ownerTimer.Stop();
+                RequestDialogClose(threadId);
+            };
+            ownerTimer.Start();
+        }
+        try
+        {
+            var result = showDialog();
+            if (ownerTimer is not null && !PickerOwner.IsLive(ownerWindowHandle, ownerProcessId))
+                return new(false, "picker_invalid_owner", NativeErrorCode: 1400);
+            return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
+        }
         catch (Exception failure) { return FailureResult(failure); }
+        finally { ownerTimer?.Stop(); }
     }
 
     public static WindowsCommandResult Run(

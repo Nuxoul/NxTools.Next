@@ -42,6 +42,14 @@ pub(crate) enum SortKey {
     Attributes,
     Path,
 }
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct ProjectionWork {
+    pub catalog_visits: u64,
+    pub path_normalizations: u64,
+    pub folder_builds: u64,
+    pub projections: u64,
+}
 pub(crate) struct BrowserModel {
     pub snapshot: Uuid,
     pub entries: Vec<ArchiveReadEntry>,
@@ -54,6 +62,9 @@ pub(crate) struct BrowserModel {
     pub anchor: Option<RowId>,
     pub show_parent_row: bool,
     rows: Vec<Row>,
+    folder_paths: std::cell::OnceCell<Vec<String>>,
+    #[cfg(test)]
+    pub work: std::cell::Cell<ProjectionWork>,
 }
 pub(super) fn member_path(name: &str) -> std::borrow::Cow<'_, str> {
     if name.contains('\\') {
@@ -61,6 +72,15 @@ pub(super) fn member_path(name: &str) -> std::borrow::Cow<'_, str> {
     } else {
         std::borrow::Cow::Borrowed(name)
     }
+}
+
+pub(super) fn entry_warning(entry: &ArchiveReadEntry) -> bool {
+    entry.warning_codes.iter().any(|code| {
+        matches!(
+            code.as_str(),
+            "UnsafePath" | "OutputCollision" | "LinkNotExtracted"
+        )
+    })
 }
 
 impl BrowserModel {
@@ -77,36 +97,62 @@ impl BrowserModel {
             anchor: None,
             show_parent_row: true,
             rows: vec![],
+            folder_paths: std::cell::OnceCell::new(),
+            #[cfg(test)]
+            work: std::cell::Cell::default(),
         };
         m.reproject();
         m
     }
+    #[cfg(test)]
+    fn note_catalog_visit(&self) {
+        let work = self.work.get();
+        self.work.set(ProjectionWork {
+            catalog_visits: work.catalog_visits + 1,
+            path_normalizations: work.path_normalizations + 1,
+            ..work
+        });
+    }
     pub fn visible(&self) -> &[Row] {
         &self.rows
     }
-    pub fn folders(&self) -> Vec<String> {
-        let mut dirs = BTreeSet::new();
-        for entry in &self.entries {
-            let normalized = member_path(&entry.name);
-            let parts = normalized
-                .trim_end_matches('/')
-                .split('/')
-                .collect::<Vec<_>>();
-            let count = parts
-                .len()
-                .saturating_sub(usize::from(entry.kind != "Directory"));
-            for end in 1..=count {
-                let path = parts[..end].join("/");
-                if !path.starts_with('/')
-                    && !parts[..end].iter().any(|p| matches!(*p, "" | "." | ".."))
-                {
-                    dirs.insert(path);
+    pub fn folders(&self) -> &[String] {
+        self.folder_paths.get_or_init(|| {
+            #[cfg(test)]
+            self.work.set(ProjectionWork {
+                folder_builds: self.work.get().folder_builds + 1,
+                ..self.work.get()
+            });
+            let mut dirs = BTreeSet::new();
+            for entry in &self.entries {
+                #[cfg(test)]
+                self.note_catalog_visit();
+                let normalized = member_path(&entry.name);
+                let parts = normalized
+                    .trim_end_matches('/')
+                    .split('/')
+                    .collect::<Vec<_>>();
+                let count = parts
+                    .len()
+                    .saturating_sub(usize::from(entry.kind != "Directory"));
+                for end in 1..=count {
+                    let path = parts[..end].join("/");
+                    if !path.starts_with('/')
+                        && !parts[..end].iter().any(|p| matches!(*p, "" | "." | ".."))
+                    {
+                        dirs.insert(path);
+                    }
                 }
             }
-        }
-        dirs.into_iter().collect()
+            dirs.into_iter().collect()
+        })
     }
     pub fn reproject(&mut self) {
+        #[cfg(test)]
+        self.work.set(ProjectionWork {
+            projections: self.work.get().projections + 1,
+            ..self.work.get()
+        });
         let prefix = if self.folder.is_empty() {
             String::new()
         } else {
@@ -115,6 +161,8 @@ impl BrowserModel {
         let mut dirs = BTreeMap::new();
         let mut rows = vec![];
         for e in &self.entries {
+            #[cfg(test)]
+            self.note_catalog_visit();
             let normalized = member_path(&e.name);
             let path = normalized.trim_end_matches('/');
             let Some(rest) = path.strip_prefix(&prefix) else {
@@ -161,13 +209,7 @@ impl BrowserModel {
                 packed_size: e.packed_size,
                 ordinal: Some(e.ordinal),
                 encrypted: e.encrypted,
-                warning: unsafe_name
-                    || e.warning_codes.iter().any(|code| {
-                        matches!(
-                            code.as_str(),
-                            "UnsafePath" | "OutputCollision" | "LinkNotExtracted"
-                        )
-                    }),
+                warning: unsafe_name || entry_warning(e),
                 kind: e.kind.clone(),
                 modified: e.modified.clone(),
                 method: e.method,
@@ -260,9 +302,14 @@ impl BrowserModel {
         self.anchor = None;
         self.reproject()
     }
-    pub fn up(&mut self) {
-        let path = parent(&self.folder);
-        self.enter(&path)
+    pub fn up(&mut self) -> bool {
+        if self.folder.is_empty() {
+            return false;
+        }
+        let departed = self.folder.clone();
+        self.enter(&parent(&departed));
+        self.select(RowId::Folder(self.snapshot, departed), false, false);
+        true
     }
     pub fn select(&mut self, id: RowId, control: bool, shift: bool) {
         let Some(index) = self.rows.iter().position(|r| r.id == id) else {

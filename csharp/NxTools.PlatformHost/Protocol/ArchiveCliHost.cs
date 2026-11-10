@@ -190,18 +190,20 @@ internal static class ArchiveCliHost
             {
                 ClientName = "platform_host",
                 ClientVersion = typeof(ArchiveCliHost).Assembly.GetName().Version?.ToString() ?? "0.1.0",
-                Capabilities = new[] { "archive_read_v1", "archive_job_v1", "archive_cli_v1" }
+                Capabilities = new[] { "archive_read_v1", "archive_job_v1", "archive_cli_v1", PlatformCapabilities.ArchiveJobLargeCount }
             }, options.SessionId);
             if (!Publish(hello)) return 1;
+            var largeCount = false;
             using (var handshake = CancellationTokenSource.CreateLinkedTokenSource(stop.Token))
             {
                 handshake.CancelAfter(TimeSpan.FromSeconds(3));
                 var acknowledgement = await ReadAsync(reader, handshake.Token);
                 if (acknowledgement is null || acknowledgement.Type != "hello_ack" || acknowledgement.CorrelationId != hello.Id)
                     throw new InvalidDataException();
+                largeCount = PlatformPipeClient.AcceptsArchiveJobLargeCount(acknowledgement);
             }
             reads = new ArchiveReadSession(log);
-            jobs = new ArchiveJobSession(log);
+            jobs = new ArchiveJobSession(log, largeCount:largeCount);
             tasks[2] = PumpAsync(reads.Events, "read_events");
             tasks[3] = PumpAsync(jobs.Events, "job_events");
             tasks[4] = PumpAsync(jobs.Progress, "job_progress");

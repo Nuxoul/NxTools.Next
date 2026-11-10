@@ -1,0 +1,422 @@
+{
+  "metric": "CDP Performance.TaskDuration (threadTicks), renderer including fixture/background iframe and identical staged instrumentation; not OS installed-extension CPU",
+  "popupChecks": 22,
+  "popupFailures": [],
+  "checks": [
+    {
+      "pass": true,
+      "label": "production-popup-dom"
+    },
+    {
+      "pass": true,
+      "label": "six-serial-interleaved-trials"
+    },
+    {
+      "pass": true,
+      "label": "AB-BA-AB-order"
+    },
+    {
+      "pass": true,
+      "label": "0-completeAndManifest"
+    },
+    {
+      "pass": true,
+      "label": "0-blob"
+    },
+    {
+      "pass": true,
+      "label": "0-deepCss"
+    },
+    {
+      "pass": true,
+      "label": "0-hook"
+    },
+    {
+      "pass": true,
+      "label": "0-boundedObservations"
+    },
+    {
+      "pass": true,
+      "label": "0-no-script-errors"
+    },
+    {
+      "pass": true,
+      "label": "0-actual-active-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "0-actual-idle-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "0-equivalent-response-events"
+    },
+    {
+      "pass": true,
+      "label": "0-complete-latency-observations"
+    },
+    {
+      "pass": true,
+      "label": "0-stable-visibility"
+    },
+    {
+      "pass": true,
+      "label": "1-completeAndManifest"
+    },
+    {
+      "pass": true,
+      "label": "1-blob"
+    },
+    {
+      "pass": true,
+      "label": "1-deepCss"
+    },
+    {
+      "pass": true,
+      "label": "1-hook"
+    },
+    {
+      "pass": true,
+      "label": "1-boundedObservations"
+    },
+    {
+      "pass": true,
+      "label": "1-no-script-errors"
+    },
+    {
+      "pass": true,
+      "label": "1-actual-active-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "1-actual-idle-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "1-equivalent-response-events"
+    },
+    {
+      "pass": true,
+      "label": "1-complete-latency-observations"
+    },
+    {
+      "pass": true,
+      "label": "1-stable-visibility"
+    },
+    {
+      "pass": true,
+      "label": "1-fragments-excluded"
+    },
+    {
+      "pass": true,
+      "label": "1-decorative-audio-excluded"
+    },
+    {
+      "pass": true,
+      "label": "2-completeAndManifest"
+    },
+    {
+      "pass": true,
+      "label": "2-blob"
+    },
+    {
+      "pass": true,
+      "label": "2-deepCss"
+    },
+    {
+      "pass": true,
+      "label": "2-hook"
+    },
+    {
+      "pass": true,
+      "label": "2-boundedObservations"
+    },
+    {
+      "pass": true,
+      "label": "2-no-script-errors"
+    },
+    {
+      "pass": true,
+      "label": "2-actual-active-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "2-actual-idle-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "2-equivalent-response-events"
+    },
+    {
+      "pass": true,
+      "label": "2-complete-latency-observations"
+    },
+    {
+      "pass": true,
+      "label": "2-stable-visibility"
+    },
+    {
+      "pass": true,
+      "label": "2-fragments-excluded"
+    },
+    {
+      "pass": true,
+      "label": "2-decorative-audio-excluded"
+    },
+    {
+      "pass": true,
+      "label": "3-completeAndManifest"
+    },
+    {
+      "pass": true,
+      "label": "3-blob"
+    },
+    {
+      "pass": true,
+      "label": "3-deepCss"
+    },
+    {
+      "pass": true,
+      "label": "3-hook"
+    },
+    {
+      "pass": true,
+      "label": "3-boundedObservations"
+    },
+    {
+      "pass": true,
+      "label": "3-no-script-errors"
+    },
+    {
+      "pass": true,
+      "label": "3-actual-active-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "3-actual-idle-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "3-equivalent-response-events"
+    },
+    {
+      "pass": true,
+      "label": "3-complete-latency-observations"
+    },
+    {
+      "pass": true,
+      "label": "3-stable-visibility"
+    },
+    {
+      "pass": true,
+      "label": "4-completeAndManifest"
+    },
+    {
+      "pass": true,
+      "label": "4-blob"
+    },
+    {
+      "pass": true,
+      "label": "4-deepCss"
+    },
+    {
+      "pass": true,
+      "label": "4-hook"
+    },
+    {
+      "pass": true,
+      "label": "4-boundedObservations"
+    },
+    {
+      "pass": true,
+      "label": "4-no-script-errors"
+    },
+    {
+      "pass": true,
+      "label": "4-actual-active-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "4-actual-idle-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "4-equivalent-response-events"
+    },
+    {
+      "pass": true,
+      "label": "4-complete-latency-observations"
+    },
+    {
+      "pass": true,
+      "label": "4-stable-visibility"
+    },
+    {
+      "pass": true,
+      "label": "5-completeAndManifest"
+    },
+    {
+      "pass": true,
+      "label": "5-blob"
+    },
+    {
+      "pass": true,
+      "label": "5-deepCss"
+    },
+    {
+      "pass": true,
+      "label": "5-hook"
+    },
+    {
+      "pass": true,
+      "label": "5-boundedObservations"
+    },
+    {
+      "pass": true,
+      "label": "5-no-script-errors"
+    },
+    {
+      "pass": true,
+      "label": "5-actual-active-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "5-actual-idle-thread-time"
+    },
+    {
+      "pass": true,
+      "label": "5-equivalent-response-events"
+    },
+    {
+      "pass": true,
+      "label": "5-complete-latency-observations"
+    },
+    {
+      "pass": true,
+      "label": "5-stable-visibility"
+    },
+    {
+      "pass": true,
+      "label": "5-fragments-excluded"
+    },
+    {
+      "pass": true,
+      "label": "5-decorative-audio-excluded"
+    },
+    {
+      "pass": true,
+      "label": "0-paired-visibility"
+    },
+    {
+      "pass": true,
+      "label": "2-paired-visibility"
+    },
+    {
+      "pass": true,
+      "label": "4-paired-visibility"
+    }
+  ],
+  "failures": [],
+  "summary": {
+    "baseline": {
+      "activeTaskMs": {
+        "raw": [
+          1957.72,
+          2005.576,
+          1995.3419999999999
+        ],
+        "median": 1995.3419999999999,
+        "slowest": 2005.576
+      },
+      "idleTaskMs": {
+        "raw": [
+          265.007,
+          239.16199999999986,
+          262.0740000000001
+        ],
+        "median": 262.0740000000001,
+        "slowest": 265.007
+      },
+      "discoveryLatencyMs": {
+        "raw": [
+          1813.7999999821186,
+          1813.1000000089407,
+          1812.9000000059605
+        ],
+        "median": 1813.1000000089407,
+        "slowest": 1813.7999999821186
+      },
+      "slowestDiscoveryLatencyMs": {
+        "raw": [
+          1823.0999999940395,
+          1830.3999999761581,
+          1826.0999999940395
+        ],
+        "median": 1826.0999999940395,
+        "slowest": 1830.3999999761581
+      },
+      "retainedCandidates": [
+        91,
+        91,
+        91
+      ],
+      "observations": [
+        91,
+        91,
+        91
+      ]
+    },
+    "candidate": {
+      "activeTaskMs": {
+        "raw": [
+          1963.812,
+          1959.447,
+          1705.635
+        ],
+        "median": 1959.447,
+        "slowest": 1963.812
+      },
+      "idleTaskMs": {
+        "raw": [
+          265.29900000000015,
+          258.9089999999998,
+          45.02000000000006
+        ],
+        "median": 258.9089999999998,
+        "slowest": 265.29900000000015
+      },
+      "discoveryLatencyMs": {
+        "raw": [
+          1817.9500000029802,
+          1817.3500000089407,
+          1824.1500000059605
+        ],
+        "median": 1817.9500000029802,
+        "slowest": 1824.1500000059605
+      },
+      "slowestDiscoveryLatencyMs": {
+        "raw": [
+          1839.2999999821186,
+          1835.2999999821186,
+          1832.9000000059605
+        ],
+        "median": 1835.2999999821186,
+        "slowest": 1839.2999999821186
+      },
+      "retainedCandidates": [
+        10,
+        10,
+        10
+      ],
+      "observations": [
+        91,
+        91,
+        91
+      ]
+    }
+  },
+  "limitations": [
+    "No installed-extension isolated worlds, actual media decoding/provider authentication, native Host or human visual acceptance.",
+    "API/DOM instrumentation and per-round checkpoints are identical in both variants; no adoption decision is made by this helper."
+  ]
+}

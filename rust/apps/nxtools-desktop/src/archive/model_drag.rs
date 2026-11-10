@@ -1,5 +1,8 @@
 //! Bounded metadata-only expansion on the ORIGINAL immutable browser snapshot.
 use super::*;
+use nxtools_archive::planning::{
+    CatalogSelection, SelectionEntry, SelectionWork, bind_ordinals, expand_selection,
+};
 use nxtools_protocol::archive_virtual_drag::valid_drag_name_component;
 
 pub(crate) struct FrozenDragItem {
@@ -11,6 +14,14 @@ pub(crate) struct FrozenDragItem {
 
 fn rejected(name: &str, reason: &str) -> String {
     format!("无法拖出“{name}”：{reason}；未拖出任何项目。")
+}
+fn selection_failure(error: nxtools_archive::ArchiveError) -> String {
+    match error {
+        nxtools_archive::ArchiveError::SourceChanged => {
+            "所选条目、目录或其成员已不在当前快照中，请刷新后重试；未拖出任何项目。".into()
+        }
+        _ => "选择超过当前元数据预算；未拖出任何项目。".into(),
+    }
 }
 fn archive_drag_stem(display_name: &str) -> Result<&str, String> {
     if !valid_drag_name_component(display_name) {
@@ -93,6 +104,51 @@ fn descriptor_name(
     unreachable!("more candidates than occupied descriptor names")
 }
 impl BrowserModel {
+    /// The original model, visible projection and selection coexist with operation-local scratch.
+    pub fn selection_metadata_credit(
+        &self,
+        work: &mut SelectionWork,
+    ) -> nxtools_archive::Result<u64> {
+        let mut bytes = 0u64;
+        for entry in &self.entries {
+            work.metadata_visits += 1;
+            let strings = entry.name.len()
+                + entry.kind.len()
+                + entry.provenance.len()
+                + entry
+                    .warning_codes
+                    .iter()
+                    .map(|code| std::mem::size_of::<String>() + code.len())
+                    .sum::<usize>();
+            bytes = bytes
+                .checked_add(2 * std::mem::size_of::<ArchiveReadEntry>() as u64)
+                .and_then(|bytes| bytes.checked_add(strings as u64))
+                .ok_or(nxtools_archive::ArchiveError::ResourceLimit)?;
+        }
+        for row in self.visible() {
+            work.metadata_visits += 1;
+            bytes = bytes
+                .checked_add(2 * std::mem::size_of::<Row>() as u64)
+                .and_then(|bytes| {
+                    bytes.checked_add((row.name.len() + row.path.len() + row.kind.len()) as u64)
+                })
+                .ok_or(nxtools_archive::ArchiveError::ResourceLimit)?;
+        }
+        for id in &self.selected {
+            work.metadata_visits += 1;
+            let path = match id {
+                RowId::Folder(_, path) | RowId::Parent(_, path) => path.len(),
+                _ => 0,
+            };
+            bytes = bytes
+                .checked_add(96 + path as u64)
+                .ok_or(nxtools_archive::ArchiveError::ResourceLimit)?;
+        }
+        nxtools_archive::ResourceLimits::default()
+            .max_metadata_bytes
+            .checked_sub(bytes)
+            .ok_or(nxtools_archive::ArchiveError::ResourceLimit)
+    }
     pub fn freeze_drag_selection(&self) -> Result<Vec<FrozenDragItem>, String> {
         self.freeze_drag_selection_authorized(false)
     }
@@ -100,39 +156,70 @@ impl BrowserModel {
         &self,
         authorized: bool,
     ) -> Result<Vec<FrozenDragItem>, String> {
+        self.freeze_drag_selection_observed(authorized, &mut SelectionWork::default())
+    }
+    pub fn freeze_drag_selection_observed(
+        &self,
+        authorized: bool,
+        work: &mut SelectionWork,
+    ) -> Result<Vec<FrozenDragItem>, String> {
         if self.selected.is_empty() {
             return Err("请选择要拖出的项目；未拖出任何项目。".into());
         }
+        let mut ordinals = Vec::new();
         let mut roots = Vec::new();
         for id in &self.selected {
-            let root = match id {
+            match id {
                 RowId::Entry(snapshot, ordinal) if *snapshot == self.snapshot => {
-                    let entry = self
-                        .entries
-                        .iter()
-                        .find(|entry| entry.ordinal == *ordinal)
-                        .ok_or_else(|| {
-                            format!("所选条目序号{ordinal}已不在当前快照中，请刷新后重试。")
-                        })?;
-                    (
-                        member_path(&entry.name).trim_end_matches('/').to_owned(),
-                        entry.kind == "Directory",
-                        Some(*ordinal),
-                    )
+                    ordinals.push(*ordinal)
                 }
                 RowId::Folder(snapshot, path) if *snapshot == self.snapshot => {
-                    (path.clone(), true, None)
+                    roots.push(path.as_str())
                 }
                 _ => return Err("所选条目来自已失效的快照，请刷新后重试。".into()),
-            };
-            roots.push(root);
+            }
         }
+        let credit = self
+            .selection_metadata_credit(work)
+            .map_err(selection_failure)?;
+        let positions = bind_ordinals(
+            &self.entries,
+            &ordinals,
+            credit,
+            |entry| entry.ordinal,
+            || Ok(()),
+            work,
+        )
+        .map_err(selection_failure)?;
         let prefix = if self.folder.is_empty() {
             String::new()
         } else {
             format!("{}/", self.folder)
         };
-        self.freeze_drag_roots(roots, &prefix, None, authorized)
+        self.freeze_drag_roots(
+            CatalogSelection::Entries {
+                positions: &positions,
+                directories: &roots,
+            },
+            &prefix,
+            None,
+            authorized,
+            credit,
+            work,
+        )
+    }
+    /// Root drag destination wrapper: one descriptor-only folder named like the archive. The
+    /// receiver creates it and the ordinary extraction job fills it, so no member is frozen here.
+    pub fn freeze_drag_locate(&self, display_name: &str) -> Result<Vec<FrozenDragItem>, String> {
+        if self.entries.is_empty() {
+            return Err("空压缩包没有可拖出的项目；未拖出任何项目。".into());
+        }
+        Ok(vec![FrozenDragItem {
+            name: archive_drag_stem(display_name)?.to_owned(),
+            directory: true,
+            ordinal: None,
+            size: None,
+        }])
     }
     pub fn freeze_drag_tree(
         &self,
@@ -140,152 +227,212 @@ impl BrowserModel {
         display_name: &str,
         authorized: bool,
     ) -> Result<Vec<FrozenDragItem>, String> {
+        let mut work = SelectionWork::default();
+        let credit = self
+            .selection_metadata_credit(&mut work)
+            .map_err(selection_failure)?;
         if path.is_empty() {
             if self.entries.is_empty() {
                 return Err("空压缩包没有可拖出的项目；未拖出任何项目。".into());
             }
             let stem = archive_drag_stem(display_name)?;
             self.freeze_drag_roots(
-                vec![(String::new(), true, None)],
+                CatalogSelection::Entries {
+                    positions: &[],
+                    directories: &[""],
+                },
                 "",
                 Some(stem),
                 authorized,
+                credit,
+                &mut work,
             )
         } else {
             let prefix = path
                 .rsplit_once('/')
                 .map_or(String::new(), |(parent, _)| format!("{parent}/"));
-            self.freeze_drag_roots(vec![(path.into(), true, None)], &prefix, None, authorized)
+            self.freeze_drag_roots(
+                CatalogSelection::Entries {
+                    positions: &[],
+                    directories: &[path],
+                },
+                &prefix,
+                None,
+                authorized,
+                credit,
+                &mut work,
+            )
         }
     }
     fn freeze_drag_roots(
         &self,
-        roots: Vec<(String, bool, Option<u64>)>,
+        selection: CatalogSelection<'_>,
         prefix: &str,
         wrapper: Option<&str>,
         authorized: bool,
+        credit: u64,
+        work: &mut SelectionWork,
     ) -> Result<Vec<FrozenDragItem>, String> {
         let mut frozen = BTreeMap::<String, FrozenDragItem>::new();
         let mut directories = BTreeMap::<String, String>::new();
         let mut ordinals = BTreeSet::new();
-        let mut resolved = vec![false; roots.len()];
-        for entry in &self.entries {
-            let normalized = member_path(&entry.name);
-            let path = normalized.trim_end_matches('/');
-            let mut wanted = false;
-            for (index, (root, directory, ordinal)) in roots.iter().enumerate() {
-                let matches = if *directory {
-                    root.is_empty()
-                        || (path == root && entry.kind == "Directory")
-                        || path.starts_with(&format!("{root}/"))
-                } else {
-                    *ordinal == Some(entry.ordinal)
-                };
-                if matches {
-                    resolved[index] = true;
-                    wanted = true;
-                }
-            }
-            if !wanted {
-                continue;
-            }
-            if !matches!(entry.kind.as_str(), "File" | "Directory") {
-                return Err(rejected(
-                    &entry.name,
-                    &format!("条目类型{}不能作为普通文件或目录提供OLE内容", entry.kind),
-                ));
-            }
-            if entry.kind == "File" && entry.encrypted == Some(true) && !authorized {
-                return Err(rejected(
-                    &entry.name,
-                    "加密文件需要先点击“解锁拖出”并输入密码，再重新按住拖动",
-                ));
-            }
-            if entry
-                .warning_codes
-                .iter()
-                .any(|code| code == "UnsafePath" || code == "LinkNotExtracted")
-            {
-                return Err(rejected(
-                    &entry.name,
-                    "读取器标记原始路径无效或条目为不提取的链接，不能授予原生文件写入路径",
-                ));
-            }
-            if !ordinals.insert(entry.ordinal) {
-                return Err(rejected(
-                    &entry.name,
-                    "当前快照含重复条目序号，请刷新后重试",
-                ));
-            }
-            let raw = if entry.kind == "Directory" {
-                normalized.strip_suffix('/').unwrap_or(&normalized)
-            } else {
-                &normalized
-            };
-            if raw.split('/').any(|part| !valid_drag_name_component(part)) {
-                return Err(rejected(
-                    &entry.name,
-                    "路径含空段、相对跳转、Windows保留名、非法字符或名称段过长",
-                ));
-            }
-            let name = path
-                .strip_prefix(prefix)
-                .filter(|name| !name.is_empty())
-                .ok_or_else(|| rejected(&entry.name, "条目已不在当前文件夹，请刷新后重试"))?;
-            let parts = name.split('/').collect::<Vec<_>>();
-            let mut parent = String::new();
-            for end in 1..=parts.len() {
-                let original = parts[..end].join("/").to_lowercase();
-                let directory = end < parts.len() || entry.kind == "Directory";
-                let ordinal = (end == parts.len()).then_some(entry.ordinal);
-                let target = if directory {
-                    directories
-                        .get(&original)
-                        .cloned()
-                        .unwrap_or_else(|| descriptor_name(&frozen, &parent, parts[end - 1], true))
-                } else {
-                    descriptor_name(&frozen, &parent, parts[end - 1], false)
-                };
-                if target.encode_utf16().count() >= 260
-                    || target
-                        .split('/')
-                        .any(|part| !valid_drag_name_component(part))
-                {
-                    return Err(rejected(
-                        &entry.name,
-                        "OLE FILEDESCRIPTORW路径必须少于260个UTF-16单元，重命名后名称段仍须满足Windows输出限制",
-                    ));
-                }
-                let key = target.to_lowercase();
-                if let Some(existing) = frozen.get_mut(&key) {
-                    if existing.ordinal.is_none() {
-                        existing.ordinal = ordinal;
+        let mut presentation_bytes = 0u64;
+        let mut failure = None;
+        let expansion = expand_selection(
+            &self.entries,
+            selection,
+            credit,
+            |_, entry| SelectionEntry {
+                ordinal: entry.ordinal,
+                path: &entry.name,
+                directory: entry.kind == "Directory",
+            },
+            |_, entry, normalized, reservation| {
+                let rendered = (|| -> Result<(), String> {
+                    let path = normalized.trim_end_matches('/');
+                    if !matches!(entry.kind.as_str(), "File" | "Directory") {
+                        return Err(rejected(
+                            &entry.name,
+                            &format!("条目类型{}不能作为普通文件或目录提供OLE内容", entry.kind),
+                        ));
                     }
-                } else {
-                    frozen.insert(
-                        key,
-                        FrozenDragItem {
-                            name: target.clone(),
-                            directory,
-                            ordinal,
-                            size: if directory { None } else { entry.size },
-                        },
-                    );
-                }
-                if directory {
-                    directories.insert(original, target.clone());
-                }
-                parent = target;
-            }
-        }
-        for (index, (root, _, _)) in roots.iter().enumerate() {
-            if !resolved[index] {
-                return Err(rejected(root, "当前快照中没有该目录或其成员，请刷新后重试"));
-            }
-        }
+                    if entry.kind == "File" && entry.encrypted == Some(true) && !authorized {
+                        return Err(rejected(
+                            &entry.name,
+                            "加密文件需要先点击“解锁拖出”并输入密码，再重新按住拖动",
+                        ));
+                    }
+                    if entry
+                        .warning_codes
+                        .iter()
+                        .any(|code| code == "UnsafePath" || code == "LinkNotExtracted")
+                    {
+                        return Err(rejected(
+                            &entry.name,
+                            "读取器标记原始路径无效或条目为不提取的链接，不能授予原生文件写入路径",
+                        ));
+                    }
+                    presentation_bytes = presentation_bytes
+                        .checked_add(64)
+                        .ok_or_else(|| rejected(&entry.name, "选择超过当前元数据预算"))?;
+                    if !ordinals.insert(entry.ordinal) {
+                        return Err(rejected(
+                            &entry.name,
+                            "当前快照含重复条目序号，请刷新后重试",
+                        ));
+                    }
+                    let raw = if entry.kind == "Directory" {
+                        normalized.strip_suffix('/').unwrap_or(normalized)
+                    } else {
+                        normalized
+                    };
+                    if raw.split('/').any(|part| !valid_drag_name_component(part)) {
+                        return Err(rejected(
+                            &entry.name,
+                            "路径含空段、相对跳转、Windows保留名、非法字符或名称段过长",
+                        ));
+                    }
+                    let name = path
+                        .strip_prefix(prefix)
+                        .filter(|name| !name.is_empty())
+                        .ok_or_else(|| {
+                            rejected(&entry.name, "条目已不在当前文件夹，请刷新后重试")
+                        })?;
+                    let parts = name.split('/').collect::<Vec<_>>();
+                    let mut parent = String::new();
+                    for end in 1..=parts.len() {
+                        let original = parts[..end].join("/").to_lowercase();
+                        let directory = end < parts.len() || entry.kind == "Directory";
+                        let ordinal = (end == parts.len()).then_some(entry.ordinal);
+                        let target = if directory {
+                            directories.get(&original).cloned().unwrap_or_else(|| {
+                                descriptor_name(&frozen, &parent, parts[end - 1], true)
+                            })
+                        } else {
+                            descriptor_name(&frozen, &parent, parts[end - 1], false)
+                        };
+                        if target.encode_utf16().count() >= 260
+                            || target
+                                .split('/')
+                                .any(|part| !valid_drag_name_component(part))
+                        {
+                            return Err(rejected(
+                                &entry.name,
+                                "OLE FILEDESCRIPTORW路径必须少于260个UTF-16单元，重命名后名称段仍须满足Windows输出限制",
+                            ));
+                        }
+                        let key = target.to_lowercase();
+                        if let Some(existing) = frozen.get_mut(&key) {
+                            if existing.ordinal.is_none() {
+                                existing.ordinal = ordinal;
+                            }
+                        } else {
+                            presentation_bytes = presentation_bytes
+                                .checked_add(256 + 2 * target.len() as u64)
+                                .ok_or_else(|| rejected(&entry.name, "选择超过当前元数据预算"))?;
+                            if presentation_bytes
+                                .checked_add(reservation)
+                                .is_none_or(|bytes| bytes > credit)
+                            {
+                                return Err(rejected(&entry.name, "选择超过当前元数据预算"));
+                            }
+                            frozen.insert(
+                                key,
+                                FrozenDragItem {
+                                    name: target.clone(),
+                                    directory,
+                                    ordinal,
+                                    size: if directory { None } else { entry.size },
+                                },
+                            );
+                        }
+                        if directory {
+                            if !directories.contains_key(&original) {
+                                presentation_bytes = presentation_bytes
+                                    .checked_add(96 + original.len() as u64 + target.len() as u64)
+                                    .ok_or_else(|| {
+                                        rejected(&entry.name, "选择超过当前元数据预算")
+                                    })?;
+                                if presentation_bytes
+                                    .checked_add(reservation)
+                                    .is_none_or(|bytes| bytes > credit)
+                                {
+                                    return Err(rejected(&entry.name, "选择超过当前元数据预算"));
+                                }
+                            }
+                            directories.insert(original, target.clone());
+                        }
+                        parent = target;
+                    }
+                    Ok(())
+                })();
+                rendered
+                    .map_err(|message| {
+                        failure = Some(message);
+                        nxtools_archive::ArchiveError::UnsafePath
+                    })
+                    .map(|()| presentation_bytes)
+            },
+            || Ok(()),
+            work,
+        );
+        expansion.map_err(|error| failure.unwrap_or_else(|| selection_failure(error)))?;
         let mut items = frozen.into_values().collect::<Vec<_>>();
         if let Some(wrapper) = wrapper {
+            presentation_bytes = presentation_bytes
+                .checked_add(256 + wrapper.len() as u64)
+                .ok_or_else(|| selection_failure(nxtools_archive::ArchiveError::ResourceLimit))?;
             for item in &mut items {
+                presentation_bytes = presentation_bytes
+                    .checked_add(wrapper.len() as u64 + 1)
+                    .ok_or_else(|| {
+                        selection_failure(nxtools_archive::ArchiveError::ResourceLimit)
+                    })?;
+                if presentation_bytes > credit {
+                    return Err(selection_failure(
+                        nxtools_archive::ArchiveError::ResourceLimit,
+                    ));
+                }
                 item.name = format!("{wrapper}/{}", item.name);
                 if item.name.encode_utf16().count() >= 260 {
                     return Err(rejected(
@@ -447,6 +594,31 @@ mod tree_tests {
             model
                 .freeze_drag_tree("missing", "bundle.zip", false)
                 .is_err()
+        );
+    }
+    #[test]
+    fn tree_root_long_unicode_wrapper_preserves_name_and_member_ordinal() {
+        let entry = serde_json::from_value(serde_json::json!({
+            "ordinal": 7, "name": "file", "kind": "File", "size": 3,
+            "packed_size": null, "encrypted": false, "warning_codes": [],
+            "provenance": "Utf8Flag", "codepage": 65001
+        }))
+        .expect("entry");
+        let model = BrowserModel::new(Uuid::new_v4(), vec![entry]);
+        let wrapper = "界".repeat(86);
+        let items = model
+            .freeze_drag_tree("", &format!("{wrapper}.zip"), false)
+            .expect("Windows UTF-16 component and FILEDESCRIPTORW path fit");
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].name, wrapper);
+        assert!(items[0].directory && items[0].ordinal.is_none());
+        assert_eq!(items[1].name, format!("{wrapper}/file"));
+        assert_eq!(items[1].ordinal, Some(7));
+        assert!(!items[1].directory);
+        assert_eq!(
+            wrapper.len(),
+            258,
+            "transport UTF-8 bytes are not component units"
         );
     }
     #[test]

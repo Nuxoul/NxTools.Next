@@ -136,6 +136,7 @@ fn original_rar_coordinator_requires_cleanup_and_preserves_one_new_admission() {
         );
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.codepage = 936;
         request.password = Some(
             if mode == "encrypted_total" {
@@ -147,8 +148,10 @@ fn original_rar_coordinator_requires_cleanup_and_preserves_one_new_admission() {
         );
         request.conflict_policy =
             Some(serde_json::from_value(json!("auto_rename")).expect("policy"));
-        request.extract_options =
-            Some(nxtools_archive::worker::ExtractOptions { copy_motw: false, reclamation: None });
+        request.extract_options = Some(nxtools_archive::worker::ExtractOptions {
+            copy_motw: false,
+            reclamation: None,
+        });
         request.limits.max_entries = 100;
         request.limits.max_metadata_bytes = 4 << 20;
         request.limits.max_working_bytes = 64 << 20;

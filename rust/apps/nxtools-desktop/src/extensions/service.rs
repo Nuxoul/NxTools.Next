@@ -20,9 +20,14 @@ pub(crate) use storage::refresh_storage_metadata;
 struct ExecutionLease {
     shutdown: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     events: Mutex<Vec<tokio::task::AbortHandle>>,
+    worker: Mutex<ExecutionThread>,
 }
-impl Drop for ExecutionLease {
-    fn drop(&mut self) {
+struct ExecutionThread {
+    thread: Option<std::thread::JoinHandle<Result<(), nxtools_extensions::blobs::BlobError>>>,
+    result: Option<Result<(), nxtools_extensions::blobs::BlobError>>,
+}
+impl ExecutionLease {
+    fn stop(&self) {
         if let Ok(mut events) = self.events.lock() {
             for event in events.drain(..) {
                 event.abort();
@@ -33,6 +38,30 @@ impl Drop for ExecutionLease {
         {
             let _ = shutdown.send(());
         }
+    }
+    fn join(&self) -> anyhow::Result<()> {
+        self.stop();
+        let mut worker = self
+            .worker
+            .lock()
+            .map_err(|_| anyhow::anyhow!("extension executor owner unavailable"))?;
+        if let Some(thread) = worker.thread.take() {
+            worker.result = Some(
+                thread
+                    .join()
+                    .unwrap_or(Err(nxtools_extensions::blobs::BlobError::Io)),
+            );
+        }
+        worker
+            .result
+            .unwrap_or(Err(nxtools_extensions::blobs::BlobError::Io))
+            .map_err(Into::into)
+    }
+}
+impl Drop for ExecutionLease {
+    fn drop(&mut self) {
+        // Final Drop may occur on an executor task; normal GUI/headless owners explicitly join.
+        self.stop();
     }
 }
 #[derive(Clone)]
@@ -47,6 +76,9 @@ pub(crate) struct ExtensionService {
     pub(crate) manual_effects: super::manual_runs::ManualEffects,
 }
 impl ExtensionService {
+    pub(crate) fn shutdown_and_wait(&self) -> anyhow::Result<()> {
+        self._lease.join()
+    }
     #[cfg(test)]
     pub(crate) fn new(
         engine: &DownloadEngine,
@@ -143,15 +175,17 @@ impl ExtensionService {
                 .map(|host| host as Arc<dyn nxtools_extensions::storage::StorageHost>),
         );
         let runtime_shutdown = runtime.clone();
-        std::thread::Builder::new()
+        let worker = std::thread::Builder::new()
             .name("extension-runtime".into())
             .spawn(move || {
-                executor.block_on(async {
+                let result = executor.block_on(async {
                     let _ = stop.await;
-                    runtime_shutdown.shutdown();
+                    let result = runtime_shutdown.shutdown_and_wait().await;
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    result
                 });
                 executor.shutdown_timeout(std::time::Duration::from_secs(5));
+                result
             })?;
         let service = Self {
             runtime,
@@ -160,6 +194,10 @@ impl ExtensionService {
             _lease: Arc::new(ExecutionLease {
                 shutdown: Mutex::new(Some(shutdown)),
                 events: Mutex::new(Vec::new()),
+                worker: Mutex::new(ExecutionThread {
+                    thread: Some(worker),
+                    result: None,
+                }),
             }),
             publication,
             storage,

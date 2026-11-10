@@ -1,8 +1,9 @@
 //! Passive owned payloads: bounded file reads/decoders, never path-backed rendering or Shell.
 use super::model::RowId;
-use crate::ui::markdown_document::DocumentMode;
+use crate::ui::markdown_document::{DocumentMode, TextBudget};
 use gpui_kit::RenderImage;
 use image::{ImageDecoder as _, ImageFormat, ImageReader};
+use nxtools_core::archive::ArchivePreviewSettings;
 use nxtools_protocol::archive_browser::ArchiveBrowserContext;
 use std::{
     fs::File,
@@ -16,13 +17,7 @@ use std::{
 };
 use uuid::Uuid;
 
-pub(super) const IMAGE_BYTES: u64 = 8 << 20;
-pub(super) const TEXT_BYTES: u64 = 64 << 10;
 const MAX_AXIS: u32 = 8192;
-const MAX_PIXELS: u64 = 8 * 1024 * 1024;
-// Decoder scratch/output allowance 32 MiB + separate final RGBA allowance 32 MiB.
-// Encoded input is separately <=8 MiB. Reject >8-bit channels before allocating pixels.
-const DECODE_BYTES: u64 = 32 << 20;
 
 #[derive(Clone)]
 pub(crate) enum PreviewPayload {
@@ -34,6 +29,7 @@ pub(crate) enum PreviewPayload {
     Text {
         text: String,
         mode: DocumentMode,
+        budget: TextBudget,
     },
 }
 #[derive(Clone)]
@@ -63,10 +59,10 @@ pub(super) enum PreviewKind {
     Text(DocumentMode),
 }
 impl PreviewKind {
-    pub(super) fn limit(self) -> u64 {
+    pub(super) fn limit(self, profile: ArchivePreviewSettings) -> u64 {
         match self {
-            Self::Image => IMAGE_BYTES,
-            Self::Text(_) => TEXT_BYTES,
+            Self::Image => profile.image_bytes(),
+            Self::Text(_) => profile.text_bytes(),
         }
     }
 }
@@ -81,6 +77,7 @@ pub(super) enum PreviewFailure {
     Corrupt,
     Cancelled,
     Io,
+    InvalidSettings,
 }
 impl From<PreviewFailure> for PreviewResult {
     fn from(value: PreviewFailure) -> Self {
@@ -94,6 +91,7 @@ impl From<PreviewFailure> for PreviewResult {
             PreviewFailure::Corrupt => Self::Corrupt,
             PreviewFailure::Cancelled => Self::Cancelled,
             PreviewFailure::Io => Self::Failed,
+            PreviewFailure::InvalidSettings => Self::Failed,
         }
     }
 }
@@ -105,6 +103,7 @@ pub(super) struct PreviewRequest {
     pub row: RowId,
     pub selection_generation: u64,
     pub kind: PreviewKind,
+    pub profile: ArchivePreviewSettings,
     pub started: Instant,
 }
 #[derive(Default)]
@@ -117,6 +116,7 @@ pub(super) struct PreviewState {
     pub cancel: Arc<AtomicBool>,
     pub retired: bool,
     pub blocked: bool,
+    pub profile: ArchivePreviewSettings,
 }
 
 pub(super) fn kind(name: &str) -> Option<PreviewKind> {
@@ -203,9 +203,13 @@ pub(super) fn read_bounded(
 pub(super) fn prepare(
     path: &Path,
     kind: PreviewKind,
+    profile: ArchivePreviewSettings,
     stop: &AtomicBool,
 ) -> Result<PreviewPayload, PreviewFailure> {
     cancelled(stop)?;
+    profile
+        .validate()
+        .map_err(|_| PreviewFailure::InvalidSettings)?;
     let shape = std::fs::symlink_metadata(path).map_err(|_| PreviewFailure::Io)?;
     if shape.file_type().is_symlink() || !shape.is_file() {
         return Err(PreviewFailure::Unsupported);
@@ -229,21 +233,25 @@ pub(super) fn prepare(
     if !metadata.is_file() {
         return Err(PreviewFailure::Unsupported);
     }
-    if metadata.len() > kind.limit() {
+    if metadata.len() > kind.limit(profile) {
         return Err(PreviewFailure::TooLarge);
     }
-    let bytes = read_bounded(&file, kind.limit(), stop)?;
+    let bytes = read_bounded(&file, metadata.len(), stop)?;
     if file.metadata().map_err(|_| PreviewFailure::Io)?.len() != bytes.len() as u64 {
         return Err(PreviewFailure::Io);
     }
-    decode_bytes(bytes, kind, stop)
+    decode_bytes(bytes, kind, profile, stop)
 }
-pub(super) fn check_dimensions(width: u32, height: u32) -> Result<(), PreviewFailure> {
+pub(super) fn check_dimensions(
+    width: u32,
+    height: u32,
+    profile: ArchivePreviewSettings,
+) -> Result<(), PreviewFailure> {
     if width == 0 || height == 0 {
         Err(PreviewFailure::Corrupt)
     } else if width > MAX_AXIS
         || height > MAX_AXIS
-        || u64::from(width) * u64::from(height) > MAX_PIXELS
+        || u64::from(width) * u64::from(height) > profile.image_pixels()
     {
         Err(PreviewFailure::ImageDimensions)
     } else {
@@ -253,10 +261,14 @@ pub(super) fn check_dimensions(width: u32, height: u32) -> Result<(), PreviewFai
 pub(super) fn decode_bytes(
     bytes: Vec<u8>,
     kind: PreviewKind,
+    profile: ArchivePreviewSettings,
     stop: &AtomicBool,
 ) -> Result<PreviewPayload, PreviewFailure> {
     cancelled(stop)?;
-    if bytes.len() as u64 > kind.limit() {
+    profile
+        .validate()
+        .map_err(|_| PreviewFailure::InvalidSettings)?;
+    if bytes.len() as u64 > kind.limit(profile) {
         return Err(PreviewFailure::TooLarge);
     }
     if let PreviewKind::Text(mut mode) = kind {
@@ -268,27 +280,30 @@ pub(super) fn decode_bytes(
         {
             return Err(PreviewFailure::Unsupported);
         }
-        if text.lines().take(1201).count() > 1200 {
+        let budget = TextBudget {
+            max_bytes: profile.text_bytes() as usize,
+            max_lines: profile.text_max_lines as usize,
+        };
+        if !budget.allows_lines(text) {
             return Err(PreviewFailure::TextLines);
         }
-        if text.chars().take(65537).count() > 65536 {
-            return Err(PreviewFailure::DocumentLimit);
-        }
-        // Same safe projection as Clipboard/Quick Launch; unsafe/complex Markdown becomes literal.
-        if crate::ui::markdown_document::prepared_source(text, mode).is_none() {
+        // Original shared projection; unsafe/complex Markdown becomes literal.
+        if crate::ui::markdown_document::prepared_source_with_budget(text, mode, budget).is_none() {
             mode = DocumentMode::Literal(None);
         }
-        if crate::ui::markdown_document::prepared_source(text, mode).is_none() {
+        if crate::ui::markdown_document::prepared_source_with_budget(text, mode, budget).is_none() {
             return Err(PreviewFailure::DocumentLimit);
         }
         cancelled(stop)?;
         return Ok(PreviewPayload::Text {
             text: text.to_owned(),
             mode,
+            budget,
         });
     }
+    let encoded_len = bytes.len() as u64;
     if image::guess_format(&bytes).ok() == Some(ImageFormat::WebP) {
-        webp_admission(&bytes)?;
+        webp_admission(&bytes, profile)?;
     }
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
@@ -309,17 +324,17 @@ pub(super) fn decode_bytes(
     let mut limits = image::Limits::default();
     limits.max_image_width = Some(MAX_AXIS);
     limits.max_image_height = Some(MAX_AXIS);
-    limits.max_alloc = Some(DECODE_BYTES);
+    limits.max_alloc = Some(profile.decode_bytes());
     reader.limits(limits.clone());
     let mut decoder = reader.into_decoder().map_err(image_failure)?;
     let (width, height) = decoder.dimensions();
-    check_dimensions(width, height)?;
-    let encoded_bytes = reader_input_estimate(format);
+    check_dimensions(width, height, profile)?;
+    let encoded_bytes = reader_input_estimate(format, encoded_len);
     let pixels = u64::from(width) * u64::from(height);
     // Locked JPEG/WebP ignore max_alloc for internal tables. Conservatively reserve
     // 32 bytes/pixel plus input copy/table slack before invoking their pixel decoder.
     if matches!(format, ImageFormat::Jpeg | ImageFormat::WebP)
-        && pixels.saturating_mul(32).saturating_add(encoded_bytes) > DECODE_BYTES
+        && pixels.saturating_mul(32).saturating_add(encoded_bytes) > profile.decode_bytes()
     {
         return Err(PreviewFailure::ImageMemory);
     }
@@ -332,7 +347,7 @@ pub(super) fn decode_bytes(
     ) {
         return Err(PreviewFailure::Unsupported);
     }
-    if decoder.total_bytes() > DECODE_BYTES {
+    if decoder.total_bytes() > profile.decode_bytes() {
         return Err(PreviewFailure::ImageMemory);
     }
     // Mirror ImageReader::decode: reserve decoded bytes BEFORE allowing decoder scratch.
@@ -342,8 +357,7 @@ pub(super) fn decode_bytes(
         .map_err(image_failure)?;
     decoder.set_limits(limits).map_err(image_failure)?;
     cancelled(stop)?;
-    // DynamicImage reads only the first frame; decoder is consumed/dropped before conversion.
-    // Original <=32 MiB + final <=32 MiB may coexist. RGBA is moved without cloning.
+    // First frame only; decoder/output allowance and final RGBA pixel allowance are separate.
     let mut pixels = image::DynamicImage::from_decoder(decoder)
         .map_err(image_failure)?
         .into_rgba8();
@@ -368,16 +382,16 @@ fn image_failure(failure: image::ImageError) -> PreviewFailure {
     }
 }
 
-fn reader_input_estimate(format: ImageFormat) -> u64 {
+fn reader_input_estimate(format: ImageFormat, encoded_len: u64) -> u64 {
     if matches!(format, ImageFormat::Jpeg | ImageFormat::WebP) {
-        IMAGE_BYTES + (1 << 20)
+        encoded_len.saturating_add(1 << 20)
     } else {
         0
     }
 }
 /// The released wrapper cannot cap WebP's meta-Huffman allocations. Admit static,
 /// directly bounded bitstreams only; do not silently trust max_alloc or animate.
-fn webp_admission(bytes: &[u8]) -> Result<(), PreviewFailure> {
+fn webp_admission(bytes: &[u8], profile: ArchivePreviewSettings) -> Result<(), PreviewFailure> {
     if bytes.len() < 12 || &bytes[..4] != b"RIFF" || &bytes[8..12] != b"WEBP" {
         return Err(PreviewFailure::Corrupt);
     }
@@ -413,11 +427,11 @@ fn webp_admission(bytes: &[u8]) -> Result<(), PreviewFailure> {
                 }
                 let width = 1 + u32::from_le_bytes([data[4], data[5], data[6], 0]);
                 let height = 1 + u32::from_le_bytes([data[7], data[8], data[9], 0]);
-                check_dimensions(width, height)?;
+                check_dimensions(width, height, profile)?;
                 if (u64::from(width) * u64::from(height))
                     .saturating_mul(32)
-                    .saturating_add(reader_input_estimate(ImageFormat::WebP))
-                    > DECODE_BYTES
+                    .saturating_add(reader_input_estimate(ImageFormat::WebP, bytes.len() as u64))
+                    > profile.decode_bytes()
                 {
                     return Err(PreviewFailure::ImageMemory);
                 }
@@ -430,11 +444,11 @@ fn webp_admission(bytes: &[u8]) -> Result<(), PreviewFailure> {
                 let header = u32::from_le_bytes([data[1], data[2], data[3], data[4]]);
                 let width = 1 + (header & 0x3fff);
                 let height = 1 + ((header >> 14) & 0x3fff);
-                check_dimensions(width, height)?;
+                check_dimensions(width, height, profile)?;
                 if (u64::from(width) * u64::from(height))
                     .saturating_mul(32)
-                    .saturating_add(reader_input_estimate(ImageFormat::WebP))
-                    > DECODE_BYTES
+                    .saturating_add(reader_input_estimate(ImageFormat::WebP, bytes.len() as u64))
+                    > profile.decode_bytes()
                 {
                     return Err(PreviewFailure::ImageMemory);
                 }
@@ -464,11 +478,11 @@ fn webp_admission(bytes: &[u8]) -> Result<(), PreviewFailure> {
                 }
                 let width = u16::from_le_bytes([data[6], data[7]]) & 0x3fff;
                 let height = u16::from_le_bytes([data[8], data[9]]) & 0x3fff;
-                check_dimensions(u32::from(width), u32::from(height))?;
+                check_dimensions(u32::from(width), u32::from(height), profile)?;
                 if (u64::from(width) * u64::from(height))
                     .saturating_mul(32)
-                    .saturating_add(reader_input_estimate(ImageFormat::WebP))
-                    > DECODE_BYTES
+                    .saturating_add(reader_input_estimate(ImageFormat::WebP, bytes.len() as u64))
+                    > profile.decode_bytes()
                 {
                     return Err(PreviewFailure::ImageMemory);
                 }

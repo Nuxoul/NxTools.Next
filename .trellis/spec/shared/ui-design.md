@@ -11,7 +11,7 @@
 | Text | primary#f4f4f5, secondary#a1a1aa, muted#71717a | Foundation uses exact approved values | Actual CJK readability at supported DPI still requires visual review |
 | Status colors | semantic green/amber/red | #6fbf8f/#d6a85f/#ff6b78 | Approved brief fixes roles, not exact values; reuse semantic values pending visual review, no invented replacement palette |
 | Controls | 24/28/32 logical px by role | Foundation compact/default24, action28/input32; settings-toggle boundary tests use actual24 | Shared target implemented; fixed-client regressions retained; no oversized-window workaround |
-| Layout spacing | strict 4px grid | Shared settings rows40/header28, menu/hotkey/field/state/diagnostic gaps4/8; module-specific measured roles remain | Consolidated migration retains ordinary176/278, media budget now HLS418/error456 and one-row DASH353 with real footer gates; no blind inflation |
+| Layout spacing | strict 4px grid | Shared settings rows40/header28, menu/hotkey/field/state/diagnostic gaps4/8; module-specific measured roles remain | New Download URL intake136/ordinary confirmation246; media budgets and native handoff remain unchanged. The2026-11-05compact amendment supersedes the historical176px intake; real footer gates remain required. |
 | Radius | 3/6/8 or semantic pill | Control3/floating6 plus component large-dialog8 mapped | Shared roles implemented; actual native alpha corners/hit testing still independently accepted |
 | Type/fonts | Centralized existing family unless demonstrated issue; compact legible text | YaHei UI/Consolas; 16/14/12/11/10, line22/20/18/16/14 | Retain roles/family absent measured issue; Body/Label for normal Chinese information, Meta10 for genuine metadata only; status glyph28 is not ordinary text |
 | Focus | Visible keyboard-only semantic ring; original keyboard equivalents | Kit Base Button/focus_visible and Window::last_input_was_keyboard replace the retired project modality registry; one Base Root owns Tab/ShiftTab | Actual pointer/Tab/KeyUp/disabled regression passes; native/provider acceptance separate |
@@ -19,10 +19,15 @@
 
 Historical palette authority: original#0ea5e9 was replaced by#38bdf8/#7dd3fc, then explicitly rejected in installed2026-10-10 feedback. Those historical values are not the current neutral target.
 
-Exceptions require: named role/surface, exact reason (content/native/hit target), measured regression, approved owner decision and verification evidence. Existing tests or comments alone cannot authorize a new exception. Native client/content budgets (ordinary download176/278, media-aware sizes), actual pixel readback, passive preview and activation/focus contracts are behavioral constraints; styling must not defeat them.
+Exceptions require: named role/surface, exact reason (content/native/hit target), measured regression, approved owner decision and verification evidence. Existing tests or comments alone cannot authorize a new exception. Native client/content budgets (New Download intake136/ordinary confirmation246, media-aware sizes), actual pixel readback, passive preview and activation/focus contracts are behavioral constraints; styling must not defeat them. The user-requested compact intake and one-shot clipboard rule are recorded in [the current experience contract](../nxtools-desktop/backend/ui-experience-contracts.md#scenario-compact-new-download-intake-and-one-shot-clipboard-prefill); visual/DPI/user acceptance remains separate.
 
 ## Composition and semantic roles
 A compact Windows productivity tool uses continuous work surfaces, clear module rail/search/list hierarchy, restrained separators and one primary action per decision area. No equal card walls, decorative gradient/glass/oversized radius or idle animation. Accent means action/focus/selection, not a large decorative background. Reuse components in `repo:rust/apps/nxtools-desktop/src/ui/components/action.rs`, field/list/settings/titlebar/menu/popover/state. Shell owns layout/chrome, not persistence or native policy. Real brand/SVG icons are registered through assets; font_family is one installed family, not CSS fallback string.
+
+## Product terminology
+Chinese product-owned archive copy uses **压缩包** in window titles, settings, forms, progress, notifications, errors, tooltips, accessibility labels and native file pickers. Clipboard portable ZIP containers use **历史压缩包**; their `.nxtclip` extension and existing import/export owners remain unchanged. Use `.title("压缩包浏览器")`, not `.title("归档浏览器")`.
+Internal `Archive` types, action IDs, wire fields and the `archive` CLI command retain their technical names. User-supplied text/file names and historical evidence are not product copy and must not be rewritten.
+`python tests/architecture/ui-terminology.py` checks current product string literals and the shared settings/native-picker naming anchors. Production GPUI tests assert the actual new labels, not an alternative accepting both names. Source checks do not certify native dialogs or visual acceptance.
 
 ## Component state matrix (required on every changed actionable surface)
 | State | Required behavior / assertion |
@@ -66,7 +71,7 @@ User now explicitly authorizes production layout migration after pushed checkpoi
 The feature-first remaining local slice implements auxiliary Downloads, advanced Quick Find, compact Clipboard editors, bounded notification copy/action and browser companion HTML/CSS/shadow hierarchy. Desktop494/494 and strict production/tests lint,workspace/fmt/Debug build pass; browser21 tests/38 isolated DOM checks pass. Workbench actions may explicitly use32px input tier in command/path/diagnostic forms; compact28px actions remain unchanged. Fixed/minimum GPUI tests use simulate_resize, not only window.resize. Constrained source/notification scrolling uses explicit GPUI overflow_y_scroll at the identified viewport with nonshrinking footer/action. Callback/owner preservation is checked, not a new keyboard/persistence/native owner. Five owned100% captures are acquired but uninspected; installed/full-state/mixed-DPI/U/provider acceptance stays open. [Exact outcome and limits](../../../docs/audits/2026-10-09-remaining-ui-layout-migration.md).
 
 ## Installed neutral/focus and idle-host correction
-User screenshots reject cyan chrome and duplicate selected/focused navigation in Global/Downloads. Keep neutral base/type/native budgets; change semantic roles together, retain mouse focus but only draw ring after keyboard input. Window-keyed weak modality state observes frame-owned input events and refreshes only on modality changes; no polling, logs or second activation listener. Browser startup/diagnostics never launch Native Messaging; pending requests and full Blob operation own demand-only transport, released1s after idle with no autonomous reconnect. Passive snapshot must not launch desktop. Persistent LocalSystem Indexer is independent; its current Stopped state/restore and actual installer/file-lock acceptance remain separate.
+User screenshots reject cyan chrome and duplicate selected/focused navigation in Global/Downloads. Keep neutral base/type/native budgets; change semantic roles together, retain mouse focus but only draw ring after keyboard input. Window-keyed weak modality state observes frame-owned input events and refreshes only on modality changes; no polling, logs or second activation listener. Browser startup/diagnostics never launch Native Messaging; pending requests, full Blob operations and the lifetime of an explicitly opened popup own demand-only transport, released1s after idle with no autonomous reconnect. Popup periodic refresh cannot reconnect after transport loss; explicit user connection test/new request/reopen may. Passive snapshot must not launch desktop. Persistent LocalSystem Indexer is independent; its current Stopped state/restore and actual installer/file-lock acceptance remain separate.
 
 ## Readable neutral primary action states
 Light neutral primary actions require explicit dark label foreground; disabled/busy state uses darker neutral background with opaque readable supporting text. Project primary_action_button owns label/style pairing and retains vendor Button's one disabled/keyboard/click boundary; do not add a second hover/activation owner or patch dependencies. Test paint-time text-style normal/hover/disabled plus fixed hit bounds and no disabled dispatch, not only theme color equality. Current settings Save/Apply messages distinguish durable saved config from failed Windows application.
@@ -334,3 +339,57 @@ distinct. [Current result contract](../nxtools-desktop/backend/ui-experience-con
 Clipboard summon retains original native activation then search focus. Only Ctrl+digit is indexed
 paste; plain digits enter search even when empty. Initial-focus tests may not repair fixture focus.
 [Shortcut contract](../nxtools-desktop/backend/quality-guidelines.md#scenario-clipboard-usable-shortcuts-and-one-capture-toggle).
+
+## Approved Listary launcher alignment (2026-11-04)
+User requests the remaining category/history, middle-path ellipsis and content-sized launcher work.
+Standalone normal results now use52DIP bodies/32DIP icons,16DIP single application titles and15/12DIP
+file/parent-path hierarchy. Official Label middle ellipsis retains full accessible/tooltip/action
+text. Keep620DIP width/42DIP header and4-or0external gap; content grows to470DIP list viewport then
+scrolls, with compact96DIP pending/empty state and reserved36DIP error footer. This supersedes the
+earlier standalone40DIP/fixed410 restrictions, not compact attached search/action rows or theme APIs.
+Current-result early publication, default-first versus explicit selection, normal retained-row paint
+with stale execution blocked, original focus/preview/window owners remain. Native content sizing uses
+existing coalesced C# SetWindowBounds/SwpNoActivate; no new IPC or framework patch.
+[Executable contract](../nxtools-desktop/backend/ui-experience-contracts.md#scenario-quick-launch-continuous-refresh-and-default-selection),
+[reference](../../../docs/reference-code/quick-launch-listary-results.md),
+[task](../../tasks/11-04-quick-launch-listary-alignment/prd.md).
+Finder's [category/history contract](../nxtools-finder/backend/quality-guidelines.md#scenario-application-classes-and-merged-result-ranking)
+replaces unconditional executable6500promotion without changing native execution or index service.
+
+## Reference-sized launcher search and query-bound geometry (2026-11-05)
+User requests a larger search field proportional to52DIP result rows and rejects intermediate
+resize effects. Search header58DIP, official Input Large44DIP,26DIP text/34DIP line,4DIP vertical
+padding and24DIP search icon supersede the standalone42/32header/input tier. Keep the original4DIP
+horizontal inset, single Input frame,28DIP recent action,52/32result row/icon and existing palette.
+An established viewport keeps its height until the current query providers complete, then commits
+final geometry immediately. First current rows can reveal a collapsed viewport. Current rows remain
+actionable; no per-batch growth/contraction or additional shrink timer. Original native no-activate,
+selection, input/IME and preview owners remain. Attached-dialog32DIP Input is unchanged.
+[Contract](../nxtools-desktop/backend/ui-experience-contracts.md#scenario-quick-launch-continuous-refresh-and-default-selection),
+[reference](../../../docs/reference-code/quick-launch-listary-results.md),
+[task](../../tasks/11-05-quick-launch-header-geometry/prd.md).
+
+## Desktop interaction polish (2026-11-09)
+
+Ordinary typed Quick Launch search uses a stable620×530DIP expanded client, clamped by the existing
+placement owner. This supersedes result-count sizing and query-completion height settling above.
+Empty input/hide/reopen retain60DIP search-only; action/recent modes retain their geometry. Existing
+58DIP header,52DIP rows,32DIP icons and4/0external gap stay. Settings expose slide_up(default),
+slide_from_right,fade,none through the original official Settings saver. Each newly admitted current
+identity gets one120ms EaseOut Tween of content only; delayed results participate, offscreen arrivals
+settle, and selection/reorder/icon/repaint/scroll never replay. Reduced/unknown motion or retirement
+finishes immediately with no retained animation timers. Hit/focus rails and native bounds do not animate.
+
+Archive preferences use Download's official filled SettingGroup and shared aligned label/control row,
+with200-design-pixel dropdown/number lane and164-design-pixel navigation seed. Existing callbacks and
+section saves remain. New Archive uses one independently scrolling144DIP-max source viewport, compact
+horizontal output/destination fields and fixed official footer. Separate selection-named ZIP/7z quick
+commands enter the original creation Job without a form; editable New Archive remains separate.
+
+Download progress filename uses14/20 over12/16 body metrics. Keep440×184/440×280 clients and fixed44DIP
+footer. Main area shows filename, host/short route/colored HTTP response-header timing, Progress,
+bytes/speed/ETA; technical capability/segment information stays in the original expansion. No peer IP.
+Timing0–100ms uses success,101–300warning,301+danger; missing time is absent, never fabricated Ping.
+Category Rules/help/official Medium Select/Small outlined Add share one wrapping header over the original
+draft/Apply owner. Source/fixture evidence and visual/native limits live in the
+[interaction task](../../tasks/11-09-desktop-interaction-polish/prd.md).

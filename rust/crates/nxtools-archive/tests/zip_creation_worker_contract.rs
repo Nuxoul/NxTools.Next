@@ -1,4 +1,6 @@
-use nxtools_archive::worker::{read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
 use serde_json::{Value, json};
 use std::{
     io::{Read, Seek, SeekFrom, Write},
@@ -26,7 +28,7 @@ fn actual_zip_creation_worker_verifies_native_source_and_partial_before_publicat
             let operation = Uuid::new_v4();
             let source = Uuid::new_v4();
             let token = Uuid::new_v4();
-            let request = json!({"schema":2,"operation_id":operation,"op":"start","operation":"create_zip","path":"authorized-source","create_name":"created.zip","compression_level":"normal","delete_source":true,"zip_options":{"method":"deflate","encryption":"none","strip_single_root":false,"exclude_patterns":[]}});
+            let request = json!({"schema":2,"bulk_transfer":1,"operation_id":operation,"op":"start","operation":"create_zip","path":"authorized-source","create_name":"created.zip","compression_level":"normal","delete_source":true,"zip_options":{"method":"deflate","encryption":"none","strip_single_root":false,"exclude_patterns":[]}});
             write_frame(child.stdin.as_mut().expect("stdin"), &request).expect("start ZIP");
             let mut committed = false;
             let mut aborted = false;

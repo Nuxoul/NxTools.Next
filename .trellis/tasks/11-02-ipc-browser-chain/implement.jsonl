@@ -1,0 +1,9 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original process and state ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Diagnostics and bounded implementation"}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"Pipe deadlines, duplex I/O and retirement"}
+{"file":".trellis/spec/nxtools-download-ipc/backend/quality-guidelines.md","reason":"Download admission and wire compatibility"}
+{"file":".trellis/spec/nxtools-browser-host/backend/quality-guidelines.md","reason":"Blob capability and native control limits"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Demand-only transport and browser fallback"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Original engine publication and compensation"}
+{"file":".trellis/spec/platformhost/index.md","reason":"PlatformHost native ownership and required native-contracts topics"}
+{"file":".trellis/tasks/11-02-ipc-browser-chain/reference-evidence.md","reason":"Verified source chains and complete changed transport/budget contracts"}

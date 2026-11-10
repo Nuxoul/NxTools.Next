@@ -19,9 +19,14 @@ const DEFAULT_SETTINGS = {
   dropTargetEnabled: true,
   dropTargetPosition: "right-bottom",
   dropTargetWidth: 188,
-  dropTargetHeight: 86
+  dropTargetHeight: 86,
+  captureFileTypes: "",
+  captureMinimumKiB: 0,
+  captureExcludedSites: "",
+  captureExcludedAddresses: ""
 };
 
+const CAPTURE_PAUSE_STORAGE_KEY = "nxtools_capture_paused";
 const RECENT_REQUEST_TTL_MS = 180000;
 const RESOURCE_TTL_MS = 20 * 60 * 1000;
 const REQUEST_CACHE_LIMIT = 800;

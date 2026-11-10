@@ -1,0 +1,13 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original Rust/GPUI/C# owners and leased-entity boundaries"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Durable publication, cancellation and payload-safe diagnostics"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Released component-first composition"}
+{"file":".trellis/spec/shared/ui-design.md","reason":"Approved current UI authority and compact client budgets"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Original link-panel and intake focus/clipboard lifecycle"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Settings/admission/store/pending/durable ownership"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Original engine/storage/rate waiter verification"}
+{"file":"docs/reference-improvement-taskbook.md","reason":"Canonical B2 requirements and measurement gates"}
+{"file":"docs/reference-code/download.md","reason":"ABDM first, legacy lifecycle and original Next entry index"}
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Behavior-only capture, limit and discovery reference"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Locked released Kit/Base APIs and retained patches"}
+{"file":"docs/reference-code/gpui-kit-component-table.md","reason":"Official component selection table"}
+{"file":"docs/reference-code/gpui-kit-component-index.md","reason":"Exact released compound/control source index"}

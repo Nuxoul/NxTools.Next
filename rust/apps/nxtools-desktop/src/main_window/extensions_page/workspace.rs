@@ -34,11 +34,15 @@ impl ExtensionManagerView {
                         "导入扩展",
                         busy || preview,
                         view.clone(),
-                        move |view, _, cx| {
+                        move |view, window, cx| {
                             view.import_open = true;
                             let owner = import_owner.clone();
+                            let source_window_handle =
+                                crate::ui::native_window_handle(window).unwrap_or_default();
                             cx.defer(move |cx| {
-                                let _ = owner.update(cx, |app, cx| app.pick_manifest(cx));
+                                let _ = owner.update(cx, |app, cx| {
+                                    app.pick_manifest(source_window_handle, cx)
+                                });
                             });
                         },
                     ))
@@ -137,12 +141,22 @@ impl ExtensionManagerView {
                                             ),
                                     )
                                     .child(
-                                        extensions_settings::app_button(
+                                        extensions_settings::view_button(
                                             "extension-pick-file",
                                             "选择 ZIP",
                                             busy,
-                                            pick,
-                                            |app, cx| app.pick_manifest(cx),
+                                            view.clone(),
+                                            move |_, window, cx| {
+                                                let owner = pick.clone();
+                                                let source_window_handle =
+                                                    crate::ui::native_window_handle(window)
+                                                        .unwrap_or_default();
+                                                cx.defer(move |cx| {
+                                                    let _ = owner.update(cx, |app, cx| {
+                                                        app.pick_manifest(source_window_handle, cx)
+                                                    });
+                                                });
+                                            },
                                         )
                                         .with_size(gpui_kit::component::Size::Medium),
                                     )
@@ -240,8 +254,12 @@ impl ExtensionManagerView {
                             if empty {
                                 view.import_open = true;
                                 let owner = view.application.downgrade();
+                                let source_window_handle =
+                                    crate::ui::native_window_handle(window).unwrap_or_default();
                                 cx.defer(move |cx| {
-                                    let _ = owner.update(cx, |app, cx| app.pick_manifest(cx));
+                                    let _ = owner.update(cx, |app, cx| {
+                                        app.pick_manifest(source_window_handle, cx)
+                                    });
                                 });
                             } else {
                                 view.search

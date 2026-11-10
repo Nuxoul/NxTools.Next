@@ -1,7 +1,7 @@
 //! Operation drafts: no filesystem, settings writes, codec or native authority.
 use nxtools_core::archive::{
     ArchiveCompressionLevel, ArchiveConflictPolicy, ArchiveCreateFormat, ArchiveDestination,
-    ArchiveFilenameEncoding, ArchiveSettings,
+    ArchiveFilenameEncoding, ArchiveSettings, ArchiveVolumeSize, ArchiveVolumeUnit,
 };
 use nxtools_protocol::{
     archive_browser::ArchiveBrowserContext, archive_job::*, archive_password::PrivatePassword,
@@ -29,12 +29,14 @@ pub(super) struct CreateDraft {
     pub exclusions: Vec<String>,
     pub test_after_create: bool,
     pub separately: bool,
-    /// Optional genuine ZIP/7z volume size, in MiB; no partial/overwrite family mode.
+    /// Integer split value; the original MiB entrance retains its explicit default unit.
     pub volume_mib: String,
+    pub volume_unit: ArchiveVolumeUnit,
 }
 pub(super) struct CreateOptions {
     pub level: Option<ArchiveCompressionLevel>,
     pub method: Option<&'static str>,
+    pub volume_bytes: Option<u64>,
 }
 impl CreateDraft {
     pub fn new(settings: &ArchiveSettings, sources: Vec<DraftSource>) -> Self {
@@ -75,7 +77,13 @@ impl CreateDraft {
             exclusions: settings.exclude_patterns.clone(),
             test_after_create: settings.test_after_create,
             separately: false,
-            volume_mib: String::new(),
+            volume_mib: settings
+                .create_volume_size
+                .map(|size| size.value.to_string())
+                .unwrap_or_default(),
+            volume_unit: settings
+                .create_volume_size
+                .map_or(ArchiveVolumeUnit::MiB, |size| size.unit),
         }
     }
     pub fn set_format(&mut self, format: ArchiveCreateFormat) {
@@ -142,7 +150,7 @@ impl CreateDraft {
         {
             return Err("当前格式不支持仅存储等级。".into());
         }
-        self.volume_bytes()?;
+        let volume_bytes = self.volume_bytes()?;
         let settings = ArchiveSettings {
             create_format: self.format,
             compression_level: self.level,
@@ -158,6 +166,7 @@ impl CreateDraft {
         };
         settings.validate()?;
         Ok(CreateOptions {
+            volume_bytes,
             level: (self.format != ArchiveCreateFormat::Tar).then_some(self.level),
             method: (self.format == ArchiveCreateFormat::Zip).then_some(
                 if self.level == ArchiveCompressionLevel::Store {
@@ -168,24 +177,33 @@ impl CreateDraft {
             ),
         })
     }
-    pub fn volume_bytes(&self) -> Result<Option<u64>, String> {
-        if self.volume_mib.trim().is_empty() {
+    pub fn volume_size(&self) -> Result<Option<ArchiveVolumeSize>, String> {
+        let digits = self.volume_mib.trim();
+        if digits.is_empty() {
             return Ok(None);
         }
+        if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err("分卷大小必须是正整数；请选择 KiB、MiB 或 GiB。".into());
+        }
+        let value = digits.parse().map_err(|_| "分卷大小超出可表示范围。")?;
+        Ok(Some(ArchiveVolumeSize {
+            value,
+            unit: self.volume_unit,
+        }))
+    }
+    pub fn volume_bytes(&self) -> Result<Option<u64>, String> {
+        let Some(size) = self.volume_size()? else {
+            return Ok(None);
+        };
         if !matches!(
             self.format,
             ArchiveCreateFormat::Zip | ArchiveCreateFormat::SevenZ
         ) {
-            return Err("仅 ZIP / 7Z 可创建分卷；请选择新目标文件名。".into());
+            return Err("仅 ZIP / 7Z 可创建分卷；请选择“不分卷”或切换回 ZIP / 7Z。".into());
         }
-        let digits = self.volume_mib.trim();
-        if !digits.bytes().all(|b| b.is_ascii_digit()) {
-            return Err("分卷大小必须是正整数 MiB。".into());
-        }
-        let mib: u64 = digits.parse().map_err(|_| "分卷大小超出可表示范围。")?;
-        let bytes = mib.checked_mul(1 << 20).ok_or("分卷大小超出可表示范围。")?;
-        if bytes < 65536 || bytes > ArchiveJobLimits::default().max_output_bytes {
-            return Err("分卷大小必须在 64 KiB 到本次输出预算之间。".into());
+        let bytes = size.bytes()?;
+        if bytes > ArchiveJobLimits::default().max_output_bytes {
+            return Err("分卷大小不能超过本次输出预算。".into());
         }
         Ok(Some(bytes))
     }
@@ -194,7 +212,6 @@ impl CreateDraft {
         if !valid_job_path(&self.destination) {
             return Err("请选择本地绝对目标文件夹（例如 C:\\Archive）。".into());
         }
-        let mut names = std::collections::HashSet::new();
         let groups: Vec<Vec<&DraftSource>> = if self.separately {
             self.sources.iter().map(|source| vec![source]).collect()
         } else {
@@ -216,9 +233,6 @@ impl CreateDraft {
             } else {
                 self.name.clone()
             };
-            if !names.insert(name.to_lowercase()) {
-                return Err("分别压缩会产生同名目标，请分批选择或更改来源名称。".into());
-            }
             let mut roots = std::collections::HashSet::new();
             let paths = sources
                 .iter()
@@ -287,7 +301,7 @@ impl CreateDraft {
                     },
                     test_after_create: self.test_after_create,
                     name,
-                    volume_bytes: self.volume_bytes()?,
+                    volume_bytes: options.volume_bytes,
                 }),
             };
             request
@@ -585,7 +599,7 @@ impl ModifyDraft {
         {
             return Err("替换内容只接受一个原始文件条目和一个普通替换文件。".into());
         }
-        let source = self.source.to_str().ok_or("归档路径不是有效 Unicode。")?;
+        let source = self.source.to_str().ok_or("压缩包路径不是有效 Unicode。")?;
         let request = ArchiveJobRequest {
             kind: ArchiveJobKind::Modify,
             paths: std::iter::once(source.to_owned())

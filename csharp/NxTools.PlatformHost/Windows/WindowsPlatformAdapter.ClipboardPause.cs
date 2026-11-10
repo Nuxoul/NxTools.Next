@@ -51,7 +51,9 @@ internal sealed partial class WindowsPlatformAdapter
 
         // No HWND/hooks/listener/COM/global input. Only the OS operations are substituted;
         // WndProc, admission, application, read guard, retry and shutdown are production code.
-        internal EventWindow(ChannelWriter<WindowsPlatformEvent> events, IPlatformLog log, ClipboardCaptureOperations operations)
+        internal EventWindow(ChannelWriter<WindowsPlatformEvent> events, IPlatformLog log, ClipboardCaptureOperations operations,
+            ClipboardContentOperations? content = null, ClipboardStagingDirectory? staging = null, ClipboardCaptureLimits? limits = null,
+            long? publicationByteLimit = null)
         {
             _events = events;
             _log = log;
@@ -62,6 +64,10 @@ internal sealed partial class WindowsPlatformAdapter
             _fileDialogWindowCallback = OnFileDialogWindowChanged;
             _deferExplorerDelivery = _ => throw new InvalidOperationException("Clipboard fixture has no Explorer delivery.");
             _clipboardCapture = operations;
+            if (content is not null) _clipboardContent = content;
+            if (staging is not null) _clipboardStaging = new(() => staging);
+            if (limits is { } captureLimits) _captureLimits = captureLimits;
+            if (publicationByteLimit is { } byteLimit) _clipboardPublicationByteLimit = byteLimit;
         }
 
         internal (bool Paused, bool HasPendingSource, int Attempts, int PendingCommands) ClipboardCaptureState
@@ -217,6 +223,12 @@ internal sealed partial class WindowsPlatformAdapter
             catch (Exception error)
             {
                 WriteClipboardCaptureFailure("clipboard.capture_stop_failed", error);
+            }
+            if (_clipboardStaging.IsValueCreated)
+            {
+                var staging = _clipboardStaging.Value;
+                _ = _capturePublishTail.ContinueWith(_ => staging.Dispose(), CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
         }
 

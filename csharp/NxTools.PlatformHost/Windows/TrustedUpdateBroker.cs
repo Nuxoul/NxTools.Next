@@ -57,16 +57,22 @@ internal static class TrustedUpdateBroker
         Trace(log, correlationId, "client_accepted", started);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             ValidateEnrollment();
             stage = "package_validation";
             using var requestedRelease = TrustedReleaseManifest.VerifyPackage(packageDirectory,
                 Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64), 0);
+            stage = "service_start";
+            cancellationToken.ThrowIfCancellationRequested();
+            StartIfStopped();
+            Trace(log, correlationId, "client_service_started", started);
             stage = "pipe_connect";
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             deadline.CancelAfter(TimeSpan.FromMinutes(5));
             using var pipe = new NamedPipeClientStream(".", PipeName, PipeDirection.InOut, PipeOptions.Asynchronous,
                 TokenImpersonationLevel.Impersonation);
-            await pipe.ConnectAsync(10_000, deadline.Token);
+            // Demand startup may first replay a durable prior transaction before it opens the pipe.
+            await pipe.ConnectAsync(240_000, deadline.Token);
             stage = "peer_service_validation";
             TrustedUpdatePeer.Verify(pipe.SafePipeHandle);
             Trace(log, correlationId, "client_peer_verified", started);
@@ -115,6 +121,30 @@ internal static class TrustedUpdateBroker
                 throw new InvalidDataException("Update trust rotation requires maintenance.");
             return;
         }
+        ProvisionEnrollment(package, publicKey, verified, log, correlationId);
+    }
+
+    // Explicit installer repair only; normal enrollment keeps its existing service check.
+    internal static void EnrollMissingRoot(string package, IPlatformLog log, Guid correlationId)
+    {
+        if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
+            throw new UnauthorizedAccessException("Administrator required.");
+        var publicKey = Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64);
+        using var verified = TrustedReleaseManifest.VerifyPackage(package, publicKey, 0);
+        using var registration = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}")
+            ?? throw new InvalidDataException("Existing updater registration required.");
+        TrustedMissingBootstrapRepair.ValidateRegistration(new(
+            registration.GetValue("ImagePath") as string, registration.GetValue("ObjectName") as string,
+            registration.GetValue("NxToolsUpdateKeySha256") as string, registration.GetValue("NxToolsBootstrapSha256") as string),
+            Bootstrap, Convert.ToHexString(SHA256.HashData(publicKey)));
+        IndexerServiceInstaller.ValidateMissingProductParents();
+        TrustedMissingBootstrapRepair.RequireMissingRoot(Root);
+        ProvisionEnrollment(package, publicKey, verified, log, correlationId, requireInitialDeployment: true);
+    }
+
+    private static void ProvisionEnrollment(string package, byte[] publicKey, VerifiedRelease verified,
+        IPlatformLog log, Guid? correlationId, bool requireInitialDeployment = false)
+    {
         using var rootLease = IndexerServiceInstaller.HardenProductChildDirectory("Updater");
         using var bootstrapLease = IndexerServiceInstaller.HardenProductChildDirectory("Updater", "Bootstrap");
         using var storeLease = IndexerServiceInstaller.HardenProductChildDirectory("Updater", "Releases");
@@ -135,7 +165,8 @@ internal static class TrustedUpdateBroker
                 }
                 if (!string.Equals(IndexerServiceInstaller.ComputeBinaryHash(Bootstrap), EnrollmentIdentity(verified).BootstrapSha256, StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Bootstrap recovery identity mismatch.");
-                new TrustedUpdateTransaction(Store, publicKey, new NativeDeployment(log), log).Initialize(package);
+                new TrustedUpdateTransaction(Store, publicKey, new NativeDeployment(log), log)
+                    .Initialize(package, requireInitialDeployment);
             },
             () => RegisterEnrollment(publicKey), ValidateEnrollment);
         Trace(log, correlationId, "enrolled", Stopwatch.GetTimestamp());
@@ -153,7 +184,7 @@ internal static class TrustedUpdateBroker
                 throw new InvalidDataException("Existing updater service is not the enrollment target.");
         }
         RunSc([exists ? "config" : "create", ServiceName, "binPath=", $"\"{Bootstrap}\" --trusted-update-service",
-            "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "NxTools Trusted Update"]);
+            "start=", "demand", "obj=", "LocalSystem", "DisplayName=", "NxTools Trusted Update"]);
         using (var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}", true)
             ?? throw new InvalidOperationException("Updater registration unavailable."))
         {
@@ -162,17 +193,39 @@ internal static class TrustedUpdateBroker
         }
         RunSc(["sdset", ServiceName, "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;CCLCSWRPLORC;;;AU)"]);
         RunSc(["failure", ServiceName, "reset=", "86400", "actions=", "restart/3000/restart/10000"]);
-        RunSc(["start", ServiceName]);
-        using var service = new ServiceController(ServiceName);
-        service.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(30));
     }
 
+    // Enrollment/explicit maintenance only: the ordinary caller never changes SCM configuration.
+    internal static void ConfigureDemandStart() => RunSc(["config", ServiceName, "start=", "demand"]);
+
+    // The authenticated user ACL grants RP (Start), not SERVICE_CHANGE_CONFIG.
+    internal static void StartIfStopped()
+    {
+        using var service = new ServiceController(ServiceName);
+        service.Refresh();
+        StartIfStopped(() => { service.Refresh(); return service.Status; }, service.Start);
+    }
+
+    internal static void StartIfStopped(Func<ServiceControllerStatus> status, Action start)
+    {
+        var current = status();
+        if (current == ServiceControllerStatus.Stopped)
+        {
+            try { start(); }
+            catch (Win32Exception error) when (error.NativeErrorCode == 1056 &&
+                status() is (ServiceControllerStatus.Running or ServiceControllerStatus.StartPending)) { }
+        }
+        else if (current is not (ServiceControllerStatus.Running or ServiceControllerStatus.StartPending))
+            throw new InvalidOperationException("Updater service is not available for demand start.");
+    }
     private static void ValidateEnrollment()
     {
         using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}")
             ?? throw new InvalidDataException("Updater is not registered.");
         if (!string.Equals(key.GetValue("ImagePath") as string, $"\"{Bootstrap}\" --trusted-update-service", StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(key.GetValue("ObjectName") as string, "LocalSystem", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(key.GetValue("NxToolsUpdateKeySha256") as string,
+                Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64))), StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(key.GetValue("NxToolsBootstrapSha256") as string,
                 IndexerServiceInstaller.ComputeBinaryHash(Bootstrap), StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Updater protected registration mismatch.");
@@ -198,7 +251,7 @@ internal static class TrustedUpdateBroker
     {
         private readonly IPlatformLog log;
         private readonly CancellationTokenSource shutdown = new();
-        private Task? loop;
+        private Task<Guid?>? loop;
         internal BrokerService(IPlatformLog log)
         {
             this.log = log;
@@ -206,94 +259,123 @@ internal static class TrustedUpdateBroker
         }
         protected override void OnStart(string[] args)
         {
-            loop = Task.Run(async () =>
+            var started = Stopwatch.GetTimestamp();
+            loop = Task.Run(() => ServeAsync(log, shutdown.Token));
+            // Stop on a separate continuation: OnStop can wait for the finished serve task.
+            _ = loop.ContinueWith(completed =>
             {
-                try { await ServeAsync(log, shutdown.Token); }
-                catch (Exception failure) when (failure is not OutOfMemoryException)
-                {
-                    Trace(log, null, "service_loop_failed", Stopwatch.GetTimestamp(), failure.HResult);
-                    Environment.Exit(1); // SCM recovery restarts and replays the protected journal.
-                }
-            });
+                var correlation = completed.Status == TaskStatus.RanToCompletion ? completed.Result : null;
+                if (completed.IsFaulted)
+                    Trace(log, correlation, "service_loop_failed", started, completed.Exception?.GetBaseException().HResult);
+                Trace(log, correlation, "service_stopping", started);
+                Stop();
+                Trace(log, correlation, "service_stopped", started);
+            }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
         }
         protected override void OnStop()
         {
             shutdown.Cancel();
-            // A prepared transaction finishes/rolls back independently of a client disconnect.
-            if (loop is not null && !loop.Wait(TimeSpan.FromMinutes(4)))
-                throw new TimeoutException("Updater transaction did not stop safely.");
+            // Prepared work settles without the client or the SCM stop token. Keep SCM informed
+            // while waiting for its real deployment/rollback, not a synthetic timeout.
+            while (loop is not null && !((IAsyncResult)loop).AsyncWaitHandle.WaitOne(TimeSpan.FromSeconds(15)))
+                RequestAdditionalTime(30_000);
         }
     }
 
-    private static async Task ServeAsync(IPlatformLog log, CancellationToken cancellationToken)
+    // The optional callbacks/name are used by owned-pipe fixtures; production always verifies
+    // the original caller token and executes the protected transaction.
+    internal static async Task<Guid?> ServeAsync(IPlatformLog log, CancellationToken cancellationToken,
+        Func<Task>? recover = null, Func<string, Guid, CancellationToken, Task>? apply = null,
+        string? pipeName = null, TimeSpan? handshakeTimeout = null, TimeSpan? readTimeout = null)
     {
         var transaction = new TrustedUpdateTransaction(Store, Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64),
             new NativeDeployment(log), log);
-        await transaction.RecoverAsync(Guid.NewGuid(), CancellationToken.None);
-        while (!cancellationToken.IsCancellationRequested)
+        if (recover is null) await transaction.RecoverAsync(Guid.NewGuid(), CancellationToken.None);
+        else await recover();
+        if (cancellationToken.IsCancellationRequested) return null;
+        var security = new PipeSecurity();
+        security.SetAccessRuleProtection(true, false);
+        foreach (var sid in new[] { WellKnownSidType.LocalSystemSid, WellKnownSidType.BuiltinAdministratorsSid })
+            security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(sid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
+            PipeAccessRights.ReadWrite, AccessControlType.Allow));
+        security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.NetworkSid, null),
+            PipeAccessRights.FullControl, AccessControlType.Deny));
+        using var pipe = NamedPipeServerStreamAcl.Create(pipeName ?? PipeName, PipeDirection.InOut, 1,
+            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, MaximumFrame, MaximumFrame, security);
+        var started = Stopwatch.GetTimestamp();
+        Guid? correlation = null;
+        try
         {
-            var security = new PipeSecurity();
-            security.SetAccessRuleProtection(true, false);
-            foreach (var sid in new[] { WellKnownSidType.LocalSystemSid, WellKnownSidType.BuiltinAdministratorsSid })
-                security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(sid, null), PipeAccessRights.FullControl, AccessControlType.Allow));
-            security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
-                PipeAccessRights.ReadWrite, AccessControlType.Allow));
-            // Network clients cannot ask SYSTEM to read a remote/unowned package.
-            security.AddAccessRule(new PipeAccessRule(new SecurityIdentifier(WellKnownSidType.NetworkSid, null),
-                PipeAccessRights.FullControl, AccessControlType.Deny));
-            using var pipe = NamedPipeServerStreamAcl.Create(PipeName, PipeDirection.InOut, 1,
-                PipeTransmissionMode.Byte, PipeOptions.Asynchronous, MaximumFrame, MaximumFrame, security);
-            try
+            using (var handshake = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
-                await pipe.WaitForConnectionAsync(cancellationToken);
-                using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                readDeadline.CancelAfter(TimeSpan.FromSeconds(10));
-                var request = await ReadFrameAsync<Request>(pipe, readDeadline.Token);
-                if (request.MaintenanceProbe && request.CorrelationId != Guid.Empty && request.PackageDirectory == "")
-                {
-                    await WriteFrameAsync(pipe, new Reply(request.CorrelationId, true, "maintenance_ready"), readDeadline.Token);
-                    continue;
-                }
-                if (request.CorrelationId == Guid.Empty || request.PackageDirectory.Length > 1024 ||
-                    !Path.IsPathFullyQualified(request.PackageDirectory) || request.PackageDirectory.StartsWith("\\\\", StringComparison.Ordinal))
-                    throw new InvalidDataException("Invalid update request.");
-                FileStream updateAdmission;
-                try { updateAdmission = new FileStream(Path.Combine(Root, "bootstrap-maintenance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+                handshake.CancelAfter(handshakeTimeout ?? TimeSpan.FromSeconds(30));
+                await pipe.WaitForConnectionAsync(handshake.Token);
+            }
+            using var readDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            readDeadline.CancelAfter(readTimeout ?? TimeSpan.FromSeconds(10));
+            var request = await ReadFrameAsync<Request>(pipe, readDeadline.Token);
+            correlation = request.CorrelationId == Guid.Empty ? null : request.CorrelationId;
+            if (request.MaintenanceProbe && correlation is not null && request.PackageDirectory == "")
+            {
+                Trace(log, correlation, "maintenance_accepted", started);
+                await WriteFrameAsync(pipe, new Reply(request.CorrelationId, true, "maintenance_ready"), readDeadline.Token);
+                Trace(log, correlation, "maintenance_completed", started);
+                return correlation;
+            }
+            if (correlation is null || request.PackageDirectory is null || request.PackageDirectory.Length > 1024 ||
+                !Path.IsPathFullyQualified(request.PackageDirectory) || request.PackageDirectory.StartsWith("\\\\", StringComparison.Ordinal))
+                throw new InvalidDataException("Invalid update request.");
+            FileStream? admission = null;
+            if (apply is null)
+            {
+                try { admission = new FileStream(Path.Combine(Root, "bootstrap-maintenance.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
                 catch (IOException)
                 {
                     await WriteFrameAsync(pipe, new Reply(request.CorrelationId, false, "bootstrap_maintenance_busy"), readDeadline.Token);
-                    continue;
+                    Trace(log, correlation, "bootstrap_maintenance_busy", started);
+                    return correlation;
                 }
-                using var admission = updateAdmission;
-                // Open the source under the caller token, not arbitrary SYSTEM read privileges.
-                // Locked verified handles can then be copied into SYSTEM-owned staging.
-                VerifiedRelease? sourceRelease = null;
-                pipe.RunAsClient(() => sourceRelease = TrustedReleaseManifest.VerifyPackage(request.PackageDirectory,
-                    Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64), 0));
-                using var callerRelease = sourceRelease ?? throw new InvalidDataException("Updater caller unavailable.");
-                var started = Stopwatch.GetTimestamp();
-                Trace(log, request.CorrelationId, "accepted", started);
-                Reply reply;
-                try
-                {
-                    await transaction.ApplyVerifiedAsync(callerRelease, request.CorrelationId, cancellationToken);
-                    reply = new(request.CorrelationId, true, "trusted_updated");
-                }
-                catch (Exception error) when (error is not OutOfMemoryException)
-                {
-                    reply = new(request.CorrelationId, false, "trusted_update_rejected",
-                        error is Win32Exception native ? native.NativeErrorCode : error.HResult);
-                }
-                Trace(log, request.CorrelationId, reply.Stage, started, reply.NativeErrorCode);
-                using var writeDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await WriteFrameAsync(pipe, reply, writeDeadline.Token);
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (Exception error) when (error is not OutOfMemoryException)
+            using (admission)
             {
-                Trace(log, null, "request_failed", Stopwatch.GetTimestamp(), error.HResult);
+                VerifiedRelease? sourceRelease = null;
+                if (apply is null)
+                    pipe.RunAsClient(() => sourceRelease = TrustedReleaseManifest.VerifyPackage(request.PackageDirectory,
+                        Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64), 0));
+                using (sourceRelease)
+                {
+                    Trace(log, correlation, "accepted", started);
+                    Reply reply;
+                    try
+                    {
+                        // Never cancel a prepared transaction when the client disappears or SCM stops.
+                        if (apply is null)
+                            await transaction.ApplyVerifiedAsync(sourceRelease ?? throw new InvalidDataException("Updater caller unavailable."),
+                                request.CorrelationId, CancellationToken.None);
+                        else await apply(request.PackageDirectory, request.CorrelationId, CancellationToken.None);
+                        reply = new(request.CorrelationId, true, "trusted_updated");
+                    }
+                    catch (Exception error) when (error is not OutOfMemoryException)
+                    {
+                        reply = new(request.CorrelationId, false, "trusted_update_rejected",
+                            error is Win32Exception native ? native.NativeErrorCode : error.HResult);
+                    }
+                    Trace(log, correlation, reply.Stage, started, reply.NativeErrorCode);
+                    using var writeDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                    await WriteFrameAsync(pipe, reply, writeDeadline.Token);
+                }
             }
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        { Trace(log, correlation, "service_stop_requested", started); }
+        catch (OperationCanceledException) when (correlation is null)
+        { Trace(log, null, pipe.IsConnected ? "read_timeout" : "handshake_timeout", started); }
+        catch (EndOfStreamException)
+        { Trace(log, correlation, "request_eof", started); }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        { Trace(log, correlation, "request_failed", started, error is Win32Exception native ? native.NativeErrorCode : error.HResult); }
+        return correlation;
     }
 
     private sealed class NativeDeployment(IPlatformLog log) : TrustedUpdateTransaction.IDeployment

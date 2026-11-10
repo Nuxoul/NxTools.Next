@@ -199,6 +199,7 @@ impl<'de> Deserialize<'de> for ArchiveVirtualDragCommand {
                                     lease_id: None,
                                     password_interaction: false,
                                     temp_policy: None,
+                                    preview_options: None,
                                 }
                             }
                             _ => {
@@ -251,7 +252,19 @@ impl ArchiveVirtualDragCommand {
             };
         }
         let items = self.items.as_ref().ok_or(invalid)?;
-        if self.action != "start" || self.source_window_handle <= 0 || items.is_empty() {
+        let locate = self.action == "locate";
+        if !(self.action == "start" || locate) || self.source_window_handle <= 0 || items.is_empty()
+        {
+            return Err(invalid);
+        }
+        // Destination location drags one descriptor-only wrapper; extraction runs as an ordinary
+        // job after the receiver reports where that wrapper was created.
+        if locate
+            && (items.len() != 1
+                || !items[0].directory
+                || items[0].name.contains('/')
+                || self.authorization_id.is_some())
+        {
             return Err(invalid);
         }
         let mut names = std::collections::HashSet::new();
@@ -350,6 +363,17 @@ pub struct ArchiveVirtualDragProgress {
     pub files_total: u64,
     pub current_index: Option<u32>,
     pub current_member: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_request_id: Option<Uuid>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_bytes_done: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_bytes_total: Option<u64>,
+    /// Processed member bytes, distinct from `bytes_done` (sealed cache bytes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes_processed: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sequence: Option<u64>,
     pub cleanup_complete: Option<bool>,
     pub code: Option<String>,
     pub native_error_code: Option<i32>,
@@ -375,6 +399,24 @@ impl ArchiveVirtualDragProgress {
                     | "failed"
             )
             || self.files_done > self.files_total
+            || self.sequence == Some(0)
+            || self.current_request_id.is_some_and(|id| id.is_nil())
+            || ((self.current_request_id.is_some()
+                || self.current_bytes_done.is_some()
+                || self.current_bytes_total.is_some()
+                || self.bytes_processed.is_some())
+                && (self.sequence.is_none()
+                    || self.current_request_id.is_none()
+                    || self.current_index.is_none()
+                    || self.current_bytes_done.is_none()
+                    || self.bytes_processed.is_none()))
+            || self
+                .bytes_processed
+                .is_some_and(|done| done < self.bytes_done)
+            || self
+                .current_bytes_done
+                .zip(self.current_bytes_total)
+                .is_some_and(|(done, total)| done > total)
             || self.current_member.as_ref().is_some_and(|name| {
                 name.is_empty() || name.len() > 32767 || name.chars().any(char::is_control)
             })
@@ -391,6 +433,54 @@ impl ArchiveVirtualDragProgress {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn r45_drag_processed_progress_wire_keeps_current_and_sealed_bytes_distinct() {
+        let wire = serde_json::json!({
+            "version":1,"operation_id":Uuid::new_v4(),"session_id":Uuid::new_v4(),
+            "generation":7,"phase":"materializing","bytes_done":100,"bytes_total":500,
+            "files_done":1,"files_total":2,"current_index":4,"current_member":"Root/current.bin",
+            "current_request_id":Uuid::new_v4(),"current_bytes_done":50,"current_bytes_total":200,
+            "bytes_processed":150,"sequence":3
+        });
+        let event: ArchiveVirtualDragProgress =
+            serde_json::from_value(wire.clone()).expect("real drag progress wire");
+        event.validate().expect("bound progress");
+        let roundtrip = serde_json::to_value(&event).expect("wire roundtrip");
+        for field in [
+            "bytes_done",
+            "current_bytes_done",
+            "current_bytes_total",
+            "bytes_processed",
+            "sequence",
+            "current_request_id",
+        ] {
+            assert_eq!(roundtrip[field], wire[field], "{field}");
+        }
+        for (field, value) in [
+            ("current_request_id", serde_json::json!(Uuid::nil())),
+            ("sequence", serde_json::json!(0)),
+            ("current_index", serde_json::Value::Null),
+            ("bytes_processed", serde_json::json!(99)),
+            ("current_bytes_done", serde_json::json!(201)),
+        ] {
+            let mut invalid = wire.clone();
+            invalid[field] = value;
+            assert!(
+                serde_json::from_value::<ArchiveVirtualDragProgress>(invalid)
+                    .expect("typed invalid snapshot")
+                    .validate()
+                    .is_err(),
+                "{field}"
+            );
+        }
+        let mut unknown = wire;
+        unknown["bytes_total"] = serde_json::Value::Null;
+        unknown["current_bytes_total"] = serde_json::Value::Null;
+        serde_json::from_value::<ArchiveVirtualDragProgress>(unknown)
+            .expect("unknown totals")
+            .validate()
+            .expect("unknown remains valid");
+    }
     #[test]
     fn tree_root_wrapper_v1_preserves_authority_and_rejects_windows_device_aliases() {
         let mut command = tree_command();
@@ -433,6 +523,32 @@ mod tests {
             serde_json::from_value::<ArchiveVirtualDragCommand>(wire).expect("roundtrip"),
             command
         );
+    }
+    #[test]
+    fn r45_n01_long_root_serialized_wire_fixture() {
+        let mut command = tree_command();
+        let wrapper = "界".repeat(86);
+        for item in command.items.as_mut().expect("items") {
+            item.name = format!(
+                "{wrapper}{}",
+                item.name.strip_prefix("root").expect("tree root")
+            );
+        }
+        command.validate().expect("Windows-valid Root tree");
+        let operation_id = command.operation_id;
+        let mut envelope = crate::Envelope::new(crate::Message::PlatformCommand(
+            crate::PlatformCommand::ArchiveVirtualDrag(Box::new(command)),
+        ));
+        envelope.correlation_id = Some(operation_id);
+        let wire = envelope
+            .encode_line()
+            .expect("actual serialized Rust envelope");
+        let decoded = crate::Envelope::decode_line(&wire).expect("serialized command roundtrip");
+        assert_eq!(decoded, envelope);
+        if let Some(scratch) = std::env::var_os("PI_SCRATCH_DIR") {
+            let path = std::path::Path::new(&scratch).join("archive-r45-n01-long-root-wire.json");
+            std::fs::write(path, wire).expect("scratch wire fixture for native admission");
+        }
     }
     #[test]
     fn virtual_spike_cancel_shape_is_bounded_and_legacy_authority_is_not_reused() {
@@ -510,6 +626,7 @@ mod tests {
             copy_motw: Some(true),
             password_interaction: false,
             temp_policy: None,
+            preview_options: None,
         };
         let item = ArchiveVirtualDragItem {
             name: "file.txt".into(),
@@ -597,6 +714,34 @@ mod tests {
             invalid.validate().is_err(),
             "directory cannot declare file length"
         );
+    }
+    #[test]
+    fn locate_admits_exactly_one_unauthorized_wrapper_directory() {
+        let mut command = tree_command();
+        command.action = "locate".into();
+        command.items.as_mut().expect("items").truncate(1);
+        command.validate().expect("single wrapper locate");
+        let wire = serde_json::to_value(&command).expect("wire");
+        assert!(wire.get("source").is_none(), "locate carries no shared source");
+        assert_eq!(
+            serde_json::from_value::<ArchiveVirtualDragCommand>(wire).expect("roundtrip"),
+            command
+        );
+        let mut file = command.clone();
+        file.items = Some(vec![tree_command().items.expect("items")[2].clone()]);
+        assert!(file.validate().is_err(), "locate never names a file");
+        let mut nested = command.clone();
+        nested.items.as_mut().expect("items")[0].name = "root/inner".into();
+        assert!(nested.validate().is_err(), "locate wrapper is one component");
+        let mut many = tree_command();
+        many.action = "locate".into();
+        assert!(many.validate().is_err(), "locate carries no member tree");
+        let mut authorized = command.clone();
+        authorized.authorization_id = Some(Uuid::new_v4());
+        assert!(authorized.validate().is_err(), "locate never consumes unlock");
+        let mut windowless = command;
+        windowless.source_window_handle = 0;
+        assert!(windowless.validate().is_err());
     }
     #[test]
     fn tree_wire_checks_prefix_casing_descriptor_file_and_serialized_budgets() {
@@ -740,6 +885,11 @@ mod tests {
             files_total: 256,
             current_index: Some(256),
             current_member: Some("ordinary/file-255.txt".into()),
+            current_request_id: None,
+            current_bytes_done: None,
+            current_bytes_total: None,
+            bytes_processed: None,
+            sequence: None,
             cleanup_complete: None,
             code: None,
             native_error_code: None,

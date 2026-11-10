@@ -11,6 +11,7 @@ pub(super) struct DragPresentation {
     session: Uuid,
     ended: bool,
     latest: ArchiveVirtualDragProgress,
+    members: Rc<[Option<Uuid>]>,
     started: Instant,
     window: AnyWindowHandle,
     view: WeakEntity<JobProgressView>,
@@ -28,24 +29,65 @@ impl ArchiveApplication {
         if event.validate().is_err() {
             return;
         }
-        let retained = self.jobs.drag_progress.as_ref().is_some_and(|slot| {
-            slot.operation == event.operation_id
-                && slot.session == event.session_id
-                && slot.generation == event.generation
-                && !slot.ended
-        });
-        let matches = retained
-            || self.windows.get(&event.session_id).is_some_and(|slot| {
-                slot.generation == event.generation
+        let members = if let Some(slot) = self
+            .jobs
+            .drag_progress
+            .as_ref()
+            .filter(|slot| slot.operation == event.operation_id)
+        {
+            if slot.ended
+                || slot.session != event.session_id
+                || slot.generation != event.generation
+                || slot
+                    .latest
+                    .sequence
+                    .is_some_and(|prior| event.sequence.is_none_or(|next| next <= prior))
+                || event.bytes_done < slot.latest.bytes_done
+                || event.files_done < slot.latest.files_done
+                || slot
+                    .latest
+                    .bytes_processed
+                    .zip(event.bytes_processed)
+                    .is_some_and(|(prior, next)| next < prior)
+                || (event.current_request_id.is_some()
+                    && event.current_request_id == slot.latest.current_request_id
                     && slot
-                        .view
+                        .latest
+                        .current_bytes_done
+                        .zip(event.current_bytes_done)
+                        .is_some_and(|(prior, next)| next < prior))
+            {
+                return;
+            }
+            slot.members.clone()
+        } else {
+            let Some(members) = self
+                .windows
+                .get(&event.session_id)
+                .filter(|slot| slot.generation == event.generation)
+                .and_then(|slot| {
+                    slot.view
                         .read_with(cx, |view, _| {
-                            view.drag_progress_matches(event.operation_id, event.generation)
+                            view.drag_progress_members(event.operation_id, event.generation)
                         })
-                        .unwrap_or(false)
-            });
-        if !matches {
-            return;
+                        .ok()
+                        .flatten()
+                })
+            else {
+                return;
+            };
+            members
+        };
+        if let Some(index) = event.current_index {
+            let Some(expected) = members.get(index as usize).copied().flatten() else {
+                return;
+            };
+            if event
+                .current_request_id
+                .is_some_and(|request| request != expected)
+            {
+                return;
+            }
         }
         if self
             .jobs
@@ -72,6 +114,7 @@ impl ArchiveApplication {
             let closing = owner.clone();
             let capture = Rc::new(std::cell::RefCell::new(None));
             let captured = capture.clone();
+            let initial = event.clone();
             let bounds = Bounds::centered(None, size(px(560.), px(300.)), cx);
             let opened = cx.open_window(
                 WindowOptions {
@@ -83,7 +126,7 @@ impl ArchiveApplication {
                     ..crate::ui::components::titlebar::caption_window_options()
                 },
                 move |window, cx| {
-                    window.set_window_title("归档拖出进度 — NxTools");
+                    window.set_window_title(crate::archive::progress::DRAG_TITLE);
                     let hwnd = crate::ui::native_window_handle(window).unwrap_or(0);
                     let scale = window.scale_factor();
                     let native_bounds = SetWindowBoundsCommand {
@@ -93,7 +136,7 @@ impl ArchiveApplication {
                         width: (560. * scale).round() as i32,
                         height: (300. * scale).round() as i32,
                     };
-                    let view = cx.new(|cx| JobProgressView::new(operation, owner, true, cx));
+                    let view = cx.new(|cx| JobProgressView::new_drag(initial, owner, cx));
                     *captured.borrow_mut() = Some((view.downgrade(), hwnd, native_bounds));
                     window.on_window_should_close(cx, move |_, cx| {
                         let owner = closing.clone();
@@ -114,6 +157,7 @@ impl ArchiveApplication {
                     session: event.session_id,
                     ended: false,
                     latest: event.clone(),
+                    members,
                     started: Instant::now(),
                     window: window.into(),
                     view,
@@ -133,9 +177,6 @@ impl ArchiveApplication {
         }) else {
             return;
         };
-        if event.bytes_done < slot.latest.bytes_done || event.files_done < slot.latest.files_done {
-            return;
-        }
         slot.latest = event.clone();
         slot.ended = terminal;
         let window = slot.window;

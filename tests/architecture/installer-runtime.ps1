@@ -1,4 +1,4 @@
-param([ValidateSet('success','failure','owned-process','exited-process','exited-cim-null','trusted-success','trusted-failure','migration-success','migration-cancel','migration-failure','migration-tampered','protected-success','protected-cancel','protected-failure')][string]$Scenario = 'success', [string]$UpgradeHelperPath = '')
+param([ValidateSet('success','failure','owned-process','exited-process','exited-cim-null','trusted-success','trusted-failure','migration-success','migration-cancel','migration-failure','migration-tampered','repair-success','repair-cancel','repair-failure','repair-tampered','detection-failure','protected-success','protected-cancel','protected-failure')][string]$Scenario = 'success', [string]$UpgradeHelperPath = '')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $source = Get-Content (Join-Path $root 'installer\nxtools-next.iss') -Raw -Encoding UTF8
@@ -92,14 +92,15 @@ exit 0
 # Extraction-only inputs keep the existing callback scenarios source-compatible.
 [IO.File]::WriteAllText((Join-Path $work 'NxTools.release.json'), '{"files":[]}')
 [IO.File]::WriteAllText((Join-Path $work 'NxTools.release.sig'), 'runtime scenario fake sidecar')
-$migration = $Scenario.StartsWith('migration-')
-$detectCode = if ($migration) { 10 } else { 0 }
-[IO.File]::WriteAllText((Join-Path $work 'bootstrap-migration.ps1'), ('param([string]$ManifestPath)' + "`r`nexit $detectCode"))
+$repair=$Scenario.StartsWith('repair-')
+$migration = $Scenario.StartsWith('migration-') -or $repair
+$detectCode = if ($repair) { 11 } elseif ($migration) { 10 } elseif ($Scenario -eq 'detection-failure') { 1 } else { 0 }
+[IO.File]::WriteAllText((Join-Path $work 'bootstrap-migration.ps1'), ('param([string]$ManifestPath,[string]$DiagnosticPath,[string]$CorrelationId)' + "`r`n" + 'if($DiagnosticPath){[IO.File]::WriteAllText($DiagnosticPath,''{"event":"fixture_detection"}'')}' + "`r`nexit $detectCode"))
 $payload = Join-Path $work 'payload'; New-Item -ItemType Directory -Path (Join-Path $payload 'nested') -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $payload 'NxTools.PlatformHost.exe'), 'same-release migration fixture; never executed')
 [IO.File]::WriteAllText((Join-Path $payload 'nested\fixture.txt'), 'nested same-release bytes')
 $payloadHash = (Get-FileHash (Join-Path $payload 'NxTools.PlatformHost.exe')).Hash
-if ($Scenario -eq 'migration-tampered') { $payloadHash = '0' * 64 }
+if ($Scenario -in @('migration-tampered','repair-tampered')) { $payloadHash = '0' * 64 }
 $callback = $callback.Replace('{#BootstrapMigrationHostSha256}', $payloadHash)
 $callback = $callback.Replace('{localappdata}\NxTools\NxTools.Next\logs\installer\', $work + '\diagnostics\')
 # Diagnostic argument adaptation is applied below, after scenario-specific helpers are selected.
@@ -107,10 +108,12 @@ $payloadFiles = if ($migration) { 'Source: "' + $payload + '\*"; DestDir: "{app}
 if ($migration) {
     # Test-only adapter: never invokes runas or a real administrator maintenance action.
     $callback = $callback.Replace("ShellExec('runas', PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)", "Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode)")
-    $answer = if ($Scenario -eq 'migration-cancel') { 'IDCANCEL' } else { 'IDOK' }
-    $callback = [regex]::Replace($callback, "MsgBox\('[^']*', mbConfirmation, MB_OKCANCEL\)", $answer)
-    $code = if ($Scenario -eq 'migration-failure') { 1 } else { 0 }
-    $helper = 'param([string]$InstallDirectory,[string]$CorrelationId,[string]$StatePath,[string]$NewManifestPath,[string]$NewSignaturePath,[string]$BootstrapMigrationPackage)' + "`r`n" +
+    $answer = if ($Scenario -in @('migration-cancel','repair-cancel')) { 'IDCANCEL' } else { 'IDOK' }
+    $callback = [regex]::Replace($callback, "MsgBox\(Prompt, mbConfirmation, MB_OKCANCEL\)", $answer)
+    $code = if ($Scenario -in @('migration-failure','repair-failure')) { 1 } else { 0 }
+    $expectedRepair=if($repair){'$true'}else{'$false'}
+    $helper = 'param([string]$InstallDirectory,[string]$CorrelationId,[string]$StatePath,[string]$NewManifestPath,[string]$NewSignaturePath,[string]$BootstrapMigrationPackage,[switch]$RepairMissingBootstrap)' + "`r`n" +
+        'if([bool]$RepairMissingBootstrap -ne '+$expectedRepair+'){exit 89}; ' +
         'if (!$BootstrapMigrationPackage -or [IO.File]::ReadAllText((Join-Path $BootstrapMigrationPackage ''NxTools.PlatformHost.exe'')) -ne ''same-release migration fixture; never executed'' -or [IO.File]::ReadAllText((Join-Path $BootstrapMigrationPackage ''nested\fixture.txt'')) -ne ''nested same-release bytes'') { exit 88 }; [IO.File]::WriteAllText((Join-Path $InstallDirectory ''helper-ran.txt''),''migration then preparation'')' + "`r`nexit $code"
     [IO.File]::WriteAllText((Join-Path $work 'close-owned-processes.ps1'), $helper, [Text.UTF8Encoding]::new($true))
 }
@@ -174,13 +177,13 @@ try {
         $passed = $runner.ExitCode -ne 0 -and !$helperRan -and !$markerInstalled -and $runtimeText -match 'upgrade_close.failed.*code=1223'
     } elseif ($Scenario -eq 'protected-failure') {
         $passed = $runner.ExitCode -ne 0 -and $helperRan -and !$markerInstalled -and (Test-Path (Join-Path $target 'elevated-ran.txt')) -and $runtimeText -match 'upgrade_close.failed.*code=7'
-    } elseif ($Scenario -eq 'migration-cancel') {
+    } elseif ($Scenario -in @('migration-cancel','repair-cancel','detection-failure')) {
         $passed = $runner.ExitCode -ne 0 -and !$helperRan -and !$markerInstalled -and $runtimeText -notmatch 'bootstrap_migration.elevation_requested'
-    } elseif ($Scenario -eq 'migration-tampered') {
+    } elseif ($Scenario -in @('migration-tampered','repair-tampered')) {
         $passed = $runner.ExitCode -ne 0 -and !$helperRan -and !$markerInstalled -and $runtimeText -notmatch 'bootstrap_migration.elevation_requested'
-    } elseif ($Scenario -eq 'migration-failure') {
+    } elseif ($Scenario -in @('migration-failure','repair-failure')) {
         $passed = $runner.ExitCode -ne 0 -and $helperRan -and !$markerInstalled
-    } elseif ($Scenario -eq 'migration-success') {
+    } elseif ($Scenario -in @('migration-success','repair-success')) {
         $passed = $runner.ExitCode -eq 0 -and $helperRan -and $markerInstalled -and ([regex]::Matches($runtimeText,'bootstrap_migration.elevation_requested')).Count -eq 1
     } else {
     if($Scenario -eq 'trusted-failure') {
@@ -198,6 +201,8 @@ try {
     } elseif ($Scenario -eq 'protected-cancel') {
         $passed = $passed -and @($diagnosticFiles | Where-Object Name -eq 'launch.txt').Count -eq 1
     }
+    $passed=$passed -and @($diagnosticFiles|Where-Object Name -eq 'bootstrap-detection.jsonl').Count -eq 1
+    $passed=$passed -and $runtimeText -match ('bootstrap_migration.detected started=1 exit='+$detectCode)
     $passed = $passed -and $runtimeText -notmatch 'Type Mismatch'
     if ($Scenario -eq 'trusted-failure') {
         $passed = $passed -and $runtimeText -match 'trusted_update.failed.*code=1'

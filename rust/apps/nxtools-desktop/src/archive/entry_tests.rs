@@ -234,6 +234,18 @@ fn active_content_escape_clears_pending_without_materialize_or_shell(
 }
 
 #[test]
+fn selected_output_limit_is_the_only_native_too_large_code() {
+    assert!(matches!(
+        entry::preview_native_result(Some(ArchiveReadError::SelectedOutputLimit)),
+        crate::archive::preview::PreviewResult::TooLarge
+    ));
+    assert!(matches!(
+        entry::preview_native_result(Some(ArchiveReadError::ResourceLimit)),
+        crate::archive::preview::PreviewResult::ReadLimit
+    ));
+}
+
+#[test]
 fn active_content_warning_includes_scripts_shortcuts_and_macro_documents() {
     for name in [
         "x.EXE", "x.hta", "x.url", "x.reg", "x.docm", "x.xlsm", "x.psm1",

@@ -256,6 +256,7 @@ impl ExtensionRuntime {
     }
     pub fn shutdown(&self) {
         self.0.stopped.store(true, Ordering::Release);
+        self.0.blobs.close();
         if let Ok(active) = self.0.active.lock() {
             for run in active.values() {
                 let _ = run.cancel.send(true);
@@ -266,6 +267,10 @@ impl ExtensionRuntime {
         {
             broker.shutdown();
         }
+    }
+    pub async fn shutdown_and_wait(&self) -> Result<(), crate::blobs::BlobError> {
+        self.shutdown();
+        self.0.blobs.shutdown().await
     }
     pub fn secret_store(&self) -> Result<BrokerSecretStore, RuntimeError> {
         Ok(BrokerSecretStore(self.broker()?))
@@ -976,6 +981,44 @@ mod tests {
         ) -> HostFuture<'a> {
             Box::pin(async { HostReply::error("unsupported") })
         }
+    }
+
+    #[tokio::test]
+    async fn blob_shutdown_runtime_drains_live_backing_without_broker_or_script() {
+        let parent = tempfile::tempdir().expect("isolated runtime shutdown");
+        let directory = parent.path().join("backing");
+        let mut runtime = ExtensionRuntime::new(
+            PackageRegistry::default(),
+            PathBuf::new(),
+            Arc::new(Adapter),
+        );
+        Arc::get_mut(&mut runtime.0)
+            .expect("unshared runtime")
+            .blobs = crate::blobs::BlobStore::new(directory.clone());
+        let run = runtime.0.blobs.invocation(
+            InvocationIdentity {
+                run_id: Uuid::new_v4(),
+                correlation_id: Uuid::new_v4(),
+                generation: 1,
+                package_id: "fixture.shutdown".into(),
+                handler_id: "run".into(),
+                content_hash: "a".repeat(64),
+            },
+            Uuid::new_v4(),
+        );
+        run.begin(3, "text/plain".into(), "a".repeat(64))
+            .await
+            .expect("real temporary backing");
+        runtime.shutdown_and_wait().await.expect("runtime drain");
+        assert!(
+            !directory.exists(),
+            "runtime shutdown must join physical blob cleanup"
+        );
+        assert!(runtime.0.broker.lock().expect("broker state").is_none());
+        assert_eq!(
+            runtime.0.blobs.available_bytes(),
+            crate::blobs::MAX_GLOBAL_BLOB_BYTES
+        );
     }
 
     #[tokio::test]

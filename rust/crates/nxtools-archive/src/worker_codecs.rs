@@ -17,6 +17,8 @@ use std::{
 #[cfg(windows)]
 mod rar;
 pub(crate) mod sevenz_budget;
+mod sevenz_drag;
+mod sevenz_layout;
 mod volumes;
 
 pub(crate) fn try_execute<W: Write + Send>(
@@ -26,6 +28,45 @@ pub(crate) fn try_execute<W: Write + Send>(
     replies: ReplyPort,
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
+) -> Option<Result<(u64, u64)>> {
+    try_execute_inner(
+        request,
+        control,
+        output,
+        replies,
+        metadata,
+        interaction,
+        None,
+    )
+}
+
+pub(crate) fn try_execute_drag<W: Write + Send>(
+    request: &mut WorkerRequest,
+    control: &OperationControl,
+    output: &mut W,
+    replies: ReplyPort,
+    drag: &crate::worker_drag::DragPort,
+) -> Option<Result<(u64, u64)>> {
+    try_execute_inner(
+        request,
+        control,
+        output,
+        replies,
+        &crate::worker_metadata::MetadataCredit::new(),
+        &crate::interaction::InteractionPort::new(control.operation_id(), 1),
+        Some(drag),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn try_execute_inner<W: Write + Send>(
+    request: &WorkerRequest,
+    control: &OperationControl,
+    output: &mut W,
+    replies: ReplyPort,
+    metadata: &crate::worker_metadata::MetadataCredit,
+    interaction: &crate::interaction::InteractionPort,
+    drag: Option<&crate::worker_drag::DragPort>,
 ) -> Option<Result<(u64, u64)>> {
     let result = (|| {
         // Never sniff a later volume or pass an unleased sibling to a codec.
@@ -48,6 +89,7 @@ pub(crate) fn try_execute<W: Write + Send>(
                 replies,
                 metadata,
                 interaction,
+                drag,
             )?));
         }
         #[cfg(windows)]
@@ -67,6 +109,7 @@ pub(crate) fn try_execute<W: Write + Send>(
                 replies,
                 metadata,
                 interaction,
+                drag,
             )?));
         }
         Ok(None)
@@ -330,6 +373,7 @@ fn sevenz_member_packed(
         .try_fold(0u64, |sum, size| sum.checked_add(*size))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_sevenz<W: Write + Send>(
     request: &WorkerRequest,
     control: &OperationControl,
@@ -337,6 +381,7 @@ fn run_sevenz<W: Write + Send>(
     replies: ReplyPort,
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
+    drag: Option<&crate::worker_drag::DragPort>,
 ) -> Result<(u64, u64)> {
     let lifecycle = control.source_delete_begin();
     let set = volumes::SourceSet::open_sevenz(request, control)?;
@@ -469,6 +514,7 @@ fn run_sevenz<W: Write + Send>(
     let mut skipped = 0;
     validate_metadata(&mut entries, &limits, control)?;
     let entries: std::sync::Arc<[ArchiveEntry]> = entries.into();
+    control.record_work(|work| work.catalog_loads += 1);
     let edit_refusal = if request.operation == "open" {
         let strict = (|| {
             let password = request
@@ -513,9 +559,45 @@ fn run_sevenz<W: Write + Send>(
         }),
         None,
     )?;
+    let decoder_ordinals = if request.operation != "open" || drag.is_some() {
+        if let Some(layout) =
+            sevenz_layout::normalize(reader.archive(), retained, &limits, control)?
+        {
+            drop(reader);
+            let password = request
+                .password
+                .as_deref()
+                .map(sevenz_rust2::Password::from)
+                .unwrap_or_default();
+            reader = sevenz_rust2::ArchiveReader::from_archive(
+                layout.archive,
+                set.sevenz_input(control)?,
+                password,
+            );
+            reader.set_thread_count(1);
+            Some(layout.ordinals)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    if let Some(drag) = drag {
+        return sevenz_drag::execute(
+            request,
+            control,
+            output,
+            replies,
+            drag,
+            &set,
+            reader,
+            entries,
+            decoder_ordinals,
+        );
+    }
     let selected =
         crate::worker_browser::selected(request, &entries)?.map(|entry| entry.id().ordinal);
-    let mut job_plan = crate::worker_job::codec_plan(request, entries.clone())?;
+    let mut job_plan = crate::worker_job::codec_plan(request, entries.clone(), control)?;
     let result = if request.operation == "open" {
         crate::worker_metadata::emit_entries(
             request,
@@ -556,6 +638,7 @@ fn run_sevenz<W: Write + Send>(
         let mut native = extracting
             .then(|| -> Result<_> {
                 Ok(PrivateOutput::new(output, control, replies)
+                    .ordinary_extraction(request.ordinary_extraction())
                     .planned_unique(job_plan.as_mut())?
                     .extraction_metadata(request.extract_options.is_some())
                     .conflicts(request.conflict_policy, interaction, entries.clone()))
@@ -571,7 +654,15 @@ fn run_sevenz<W: Write + Send>(
         let callback_bytes = (entries.len() as u64)
             .checked_mul(std::mem::size_of::<usize>() as u64)
             .ok_or(ArchiveError::ResourceLimit)?;
-        if retained
+        let decoder_retained = if decoder_ordinals.is_some() {
+            retained
+                .checked_mul(2)
+                .and_then(|cost| cost.checked_add(callback_bytes))
+                .ok_or(ArchiveError::ResourceLimit)?
+        } else {
+            retained
+        };
+        if decoder_retained
             .checked_add(callback_bytes)
             .is_none_or(|bytes| bytes > limits.max_metadata_bytes)
         {
@@ -592,11 +683,19 @@ fn run_sevenz<W: Write + Send>(
                     .checked_add(count)
                     .filter(|end| *end <= entries.len())
                     .ok_or(ArchiveError::CorruptArchive)?;
-                callback_ordinals.extend(start..end);
+                callback_ordinals.extend((start..end).map(|index| {
+                    decoder_ordinals
+                        .as_ref()
+                        .map_or(index, |ordinals| ordinals[index])
+                }));
             }
             for (index, block) in archive.stream_map.file_block_index.iter().enumerate() {
                 if block.is_none() {
-                    callback_ordinals.push(index);
+                    callback_ordinals.push(
+                        decoder_ordinals
+                            .as_ref()
+                            .map_or(index, |ordinals| ordinals[index]),
+                    );
                 }
             }
         }
@@ -669,12 +768,14 @@ fn run_sevenz<W: Write + Send>(
                         let decode_limits = crate::worker_browser::decode_limits(request);
                         if count > decode_limits.max_entry_bytes
                             || bytes > decode_limits.max_output_bytes
-                            || wanted
-                                && (count > limits.max_entry_bytes
-                                    || written_bytes.saturating_add(count)
-                                        > limits.max_output_bytes)
                         {
                             return Err(ArchiveError::ResourceLimit);
+                        }
+                        if wanted
+                            && (count > limits.max_entry_bytes
+                                || written_bytes.saturating_add(count) > limits.max_output_bytes)
+                        {
+                            return Err(ArchiveError::SelectedOutputLimit);
                         }
                         crc.update(&buffer[..read]);
                         if let (Some(native), Some(token)) = (&mut native, token) {
@@ -827,6 +928,7 @@ fn validate_extraction(entries: &[ArchiveEntry]) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 #[cfg(windows)]
 fn run_rar<W: Write + Send>(
     request: &WorkerRequest,
@@ -836,6 +938,7 @@ fn run_rar<W: Write + Send>(
     replies: ReplyPort,
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
+    drag: Option<&crate::worker_drag::DragPort>,
 ) -> Result<(u64, u64)> {
     let lifecycle = control.source_delete_begin();
     let path = Path::new(&request.path);
@@ -851,6 +954,7 @@ fn run_rar<W: Write + Send>(
     let (mut entries, mut files, mut bytes, _) = rar::execute(request, control, None, None)?;
     validate_metadata(&mut entries, &request.limits.into(), control)?;
     let entries: std::sync::Arc<[ArchiveEntry]> = entries.into();
+    control.record_work(|work| work.catalog_loads += 1);
     crate::worker_browser::bind(
         request,
         request.operation_id,
@@ -863,9 +967,12 @@ fn run_rar<W: Write + Send>(
         control,
         replies.clone(),
     )?;
+    if let Some(drag) = drag {
+        return rar::retained(request, control, output, replies, drag, &set, entries);
+    }
     let selected =
         crate::worker_browser::selected(request, &entries)?.map(|entry| entry.id().ordinal);
-    let mut job_plan = crate::worker_job::codec_plan(request, entries.clone())?;
+    let mut job_plan = crate::worker_job::codec_plan(request, entries.clone(), control)?;
     let mut skipped = 0;
     if request.operation == "extract" {
         if selected.is_none() {
@@ -884,6 +991,7 @@ fn run_rar<W: Write + Send>(
             interaction,
         )?;
         let mut native = PrivateOutput::new(output, control, replies)
+            .ordinary_extraction(request.ordinary_extraction())
             .planned_unique(job_plan.as_mut())?
             .extraction_metadata(request.extract_options.is_some())
             .conflicts(request.conflict_policy, interaction, entries.clone());

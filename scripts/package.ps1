@@ -4,6 +4,7 @@
     [string]$OutputPath = '',
     [switch]$SkipVerification,
     [switch]$SkipInstaller,
+    [switch]$CreateDistributionArchive,
     [ValidateRange(0.0, 1024.0)]
     [double]$MinimumCommitHeadroomGiB = 6.0,
     [string]$SigningKeyPath = $env:NXTOOLS_RELEASE_SIGNING_KEY,
@@ -35,6 +36,7 @@ if ($IsolatedStaging) {
 }
 $packageBuild = Join-Path $buildRoot ('package-build-' + [Guid]::NewGuid().ToString('N'))
 $generatedDirectory = Join-Path $packageBuild 'generated'
+try {
 New-Item -ItemType Directory -Force -Path $generatedDirectory | Out-Null
 $trustInput = ''
 $ownedTestKeyPath = ''
@@ -223,6 +225,9 @@ try {
         -Recurse `
         -Force
     Copy-Item '.\LICENSE-MIT', '.\LICENSE-APACHE', '.\THIRD_PARTY_NOTICES.md' $destination
+    & python (Join-Path $PSScriptRoot 'package-archive-source.py') `
+        --output (Join-Path $root 'artifacts\installer\third_party\archive-worker\archive-worker-source.zip')
+    if ($LASTEXITCODE -ne 0) { throw 'Archive source distribution failed; do not sign an incomplete package.' }
     Remove-Item (Join-Path $destination 'NxTools.release.json'), (Join-Path $destination 'NxTools.release.sig') -Force -ErrorAction SilentlyContinue
     if ($Configuration -eq 'Release' -and -not $LegacyUnsigned) {
         & (Join-Path $PSScriptRoot 'write-trusted-release-manifest.ps1') `
@@ -234,7 +239,14 @@ try {
     $packageCompleted = $true
     if ($IsolatedStaging) {
         Copy-Item -LiteralPath $trustInput -Destination ($destination + '.TEST-public-trust.g.cs')
-        [IO.File]::WriteAllText(($destination + '.build-inputs.json'), (@{ build_directory=$packageBuild; generated_directory=$generatedDirectory; test_only=$true; production_sequence_reserved=$false } | ConvertTo-Json))
+        $retainedGeneratedDirectory = $destination + '.generated-inputs'
+        New-Item -ItemType Directory -Path $retainedGeneratedDirectory | Out-Null
+        foreach ($name in @('DesktopIdentity.g.cs', 'ReleaseBinaryManifest.g.cs', 'ArchiveReleaseManifest.g.cs', 'UpdateTrust.g.cs')) {
+            Copy-Item -LiteralPath (Join-Path $generatedDirectory $name) -Destination (Join-Path $retainedGeneratedDirectory $name)
+        }
+        $retainedHostAssembly = $destination + '.TEST-PlatformHost.dll'
+        Copy-Item -LiteralPath (Join-Path $packageBuild 'host-build\bin\NxTools.PlatformHost\release_win-x64\NxTools.PlatformHost.dll') -Destination $retainedHostAssembly
+        [IO.File]::WriteAllText(($destination + '.build-inputs.json'), (@{ generated_directory=$retainedGeneratedDirectory; host_assembly=$retainedHostAssembly; test_only=$true; production_sequence_reserved=$false } | ConvertTo-Json))
         Remove-Item -LiteralPath $ownedTestKeyPath -Force
     }
 }
@@ -278,10 +290,14 @@ if (-not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     foreach ($nativeShellDirectory in @('SysWOW64', 'System32')) {
         $nativeShell = Join-Path $env:SystemRoot ($nativeShellDirectory + '\WindowsPowerShell\v1.0\powershell.exe')
         & $nativeShell -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'tests\architecture\installer-process-identity.ps1') `
+            -HelperPath (Join-Path $root 'installer\close-owned-processes.ps1')
+        if ($LASTEXITCODE -ne 0) { throw "Installer process identity regression failed: $nativeShellDirectory" }
+        & $nativeShell -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'tests\architecture\installer-process-exit-race.ps1')
         if ($LASTEXITCODE -ne 0) { throw "Installer exited-process regression failed: $nativeShellDirectory" }
     }
-    foreach ($scenario in @('success', 'failure', 'owned-process', 'exited-process', 'exited-cim-null', 'trusted-success', 'trusted-failure', 'migration-success', 'migration-cancel', 'migration-failure', 'migration-tampered')) {
+    foreach ($scenario in @('success', 'failure', 'owned-process', 'exited-process', 'exited-cim-null', 'trusted-success', 'trusted-failure', 'migration-success', 'migration-cancel', 'migration-failure', 'migration-tampered', 'repair-success', 'repair-cancel', 'repair-failure', 'repair-tampered', 'detection-failure')) {
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'tests\architecture\installer-runtime.ps1') `
             -Scenario $scenario
@@ -309,4 +325,16 @@ if (-not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
 }
 if ($restartIndexerServiceOnFailure -and $packageCompleted) {
     Write-Host 'The legacy writable-path indexer service remains stopped; the next desktop launch will request one-time migration to the protected service directory.'
+}
+if ($CreateDistributionArchive -and -not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
+    & python (Join-Path $PSScriptRoot 'package-archive-source.py') `
+        --output (Join-Path $root 'artifacts\installer\third_party\archive-worker\archive-worker-source.zip') `
+        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.0.exe')
+    if ($LASTEXITCODE -ne 0) { throw 'Complete release distribution failed.' }
+}
+}
+finally {
+    if (Test-Path -LiteralPath $packageBuild) {
+        Remove-Item -LiteralPath $packageBuild -Recurse -Force
+    }
 }

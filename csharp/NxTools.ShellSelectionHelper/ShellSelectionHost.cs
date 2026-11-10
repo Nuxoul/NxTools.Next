@@ -23,6 +23,8 @@ internal static class HelperIdentity
         [ShellVerb.ExtractDialog] = new("306F1051-91FA-4D1B-87BC-E02E9D68FB46"),
         [ShellVerb.Test] = new("133C1261-3EBC-4B3A-89C6-9AECEB6C352D"),
         [ShellVerb.Compress] = new("BC9707AF-8361-431D-82CC-36554BDDA04C"),
+        [ShellVerb.CompressZip] = new("0E30B5E0-6767-4FFB-8198-D748035B3E6D"),
+        [ShellVerb.CompressSevenZ] = new("55CCFF86-9D14-4750-9497-7A8D586A6402"),
     };
 
     /// <summary>Existing Desktop launch-ingress vocabulary; paths follow as separate argv items.</summary>
@@ -35,6 +37,8 @@ internal static class HelperIdentity
         ShellVerb.ExtractDialog => ["--archive-extract", "dialog"],
         ShellVerb.Test => ["--archive-test"],
         ShellVerb.Compress => ["--archive-compress"],
+        ShellVerb.CompressZip => ["--archive-compress-zip"],
+        ShellVerb.CompressSevenZ => ["--archive-compress-7z"],
         _ => throw new ArgumentOutOfRangeException(nameof(verb)),
     };
 }
@@ -86,7 +90,10 @@ internal sealed class DesktopIntentForwarder(DesktopIdentity identity, IDesktopL
         if (cancellation.IsCancellationRequested) return new(ForwardStatus.Cancelled, 0);
         var (approved, _) = identity.Verify();
         if (!approved) return new(ForwardStatus.IdentityRejected, 0);
-        var arguments = HelperIdentity.IntentArguments(verb).Concat(paths).ToArray();
+        var prefix = verb is ShellVerb.CompressZip or ShellVerb.CompressSevenZ
+            ? new[] { "--archive-correlation-id", correlationId.ToString("D") }
+            : Array.Empty<string>();
+        var arguments = prefix.Concat(HelperIdentity.IntentArguments(verb)).Concat(paths).ToArray();
         int? exitCode;
         try { exitCode = launcher.Run(identity.DesktopPath, arguments, HandoffTimeout, cancellation); }
         catch (OperationCanceledException) { return new(ForwardStatus.Cancelled, 0); }

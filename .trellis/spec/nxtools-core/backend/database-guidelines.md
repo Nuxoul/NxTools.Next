@@ -15,3 +15,28 @@ CurrencyConversionSettings is nested in ClipboardSettings, serde-default off/CNY
 Presentation settings2026-10-22: `ClipboardSettings.image_view_mode` serde-defaultAuto and `QuickLaunchSettings.row_style` serde-defaultSeparated (gap4DIP,Continuous0). Persist only the owning field with AppConfig::update_section; preserve disk-latest Clipboard storage root/other sections and live cached panel size. Failure does not publish requested value. No native capture/indexer/service configuration is needed for presentation-only updates. Evidence: `repo:rust/crates/nxtools-core/src/lib.rs#ClipboardImageViewMode`, `repo:rust/crates/nxtools-core/src/lib.rs#QuickLaunchRowStyle`; Corelegacy/default/allsix/bothstyle/fieldmerge and Desktopactualselector/failure/noIPC tests.
 
 Chrome store scoped amendment: `DownloadSettings.chrome_web_store_extension_id` is serde-default empty (first upload has no ID), trim then strict32a–p; malformed loaded values clear to empty/local fallback, invalid UI draft is rejected before persistence. Existing DownloadSettings section transaction preserves other sections. Store-ID registration is issued only after durable success and again on connection; failed persistence keeps previous live ID and cannot publish native mutation. Store ZIP uses original export owner, strips only manifest.key in copy and never touches local source identity/PEM. Exact full chain and tests: [extension contract](../../browser-extension/contracts.md#scenario-key-free-chrome-store-upload-and-optional-exact-identity).
+
+## Scenario: Exact archive Create split-size preferences
+
+### 1. Scope / Trigger
+Original archive Create form presets/custom binary units and accepted-operation preference saving. Evidence: `repo:rust/crates/nxtools-core/src/archive.rs#ArchiveVolumeSize`, `repo:rust/apps/nxtools-desktop/src/archive/forms_volume.rs`, `repo:rust/apps/nxtools-desktop/src/archive/jobs.rs#remember_accepted`.
+
+### 2. Signatures
+`ArchiveSettings.create_volume_size: Option<ArchiveVolumeSize>`; `ArchiveVolumeSize { value:u64, unit:ArchiveVolumeUnit }`; `ArchiveVolumeUnit::{KiB,MiB,GiB}`; `ArchiveVolumeSize::bytes(self) -> Result<u64,String>`; `ArchiveSettings::merge_create_preferences(&mut self, baseline:&Self, desired:&Self)`.
+
+### 3. Contracts
+Missing preference is None/no split and remains omitted; missing unit is MiB. `{"create_volume_size":{"value":128}}` is exactly128MiB, never magnitude-inferred. The existing integer `volume_mib` draft entrance keeps default MiB. Open/reopen hydrates stable inputs without saving. Checked integer multiplication normalizes once per request snapshot; minimum65536bytes. Presets explicitly select new intended bytes; unit switches require an exact positive integer representation of the same bytes, otherwise retain old value/unit with a reason.
+
+Accepted Create saves through original locked `AppConfig::update_section` disk reread. Merge only leaves changed from the captured baseline; value/unit is one semantic leaf. Ordered returned merged settings refresh the original cache. Unchanged stale Test/format/other Create fields and unrelated sections preserve disk latest. Unsupported format retains split intent and blocks Submit until explicit correction; quick ZIP/7z keeps its original no-volume semantics. ZIP coordinates and continuous7z writers/publication remain separate and unchanged.
+
+### 4. Validation & Error Matrix
+Absent → no split/no write; missing unit → exact MiB; noninteger/parse overflow/checked multiplication overflow/zero/<64KiB → original parsing, range or minimum error with text/unit/entity retained. Exact-divisibility guidance applies only to successfully normalized bytes with a remainder in the requested unit. Unsupported format → blocked Submit, no silent erase; failed durable save → no requested-cache publication and no reversal of already accepted work.
+
+### 5. Good / Base / Bad Cases
+Good:2048MiB switches to2GiB and keeps2147483648bytes. Base: legacy absent preference opens without saving. Bad: round65KiB to1MiB or overwrite a concurrent untouched Test preference from cached whole-section state.
+
+### 6. Tests Required
+Core `ref17_size_units_legacy_mib_and_load_are_lossless_without_writes` and `ref17_size_is_one_changed_leaf_in_original_section_transaction`; Desktop `ref17_` production number/select/format/Submit/save/reopen and default/minimum scroll/footer tests. Actual preset selection and official +/- hitboxes must reach the deferred Step subscriber with exact bytes, stable InputState/focus and no outer Submit. Actual form Submit must reach original ArchiveApplication/JobQueue/JobRecord/PlatformBridge; both accepted and outbound commands keep exact volume_bytes after a retained submitted draft changes. Real original native ZIP/7z fixtures require independent project-approved readback plus existing-family/count/cancel/partial-publication facts; [volume source map](../../../../docs/reference-code/archive-volumes.md).
+
+### 7. Wrong vs Correct
+Wrong: change unit label and reinterpret the same integer, or assign cached ArchiveSettings wholesale. Correct: preserve checked bytes with exact division, then merge only baseline-changed Create leaves inside the original section transaction.

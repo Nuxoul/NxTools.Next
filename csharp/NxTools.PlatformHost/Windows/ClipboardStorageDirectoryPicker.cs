@@ -11,10 +11,10 @@ internal static class ClipboardStorageDirectoryPicker
     public static WindowsCommandResult Pick(
         PickClipboardStorageDirectoryCommand command,
         CancellationToken cancellationToken)
-        => StaDialogRunner.Run(
-            "NxTools clipboard storage picker",
-            () => PickOnStaThread(command, cancellationToken),
-            cancellationToken);
+        => BoundedStaOperationRunner.TryRun("NxTools clipboard storage picker", Timeout.InfiniteTimeSpan,
+            token => StaDialogRunner.RunInline(() => PickOnStaThread(command, token), token, command.SourceWindowHandle, command.SourceProcessId),
+            out WindowsCommandResult? result, out _, cancellationToken)
+            ? result ?? new(false, "picker_failed") : new(false, "picker_busy", NativeErrorCode: 170);
 
     private static WindowsCommandResult PickOnStaThread(
         PickClipboardStorageDirectoryCommand command,
@@ -35,9 +35,10 @@ internal static class ClipboardStorageDirectoryPicker
                 ShowNewFolderButton = true,
                 UseDescriptionForTitle = true
             };
-            var result = dialog.ShowDialog() == DialogResult.OK
-                ? new WindowsCommandResult(true, Data: dialog.SelectedPath)
-                : new WindowsCommandResult(true, Data: string.Empty);
+            var result = PickerOwner.Run(command.SourceWindowHandle, command.SourceProcessId, cancellationToken, owner =>
+                dialog.ShowDialog(owner) == DialogResult.OK
+                    ? new WindowsCommandResult(true, Data: dialog.SelectedPath)
+                    : new WindowsCommandResult(true, Data: string.Empty));
             return cancellationToken.IsCancellationRequested ? CancelledResult() : result;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -46,7 +47,7 @@ internal static class ClipboardStorageDirectoryPicker
         }
         catch (Exception error) when (error is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            return new WindowsCommandResult(false, error.Message);
+            return new WindowsCommandResult(false, "picker_failed", NativeErrorCode: error.HResult);
         }
     }
 

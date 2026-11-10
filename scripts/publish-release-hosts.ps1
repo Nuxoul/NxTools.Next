@@ -11,6 +11,8 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $profile = $Configuration.ToLowerInvariant()
 if (-not $TargetDirectory) { $TargetDirectory = Join-Path $root "target\$profile" }
+# Both directories are borrowed outputs. Their caller owns cleanup after test builds
+# and package copies have consumed the generated inputs and published binaries.
 New-Item -ItemType Directory -Force -Path $GeneratedDirectory | Out-Null
 $identityPath = Join-Path $GeneratedDirectory 'DesktopIdentity.g.cs'
 & (Join-Path $PSScriptRoot 'write-shell-selection-identity.ps1') -DesktopPath (Join-Path $TargetDirectory 'nxtools-desktop.exe') -OutputPath $identityPath

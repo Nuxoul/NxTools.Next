@@ -37,7 +37,7 @@ fn visible_entries<'a>(
                 .enumerate()
                 .take_while(move |(row, _)| !row.is_multiple_of(128) || is_current())
                 .filter(move |(_, (id, _))| !snapshot.overlay.deleted.contains(id))
-                .map(|(_, (_, entry))| entry.as_ref()),
+                .map(|(_, (_, entry))| entry.as_ref().as_ref()),
         )
 }
 
@@ -515,15 +515,15 @@ mod tests {
         snapshot
             .overlay
             .replacements
-            .insert(10, entry(10, "C:\\Moved\\CACHEDIR.TAG", None));
+            .insert(10, entry(10, "C:\\Moved\\CACHEDIR.TAG", None).into());
         snapshot
             .overlay
             .replacements
-            .insert(17, entry(17, "C:\\New\\pyvenv.cfg", None));
+            .insert(17, entry(17, "C:\\New\\pyvenv.cfg", None).into());
         snapshot
             .overlay
             .replacements
-            .insert(11, entry(11, "C:\\Old\\updated.txt", Some(95)));
+            .insert(11, entry(11, "C:\\Old\\updated.txt", Some(95)).into());
         let results = search(&snapshot, &request());
         assert_eq!(
             results

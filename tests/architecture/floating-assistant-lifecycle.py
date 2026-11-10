@@ -36,7 +36,7 @@ contract = read(NATIVE + "Protocol/FloatingAssistantContract.cs")
 regressions = read(DESKTOP + "tools/floating_assistant/application/tests.rs")
 
 send = section(owner, "    fn send(", "    fn sync(")
-require(send.index("self.lifecycle.begin") < send.index("send_command_with_id"),
+require(send.index("self.lifecycle.begin") < send.index("send_floating_assistant"),
         "native pending must precede observable dispatch")
 require("show: false" in owner and "focus: false" in owner,
         "renderer must be created hidden/passive")
@@ -108,5 +108,31 @@ for test in (
 ):
     require("fn floating_assistant_" + test in regressions,
             "missing production lifecycle regression: " + test)
+
+cleanup = read("rust/crates/nxtools-ipc/src/floating_cleanup.rs")
+require("active.generation == origin" in cleanup and "floating_cleanup: Option<Envelope>" in
+        read("rust/crates/nxtools-ipc/src/lib.rs"),
+        "cleanup must retain one original-connection slot, not replay after reconnect")
+require("pending.generation == self.generation" in actions and "release_action_drop" in actions,
+        "late actions cannot rebind Drop release to the current generation")
+delete = section(coordinator, "    private void DeleteOwned(", "    internal void Stop(")
+require("drop_cleanup_pending" in delete and "_drops.Remove(id)" in delete and
+        delete.index("Directory.Delete") < delete.index("_drops.Remove(id)"),
+        "physical deletion, not logical release, must relinquish Drop ownership")
+require("if (_drops.Count == 0) context.ExitThread()" in coordinator and
+        "RetryDropCleanup();" in coordinator,
+        "stopping original STA remains cleanup owner until physical completion")
+
+require("Interlocked.CompareExchange(ref _dropSlot, 1, 0)" in coordinator and
+        "Interlocked.Exchange(ref _dropSlot, 0)" in delete and "16 * 1024 * 1024" in coordinator,
+        "failed old-pipe cleanup retains the sole process-wide staging slot and image budget")
+require("if phase == Phase::Retire" in send and "timeout: Option<Duration>" in
+        read("rust/crates/nxtools-ipc/src/lib.rs"),
+        "retirement must survive ordinary UI and IPC deadlines")
+for test in ("release_full_queue_recovers_after_cancel", "retire_full_queue_survives_owner_drop",
+             "release_disconnect_and_stale_generation_never_replay",
+             "late_action_result_cannot_rebind_release_generation", "retire_recovers_after_original_deadlines"):
+    require("fn floating_drop_" + test in regressions,
+            "missing Drop ownership regression: " + test)
 
 print(f"PASS floating assistant lifecycle: {checks} source contracts (not native/visual acceptance)")

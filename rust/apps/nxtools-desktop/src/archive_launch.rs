@@ -66,6 +66,7 @@ pub(crate) fn parse_arguments(
     let mut paths = Vec::new();
     let mut action = None;
     let mut mode = None;
+    let mut correlation_id = None;
     let mut incompatible = false;
     let mut unknown_option = false;
     let mut index = 0;
@@ -82,8 +83,27 @@ pub(crate) fn parse_arguments(
                     return Err(LaunchFailure::InvalidRequest);
                 }
             }
+            Some("--archive-correlation-id") => {
+                if correlation_id.is_some() {
+                    return Err(LaunchFailure::InvalidRequest);
+                }
+                index += 1;
+                correlation_id = Some(
+                    arguments
+                        .get(index)
+                        .and_then(|value| value.to_str())
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                        .filter(|id| !id.is_nil())
+                        .ok_or(LaunchFailure::InvalidRequest)?,
+                );
+            }
             Some(
-                "--archive-open" | "--archive-extract" | "--archive-compress" | "--archive-test",
+                "--archive-open"
+                | "--archive-extract"
+                | "--archive-compress"
+                | "--archive-test"
+                | "--archive-compress-zip"
+                | "--archive-compress-7z",
             ) => {
                 if action.is_some() || !paths.is_empty() {
                     return Err(LaunchFailure::InvalidRequest);
@@ -92,6 +112,8 @@ pub(crate) fn parse_arguments(
                     Some("--archive-open") => ArchiveIntentAction::Open,
                     Some("--archive-extract") => ArchiveIntentAction::Extract,
                     Some("--archive-compress") => ArchiveIntentAction::Compress,
+                    Some("--archive-compress-zip") => ArchiveIntentAction::CompressZip,
+                    Some("--archive-compress-7z") => ArchiveIntentAction::CompressSevenZ,
                     _ => ArchiveIntentAction::Test,
                 });
                 if action == Some(ArchiveIntentAction::Extract) {
@@ -126,6 +148,9 @@ pub(crate) fn parse_arguments(
         index += 1;
     }
     if unknown_option && (action.is_some() || paths.iter().any(|path| recognized_archive(path))) {
+        return Err(LaunchFailure::InvalidRequest);
+    }
+    if correlation_id.is_some() && action.is_none() {
         return Err(LaunchFailure::InvalidRequest);
     }
     if action.is_none() {
@@ -168,7 +193,7 @@ pub(crate) fn parse_arguments(
     }
     let intent = DesktopArchiveIntent {
         version: VERSION,
-        request_id: Uuid::new_v4(),
+        request_id: correlation_id.unwrap_or_else(Uuid::new_v4),
         action: action.ok_or(LaunchFailure::InvalidRequest)?,
         paths: resolved,
         mode,

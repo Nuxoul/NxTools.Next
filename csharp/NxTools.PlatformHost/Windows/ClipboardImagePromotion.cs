@@ -1,5 +1,4 @@
 using System.Drawing;
-using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
 namespace NxTools.PlatformHost.Windows;
@@ -11,7 +10,8 @@ internal static class ClipboardImagePromotion
     public static PromotedClipboardImage? TryPromote(
         IReadOnlyList<string> paths,
         string? text,
-        string stagingDirectory)
+        string stagingDirectory, Action<Image, string, ulong>? save = null, ClipboardCaptureFiles? ownership = null,
+        ClipboardCaptureLimits? limits = null)
     {
         var candidate = SinglePath(paths) ?? SingleTextPath(text);
         if (candidate is null || !File.Exists(candidate))
@@ -19,6 +19,7 @@ internal static class ClipboardImagePromotion
             return null;
         }
 
+        using var files = new ClipboardCaptureFiles();
         try
         {
             using var stream = new FileStream(
@@ -28,18 +29,24 @@ internal static class ClipboardImagePromotion
                 return null;
             }
             stream.Position = 0;
+            var budget = limits ?? ClipboardCaptureLimits.Default;
+            var size = ClipboardImageEncoding.ReadDimensions(stream);
+            ClipboardImageEncoding.CheckPixels(size.Width, size.Height, budget.MaxImagePixels);
             using var source = Image.FromStream(
                 stream, useEmbeddedColorManagement: false, validateImageData: true);
-            Directory.CreateDirectory(stagingDirectory);
-            var stagedPath = Path.Combine(stagingDirectory, $"{Guid.NewGuid():N}.png");
-            source.Save(stagedPath, ImageFormat.Png);
-            return new PromotedClipboardImage(
+            var stagedPath = files.CreatePath(stagingDirectory, ".png");
+            (save ?? ClipboardImageEncoding.SavePng)(source, stagedPath, budget.MaxImageBytes);
+            var result = new PromotedClipboardImage(
                 new ClipboardImageData(
                     stagedPath,
                     checked((uint)source.Width),
                     checked((uint)source.Height)),
                 []);
+            ownership?.Own(stagedPath);
+            files.Transfer();
+            return result;
         }
+        catch (ClipboardImageBudgetExceededException) { throw; }
         catch (Exception error) when (
             error is ArgumentException or ExternalException or IOException
                 or UnauthorizedAccessException or OutOfMemoryException)

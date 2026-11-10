@@ -7,6 +7,7 @@ namespace NxTools.PlatformHost.Tests;
 
 internal static class ArchiveExtractionWorkerTests
 {
+    private static void Check(bool condition, string detail) { if (!condition) throw new InvalidOperationException(detail); }
     public static async Task ActualZipToHandleSession()
     {
         var source=Environment.GetEnvironmentVariable("NXTOOLS_ARCHIVE_WORKER_FIXTURE");
@@ -27,15 +28,71 @@ internal static class ArchiveExtractionWorkerTests
                 var clock=Stopwatch.StartNew();while(!events.Any(e=>e.Kind=="exited")){if(clock.ElapsedMilliseconds>15000)throw new InvalidOperationException("actual extraction deadline");await Task.Delay(20);}
                 var terminal=events.Last();
                 if(terminal.Category!=(success?"success":"worker_failure")||!terminal.CleanupComplete)throw new InvalidOperationException("actual extraction result: "+terminal.Category);
+                if(terminal.FilesCommitted!=files || terminal.Journal?.Count(f=>f.Published==true)!=files)
+                    throw new InvalidOperationException("CRC failure must retain only completed output journal: "+terminal.FilesCommitted);
                 if(Directory.GetFiles(target.FullName,"*",SearchOption.AllDirectories).Length!=files)throw new InvalidOperationException("partial leaked or final output missing");
                 if(File.ReadAllText(Path.Combine(target.FullName,"资料","说明.txt"))!="你好，压缩包\n")throw new InvalidOperationException("Chinese payload differs");
                 if(success&&!File.ReadAllBytes(Path.Combine(target.FullName,"bytes.bin")).SequenceEqual(Enumerable.Range(0,256).Select(i=>(byte)i)))throw new InvalidOperationException("binary payload differs");
-                if(!success&&File.Exists(Path.Combine(target.FullName,"bytes.bin")))throw new InvalidOperationException("bad CRC committed");
+                if(!success && (File.Exists(Path.Combine(target.FullName,"bytes.bin")) || !File.Exists(Path.Combine(target.FullName,"empty"))))
+                    throw new InvalidOperationException("bad CRC current file must be deleted while earlier closed files remain");
                 if(events.Any(e=>e.Frame is {} frame&&frame.GetProperty("op").GetString()=="native_call"))throw new InvalidOperationException("file content escaped private output pump");
                 if(!await runner.DrainAsync())throw new InvalidOperationException("actual extraction did not drain");
             }
         }
         finally{if(created)File.Delete(installed);owned.Delete(true);}
+    }
+    public static async Task CancelWhileSecondFileWriting()
+    {
+        var source = Environment.GetEnvironmentVariable("NXTOOLS_ARCHIVE_WORKER_FIXTURE");
+        if (string.IsNullOrEmpty(source) || !File.Exists(source))
+            throw new TestSkippedException("Explicit matching isolated worker required.");
+        var installed = Path.Combine(AppContext.BaseDirectory, "NxTools.ArchiveWorker.exe");
+        if (File.Exists(installed)) throw new InvalidOperationException("Fixture cannot replace an existing worker.");
+        var owned = Directory.CreateTempSubdirectory("archive-direct-cancel-"); var copied = false;
+        try
+        {
+            File.Copy(source, installed, false); copied = true;
+            var archive = Path.Combine(owned.FullName, "two.zip");
+            var target = Directory.CreateDirectory(Path.Combine(owned.FullName, "output"));
+            using (var zip = System.IO.Compression.ZipFile.Open(archive, System.IO.Compression.ZipArchiveMode.Create))
+            {
+                using (var first = zip.CreateEntry("first.txt", System.IO.Compression.CompressionLevel.NoCompression).Open())
+                    first.Write(Encoding.UTF8.GetBytes("first-completed"));
+                using (var second = zip.CreateEntry("second.bin", System.IO.Compression.CompressionLevel.NoCompression).Open())
+                {
+                    var block = Enumerable.Repeat((byte)0x53, 65536).ToArray();
+                    for (var index = 0; index < 16; index++) second.Write(block);
+                }
+            }
+            var events = new ConcurrentQueue<ArchiveWorkerEvent>();
+            using var runner = ArchiveWorkerRunner.ForPackage(events.Enqueue);
+            var id = Guid.NewGuid(); var cancelledDuringWrite = false;
+            runner.OutputWriteCheckpointProbe = _ =>
+            {
+                if (cancelledDuringWrite || !File.Exists(Path.Combine(target.FullName, "second.bin"))) return;
+                Check(File.ReadAllText(Path.Combine(target.FullName, "first.txt")) == "first-completed", "first file was not closed before second write");
+                Check(new FileInfo(Path.Combine(target.FullName, "second.bin")).Length > 0, "second file has no written bytes");
+                cancelledDuringWrite = true;
+                Check(runner.Cancel(id), "cancel live original Run");
+            };
+            Check(runner.Start(new(id, "extract", archive, 0, new { max_entries = 100 }, OutputRoot: target.FullName)), "ZIP cancellation admission");
+            var clock = Stopwatch.StartNew();
+            while (!events.Any(e => e.Kind == "exited"))
+            {
+                Check(clock.ElapsedMilliseconds < 15000, "ZIP cancellation deadline");
+                await Task.Delay(20);
+            }
+            Check(await runner.DrainAsync(15000), "cancelled Run drains before fixture disposal");
+            var terminal = events.Single(e => e.Kind == "exited");
+            Check(cancelledDuringWrite && terminal.Category == "cancelled_with_committed_output" &&
+                terminal.CleanupComplete && terminal.FilesCommitted == 1 && terminal.Journal?.Count(f => f.Published == true) == 1,
+                "cancel during second write retains first completed output and truthful journal: " + terminal.Category);
+            Check(File.ReadAllText(Path.Combine(target.FullName, "first.txt")) == "first-completed" &&
+                !File.Exists(Path.Combine(target.FullName, "second.bin")) &&
+                Directory.GetFiles(target.FullName, "*", SearchOption.AllDirectories).Length == 1,
+                "cancellation must remove current incomplete file only");
+        }
+        finally { if (copied) File.Delete(installed); owned.Delete(true); }
     }
     public static async Task ActualSevenzToHandleSession()
     {
@@ -50,6 +107,7 @@ internal static class ArchiveExtractionWorkerTests
         try
         {
             File.Copy(source, installed, false); created = true;
+            var completedCases = 0;
             async Task<string> Verify(string name, string? password, object limits, string? expectedError = null, bool existing = false)
             {
                 var target = Directory.CreateDirectory(Path.Combine(owned.FullName, Guid.NewGuid().ToString("N")));
@@ -70,7 +128,7 @@ internal static class ArchiveExtractionWorkerTests
                 var failure = events.FirstOrDefault(e => e.Frame is { } f && f.GetProperty("op").GetString() == "failure")?.Frame;
                 var code = failure?.GetProperty("error_code").GetString();
                 if (!terminal.CleanupComplete || (expectedError is null ? terminal.Category != "success" : code != expectedError))
-                    throw new InvalidOperationException("7z extraction result: " + terminal.Category + "/" + code);
+                    throw new InvalidOperationException("7z extraction result for " + Path.GetFileName(name) + ": expected=" + (expectedError ?? "success") + ", actual=" + terminal.Category + "/" + code + "; native=" + terminal.NativeErrorCode + "; cleanup=" + terminal.CleanupComplete);
                 if (expectedError is not null && Directory.GetFiles(target.FullName, "*", SearchOption.AllDirectories).Length != (existing ? 2 : 1))
                     throw new InvalidOperationException("failed 7z extraction leaked output");
                 if (existing && File.ReadAllText(Path.Combine(target.FullName, "file.txt")) != "user-original")
@@ -80,6 +138,8 @@ internal static class ArchiveExtractionWorkerTests
                 if (events.Any(e => e.Frame is { } frame && frame.GetProperty("op").GetString() == "native_call"))
                     throw new InvalidOperationException("7z payload escaped private output pump");
                 if (!await runner.DrainAsync()) throw new InvalidOperationException("7z extraction cleanup");
+                completedCases++;
+                Console.WriteLine($"ARCHIVE_7Z_CASE case={completedCases} fixture={Path.GetFileName(name)} expected={expectedError ?? "success"} actual={code ?? terminal.Category} cleanup={terminal.CleanupComplete} output_and_sentinel_checks=passed");
                 return target.FullName;
             }
             var defaults = new { max_entries = 100 };
@@ -115,6 +175,8 @@ internal static class ArchiveExtractionWorkerTests
             var encryptedBytes = File.ReadAllBytes(Path.Combine(fixtures, "encrypted.7z"));
             encryptedBytes[40] ^= 0x80; File.WriteAllBytes(encryptedDamage, encryptedBytes);
             await Verify(encryptedDamage, "sevenz-rust", defaults, "AuthenticationOrDataError");
+            if (completedCases != 10) throw new InvalidOperationException("incomplete 7z preservation cases");
+            Console.WriteLine("ARCHIVE_7Z_PRESERVATION cases=10 payload_oracles=passed collision=passed plain_corruption=passed encrypted_corruption=passed cleanup=passed");
         }
         finally { if (created) File.Delete(installed); owned.Delete(true); }
     }

@@ -41,6 +41,17 @@
   .trigger:hover { background: var(--nt-surface-hover); border-color: var(--nt-accent); }
   .trigger[aria-expanded="true"] { border-color: var(--nt-accent); background: var(--nt-accent-soft); }
   .trigger:disabled { cursor: wait; opacity: .7; }
+  .dismiss {
+    position: absolute; top: -6px; right: -6px; z-index: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; padding: 0;
+    border: 1px solid var(--nt-border); border-radius: 50%;
+    background: var(--nt-surface-raised); color: var(--nt-text-secondary); cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0,0,0,.25);
+  }
+  .dismiss::before { content: ""; position: absolute; inset: -4px; border-radius: 50%; }
+  .dismiss:hover { background: var(--nt-surface-hover); border-color: var(--nt-accent); color: var(--nt-text); }
+  .dismiss svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
   .status { position: fixed; left: 8px; bottom: 8px; max-width: min(360px,calc(100vw - 16px)); padding: 6px 10px; background: var(--nt-surface); border: 1px solid var(--nt-border); border-radius: 6px; color: var(--nt-text-secondary); font-size: 12px; line-height: 18px; text-align: left; overflow-wrap: anywhere; pointer-events: none; }
   :focus-visible { outline: 2px solid var(--nt-accent); outline-offset: 2px; }
   .icon { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 24px; height: 24px; }

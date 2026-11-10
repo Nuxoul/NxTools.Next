@@ -10,7 +10,7 @@ using System.Security.Cryptography;
 
 namespace NxTools.PlatformHost.Windows.Archive;
 
-// Private stdio protocol: u32 little-endian byte length (1..1MiB), then strict UTF-8 JSON.
+// Private stdio: u32LE typed JSON, or a negotiated high-bit binary bulk record.
 // Rust owns archive state/codecs. Only this boundary owns Windows process/Job lifetime.
 internal sealed record ArchiveWorkerRequest(Guid OperationId, string Operation, string Path, int Codepage,
     object Limits, string? Password = null, int MemoryBytes = 0, int TimeoutMs = 30000, string? OutputRoot = null,
@@ -20,7 +20,8 @@ internal sealed record ArchiveWorkerRequest(Guid OperationId, string Operation, 
     bool? DeleteSource = null, bool ActiveTemporarySource = false, int? ReadContract = null, ArchiveReadTransport? ReadTransport = null,
     bool PasswordInteraction = false, string? ConflictPolicy = null, JsonElement? OutputReadmission = null,
     Protocol.ArchiveEntryCommand? BrowserEntry = null, bool JobExecution = false, Protocol.ArchiveJobExtract? JobExtract = null,
-    ulong? VolumeBytes = null, Protocol.ArchiveJobModify? JobModify = null, Protocol.ArchiveBrowserContext? BrowserAuthorize = null);
+    ulong? VolumeBytes = null, Protocol.ArchiveJobModify? JobModify = null, Protocol.ArchiveBrowserContext? BrowserAuthorize = null,
+    ArchiveDragMaterialization? DragMaterialization = null, bool JobLargeCount = false, bool ParallelExtraction = false);
 internal sealed record ArchiveReadTransport(ulong MaxTotalBytes, bool BrowserContext = false);
 internal sealed record ArchiveZipCreateOptions(string Method = "deflate", string Encryption = "none", bool StripSingleRoot = false,
     IReadOnlyList<string>? ExcludePatterns = null);
@@ -34,7 +35,9 @@ internal sealed record ArchiveWorkerEvent(string Kind, Guid OperationId, string?
     ulong? PrivateBytes = null, ulong? ProcessBudgetBytes = null, ulong FilesSkipped = 0,
     IReadOnlyList<Protocol.ArchiveJobCommit>? Journal = null, ulong BytesCommitted = 0,
     Protocol.ArchiveJobResultLocation? ResultLocation = null, bool? OutputPublished = null,
-    [property: System.Text.Json.Serialization.JsonIgnore] bool HasNativeFailure = false);
+    Protocol.ArchiveJobAddResult? AddResult = null,
+    [property: System.Text.Json.Serialization.JsonIgnore] bool HasNativeFailure = false,
+    Protocol.ArchiveJobJournalSummary? JournalSummary = null);
 
 internal sealed partial class ArchiveWorkerRunner : IDisposable
 {
@@ -80,9 +83,11 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             ? (output.FilesCommitted, output.LastCommitState?.ToString()) : (0, null);
     }
     internal Action<string>? SourceCheckpointProbe { get; set; }
+    internal Action<ArchiveNativeReadStage, ArchiveNativeReadKind, long>? EditSourceReadChunkProbeForFixture { get; set; }
     internal Func<string, string>? SourceNamespacePathProbe { get; set; }
     internal Func<string, string>? SourceOutputNamespacePathProbe { get; set; }
     internal Action<string>? OutputCommitCheckpointProbe { get; set; }
+    internal Action<string>? OutputBeginCheckpointProbe { get; set; }
     internal Action? CreateOverwritePreflightProbe { get; set; }
     internal Action<int>? OutputWriteCheckpointProbe { get; set; }
     internal Action<string>? ControlInputCheckpointProbe { get; set; }
@@ -96,8 +101,8 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
     internal static bool ModificationFormatMatches(string operation, string format) => operation switch {
         "modify_zip" => format == "Zip", "modify_7z" => format == "SevenZ",
         "modify_tar" => format is "Tar" or "TarGz" or "TarXz", _ => false };
-    internal static bool SupportsCapabilities(string operation, JsonElement capabilities) {
-        if (capabilities.ValueKind != JsonValueKind.Array || capabilities.GetArrayLength() > 24 || capabilities.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.String)) return false;
+    internal static bool SupportsCapabilities(string operation, JsonElement capabilities, int maximum = 24) {
+        if (capabilities.ValueKind != JsonValueKind.Array || capabilities.GetArrayLength() > maximum || capabilities.EnumerateArray().Any(value => value.ValueKind != JsonValueKind.String)) return false;
         bool Has(string name) => capabilities.EnumerateArray().Any(value => value.GetString() == name);
         return Has("source_lease_v1") && Has("budget_reservations_v1") &&
             (operation != "extract" || Has("extraction_metadata_v1") && Has("motw_v1")) &&
@@ -143,6 +148,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         if (browserPassword is not null && (request.BrowserEntry is null || request.PasswordInteraction || request.BrowserAuthorize is not null || !ValidPasswordBytes(browserPassword))) reason = "invalid_request";
         if (request.BrowserEntry is { } entry && (entry.Action != "materialize" || entry.Browser?.Valid != true || entry.Ordinal is null || request.Operation != "extract" || request.ReadContract is not null || readHelper is null || request.Password is not null || request.DeleteSource is not null || request.ConflictPolicy is not null || request.OutputReadmission is not null)) reason = "invalid_request";
         if (request.JobExecution && (readHelper is null || request.ReadContract is not null || request.BrowserEntry is not null || request.DeleteSource is not null)) reason = "invalid_request";
+        if (request.JobLargeCount && (!request.JobExecution || request.Operation != "extract" || request.JobExtract is null || request.ExtractOptions?.Reclamation is not null)) reason = "invalid_request";
         if (confirmCreateOverwrite is not null && (!request.JobExecution || !IsCreation(request.Operation) || request.ConfirmedOverwrites is not null)) reason = "invalid_request";
         if (request.ConflictPolicy is not null && (request.ConflictPolicy is not ("ask" or "overwrite" or "skip" or "auto_rename") || request.Operation != "extract" && !(IsModification(request.Operation) && request.JobExecution && request.ConflictPolicy == "ask") || request.ReadContract is not null || request.ConfirmedOverwrites is not null)) reason = "invalid_request";
         if (request.OutputReadmission is not null && (request.Operation != "extract" || request.ReadContract is not null || request.DeleteSource is not null)) reason = "invalid_request";
@@ -153,7 +159,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             request.ReadTransport is { MaxTotalBytes: 0 or > 67108864 }) reason = "invalid_request";
         if (request.OperationId == Guid.Empty || request.Operation is not ("open" or "test" or "extract") && !IsModification(request.Operation) && !IsCreation(request.Operation) ||
             string.IsNullOrWhiteSpace(request.Path) || request.Path.Length > 32767 || request.Codepage < 0 ||
-            request.TimeoutMs < 200 || request.TimeoutMs > (request.Operation == "create_zip" ? 600000 : 120000))
+            (request.TimeoutMs == 0 ? !request.JobLargeCount : request.TimeoutMs < 200 || request.TimeoutMs > (request.Operation == "create_zip" ? 600000 : 120000)))
             reason = "invalid_request";
         else if ((request.Operation == "extract" || IsModification(request.Operation) || IsCreation(request.Operation)) != !string.IsNullOrEmpty(request.OutputRoot))
             reason = "invalid_request";
@@ -162,6 +168,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             try
             {
                 request = ArchiveWorkerAdmission.Capture(request);
+                request = request with { DragMaterialization = CaptureVirtual(request) };
                 if (request.VolumeBytes is {} volume && (volume < 65536 || volume > ((ArchiveAdmittedLimits)request.Limits).max_output_bytes || request.Operation is not ("create_zip" or "create_7z") || request.ConfirmedOverwrites is not null || confirmCreateOverwrite is not null)) throw new ArchiveOutputException("invalid_create_request");
                 if (IsModification(request.Operation)) {
                     if (!request.JobExecution || request.JobModify?.Browser.Valid != true || !ModificationFormatMatches(request.Operation,request.JobModify.Browser.Format) || request.ReadContract is not null || request.CreateName is not null || request.CompressionLevel is not null || request.VolumeBytes is not null || request.ConfirmedOverwrites is not null ||
@@ -282,9 +289,15 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     privateRequest["browser_entry"] = JsonSerializer.SerializeToNode(new { ordinal = selection.Ordinal, expected = selection.Browser }, Protocol.JsonDefaults.Options);
                     CryptographicOperations.ZeroMemory(input); input = Pack(privateRequest);
                 }
+                if (request.DragMaterialization is { } drag) {
+                    var privateRequest = System.Text.Json.Nodes.JsonNode.Parse(input.AsSpan(4))!;
+                    privateRequest["drag_materialization"] = JsonSerializer.SerializeToNode(new { version = 1, members = drag.Members });
+                    CryptographicOperations.ZeroMemory(input); input = Pack(privateRequest);
+                }
                 if (request.JobExecution) {
                     var privateRequest = System.Text.Json.Nodes.JsonNode.Parse(input.AsSpan(4))!;
                     privateRequest["job_execution"] = true;
+                    if (request.JobLargeCount) privateRequest["job_large_count"] = true;
                     if (request.JobExtract is { } jobExtract) privateRequest["job_extract"] = JsonSerializer.SerializeToNode(jobExtract, Protocol.JsonDefaults.Options);
                     CryptographicOperations.ZeroMemory(input); input = Pack(privateRequest);
                 }
@@ -300,6 +313,15 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 if (request.BrowserAuthorize is { } authorizationContext) {
                     var privateRequest = System.Text.Json.Nodes.JsonNode.Parse(input.AsSpan(4))!;
                     privateRequest["browser_authorize"] = JsonSerializer.SerializeToNode(authorizationContext, Protocol.JsonDefaults.Options);
+                    CryptographicOperations.ZeroMemory(input); input = Pack(privateRequest);
+                }
+                if (request.ParallelExtraction && (request.Operation != "extract" || request.BrowserEntry is not null ||
+                    request.DragMaterialization is not null || request.ExtractOptions?.Reclamation is not null))
+                    throw new ArchiveOutputException("invalid_request");
+                if (argument != "--archive-worker-fixture" && BulkOperation(request)) {
+                    var privateRequest = System.Text.Json.Nodes.JsonNode.Parse(input.AsSpan(4))!;
+                    privateRequest["bulk_transfer"] = 1;
+                    if (request.ParallelExtraction) privateRequest["parallel_extraction"] = true;
                     CryptographicOperations.ZeroMemory(input); input = Pack(privateRequest);
                 }
                 // Insert bytes LAST, never through JsonNode/string or a retained Run.Request field.
@@ -396,7 +418,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         while (ActiveCount != 0 && clock.ElapsedMilliseconds < milliseconds) await Task.Delay(20);
         return ActiveCount == 0;
     }
-    private sealed class Run
+    private sealed partial class Run
     {
         internal readonly ArchiveWorkerRequest Request;
         internal readonly int Memory;
@@ -410,6 +432,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         internal readonly CancellationTokenSource InputStop = new();
         internal readonly CancellationTokenSource MetadataStop = new();
         internal int InputBytes, OutputBytes, StderrBytes, PendingWrites;
+        internal long TransportStdinBytes, TransportStdoutBytes;
         internal bool SawTerminal;
         internal bool Negotiated;
         internal ulong FilesSkipped;
@@ -418,9 +441,11 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         private readonly object timingGate=new();
         internal long ExcludedMs, HoldStartedMs;
         internal IReadOnlyList<Protocol.ArchiveJobCommit>? Journal;
+        internal Protocol.ArchiveJobJournalSummary? JournalSummary;
         internal ulong BytesCommitted;
         internal Protocol.ArchiveJobResultLocation? ResultLocation;
         internal bool? OutputPublished;
+        internal Protocol.ArchiveJobAddResult? AddResult;
         internal long ActiveElapsedMs { get {lock(timingGate){var elapsed=Clock.ElapsedMilliseconds;return elapsed-ExcludedMs-(Paused || PromptWaiting?elapsed-HoldStartedMs:0);}} }
         internal void SetHold(bool paused, bool prompt) {
             lock(timingGate) {
@@ -445,17 +470,35 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         internal volatile bool Recycling;
         internal readonly CancellationTokenSource RecycleCancellation = new();
         internal Run(ArchiveWorkerRequest request, int memory, byte[] first)
-        { Request = request; Memory = memory; InputBytes = first.Length; Input.Writer.TryWrite(first); }
-        internal void Fail(string reason, int? native = null) {
+        {
+            Request = request; Memory = memory; InputBytes = first.Length;
+            using var start = JsonDocument.Parse(first.AsMemory(4));
+            BulkRequested = start.RootElement.TryGetProperty("bulk_transfer", out _);
+            Input.Writer.TryWrite(first); InitializeVirtual();
+        }
+        internal void Fail(string reason, int? native = null, bool operationFailure = false) {
             if (Recycling) { RecycleCancellation.Cancel(); return; }
-            Interlocked.CompareExchange(ref Failure, new ArchiveFault(reason, native), null);
+            var failure = new ArchiveFault(reason, native);
+            if (operationFailure) RecordOperationFailure(failure);
+            else Interlocked.CompareExchange(ref Failure, failure, null);
             if (Request.ReadContract is not null || Request.JobExecution) MetadataStop.Cancel();
             Output?.RequestCancellation();
         }
+        private void RecordOperationFailure(ArchiveFault failure) {
+            while (true) {
+                var current = Volatile.Read(ref Failure);
+                if (current is not null && !(Request.ParallelExtraction && current.Category == "cancelled" && failure.Category != "cancelled")) return;
+                if (ReferenceEquals(Interlocked.CompareExchange(ref Failure, failure, current), current)) return;
+            }
+        }
         internal void FailNative(ArchiveNativeOutputFailure failure) {
             if (failure.OperationId != Request.OperationId) throw new ArchiveFault("stdout_invalid_frame");
+            if (Request.ParallelExtraction && failure.Category != "target_exists") {
+                RecordOperationFailure(new ArchiveFault(failure.Category, failure.NativeCode, failure));
+                Output?.RequestCancellation(); return;
+            }
             if (!(IsModification(Request.Operation) && failure.Action == "commit") && failure.Category is not ("write_file" or "flush_file" or "flush_or_commit") && !failure.Category.StartsWith("reclamation_", StringComparison.Ordinal) && !failure.Category.StartsWith("metadata_", StringComparison.Ordinal) && !failure.Category.StartsWith("motw_", StringComparison.Ordinal) && failure.Category is not ("target_changed" or "target_missing" or "target_directory" or
-                "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported" or
+                "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported" or "selected_output_limit" or
                 "commit_outcome_unknown" or "committed_but_verification_failed" or "target_changed_after_commit" or "cancelled")) return;
             // Fail-stop on this exact acknowledged call, never recover from a mutable last error.
             Interlocked.CompareExchange(ref Failure, new ArchiveFault(failure.Category, failure.NativeCode, failure), null);
@@ -484,6 +527,10 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             if (run.Request.Operation == "extract" || IsModification(run.Request.Operation) || IsCreation(run.Request.Operation)) {
                 ArchiveOutputSession? prepared = null;
                 var outputRequest = run.Request;
+                if (run.Request.DragMaterialization is { } drag) {
+                    var limits = (ArchiveAdmittedLimits)run.Request.Limits;
+                    outputRequest = outputRequest with { Limits = limits with { max_entry_bytes = Math.Min(limits.max_entry_bytes, drag.First.OutputLimit), max_output_bytes = drag.First.OutputLimit } };
+                }
                 if (run.ConfirmCreateOverwrite is { } confirm) {
                     // Original global/max2 Run already owns this blocking preflight and every
                     // handle until actual cleanup. Never run it on the serial command reader.
@@ -499,10 +546,12 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     }
                     if (run.Failure is not null) throw run.Failure;
                 }
-                run.Output = new ArchiveWorkerOutputBridge(outputRequest, log, prepared);
+                run.Output = new ArchiveWorkerOutputBridge(outputRequest, log, prepared, run.BulkRequested);
                 if (run.Request.VolumeBytes is not null) run.Output.ConfigureVolumeOutput(run.Request);
                 if (prepared is not null) run.Resources.Remove(prepared); // Bridge now owns the SAME held namespace.
                 run.Output.CommitCheckpointProbe = stage => OutputCommitCheckpointProbe?.Invoke(stage);
+                run.Output.ParallelOrdinary = run.Request.ParallelExtraction;
+                run.Output.BeginCheckpointProbe = OutputBeginCheckpointProbe;
                 run.Output.WriteCheckpointProbe = OutputWriteCheckpointProbe;
                 run.Output.CreationOutput.NamedStreamsFlagsProbe = NamedStreamsFlagsProbe;
                 run.Resources.Add(run.Output);
@@ -521,9 +570,10 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             ExtensionNative.Require(ExtensionNative.AssignJob(job, process.DangerousGetHandle()), "assign_job");
             assigned = true;
             admissionProbe?.Invoke(process);
-            if ((run.Request.JobExecution ? run.ActiveElapsedMs : run.Clock.ElapsedMilliseconds) >= run.Request.TimeoutMs) run.Fail("timeout");
+            CheckWorkTimeout(run);
             if (run.Failure is not null) throw run.Failure;
-            input = new FileStream(stdin.Ours, FileAccess.Write, 8192, false); run.Resources.Add(input);
+            // The unique input pump sends complete envelopes; small control frames must not remain buffered.
+            input = new FileStream(stdin.Ours, FileAccess.Write, 1, false); run.Resources.Add(input);
             output = new FileStream(stdout.Ours, FileAccess.Read, 8192, false); run.Resources.Add(output);
             error = new FileStream(stderr.Ours, FileAccess.Read, 8192, false); run.Resources.Add(error);
             if (ExtensionNative.Resume(thread) == uint.MaxValue)
@@ -539,7 +589,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 var wait = ExtensionNative.Wait(process, 0);
                 if (wait == 0) break;
                 if (wait == uint.MaxValue) throw new ArchiveFault("wait_process", Marshal.GetLastWin32Error());
-                if ((run.Request.JobExecution ? run.ActiveElapsedMs : run.Clock.ElapsedMilliseconds) >= run.Request.TimeoutMs) run.Fail("timeout");
+                CheckWorkTimeout(run);
                 await Task.Delay(20);
             }
             if (run.Failure is not null && ExtensionNative.Wait(process, 0) != 0)
@@ -589,9 +639,13 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 CleanupCheckpointProbe?.Invoke();
                 run.SourceDeletion = await ResolveSourceDeletionAsync(run, exit);
                 run.DeleteSession?.Retire();
-                if (run.Request.JobExecution && run.Request.Operation == "extract") {
-                    try { run.ResultLocation=run.Output?.CreationOutput.ResultLocation(); }
-                    catch (Exception) { run.ResultLocation=null; } // Presentation failure never changes extraction.
+                if (run.Request.JobExecution && run.Request.Operation is "extract" or "create_zip" or "create_7z" or "create_tar" or "create_tgz" or "create_txz" or "create_gzip" or "create_xz") {
+                    try {
+                        var preferred = run.Request.Operation == "extract" ? null : run.Request.Operation == "create_7z" && run.Request.VolumeBytes is not null
+                            ? run.Request.CreateName + ".001" : run.Request.CreateName;
+                        run.ResultLocation = run.Output?.CreationOutput.ResultLocation(preferred);
+                    }
+                    catch (Exception) { run.ResultLocation = null; } // Presentation failure never changes publication.
                 }
                 foreach (var resource in run.Resources)
                 {
@@ -599,9 +653,11 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     catch (Exception) { run.Fail("dispose_failure"); if (run.Request.ReadContract is not null || run.Request.BrowserEntry is not null || run.Request.BrowserAuthorize is not null || run.Request.JobExecution) run.CleanupFailed = true; }
                 }
                 if (!run.CleanupFailed) run.SourceReservation?.Dispose();
-                run.Journal = run.Output?.CreationOutput.CommitJournal();
-                run.BytesCommitted = run.Journal?.Where(fact=>fact.Published==true).Aggregate(0ul,(total,fact)=>total+fact.Bytes) ?? 0;
-                run.OutputPublished = run.Output is null ? false : run.Output.CreationOutput.OutputPublished();
+                run.Journal = run.Output?.CreationOutput.CommitJournal(run.Request.JobLargeCount ? 256 : int.MaxValue);
+                run.JournalSummary = run.Request.JobLargeCount ? run.Output?.CreationOutput.CommitSummary() : null;
+                run.BytesCommitted = run.Output?.BytesCommitted ?? 0;
+                run.OutputPublished = run.Request.DragMaterialization is null ? run.Output is null ? false : run.Output.CreationOutput.OutputPublished()
+                    : run.VirtualOutputs.Any(member => member.CreationOutput.OutputPublished() == true);
                 run.InputStop.Dispose();
                 if (!run.CleanupFailed) {
                     try { run.HelperLease?.Dispose(); }
@@ -621,15 +677,16 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             }
             else run.Fail("cleanup_stuck"); // Leases remain rooted in the occupied slot.
             var terminal = ResolveTerminal(run, drained && !run.CleanupFailed, exit);
-            DiagnosticTerminal(terminal);
+            DiagnosticTerminal(run, terminal);
             Emit(terminal);
         }
     }
     private static ArchiveWorkerEvent ResolveTerminal(Run run, bool drained, uint? exit)
     {
-        var failure = run.Failure;
+        var failure = run.Request.ParallelExtraction ? run.Failure : run.OutputWriteFailure is { } firstWrite
+            ? new ArchiveFault(firstWrite.Category, firstWrite.NativeCode, firstWrite) : run.Failure;
         if (run.ArchiveTerminal is { } frozen) return frozen with { CleanupComplete = drained, SourceDeletion = run.SourceDeletion, ElapsedMs = run.Clock.ElapsedMilliseconds, OutputPublished = run.OutputPublished };
-        var files = run.Output?.FilesCommitted ?? 0;
+        var files = run.PublishedFiles;
         var state = run.Output?.LastCommitState;
         // Publication/uncertainty outranks cancellation. Ordinary failures use only their own call.
         var authoritativeCommit = state is ArchiveCommitState.CommitOutcomeUnknown or ArchiveCommitState.CommitInFlight or
@@ -645,8 +702,9 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
             FilesCommitted: files, CommitState: state?.ToString(), SourceDeletion: run.SourceDeletion,
             PrivateBytes: run.Request.ReadContract == 2 ? (ulong)run.OutputBytes : null,
             ProcessBudgetBytes: run.Request.ReadContract == 2 ? (ulong)run.Memory : null, FilesSkipped: run.FilesSkipped,
-            Journal: run.Journal, BytesCommitted: run.Output?.BytesCommitted ?? run.BytesCommitted, ResultLocation:run.ResultLocation, OutputPublished:run.OutputPublished,
-            HasNativeFailure: failure?.OutputFailure is not null);
+            Journal: run.Journal, BytesCommitted: run.PublishedBytes, ResultLocation:run.ResultLocation, OutputPublished:run.OutputPublished,
+            AddResult: drained && (category is "success" or "succeeded_with_warnings") && state == ArchiveCommitState.Committed && run.OutputPublished == true && files > 0 && run.SawTerminal ? run.AddResult : null,
+            HasNativeFailure: failure?.OutputFailure is not null, JournalSummary: run.JournalSummary);
     }
     private async Task ReadFrames(Run run, Stream stream)
     {
@@ -655,16 +713,26 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         {
             while (true)
             {
-                var count = await stream.ReadAsync(header.AsMemory(0, 4));
+                // CreatePipe supplies synchronous handles; this independent pump owns their blocking reads.
+                var count = stream.Read(header.AsSpan(0, 4));
                 if (count == 0)
                 {
+                    await JoinNative(run);
                     if (!run.SawTerminal) run.Fail("stdout_missing_terminal");
                     return;
                 }
-                if (count < 4) await stream.ReadExactlyAsync(header.AsMemory(count, 4 - count));
+                if (count < 4) stream.ReadExactly(header.AsSpan(count, 4 - count));
                 var size = BinaryPrimitives.ReadUInt32LittleEndian(header);
+                if ((size & ArchiveBulkFrame.Discriminator) != 0) {
+                    await ReadBulkWrite(run, stream, size & ~ArchiveBulkFrame.Discriminator);
+                    continue;
+                }
                 if (size is 0 or > FrameLimit) throw new ArchiveFault("stdout_frame_limit");
-                var body = new byte[size]; await stream.ReadExactlyAsync(body);
+                var body = new byte[size];
+                try {
+                stream.ReadExactly(body);
+                Interlocked.Add(ref run.TransportStdoutBytes, size + 4L);
+                Interlocked.Increment(ref run.StdoutJsonFrames);
                 using var doc = JsonDocument.Parse(body, new JsonDocumentOptions { MaxDepth = 32 });
                 var root = doc.RootElement;
                 var cumulativeLimit = run.Request.ReadContract == 2 && run.Negotiated
@@ -673,9 +741,11 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     Interlocked.Add(ref run.OutputBytes, checked((int)size + 4)) > cumulativeLimit) throw new ArchiveFault("stdout_total_limit");
                 if (root.GetProperty("schema").GetInt32() != 1 ||
                     root.GetProperty("operation_id").GetGuid() != run.Request.OperationId ||
-                    root.GetProperty("op").GetString() is not ("accepted" or "progress" or "entry_batch" or "complete" or "failure" or "native_call" or "password_state" or "conflict_prompt" or "extraction_summary" or "risk_prompt" or "risk_confirmed" or "output_budget_shortfall" or "browser_context" or "browser_selected"))
+                    root.GetProperty("op").GetString() is not ("accepted" or "progress" or "entry_batch" or "complete" or "failure" or "native_call" or "password_state" or "conflict_prompt" or "extraction_summary" or "risk_prompt" or "risk_confirmed" or "output_budget_shortfall" or "browser_context" or "browser_selected" or "add_result" or "drag_member_ready"))
                     throw new ArchiveFault("stdout_invalid_frame");
                 if (run.SawTerminal) throw new ArchiveFault("stdout_invalid_frame");
+                if (run.BulkRequested && !run.Negotiated && root.GetProperty("op").GetString() != "accepted")
+                    throw new ArchiveFault("worker_capability_mismatch");
                 if (root.GetProperty("op").GetString() == "accepted" && run.Request.ReadContract is not null) {
                     if (!root.TryGetProperty("read_contract", out var contract) || contract.ValueKind != JsonValueKind.Number || contract.GetInt32() != 1)
                         throw new ArchiveFault("incompatible_version");
@@ -695,11 +765,22 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     }
                 }
                 if (root.GetProperty("op").GetString() == "accepted" && argument != "--archive-worker-fixture") {
-                    if (run.Negotiated || !root.TryGetProperty("capabilities", out var capabilities) || !SupportsCapabilities(run.Request.Operation, capabilities))
+                    if (run.Negotiated || !root.TryGetProperty("capabilities", out var capabilities) ||
+                        !SupportsCapabilities(run.Request.Operation, capabilities, run.Request.ParallelExtraction ? 32 : 24))
                         throw new ArchiveFault(run.Request.ReadContract is not null ? "missing_capability" : "worker_capability_mismatch");
+                    if (run.BulkRequested && !HasBulkCapability(capabilities)) throw new ArchiveFault("worker_capability_mismatch");
+                    if (run.Request.ParallelExtraction && !capabilities.EnumerateArray().Any(item => item.GetString() == "parallel_extraction_v1"))
+                        throw new ArchiveFault("worker_capability_mismatch");
+                    if (run.BulkRequested && run.Output?.PipelinedExtraction == true && !capabilities.EnumerateArray().Any(item => item.GetString() == "extraction_output_v1"))
+                        throw new ArchiveFault("worker_capability_mismatch");
                     run.Negotiated = true;
                     if (run.Request.JobExecution && !capabilities.EnumerateArray().Any(item=>item.GetString()=="product_job_v1"))throw new ArchiveFault("missing_capability");
+                    if (run.Request.JobLargeCount && !capabilities.EnumerateArray().Any(item=>item.GetString()=="job_large_count_v1"))throw new ArchiveFault("missing_capability");
                     if (run.Request.BrowserEntry is not null && !capabilities.EnumerateArray().Any(item => item.GetString() == "browser_entry_v1")) throw new ArchiveFault("missing_capability");
+                    if (run.Request.DragMaterialization is not null) {
+                        if (!capabilities.EnumerateArray().Any(item => item.GetString() == "drag_materialization_v1")) throw new ArchiveFault("missing_capability");
+                        lock (gate) { if (!SendVirtualDemand(run)) throw new ArchiveFault("input_limit"); }
+                    }
                     if (run.Request.BrowserAuthorize is not null && !capabilities.EnumerateArray().Any(item => item.GetString() == "browser_authorize_v1")) throw new ArchiveFault("missing_capability");
                     if (run.Request.DeleteSource is not null && !capabilities.EnumerateArray().Any(item => item.GetString() == "source_delete_eligibility_v1")) throw new ArchiveFault("worker_capability_mismatch");
                     if (run.Request.PasswordInteraction && !capabilities.EnumerateArray().Any(item => item.GetString() == "password_interaction_v1")) throw new ArchiveFault("worker_capability_mismatch");
@@ -711,6 +792,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     if (run.Request.ReadContract == 2 && (ulong)run.OutputBytes > run.Request.ReadTransport!.MaxTotalBytes)
                         throw new ArchiveFault("stdout_total_limit");
                 }
+                if (root.GetProperty("op").GetString() == "drag_member_ready") { ReadyVirtualMember(run, root); continue; }
                 if (root.GetProperty("op").GetString() == "password_state") {
                     if (!run.Request.PasswordInteraction || !run.Negotiated) throw new ArchiveFault("stdout_invalid_frame");
                     DiagnosticPassword(run, root.GetProperty("password_state"));
@@ -719,6 +801,14 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     if (run.Request.ConflictPolicy is null || !run.Negotiated) throw new ArchiveFault("stdout_invalid_frame");
                     if (root.GetProperty("op").GetString() == "extraction_summary") run.FilesSkipped = root.GetProperty("extraction_summary").GetProperty("files_skipped").GetUInt64();
                     Diagnostic(root.GetProperty("op").GetString() == "conflict_prompt" ? "awaiting_conflict" : "conflict_finished", run);
+                }
+                if (root.GetProperty("op").GetString() == "add_result") {
+                    if (!run.Request.JobExecution || !IsModification(run.Request.Operation) || run.Request.JobModify?.Action != "add" ||
+                        !run.Negotiated || run.AddResult is not null || run.Output?.FilesCommitted != 1 || run.Failure is not null)
+                        throw new ArchiveFault("stdout_invalid_frame");
+                    var result = root.GetProperty("add_result").Deserialize<Protocol.ArchiveJobAddResult>(Protocol.ArchiveJobWire.Strict);
+                    if (result?.Valid != true) throw new ArchiveFault("stdout_invalid_frame");
+                    run.AddResult = result;
                 }
                 if (root.GetProperty("op").GetString() is "risk_prompt" or "risk_confirmed") {
                     if (run.Request.Operation != "extract" || !run.Negotiated) throw new ArchiveFault("stdout_invalid_frame");
@@ -731,6 +821,13 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 if (root.GetProperty("op").GetString() == "native_call") {
                     var nativeCall = root.GetProperty("native");
                     var action = nativeCall.GetProperty("action").GetString();
+                    if (run.BulkRequested && action == "write") throw new ArchiveFault("stdout_invalid_frame");
+                    if (run.BulkRequested && action is ("source_read" or "read")) {
+                        if (action == "source_read" && run.CreationSources is null) throw new ArchiveFault("source_lease_required");
+                        await ReadBulkRequest(run, nativeCall, action == "source_read");
+                        continue;
+                    }
+                    if (!run.BulkRequested && action == "write") run.PayloadConversionInputBytes += body.Length;
                     if (action == "begin" && run.Request.BrowserEntry is not null) Emit(new("browser_output", run.Request.OperationId, Frame: nativeCall.Clone()));
                     if (action == "source_acquire") {
                         if (!run.Negotiated || run.Source is not null || run.Output?.HasReclamation == true || run.CreationSources is not null || run.Failure is not null) throw new ArchiveFault("stdout_invalid_frame");
@@ -757,10 +854,11 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                 run.Output!.AcquireReclamation(run.Request, run.SourceReservation?.Identity);
                             } else {
                                 if (IsModification(run.Request.Operation)) {
-                                    run.Source = ArchiveSourceLease.OpenForEdit(run.Request.Path);
+                                    run.Source = ArchiveSourceLease.OpenForEdit(run.Request.Path, run.Output!.OperationCancellation);
                                     run.Resources.Add(run.Source);
+                                    run.Source.ReadObservation.ReadChunkProbeForFixture = EditSourceReadChunkProbeForFixture;
                                     if (run.Request.JobModify!.Browser.Source.Native != run.Source.ReadmissionIdentity()) throw new ArchiveOutputException("source_changed");
-                                    run.EditTargetIdentity = run.Output!.CreationOutput.CaptureTargetIdentity(Path.GetFileName(run.Request.Path));
+                                    run.EditTargetIdentity = run.Output!.CreationOutput.CaptureTargetIdentity(Path.GetFileName(run.Request.Path), run.Output.OperationCancellation);
                                     run.Output.BindEditSource(run.Source,run.EditTargetIdentity);
                                     if (run.Request.SourcePaths is {Count:>0} additions) {
                                         var limits=(ArchiveAdmittedLimits)run.Request.Limits;
@@ -779,7 +877,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                         zipOutputPreflight:run.Request.Operation=="extract" && run.Request.OutputReadmission is not null);
                                     run.Source=run.VolumeSources.Primary;run.Resources.Add(run.VolumeSources);
                                 }
-                                if (run.SourceReservation is { } reservation && run.Source.ActivityIdentity != reservation.Identity) throw new ArchiveOutputException("source_changed");
+                                if (run.SourceReservation is { } reservation && (run.VolumeSources?.Requested ?? run.Source).ActivityIdentity != reservation.Identity) throw new ArchiveOutputException("source_changed");
                                 var originalIdentity=run.VolumeSources?.Identity() ?? run.Source.ReadmissionIdentity();
                                 if (run.Request.JobExtract?.Selection is { } selected && selected.Browser.Source.Native != originalIdentity) throw new ArchiveOutputException("source_changed");
                                 if (run.Request.BrowserEntry is { } browser && browser.Browser!.Source.Native != originalIdentity) throw new ArchiveOutputException("source_changed");
@@ -789,6 +887,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                 if (run.Request.Operation == "extract" && (run.Request.ExtractOptions?.CopyMotw ?? true)) {
                                     var mark = run.Source.CaptureZoneIdentifier(NamedStreamsFlagsProbe);
                                     run.Output!.BindZoneIdentifier(mark);
+                                    run.VirtualZone = mark;
                                     Diagnostic(mark is null ? "motw_absent" : "motw_captured", run);
                                 } else if (run.Request.Operation == "extract") {
                                     Diagnostic("motw_disabled", run);
@@ -810,19 +909,24 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                 run.FailNative(new(run.Request.OperationId,nativeCall.GetProperty("call_id").GetGuid(),"source_acquire",null,failure.Stage,failure.NativeCode,failure.State));
                             }
                             if (run.Request.ReadContract is not null || run.Request.OutputReadmission is not null || run.Request.BrowserEntry is not null || run.Request.BrowserAuthorize is not null || run.Request.JobExecution)
-                                run.Fail(failure.Stage is "source_changed" ? "source_changed" :
+                                run.Fail(failure.Stage is "source_changed" or "missing_volume" ? failure.Stage :
                                     failure.Stage is "resource_limit" or "read_limit" or "session_entry_limit" ? "resource_limit" : failure.NativeCode is 32 or 33 ? "source_changed" : "source_unavailable", failure.NativeCode);
                             if (failure.Stage.StartsWith("motw_", StringComparison.Ordinal)) run.Fail(failure.Stage, failure.NativeCode);
                             DiagnosticSourceFailure(run, failure);
                             sourceReply = new { version = 1, operation_id = run.Request.OperationId, op = "native_result",
                                 call_id = nativeCall.GetProperty("call_id").GetGuid(), success = false,
-                                error_code = failure.Stage.StartsWith("reclamation_", StringComparison.Ordinal) ? failure.Stage : failure.Stage is "resource_limit" or "session_entry_limit" or "read_limit" or "reparse_component" or "source_output_collision" or "source_changed" or "cancelled" ? failure.Stage : failure.NativeCode is 32 or 33 ? "source_changed" : "source_unavailable",
+                                error_code = failure.Stage.StartsWith("reclamation_", StringComparison.Ordinal) ? failure.Stage : failure.Stage is "missing_volume" or "resource_limit" or "session_entry_limit" or "read_limit" or "reparse_component" or "source_output_collision" or "source_changed" or "cancelled" ? failure.Stage : failure.NativeCode is 32 or 33 ? "source_changed" : "source_unavailable",
                                 native_error_code = failure.NativeCode };
                         }
                         if (!run.Input.Writer.TryWrite(Pack(sourceReply))) throw new ArchiveFault("input_limit");
                         continue;
                     }
                     if (run.Source is null && run.Output?.HasReclamation != true && run.CreationSources is null && argument != "--archive-worker-fixture") throw new ArchiveFault("source_lease_required");
+                    if (action == "member_acquire") {
+                        var acquired = AcquireVirtualMember(run, nativeCall);
+                        if (!run.Input.Writer.TryWrite(Pack(acquired))) throw new ArchiveFault("input_limit");
+                        continue;
+                    }
                     if (action == "source_stamp" && (run.Request.OutputReadmission is not null || run.Request.ReadContract == 2 || run.Request.BrowserEntry is not null || run.Request.BrowserAuthorize is not null || run.Request.JobExtract?.Selection is not null || run.Request.JobModify is not null)) {
                         if (run.Source is null || run.Failure is not null) throw new ArchiveFault("source_lease_required");
                         if (!run.Input.Writer.TryWrite(Pack(new { version = 1, operation_id = run.Request.OperationId, op = "native_result", call_id = nativeCall.GetProperty("call_id").GetGuid(), success = true, read_data = run.VolumeSources?.Identity() ?? run.Source.ReadmissionIdentity() }))) throw new ArchiveFault("input_limit");
@@ -864,6 +968,13 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                         continue;
                     }
                     if(run.Request.JobExecution&&!run.DestinationChecked&&action is ("directory" or "directory_new" or "begin" or "begin_overwrite" or "observe_target"))await CheckDestination(run,null);
+                    if (run.Request.ParallelExtraction && action is ("begin" or "begin_overwrite" or "commit")) {
+                        if (!run.Negotiated || run.Source is null) throw new ArchiveFault("source_lease_required");
+                        if (action is "begin" or "begin_overwrite") run.Output.PrepareParallelRoot();
+                        await DispatchNative(run, nativeCall);
+                        continue;
+                    }
+                    if (run.Request.ParallelExtraction) await JoinNative(run);
                     var reply = run.Output.Execute(run.Request.OperationId, root.GetProperty("native"), out var nativeFailure);
                     if (nativeFailure is not null) run.FailNative(nativeFailure);
                     if (!run.Input.Writer.TryWrite(Pack(reply))) throw new ArchiveFault("input_limit");
@@ -872,13 +983,17 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 }
                 if (root.GetProperty("op").GetString() is "complete" or "failure")
                 {
+                    if (run.Request.ParallelExtraction) await JoinNative(run);
                     run.SawTerminal = true;
+                    DiagnosticWork(run, root);
                     if (root.TryGetProperty("source_delete", out var deleteEvidence)) run.DeleteEvidence = recycleEvidenceFixtureProbe?.Invoke(deleteEvidence.Clone()) ?? deleteEvidence.Clone();
                     if (root.GetProperty("op").GetString() == "failure") {
-                        var resourceLimit = root.TryGetProperty("error_code", out var errorCode) && errorCode.GetString() == "ResourceLimit";
-                        var passwordCancelled = (run.Request.PasswordInteraction || run.Request.Operation == "extract") && errorCode.GetString() == "Cancelled";
-                        run.Fail(passwordCancelled ? "cancelled" : resourceLimit ? "resource_limit" : "worker_failure",
-                            root.TryGetProperty("native_error_code", out var nativeCode) ? nativeCode.GetInt32() : null);
+                        var errorCode = root.GetProperty("error_code").GetString();
+                        var resourceLimit = errorCode == "ResourceLimit";
+                        var selectedOutputLimit = errorCode == "SelectedOutputLimit";
+                        var passwordCancelled = (run.Request.PasswordInteraction || run.Request.Operation == "extract") && errorCode == "Cancelled";
+                        run.Fail(passwordCancelled ? "cancelled" : selectedOutputLimit ? "selected_output_limit" : resourceLimit ? "resource_limit" : "worker_failure",
+                            root.TryGetProperty("native_error_code", out var nativeCode) ? nativeCode.GetInt32() : null, operationFailure: true);
                     }
                 }
                 if (run.Request.ReadContract is not null || run.Request.JobExecution) {
@@ -890,11 +1005,17 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                             op = "metadata_ack", batch_sequence = root.GetProperty("batch_sequence").GetUInt64() })))
                         throw new ArchiveFault("input_limit");
                 } else Emit(new("frame", run.Request.OperationId, Frame: root.Clone(), ElapsedMs: run.Clock.ElapsedMilliseconds));
+                }
+                finally { CryptographicOperations.ZeroMemory(body); }
             }
         }
         catch (ArchiveFault e) { run.Fail(e.Category, e.NativeCode); }
         catch (OperationCanceledException) when (run.MetadataStop.IsCancellationRequested) { }
         catch (Exception) { run.Fail("stdout_invalid_frame"); }
+        finally {
+            await JoinNative(run);
+            lock (run.BulkGate) { run.BulkPending?.Sent.TrySetResult(false); run.BulkPending = null; }
+        }
     }
     private static async Task DrainStderr(Run run, Stream stream)
     {
@@ -913,20 +1034,29 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         {
             await foreach (var data in run.Input.Reader.ReadAllAsync(run.InputStop.Token))
             {
+                var sent = false;
                 try {
-                    await stream.WriteAsync(data, run.InputStop.Token);
+                    run.InputStop.Token.ThrowIfCancellationRequested();
+                    stream.Write(data);
+                    ObserveInputWire(run, data);
                     if (ControlInputCheckpointProbe is { } probe) {
-                        using var control = JsonDocument.Parse(data.AsMemory(4));
-                        probe(control.RootElement.GetProperty("op").GetString()!);
+                        if ((BinaryPrimitives.ReadUInt32LittleEndian(data) & ArchiveBulkFrame.Discriminator) != 0) probe("binary_bulk");
+                        else {
+                            using var control = JsonDocument.Parse(data.AsMemory(4));
+                            probe(control.RootElement.GetProperty("op").GetString()!);
+                        }
                     }
+                    sent = true;
                 }
-                finally { CryptographicOperations.ZeroMemory(data); }
+                finally { CryptographicOperations.ZeroMemory(data); run.CompleteBulkInput(data, sent); run.CompleteNativeInput(data, sent); }
                 lock (gate) { if (run.PendingWrites > 0) run.PendingWrites--; }
             }
         }
         catch (OperationCanceledException) when (run.InputStop.IsCancellationRequested) { }
         catch (Exception) { run.Fail("stdin_io_failure"); }
-        finally { while (run.Input.Reader.TryRead(out var pending)) CryptographicOperations.ZeroMemory(pending); }
+        finally {
+            while (run.Input.Reader.TryRead(out var pending)) { CryptographicOperations.ZeroMemory(pending); run.CompleteBulkInput(pending, false); run.CompleteNativeInput(pending, false); }
+        }
     }
     private async Task<ArchiveSourceDeletionResult> ResolveSourceDeletionAsync(Run run, uint? exit)
     {
@@ -949,6 +1079,30 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
         try { publish(value); }
         catch (Exception) { Stop("transport_failure"); }
     }
+    private void DiagnosticWork(Run run, JsonElement frame)
+    {
+        try {
+            if (log is null || !frame.TryGetProperty("work", out var work) || work.ValueKind != JsonValueKind.Object) return;
+            var fields = new Dictionary<string, object?> { ["elapsed_ms"] = run.Clock.ElapsedMilliseconds };
+            foreach (var name in new[] { "revision_passes", "revision_bytes", "revision_us", "catalog_loads", "eligibility_checks", "outer_decodes" }) {
+                if (!work.TryGetProperty(name, out var value) || !value.TryGetUInt64(out var count)) return;
+                fields[name] = count;
+            }
+            foreach (var name in new[] { "zip_member_decodes", "tar_member_reads", "sevenz_block_decodes", "rar_decoder_opens", "rar_replayed_entries",
+                "zip_local_checks", "zip_descriptor_checks", "zip_record_seeks", "zip_source_payload_decodes", "zip_addition_payload_decodes", "zip_candidate_payload_decodes",
+                "tar_index_builds", "tar_record_scans", "tar_header_seeks", "tar_payload_seeks", "tar_plan_bytes", "outer_decoded_bytes",
+                "zip_inflate_us", "zip_inflate_calls", "zip_payload_read_us", "output_ipc_ack_us", "output_write_calls", "output_write_bytes",
+                "output_begin_calls", "output_begin_wait_us", "output_close_calls", "output_close_wait_us",
+                "output_directory_calls", "output_directory_wait_us", "output_directory_metadata_calls", "output_directory_metadata_wait_us",
+                "parallel_workers_planned", "parallel_workers_high_water", "parallel_members_completed" })
+                if (work.TryGetProperty(name, out var value) && value.TryGetUInt64(out var count)) fields[name] = count;
+            if (work.TryGetProperty("selection", out var selection) && selection.ValueKind == JsonValueKind.Object)
+                fields["selection"] = selection.Clone();
+            log.Write("info", "archive.worker.work", run.Request.OperationId, fields);
+        }
+        catch (Exception) { /* Diagnostics do not determine the operation. */ }
+    }
+
     private void DiagnosticSourceFailure(Run run, ArchiveOutputException failure)
     {
         try { log?.Write("info", "archive.worker.source_failed", run.Request.OperationId,
@@ -956,15 +1110,64 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 ["elapsed_ms"] = run.Clock.ElapsedMilliseconds, ["stage"] = "source_acquire", ["recovery_id"] = run.Request.ExtractOptions?.Reclamation?.RecoveryId }); }
         catch (Exception) { /* Diagnostics do not determine the operation. */ }
     }
-    private void DiagnosticTerminal(ArchiveWorkerEvent terminal)
+    private void DiagnosticTerminal(Run run, ArchiveWorkerEvent terminal)
     {
         var phase = terminal.Category is "success" or "succeeded_with_warnings" ? "completed" :
             terminal.Category is "cancelled" or "cancelled_with_committed_output" ? "cancelled" : "failed";
         try {
-            log?.Write("info", "archive.worker." + phase, terminal.OperationId, new Dictionary<string, object?> {
+            if (log is null) return;
+            var fields = new Dictionary<string, object?> {
                 ["elapsed_ms"] = terminal.ElapsedMs, ["category"] = terminal.Category,
                 ["native_error_code"] = terminal.NativeErrorCode, ["files_committed"] = terminal.FilesCommitted, ["files_skipped"] = terminal.FilesSkipped,
-                ["commit_state"] = terminal.CommitState, ["cleanup_complete"] = terminal.CleanupComplete });
+                ["commit_state"] = terminal.CommitState, ["cleanup_complete"] = terminal.CleanupComplete,
+                ["native_pending_high_water"] = run.NativePendingHighWater,
+                ["transport_stdin_json_bytes"] = Interlocked.Read(ref run.TransportStdinBytes),
+                ["transport_stdout_json_bytes"] = Interlocked.Read(ref run.TransportStdoutBytes) };
+            // Numeric observations survive disposal; the Run also owns sources whose bridge bind failed.
+            ArchiveWorkerOutputBridge[] outputs = run.Request.DragMaterialization is null || run.VirtualOutputs.Count == 0
+                ? run.Output is null ? [] : [run.Output]
+                : run.VirtualOutputs.ToArray();
+            var reads = (run.Source?.ReadObservation.Snapshot() ?? [])
+                .Concat(outputs.SelectMany(item => item.CreationOutput.ReadObservation.Snapshot())).ToArray();
+            foreach (var kind in new[] { "Source", "Target", "Output" }) {
+                var role = reads.Where(read => read.Kind == kind);
+                var prefix = "native_" + kind.ToLowerInvariant();
+                fields[prefix + "_attempts"] = role.Sum(read => read.Attempts);
+                fields[prefix + "_full_reads"] = role.Sum(read => read.FullReads);
+                fields[prefix + "_read_bytes"] = role.Sum(read => read.BytesRead);
+                fields[prefix + "_completed_bytes"] = role.Sum(read => read.CompletedBytes);
+            }
+            fields["partial_read_calls"] = outputs.Sum(item => item.CreationOutput.ReadObservation.PartialReadCalls);
+            fields["partial_read_bytes"] = outputs.Sum(item => item.CreationOutput.ReadObservation.PartialReadBytes);
+            fields["source_payload_read_calls"] = run.CreationSources?.PayloadReadCalls ?? 0;
+            fields["source_payload_read_bytes"] = run.CreationSources?.PayloadReadBytes ?? 0;
+            fields["output_payload_write_calls"] = outputs.Sum(item => item.PayloadWriteCalls);
+            fields["output_payload_write_bytes"] = outputs.Aggregate(0ul, (sum, item) => sum + item.PayloadWriteBytes);
+            fields["output_write_ack_frames"] = Interlocked.Read(ref run.OutputWriteAckFrames);
+            fields["native_write_ms"] = outputs.Sum(item => item.CreationOutput.NativeWriteMs);
+            fields["native_commit_ms"] = outputs.Sum(item => item.NativeCommitMs);
+            fields["native_begin_ms"] = outputs.Sum(item => item.NativeBeginMs);
+            fields["native_parent_resolution_ms"] = outputs.Sum(item => item.CreationOutput.ParentResolutionMs);
+            fields["native_final_open_ms"] = outputs.Sum(item => item.CreationOutput.FinalOpenMs);
+            fields["native_create_ms"] = outputs.Sum(item => item.CreationOutput.NativeCreateMs);
+            fields["native_open_inspection_ms"] = outputs.Sum(item => item.CreationOutput.NativeOpenInspectionMs);
+            fields["native_directory_ms"] = outputs.Sum(item => item.NativeDirectoryMs);
+            fields["native_directory_metadata_ms"] = outputs.Sum(item => item.NativeDirectoryMetadataMs);
+            fields["native_fingerprint_ms"] = outputs.Sum(item => item.CreationOutput.FingerprintMs);
+            fields["native_postpublication_ms"] = outputs.Sum(item => item.CreationOutput.PostpublicationMs);
+            fields["transport_stdin_json_frames"] = Interlocked.Read(ref run.StdinJsonFrames);
+            fields["transport_stdout_json_frames"] = Interlocked.Read(ref run.StdoutJsonFrames);
+            fields["transport_stdin_binary_bytes"] = Interlocked.Read(ref run.StdinBinaryBytes);
+            fields["transport_stdout_binary_bytes"] = Interlocked.Read(ref run.StdoutBinaryBytes);
+            fields["transport_stdin_binary_frames"] = Interlocked.Read(ref run.StdinBinaryFrames);
+            fields["transport_stdout_binary_frames"] = Interlocked.Read(ref run.StdoutBinaryFrames);
+            fields["payload_conversion_input_bytes"] = run.PayloadConversionInputBytes +
+                (run.CreationSources?.PayloadConversionInputBytes ?? 0) + outputs.Sum(item => item.PayloadConversionInputBytes);
+            fields["transport_payload_copy_bytes"] = run.PayloadEnvelopeCopyBytes;
+            fields["transport_reserved_bytes"] = run.BulkRequested ? ArchiveWorkerBudget.BulkTransportReservation : 0;
+            fields["transport_payload_buffers_high_water"] = run.BulkBufferHighWater;
+            fields["transport_payload_buffer_bytes_high_water"] = run.BulkBufferBytesHighWater;
+            log.Write("info", "archive.worker." + phase, terminal.OperationId, fields);
         }
         catch (Exception) { /* Diagnostics never change the resolved business outcome. */ }
     }

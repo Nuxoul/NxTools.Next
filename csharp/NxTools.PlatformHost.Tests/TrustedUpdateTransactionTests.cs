@@ -31,6 +31,63 @@ internal static class TrustedUpdateTransactionTests
         Assert(transaction.ReadState().Sequence == 11 && fixture.Deployment.Sequences.Count == 1, "tamper rejected before deployment");
     }
 
+    public static async Task InitialDeploymentPendingRepair()
+    {
+        using var fixture = new Fixture();
+        var transaction = fixture.Transaction();
+        var initial = fixture.Package(10);
+        transaction.Initialize(initial, requireInitialDeployment: true);
+        var statePath = Path.Combine(fixture.Store, "state.json");
+        var originalBytes = File.ReadAllBytes(statePath);
+        Assert(transaction.ReadState().DeploymentPending && !Directory.Exists(fixture.Deployment.Target),
+            "repair snapshot is staged, not an installed protected tuple");
+        transaction.Initialize(initial, requireInitialDeployment: true);
+        Assert(File.ReadAllBytes(statePath).SequenceEqual(originalBytes), "interrupted enrollment retains initial deployment truth");
+        var correlation = Guid.NewGuid();
+        var different = fixture.Package(10);
+        await Reject(() => transaction.ApplyAsync(different, correlation, CancellationToken.None));
+        await Reject(() => transaction.ApplyAsync(fixture.Package(9), correlation, CancellationToken.None));
+        Assert(transaction.ReadState().DeploymentPending && fixture.Deployment.Sequences.Count == 0,
+            "same-sequence different identity and downgrade fail before initial deployment");
+        fixture.Deployment.FailSequence = 10;
+        await Reject(() => fixture.Transaction().ApplyAsync(initial, correlation, CancellationToken.None));
+        Assert(transaction.ReadState().DeploymentPending && File.ReadAllBytes(statePath).SequenceEqual(originalBytes) &&
+            fixture.Deployment.Sequences.SequenceEqual(new long[] { 10 }), "failed native deployment leaves durable pending state for retry");
+        fixture.Deployment.FailSequence = null;
+        var installed = await fixture.Transaction().ApplyAsync(initial, correlation, CancellationToken.None);
+        Assert(!installed.DeploymentPending && transaction.ReadState() == installed &&
+            fixture.Deployment.Sequences.SequenceEqual(new long[] { 10, 10 }) &&
+            fixture.Deployment.Correlations.All(id => id == correlation), "retry deploys real initial tuple before publishing completion");
+        using (var release = TrustedReleaseManifest.VerifyPackage(initial, fixture.PublicKey, 0))
+            foreach (var member in release.Files)
+                Assert(File.ReadAllBytes(Path.Combine(fixture.Deployment.Target, member.Path)).SequenceEqual(
+                    File.ReadAllBytes(Path.Combine(initial, member.Path))), "initial protected tuple matches signed release");
+        Assert(!JsonDocument.Parse(File.ReadAllBytes(statePath)).RootElement.TryGetProperty("DeploymentPending", out _),
+            "ordinary state serialization retains its original fields");
+        await transaction.ApplyAsync(initial, correlation, CancellationToken.None);
+        Assert(fixture.Deployment.Sequences.Count == 2, "completed same release never redeploys");
+        var newer = fixture.Package(11);
+        Assert((await transaction.ApplyAsync(newer, correlation, CancellationToken.None)).Sequence == 11 &&
+            fixture.Deployment.Sequences.SequenceEqual(new long[] { 10, 10, 11 }), "newer signed release retains ordinary update sequence");
+        await Reject(() => transaction.ApplyAsync(initial, correlation, CancellationToken.None));
+        Assert(transaction.ReadState().Sequence == 11 && fixture.Deployment.Sequences.Count == 3, "downgrade remains refused");
+        using var newerFirst = new Fixture();
+        var repair = newerFirst.Transaction();
+        repair.Initialize(newerFirst.Package(10), requireInitialDeployment: true);
+        var nextPackage = newerFirst.Package(11);
+        var advanced = await repair.ApplyAsync(nextPackage, correlation, CancellationToken.None);
+        Assert(advanced.Sequence == 11 && !advanced.DeploymentPending &&
+            newerFirst.Deployment.Sequences.SequenceEqual(new long[] { 10, 11 }),
+            "newer request first deploys the pinned repair release before ordinary upgrade");
+        using var tampered = new Fixture();
+        var tamperTransaction = tampered.Transaction();
+        tamperTransaction.Initialize(tampered.Package(10), requireInitialDeployment: true);
+        File.AppendAllText(Path.Combine(tampered.Store, "active", "NxTools.exe"), "tampered");
+        await Reject(() => tamperTransaction.ApplyAsync(tampered.Package(11), correlation, CancellationToken.None));
+        Assert(tamperTransaction.ReadState().DeploymentPending && tampered.Deployment.Sequences.Count == 0,
+            "changed durable repair snapshot cannot deploy or clear pending state");
+    }
+
     public static async Task PartialDeploymentRestoresLastGoodAndCanRetry()
     {
         using var fixture = new Fixture();

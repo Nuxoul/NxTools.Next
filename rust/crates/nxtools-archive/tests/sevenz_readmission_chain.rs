@@ -81,12 +81,15 @@ fn original_sevenz_coordinator_waits_for_cleanup_and_readmits_once_with_same_int
         );
         request.version = 2;
         request.operation = "extract".into();
+        request.bulk_transfer = Some(1);
         request.codepage = 936;
         request.password = Some("fixture-unused-password".into());
         request.conflict_policy =
             Some(serde_json::from_value(json!("auto_rename")).expect("policy"));
-        request.extract_options =
-            Some(nxtools_archive::worker::ExtractOptions { copy_motw: false, reclamation: None });
+        request.extract_options = Some(nxtools_archive::worker::ExtractOptions {
+            copy_motw: false,
+            reclamation: None,
+        });
         request.limits.max_entries = 100;
         request.limits.max_metadata_bytes = 4 << 20;
         request.limits.max_working_bytes = 64 << 20;

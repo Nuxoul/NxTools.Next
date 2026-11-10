@@ -1,5 +1,8 @@
 //! Audit #4: real worker/InteractionPort with a controlled no-filesystem output adapter.
-use nxtools_archive::worker::{WorkerRequest, read_frame, write_frame};
+#[path = "common/bulk_peer.rs"]
+mod bulk_peer;
+use bulk_peer::{read_frame, write_frame};
+use nxtools_archive::worker::WorkerRequest;
 use serde_json::{Value, json};
 use std::process::{Command, Stdio};
 use uuid::Uuid;
@@ -12,6 +15,7 @@ fn run(fixture: &str, named: bool) {
     let mut request = WorkerRequest::open(id, path.to_string_lossy().into_owned());
     request.version = 2;
     request.operation = "extract".into();
+    request.bulk_transfer = Some(1);
     request.conflict_policy = Some(serde_json::from_value(json!("ask")).expect("typed Ask policy"));
     if named {
         request.job_execution = Some(true);
@@ -38,12 +42,13 @@ fn run(fixture: &str, named: bool) {
                 let call = &frame["native"];
                 let mut reply = json!({"version":1,"operation_id":id,"op":"native_result","call_id":call["call_id"],"success":true});
                 match call["action"].as_str().expect("typed native action") {
-                    "observe_target" => {
+                    "begin" => {
                         observed = call["path"]
                             .as_str()
                             .expect("current observed path")
                             .to_owned();
-                        reply["token"] = json!(Uuid::new_v4());
+                        reply["success"] = json!(false);
+                        reply["error_code"] = json!("target_exists");
                         reply["existing_bytes"] = json!(10);
                     }
                     "directory_new" => {

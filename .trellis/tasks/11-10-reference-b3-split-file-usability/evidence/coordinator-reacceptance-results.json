@@ -1,0 +1,507 @@
+{
+  "ref17-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "ref17_",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.963,
+    "listed": 8
+  },
+  "ref17": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "ref17_",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 26.639,
+    "summaries": [
+      [
+        "ok",
+        "8",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "ref18-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "ref18_",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.701,
+    "listed": 11
+  },
+  "ref18": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "ref18_",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 7.836,
+    "summaries": [
+      [
+        "ok",
+        "11",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "forms-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive::forms::tests",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.679,
+    "listed": 48
+  },
+  "forms": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive::forms::tests",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 33.745,
+    "summaries": [
+      [
+        "ok",
+        "48",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "draft-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive::draft::tests",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.685,
+    "listed": 12
+  },
+  "draft": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive::draft::tests",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.698,
+    "summaries": [
+      [
+        "ok",
+        "12",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "jobs-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive::application::jobs::tests",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.667,
+    "listed": 129
+  },
+  "jobs": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive::application::jobs::tests",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 49.92,
+    "summaries": [
+      [
+        "ok",
+        "129",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "quick-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive_polish_quick",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.697,
+    "listed": 3
+  },
+  "quick": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "archive_polish_quick",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.741,
+    "summaries": [
+      [
+        "ok",
+        "3",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "tools-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "tools::polish_tests",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 1.697,
+    "listed": 11
+  },
+  "tools": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "tools::polish_tests",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 4.003,
+    "summaries": [
+      [
+        "ok",
+        "11",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "core-ref17-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-core",
+      "--lib",
+      "ref17_",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.759,
+    "listed": 2
+  },
+  "core-ref17": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-core",
+      "--lib",
+      "ref17_",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.753,
+    "summaries": [
+      [
+        "ok",
+        "2",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "protocol-ref18-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-protocol",
+      "--lib",
+      "ref18_",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.617,
+    "listed": 1
+  },
+  "protocol-ref18": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-protocol",
+      "--lib",
+      "ref18_",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.589,
+    "summaries": [
+      [
+        "ok",
+        "1",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "ipc-list": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-ipc",
+      "--lib",
+      "--",
+      "--list"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.619,
+    "listed": 62
+  },
+  "ipc": {
+    "command": [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-ipc",
+      "--lib",
+      "--",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 11.94,
+    "summaries": [
+      [
+        "ok",
+        "62",
+        "0",
+        "0"
+      ]
+    ]
+  },
+  "rustfmt": {
+    "command": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--check",
+      "--config",
+      "skip_children=true",
+      "rust/apps/nxtools-desktop/src/archive/forms_volume.rs",
+      "rust/apps/nxtools-desktop/src/tools/raw_join.rs",
+      "rust/apps/nxtools-desktop/src/archive/forms_tests.rs",
+      "rust/apps/nxtools-desktop/src/archive/application_tests.rs",
+      "rust/apps/nxtools-desktop/src/archive/forms.rs",
+      "rust/apps/nxtools-desktop/src/tools/raw_join/tests.rs"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.458
+  },
+  "spec-contracts": {
+    "command": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "tests/architecture/spec-contracts.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.909
+  },
+  "gpui-component-catalog": {
+    "command": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "tests/architecture/gpui-component-catalog.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.086
+  },
+  "gpui-release-contracts": {
+    "command": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "tests/architecture/gpui-release-contracts.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.294
+  },
+  "markdown-editor-contracts": {
+    "command": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "tests/architecture/markdown-editor-contracts.py"
+    ],
+    "exit_code": 0,
+    "elapsed_seconds": 0.098
+  },
+  "desktop-clippy": {
+    "command": [
+      "cargo",
+      "clippy",
+      "--locked",
+      "--offline",
+      "-p",
+      "nxtools-desktop",
+      "--bin",
+      "nxtools-desktop",
+      "--tests",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit_code": 101,
+    "elapsed_seconds": 45.883,
+    "error_lines": [
+      "error: this boolean expression can be simplified",
+      "error: used `unwrap()` on an `Option` value",
+      "error: could not compile `nxtools-desktop` (bin \"nxtools-desktop\" test) due to 2 previous errors"
+    ]
+  }
+}

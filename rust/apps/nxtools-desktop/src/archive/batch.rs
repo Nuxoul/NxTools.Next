@@ -52,6 +52,8 @@ impl MemberState {
 #[derive(Clone)]
 pub(super) struct BatchMember {
     pub id: Uuid,
+    pub attempt: Uuid,
+    pub generation: u64,
     pub label: String,
     pub state: MemberState,
     pub never_started: bool,
@@ -74,7 +76,7 @@ impl BatchSnapshot {
     pub fn heading(&self) -> String {
         let count = |state| self.members.iter().filter(|m| m.state == state).count();
         format!(
-            "归档任务 {}：排队 {}，运行 {}，等待交互 {}，暂停 {}，成功 {}，警告 {}，失败 {}，取消 {}；正在准入 {}",
+            "压缩包任务 {}：排队 {}，运行 {}，等待交互 {}，暂停 {}，成功 {}，警告 {}，失败 {}，取消 {}；正在准入 {}",
             self.members.len() + self.not_admitted + self.pending_forms + self.cancelled_unstarted,
             count(MemberState::Queued),
             count(MemberState::Running),
@@ -108,6 +110,8 @@ pub(super) struct BatchRecord {
     pub terminal_logged: bool,
     pub pending_forms: Vec<Uuid>,
     pub cancelled_unstarted: usize,
+    pub selected: Option<Uuid>,
+    pub password_retired: bool,
 }
 
 /// Official stateless table, no second selection/controller; actions return original logical IDs.
@@ -116,8 +120,10 @@ pub(super) fn render(
     owner: gpui_kit::WeakEntity<super::ArchiveApplication>,
 ) -> gpui_kit::AnyElement {
     let mut body = TableBody::new();
-    for member in &snapshot.members {
+    for (index, member) in snapshot.members.iter().enumerate() {
         let id = member.id;
+        let attempt = member.attempt;
+        let generation = member.generation;
         let detail_owner = owner.clone();
         let retry_owner = owner.clone();
         let stop_owner = owner.clone();
@@ -170,6 +176,7 @@ pub(super) fn render(
                 Button::new(gpui_kit::SharedString::from(format!(
                     "archive-batch-stop-{id}"
                 )))
+                .debug_selector(move || format!("archive-batch-stop-{index}"))
                 .label("停止")
                 .outline()
                 .with_size(Size::Medium)
@@ -178,11 +185,8 @@ pub(super) fn render(
                     let owner = stop_owner.clone();
                     cx.defer(move |cx| {
                         let _ = owner.update(cx, |app, cx| {
-                            app.control_job(
-                                id,
-                                nxtools_protocol::archive_job::ArchiveJobAction::Cancel,
-                                cx,
-                            )
+                            app.show_job(id, cx);
+                            app.request_job_stop(id, attempt, generation, cx);
                         });
                     });
                 }),
@@ -241,12 +245,12 @@ pub(super) fn render(
     content
         .child(
             Table::new()
-                .accessibility_label("归档批次任务状态")
+                .accessibility_label("压缩包批次任务状态")
                 .with_size(Size::Small)
                 .child(
                     TableHeader::new().child(
                         TableRow::new()
-                            .child(TableHead::new().child("归档任务"))
+                            .child(TableHead::new().child("压缩包任务"))
                             .child(TableHead::new().child("实际状态 / 失败详情"))
                             .child(TableHead::new().child("操作")),
                     ),

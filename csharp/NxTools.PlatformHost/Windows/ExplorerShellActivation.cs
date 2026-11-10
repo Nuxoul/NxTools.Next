@@ -523,7 +523,10 @@ internal static class ExplorerShellActivation
         private void ReportObservationStage(string stage)
         {
             // Fixed vocabulary, once per command rather than per window/attempt.
-            if (!_reportedObservationStages.Add(stage)) return;
+            lock (_reportedObservationStages)
+            {
+                if (!_reportedObservationStages.Add(stage)) return;
+            }
             try { _observationStage?.Invoke(stage); }
             catch { /* A diagnostic sink cannot change the native result. */ }
         }

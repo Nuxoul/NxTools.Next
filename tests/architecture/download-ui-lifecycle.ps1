@@ -58,7 +58,8 @@ $newDownloadSource = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxto
 foreach ($contract in @('Form::horizontal()', 'Form::new()', 'Field::new()', 'RadioGroup::new(',
     'Radio::new(', 'StatefulInteractiveElement::on_click(radio', 'ListItem::new(',
     'Popover::new("download-new-schedule-popover")', 'Popover::new("download-new-category-popover")',
-    'new_download_url_control(&self.url, self.handoff_pending)', 'fn fixed_confirmation_draft(',
+    'fn new_download_compact_url_control(', 'InputGroup::new("download-new-url-group")',
+    'InputGroupButton::new("download-paste-url")', 'fn fixed_confirmation_draft(',
     'fn request(', 'fn begin_probe(', 'fn submit(')) {
     if (-not $newDownloadSource.Contains($contract)) { throw "New-download component/original owner missing: $contract" }
 }

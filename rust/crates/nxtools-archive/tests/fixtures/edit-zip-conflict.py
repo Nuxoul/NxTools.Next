@@ -9,28 +9,32 @@ import threading
 import uuid
 import zipfile
 from pathlib import Path
+from bulk_peer import BulkPeer
 
 worker, root, decision = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
-future = len(sys.argv) > 4 and sys.argv[4] == "future-name"
+scenario = sys.argv[4] if len(sys.argv) > 4 else "single"
+future = scenario == "future-name"
+duplicates = scenario == "duplicate-sources"
 source, candidate = root / "owned.zip", root / "candidate.zip"
 with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
     archive.writestr("folder/", b"")
-    archive.writestr("folder/same.txt", b"old-content")
+    if not duplicates:
+        archive.writestr("folder/same.txt", b"old-content")
     archive.writestr("untouched.txt", b"keep")
 original = source.read_bytes()
 op, token, source_id = (str(uuid.uuid4()) for _ in range(3))
 future_id = str(uuid.uuid4())
-request = dict(schema=2, operation_id=op, op="start", operation="modify_zip", path=str(source), job_execution=True, password_interaction=True, conflict_policy="ask", job_modify=dict(browser=dict(snapshot_id=str(uuid.uuid4()), format="Zip", comment="", source=dict(native="v1:fixture", digest=list(hashlib.sha256(original).digest()), size=len(original), modified_unix_ns=source.stat().st_mtime_ns)), action="add", ordinals=[], value="folder/"))
+request = dict(schema=2, bulk_transfer=1, operation_id=op, op="start", operation="modify_zip", path=str(source), job_execution=True, password_interaction=True, conflict_policy="ask", job_modify=dict(browser=dict(snapshot_id=str(uuid.uuid4()), format="Zip", comment="", source=dict(native="v1:fixture", digest=list(hashlib.sha256(original).digest()), size=len(original), modified_unix_ns=source.stat().st_mtime_ns)), action="add", ordinals=[], value="folder/"))
 child = subprocess.Popen([str(worker), "--archive-worker"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 timer = threading.Timer(30, lambda: child.kill() if child.poll() is None else None)
 timer.start()
 output, wire = bytearray(), []
 prompts = commits = opens = closes = 0
 handed = False
+peer = BulkPeer(request)
 
 def send(value):
-    body = json.dumps(value, separators=(",", ":")).encode()
-    child.stdin.write(struct.pack("<I", len(body)) + body)
+    child.stdin.write(peer.encode(value))
     child.stdin.flush()
 
 def exact(length):
@@ -45,7 +49,7 @@ def exact(length):
 try:
     send(request)
     while True:
-        frame = json.loads(exact(struct.unpack("<I", exact(4))[0]))
+        frame = peer.read(exact)
         wire.append(frame)
         if frame["op"] in ("complete", "failure"):
             terminal = frame
@@ -53,8 +57,10 @@ try:
         if frame["op"] == "conflict_prompt":
             prompts += 1
             prompt = frame["conflict_prompt"]
+            assert opens == 0 and not output, "all decisions precede payload reads and encoding"
             assert prompt["display"] == {"incoming_member": "folder/same.txt", "target": "folder/same.txt"}
-            assert prompt["existing_bytes"] == 11 and prompt["incoming_bytes"] == 3
+            assert prompt["existing_bytes"] == (3 if duplicates else 11)
+            assert prompt["incoming_bytes"] == (5 if duplicates else 3)
             ticket = dict(prompt["ticket"])
             stale = dict(ticket, prompt_id=str(uuid.uuid4()))
             send(dict(version=1, operation_id=op, op="conflict_reply", conflict_reply=dict(ticket=stale, decision="overwrite", apply_to_all=True)))
@@ -71,8 +77,8 @@ try:
             reply["read_data"] = "v1:fixture"
         elif action == "source_roots":
             roots = [dict(id=source_id, name="same.txt", directory=False, size=3, dos_modified=None)]
-            if future:
-                roots.append(dict(id=future_id, name="same (2).txt", directory=False, size=5, dos_modified=None))
+            if future or duplicates:
+                roots.append(dict(id=future_id, name="same.txt" if duplicates else "same (2).txt", directory=False, size=5, dos_modified=None))
             reply["read_data"] = json.dumps(roots)
         elif action == "source_open":
             opens += 1
@@ -106,7 +112,7 @@ finally:
         child.wait(timeout=10)
     (root / "wire.json").write_text(json.dumps(wire, indent=2))
 assert source.read_bytes() == original
-assert prompts == 1
+assert prompts == 1, ("Add same-name sources must reach original conflict ticket", terminal, prompts)
 assert opens == closes
 if decision == "cancel":
     assert terminal["op"] == "failure" and terminal["error_code"] == "Cancelled" and commits == 0 and opens == 0
@@ -117,9 +123,9 @@ else:
     assert terminal["op"] == "complete" and commits == 1 and handed
     candidate.write_bytes(output)
     with zipfile.ZipFile(candidate) as archive:
-        expected = {"folder/": b"", "folder/same.txt": b"new" if decision == "overwrite" else b"old-content", "untouched.txt": b"keep"}
+        expected = {"folder/": b"", "folder/same.txt": (b"later" if decision == "overwrite" else b"new") if duplicates else (b"new" if decision == "overwrite" else b"old-content"), "untouched.txt": b"keep"}
         if decision == "auto_rename":
-            expected["folder/same (3).txt" if future else "folder/same (2).txt"] = b"new"
+            expected["folder/same (3).txt" if future else "folder/same (2).txt"] = b"later" if duplicates else b"new"
         if future:
             expected["folder/same (2).txt"] = b"later"
         assert sorted(archive.namelist()) == sorted(expected)

@@ -365,42 +365,196 @@ impl DownloadApplication {
         &mut self,
         format: &'static str,
         operation_id: uuid::Uuid,
+        source: AnyWindowHandle,
+        owner: gpui_kit::WeakEntity<DownloadSettingsView>,
+        source_window_handle: i64,
     ) -> Result<(), String> {
         if self.pending_extension_export.is_some() {
             return Err("已有导出任务在进行".into());
         }
         self.pending_extension_export = Some(PendingExtensionExport {
             command_id: operation_id,
+            operation_id,
             format,
             started_at: Instant::now(),
+            selection_origin: Some((source, owner)),
         });
-        match self.platform.send_command_with_id(
-            PlatformCommand::ExportBrowserExtension(ExportBrowserExtensionCommand {
-                format: format.into(),
-                destination: String::new(),
-            }),
+        match self.platform.send_command_with_id_correlated(
+            PlatformCommand::PickBrowserExtensionExportPath(
+                PickBrowserExtensionExportPathCommand {
+                    format: format.into(),
+                    source_window_handle,
+                    source_process_id: std::process::id(),
+                },
+            ),
+            operation_id,
             operation_id,
         ) {
             Ok(command_id) => {
-                info!(
-                    event = "download.browser_extension.export_accepted",
-                    %command_id,
-                    format,
-                    "browser extension export accepted"
-                );
+                info!(event = "download.browser_extension.selection_accepted", %operation_id,
+                    %command_id, format, "browser extension destination selection accepted");
                 Ok(())
             }
             Err(error) => {
                 self.pending_extension_export = None;
-                warn!(
-                    event = "download.browser_extension.export_rejected",
-                    %error,
-                    format,
-                    "browser extension export could not be queued"
-                );
+                warn!(event = "download.browser_extension.export_rejected", %operation_id,
+                    format, "browser extension destination selection could not be queued");
                 Err(format!("导出失败:{error}"))
             }
         }
+    }
+
+    fn dismiss_extension_export_status(&self, operation_id: uuid::Uuid, cx: &mut Context<Self>) {
+        let center = self.notifications.clone();
+        let id = format!("download-browser-export-{operation_id}");
+        cx.defer(move |cx| center.update(cx, |center, cx| center.dismiss_current(id, cx)));
+    }
+
+    pub(super) fn retire_extension_export_selection(&mut self, cx: &mut Context<Self>) {
+        if self
+            .pending_extension_export
+            .as_ref()
+            .is_some_and(|pending| pending.selection_origin.is_some())
+        {
+            let pending = self
+                .pending_extension_export
+                .take()
+                .expect("selection pending");
+            self.dismiss_extension_export_status(pending.operation_id, cx);
+            info!(event = "download.browser_extension.selection_retired", operation_id = %pending.operation_id,
+                elapsed_ms = pending.started_at.elapsed().as_millis(), reason = "window_closed",
+                "browser extension destination owner retired");
+        }
+    }
+
+    pub(super) fn handle_browser_extension_export_result(
+        &mut self,
+        command_id: uuid::Uuid,
+        result: &PlatformCommandResult,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if !self
+            .pending_extension_export
+            .as_ref()
+            .is_some_and(|pending| pending.command_id == command_id)
+        {
+            return false;
+        }
+        let mut pending = self
+            .pending_extension_export
+            .take()
+            .expect("matching export command");
+        let elapsed_ms = pending.started_at.elapsed().as_millis();
+        if let Some((source, owner)) = pending.selection_origin.take() {
+            if !cx.windows().contains(&source)
+                || owner.upgrade().is_none()
+                || self.settings_window != Some(source)
+            {
+                self.dismiss_extension_export_status(pending.operation_id, cx);
+                info!(event = "download.browser_extension.selection_retired", operation_id = %pending.operation_id,
+                    elapsed_ms, reason = "origin_retired", "browser extension destination owner retired");
+                return true;
+            }
+            let destination = result.data.as_deref().unwrap_or_default();
+            if result.success && destination.is_empty() {
+                self.dismiss_extension_export_status(pending.operation_id, cx);
+                info!(event = "download.browser_extension.export_cancelled", operation_id = %pending.operation_id,
+                    elapsed_ms, "browser extension destination selection cancelled");
+                return true;
+            }
+            if result.success {
+                let export_id = uuid::Uuid::new_v4();
+                pending.command_id = export_id;
+                let operation_id = pending.operation_id;
+                let format = pending.format;
+                self.pending_extension_export = Some(pending);
+                if self
+                    .platform
+                    .send_command_with_id_correlated(
+                        PlatformCommand::ExportBrowserExtension(ExportBrowserExtensionCommand {
+                            format: format.into(),
+                            destination: destination.into(),
+                        }),
+                        export_id,
+                        operation_id,
+                    )
+                    .is_err()
+                {
+                    self.pending_extension_export = None;
+                    self.publish_extension_export_status(
+                        operation_id,
+                        "导出失败:无法发送导出请求".into(),
+                        cx,
+                    );
+                    warn!(event = "download.browser_extension.export_failed", %operation_id, elapsed_ms,
+                        failure_kind = "dispatch_rejected", "browser extension export could not be queued");
+                } else {
+                    info!(event = "download.browser_extension.export_started", %operation_id,
+                        command_id = %export_id, format, "browser extension export started");
+                }
+                return true;
+            }
+        }
+        if result.success {
+            let file_name = result
+                .data
+                .as_deref()
+                .and_then(|path| std::path::Path::new(path).file_name())
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            self.publish_extension_export_status(
+                pending.operation_id,
+                format!("已导出:{file_name}"),
+                cx,
+            );
+            info!(event = "download.browser_extension.exported", operation_id = %pending.operation_id,
+                format = pending.format, elapsed_ms, "browser extension export completed");
+        } else {
+            let reason = result.error.as_deref().unwrap_or("Windows 未返回错误详情");
+            self.publish_extension_export_status(
+                pending.operation_id,
+                format!("导出失败:{reason}"),
+                cx,
+            );
+            warn!(event = "download.browser_extension.export_failed", operation_id = %pending.operation_id,
+                format = pending.format, native_error_code = ?result.native_error_code,
+                elapsed_ms, "browser extension export failed");
+        }
+        cx.notify();
+        true
+    }
+
+    pub(crate) fn admits_link_download(url: &str) -> bool {
+        clipboard_prefill::valid_download_url(url)
+    }
+
+    pub(crate) fn open_link_download(
+        &mut self,
+        url: String,
+        correlation_id: uuid::Uuid,
+        started_at: Instant,
+        cx: &mut Context<Self>,
+    ) {
+        let outcome = if !Self::admits_link_download(&url) {
+            "invalid_target"
+        } else if self
+            .open_new_download_window_with_request(
+                Some(NewDownloadInitialSource::Url {
+                    url,
+                    correlation_id,
+                }),
+                None,
+                cx,
+            )
+            .is_ok()
+        {
+            "intake_ready"
+        } else {
+            "open_failed"
+        };
+        info!(event = "tools.link_panel.download_finished", %correlation_id, outcome,
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            "explicit link download intake finished");
     }
 
     pub(crate) fn open_new_download_window(&mut self, cx: &mut Context<Self>) {
@@ -443,22 +597,62 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         self.cleanup_new_download_handoff(cx);
+        let (explicit_url, intake_correlation) = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::Url {
+                url,
+                correlation_id,
+            }) => (Some(url.clone()), Some(*correlation_id)),
+            _ => (None, None),
+        };
         if let Some(window) = self.new_download_window {
-            if initial_source.is_some() {
+            if initial_source.is_some() && explicit_url.is_none() {
                 if window.update(cx, |_, _, _| {}).is_ok() {
                     return Err("已有添加下载窗口，请先完成或关闭后重试".into());
                 }
-            } else if window.update(cx, |_, window, _| window.refresh()).is_ok() {
+            } else if window
+                .update(cx, |root, native_window, cx| {
+                    native_window.refresh();
+                    if let Some(url) = explicit_url.clone() {
+                        let view = root.downcast::<Root>().ok().and_then(|root| {
+                            root.read(cx)
+                                .view()
+                                .clone()
+                                .downcast::<NewDownloadView>()
+                                .ok()
+                        });
+                        if let Some(view) = view {
+                            cx.defer(move |cx| {
+                                let _ = window.update(cx, |_, window, cx| {
+                                    let current =
+                                        view.read(cx).application.read(cx).new_download_window;
+                                    if current != Some(window.window_handle()) {
+                                        return;
+                                    }
+                                    view.update(cx, |view, cx| {
+                                        view.prefill_clipboard_url(url, window, cx);
+                                        view.focus_url_input(window, cx);
+                                    });
+                                });
+                            });
+                        }
+                    }
+                })
+                .is_ok()
+            {
+                if explicit_url.is_some() {
+                    self.retire_new_download_clipboard("explicit_url");
+                }
                 let native = window
                     .update(cx, |_, window, _| {
                         native_window_handle(window).unwrap_or_default()
                     })
                     .unwrap_or_default();
-                let _ = self.platform.send_command(PlatformCommand::ActivateWindow(
-                    ActivateWindowCommand {
+                let _ = self.platform.send_command_correlated(
+                    PlatformCommand::ActivateWindow(ActivateWindowCommand {
                         window_handle: native,
-                    },
-                ));
+                    }),
+                    intake_correlation.unwrap_or_else(uuid::Uuid::new_v4),
+                );
                 return Ok(());
             }
             self.new_download_window = None;
@@ -476,6 +670,7 @@ impl DownloadApplication {
             .cloned()
             .collect::<Vec<_>>();
         let auto_probe = matches!(initial_source, Some(NewDownloadInitialSource::Download(_)));
+        let prefill_clipboard = initial_source.is_none();
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
         #[cfg(test)]
@@ -501,6 +696,7 @@ impl DownloadApplication {
                     });
                 }
                 *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
+                let clipboard_application = application.downgrade();
                 let view = cx.new(|cx| {
                     NewDownloadView::new(
                         NewDownloadViewInit {
@@ -518,6 +714,19 @@ impl DownloadApplication {
                 #[cfg(test)]
                 {
                     *opened_view_slot.borrow_mut() = Some(view.clone());
+                }
+                if prefill_clipboard {
+                    let clipboard_view = view.downgrade();
+                    let clipboard_window = window.window_handle();
+                    cx.defer(move |cx| {
+                        let _ = clipboard_application.update(cx, |app, cx| {
+                            app.request_new_download_clipboard(
+                                clipboard_window,
+                                clipboard_view,
+                                cx,
+                            );
+                        });
+                    });
                 }
                 // Focus the URL input one frame after the dialog is actually
                 // on screen; the constructor races the native first show.
@@ -548,6 +757,7 @@ impl DownloadApplication {
                 let _ = window.update(cx, |_, window, _| window.activate_window());
                 let correlation_id = browser_context
                     .map(|(correlation_id, _)| correlation_id)
+                    .or(intake_correlation)
                     .unwrap_or_else(uuid::Uuid::new_v4);
                 let topmost_result = self.platform.send_command_correlated(
                     PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using NxTools.PlatformHost.ExtensionHost;
 using NxTools.PlatformHost.Windows.Extensions;
 using static NxTools.PlatformHost.Tests.ExtensionProcessTests;
 
@@ -7,6 +8,65 @@ namespace NxTools.PlatformHost.Tests;
 
 internal static class ExtensionProcessBrokerTests
 {
+    public static async Task ControlReaderStreamsBeyondInt32WithoutLifetimeBudget()
+    {
+        const long expectedFrames = 8193;
+        var sourceFrame = LargeJsonFrame();
+        var expectedBytes = checked(sourceFrame.LongLength * expectedFrames);
+        Assert(expectedBytes == 2147745792L && expectedBytes > int.MaxValue,
+            "stream fixture must exceed the former cumulative Int32 budget");
+        using var source = new RepeatingFrameStream(sourceFrame, expectedFrames);
+        var reader = ExtensionHostBroker.CreateControlReader(source);
+        long frames = 0;
+        var expectedChars = 0;
+        while (await reader.ReadAsync() is { } frame)
+        {
+            frames++;
+            if (frames == 1)
+            {
+                var command = ExtensionProcessProtocol.Parse(frame);
+                Assert(command.Control is { Op: "write", Data: not null } && command.Control.Data.Length > 80000,
+                    "generated control frame must satisfy the real JSON protocol");
+                expectedChars = frame.Length;
+            }
+            Assert(frame.Length == expectedChars && frame[0] == '{' && frame[^1] == ' ',
+                "stream frame changed while generating bounded chunks");
+        }
+        Assert(frames == expectedFrames, "unlimited broker reader stopped before all generated frames");
+        Assert(source.BytesGenerated == expectedBytes, "unlimited broker reader did not consume the complete generated stream");
+    }
+
+    public static async Task FiniteReaderBudgetsAndFrameErrors()
+    {
+        using (var finite = new MemoryStream(ExtensionProcessProtocol.Utf8.GetBytes("{}\n{}\n"), writable: false))
+        {
+            var reader = new ExtensionLineReader(finite, 5, "finite");
+            Assert(await reader.ReadAsync() == "{}", "finite reader must preserve an in-budget frame");
+            await ExpectReaderFailure(reader, "finite_total_limit");
+        }
+
+        var maximumLine = new byte[ExtensionProcessProtocol.FrameLimit + 1];
+        Array.Fill(maximumLine, (byte)'x');
+        maximumLine[^1] = 10;
+        using (var stream = new MemoryStream(maximumLine, writable: false))
+        {
+            var reader = new ExtensionLineReader(stream, maximumLine.Length, "finite");
+            Assert((await reader.ReadAsync())?.Length == ExtensionProcessProtocol.FrameLimit,
+                "finite reader must preserve the 256 KiB line boundary");
+            Assert(await reader.ReadAsync() is null, "finite reader must reach EOF after the maximum line");
+        }
+
+        var longLine = new byte[ExtensionProcessProtocol.FrameLimit + 2];
+        Array.Fill(longLine, (byte)'x');
+        longLine[^1] = 10;
+        using (var stream = new MemoryStream(longLine, writable: false))
+            await ExpectReaderFailure(new ExtensionLineReader(stream, longLine.Length, "finite"), "finite_line_limit");
+        using (var stream = new MemoryStream(new byte[] { 0xc3, 0x28, 10 }, writable: false))
+            await ExpectReaderFailure(new ExtensionLineReader(stream, 3, "finite"), "finite_invalid_utf8");
+        using (var stream = new MemoryStream(ExtensionProcessProtocol.Utf8.GetBytes("{}"), writable: false))
+            await ExpectReaderFailure(new ExtensionLineReader(stream, 2, "finite"), "finite_truncated_line");
+    }
+
     public static async Task ControlResponsivenessAndParentEof()
     {
         using var broker = Broker();
@@ -86,6 +146,87 @@ internal static class ExtensionProcessBrokerTests
             await broker.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
         }
         finally { KillOwned(broker); }
+    }
+
+    private static async Task ExpectReaderFailure(ExtensionLineReader reader, string reason)
+    {
+        try
+        {
+            while (await reader.ReadAsync() is not null) { }
+        }
+        catch (ExtensionFailure failure)
+        {
+            Assert(failure.Reason == reason, "reader returned the wrong bounded failure");
+            return;
+        }
+        throw new InvalidOperationException("reader accepted a bounded protocol violation");
+    }
+
+    private static byte[] LargeJsonFrame()
+    {
+        var frame = new byte[ExtensionProcessProtocol.FrameLimit];
+        var prefix = ExtensionProcessProtocol.Utf8.GetBytes(
+            "{\"version\":1,\"op\":\"write\",\"run_id\":\"00000000-0000-0000-0000-000000000001\",\"data\":\"");
+        var suffix = ExtensionProcessProtocol.Utf8.GetBytes("\"}");
+        prefix.CopyTo(frame, 0);
+        var offset = prefix.Length;
+        ReadOnlySpan<byte> value = [0xe4, 0xb8, 0xad];
+        while (offset + value.Length + suffix.Length + 2 <= frame.Length)
+        {
+            value.CopyTo(frame.AsSpan(offset));
+            offset += value.Length;
+        }
+        suffix.CopyTo(frame, offset);
+        offset += suffix.Length;
+        while (offset < frame.Length - 1) frame[offset++] = (byte)' ';
+        frame[^1] = 10;
+        return frame;
+    }
+
+    private sealed class RepeatingFrameStream(byte[] frame, long frameCount) : Stream
+    {
+        private readonly long length = checked(frame.LongLength * frameCount);
+        private long remaining = checked(frame.LongLength * frameCount);
+        private int frameOffset;
+
+        internal long BytesGenerated { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => length;
+        public override long Position { get => BytesGenerated; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => ReadCore(buffer.AsSpan(offset, count));
+        public override int Read(Span<byte> buffer) => ReadCore(buffer);
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(ReadCore(buffer.AsSpan(offset, count)));
+        }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(ReadCore(buffer.Span));
+        }
+        private int ReadCore(Span<byte> buffer)
+        {
+            var target = (int)Math.Min(buffer.Length, remaining);
+            var written = 0;
+            while (written < target)
+            {
+                var count = Math.Min(target - written, frame.Length - frameOffset);
+                frame.AsSpan(frameOffset, count).CopyTo(buffer[written..]);
+                written += count;
+                frameOffset += count;
+                if (frameOffset == frame.Length) frameOffset = 0;
+            }
+            remaining -= written;
+            BytesGenerated += written;
+            return written;
+        }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     private static Process Broker() => ExtensionProcessFixture.Start("--extension-fixture-broker", Environment.ProcessId.ToString(), Environment.ProcessPath!);

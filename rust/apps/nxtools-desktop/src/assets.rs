@@ -3,6 +3,8 @@ use std::borrow::Cow;
 use anyhow::Result;
 use gpui_kit::{AssetSource, SharedString};
 
+gpui_kit::assets::icon_assets!(DownloadIconAssets, [Link]);
+
 pub struct NxToolsAssets;
 
 impl AssetSource for NxToolsAssets {
@@ -131,12 +133,16 @@ impl AssetSource for NxToolsAssets {
         };
         match bytes {
             Some(bytes) => Ok(Some(Cow::Borrowed(bytes))),
-            None => gpui_kit::assets::Assets.load(path),
+            None => match DownloadIconAssets.load(path)? {
+                Some(bytes) => Ok(Some(bytes)),
+                None => gpui_kit::assets::Assets.load(path),
+            },
         }
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {
         let mut paths = gpui_kit::assets::Assets.list(path)?;
+        paths.extend(DownloadIconAssets.list(path)?);
         use gpui_kit::assets::IconNamed;
         for icon_path in crate::icons::MaterialIcon::ALL
             .iter()
@@ -198,6 +204,16 @@ mod tests {
                 .expect("product icon")
         );
     }
+    #[test]
+    fn download_neutral_file_fallback_is_embedded() {
+        let path = gpui_kit::component::IconName::File.path();
+        let bytes = NxToolsAssets
+            .load(path.as_ref())
+            .expect("load official file fallback")
+            .expect("official file fallback is embedded");
+        assert!(!bytes.is_empty());
+    }
+
     #[test]
     fn all_registered_icons_are_embedded() {
         for &icon in MaterialIcon::ALL {

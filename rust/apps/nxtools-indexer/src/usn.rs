@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, ensure};
 
@@ -64,6 +65,15 @@ impl UsnRecord {
             is_directory,
             kind: UsnRecordKind::Upsert,
             modified_at_unix_ms: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn metadata(file_reference: u64, modified_at_unix_ms: i64) -> Self {
+        Self {
+            kind: UsnRecordKind::Metadata,
+            modified_at_unix_ms: Some(Some(modified_at_unix_ms)),
+            ..Self::upsert(file_reference, 0, "", false)
         }
     }
 
@@ -141,15 +151,41 @@ pub(crate) struct JournalBatch {
     pub records: Vec<UsnRecord>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct JournalRebuild {
+    pub reason: nxtools_protocol::IndexRebuildReason,
+    pub native_error_code: Option<u32>,
+}
+
+impl JournalRebuild {
+    pub(crate) fn new(reason: nxtools_protocol::IndexRebuildReason) -> Self {
+        Self {
+            reason,
+            native_error_code: None,
+        }
+    }
+}
+
+impl fmt::Display for JournalRebuild {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "{} (native code {:?})",
+            self.reason.code(),
+            self.native_error_code
+        )
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum JournalApplyError {
-    RebuildRequired(String),
+    RebuildRequired(JournalRebuild),
 }
 
 impl fmt::Display for JournalApplyError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RebuildRequired(reason) => formatter.write_str(reason),
+            Self::RebuildRequired(reason) => reason.fmt(formatter),
         }
     }
 }
@@ -161,7 +197,7 @@ pub(crate) enum JournalPoll {
     NoChange,
     CursorAdvanced(MftSnapshot),
     Updated(MftSnapshot),
-    RebuildRequired(String),
+    RebuildRequired(JournalRebuild),
 }
 
 fn classify_applied_update(previous: &MftSnapshot, updated: MftSnapshot) -> JournalPoll {
@@ -179,27 +215,23 @@ pub(crate) fn apply_journal_batch(
     batch: JournalBatch,
 ) -> std::result::Result<MftSnapshot, JournalApplyError> {
     let Some(expected_journal) = snapshot.journal_id else {
-        return Err(JournalApplyError::RebuildRequired(format!(
-            "{} has no cached journal identity",
-            snapshot.mount_point
+        return Err(JournalApplyError::RebuildRequired(JournalRebuild::new(
+            nxtools_protocol::IndexRebuildReason::CursorInvalid,
         )));
     };
     let Some(start_usn) = snapshot.next_usn else {
-        return Err(JournalApplyError::RebuildRequired(format!(
-            "{} has no cached USN cursor",
-            snapshot.mount_point
+        return Err(JournalApplyError::RebuildRequired(JournalRebuild::new(
+            nxtools_protocol::IndexRebuildReason::CursorInvalid,
         )));
     };
     if expected_journal != batch.journal_id {
-        return Err(JournalApplyError::RebuildRequired(format!(
-            "{} journal changed from {} to {}",
-            snapshot.mount_point, expected_journal, batch.journal_id
+        return Err(JournalApplyError::RebuildRequired(JournalRebuild::new(
+            nxtools_protocol::IndexRebuildReason::CursorInvalid,
         )));
     }
     if start_usn < batch.lowest_valid_usn || start_usn > batch.next_usn {
-        return Err(JournalApplyError::RebuildRequired(format!(
-            "{} USN cursor {} is outside {}..{}",
-            snapshot.mount_point, start_usn, batch.lowest_valid_usn, batch.next_usn
+        return Err(JournalApplyError::RebuildRequired(JournalRebuild::new(
+            nxtools_protocol::IndexRebuildReason::CursorInvalid,
         )));
     }
 
@@ -215,7 +247,18 @@ pub(crate) fn apply_journal_batch(
             UsnRecordKind::Metadata => {
                 // A close/data/basic-info event must not turn a split rename's old name into
                 // a structural upsert, resurrect a deleted row or expand directory descendants.
-                if let Some(mut previous) = updated.visible_entry(record.file_reference) {
+                if updated.overlay.deleted.contains(&record.file_reference) {
+                    continue;
+                }
+                if let Some(previous) = updated.overlay.replacements.get_mut(&record.file_reference)
+                {
+                    let time = record
+                        .modified_at_unix_ms
+                        .unwrap_or(previous.modified_at_unix_ms);
+                    if previous.modified_at_unix_ms != time {
+                        Arc::make_mut(previous).modified_at_unix_ms = time;
+                    }
+                } else if let Some(mut previous) = updated.visible_entry(record.file_reference) {
                     let time = record
                         .modified_at_unix_ms
                         .unwrap_or(previous.modified_at_unix_ms);
@@ -224,7 +267,7 @@ pub(crate) fn apply_journal_batch(
                         updated
                             .overlay
                             .replacements
-                            .insert(record.file_reference, previous);
+                            .insert(record.file_reference, previous.into());
                     }
                 }
             }
@@ -267,7 +310,7 @@ pub(crate) fn apply_journal_batch(
                 updated
                     .overlay
                     .replacements
-                    .insert(record.file_reference, replacement);
+                    .insert(record.file_reference, replacement.into());
                 overlay_children
                     .entry(record.parent_reference)
                     .or_default()
@@ -329,7 +372,7 @@ fn refresh_visible_path(
     let Some(entry) = snapshot.overlay.replacements.get_mut(&file_reference) else {
         return Ok(false);
     };
-    entry.path = path;
+    Arc::make_mut(entry).path = path;
     Ok(true)
 }
 
@@ -376,9 +419,8 @@ fn refresh_descendant_paths(
             .visible_entry(parent)
             .map(|entry| entry.path.clone())
             .ok_or_else(|| {
-                JournalApplyError::RebuildRequired(format!(
-                    "{} lost live directory reference {}",
-                    snapshot.mount_point, parent
+                JournalApplyError::RebuildRequired(JournalRebuild::new(
+                    nxtools_protocol::IndexRebuildReason::CursorInvalid,
                 ))
             })?;
         let children =
@@ -405,7 +447,10 @@ fn refresh_descendant_paths(
                 "\\"
             };
             replacement.path = format!("{parent_path}{separator}{}", replacement.name);
-            snapshot.overlay.replacements.insert(child, replacement);
+            snapshot
+                .overlay
+                .replacements
+                .insert(child, replacement.into());
             if is_directory {
                 queue.push_back(child);
             }
@@ -426,25 +471,24 @@ fn delete_visible_subtree(
         if !visited.insert(parent) {
             continue;
         }
-        reserve_recursive_work(snapshot, live_work)?;
-        let children =
-            bounded_visible_child_candidates(snapshot, overlay_children, parent, *live_work)?;
-        queue.extend(children.into_iter().filter(|child| {
-            snapshot
-                .visible_entry(*child)
-                .and_then(|entry| entry.identity)
-                .is_some_and(|identity| identity.parent_reference == parent)
-        }));
-        let was_visible = snapshot.visible_entry(parent).is_some();
+        let Some(entry) = snapshot.visible_entry(parent) else {
+            continue;
+        };
+        if entry.is_directory {
+            let children =
+                bounded_visible_child_candidates(snapshot, overlay_children, parent, *live_work)?;
+            for child in children {
+                reserve_recursive_work(snapshot, live_work)?;
+                queue.push_back(child);
+            }
+        }
         snapshot.overlay.replacements.remove(&parent);
         if snapshot.contains_base_reference(parent) {
             snapshot.overlay.deleted.insert(parent);
         } else {
             snapshot.overlay.deleted.remove(&parent);
         }
-        if was_visible {
-            snapshot.record_visible_delete();
-        }
+        snapshot.record_visible_delete();
     }
     Ok(())
 }
@@ -496,42 +540,42 @@ fn bounded_visible_child_candidates(
     let base = snapshot.base_children(parent);
     let replacements = overlay_children.get(&parent);
     let remaining = MAX_RECURSIVE_WORK_UNITS_PER_BATCH.saturating_sub(mutations_used);
-    if base.len() > remaining {
-        return Err(JournalApplyError::RebuildRequired(format!(
-            "{} directory reference {} has at least {} child candidates; rebuilding before expansion",
-            snapshot.mount_point,
-            parent,
-            base.len()
-        )));
-    }
     let mut unique =
         HashSet::with_capacity(remaining.min(base.len() + replacements.map_or(0, HashSet::len)));
-    unique.extend(base);
-    if let Some(replacements) = replacements {
-        for &reference in replacements {
-            unique.insert(reference);
-            if unique.len() > remaining {
-                return Err(JournalApplyError::RebuildRequired(format!(
-                    "{} directory reference {} has at least {} child candidates; rebuilding before expansion",
-                    snapshot.mount_point,
-                    parent,
-                    unique.len()
-                )));
-            }
+    for reference in base
+        .into_iter()
+        .chain(replacements.into_iter().flatten().copied())
+    {
+        if snapshot.overlay.deleted.contains(&reference) {
+            continue;
+        }
+        let Some(entry) = snapshot.visible_entry(reference) else {
+            continue;
+        };
+        if entry
+            .identity
+            .is_none_or(|identity| identity.parent_reference != parent)
+        {
+            continue;
+        }
+        unique.insert(reference);
+        if unique.len() > remaining {
+            return Err(JournalApplyError::RebuildRequired(JournalRebuild::new(
+                nxtools_protocol::IndexRebuildReason::BulkChanges,
+            )));
         }
     }
     Ok(unique.into_iter().collect())
 }
 
 fn reserve_recursive_work(
-    snapshot: &MftSnapshot,
+    _snapshot: &MftSnapshot,
     live_work: &mut usize,
 ) -> std::result::Result<(), JournalApplyError> {
     *live_work = live_work.saturating_add(1);
     if *live_work > MAX_RECURSIVE_WORK_UNITS_PER_BATCH {
-        return Err(JournalApplyError::RebuildRequired(format!(
-            "{} recursive journal update exceeded {} bounded work units; rebuilding snapshot",
-            snapshot.mount_point, MAX_RECURSIVE_WORK_UNITS_PER_BATCH
+        return Err(JournalApplyError::RebuildRequired(JournalRebuild::new(
+            nxtools_protocol::IndexRebuildReason::BulkChanges,
         )));
     }
     Ok(())
@@ -649,9 +693,10 @@ pub(crate) fn poll_snapshot(_snapshot: &MftSnapshot) -> Result<JournalPoll> {
 
 fn classify_usn_read_failure(mount_point: &str, code: u32) -> Result<JournalPoll> {
     if code == ERROR_JOURNAL_ENTRY_DELETED_CODE {
-        return Ok(JournalPoll::RebuildRequired(format!(
-            "USN journal entry was deleted by Windows (Win32 {code})"
-        )));
+        return Ok(JournalPoll::RebuildRequired(JournalRebuild {
+            reason: nxtools_protocol::IndexRebuildReason::JournalWrapped,
+            native_error_code: Some(code),
+        }));
     }
     Err(anyhow::anyhow!(
         "read USN journal for {mount_point} failed with Win32 {code}"
@@ -700,9 +745,8 @@ mod windows {
 
     pub(super) fn poll_snapshot(snapshot: &MftSnapshot) -> Result<JournalPoll> {
         let (Some(journal_id), Some(start_usn)) = (snapshot.journal_id, snapshot.next_usn) else {
-            return Ok(JournalPoll::RebuildRequired(format!(
-                "{} has no resumable USN cursor",
-                snapshot.mount_point
+            return Ok(JournalPoll::RebuildRequired(super::JournalRebuild::new(
+                nxtools_protocol::IndexRebuildReason::CursorInvalid,
             )));
         };
         let handle = open_volume(&snapshot.mount_point)?;
@@ -711,9 +755,8 @@ mod windows {
             || start_usn < journal.LowestValidUsn
             || start_usn > journal.NextUsn
         {
-            return Ok(JournalPoll::RebuildRequired(format!(
-                "{} USN journal can no longer resume at {}",
-                snapshot.mount_point, start_usn
+            return Ok(JournalPoll::RebuildRequired(super::JournalRebuild::new(
+                nxtools_protocol::IndexRebuildReason::CursorInvalid,
             )));
         }
         if start_usn == journal.NextUsn {
@@ -1006,7 +1049,7 @@ mod tests {
         let mut old = snapshot();
         let mut file = old.visible_entry(11).expect("file");
         file.modified_at_unix_ms = Some(9000);
-        old.overlay.replacements.insert(11, file);
+        old.overlay.replacements.insert(11, file.into());
         let records = vec![UsnRecord {
             kind: UsnRecordKind::Metadata,
             modified_at_unix_ms: Some(Some(10)),
@@ -1059,7 +1102,7 @@ mod tests {
         assert!(matches!(
             result,
             JournalPoll::RebuildRequired(reason)
-                if reason.contains("1181") && reason.contains("deleted by Windows")
+                if reason.reason == nxtools_protocol::IndexRebuildReason::JournalWrapped && reason.native_error_code == Some(1181)
         ));
     }
 
@@ -1259,7 +1302,8 @@ mod tests {
                     5,
                     &format!(r"C:\{offset}.txt"),
                     false,
-                ),
+                )
+                .into(),
             );
         }
 
@@ -1360,7 +1404,80 @@ mod tests {
         )
         .expect_err("large subtree mutation must switch to a background rebuild");
 
-        assert!(result.to_string().contains("rebuilding before expansion"));
+        assert!(matches!(result, JournalApplyError::RebuildRequired(cause)
+            if cause.reason == nxtools_protocol::IndexRebuildReason::BulkChanges));
+    }
+
+    fn deletion_fixture() -> MftSnapshot {
+        let mut entries = vec![entry(10, 5, r"C:\Large", true)];
+        entries.extend(
+            (20_000..25_000).map(|reference| {
+                entry(reference, 10, &format!(r"C:\Large\{reference}.txt"), false)
+            }),
+        );
+        MftSnapshot::from_entries(r"C:\", Some(17), Some(100), entries)
+    }
+
+    fn delete_batch(records: Vec<UsnRecord>) -> JournalBatch {
+        JournalBatch {
+            journal_id: 17,
+            lowest_valid_usn: 90,
+            next_usn: 110,
+            records,
+        }
+    }
+
+    #[test]
+    fn h2_five_thousand_direct_leaf_deletes_remain_incremental() {
+        let original = deletion_fixture();
+        let updated = apply_journal_batch(
+            &original,
+            delete_batch((20_000..25_000).map(UsnRecord::delete).collect()),
+        )
+        .expect("direct leaf deletes must not spend recursive expansion budget");
+        assert_eq!(updated.visible_len(), 1);
+        assert!((20_000..25_000).all(|reference| updated.visible_entry(reference).is_none()));
+        assert_eq!(original.visible_len(), 5_001, "last-good remains immutable");
+    }
+
+    #[test]
+    fn h2_invisible_deletes_do_not_spend_recursive_budget_or_grow_tombstones() {
+        let updated = apply_journal_batch(
+            &snapshot(),
+            delete_batch((20_000..25_000).map(UsnRecord::delete).collect()),
+        )
+        .expect("unknown deletes require no descendant expansion");
+        assert_eq!(updated.visible_len(), 2);
+        assert!(updated.overlay.deleted.is_empty());
+    }
+
+    #[test]
+    fn h2_directory_delete_counts_only_visible_children_still_under_parent() {
+        let mut original = deletion_fixture();
+        for reference in 20_000..24_900 {
+            original.overlay.deleted.insert(reference);
+            original.record_visible_delete();
+        }
+        for reference in 24_900..24_990 {
+            original.overlay.replacements.insert(
+                reference,
+                entry(reference, 5, &format!(r"C:\moved-{reference}.txt"), false).into(),
+            );
+        }
+        let updated = apply_journal_batch(&original, delete_batch(vec![UsnRecord::delete(10)]))
+            .expect("tombstoned and moved-away base children do not consume candidate budget");
+        assert_eq!(updated.visible_len(), 90);
+        assert!(updated.visible_entry(10).is_none());
+        assert!((24_900..24_990).all(|reference| updated.visible_entry(reference).is_some()));
+        assert!((24_990..25_000).all(|reference| updated.visible_entry(reference).is_none()));
+    }
+
+    #[test]
+    fn h2_truly_large_visible_delete_subtree_still_requires_rebuild() {
+        let original = deletion_fixture();
+        let result = apply_journal_batch(&original, delete_batch(vec![UsnRecord::delete(10)]));
+        assert!(matches!(result, Err(JournalApplyError::RebuildRequired(_))));
+        assert_eq!(original.visible_len(), 5_001);
     }
 
     #[cfg(windows)]
@@ -1464,7 +1581,7 @@ mod idle_classification_tests {
         changed.next_usn = Some(110);
         let mut entry = changed.visible_entry(11).expect("existing row");
         entry.modified_at_unix_ms = Some(10);
-        changed.overlay.replacements.insert(11, entry);
+        changed.overlay.replacements.insert(11, entry.into());
         assert!(matches!(
             classify_applied_update(&snapshot, changed),
             JournalPoll::Updated(_)
@@ -1473,5 +1590,209 @@ mod idle_classification_tests {
             classify_applied_update(&snapshot, snapshot.clone()),
             JournalPoll::NoChange
         ));
+    }
+}
+
+#[cfg(test)]
+mod measurements {
+    use super::*;
+    use crate::mft::allocation_probe::measure;
+    use std::time::Instant;
+
+    #[test]
+    #[ignore = "synthetic million-row allocation and coordinator-occupancy measurement"]
+    fn m8_million_row_overlay_apply_and_classification() {
+        let base = MftSnapshot::from_entries(
+            r"C:\",
+            Some(17),
+            Some(100),
+            (0..1_000_000_u64)
+                .map(|row| MftEntry {
+                    identity: Some(MftIdentity {
+                        file_reference: row + 1_000,
+                        parent_reference: 5,
+                    }),
+                    path: format!(r"C:\synthetic-{row:07}.txt"),
+                    name: format!("synthetic-{row:07}.txt"),
+                    is_directory: false,
+                    size_bytes: None,
+                    modified_at_unix_ms: Some(1),
+                })
+                .collect(),
+        );
+        for overlay_rows in [1_000, 100_000] {
+            let mut snapshot = base.clone();
+            for row in 0..overlay_rows {
+                let reference = row as u64 + 1_000;
+                let mut entry = snapshot.visible_entry(reference).expect("synthetic row");
+                entry.modified_at_unix_ms = Some(2);
+                snapshot
+                    .overlay
+                    .replacements
+                    .insert(reference, entry.into());
+            }
+            for changed in [false, true] {
+                let batch = JournalBatch {
+                    journal_id: 17,
+                    lowest_valid_usn: 90,
+                    next_usn: 110,
+                    records: if changed {
+                        vec![UsnRecord::metadata(1_000, 3)]
+                    } else {
+                        Vec::new()
+                    },
+                };
+                let started = Instant::now();
+                let (updated, apply_allocations) =
+                    measure(|| apply_journal_batch(&snapshot, batch).expect("synthetic update"));
+                let apply_elapsed = started.elapsed();
+                let started = Instant::now();
+                let (classification, classify_allocations) =
+                    measure(|| classify_applied_update(&snapshot, updated));
+                let classify_elapsed = started.elapsed();
+                assert_eq!(matches!(classification, JournalPoll::Updated(_)), changed);
+                eprintln!(
+                    "M8 base_rows=1000000 overlay_rows={overlay_rows} changed={changed} apply_us={} apply_allocations={} apply_requested_bytes={} apply_peak_bytes={} classify_us={} classify_allocations={} classify_requested_bytes={}",
+                    apply_elapsed.as_micros(),
+                    apply_allocations.calls,
+                    apply_allocations.requested_bytes,
+                    apply_allocations.peak_bytes,
+                    classify_elapsed.as_micros(),
+                    classify_allocations.calls,
+                    classify_allocations.requested_bytes,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod overlay_sharing_tests {
+    use super::*;
+
+    #[test]
+    fn m8_snapshot_clone_shares_unchanged_overlay_rows_and_updates_are_isolated() {
+        let mut snapshot = MftSnapshot::from_entries(r"C:\", Some(17), Some(100), Vec::new());
+        for reference in 1_000..3_000 {
+            snapshot.overlay.replacements.insert(
+                reference,
+                MftEntry {
+                    identity: Some(MftIdentity {
+                        file_reference: reference,
+                        parent_reference: 5,
+                    }),
+                    path: format!(r"C:\synthetic-{reference}.txt"),
+                    name: format!("synthetic-{reference}.txt"),
+                    is_directory: false,
+                    size_bytes: None,
+                    modified_at_unix_ms: Some(1),
+                }
+                .into(),
+            );
+            snapshot.record_visible_insert();
+        }
+        let (cloned, allocations) = crate::mft::allocation_probe::measure(|| snapshot.clone());
+        assert!(
+            allocations.calls < 16,
+            "snapshot clone must share immutable overlay rows, not deep-copy every string: {allocations:?}"
+        );
+        assert!(
+            snapshot
+                .overlay
+                .replacements
+                .iter()
+                .all(|(reference, entry)| Arc::ptr_eq(
+                    entry,
+                    cloned
+                        .overlay
+                        .replacements
+                        .get(reference)
+                        .expect("shared row")
+                ))
+        );
+        let updated = apply_journal_batch(
+            &cloned,
+            JournalBatch {
+                journal_id: 17,
+                lowest_valid_usn: 90,
+                next_usn: 110,
+                records: vec![UsnRecord::metadata(1_000, 2), UsnRecord::metadata(1_001, 1)],
+            },
+        )
+        .expect("isolated copy-on-write metadata update");
+        assert_eq!(
+            snapshot
+                .visible_entry(1_000)
+                .expect("last-good")
+                .modified_at_unix_ms,
+            Some(1)
+        );
+        assert_eq!(
+            cloned
+                .visible_entry(1_000)
+                .expect("search snapshot")
+                .modified_at_unix_ms,
+            Some(1)
+        );
+        assert_eq!(
+            updated
+                .visible_entry(1_000)
+                .expect("new snapshot")
+                .modified_at_unix_ms,
+            Some(2)
+        );
+        assert!(!Arc::ptr_eq(
+            snapshot.overlay.replacements.get(&1_000).expect("old row"),
+            updated
+                .overlay
+                .replacements
+                .get(&1_000)
+                .expect("changed row"),
+        ));
+        assert!(Arc::ptr_eq(
+            snapshot
+                .overlay
+                .replacements
+                .get(&1_001)
+                .expect("old unchanged row"),
+            updated
+                .overlay
+                .replacements
+                .get(&1_001)
+                .expect("shared unchanged row"),
+        ));
+        let mut equivalent = updated.clone();
+        let mut owned = equivalent
+            .visible_entry(1_000)
+            .expect("owned requested row");
+        equivalent
+            .overlay
+            .replacements
+            .insert(1_000, owned.clone().into());
+        assert!(!Arc::ptr_eq(
+            updated
+                .overlay
+                .replacements
+                .get(&1_000)
+                .expect("original allocation"),
+            equivalent
+                .overlay
+                .replacements
+                .get(&1_000)
+                .expect("independent allocation"),
+        ));
+        assert_eq!(
+            updated.overlay, equivalent.overlay,
+            "distinct row allocations retain content equality"
+        );
+        assert!(matches!(
+            classify_applied_update(&updated, equivalent),
+            JournalPoll::NoChange
+        ));
+        owned.path.push_str(".detached");
+        assert_eq!(
+            updated.visible_entry(1_000).expect("immutable row").path,
+            r"C:\synthetic-1000.txt"
+        );
     }
 }

@@ -54,6 +54,7 @@ pub(crate) struct FloatingAssistantApplication {
     surface: Option<Surface>,
     pub(super) session: Uuid,
     pub(super) generation: u64,
+    connection: Option<u64>,
     lifecycle: Lifecycle,
     bounds: Option<FloatingAssistantBounds>,
     dirty: bool,
@@ -111,6 +112,7 @@ impl FloatingAssistantApplication {
             surface: None,
             session: Uuid::new_v4(),
             generation: 1,
+            connection: None,
             lifecycle: Lifecycle::default(),
             bounds: None,
             dirty: false,
@@ -151,6 +153,13 @@ impl FloatingAssistantApplication {
         self.sync(cx);
     }
     pub(crate) fn retry(&mut self, cx: &mut Context<Self>) {
+        if self
+            .lifecycle
+            .pending
+            .is_some_and(|(_, phase)| phase == Phase::Retire)
+        {
+            return;
+        }
         self.error = None;
         self.cancel_actions(true);
         self.loaded_asset = None;
@@ -290,9 +299,13 @@ impl FloatingAssistantApplication {
         let id = Uuid::new_v4();
         self.lifecycle.begin(id, phase);
         let command = self.command(operation, None);
+        if phase == Phase::Prepare && self.connection.is_none() {
+            self.connection = self.platform.floating_assistant_connection();
+        }
         if self
-            .platform
-            .send_command_with_id(PlatformCommand::FloatingAssistant(command), id)
+            .connection
+            .ok_or(nxtools_ipc::PlatformBridgeError::Disconnected)
+            .and_then(|origin| self.platform.send_floating_assistant(command, id, origin))
             .is_err()
         {
             self.lifecycle.pending = None;
@@ -300,6 +313,10 @@ impl FloatingAssistantApplication {
             return;
         }
         tracing::info!(event="floating_assistant.window.accepted",correlation_id=%id,session_id=%self.session,generation=self.generation,?phase,"floating native operation admitted");
+        // Retire retains its exact identity until the original result or pipe EOF.
+        if phase == Phase::Retire {
+            return;
+        }
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(Duration::from_secs(5)).await;
             let _ = this.update(cx, |owner, cx| {
@@ -459,6 +476,7 @@ impl FloatingAssistantApplication {
             PlatformNotification::Disconnected { .. } => {
                 self.last_event_sequence = 0;
                 self.lifecycle.retire();
+                self.connection = None;
                 self.session = Uuid::new_v4();
                 self.generation += 1;
                 self.picker = None;
@@ -822,23 +840,37 @@ impl FloatingAssistantApplication {
         }
     }
     pub(super) fn release_drop(&self, drop_id: Option<Uuid>) {
-        if drop_id.is_some() {
-            let _ = self
-                .platform
-                .send_command(PlatformCommand::FloatingAssistant(
-                    self.command(FloatingAssistantOperation::ReleaseDrop, drop_id),
-                ));
+        if let Some(drop_id) = drop_id {
+            self.queue_cleanup(
+                self.command(FloatingAssistantOperation::ReleaseDrop, Some(drop_id)),
+                Uuid::new_v4(),
+            );
+        }
+    }
+    fn queue_cleanup(&self, command: FloatingAssistantCommand, receipt: Uuid) {
+        let correlation = command.drop_id.unwrap_or(receipt);
+        let result = self
+            .connection
+            .ok_or(nxtools_ipc::PlatformBridgeError::Disconnected)
+            .and_then(|origin| {
+                self.platform
+                    .send_floating_assistant(command, receipt, origin)
+            });
+        if let Err(error) = result {
+            // EOF owns old native staging; other admission errors remain observable.
+            tracing::warn!(event="floating_assistant.cleanup.terminal",correlation_id=%correlation,
+                reason=if error == nxtools_ipc::PlatformBridgeError::Disconnected { "connection_retired" } else { "admission_failed" },
+                "floating cleanup was not admitted");
         }
     }
 }
 impl Drop for FloatingAssistantApplication {
     fn drop(&mut self) {
         if self.surface.is_some() {
-            let _ = self
-                .platform
-                .send_command(PlatformCommand::FloatingAssistant(
-                    self.command(FloatingAssistantOperation::Retire, None),
-                ));
+            self.queue_cleanup(
+                self.command(FloatingAssistantOperation::Retire, None),
+                Uuid::new_v4(),
+            );
         }
     }
 }

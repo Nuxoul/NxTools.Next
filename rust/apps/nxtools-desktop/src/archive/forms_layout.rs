@@ -92,33 +92,46 @@ impl OperationForm {
             draft.format,
             ArchiveCreateFormat::Gz | ArchiveCreateFormat::Xz
         );
-        let mut sources = div().flex().flex_col().gap_2().min_w_0();
+        let mut sources = div().flex().flex_col().gap_1().min_w_0();
         for (index, source) in draft.sources.iter().enumerate() {
+            let full_path = source.path.to_string_lossy().into_owned();
+            let name = source
+                .path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| full_path.clone());
+            let detail = if source.directory {
+                "文件夹".into()
+            } else {
+                source
+                    .bytes
+                    .map(super::super::progress::format_bytes)
+                    .unwrap_or_else(|| "大小未知".into())
+            };
             sources = sources.child(
                 div()
+                    .id(("archive-create-source", index))
+                    .h(px(32.))
+                    .flex_none()
                     .flex()
                     .items_center()
                     .gap_2()
                     .min_w_0()
+                    .tooltip(move |window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new(full_path.clone())
+                            .build(window, cx)
+                    })
+                    .child(div().flex_1().min_w_0().truncate().text_sm().child(name))
                     .child(
                         div()
-                            .flex_1()
-                            .min_w_0()
+                            .flex_none()
                             .text_sm()
-                            .child(source.path.to_string_lossy().into_owned())
-                            .child(div().text_color(cx.theme().muted_foreground).child(
-                                if source.directory {
-                                    "文件夹".into()
-                                } else {
-                                    source
-                                        .bytes
-                                        .map(super::super::progress::format_bytes)
-                                        .unwrap_or_else(|| "大小未知".into())
-                                },
-                            )),
+                            .text_color(cx.theme().muted_foreground)
+                            .child(detail),
                     )
                     .child(
                         Button::new(("archive-remove-source", index))
+                            .debug_selector(move || format!("archive-create-remove-source-{index}"))
                             .label("移除")
                             .outline()
                             .with_size(Size::Small)
@@ -137,7 +150,38 @@ impl OperationForm {
                     ),
             );
         }
+        let known_bytes = draft
+            .sources
+            .iter()
+            .filter_map(|source| source.bytes)
+            .fold(0u64, u64::saturating_add);
+        let unknown = draft
+            .sources
+            .iter()
+            .filter(|source| source.bytes.is_none())
+            .count();
+        let summary = format!(
+            "{} 个来源 · 已知大小 {}{}",
+            draft.sources.len(),
+            super::super::progress::format_bytes(known_bytes),
+            if unknown == 0 {
+                String::new()
+            } else {
+                format!(" · {unknown} 项大小待扫描")
+            }
+        );
+        let sources = div()
+            .id("archive-create-source-viewport")
+            .debug_selector(|| "archive-create-source-viewport".into())
+            .w_full()
+            .min_w_0()
+            .min_h(px(32.))
+            .max_h(px(144.))
+            .flex_none()
+            .overflow_y_scroll()
+            .child(sources);
         let format = Form::vertical()
+            .with_size(Size::Small)
             .columns(2)
             .child(
                 Field::new().label("格式").child(
@@ -161,6 +205,8 @@ impl OperationForm {
         let password_open = self.space.password_open
             || !self.password.read(cx).value().is_empty()
             || !self.confirm.read(cx).value().is_empty();
+        let header_enabled = !self.password.read(cx).value().is_empty()
+            && self.password.read(cx).value() == self.confirm.read(cx).value();
         let password = Collapsible::new()
             .open(password_open)
             .child(
@@ -224,6 +270,9 @@ impl OperationForm {
                 Field::new()
                     .label("7Z 选项")
                     .visible(draft.format == ArchiveCreateFormat::SevenZ)
+                    .when(!header_enabled, |field| {
+                        field.description("文件名加密需要先输入并确认密码。")
+                    })
                     .child(self.check(
                         "archive-solid",
                         "固实压缩",
@@ -237,7 +286,7 @@ impl OperationForm {
                         "加密文件名（需要密码）",
                         draft.encrypt_header,
                         Flag::Header,
-                        false,
+                        !header_enabled,
                         cx,
                     )),
             )
@@ -271,16 +320,7 @@ impl OperationForm {
                         cx,
                     )),
             )
-            .child(
-                Field::new()
-                    .label("分卷大小（MiB）")
-                    .description("留空不分卷；仅 ZIP 和 7Z 可用，不覆盖已有分卷。")
-                    .child(
-                        Input::new(&self.volume)
-                            .aria_label("分卷大小 MiB")
-                            .disabled(busy),
-                    ),
-            )
+            .child(self.volume_field(busy))
             .child(
                 Field::new()
                     .label("排除规则")
@@ -290,7 +330,8 @@ impl OperationForm {
             )
             .child(self.preferences(false, cx));
         Form::vertical()
-            .gap_y_3()
+            .with_size(Size::Small)
+            .gap_y_2()
             .child(
                 Field::new()
                     .label(format!("来源（{}）", draft.sources.len()))
@@ -299,6 +340,7 @@ impl OperationForm {
                             .flex()
                             .gap_2()
                             .flex_wrap()
+                            .child(self.paste_button(cx))
                             .child(self.picker_button(
                                 "archive-add-files",
                                 "添加文件…",
@@ -312,42 +354,61 @@ impl OperationForm {
                                 cx,
                             )),
                     )
-                    .child(sources),
-            )
-            .child(self.destination_field(false, cx))
-            .child(
-                Field::new()
-                    .label("压缩包名称")
-                    .required(true)
-                    .when(draft.separately, |field| {
-                        field.description("按每个来源名称分别生成压缩包。")
-                    })
-                    .when(
-                        !draft.separately && !valid_job_name(self.name.read(cx).value().as_ref()),
-                        |field| field.description("名称不能包含路径或 Windows 不允许的字符。"),
-                    )
+                    .child(sources)
                     .child(
                         div()
-                            .flex()
-                            .items_center()
-                            .gap_2()
-                            .min_w_0()
-                            .child(
-                                div().flex_1().min_w_0().child(
-                                    Input::new(&self.name)
-                                        .aria_label("压缩包名称")
-                                        .disabled(busy || draft.separately),
-                                ),
-                            )
-                            .child(self.picker_button(
-                                "archive-save-picker",
-                                "另存为…",
-                                ArchivePickerPurpose::Save,
-                                cx,
-                            )),
+                            .text_sm()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(summary),
                     ),
             )
-            .child(Field::new().child(format))
+            .child(
+                Field::new().child(
+                    Form::horizontal()
+                        .with_size(Size::Small)
+                        .label_width(px(96.))
+                        .gap_y_2()
+                        .child(self.destination_field(false, cx))
+                        .child(
+                            Field::new()
+                                .label("压缩包名称")
+                                .required(true)
+                                .when(draft.separately, |field| {
+                                    field.description("按每个来源名称分别生成压缩包。")
+                                })
+                                .when(
+                                    !draft.separately
+                                        && !valid_job_name(self.name.read(cx).value().as_ref()),
+                                    |field| {
+                                        field.description(
+                                            "名称不能包含路径或 Windows 不允许的字符。",
+                                        )
+                                    },
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .items_center()
+                                        .gap_2()
+                                        .min_w_0()
+                                        .child(
+                                            div().flex_1().min_w_0().child(
+                                                Input::new(&self.name)
+                                                    .aria_label("压缩包名称")
+                                                    .disabled(busy || draft.separately),
+                                            ),
+                                        )
+                                        .child(self.picker_button(
+                                            "archive-save-picker",
+                                            "另存为…",
+                                            ArchivePickerPurpose::Save,
+                                            cx,
+                                        )),
+                                ),
+                        )
+                        .child(Field::new().child(format)),
+                ),
+            )
             .child(
                 Field::new()
                     .visible(draft::encrypted(draft.format))

@@ -91,7 +91,7 @@ impl PlatformBridge {
                 PendingCommand {
                     generation,
                     accepted_at: Instant::now(),
-                    timeout: super::PENDING_COMMAND_TIMEOUT,
+                    timeout: Some(super::PENDING_COMMAND_TIMEOUT),
                     summon_reply: None,
                 },
             );
@@ -172,6 +172,7 @@ mod tests {
             generation: 1,
             action: ArchiveJobAction::Start,
             reply: None,
+            batch_id: None,
             request: Some(nxtools_protocol::archive_job::ArchiveJobRequest {
                 kind: nxtools_protocol::archive_job::ArchiveJobKind::Test,
                 paths: vec!["C:\\owned\\tiny.zip".into()],
@@ -264,6 +265,8 @@ mod tests {
                 output_shortfall: None,
                 result_location: None,
                 output_published: None,
+                add_result: None,
+                journal_summary: None,
             }),
         };
         endpoint.observe_job_cleanup(&PlatformNotification::Event(PlatformEvent::ArchiveJob(

@@ -1,5 +1,9 @@
 #[path = "browser_host.rs"]
 mod browser_host;
+#[path = "clipboard_requests.rs"]
+mod clipboard_requests;
+#[path = "create_output_plan.rs"]
+mod create_output_plan;
 #[path = "drag_progress.rs"]
 mod drag_progress;
 #[path = "entry.rs"]
@@ -171,6 +175,7 @@ pub(crate) fn open_recent(path: PathBuf, source: AnyWindowHandle, cx: &mut App) 
 type TempDirectoryReply = Rc<dyn Fn(Result<Option<String>, &'static str>, &mut App)>;
 pub(crate) fn pick_temp_directory(
     current: String,
+    source: AnyWindowHandle,
     reply: impl Fn(Result<Option<String>, &'static str>, &mut App) + 'static,
     cx: &mut App,
 ) {
@@ -188,6 +193,11 @@ pub(crate) fn pick_temp_directory(
                         return;
                     }
                     let id = Uuid::new_v4();
+                    let source_window_handle = source
+                        .update(cx, |_, window, _| {
+                            crate::ui::native_window_handle(window).unwrap_or_default()
+                        })
+                        .unwrap_or_default();
                     app.temp_directory_picker = Some((id, reply.clone()));
                     if app
                         .platform
@@ -195,7 +205,9 @@ pub(crate) fn pick_temp_directory(
                             nxtools_protocol::PlatformCommand::PickDirectory(
                                 nxtools_protocol::PickDirectoryCommand {
                                     current_directory: current,
-                                    title: "选择归档临时目录".into(),
+                                    title: "选择压缩包临时目录".into(),
+                                    source_window_handle,
+                                    source_process_id: std::process::id(),
                                 },
                             ),
                             id,
@@ -244,6 +256,12 @@ pub(crate) fn handle(notification: PlatformNotification, cx: &mut App) {
         });
     }
 }
+#[derive(Clone)]
+struct DropAddTarget {
+    request: nxtools_protocol::archive_job::ArchiveJobRequest,
+    origin: jobs::EditFormOrigin,
+}
+
 struct BrowserSlot {
     path: PathBuf,
     view: WeakEntity<ArchiveBrowser>,
@@ -252,6 +270,7 @@ struct BrowserSlot {
     browser: Option<ArchiveBrowserContext>,
     depth: u32,
     leases: Vec<Lease>,
+    preview_lease: Option<Lease>,
 }
 struct BrowserHostSlot {
     id: Uuid,
@@ -508,7 +527,7 @@ impl ArchiveApplication {
                                     use gpui_kit::component::{WindowExt, dialog::DialogClose};
                                     window.open_dialog(cx, |dialog, _, _| {
                                         dialog
-                                            .title("无法打开归档")
+                                            .title("无法打开压缩包")
                                             .child("文件已不可用或没有访问权限，请重新选择。")
                                             .footer(
                                                 DialogClose::new()
@@ -706,6 +725,7 @@ impl ArchiveApplication {
                     browser: None,
                     depth,
                     leases,
+                    preview_lease: None,
                 },
             );
             tracing::info!(event="archive.browser.tab_opened", correlation_id=%id, tab_count=self.windows.len(), "archive tab opened");
@@ -854,7 +874,7 @@ impl ArchiveApplication {
             }
             Err(error) => self.fail_view(
                 id,
-                format!("无法读取归档：{error}。请检查原生适配器和文件后重试。"),
+                format!("无法读取压缩包：{error}。请检查原生适配器和文件后重试。"),
                 cx,
             ),
         }
@@ -1160,85 +1180,123 @@ impl ArchiveApplication {
         source: AnyWindowHandle,
         cx: &mut Context<Self>,
     ) {
-        if paths.is_empty() || paths.len() > 31 {
-            self.notice(id, "一次最多拖入 31 个来源；未截断文件列表。".into(), cx);
+        if paths.is_empty()
+            || paths.len() > 32
+            || paths.iter().any(|path| {
+                path.to_str()
+                    .is_none_or(|path| !nxtools_protocol::archive_job::valid_job_path(path))
+            })
+        {
+            self.incoming_notice(
+                id,
+                "一次最多拖入 32 个有效来源；未截断文件列表。".into(),
+                cx,
+            );
             return;
         }
+        let frozen_target = self.drop_add_target(id, &paths, cx);
         let Some(slot) = self.windows.get(&id) else {
             return;
         };
         let generation = slot.generation;
-        let frozen_target = slot
+        let frozen_target = Rc::new(std::cell::RefCell::new(frozen_target));
+        let add_reason = slot
             .view
-            .read_with(cx, |view, _| {
-                view.model
-                    .as_ref()
-                    .map(|model| (model.snapshot, model.folder.clone()))
-            })
-            .ok()
-            .flatten();
-        let eligible = slot
-            .view
-            .read_with(cx, |v, _| v.edit_reason().is_none())
-            .unwrap_or(false);
+            .read_with(cx, |view, _| view.edit_reason())
+            .unwrap_or(Some("原压缩包已关闭".into()))
+            .or_else(|| (paths.len() > 31).then(|| "Add 最多接受 31 个来源".into()))
+            .or_else(|| {
+                frozen_target
+                    .borrow()
+                    .is_none()
+                    .then(|| "当前来源或连接已失效，请重新打开压缩包。".into())
+            });
+        let eligible = add_reason.is_none();
         let owner = cx.entity().downgrade();
         cx.defer(move |cx| {
             let _ = source.update(cx, |_, window, cx| {
                 use gpui_kit::ParentElement;
                 use gpui_kit::component::{
-                    WindowExt,
+                    Sizable, WindowExt,
                     button::Button,
                     dialog::{DialogAction, DialogClose, DialogFooter},
                 };
                 let owner_open = owner.clone();
                 let owner_add = owner.clone();
+                let owner_new = owner.clone();
+                let new_paths = paths
+                    .iter()
+                    .map(|path| path.to_str().expect("validated path").to_owned())
+                    .collect::<Vec<_>>();
                 let open_path = paths[0].clone();
-                let add_paths = paths.clone();
                 window.open_dialog(cx, move |dialog, _, _| {
                     let owner_open = owner_open.clone();
                     let owner_add = owner_add.clone();
+                    let owner_new = owner_new.clone();
+                    let new_paths = new_paths.clone();
                     let open_path = open_path.clone();
-                    let add_paths = add_paths.clone();
                     let frozen_target = frozen_target.clone();
+                    let closing_target = frozen_target.clone();
                     dialog
                         .title("拖入文件")
-                        .child(if eligible {
-                            "打开为归档，或添加到当前归档？"
-                        } else {
-                            "当前归档不能编辑；可以打开首个来源。"
-                        })
+                        .child(add_reason.as_ref().map_or_else(
+                            || "选择打开首项、使用全部来源新建，或添加到当前压缩包。".to_owned(),
+                            |reason| format!("可打开首项或使用全部来源新建。无法添加：{reason}"),
+                        ))
                         .footer(
                             DialogFooter::new()
                                 .child(DialogClose::new().trigger(|button| button.label("取消")))
                                 .child(
                                     DialogAction::new().child(
-                                        Button::new("archive-drop-open").label("打开为归档"),
+                                        Button::new("archive-drop-open")
+                                            .label("打开首项")
+                                            .outline()
+                                            .with_size(gpui_kit::component::Size::Medium),
                                     ),
                                 )
                                 .child(
-                                    Button::new("archive-drop-add")
-                                        .label("添加到当前归档")
+                                    Button::new("archive-drop-new")
+                                        .label("全部来源新建")
                                         .outline()
-                                        .disabled(!eligible)
+                                        .with_size(gpui_kit::component::Size::Medium)
                                         .on_click(move |_, window, cx| {
-                                            let owner = owner_add.clone();
-                                            let paths = add_paths.clone();
-                                            let frozen_target = frozen_target.clone();
+                                            let owner = owner_new.clone();
+                                            let paths = new_paths.clone();
                                             window.close_dialog(cx);
                                             cx.defer(move |cx| {
                                                 let _ = owner.update(cx, |app, cx| {
-                                                    app.add_drop(
-                                                        id,
-                                                        generation,
-                                                        frozen_target.clone(),
-                                                        paths,
-                                                        cx,
-                                                    )
+                                                    if app.windows.get(&id).is_some_and(|slot| {
+                                                        slot.generation == generation
+                                                    }) {
+                                                        app.open_create_paths(paths, cx);
+                                                    }
                                                 });
+                                            });
+                                        }),
+                                )
+                                .child(
+                                    Button::new("archive-drop-add")
+                                        .label("添加到当前压缩包")
+                                        .outline()
+                                        .with_size(gpui_kit::component::Size::Medium)
+                                        .disabled(!eligible)
+                                        .on_click(move |_, window, cx| {
+                                            let owner = owner_add.clone();
+                                            let Some(target) = frozen_target.borrow_mut().take()
+                                            else {
+                                                return;
+                                            };
+                                            window.close_dialog(cx);
+                                            cx.defer(move |cx| {
+                                                let _ = owner
+                                                    .update(cx, |app, cx| app.add_drop(target, cx));
                                             });
                                         }),
                                 ),
                         )
+                        .on_close(move |_, _, _| {
+                            closing_target.borrow_mut().take();
+                        })
                         .on_ok(move |_, _, cx| {
                             let owner = owner_open.clone();
                             let path = open_path.clone();
@@ -1268,69 +1326,76 @@ impl ArchiveApplication {
             });
         });
     }
-    fn add_drop(
-        &mut self,
-        id: Uuid,
-        generation: u64,
-        frozen_target: Option<(Uuid, String)>,
-        paths: Vec<PathBuf>,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(slot) = self
-            .windows
-            .get(&id)
-            .filter(|slot| slot.generation == generation)
-        else {
-            return;
-        };
-        let Some((snapshot, prefix, codepage)) = slot
+    fn drop_add_target(&self, id: Uuid, paths: &[PathBuf], cx: &App) -> Option<DropAddTarget> {
+        let slot = self.windows.get(&id)?;
+        let connection = self.platform.connection_generation()?;
+        let browser = slot.browser.clone()?;
+        let (folder, codepage) = slot
             .view
             .read_with(cx, |view, _| {
-                if view.edit_reason().is_some() {
-                    return None;
-                }
                 let model = view.model.as_ref()?;
-                if frozen_target.as_ref().is_none_or(|(snapshot, folder)| {
-                    *snapshot != model.snapshot || folder != &model.folder
-                }) {
-                    return None;
-                }
-                Some((
-                    model.snapshot,
-                    (!model.folder.is_empty()).then(|| format!("{}/", model.folder)),
-                    view.codepage,
-                ))
+                (view.edit_reason().is_none()
+                    && view.preview_connection() == connection
+                    && model.snapshot == browser.snapshot_id)
+                    .then(|| (model.folder.clone(), view.codepage))
             })
             .ok()
-            .flatten()
-        else {
-            return;
-        };
-        let Some(browser) = slot
-            .browser
-            .clone()
-            .filter(|browser| browser.snapshot_id == snapshot)
-        else {
-            return;
-        };
+            .flatten()?;
         let draft = crate::archive::draft::ModifyDraft {
             source: slot.path.clone(),
             browser,
             action: nxtools_protocol::archive_job::ArchiveJobModifyAction::Add,
             ordinals: vec![],
-            value: prefix,
+            value: (!folder.is_empty()).then(|| format!("{folder}/")),
             source_prefix: None,
             added: paths
                 .iter()
-                .filter_map(|p| p.to_str().map(str::to_owned))
-                .collect(),
+                .map(|path| path.to_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()?,
             codepage,
         };
-        if draft.added.len() != paths.len() || draft.request().is_err() {
-            self.notice(id, "拖入来源无效；未丢弃任何路径。".into(), cx);
+        let request = draft.request().ok()?;
+        Some(DropAddTarget {
+            origin: jobs::EditFormOrigin {
+                browser: (id, slot.generation, draft.browser.snapshot_id),
+                connection,
+            },
+            request,
+        })
+    }
+
+    fn add_drop(&mut self, target: DropAddTarget, cx: &mut Context<Self>) {
+        let id = target.origin.browser.0;
+        if !self.tab_is_active(id, cx)
+            || !self.edit_request_current(&target.request, target.origin, cx)
+        {
+            self.incoming_notice(
+                id,
+                "原压缩包、目录或连接已变化，请在目标目录重新拖入文件。".into(),
+                cx,
+            );
             return;
         }
-        self.open_modify_form(draft, (id, generation, snapshot), cx);
+        if let Err(message) = self.submit_drop_add(target.request, target.origin, cx) {
+            self.incoming_notice(id, message, cx);
+        }
+    }
+
+    fn incoming_notice(&self, id: Uuid, message: String, cx: &mut Context<Self>) {
+        tracing::warn!(event = "archive.drop_add.refused", browser_id = %id, "incoming Add refused before job admission");
+        let Some(center) = crate::notifications::current(cx) else {
+            return;
+        };
+        let mut notice = crate::notifications::AppNotification::new(
+            format!("archive-drop-{id}"),
+            crate::notifications::NotificationLevel::Error,
+            "添加文件失败",
+            message,
+        );
+        if let Some(slot) = self.windows.get(&id) {
+            notice = notice.in_window(slot.window);
+        }
+        cx.defer(move |cx| center.update(cx, |center, cx| center.push(notice, cx)));
     }
     fn notification(&mut self, notification: PlatformNotification, cx: &mut Context<Self>) {
         if let PlatformNotification::Event(
@@ -1468,13 +1533,22 @@ impl ArchiveApplication {
                 .map(|slot| slot.view.clone());
             if let Some(view) = matching_drag {
                 cx.defer(move |cx| {
-                    let _ =
-                        view.update(cx, |view, cx| view.drag_result(correlation_id, &result, cx));
+                    let located = view
+                        .update(cx, |view, cx| view.drag_result(correlation_id, &result, cx))
+                        .ok()
+                        .flatten();
                     cx.defer(move |cx| {
                         let _ = cx
                             .try_global::<ArchiveGlobal>()
                             .map(|global| global.0.clone())
-                            .map(|owner| owner.update(cx, |app, cx| app.flush_job_locations(cx)));
+                            .map(|owner| {
+                                owner.update(cx, |app, cx| {
+                                    if let Some(drop) = located {
+                                        app.extract_dropped(drop, cx);
+                                    }
+                                    app.flush_job_locations(cx)
+                                })
+                            });
                     });
                 });
                 return;
@@ -1548,7 +1622,7 @@ fn picker_failure(source: AnyWindowHandle, cx: &mut App) {
             use gpui_kit::component::{WindowExt, dialog::DialogClose};
             window.open_dialog(cx, |dialog, _, _| {
                 dialog
-                    .title("无法选择归档")
+                    .title("无法选择压缩包")
                     .child("原生文件选择器不可用或连接已断开，请重试。")
                     .footer(DialogClose::new().trigger(|button| button.label("关闭")))
             });

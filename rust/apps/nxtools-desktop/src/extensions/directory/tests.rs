@@ -254,3 +254,39 @@ fn directory_result_uses_shared_notification_without_page_banner(cx: &mut TestAp
         );
     });
 }
+
+#[gpui_kit::test]
+fn runtime_human_picker_survives_old_deadline_and_completes_once(cx: &mut TestAppContext) {
+    let temp = tempfile::tempdir().expect("owned picker lifetime fixture");
+    let (app, endpoint) = fixture(temp.path().join("config.json"), cx);
+    let receiver = app
+        .update(cx, |app, cx| {
+            app.request_runtime(
+                PlatformCommand::PickExtensionRuntime(
+                    nxtools_protocol::PickExtensionRuntimeCommand {
+                        program: "python".into(),
+                        current_path: String::new(),
+                        source_window_handle: 0,
+                        source_process_id: std::process::id(),
+                    },
+                ),
+                cx,
+            )
+        })
+        .expect("picker accepted");
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("picker sent");
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(601));
+    cx.run_until_parked();
+    assert!(receiver.try_recv().is_err(), "human wait is not a timeout");
+    assert!(app.read_with(cx, |app, _| app.pending_runtime.contains_key(&command.id)));
+    reply(&app, command.id, true, cx);
+    assert!(receiver.try_recv().expect("delayed selection").success);
+    reply(&app, command.id, true, cx);
+    assert!(
+        receiver.try_recv().is_err(),
+        "duplicate cannot complete twice"
+    );
+}

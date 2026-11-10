@@ -47,11 +47,12 @@ use nxtools_ipc::{PlatformBridge, PlatformBridgeError, PlatformNotification};
 use nxtools_protocol::{
     ActivateWindowCommand, BeginFileDragCommand, EnsureBrowserNativeMessagingCommand,
     ExportBrowserExtensionCommand, ExtractShellIconCommand, MoveWindowCenteredOverKeyCommand,
-    OpenShellTargetCommand, PasteTextCommand, PickDirectoryCommand, PickProgramCommand,
-    PlaceTaskbarProgressOverlayCommand, PlatformCommand, PlatformCommandResult, PlatformEvent,
-    SetTaskbarProgressCommand, SetWindowBoundsCenteredCommand, SetWindowTopmostCommand,
-    SetWindowVisibilityCommand, ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand,
-    TaskbarOverlayAnchor, TaskbarProgressState,
+    OpenShellTargetCommand, PasteTextCommand, PickBrowserExtensionExportPathCommand,
+    PickDirectoryCommand, PickProgramCommand, PlaceTaskbarProgressOverlayCommand, PlatformCommand,
+    PlatformCommandResult, PlatformEvent, SetTaskbarProgressCommand,
+    SetWindowBoundsCenteredCommand, SetWindowTopmostCommand, SetWindowVisibilityCommand,
+    ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand, TaskbarOverlayAnchor,
+    TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
@@ -90,10 +91,17 @@ use crate::ui::typography::{
 };
 
 mod artifact_actions;
+mod batch;
+#[cfg(test)]
+mod batch_tests;
 mod browser_handoff_impl;
+mod clipboard_prefill;
 mod completion_shutdown_impl;
 #[cfg(debug_assertions)]
 pub(crate) mod completion_transition_preview;
+mod conflict;
+#[cfg(test)]
+mod conflict_tests;
 mod delete_confirmation;
 mod detail_request;
 #[cfg(test)]
@@ -109,8 +117,11 @@ mod new_download_view;
 mod polish_tests;
 mod progress_display;
 mod schedule_view;
+#[cfg(test)]
+mod server_information_tests;
 mod settings_view;
 mod shutdown_window;
+mod speed_limit_edit;
 mod task_window;
 mod task_windows_impl;
 #[cfg(debug_assertions)]
@@ -119,6 +130,7 @@ pub(crate) mod visual_preview;
 use self::artifact_actions::PendingDownloadArtifactAction;
 #[cfg(test)]
 use self::artifact_actions::resolve_download_artifact_target;
+use self::batch::{BatchConfirmation, PendingDownloadBatch};
 use self::delete_confirmation::*;
 pub(crate) use self::detail_request::DownloadDetailScope;
 use self::directory_picker::*;
@@ -130,8 +142,12 @@ use self::task_window::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum DownloadApplicationEvent {
+    SelectBatchFailures {
+        task_ids: Vec<DownloadTaskId>,
+    },
     FfmpegExecutablePicked {
         path: PathBuf,
+        picker_origin: Option<FfmpegPickerOrigin>,
     },
     FfmpegInstallChanged {
         state: FfmpegInstallViewState,
@@ -240,7 +256,6 @@ struct DownloadSettingsViewInitial {
     ffmpeg_install_state: FfmpegInstallViewState,
 }
 
-const FFMPEG_PICKER_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const FFMPEG_DOWNLOAD_PAGE_TIMEOUT: Duration = Duration::from_secs(15);
 const DOWNLOAD_SETTINGS_PATH_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -327,11 +342,13 @@ impl DownloadSettingsPathAction {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone)]
 struct PendingExtensionExport {
     command_id: uuid::Uuid,
+    operation_id: uuid::Uuid,
     format: &'static str,
     started_at: Instant,
+    selection_origin: Option<(AnyWindowHandle, gpui_kit::WeakEntity<DownloadSettingsView>)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -370,11 +387,18 @@ enum FfmpegPlatformOperationKind {
     DownloadPage(FfmpegDownloadSource),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FfmpegPickerOrigin {
+    view_id: gpui_kit::EntityId,
+    edit_generation: u64,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct PendingFfmpegPlatformOperation {
     correlation_id: uuid::Uuid,
     started_at: Instant,
     kind: FfmpegPlatformOperationKind,
+    picker_origin: Option<FfmpegPickerOrigin>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -519,9 +543,15 @@ struct PendingDownloadTaskIcon {
     started_at: Instant,
 }
 
+struct DownloadTaskIconFailure {
+    attempts: u8,
+    retry_token: Option<uuid::Uuid>,
+}
+
 const DOWNLOAD_TASK_ICON_SIZE: u32 = 48;
 const DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT: usize = 8;
 const DOWNLOAD_TASK_ICON_RETRY_DELAY: Duration = Duration::from_secs(5);
+const DOWNLOAD_TASK_ICON_MAX_ATTEMPTS: u8 = 3;
 
 fn download_task_icon_target(task: &DownloadEngineTask) -> Option<String> {
     if task.task.status() == DownloadStatus::Completed
@@ -590,7 +620,7 @@ pub(crate) struct DownloadApplication {
     task_icon_resource_assignments: HashMap<DownloadTaskId, String>,
     task_icon_resources: HashMap<String, PathBuf>,
     pending_task_icons: HashMap<uuid::Uuid, PendingDownloadTaskIcon>,
-    failed_task_icon_resources: HashMap<String, Instant>,
+    failed_task_icon_resources: HashMap<String, DownloadTaskIconFailure>,
     pending_task_icon_resources: HashMap<String, uuid::Uuid>,
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
     task_window_lifecycle: DownloadWindowLifecycle,
@@ -606,10 +636,14 @@ pub(crate) struct DownloadApplication {
         reason = "retained for the Phase 3 task context-menu delete action"
     )]
     delete_confirmation_windows: HashMap<DownloadTaskId, AnyWindowHandle>,
+    pending_batch: Option<PendingDownloadBatch>,
+    pending_batch_confirmation: Option<DownloadTaskId>,
+    destination_conflicts: HashSet<DownloadTaskId>,
     new_download_window: Option<AnyWindowHandle>,
     #[cfg(test)]
     new_download_view: Option<Entity<NewDownloadView>>,
     pending_new_download_handoff: Option<browser_handoff_impl::PendingNewDownloadHandoff>,
+    pending_new_download_clipboard: Option<clipboard_prefill::PendingDownloadClipboard>,
     _new_download_close_subscription: Subscription,
     #[cfg(test)]
     new_download_native_handles_override: Option<(i64, i64)>,
@@ -812,10 +846,14 @@ impl DownloadApplication {
             #[cfg(test)]
             task_window_activation_commands: Rc::new(RefCell::new(Vec::new())),
             delete_confirmation_windows: HashMap::new(),
+            pending_batch: None,
+            pending_batch_confirmation: None,
+            destination_conflicts: HashSet::new(),
             new_download_window: None,
             #[cfg(test)]
             new_download_view: None,
             pending_new_download_handoff: None,
+            pending_new_download_clipboard: None,
             _new_download_close_subscription: {
                 let application = cx.entity().downgrade();
                 cx.on_window_closed(move |cx, _| {
@@ -1245,44 +1283,6 @@ impl DownloadApplication {
         Ok(())
     }
 
-    pub(crate) fn batch_action(
-        &mut self,
-        task_ids: Vec<DownloadTaskId>,
-        action: DownloadBatchAction,
-        cx: &mut Context<Self>,
-    ) {
-        let outcome = self.execute(DownloadCommand::Batch { task_ids, action });
-        match outcome {
-            DownloadCommandOutcome::Batch { results } => {
-                let failures = results
-                    .iter()
-                    .filter_map(|result| result.fault.as_ref())
-                    .collect::<Vec<_>>();
-                if let Some(first) = failures.first() {
-                    self.notifications.update(cx, |notifications, cx| {
-                        notifications.show_error(
-                            format!("download-batch-action-{}", uuid::Uuid::new_v4()),
-                            format!("有 {} 个任务操作失败", failures.len()),
-                            first.message.clone(),
-                            cx,
-                        );
-                    });
-                }
-                self.refresh(cx);
-            }
-            DownloadCommandOutcome::Rejected { fault } => {
-                let _ = self.action_error("批量操作失败", fault.message, cx);
-            }
-            _ => {
-                let _ = self.action_error(
-                    "批量操作失败",
-                    "下载引擎返回了无效的批量操作结果".into(),
-                    cx,
-                );
-            }
-        }
-    }
-
     pub(crate) fn move_queue_tasks(
         &mut self,
         task_ids: Vec<DownloadTaskId>,
@@ -1468,7 +1468,13 @@ impl DownloadApplication {
         cx.notify();
     }
 
-    fn request_ffmpeg_executable(&mut self, current_path: String, cx: &mut Context<Self>) {
+    fn request_ffmpeg_executable(
+        &mut self,
+        current_path: String,
+        source_window_handle: i64,
+        picker_origin: Option<FfmpegPickerOrigin>,
+        cx: &mut Context<Self>,
+    ) {
         if self
             .pending_ffmpeg_operations
             .values()
@@ -1477,9 +1483,14 @@ impl DownloadApplication {
             return;
         }
         self.begin_ffmpeg_platform_operation(
-            PlatformCommand::PickProgram(PickProgramCommand { current_path }),
+            PlatformCommand::PickProgram(PickProgramCommand {
+                current_path,
+                source_window_handle,
+                source_process_id: std::process::id(),
+            }),
             FfmpegPlatformOperationKind::Picker,
-            FFMPEG_PICKER_TIMEOUT,
+            None,
+            picker_origin,
             cx,
         );
     }
@@ -1733,6 +1744,7 @@ impl DownloadApplication {
                 self.set_ffmpeg_install_state(FfmpegInstallViewState::Completed, cx);
                 cx.emit(DownloadApplicationEvent::FfmpegExecutablePicked {
                     path: installation.executable.clone(),
+                    picker_origin: None,
                 });
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_success(
@@ -2028,7 +2040,8 @@ impl DownloadApplication {
                 action: ShellOpenAction::Open,
             }),
             FfmpegPlatformOperationKind::DownloadPage(source),
-            FFMPEG_DOWNLOAD_PAGE_TIMEOUT,
+            Some(FFMPEG_DOWNLOAD_PAGE_TIMEOUT),
+            None,
             cx,
         );
     }
@@ -2037,7 +2050,8 @@ impl DownloadApplication {
         &mut self,
         command: PlatformCommand,
         kind: FfmpegPlatformOperationKind,
-        timeout: Duration,
+        timeout: Option<Duration>,
+        picker_origin: Option<FfmpegPickerOrigin>,
         cx: &mut Context<Self>,
     ) {
         let correlation_id = uuid::Uuid::new_v4();
@@ -2075,15 +2089,18 @@ impl DownloadApplication {
                         correlation_id,
                         started_at,
                         kind,
+                        picker_origin,
                     },
                 );
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(timeout).await;
-                    let _ = this.update(cx, |application, cx| {
-                        application.ffmpeg_platform_operation_timed_out(command_id, cx);
-                    });
-                })
-                .detach();
+                if let Some(timeout) = timeout {
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor().timer(timeout).await;
+                        let _ = this.update(cx, |application, cx| {
+                            application.ffmpeg_platform_operation_timed_out(command_id, cx);
+                        });
+                    })
+                    .detach();
+                }
             }
             Err(error) => {
                 self.finish_ffmpeg_platform_operation_failure(
@@ -2091,6 +2108,7 @@ impl DownloadApplication {
                         correlation_id,
                         started_at,
                         kind,
+                        picker_origin,
                     },
                     None,
                     error.to_string(),
@@ -2182,7 +2200,7 @@ impl DownloadApplication {
             {
                 return;
             }
-            self.settings_window = None;
+            self.handle_settings_window_closed(cx);
         }
         let application = cx.entity();
         let initial = self.settings_view_initial();
@@ -2616,6 +2634,20 @@ impl DownloadApplication {
     }
 
     fn handle_settings_window_closed(&mut self, cx: &mut Context<Self>) {
+        self.retire_extension_export_selection(cx);
+        self.pending_ffmpeg_operations.retain(|_, pending| {
+            if pending.kind != FfmpegPlatformOperationKind::Picker {
+                return true;
+            }
+            info!(
+                event = "download.ffmpeg_picker.retired",
+                correlation_id = %pending.correlation_id,
+                reason = "window_closed",
+                elapsed_ms = pending.started_at.elapsed().as_millis(),
+                "FFmpeg executable selection retired"
+            );
+            false
+        });
         if self
             .pending_directory_picker
             .as_ref()
@@ -2923,6 +2955,9 @@ impl DownloadApplication {
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        if self.handle_new_download_clipboard(&notification, cx) {
+            return;
+        }
         if self.handle_browser_store_page(&notification, cx) {
             return;
         }
@@ -2949,8 +2984,7 @@ impl DownloadApplication {
             return;
         }
         if matches!(&notification, PlatformNotification::Connected) {
-            self.failed_task_icon_resources.clear();
-            self.request_task_icons();
+            self.request_task_icons(cx);
             let correlation_id = uuid::Uuid::new_v4();
             self.request_browser_registration(correlation_id, cx);
             match self.apply_taskbar_overlay_placement(correlation_id) {
@@ -2983,6 +3017,7 @@ impl DownloadApplication {
                 event = "downloads.platform_disconnected",
                 generation,
                 pending_command_count = pending_command_ids.len(),
+                failed_icon_resource_count = self.failed_task_icon_resources.len(),
                 "downloads invalidated commands from the disconnected PlatformHost session"
             );
             if let Some(pending) = self.pending_new_download_handoff.as_ref() {
@@ -2991,6 +3026,7 @@ impl DownloadApplication {
             self.disconnect_artifact_actions(cx);
             self.pending_task_icons.clear();
             self.pending_task_icon_resources.clear();
+            self.failed_task_icon_resources.clear();
             self.pending_task_window_activations.clear();
             self.pending_taskbar_overlay_gestures.clear();
             self.retire_directory_picker("disconnected", cx);
@@ -2999,7 +3035,7 @@ impl DownloadApplication {
             if let Some(pending) = self.pending_extension_export.take() {
                 let elapsed = pending.started_at.elapsed().as_millis();
                 self.publish_extension_export_status(
-                    pending.command_id,
+                    pending.operation_id,
                     "导出失败:Windows 连接已断开".into(),
                     cx,
                 );
@@ -3092,6 +3128,8 @@ impl DownloadApplication {
                     "download task Shell icon request completed"
                 );
             } else {
+                self.record_task_icon_failure(pending.resource_key.clone(), cx);
+                let failure = &self.failed_task_icon_resources[&pending.resource_key];
                 warn!(
                     event = "download.list.icon_failed",
                     %correlation_id,
@@ -3100,11 +3138,12 @@ impl DownloadApplication {
                     elapsed_ms = pending.started_at.elapsed().as_millis(),
                     ?native_error_code,
                     error_present,
+                    attempts = failure.attempts,
+                    retry_scheduled = failure.retry_token.is_some(),
                     "download task Shell icon request failed"
                 );
-                self.record_task_icon_failure(pending.resource_key, cx);
             }
-            self.request_task_icons();
+            self.request_task_icons(cx);
             cx.notify();
             return;
         }
@@ -3181,71 +3220,7 @@ impl DownloadApplication {
             );
             return;
         }
-        if self
-            .pending_extension_export
-            .as_ref()
-            .is_some_and(|pending| pending.command_id == correlation_id)
-        {
-            let pending = self
-                .pending_extension_export
-                .take()
-                .expect("matching browser extension export command");
-            let elapsed = pending.started_at.elapsed().as_millis();
-            if result.success {
-                let cancelled = result
-                    .data
-                    .as_deref()
-                    .map(str::trim)
-                    .unwrap_or_default()
-                    .is_empty();
-                if cancelled {
-                    info!(
-                        event = "download.browser_extension.export_cancelled",
-                        format = pending.format,
-                        elapsed_ms = elapsed,
-                        "browser extension export cancelled in the save dialog"
-                    );
-                    self.publish_extension_export_status(
-                        pending.command_id,
-                        "已取消导出浏览器扩展".into(),
-                        cx,
-                    );
-                    return;
-                }
-                let file_name = result
-                    .data
-                    .as_deref()
-                    .map(|path| {
-                        std::path::Path::new(path)
-                            .file_name()
-                            .map(|name| name.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| path.to_owned())
-                    })
-                    .unwrap_or_default();
-                let status = format!("已导出:{file_name}");
-                self.publish_extension_export_status(pending.command_id, status, cx);
-                info!(
-                    event = "download.browser_extension.exported",
-                    format = pending.format,
-                    elapsed_ms = elapsed,
-                    "browser extension export completed"
-                );
-            } else {
-                let reason = result
-                    .error
-                    .clone()
-                    .unwrap_or_else(|| "Windows 未返回错误详情".into());
-                let status = format!("导出失败:{reason}");
-                self.publish_extension_export_status(pending.command_id, status, cx);
-                warn!(
-                    event = "download.browser_extension.export_failed",
-                    format = pending.format,
-                    reason,
-                    elapsed_ms = elapsed,
-                    "browser extension export failed"
-                );
-            }
-            cx.notify();
+        if self.handle_browser_extension_export_result(correlation_id, &result, cx) {
             return;
         }
         if let Some(pending) = self.pending_ffmpeg_operations.remove(&correlation_id) {
@@ -3272,6 +3247,7 @@ impl DownloadApplication {
                         );
                         cx.emit(DownloadApplicationEvent::FfmpegExecutablePicked {
                             path: PathBuf::from(path),
+                            picker_origin: pending.picker_origin,
                         });
                     } else {
                         info!(
@@ -3311,33 +3287,47 @@ impl DownloadApplication {
     }
 
     fn record_task_icon_failure(&mut self, resource_key: String, cx: &mut Context<Self>) {
-        let failed_at = Instant::now();
-        self.failed_task_icon_resources
-            .insert(resource_key.clone(), failed_at);
+        let attempts = self
+            .failed_task_icon_resources
+            .get(&resource_key)
+            .map_or(1, |failure| failure.attempts + 1)
+            .min(DOWNLOAD_TASK_ICON_MAX_ATTEMPTS);
+        let retry_token = (attempts < DOWNLOAD_TASK_ICON_MAX_ATTEMPTS).then(uuid::Uuid::new_v4);
+        self.failed_task_icon_resources.insert(
+            resource_key.clone(),
+            DownloadTaskIconFailure {
+                attempts,
+                retry_token,
+            },
+        );
+        let Some(retry_token) = retry_token else {
+            return;
+        };
+        let retry_delay = DOWNLOAD_TASK_ICON_RETRY_DELAY * (1 << (attempts - 1));
         cx.spawn(async move |this, cx| {
-            cx.background_executor()
-                .timer(DOWNLOAD_TASK_ICON_RETRY_DELAY)
-                .await;
+            cx.background_executor().timer(retry_delay).await;
             let Some(this) = this.upgrade() else {
                 return;
             };
             this.update(cx, |application, cx| {
-                if application
+                let Some(failure) = application
                     .failed_task_icon_resources
-                    .get(&resource_key)
-                    .is_none_or(|current| *current != failed_at)
-                {
+                    .get_mut(&resource_key)
+                else {
+                    return;
+                };
+                if failure.retry_token != Some(retry_token) {
                     return;
                 }
-                application.failed_task_icon_resources.remove(&resource_key);
-                application.request_task_icons();
+                failure.retry_token = None;
+                application.request_task_icons(cx);
                 cx.notify();
             });
         })
         .detach();
     }
 
-    fn request_task_icons(&mut self) {
+    fn request_task_icons(&mut self, cx: &mut Context<Self>) {
         let live_task_ids = self
             .tasks
             .iter()
@@ -3367,6 +3357,9 @@ impl DownloadApplication {
             .retain(|resource_key, _| live_resource_keys.contains(resource_key));
         self.failed_task_icon_resources
             .retain(|resource_key, _| live_resource_keys.contains(resource_key));
+        if !self.platform.is_connected() {
+            return;
+        }
         let mut in_flight = self.pending_task_icons.len();
         for (task_id, resource_key, target) in descriptors {
             let resource_scope = if resource_key.contains(":target:") {
@@ -3394,32 +3387,36 @@ impl DownloadApplication {
             if self
                 .failed_task_icon_resources
                 .get(&resource_key)
-                .is_some_and(|failed_at| failed_at.elapsed() < DOWNLOAD_TASK_ICON_RETRY_DELAY)
+                .is_some_and(|failure| {
+                    failure.attempts >= DOWNLOAD_TASK_ICON_MAX_ATTEMPTS
+                        || failure.retry_token.is_some()
+                })
             {
                 continue;
             }
-            self.failed_task_icon_resources.remove(&resource_key);
             if in_flight >= DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT {
                 continue;
             }
-            match self
-                .platform
-                .send_command(PlatformCommand::ExtractShellIcon(ExtractShellIconCommand {
+            let command_id = uuid::Uuid::new_v4();
+            self.pending_task_icon_resources
+                .insert(resource_key.clone(), command_id);
+            self.pending_task_icons.insert(
+                command_id,
+                PendingDownloadTaskIcon {
+                    resource_key: resource_key.clone(),
+                    task_ids: HashSet::from([task_id]),
+                    resource_scope,
+                    started_at: Instant::now(),
+                },
+            );
+            match self.platform.send_command_with_id(
+                PlatformCommand::ExtractShellIcon(ExtractShellIconCommand {
                     target,
                     size: DOWNLOAD_TASK_ICON_SIZE,
-                })) {
-                Ok(command_id) => {
-                    self.pending_task_icon_resources
-                        .insert(resource_key.clone(), command_id);
-                    self.pending_task_icons.insert(
-                        command_id,
-                        PendingDownloadTaskIcon {
-                            resource_key,
-                            task_ids: HashSet::from([task_id]),
-                            resource_scope,
-                            started_at: Instant::now(),
-                        },
-                    );
+                }),
+                command_id,
+            ) {
+                Ok(_) => {
                     in_flight += 1;
                     info!(
                         event = "download.list.icon_accepted",
@@ -3428,12 +3425,18 @@ impl DownloadApplication {
                         "download task Shell icon request accepted"
                     );
                 }
-                Err(error) => {
-                    self.failed_task_icon_resources
-                        .insert(resource_key, Instant::now());
+                Err(_) => {
+                    self.pending_task_icons.remove(&command_id);
+                    self.pending_task_icon_resources.remove(&resource_key);
+                    self.record_task_icon_failure(resource_key.clone(), cx);
+                    let failure = &self.failed_task_icon_resources[&resource_key];
                     warn!(
                         event = "download.list.icon_request_failed",
-                        %error,
+                        correlation_id = %command_id,
+                        resource_scope,
+                        attempts = failure.attempts,
+                        retry_scheduled = failure.retry_token.is_some(),
+                        failure_kind = "transport",
                         "download task Shell icon request could not be queued"
                     );
                 }
@@ -3488,10 +3491,11 @@ impl DownloadApplication {
         };
         self.latest_progress.clear();
         self.last_event_sequence = snapshot.sequence;
+        self.observe_destination_conflicts(&tasks);
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = Rc::new(tasks);
         self.queues = snapshot.queues;
-        self.request_task_icons();
+        self.request_task_icons(cx);
         if refresh_task_detail {
             self.refresh_selected_task_detail(cx);
         }
@@ -3682,3 +3686,7 @@ pub(crate) use window_support::*;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "downloads/new_download_link_tests.rs"]
+mod new_download_link_tests;

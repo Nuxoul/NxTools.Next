@@ -1,0 +1,7 @@
+{"file":".trellis/tasks/11-09-reference-b1-existing-correctness/prd.md","reason":"Approved B1 acceptance"}
+{"file":".trellis/tasks/11-09-reference-b1-existing-correctness/design.md","reason":"Smallest behavior gap and owner boundaries"}
+{"file":".trellis/spec/shared/verification.md","reason":"Relevant checks and evidence limitations"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Browser ownership, privacy and Native Messaging invariants"}
+{"file":".trellis/tasks/11-09-reference-b1-existing-correctness/acceptance-repair.md","reason":"Three reopened B1 acceptance corrections and separate evidence levels"}
+{"file":"browser_extension/nxtools-interceptor/tests/manual-confirmation.behavior.test.js","reason":"Production manual pending, rejection, Blob and transport outcomes"}
+{"file":"rust/apps/nxtools-desktop/src/clipboard_link_copy_tests.rs","reason":"Real explicit Copy close/reopen and exactly-once correlated terminal"}

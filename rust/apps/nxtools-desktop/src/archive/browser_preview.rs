@@ -21,10 +21,12 @@ pub(super) struct PreviewPane {
     pub generation: u64,
     fingerprint: Option<Fingerprint>,
     dispatch: bool,
+    visible: bool,
     result: PreviewResult,
     document: Option<Entity<MarkdownDocument>>,
     source: bool,
     scroll: ScrollHandle,
+    profile: nxtools_core::archive::ArchivePreviewSettings,
 }
 impl Default for PreviewPane {
     fn default() -> Self {
@@ -32,28 +34,24 @@ impl Default for PreviewPane {
             generation: 0,
             fingerprint: None,
             dispatch: false,
+            visible: false,
             result: PreviewResult::Idle,
             document: None,
             source: false,
             scroll: ScrollHandle::new(),
+            profile: Default::default(),
         }
     }
 }
 impl ArchiveBrowser {
+    pub(crate) fn preview_profile(
+        &mut self,
+        profile: nxtools_core::archive::ArchivePreviewSettings,
+    ) {
+        self.preview.profile = profile;
+    }
     pub(super) fn preview_visible(&self) -> bool {
-        let fingerprint = self.preview_fingerprint();
-        let Selection::Single(RowId::Entry(snapshot, ordinal)) = fingerprint.selection else {
-            return false;
-        };
-        fingerprint.ready
-            && self.model.as_ref().is_some_and(|model| {
-                model.snapshot == snapshot
-                    && model.entries.iter().any(|entry| {
-                        entry.ordinal == ordinal
-                            && entry.kind == "File"
-                            && crate::archive::preview::kind(&entry.name).is_some()
-                    })
-            })
+        self.preview.visible
     }
 
     fn preview_fingerprint(&self) -> Fingerprint {
@@ -88,6 +86,10 @@ impl ArchiveBrowser {
         if self.preview.fingerprint.as_ref() == Some(&fingerprint) {
             return;
         }
+        self.preview.visible = fingerprint.ready && self.model.as_ref().is_some_and(|model| {
+            matches!(&fingerprint.selection, Selection::Single(id) if model.visible().iter().any(|row|
+                &row.id == id && row.kind == "File" && crate::archive::preview::kind(&row.path).is_some()))
+        });
         self.preview.fingerprint = Some(fingerprint.clone());
         self.preview.generation = self.preview.generation.wrapping_add(1).max(1);
         self.preview.document = None;
@@ -185,8 +187,8 @@ impl ArchiveBrowser {
             return;
         }
         self.preview.document = match &result {
-            PreviewResult::Ready(PreviewPayload::Text { text, mode }) => {
-                markdown_document::document(text, *mode, window, cx)
+            PreviewResult::Ready(PreviewPayload::Text { text, mode, budget }) => {
+                markdown_document::document_with_budget(text, *mode, *budget, window, cx)
             }
             _ => None,
         };
@@ -201,17 +203,20 @@ impl ArchiveBrowser {
         cx.notify();
     }
     fn preview_source(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let PreviewResult::Ready(PreviewPayload::Text { text, mode }) = &self.preview.result else {
+        let PreviewResult::Ready(PreviewPayload::Text { text, mode, budget }) =
+            &self.preview.result
+        else {
             return;
         };
         self.preview.source = !self.preview.source;
-        self.preview.document = markdown_document::document(
+        self.preview.document = markdown_document::document_with_budget(
             text,
             if self.preview.source {
                 DocumentMode::Literal(None)
             } else {
                 *mode
             },
+            *budget,
             window,
             cx,
         );
@@ -278,20 +283,22 @@ impl ArchiveBrowser {
                     ),
                     PreviewResult::TooLarge => (
                         "文件超过预览读取大小上限",
-                        "成员解压后文本最多64 KiB，图片最多8 MiB；此处不计算压缩包源大小。",
+                        "超过本次成员文件大小额度；可在压缩包设置的“预览”页调整。",
                     ),
                     PreviewResult::ReadLimit => (
                         "压缩包读取资源达到上限",
                         "原生读取或中间解包达到本次请求的资源额度，尚未进入预览解码；不表示选中文件本身超限。",
                     ),
-                    PreviewResult::TextLines => ("文本超过预览行数上限", "文本预览最多1200行。"),
+                    PreviewResult::TextLines => {
+                        ("文本超过预览行数上限", "文本行数超过本次预览额度。")
+                    }
                     PreviewResult::ImageDimensions => (
                         "图片尺寸超过预览上限",
-                        "图片每边最多8192像素，总像素最多8 Mi。",
+                        "每边最多8192像素，且不能超过本次总像素额度。",
                     ),
                     PreviewResult::ImageMemory => (
                         "图片解码内存超过预览上限",
-                        "图片解码预算为32 MiB；JPEG/WebP还需在此预算内预留解码工作空间。",
+                        "解码工作空间超过本次预算；该预算不是进程总内存上限。",
                     ),
                     PreviewResult::DocumentLimit => (
                         "文档超过预览呈现上限",
@@ -309,6 +316,26 @@ impl ArchiveBrowser {
                         ("预览读取失败", "请检查连接并重试；不会自动外部打开。")
                     }
                     _ => ("预览已取消", "重新选择一个文件以继续。"),
+                };
+                let profile = self.preview.profile;
+                let description = match state {
+                    PreviewResult::TooLarge => format!(
+                        "成员解压后文本最多 {} KiB，图片最多 {} MiB；可在压缩包设置 → 预览调整。此处不计算压缩包源大小。",
+                        profile.text_limit_kib, profile.image_limit_mib
+                    ),
+                    PreviewResult::TextLines => format!(
+                        "本次文本预览最多 {} 行；可在压缩包设置 → 预览调整。",
+                        profile.text_max_lines
+                    ),
+                    PreviewResult::ImageDimensions => format!(
+                        "每边最多 8192 像素，总像素最多 {} 百万（每百万为 1,000,000）。",
+                        profile.image_max_megapixels
+                    ),
+                    PreviewResult::ImageMemory => format!(
+                        "本次图片解码预算为 {} MiB；JPEG/WebP 还需预留解码工作空间。该预算不是进程总内存上限。",
+                        profile.image_decode_mib
+                    ),
+                    _ => description.to_owned(),
                 };
                 div()
                     .size_full()

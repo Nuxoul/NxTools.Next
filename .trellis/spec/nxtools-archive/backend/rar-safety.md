@@ -40,12 +40,12 @@ member inside a volume family is not automatically split merely because ROADF_VO
 Unknown ratio still obeys declared/actual byte and dictionary/work/metadata budgets.
 
 **Risk:** original strictly >64MiB AND >1000x known positive packed, using overflow-safe arithmetic.
-Original source/path/collision/selection/format/plan checks precede prompts, and all wanted Risk
-confirmations precede payload/native partials. Exact current operation/prompt/generation approves
+Original source/path/collision/selection/format/plan checks precede prompts,and all wanted Risk
+confirmations precede payload/final-name begin. Exact current operation/prompt/generation approves
 only its original admitted entry ceiling. Larger/stale/cross-operation/duplicate replies cannot
 approve; same-operation stale transport acceptance is not Rust policy approval. Risk never increases
 entry/output/work/dictionary/metadata/Job limits. Decline/cancel stops later output and retains prior
-publication truth. Open/TEST and noninteractive CLI gain no Risk UI or implicit approval.
+successfully closed truth. Open/TEST and noninteractive CLI gain no Risk UI or implicit approval.
 
 **Encoded admission:** ONLY RAR extract+output_readmission uses max(original output allowance,
 existing default100GiB) for encoded input. Rust obtains ResourceLimits::default; C# obtains the same
@@ -56,18 +56,18 @@ This is not a decode/output/Job grant. No new constant or public budget field is
 
 **Readmission:** original complete plan and fully known declared regular-file max/sum may report
 OutputShortfall {current,required,source}; declarations are admission facts, not payload integrity.
-Only matching ResourceLimit attempt/current limits, zero commits/publication and actual cleanup
-permit one explicit finite OutputBudget (entry <=32GiB, total <=2^50, covering required/current).
+Only matching ResourceLimit attempt/current limits,zero successfully closed files and actual cleanup
+permit one explicit finite OutputBudget (entry <=32GiB,total <=2^50,covering required/current).
 Fresh operation/control ID retains logical correlation/shared cancellation; normal native admission
 rechecks original native source identity/version and Rust digest before effects. Only entry/output
 limits change; selection/password/codepage/conflict/MOTW/work/dictionary/metadata/Job remain original.
-Actual overflow/corruption/source change/commits/incomplete cleanup never finances another attempt,
-output merge or replaced-user-file rollback. A second failure is terminal, no third prompt/attempt.
+Actual overflow/corruption/source change/completed output/incomplete cleanup never finances another
+attempt,output merge or completed-user-file rollback. A second failure is terminal,no third prompt/attempt.
 
 **Password / cost:** Required and explicit native BAD_PASSWORD24 stay in original finite Rust
 worker_password no-output TEST preparation. Ambiguous auth/data is terminal, not guessed WrongPassword.
 C# only forwards RespondPassword, never owns another retry loop. Preparation may decode full payload
-before one original extraction; it can prepare an empty root, not publish files. This is distinct
+before one original extraction; it can prepare an empty root,not close files. This is distinct
 from cheap metadata preflight. RAR list uses original metadata-only RAR_SKIP; extraction retains its
 metadata pass plus full RAR_TEST callbacks/integrity, all decoded bytes charged even on skip. A fresh
 admission rereads/hashes headers/source, and password interaction may repeat original preparation.
@@ -88,10 +88,10 @@ source evidence unless separately runtime-tested. Never save secret-bearing requ
 | Shared/solid/split/unknown packed | No fabricated ratio; original declared/actual budgets still enforce |
 | Wrong operation/generation/stale/larger Risk reply | Cannot approve current member; no output while pending |
 | Known entry/total shortage, zero effects | ResourceLimit+source-bound shortfall; wait actual cleanup before OutputBudget |
-| Cleanup held/incomplete, commits, mismatched ID/current limits or hard ceiling | No prompt/new attempt; native slot/leases remain owned |
-| Actual UCM_PROCESSDATA overflow | ResourceLimit without shortfall; zero invalid publish/no third attempt |
-| Corruption or source identity/version/digest change | Original typed failure, no retry/publication authorization |
-| Publication then cancel | cancelled_with_committed_output and original commit/journal/retained bytes |
+| Cleanup held/incomplete,successfully closed output,mismatched ID/current limits or hard ceiling | No prompt/new attempt; native slot/leases remain owned |
+| Actual UCM_PROCESSDATA overflow | ResourceLimit without shortfall; no invalid close/no third attempt |
+| Corruption or source identity/version/digest change | Original typed failure,no retry/output authorization |
+| Successful close then cancel | cancelled_with_committed_output and original completion journal/retained bytes |
 | PasswordRequired / explicit WrongPassword | Original bounded no-output preparation, never extraction retry after effects |
 
 ## 5. Good/Base/Bad Cases
@@ -103,15 +103,15 @@ independent ratio, release a cleanup-held slot or convert callback overflow into
 ## 6. Tests Required
 - `repo:rust/crates/nxtools-archive/tests/rar_readmission_contract.rs`: actual original worker RAR4/5
   total1 must reach bound declaration11/7 before output. Native counterpart below protects C# owner.
-- `repo:rust/crates/nxtools-archive/tests/output_readmission_contract.rs`: incomplete cleanup/commits/
-  ID/current-limit/hard-ceiling guards, explicit finite approvals and shared cancellation.
+- `repo:rust/crates/nxtools-archive/tests/output_readmission_contract.rs`: incomplete cleanup/completed-output/
+  ID/current-limit/hard-ceiling guards,explicit finite approvals and shared cancellation.
 - `repo:rust/crates/nxtools-archive/tests/rar_readmission_chain.rs`: unchanged coordinator -> original
-  native runner/Job/output; cleanupheld active1/sourcehelper protected/no prompt, then actual drain/
+  native runner/Job/output; cleanupheld active1/sourcehelper protected/no prompt,then actual drain/
   active0/exclusive reopen; fresh IDs/options/source binding; selected/encrypted/solid declarations;
-  actual overflow, second actual failure/no third attempt, commit-bearing cancel retained.
+  actual overflow,second actual failure/no third attempt,completed-output cancel retained.
 - `repo:csharp/NxTools.PlatformHost.Tests/RarRiskReadmissionTests.cs` and
   `repo:csharp/NxTools.PlatformHost.Tests/RarReadmissionHost.cs`: original RAR4/5 metadata/TEST/lowtotal,
-  skip/overwrite, Required/WrongPassword preparation, postpublication cancel and exact native journal.
+  skip/overwrite,Required/WrongPassword preparation,cancel after prior close and exact native journal.
 - `repo:csharp/NxTools.PlatformHost.Tests/RarRiskInteractionTests.cs`: genuinely compressed tiny
   RAR4/5 positive Risk at lowered DEBUG(1,1), production no false prompt, stale/larger/cancel replies;
   real RAR5 solid skip/full integrity/corrupt refusal; exact genuine volume declarations/unknown packed.
@@ -127,5 +127,5 @@ Wrong: clone 7z rules/signature blindly, raise current output limit to list RAR,
 ratio, or manually enlarge a second request and call it readmission.
 Correct: actual RAR signature under original lease -> separate finite encoded admission -> original
 metadata/plan/source-bound declaration -> actual zero-effect cleanup -> original explicit finite
-coordinator -> one fresh normal admission; original RAR_TEST callbacks/integrity/native publication
-still own actual bytes and irreversible commit facts.
+coordinator -> one fresh normal admission; original RAR_TEST callbacks/integrity and ordinary
+metadata+drain+close still own actual bytes and irreversible completed-output facts.
