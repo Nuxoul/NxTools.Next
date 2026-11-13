@@ -1287,6 +1287,9 @@
   }
 
   const observer = new MutationObserver((mutations) => {
+    if (!captureResourcesEnabled && !overlayEnabled) {
+      return;
+    }
     for (const mutation of mutations) {
       if (mutation.type === "attributes" && mutation.target instanceof Element) {
         scanElement(mutation.target);
@@ -1443,6 +1446,19 @@
           message: error instanceof Error ? error.message : "Blob 下载失败"
         });
       });
+      return true;
+    }
+
+    if (message?.type === "content_inspect_media_resource") {
+      void NxToolsContent.mediaInspection.inspectMediaResource(message.url, {
+        pageKey: message.pageKey,
+        mime: message.mime,
+        includeCredentials: message.includeCredentials === true
+      }).then(sendResponse, () => sendResponse({
+        ok: false,
+        inspection: { state: "failed", kind: "unknown", requiresMerge: false, encrypted: false, live: false, message: "当前页面无法检查此资源", reason: "unavailable" },
+        message: "当前页面无法检查此资源"
+      }));
       return true;
     }
 

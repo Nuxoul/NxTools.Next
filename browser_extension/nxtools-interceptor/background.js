@@ -21,6 +21,7 @@ const BACKGROUND_DEPENDENCIES = [
   "bg/capture.js",
   "bg/handoff.js",
   "bg/resource-choices.js",
+  "bg/link-collection.js",
   "bg/popup-state.js",
   "bg/context-menu.js",
   "bg/router.js"

@@ -6,24 +6,34 @@
 
 async function checkApiStatus(explicitRetry = false) {
   if (popupPortOwners > 0 && !explicitRetry && !desktopPort && !desktopConnectPromise) {
-    return { ok: false, transport: "native_messaging", message: "NxTools 未运行", data: lastSnapshot };
+    return disconnectedStatus();
   }
+  const correlationId = nextRequestId();
+  const startedAt = Date.now();
+  const logCheck = (phase, reason) => {
+    if (explicitRetry) sendExtensionLog(phase === "failed" ? "warn" : "info", `connection_check_${phase}`,
+      "浏览器连接检查", { reason, elapsedMs: Math.max(0, Date.now() - startedAt) }, 0, correlationId);
+  };
   try {
-    const response = await sendDesktopRequest("get_snapshot", {}, 2500);
+    if (explicitRetry) {
+      await ensureDesktopConnection();
+      logCheck("started", "started");
+    }
+    const response = await sendDesktopRequest("get_snapshot", {}, 2500, correlationId);
+    logCheck("completed", "ready");
     lastSnapshot = response.data || lastSnapshot;
     return {
       ok: true,
+      code: "connected",
+      guidance: "",
       message: "已连接",
       transport: "native_messaging",
       data: response.data || lastSnapshot
     };
   } catch (error) {
-    return {
-      ok: false,
-      transport: "native_messaging",
-      message: "NxTools 未运行",
-      data: lastSnapshot
-    };
+    connectionFailureCode = nativeConnectionCode(error, connectionFailureCode);
+    logCheck("failed", connectionFailureCode);
+    return disconnectedStatus();
   }
 }
 
@@ -42,6 +52,9 @@ function resourcesForPopup(activeTabId) {
 
   const enrich = (resource) => ({
     ...NxToolsCapturePolicy.projectResourceForPopup(resource),
+    ...(resourcesById.get(resource.id)?.mediaInspection ? {
+      mediaInspection: normalizeMediaInspection(resourcesById.get(resource.id).mediaInspection)
+    } : {}),
     domain: domainFromUrl(resource.url),
     description: describeResource(resource)
   });
@@ -132,6 +145,7 @@ async function buildPopupState(preferredMediaIndex = null, currentView = "tasks"
     status,
     tasks: Array.isArray(status.data?.tasks) ? status.data.tasks : [],
     lastHandoff: lastHandoff ? { ...lastHandoff } : null,
+    linkReview: linkReview?.tabId === tabId ? { ...linkReview } : null,
     featureStates: featureStatesForTab(tabId, settings),
     siteControl: {
       host: activeHost,

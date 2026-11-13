@@ -28,6 +28,10 @@
     <main id="mainContent" class="workspace" tabindex="-1">
       <section id="tasksView" class="view active" role="tabpanel" aria-labelledby="tasksTab" aria-hidden="false">
         <label class="switch-row site-toggle" id="siteToggleRow"><span><strong>接管当前网站的下载</strong><small id="siteToggleHint">正在读取网站策略</small></span><input id="siteEnabledToggle" type="checkbox" aria-label="切换当前网站接管"></label>
+        <section class="home-statuses" aria-label="接管与连接状态">
+          <div class="home-status-row"><span><strong id="homeCaptureStatus">正在读取自动接管状态</strong><small id="homeCaptureHint">不会更改下载接管总开关</small></span><button id="homeCapturePauseButton" aria-pressed="false">临时暂停</button></div>
+          <div id="homeConnectionPanel" class="home-status-row connection-help"><span><strong id="homeConnectionMessage">正在读取桌面连接</strong><small id="homeConnectionGuidance">打开面板不会自动启动桌面端</small></span><button id="homeTestButton">测试连接</button></div>
+        </section>
         <p id="handoffStatus" class="handoff-status" role="status" aria-live="polite" hidden></p>
         <div class="section-head"><h2>桌面任务 <small id="taskCountText" class="count">0</small></h2><small>最近 8 项 · 由桌面端管理</small></div>
         <div id="taskList" class="list task-list" aria-label="桌面下载任务"></div>
@@ -40,9 +44,14 @@
           <div id="signalRail" class="capture-summary"><span id="captureSummaryText">读取中</span><small id="captureAgeText"></small></div>
           <button id="clearResourcesButton" class="ghost">清空</button>
         </div>
+        <div class="resource-tools-row">
+          <label class="resource-search"><span class="visually-hidden">搜索资源名称或网址域名</span><input id="resourceSearchInput" type="search" placeholder="搜索名称或域名" autocomplete="off"></label>
+          <button id="extractLinksButton">提取页面链接…</button>
+        </div>
+        <p id="linkReviewStatus" class="link-review-status" role="status" aria-live="polite" hidden></p>
         <div class="batch-toolbar" hidden><span id="currentResourceCountText">已选 0 项</span><button id="clearSelectionButton" class="ghost">取消选择</button><button id="batchResourcesButton" class="primary batch-action" disabled>批量加入队列</button></div>
         <div id="currentResourceList" class="list resource-list" aria-label="当前页面资源"></div>
-        <div class="section-head muted"><h2>其他页面</h2></div><div id="otherResourceList" class="list compact-list resource-list" aria-label="其他页面资源"></div>
+        <details id="otherResourcesDetails" class="other-resources"><summary>其他页面 <small id="otherResourceCountText">0</small></summary><div id="otherResourceList" class="list compact-list resource-list" aria-label="其他页面资源"></div></details>
       </section>
       <section id="advancedView" class="view" role="tabpanel" aria-labelledby="advancedTab" aria-hidden="true">
         <section class="panel tool-panel"><div class="section-head inline"><h2>当前媒体</h2><small id="mediaStateText">未检测到媒体</small></div>

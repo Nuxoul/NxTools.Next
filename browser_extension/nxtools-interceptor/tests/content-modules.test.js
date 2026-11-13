@@ -48,7 +48,7 @@ test("content modules are idempotent, isolated and frozen", () => {
     assert.equal(realm.NxToolsContent[key], api, `${key} not replaced by re-injection`);
     assert.ok(Object.isFrozen(api), `${key} exports are frozen`);
   }
-  assert.deepEqual(Object.keys(first).sort(), ["blob", "choices", "constants", "geometry", "media", "runtime"]);
+  assert.deepEqual(Object.keys(first).sort(), ["blob", "choices", "constants", "geometry", "media", "mediaInspection", "runtime"]);
 });
 
 test("content modules hold no shared page state and stay bounded", () => {

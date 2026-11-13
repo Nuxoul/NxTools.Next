@@ -78,6 +78,142 @@ function createMediaLabel(source, type, frameId, localIndex, resolution = "") {
   return `${(name || `${kind} ${localIndex + 1}`).slice(0, 52)}${resolutionText}${frameText}`.slice(0, 86);
 }
 
+const pendingMediaInspections = new WeakMap();
+const MEDIA_INSPECTION_STATES = new Set(["inspecting", "ready", "protected", "failed"]);
+const MEDIA_INSPECTION_KINDS = new Set(["hls", "dash", "video", "audio", "file", "unknown"]);
+const MEDIA_INSPECTION_REASONS = new Set(["started", "ready", "protected", "unavailable", "page_changed", "timeout", "too_large", "invalid_response", "unsupported"]);
+
+function mediaInspectionMessage(state, kind, reason) {
+  if (state === "inspecting") return "正在检查媒体资源";
+  if (state === "ready") {
+    if (kind === "hls") return "HLS 清单已检查";
+    if (kind === "dash") return "DASH 清单已检查";
+    if (kind === "audio") return "音频资源可用";
+    if (kind === "video") return "视频资源可用";
+    return "文件资源可用";
+  }
+  if (state === "protected") return "检测到受保护的媒体，NxTools 不会请求密钥或分段";
+  return {
+    unavailable: "当前页面无法检查此资源",
+    page_changed: "页面已变化，请重新选择资源",
+    timeout: "媒体检查超时，请重试",
+    too_large: "媒体清单超过 2 MiB，未继续读取",
+    invalid_response: "页面返回的媒体信息无效",
+    unsupported: "无法识别此媒体资源"
+  }[reason] || "页面返回的媒体信息无效";
+}
+
+function normalizeMediaInspection(value, fallbackReason = "invalid_response") {
+  const source = value?.inspection && typeof value.inspection === "object" ? value.inspection : value;
+  let state = MEDIA_INSPECTION_STATES.has(source?.state) ? source.state : "failed";
+  if ((state === "ready" || state === "protected") && value?.inspection && value.ok !== true) state = "failed";
+  let kind = MEDIA_INSPECTION_KINDS.has(source?.kind) ? source.kind : "unknown";
+  let reason = MEDIA_INSPECTION_REASONS.has(source?.reason) ? source.reason : fallbackReason;
+  if (state === "inspecting") reason = "started";
+  else if (state === "ready") reason = "ready";
+  else if (state === "protected") reason = "protected";
+  else if (!["unavailable", "page_changed", "timeout", "too_large", "invalid_response", "unsupported"].includes(reason)) reason = "invalid_response";
+  if (state === "failed" && !MEDIA_INSPECTION_KINDS.has(source?.kind)) kind = "unknown";
+  return {
+    state,
+    kind,
+    requiresMerge: (state === "ready" || state === "protected") && source?.requiresMerge === true,
+    encrypted: state === "protected" || ((state === "ready" || state === "protected") && source?.encrypted === true),
+    live: (state === "ready" || state === "protected") && source?.live === true,
+    message: mediaInspectionMessage(state, kind, reason),
+    reason
+  };
+}
+
+function mediaInspectionResult(resourceId, inspection) {
+  return { ok: inspection.state === "ready" || inspection.state === "protected", resourceId, inspection: { ...inspection }, message: inspection.message };
+}
+
+function setMediaInspection(resource, inspection) {
+  Object.defineProperty(resource, "mediaInspection", {
+    value: { ...inspection }, writable: true, configurable: true, enumerable: false
+  });
+}
+
+function mediaInspectionSource(resource) {
+  return { tabId: resource.tabId, frameId: resource.frameId, url: resource.url, pageKey: resource.pageKey,
+    frameUrl: resource.frameUrl, frameDocumentId: resource.frameDocumentId, pageUrl: resource.pageUrl, source: resource.source };
+}
+
+function mediaInspectionOwnerMatches(resourceId, resource, bucket, source) {
+  if (resourcesById.get(resourceId) !== resource || resourcesByTab.get(source.tabId) !== bucket ||
+      ![...new Set(bucket?.values() || [])].includes(resource)) return false;
+  return Object.entries(source).every(([field, value]) => resource[field] === value);
+}
+
+async function inspectMediaResource(resourceId) {
+  const id = String(resourceId || "");
+  const resource = resourcesById.get(id);
+  const correlationId = nextRequestId();
+  const startedAt = Date.now();
+  if (!resource) {
+    const inspection = normalizeMediaInspection({ state: "failed", kind: "unknown", reason: "unavailable" });
+    sendExtensionLog("warn", "media_inspection_failed", "媒体资源检查失败", { reason: inspection.reason, elapsedMs: 0 }, 0, correlationId);
+    return mediaInspectionResult(id, inspection);
+  }
+  const existingPending = pendingMediaInspections.get(resource);
+  if (existingPending) return existingPending;
+
+  const bucket = resourcesByTab.get(resource.tabId);
+  const source = mediaInspectionSource(resource);
+  if (!mediaInspectionOwnerMatches(id, resource, bucket, source)) {
+    return mediaInspectionResult(id, normalizeMediaInspection({ state: "failed", reason: "page_changed" }, "page_changed"));
+  }
+  setMediaInspection(resource, normalizeMediaInspection({ state: "inspecting", kind: "unknown", reason: "started" }));
+  sendExtensionLog("info", "media_inspection_started", "媒体资源检查已开始", { reason: "started", elapsedMs: 0 }, 0, correlationId);
+
+  const pending = (async () => {
+    let inspection;
+    try {
+      const settings = await getSettings();
+      const originalFrame = await frameInfo(resource.tabId, Number.isInteger(source.frameId) ? source.frameId : 0);
+      const expectedFrameUrl = source.frameUrl || source.pageKey;
+      if (!mediaInspectionOwnerMatches(id, resource, bucket, source) || !originalFrame ||
+          (source.frameDocumentId && source.frameDocumentId !== originalFrame.documentId) ||
+          (expectedFrameUrl && normalizeUrlKey(expectedFrameUrl) !== normalizeUrlKey(originalFrame.url))) {
+        inspection = normalizeMediaInspection({ state: "failed", reason: "page_changed" }, "page_changed");
+      } else {
+        const sent = await sendMessageToTab(resource.tabId, {
+          type: "content_inspect_media_resource",
+          url: resource.url,
+          pageKey: resource.pageKey || "",
+          mime: resource.mime || "",
+          includeCredentials: settings.includeRequestHeaders === true && settings.includeCookies === true
+        }, { frameId: Number.isInteger(resource.frameId) ? resource.frameId : 0 });
+        const currentFrame = await frameInfo(resource.tabId, Number.isInteger(source.frameId) ? source.frameId : 0);
+        if (!mediaInspectionOwnerMatches(id, resource, bucket, source) || !sameFrameDocument(originalFrame, currentFrame)) {
+          inspection = normalizeMediaInspection({ state: "failed", reason: "page_changed" }, "page_changed");
+        } else if (!sent.ok) {
+          inspection = normalizeMediaInspection({ state: "failed", reason: "unavailable" }, "unavailable");
+        } else {
+          inspection = normalizeMediaInspection(sent.response);
+        }
+      }
+    } catch {
+      inspection = normalizeMediaInspection({ state: "failed", reason: "unavailable" }, "unavailable");
+    }
+
+    const elapsedMs = Math.max(0, Date.now() - startedAt);
+    const current = mediaInspectionOwnerMatches(id, resource, bucket, source);
+    if (!current) inspection = normalizeMediaInspection({ state: "failed", reason: "page_changed" }, "page_changed");
+    else setMediaInspection(resource, inspection);
+    sendExtensionLog(inspection.state === "failed" ? "warn" : "info",
+      inspection.state === "failed" ? "media_inspection_failed" : "media_inspection_completed",
+      inspection.state === "failed" ? "媒体资源检查失败" : "媒体资源检查完成",
+      { reason: inspection.reason, elapsedMs }, 0, correlationId);
+    return mediaInspectionResult(id, inspection);
+  })().finally(() => {
+    if (pendingMediaInspections.get(resource) === pending) pendingMediaInspections.delete(resource);
+  });
+  pendingMediaInspections.set(resource, pending);
+  return pending;
+}
+
 async function getMediaState(tabId, index = 0) {
   const results = await sendMessageToTabFrames(tabId, {
     Message: "getVideoState",

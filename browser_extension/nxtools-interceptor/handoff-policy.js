@@ -40,6 +40,11 @@
     return { state: "rejected", reason: "desktop_refused" };
   }
 
+  function isWorkflowLogEvent(event) {
+    return ["link_collection", "media_inspection", "connection_check"].some(prefix =>
+      ["started", "completed", "failed"].some(phase => event === `${prefix}_${phase}`));
+  }
+
   function buildExtensionLogRequest({
     protocolVersion,
     level,
@@ -67,7 +72,7 @@
             message,
             correlationId: correlationId || undefined,
             ...(event === "handoff_state" ? { handoffState, reason, elapsedMs, boundaryCode, compensation } : {}),
-            ...(["capture_pause_started", "capture_pause_applied", "capture_pause_failed"].includes(event) ? { reason, elapsedMs } : {}),
+            ...(["capture_pause_started", "capture_pause_applied", "capture_pause_failed"].includes(event) || isWorkflowLogEvent(event) ? { reason, elapsedMs } : {}),
           },
         };
       }
@@ -121,6 +126,7 @@
     acceptedHandoffResponse,
     handoffOutcome,
     buildExtensionLogRequest,
+    isWorkflowLogEvent,
     completeAcceptedHandoff,
   });
 });

@@ -71,6 +71,9 @@ async function captureNetworkResource(details) {
   cacheResource({
     id: `${resolvedTabId}:${normalizeResourceUrlKey(details.url)}`,
     tabId: resolvedTabId,
+    frameId: Number.isInteger(details.frameId) && details.frameId >= 0 ? details.frameId : 0,
+    frameDocumentId: details.documentId || "",
+    frameUrl: details.documentUrl || details.originUrl || "",
     url: details.url,
     pageTitle: tab?.title || "",
     pageUrl: details.initiator && details.initiator !== "null" ? details.initiator : redirectHint?.initiator || tab?.url || "",
@@ -161,6 +164,9 @@ async function captureRequestResource(details) {
   cacheResource({
     id: `${tabId}:${normalizeResourceUrlKey(details.url)}`,
     tabId,
+    frameId: Number.isInteger(details.frameId) && details.frameId >= 0 ? details.frameId : 0,
+    frameDocumentId: details.documentId || "",
+    frameUrl: details.documentUrl || details.originUrl || "",
     url: details.url,
     pageTitle: tab?.title || "",
     pageUrl: details.initiator && details.initiator !== "null" ? details.initiator : tab?.url || "",

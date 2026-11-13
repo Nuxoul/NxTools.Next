@@ -63,16 +63,28 @@ test("resource context and three metadata fields remain available", () => {
   assert.match(script,/function resourceMetaText\(resource\)/);
   for (const field of ["resourceKindLabel", "info.resolution", "formatBytes(resource.size)"]) assert.ok(script.includes(field), field);
   assert.match(script,/info\.badge \|\| ""/); assert.match(script,/trackHint, blobNote/);
-  assert.match(script,/resourcePreview: resource\.id/); assert.match(script,/`选择 \$\{name\}`/);
+  assert.match(script,/resourceCheck: resource\.id/); assert.match(script,/无法选择受保护资源/);
   assert.doesNotMatch(script,/innerHTML|escapeHtml/, "popup renders with DOM APIs only");
   assert.match(cssRule("input.resource-check"),/width:\s*16px/);
   assert.doesNotMatch(cssRule("input.resource-check"),/display:\s*none/);
 });
 test("task and batch ownership, caps and partial retry remain", () => {
-  assert.match(script,/tasks\.slice\(0, 8\)/); assert.match(script,/visibleResources\.slice\(0, 24\)/);
+  assert.match(script,/tasks\.slice\(0, 8\)/); assert.match(script,/visibleResources\.slice\(0, visibleLimit\)/);
+  assert.match(script,/resourceListLimits\.get\(target\) \|\| 24/); assert.match(script,/resourceMore: target\.id/);
   assert.match(script,/selectedResourceIds\.size > 32/); assert.match(script,/result\.acceptedResourceIds \|\| \[\]/);
   assert.match(script,/selectedResourceIds\.delete\(resourceId\)/);
   assert.match(script,/isQueuedDesktopResult\(result\)/);
+});
+test("polish workflow keeps local view/search and explicit review/inspection boundaries", () => {
+  assert.match(html, /id="homeCapturePauseButton"/);
+  assert.match(html, /id="resourceSearchInput"[^>]*type="search"/);
+  assert.match(html, /<details id="otherResourcesDetails"/);
+  assert.match(html, /id="extractLinksButton"[^>]*>提取页面链接…/);
+  assert.match(script, /nxtools_popup_view/);
+  assert.match(script, /type:\s*"popup_extract_links", mode:\s*"page"/);
+  assert.match(script, /type:\s*"popup_inspect_resource", resourceId/);
+  assert.match(script, /inspection\.state === "protected"/);
+  assert.doesNotMatch(script, /popup_inspect_resource[\s\S]{0,100}expandedPreview/);
 });
 test("media tools are flat named action rows not indexed cards", () => {
   assert.match(cssRule(".feature-card"),/border-radius:\s*0/);

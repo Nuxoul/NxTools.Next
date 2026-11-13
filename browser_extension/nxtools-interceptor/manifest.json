@@ -48,6 +48,7 @@
       "bg/capture.js",
       "bg/handoff.js",
       "bg/resource-choices.js",
+      "bg/link-collection.js",
       "bg/popup-state.js",
       "bg/context-menu.js",
       "bg/router.js",
@@ -57,7 +58,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["shadow-styles.js", "blob-transfer-policy.js", "capture-policy.js", "content/constants.js", "content/runtime.js", "content/media-info.js", "content/resource-choice-text.js", "content/blob-bridge.js", "content/media-geometry.js", "content-script.js"],
+      "js": ["shadow-styles.js", "blob-transfer-policy.js", "capture-policy.js", "content/constants.js", "content/runtime.js", "content/media-info.js", "content/media-inspection.js", "content/resource-choice-text.js", "content/blob-bridge.js", "content/media-geometry.js", "content-script.js"],
       "run_at": "document_start",
       "all_frames": true
     }

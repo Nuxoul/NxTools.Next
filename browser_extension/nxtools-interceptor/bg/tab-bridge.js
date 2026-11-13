@@ -86,6 +86,22 @@ async function resolveTabIdForRequest(details) {
   return current?.id || lastActiveTabId || 0;
 }
 
+function frameInfo(tabId, frameId = 0) {
+  return new Promise(resolve => {
+    if (!chrome.webNavigation?.getFrame) return resolve(null);
+    try {
+      chrome.webNavigation.getFrame({ tabId, frameId }, frame => {
+        resolve(chrome.runtime.lastError ? null : frame || null);
+      });
+    } catch { resolve(null); }
+  });
+}
+
+function sameFrameDocument(original, current) {
+  return Boolean(original && current && normalizeUrlKey(original.url) === normalizeUrlKey(current.url) &&
+    (!original.documentId || original.documentId === current.documentId));
+}
+
 function tabFrames(tabId) {
   return new Promise((resolve) => {
     if (!chrome.webNavigation?.getAllFrames || !tabId || tabId <= 0) {
@@ -144,6 +160,7 @@ const CONTENT_SCRIPT_FILES = [
   "content/constants.js",
   "content/runtime.js",
   "content/media-info.js",
+  "content/media-inspection.js",
   "content/resource-choice-text.js",
   "content/blob-bridge.js",
   "content/media-geometry.js",

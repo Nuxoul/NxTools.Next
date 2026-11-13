@@ -215,18 +215,25 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
   }
 }
 
-async function sendDownloadItem(downloadItem, existingHandoffId = "") {
+async function resolveDownloadRequestContext(downloadItem) {
   const url = downloadItem.finalUrl || downloadItem.url;
-  if (!isHttpUrl(url)) {
-    return { ok: false, skipped: true, message: "不是 HTTP 下载链接" };
-  }
-
   let headerSnapshot = resolveHeaderSnapshot(url, downloadItem) || resolveHeaderSnapshot(downloadItem.url, downloadItem);
   const downloadTabId = await resolveTabIdForDownload(downloadItem, headerSnapshot);
   if (downloadTabId > 0) {
     const source = { ...downloadItem, tabId: downloadTabId };
     headerSnapshot = resolveHeaderSnapshot(url, source) || resolveHeaderSnapshot(downloadItem.url, source);
   }
+  const source = downloadTabId > 0 ? { ...downloadItem, tabId: downloadTabId } : downloadItem;
+  const method = observedRequestMethod(url, source) || observedRequestMethod(downloadItem.url, source);
+  return { headerSnapshot, downloadTabId, method };
+}
+
+async function sendDownloadItem(downloadItem, existingHandoffId = "", requestContext = null) {
+  const url = downloadItem.finalUrl || downloadItem.url;
+  if (!isHttpUrl(url)) {
+    return { ok: false, skipped: true, message: "不是 HTTP 下载链接" };
+  }
+  const { headerSnapshot, downloadTabId } = requestContext || await resolveDownloadRequestContext(downloadItem);
   const resource = downloadTabId > 0
     ? resourcesById.get(`${downloadTabId}:${normalizeResourceUrlKey(url)}`) || null
     : null;
@@ -307,6 +314,12 @@ async function sendResource(resourceId, overrides = {}) {
     }, 0);
     return { ok: false, message: "资源不存在" };
   }
+  if (resource.mediaInspection?.state === "inspecting") {
+    return { ok: false, message: "媒体检查尚未完成，请稍后提交" };
+  }
+  if (resource.mediaInspection?.state === "protected") {
+    return { ok: false, message: "此资源包含受保护媒体，不能提交下载" };
+  }
 
   if (String(resource.url || "").startsWith("blob:")) {
     const sourceResource = findBlobSourceResource(resource);
@@ -358,6 +371,12 @@ async function sendResourcesBatch(resourceIds) {
   const resources = [...new Set(Array.isArray(resourceIds) ? resourceIds.map(String) : [])]
     .map((resourceId) => resourcesById.get(resourceId))
     .filter(Boolean);
+  if (resources.some(resource => resource.mediaInspection?.state === "inspecting")) {
+    return { ok: false, message: "所选资源仍在检查，请完成后再提交" };
+  }
+  if (resources.some(resource => resource.mediaInspection?.state === "protected")) {
+    return { ok: false, message: "所选资源包含受保护媒体，请取消勾选后再提交" };
+  }
   const selection = NxToolsBatchHandoffPolicy.selectBatchResources(resources);
   if (selection.error) {
     return { ok: false, message: selection.error };
@@ -518,9 +537,15 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
       recordBrowserHandoff(context, excluded);
       return;
     }
+    const requestContext = await resolveDownloadRequestContext(downloadItem);
+    const method = requestContext.method;
+    if (method && method !== "GET") {
+      recordBrowserHandoff(context, { state: "skipped", reason: "unsupported_request_method" });
+      return;
+    }
 
     recordBrowserHandoff(context, { state: "submitting", reason: "handoff_started" }, false);
-    const { response, handoffId } = await sendDownloadItem(downloadItem, context.correlationId);
+    const { response, handoffId } = await sendDownloadItem(downloadItem, context.correlationId, requestContext);
     const outcome = NxToolsHandoffPolicy.handoffOutcome(response, handoffId);
     recordBrowserHandoff(context, outcome);
     if (outcome.state !== "persisted") return;

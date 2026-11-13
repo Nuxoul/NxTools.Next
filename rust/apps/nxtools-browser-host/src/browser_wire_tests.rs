@@ -764,6 +764,15 @@ fn b2_capture_pause_logs_use_bounded_correlated_native_frames() {
         ("capture_pause_started", "paused"),
         ("capture_pause_applied", "resumed"),
         ("capture_pause_failed", "session_storage_failed"),
+        ("link_collection_started", "started"),
+        ("link_collection_completed", "ready"),
+        ("link_collection_failed", "page_changed"),
+        ("media_inspection_started", "started"),
+        ("media_inspection_completed", "protected"),
+        ("media_inspection_failed", "too_large"),
+        ("connection_check_started", "started"),
+        ("connection_check_completed", "ready"),
+        ("connection_check_failed", "connection_timeout"),
     ] {
         let mut bytes = Vec::new();
         write_native_message(&mut bytes, &json!({

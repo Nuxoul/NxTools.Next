@@ -142,6 +142,35 @@ function resourceTrackHint(resource) {
 
   return "";
 }
+function mediaInspection(resource) {
+  const inspection = resource?.mediaInspection;
+  return inspection && typeof inspection === "object" ? inspection : null;
+}
+
+function isProtectedResource(resource) {
+  return mediaInspection(resource)?.state === "protected";
+}
+
+function inspectionKindLabel(kind) {
+  switch (kind) {
+    case "hls": return "HLS";
+    case "dash": return "DASH";
+    case "video": return "视频";
+    case "audio": return "音频";
+    case "file": return "普通文件";
+    default: return "未知媒体";
+  }
+}
+
+function inspectionStateLabel(state) {
+  switch (state) {
+    case "inspecting": return "正在识别";
+    case "ready": return "识别完成";
+    case "protected": return "受保护媒体";
+    case "failed": return "识别失败";
+    default: return "尚未识别";
+  }
+}
 
 function compactUrl(url) {
   const text = String(url || "");

@@ -147,6 +147,9 @@ function createChromeApi(options = {}) {
     webNavigation: {
       onCommitted: createEvent(),
       onHistoryStateUpdated: createEvent(),
+      getFrame({ tabId, frameId }, callback) {
+        callback({ frameId, url: tabs.get(tabId)?.url || "", documentId: `${tabId}:${frameId}:document` });
+      },
       getAllFrames(details, callback) {
         const result = [{ frameId: 0 }];
         if (callback) { callback(result); return undefined; }

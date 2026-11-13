@@ -12,7 +12,13 @@ window.addEventListener("pagehide", () => popupTransportPort.disconnect(), { onc
 
 bindPopupEvents();
 setView(currentView);
-refresh().catch((error) => {
+const initialRefresh = refresh().catch((error) => {
   setMessage(error instanceof Error ? error.message : "扩展初始化失败");
+  return currentState;
+});
+restoreViewPreference().then(async (restored) => {
+  if (!restored) return;
+  await initialRefresh;
+  await refresh({ force: true }).catch(() => {});
 });
 startRefreshLoop();

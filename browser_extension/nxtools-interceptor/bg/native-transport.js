@@ -33,10 +33,38 @@ async function browserDownloadHandoffId(downloadItem) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function desktopHandoffError(message, reason, boundaryCode) {
+const CONNECTION_FAILURES = Object.freeze({
+  host_not_registered: ["原生宿主未注册", "启动一次 NxTools 完成浏览器接管注册，然后重新加载扩展并测试连接。"],
+  host_forbidden: ["扩展连接未获允许", "在 NxTools 的浏览器扩展设置中重新应用注册，然后重新加载扩展。"],
+  host_start_failed: ["原生宿主启动失败", "确认 NxTools 安装完整；启动桌面端重新注册后，再测试连接。"],
+  connection_timeout: ["连接 NxTools 超时", "等待桌面端启动完成，再点击测试连接；浏览器原下载会保留。"],
+  connection_lost: ["与 NxTools 的连接已断开", "确认桌面端可用后点击测试连接，定时刷新不会自行重连。"],
+  native_rejected: ["NxTools 拒绝了连接或请求", "确认桌面端与扩展均已更新，再重新加载扩展并测试连接。"],
+  desktop_unavailable: ["NxTools 未运行", "启动 NxTools；若已在运行，请重新应用浏览器接管注册并测试连接。"]
+});
+
+function nativeConnectionCode(error, fallback = "desktop_unavailable") {
+  if (Object.hasOwn(CONNECTION_FAILURES, error?.connectionCode)) return error.connectionCode;
+  if (error?.handoffReason === "handoff_timeout") return "connection_timeout";
+  if (error?.handoffReason === "handoff_disconnected") return "connection_lost";
+  const message = String(error?.message || error || "").toLowerCase();
+  if (/not found|no such native application|not registered/.test(message)) return "host_not_registered";
+  if (/forbidden|not allowed|permission denied/.test(message)) return "host_forbidden";
+  if (/failed to start|failed to launch|not executable/.test(message)) return "host_start_failed";
+  if (/native host has exited|native application.*disconnected/.test(message)) return "connection_lost";
+  return fallback;
+}
+
+function disconnectedStatus() {
+  const [message, guidance] = CONNECTION_FAILURES[connectionFailureCode] || CONNECTION_FAILURES.desktop_unavailable;
+  return { ok: false, code: connectionFailureCode, message, guidance, transport: "native_messaging", data: lastSnapshot };
+}
+
+function desktopHandoffError(message, reason, boundaryCode, connectionCode = "") {
   const error = new Error(message);
   error.handoffReason = reason;
   error.boundaryCode = boundaryCode;
+  if (connectionCode) error.connectionCode = connectionCode;
   return error;
 }
 
@@ -129,7 +157,7 @@ function sendExtensionLog(
         boundaryCode: details.boundaryCode,
         compensation: details.compensation
       } : {}),
-      ...(["capture_pause_started", "capture_pause_applied", "capture_pause_failed"].includes(event)
+      ...(["capture_pause_started", "capture_pause_applied", "capture_pause_failed"].includes(event) || NxToolsHandoffPolicy.isWorkflowLogEvent(event)
         ? { reason: details.reason, elapsedMs: details.elapsedMs } : {}),
       correlationId,
       allocateRequestId: nextRequestId,
@@ -185,7 +213,8 @@ function handleDesktopMessage(message) {
   if (message.ok === false) {
     const reason = ["desktop_unavailable", "handoff_timeout", "handoff_disconnected", "identity_mismatch"]
       .includes(message.data?.reason) ? message.data.reason : "desktop_refused";
-    const error = desktopHandoffError(message.message || "NxTools 返回失败", reason, "native_rejected");
+    const error = desktopHandoffError("NxTools 拒绝了连接或请求", reason, "native_rejected",
+      reason === "desktop_unavailable" ? "desktop_unavailable" : "native_rejected");
     error.nativeRejected = true;
     pending.reject(error);
     return;
@@ -218,34 +247,40 @@ async function ensureDesktopConnection(force = false) {
 
   desktopConnectPromise = new Promise((resolve, reject) => {
     let port;
-    try { port = chrome.runtime.connectNative(NATIVE_HOST_NAME); } catch {
+    try { port = chrome.runtime.connectNative(NATIVE_HOST_NAME); } catch (error) {
       connectionState = "disconnected";
-      reject(desktopHandoffError("无法连接 NxTools Native Messaging", "desktop_unavailable", "connect_failed"));
+      connectionFailureCode = nativeConnectionCode(error);
+      reject(desktopHandoffError(disconnectedStatus().message, "desktop_unavailable", "connect_failed", connectionFailureCode));
       return;
     }
     desktopPort = port;
     let settled = false;
 
-    const fail = (message, reason = "desktop_unavailable", boundaryCode = "connect_failed") => {
+    const fail = (message, reason = "desktop_unavailable", boundaryCode = "connect_failed", code = "desktop_unavailable") => {
       if (desktopPort !== port) return;
       clearTimeout(openTimeout);
       desktopPort = null;
       connectionState = "disconnected";
-      connectionMessage = message;
+      connectionFailureCode = code;
+      connectionMessage = disconnectedStatus().message;
       desktopConnectPromise = null;
       if (!settled) {
         settled = true;
-        reject(desktopHandoffError(message, reason, boundaryCode));
+        reject(desktopHandoffError(connectionMessage, reason, boundaryCode, code));
       }
       try { port.disconnect(); } catch { /* Already disconnected. */ }
     };
 
     const openTimeout = setTimeout(() => {
-      fail("连接 NxTools Native Messaging 超时", "handoff_timeout", "connect_timeout");
+      fail("连接 NxTools Native Messaging 超时", "handoff_timeout", "connect_timeout", "connection_timeout");
     }, DESKTOP_CONNECT_TIMEOUT_MS);
 
     port.onMessage.addListener((message) => {
       if (desktopPort !== port) return;
+      if (!settled && message?.requestId === "native-hello" && message?.ok === false) {
+        fail("NxTools 拒绝了连接或请求", "desktop_refused", "native_rejected", "native_rejected");
+        return;
+      }
       handleDesktopMessage(message);
       if (!settled && message?.requestId === "native-hello" && message?.ok === true) {
         settled = true;
@@ -268,11 +303,12 @@ async function ensureDesktopConnection(force = false) {
       }
       desktopConnectPromise = null;
       connectionState = "disconnected";
-      connectionMessage = runtimeError || "Native Messaging 已断开";
+      connectionFailureCode = nativeConnectionCode(runtimeError, settled ? "connection_lost" : "desktop_unavailable");
+      connectionMessage = disconnectedStatus().message;
       rejectPendingDesktopRequests("与 NxTools 的 Native Messaging 连接已断开");
       if (!settled) {
         settled = true;
-        reject(desktopHandoffError(connectionMessage, "desktop_unavailable", "connect_failed"));
+        reject(desktopHandoffError(connectionMessage, "desktop_unavailable", "connect_failed", connectionFailureCode));
       }
       // A future user request may reconnect; idle disconnect never restarts a host.
     });
@@ -287,7 +323,7 @@ async function ensureDesktopConnection(force = false) {
       });
     } catch (error) {
       clearTimeout(openTimeout);
-      fail(error instanceof Error ? error.message : "无法连接 NxTools Native Messaging");
+      fail("无法连接 NxTools Native Messaging", "desktop_unavailable", "connect_failed", nativeConnectionCode(error));
     }
   });
 

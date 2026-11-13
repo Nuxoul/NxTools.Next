@@ -21,6 +21,19 @@ function createContextMenus() {
     });
 
     chrome.contextMenus.create({
+      id: "nxtools-download-selection",
+      title: "使用 NxTools 下载选区中的链接…",
+      contexts: ["selection"],
+      documentUrlPatterns: ["http://*/*", "https://*/*"]
+    });
+    chrome.contextMenus.create({
+      id: "nxtools-extract-page-links",
+      title: "提取当前页面链接…",
+      contexts: ["page"],
+      documentUrlPatterns: ["http://*/*", "https://*/*"]
+    });
+
+    chrome.contextMenus.create({
       id: "nxtools-open-popup",
       title: "打开 NxTools 资源面板",
       contexts: ["page", "link", "image", "audio", "video"]
@@ -31,6 +44,16 @@ function createContextMenus() {
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === "nxtools-open-popup") {
     actionApi()?.openPopup?.();
+    return;
+  }
+
+  if (info.menuItemId === "nxtools-download-selection" || info.menuItemId === "nxtools-extract-page-links") {
+    void collectLinksForReview(tab, {
+      mode: info.menuItemId === "nxtools-download-selection" ? "selection" : "page",
+      frameId: info.frameId || 0,
+      selectionText: info.selectionText || ""
+    }).then(result => setBadge(result.ok ? "…" : "!", result.ok ? "#138a72" : "#9a3412"));
+    openLinkReviewPopup();
     return;
   }
 

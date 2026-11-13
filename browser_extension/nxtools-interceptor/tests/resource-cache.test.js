@@ -36,7 +36,7 @@ function fixture(limit = 2) {
   });
   vm.runInContext(`
     const resourcesByTab = new Map(), resourcesById = new Map();
-    let lastActiveTabId = 0, persistTimer = 0;
+    let lastActiveTabId = 0, persistTimer = 0, linkReview = null;
     const mobileUserAgentTabs = new Set(), pageThumbnailByTab = new Map();
     const lastFrameScanByTab = new Map(), selectedMediaIndexByTab = new Map();
     const RESOURCE_LIMIT_PER_TAB = ${limit}, RESOURCE_TTL_MS = 1000;

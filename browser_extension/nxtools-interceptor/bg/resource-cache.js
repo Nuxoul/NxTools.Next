@@ -75,6 +75,8 @@ function cacheResource(resource, expectedBucket = null) {
     url,
     blobUrl: boundedCapturedUrl(resource.blobUrl),
     pageKey: boundedCapturedText(resource.pageKey),
+    frameUrl: boundedCapturedUrl(resource.frameUrl),
+    frameDocumentId: boundedCapturedText(resource.frameDocumentId, 128),
     pageTitle: boundedCapturedText(resource.pageTitle),
     pageUrl: boundedCapturedUrl(resource.pageUrl),
     filename: boundedCapturedText(resource.filename),
@@ -128,7 +130,7 @@ function cacheResource(resource, expectedBucket = null) {
       }
       const metadata = NxToolsCapturePolicy.mergeCapturedResource(cached, merged);
       // Sharing metadata must not move another capture's identity or handoff.
-      for (const field of ["id", "tabId", "frameId", "pageKey", "source", "url", "capturedAt", "pendingBatchHandoffId", "sentToDesktopAt", "discovery", "mediaElement"]) {
+      for (const field of ["id", "tabId", "frameId", "frameUrl", "frameDocumentId", "pageKey", "source", "url", "capturedAt", "pendingBatchHandoffId", "sentToDesktopAt", "discovery", "mediaElement"]) {
         delete metadata[field];
       }
       if (cached.tabId !== merged.tabId) {
@@ -240,6 +242,7 @@ function clearTabResources(tabId) {
   pageThumbnailByTab.delete(tabId);
   lastFrameScanByTab.delete(tabId);
   selectedMediaIndexByTab.delete(tabId);
+  if (linkReview?.tabId === tabId) linkReview = null;
   const bucket = resourcesByTab.get(tabId);
   if (bucket) {
     for (const resource of new Set(bucket.values())) {

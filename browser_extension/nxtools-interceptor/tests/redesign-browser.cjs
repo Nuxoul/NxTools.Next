@@ -28,7 +28,7 @@ async function run() {
   check(__fixture.messages.length===1&&__fixture.messages[0].type==='popup_get_state','initialization-passive-snapshot-only');
   check(__fixture.ports.length===1&&__fixture.ports[0].name==='nxtools-popup'&&!__fixture.ports[0].closed,'popup-entry-retains-one-port');
   check(statusText.textContent==='已连接','stable-connected-label');
-  renderConnection({ok:false,message:'合成传输状态变化'});check(statusText.textContent==='NxTools 未运行','stable-not-running-label');renderConnection(__fixture.state.status);
+  renderConnection({ok:false,code:'connection_lost',message:'合成传输状态变化',guidance:'合成固定恢复指引'});check(statusText.textContent==='合成传输状态变化'&&homeConnectionGuidance.textContent==='合成固定恢复指引','backend-connection-message-and-guidance');renderConnection(__fixture.state.status);
   const taskProgress=document.querySelector('progress.bar');check(taskProgress&&Math.abs(taskProgress.value-43.75)<.01&&!taskProgress.hasAttribute('style'),'csp-safe-task-progress-real-value');
   tasksTab.focus();tasksTab.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));await settle();
   check(resourcesTab.getAttribute('aria-selected')==='true'&&document.activeElement===resourcesTab,'actual-tab-arrow-focus');

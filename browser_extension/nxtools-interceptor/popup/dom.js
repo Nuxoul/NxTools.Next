@@ -8,6 +8,11 @@ let currentView = "tasks";
 let currentResourceFilter = "all";
 let selectedResourceIds = new Set();
 let previewResourceId = "";
+let currentResourceSearch = "";
+let viewSelectionRevision = 0;
+let lastHandledLinkReviewId = "";
+let localLinkReviewStatus = null;
+const inspectingResourceIds = new Set();
 let selectedMediaIndex = 0;
 let refreshTimer = null;
 let refreshInFlight = null;
@@ -24,6 +29,9 @@ const elements = {
   captureExcludedSites: document.getElementById("captureExcludedSites"),
   captureExcludedAddresses: document.getElementById("captureExcludedAddresses"),
   capturePauseButton: document.getElementById("capturePauseButton"),
+  homeCapturePauseButton: document.getElementById("homeCapturePauseButton"),
+  homeCaptureStatus: document.getElementById("homeCaptureStatus"),
+  homeCaptureHint: document.getElementById("homeCaptureHint"),
   capturePauseHint: document.getElementById("capturePauseHint"),
   openDialog: document.getElementById("openDialog"),
   captureResources: document.getElementById("captureResources"),
@@ -38,6 +46,13 @@ const elements = {
   saveButton: document.getElementById("saveButton"),
   testButton: document.getElementById("testButton"),
   sendTabButton: document.getElementById("sendTabButton"),
+  homeTestButton: document.getElementById("homeTestButton"),
+  homeConnectionPanel: document.getElementById("homeConnectionPanel"),
+  homeConnectionMessage: document.getElementById("homeConnectionMessage"),
+  homeConnectionGuidance: document.getElementById("homeConnectionGuidance"),
+  extractLinksButton: document.getElementById("extractLinksButton"),
+  resourceSearchInput: document.getElementById("resourceSearchInput"),
+  linkReviewStatus: document.getElementById("linkReviewStatus"),
   clearResourcesButton: document.getElementById("clearResourcesButton"),
   clearSelectionButton: document.getElementById("clearSelectionButton"),
   batchResourcesButton: document.getElementById("batchResourcesButton"),
@@ -64,6 +79,8 @@ const elements = {
   mediaPlayButton: document.getElementById("mediaPlayButton"),
   mediaPipButton: document.getElementById("mediaPipButton"),
   mediaScreenshotButton: document.getElementById("mediaScreenshotButton"),
+  otherResourcesDetails: document.getElementById("otherResourcesDetails"),
+  otherResourceCountText: document.getElementById("otherResourceCountText"),
   mediaTimeRange: document.getElementById("mediaTimeRange"),
   mediaVolumeRange: document.getElementById("mediaVolumeRange"),
   mediaMuteButton: document.getElementById("mediaMuteButton"),
@@ -129,11 +146,24 @@ function findResourceById(resourceId, state = currentState) {
   return allResourcesFromState(state).find((resource) => resource.id === resourceId) || null;
 }
 
+function resourceSearchText(resource) {
+  return [resource?.filename, resource?.domain, resource?.url].filter(Boolean).join(" ").toLocaleLowerCase();
+}
+
 function filterResourceList(resources) {
-  if (currentResourceFilter === "all") {
-    return resources;
-  }
-  return resources.filter((resource) => resourceKind(resource) === currentResourceFilter);
+  const query = currentResourceSearch.trim().toLocaleLowerCase();
+  return resources.filter((resource) => {
+    const matchesKind = currentResourceFilter === "all" || resourceKind(resource) === currentResourceFilter;
+    return matchesKind && (!query || resourceSearchText(resource).includes(query));
+  });
+}
+
+function capturePauseButtons() {
+  return [elements.capturePauseButton, elements.homeCapturePauseButton].filter(Boolean);
+}
+
+function connectionTestButtons() {
+  return [elements.testButton, elements.homeTestButton].filter(Boolean);
 }
 
 function collectSettings() {

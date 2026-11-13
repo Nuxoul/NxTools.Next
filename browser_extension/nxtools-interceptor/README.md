@@ -31,6 +31,17 @@
 
 “临时暂停”只影响本次浏览器会话的自动接管，与“拦截浏览器下载”的长期设置分开。暂停写入已有会话存储后才显示生效，可跨后台工作线程重建恢复；重启浏览器后恢复默认未暂停。手动拖放、右键和 Popup 发送仍使用原确认入口。会话读取失败时暂不自动接管；保存失败保留原状态并显示重试提示。
 
+已观察到 POST 等非 GET 最终请求的下载保留在浏览器，不读取下载凭据、不创建桌面任务，也不把表单请求重放为 GET。重定向后确实观察到 GET 的请求仍可沿原交接流程接管；没有方法证据时维持原行为。
+
+## 链接复核与媒体识别
+
+- 右键“使用 NxTools 下载选区中的链接…”读取当前选区中的锚点和文本 URL；右键“提取当前页面链接…”或捕获页“提取页面链接…”读取当前页面锚点。只保留 HTTP/HTTPS，去重并限制为 120 项。
+- 提取结果进入捕获页复核，不自动创建下载。资源每次显示 24 项，可继续“显示更多”直到全部 120 项。勾选后每批最多 32 项加入原队列；搜索名称或域名不会清除已选项目，其他页面资源默认折叠。
+- 资源“详情”中的“识别媒体”仅在点击后读取资源。检查在原页面、原 frame 的浏览器上下文内执行，5 秒超时、清单最多 2 MiB，未知类型最多嗅探 4096 字节；不请求清单内的变体、密钥或分段。
+- 识别结果区分普通文件/音视频、HLS/DASH、音视频分离、直播和加密/受保护媒体。AES-128 不等于 DRM；受保护资源禁止选择和发送。摘要只保留在后台内存，不写入资源缓存，也不回传清单、密钥或正文。
+- 只有“携带必要 Header”和“携带 Cookie”同时开启，识别请求才允许使用原页面凭据；不导入捕获的 Cookie 或其他存储区。页面跨域策略不允许读取时显示失败，保留重试。
+- 任务页提供会话暂停入口；最近页签保存在本地，链接复核会切到捕获页。连接失败提供未注册、未获允许、启动失败、超时、断开或拒绝的固定说明和操作建议；仅显式测试连接执行重试。
+
 ## 使用
 
 1. 启动一次 NxTools.Next，使 PlatformHost 为 Chrome、Edge、Firefox 注册 `com.nxtools.next.browser`。
@@ -62,5 +73,7 @@
 运行 `node browser_extension/nxtools-interceptor/tests/build-preview.cjs` 可生成 `artifacts/ui-extension-redesign/` 的状态图库和可交互预览。预览运行生产页面/脚本，但使用测试 API；不等同于 Chrome/Edge/Firefox 安装版验收。测试夹具不由 manifest 或生产 popup 加载。
 
 B1 定向回归包括 `tests/cookie-store.behavior.test.js`、`tests/manual-confirmation.behavior.test.js` 和 `tests/handoff-reasons.behavior.test.js`。`tests/handoff-popup-browser.mjs` 通过 ego-browser 运行生产 popup/content 与后台投影，检查原因说明、手动待定语气/弹窗保留、媒体反馈、焦点、尺寸与端口释放。具体已执行结果与未完成验收见 B1 outcomes。
+
+本次工作流回归为 `tests/request-method.behavior.test.js`、`connection-diagnosis.behavior.test.js`、`link-collection.behavior.test.js`、`media-inspection*.behavior.test.js`、`frame-workflow.behavior.test.js`、`polish-popup.behavior.test.js` 和 `workflow-boundaries.behavior.test.js`。`tests/polish-browser.mjs` 导出接收现有 ego-browser Page 的 `runPolishPopup(page)` / `runPolishContent(page)`，检查生产 DOM、选区和原生 XML 解析；不拥有或创建浏览器空间。已执行证据与验收限制见 `.trellis/tasks/11-13-browser-integration-polish/outcomes.md`。
 
 `tests/harness/native-host-roundtrip.cjs` 由 `nxtools-browser-host` 的 `b1_` Rust 测试驱动：生产后台下载事件和手动拖放请求与真实宿主交换 Native Messaging 帧，再经过独立当前用户管道和临时引擎，核对 Firefox 容器/隐私 Cookie、有效待确认回复和确认前浏览器所有权；真实 queue-only 回执继续检查浏览器取消失败后的引擎取消、同 ID 重试和拒绝。需 Node.js；不单独运行此脚本。Rust 验证沿用单 Cargo 通道、内存约束和 scratch TEMP/TMP。该夹具不启动产品、不注册宿主，也不替代安装环境验收。

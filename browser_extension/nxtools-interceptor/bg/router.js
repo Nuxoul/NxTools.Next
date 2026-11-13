@@ -383,6 +383,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "popup_extract_links") {
+    void activeTab().then(tab => collectLinksForReview(tab, { mode: message.mode || "page" }))
+      .then(sendResponse, () => sendResponse({ ok: false, message: "无法提取链接，请刷新页面后重试" }));
+    return true;
+  }
+
+  if (message.type === "popup_inspect_resource") {
+    void inspectMediaResource(String(message.resourceId || "")).then(sendResponse,
+      () => sendResponse({ ok: false, message: "无法识别媒体，请重试" }));
+    return true;
+  }
+
   if (message.type === "popup_send_resource") {
     void sendResource(String(message.resourceId || "")).then(sendResponse, (error) => {
       sendResponse({

@@ -4,9 +4,10 @@ const path = require("node:path");
 const vm = require("node:vm");
 const root = path.resolve(__dirname, "../..");
 
-function loadContent() {
-  const listeners = new Map(), messages = [], intervals = [], observers = [], performanceObservers = [];
+function loadContent(options = {}) {
+  const listeners = new Map(), messages = [], intervals = [], timeouts = [], observers = [], performanceObservers = [];
   let runtimeResponse = () => ({ ok: true, choices: [] });
+  let timeoutSerial = 0;
   const elements = [], entries = [], runtimeListeners = [];
   class Element {
     constructor(tag = "div", attributes = {}) { this.tagName = tag.toUpperCase(); this.attributes = { ...attributes }; this.style = {}; this.children = []; }
@@ -27,30 +28,38 @@ function loadContent() {
   const document = { title: "fixture", readyState: "complete", visibilityState: "visible", documentElement: new Element("html"),
     addEventListener, getElementById: () => null, querySelector: () => null, createElement: tag => new Element(tag),
     querySelectorAll(selector) { return selector === "*" ? elements : elements.filter(element => selector.includes(element.tagName.toLowerCase())); } };
-  const realm = { console, URL, Element, HTMLMediaElement, HTMLAudioElement, HTMLVideoElement, HTMLImageElement,
+  const realm = { console, URL, TextDecoder, TextEncoder, AbortController, DOMParser: options.DOMParser,
+    Element, HTMLMediaElement, HTMLAudioElement, HTMLVideoElement, HTMLImageElement,
     innerWidth: 900, innerHeight: 900,
     location: { href: "https://example.test/watch", hostname: "example.test" }, document, addEventListener,
     performance: { timeOrigin: Date.now(), getEntriesByType: () => entries },
     MutationObserver: class { constructor(fn) { this.fn = fn; observers.push(this); } observe(target, options) { this.options = options; } },
     PerformanceObserver: class { constructor(fn) { this.fn = fn; performanceObservers.push(this); } observe(options) { this.options = options; } },
-    visualViewport: null, requestAnimationFrame: () => 1, setTimeout: () => 1, clearTimeout() {},
+    visualViewport: null, requestAnimationFrame: () => 1,
+    setTimeout(fn, ms = 0) { const timer = { id: ++timeoutSerial, fn, ms, cleared: false }; timeouts.push(timer); return timer.id; },
+    clearTimeout(id) { const timer = timeouts.find(item => item.id === id); if (timer) timer.cleared = true; },
     setInterval(fn, ms) { intervals.push({ fn, ms }); return intervals.length; },
     getComputedStyle: element => ({ backgroundImage: element.backgroundImage || "none" }),
+    fetch: options.fetch || (async () => { throw new Error("network blocked in content behavior tests"); }),
     chrome: { runtime: { id: "fixture", lastError: null, getURL: () => "data:text/javascript,",
       sendMessage(message, callback) { messages.push(message); Promise.resolve(runtimeResponse(message)).then(value => callback?.(value)); },
       onMessage: { addListener(fn) { runtimeListeners.push(fn); } } },
-      storage: { local: { get(defaults, callback) { callback({ ...defaults }); } }, onChanged: { addListener() {} } } }
+      storage: { local: { get(defaults, callback) { callback({ ...defaults, ...(options.storage || {}) }); } }, onChanged: { addListener() {} } } }
   };
   realm.window = realm;
   const context = vm.createContext(realm);
-  for (const file of JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8")).content_scripts[0].js) {
+  const contentFiles = [...JSON.parse(fs.readFileSync(path.join(root, "manifest.json"), "utf8")).content_scripts[0].js];
+  if (!contentFiles.includes("content/media-inspection.js")) contentFiles.splice(contentFiles.indexOf("content-script.js"), 0, "content/media-inspection.js");
+  for (const file of contentFiles) {
     vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), context, { filename: file });
   }
-  return { realm, messages, elements, entries, intervals, observers, performanceObservers, Element, HTMLAudioElement, HTMLVideoElement,
+  return { realm, messages, elements, entries, intervals, timeouts, observers, performanceObservers, Element, HTMLAudioElement, HTMLVideoElement,
     setRuntimeResponse(handler) { runtimeResponse = handler; },
     fire(name, event = {}) { for (const fn of listeners.get(name) || []) fn(event); },
     mutate(element, attributeName) { for (const observer of observers) if (observer.options.attributeFilter.includes(attributeName)) observer.fn([{ type: "attributes", target: element }]); },
-    dispatch(message) { let result; for (const fn of runtimeListeners) fn(message, {}, value => { result = value; }); return result; }
+    runTimeout(ms) { for (const timer of timeouts.filter(item => !item.cleared && item.ms === ms)) { timer.cleared = true; timer.fn(); } },
+    dispatch(message) { let result; for (const fn of runtimeListeners) fn(message, {}, value => { result = value; }); return result; },
+    dispatchAsync(message) { return new Promise(resolve => { let pending = false, responded = false; for (const fn of runtimeListeners) pending = fn(message, {}, value => { responded = true; resolve(value); }) === true || pending; if (!pending && !responded) resolve(undefined); }); }
   };
 }
 module.exports = { loadContent };

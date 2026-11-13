@@ -471,6 +471,7 @@ function rememberRequestHeaders(details) {
     ...cookieSourceDetails(details),
     url: normalizeUrlKey(details.url),
     initiator: details.initiator || details.originUrl || "",
+    method: typeof details.method === "string" ? details.method.trim().toUpperCase() : "",
     time: Date.now(),
     headers,
     supportsRange: Object.keys(headers).some((name) => name === "range")
@@ -537,6 +538,7 @@ function rememberRedirectHint(details) {
     targetUrl: targetUrl ? normalizeUrlKey(targetUrl) : "",
     tabId: details.tabId > 0 ? details.tabId : snapshot?.tabId || lastActiveTabId || 0,
     initiator: details.initiator || details.originUrl || snapshot?.initiator || "",
+    method: typeof details.method === "string" ? details.method.trim().toUpperCase() : snapshot?.method || "",
     time: Date.now(),
     assetHint: assetHint || meta.assetHint || null,
     mime: assetHint?.mime || meta.mime || "",
@@ -641,6 +643,18 @@ function resolveHeaderSnapshot(url, source = {}) {
     }
   }
   return best;
+}
+
+function observedRequestMethod(url, source) {
+  cleanupRequestCache();
+  const address = normalizeUrlKey(url);
+  const requests = [...recentRequestsByRequestId.values()].reverse()
+    .filter(snapshot => snapshot.url === address && matchesRequestContext(snapshot, source))
+    .sort((left, right) => right.time - left.time);
+  if (!(source.tabId > 0 || source.cookieStoreId) &&
+      new Set(requests.map(snapshot => `${snapshot.tabId}:${snapshot.cookieStoreId || snapshot.incognito || ""}`)).size > 1) return "";
+  return requests.find(snapshot => snapshot.method && snapshot.method !== "GET")?.method ||
+    requests[0]?.method || resolveRedirectHint({ ...source, url })?.method || "";
 }
 
 function registerHeaderCapture() {

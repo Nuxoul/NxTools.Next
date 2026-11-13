@@ -52,6 +52,15 @@ const ALLOWED_EXTENSION_LOG_EVENTS: &[&str] = &[
     "capture_pause_started",
     "capture_pause_applied",
     "capture_pause_failed",
+    "connection_check_started",
+    "connection_check_completed",
+    "connection_check_failed",
+    "link_collection_started",
+    "link_collection_completed",
+    "link_collection_failed",
+    "media_inspection_started",
+    "media_inspection_completed",
+    "media_inspection_failed",
     "content_bridge_inject_failed",
     "content_media_resource_failed",
     "content_resource_choices_built",
@@ -98,6 +107,7 @@ const HANDOFF_REASONS: &[&str] = &[
     "browser_transferred",
     "rule_excluded",
     "temporarily_paused",
+    "unsupported_request_method",
     "desktop_unavailable",
     "desktop_refused",
     "handoff_timeout",
@@ -237,6 +247,12 @@ struct BrowserBlobCommitPayload {
     open_dialog: bool,
 }
 
+fn is_workflow_log_event(event: &str) -> bool {
+    event.starts_with("link_collection_")
+        || event.starts_with("media_inspection_")
+        || event.starts_with("connection_check_")
+}
+
 fn validate_extension_log_payload(payload: &BrowserExtensionLogPayload) -> Result<Option<Uuid>> {
     bounded(
         "extensionLog.event",
@@ -284,6 +300,35 @@ fn validate_extension_log_payload(payload: &BrowserExtensionLogPayload) -> Resul
         };
         if correlation_id.is_none() || payload.elapsed_ms.is_none() || !valid_reason {
             bail!("browser capture pause diagnostic metadata is invalid");
+        }
+    }
+    if is_workflow_log_event(&payload.event) {
+        let reason = payload.reason.as_deref().unwrap_or_default();
+        let valid_reason = if payload.event.ends_with("_started") {
+            reason == "started"
+        } else if payload.event.ends_with("_completed") {
+            reason == "ready"
+                || (payload.event == "media_inspection_completed" && reason == "protected")
+        } else if payload.event == "connection_check_failed" {
+            matches!(
+                reason,
+                "host_not_registered"
+                    | "host_forbidden"
+                    | "host_start_failed"
+                    | "connection_timeout"
+                    | "connection_lost"
+                    | "native_rejected"
+                    | "desktop_unavailable"
+            )
+        } else {
+            matches!(
+                reason,
+                "unavailable" | "page_changed" | "timeout" | "invalid_response"
+            ) || (payload.event == "media_inspection_failed"
+                && matches!(reason, "too_large" | "unsupported"))
+        };
+        if correlation_id.is_none() || payload.elapsed_ms.is_none() || !valid_reason {
+            bail!("browser workflow diagnostic metadata is invalid");
         }
     }
     Ok(correlation_id)
@@ -487,7 +532,7 @@ fn handle_request(
         "commit_blob_upload" => {
             commit_blob_upload(request_id, request.payload, paths, executable, blob_uploads)
         }
-        "get_snapshot" => snapshot(request_id),
+        "get_snapshot" => snapshot(request_id, DOWNLOAD_PIPE_NAME),
         "task_action" => task_action(request_id, request.task_id, request.action, executable),
         "extension_log" => {
             let payload: BrowserExtensionLogPayload = serde_json::from_value(request.payload)
@@ -505,14 +550,16 @@ fn handle_request(
                     compensation = payload.compensation.as_deref().unwrap_or("none"),
                     "bounded browser handoff state received"
                 );
-            } else if payload.event.starts_with("capture_pause_") {
+            } else if payload.event.starts_with("capture_pause_")
+                || is_workflow_log_event(&payload.event)
+            {
                 info!(
                     event = "browser_extension.event",
-                    correlation_id = %correlation_id.expect("validated pause correlation"),
+                    correlation_id = %correlation_id.expect("validated workflow correlation"),
                     extension_event = %payload.event,
                     reason = payload.reason.as_deref().unwrap_or_default(),
                     elapsed_ms = payload.elapsed_ms.unwrap_or_default(),
-                    "bounded browser capture pause state received"
+                    "bounded browser workflow state received"
                 );
             } else if let Some(correlation_id) = correlation_id {
                 info!(
@@ -1212,11 +1259,21 @@ fn submit_download_batch(
     }
 }
 
-fn snapshot(request_id: String) -> Result<BrowserResponse> {
+fn snapshot(request_id: String, pipe_name: &str) -> Result<BrowserResponse> {
     let command_request_id = correlation_id(&request_id)?;
     // Status is passive: only an explicit download request may start the desktop.
-    let mut client = DownloadIpcClient::connect(DOWNLOAD_PIPE_NAME, Duration::from_millis(150))
-        .context("NxTools 尚未运行，请先启动桌面应用")?;
+    let mut client = match DownloadIpcClient::connect(pipe_name, Duration::from_millis(150)) {
+        Ok(client) => client,
+        Err(_) => {
+            let mut response = BrowserResponse::failed(
+                request_id,
+                "desktop_unavailable",
+                "NxTools 尚未运行，请先启动桌面应用".into(),
+            );
+            response.data = Some(json!({ "reason": "desktop_unavailable" }));
+            return Ok(response);
+        }
+    };
     let result = client.command(command_envelope(
         command_request_id,
         DownloadCommand::Snapshot {
@@ -1721,6 +1778,19 @@ mod tests {
             snapshot.contains("DownloadIpcClient::connect("),
             "snapshot still queries an existing engine"
         );
+    }
+
+    #[test]
+    fn unavailable_snapshot_returns_fixed_desktop_diagnosis() {
+        let request_id = Uuid::new_v4().to_string();
+        let pipe_name = format!(r"\\.\pipe\nxtools-browser-missing-{}", Uuid::new_v4());
+        let response =
+            snapshot(request_id.clone(), &pipe_name).expect("fixed unavailable response");
+        assert!(!response.ok);
+        assert_eq!(response.request_id, request_id);
+        assert_eq!(response.error.as_deref(), Some("desktop_unavailable"));
+        assert_eq!(response.data.unwrap()["reason"], "desktop_unavailable");
+        assert!(!response.message.unwrap().contains(&pipe_name));
     }
 
     #[test]

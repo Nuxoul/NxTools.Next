@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/browser-extension/contracts.md", "reason": "Browser ownership, source privacy, bounded capture and batch lifecycle"}
+{"file": ".trellis/spec/browser-extension/ui-guidelines.md", "reason": "Current popup geometry, tokens, focus and feedback"}
+{"file": "docs/reference-code/browser-integration-polish.md", "reason": "Verified ABDM, legacy and Mister behavior and invariants"}

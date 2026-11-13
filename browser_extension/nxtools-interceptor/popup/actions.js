@@ -1,10 +1,30 @@
 "use strict";
 
-// Popup actions: background messaging, busy guards, visible feedback and all
-// user-event wiring. Message types and payloads are unchanged from the original.
+// Popup actions: background messaging, busy guards, visible feedback, local
+// presentation preferences and all user-event wiring.
 
 const SUCCESS_MESSAGE_MS = 4000;
 let messageHideTimer = 0;
+const POPUP_VIEW_STORAGE_KEY = "nxtools_popup_view";
+const POPUP_VIEWS = new Set(["tasks", "resources", "advanced", "settings"]);
+
+function persistViewPreference(view) {
+  if (!POPUP_VIEWS.has(view) || !chrome.storage?.local?.set) return;
+  Promise.resolve(chrome.storage.local.set({ [POPUP_VIEW_STORAGE_KEY]: view })).catch(() => {});
+}
+
+async function restoreViewPreference() {
+  if (!chrome.storage?.local?.get) return false;
+  const revision = viewSelectionRevision;
+  try {
+    const stored = await chrome.storage.local.get(POPUP_VIEW_STORAGE_KEY);
+    const view = stored?.[POPUP_VIEW_STORAGE_KEY];
+    if (revision !== viewSelectionRevision || !POPUP_VIEWS.has(view) || lastHandledLinkReviewId) return false;
+    return setView(view);
+  } catch {
+    return false;
+  }
+}
 
 function sendMessage(message, timeoutMs = 10000) {
   const request = chrome.runtime.sendMessage(message);
@@ -97,6 +117,26 @@ function endBusy(button) {
     delete button.dataset.originalText;
   }
 }
+function setButtonGroupBusy(buttons, busy, busyText = "") {
+  for (const button of buttons) {
+    if (busy) {
+      button.dataset.originalText = button.textContent || "";
+      if (busyText) button.textContent = busyText;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    } else {
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+      if (button.dataset.originalText) button.textContent = button.dataset.originalText;
+      delete button.dataset.originalText;
+    }
+  }
+}
+async function refreshAfterCurrent() {
+  const activeRefresh = refreshInFlight;
+  if (activeRefresh) await activeRefresh.catch(() => {});
+  return refresh({ force: true });
+}
 
 async function runTaskAction(button) {
   beginBusy(button, "处理中");
@@ -117,13 +157,15 @@ async function runTaskAction(button) {
 }
 
 async function sendResourceFromButton(button, resourceId) {
+  const resource = findResourceById(resourceId);
+  if (isProtectedResource(resource)) {
+    setMessage("受保护媒体无法发送");
+    return;
+  }
   beginBusy(button, "发送中");
   try {
     setMessage("正在发送到 NxTools");
-    const result = await sendMessage({
-      type: "popup_send_resource",
-      resourceId
-    }, 14000);
+    const result = await sendMessage({ type: "popup_send_resource", resourceId }, 14000);
     setMessage(result.message || (result.ok ? "已发送到 NxTools" : "发送失败"));
     if (result.ok !== false && result.data?.handoffState !== "awaiting_confirmation" && !isQueuedDesktopResult(result)) {
       closePopupSoon();
@@ -134,6 +176,37 @@ async function sendResourceFromButton(button, resourceId) {
     setMessage(error instanceof Error ? error.message : "发送资源失败");
   } finally {
     endBusy(button);
+  }
+}
+
+function applyInspectionProjection(resourceId, inspection) {
+  if (!currentState || !inspection) return;
+  const update = (resources) => (resources || []).map((resource) => resource.id === resourceId ? { ...resource, mediaInspection: inspection } : resource);
+  currentState = { ...currentState, currentResources: update(currentState.currentResources), otherResources: update(currentState.otherResources) };
+  if (inspection.state === "protected") selectedResourceIds.delete(resourceId);
+  renderRevision += 1;
+}
+
+async function inspectResourceFromButton(button, resourceId) {
+  if (!resourceId || inspectingResourceIds.has(resourceId)) return;
+  beginBusy(null, "");
+  inspectingResourceIds.add(resourceId);
+  renderResourceLists();
+  try {
+    setMessage("正在识别媒体");
+    const result = await sendMessage({ type: "popup_inspect_resource", resourceId }, 12000);
+    if (result?.resourceId === resourceId && result.inspection) applyInspectionProjection(resourceId, result.inspection);
+    setMessage(result?.message || (result?.ok ? "媒体识别完成" : "媒体识别失败，请重试"));
+    await refreshAfterCurrent();
+  } catch (error) {
+    applyInspectionProjection(resourceId, { state: "failed", kind: "unknown", requiresMerge: false,
+      encrypted: false, live: false, message: "媒体识别失败，请重试", reason: "unavailable" });
+    setMessage(error instanceof Error ? error.message : "媒体识别失败，请重试");
+  } finally {
+    inspectingResourceIds.delete(resourceId);
+    renderResourceLists();
+    document.querySelector(`[data-resource-inspect="${CSS.escape(resourceId)}"]`)?.focus({ preventScroll: true });
+    endBusy(null);
   }
 }
 
@@ -240,30 +313,76 @@ async function saveSettings(button, progressText, doneText, failureText) {
   }
 }
 
-function bindPopupEvents() {
-  elements.capturePauseButton.addEventListener("click", async () => {
-    if (elements.capturePauseButton.disabled) return;
-    const paused = !currentState?.capturePaused;
-    beginBusy(elements.capturePauseButton, "更新中");
-    try {
-      if (currentState?.capturePauseAvailable === false) {
-        const state = await refresh({ force: true });
-        if (state.capturePauseAvailable === false) throw new Error("会话状态不可用，请重试");
-        setMessage("会话状态已恢复");
-        return;
-      }
-      const result = await sendMessage({ type: "popup_set_capture_paused", paused }, 12000);
-      if (result?.ok !== true) throw new Error(result?.message || "更新会话暂停失败，请重试");
-      currentState = { ...currentState, capturePaused: result.capturePaused, capturePauseAvailable: true };
-      renderRevision += 1;
-      setMessage(result.capturePaused ? "本次会话已暂停自动接管" : "已恢复自动接管");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "更新会话暂停失败，请重试");
-    } finally {
-      endBusy(elements.capturePauseButton);
-      renderCapturePause(currentState || {});
+async function toggleCapturePause() {
+  const buttons = capturePauseButtons();
+  if (buttons.some((button) => button.disabled)) return;
+  const paused = !currentState?.capturePaused;
+  beginBusy(null, "");
+  setButtonGroupBusy(buttons, true, "更新中");
+  try {
+    if (currentState?.capturePauseAvailable === false) {
+      const state = await refresh({ force: true });
+      if (state.capturePauseAvailable === false) throw new Error("会话状态不可用，请重试");
+      setMessage("会话状态已恢复");
+      return;
     }
-  });
+    const result = await sendMessage({ type: "popup_set_capture_paused", paused }, 12000);
+    if (result?.ok !== true) throw new Error(result?.message || "更新会话暂停失败，请重试");
+    currentState = { ...currentState, capturePaused: result.capturePaused, capturePauseAvailable: true };
+    renderRevision += 1;
+    setMessage(result.capturePaused ? "本次会话已暂停自动接管" : "已恢复自动接管");
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : "更新会话暂停失败，请重试");
+  } finally {
+    setButtonGroupBusy(buttons, false);
+    endBusy(null);
+    renderCapturePause(currentState || {});
+  }
+}
+
+async function testConnection() {
+  const buttons = connectionTestButtons();
+  if (buttons.some((button) => button.disabled)) return;
+  beginBusy(null, "");
+  setButtonGroupBusy(buttons, true, "测试中");
+  try {
+    setMessage("正在测试 Native Messaging");
+    const status = await sendMessage({ type: "popup_test_connection" }, 9000);
+    renderConnection(status || {});
+    const presentation = connectionPresentation(status || {});
+    setMessage(status?.ok ? presentation.message : `${presentation.message}：${presentation.guidance}`);
+  } catch (error) {
+    setMessage(error instanceof Error ? error.message : "连接测试失败");
+  } finally {
+    setButtonGroupBusy(buttons, false);
+    endBusy(null);
+  }
+}
+
+async function extractPageLinks() {
+  if (elements.extractLinksButton.disabled) return;
+  beginBusy(elements.extractLinksButton, "提取中");
+  localLinkReviewStatus = { state: "collecting", count: 0, message: "正在读取当前页面可复核链接" };
+  renderLinkReview();
+  try {
+    const result = await sendMessage({ type: "popup_extract_links", mode: "page" }, 12000);
+    localLinkReviewStatus = result?.linkReview || { state: result?.ok ? "ready" : "failed", count: 0, message: result?.message || "链接提取失败，请重试" };
+    if (currentState) currentState = { ...currentState, linkReview: result?.linkReview || null };
+    renderRevision += 1;
+    renderLinkReview();
+    setMessage(result?.message || (result?.ok ? "页面链接已提取，请复核后批量发送" : "链接提取失败，请重试"));
+    await refreshAfterCurrent();
+  } catch (error) {
+    localLinkReviewStatus = { state: "failed", count: 0, message: error instanceof Error ? error.message : "链接提取失败，请重试" };
+    renderLinkReview();
+    setMessage(localLinkReviewStatus.message);
+  } finally {
+    endBusy(elements.extractLinksButton);
+  }
+}
+
+function bindPopupEvents() {
+  for (const button of capturePauseButtons()) button.addEventListener("click", toggleCapturePause);
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && previewResourceId && currentView === "resources") {
       event.preventDefault();
@@ -273,8 +392,8 @@ function bindPopupEvents() {
 
   document.querySelectorAll(".tab").forEach((button) => {
     button.addEventListener("click", () => {
-      setView(button.dataset.view);
-      refresh({ force: true }).catch(() => {});
+      setView(button.dataset.view, { trackIntent: true, persist: true });
+      refreshAfterCurrent().catch(() => {});
     });
     button.addEventListener("keydown", (event) => {
       const tabs = [...document.querySelectorAll(".tab")];
@@ -287,9 +406,9 @@ function bindPopupEvents() {
       if (nextIndex === currentIndex) return;
       event.preventDefault();
       const nextTab = tabs[nextIndex];
-      setView(nextTab.dataset.view);
+      setView(nextTab.dataset.view, { trackIntent: true, persist: true });
       nextTab.focus();
-      refresh({ force: true }).catch(() => {});
+      refreshAfterCurrent().catch(() => {});
     });
   });
 
@@ -306,23 +425,17 @@ function bindPopupEvents() {
     });
   });
 
+  elements.resourceSearchInput.addEventListener("input", () => {
+    currentResourceSearch = elements.resourceSearchInput.value;
+    if (currentState) renderResourceLists();
+  });
+  elements.extractLinksButton.addEventListener("click", extractPageLinks);
+
   elements.dismissMessageButton?.addEventListener("click", () => setMessage(""));
 
   elements.saveButton.addEventListener("click", () => saveSettings(elements.saveButton, "正在保存", "已保存", "保存失败"));
 
-  elements.testButton.addEventListener("click", async () => {
-    beginBusy(elements.testButton, "测试中");
-    try {
-      setMessage("正在测试 Native Messaging");
-      const status = await sendMessage({ type: "popup_test_connection" }, 9000);
-      renderConnection({ ok: Boolean(status.ok), message: status.message || "未连接" });
-      setMessage(status.ok ? "Native Messaging 连接正常" : "连接失败，请确认 NxTools 正在运行且浏览器接管已注册");
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "连接测试失败");
-    } finally {
-      endBusy(elements.testButton);
-    }
-  });
+  for (const button of connectionTestButtons()) button.addEventListener("click", testConnection);
 
   elements.sendTabButton.addEventListener("click", async () => {
     beginBusy(elements.sendTabButton, "发送中");
